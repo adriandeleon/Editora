@@ -76,10 +76,9 @@ class DocxWriterTest {
         try {
             DocxWriter.write(md, null, null, out);
             try (InputStream in = Files.newInputStream(out);
-                    XWPFDocument doc = new XWPFDocument(in);
-                    org.apache.poi.xwpf.extractor.XWPFWordExtractor extractor =
-                            new org.apache.poi.xwpf.extractor.XWPFWordExtractor(doc)) {
-                return extractor.getText();
+                    XWPFDocument doc = new XWPFDocument(in)) {
+                // As Word shows it: a list item's number or bullet comes from the numbering part.
+                return DocxLists.text(doc);
             }
         } finally {
             Files.deleteIfExists(out);

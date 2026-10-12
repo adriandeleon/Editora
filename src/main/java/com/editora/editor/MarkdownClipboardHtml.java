@@ -53,11 +53,38 @@ public final class MarkdownClipboardHtml {
 
     private MarkdownClipboardHtml() {}
 
+    /** Largest local picture inlined into the fragment; a bigger one is referenced by its absolute file URI. */
+    static final int MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+
     /**
      * Renders {@code markdown} to the clipboard HTML fragment — a single styled {@code <div>}, with no
      * doctype/{@code <html>}/{@code <head>} (a fragment is what the {@code text/html} flavor expects).
      */
     public static String toHtml(String markdown, boolean mathEnabled) {
+        return toHtml(markdown, mathEnabled, null);
+    }
+
+    /**
+     * As {@link #toHtml(String, boolean)} for the document saved as {@code documentFile} (null: unsaved): a
+     * picture it names by a relative path travels with the fragment (as a {@code data:} URI) instead of as a
+     * path that means nothing wherever the fragment is pasted.
+     */
+    public static String toHtml(String markdown, boolean mathEnabled, java.nio.file.Path documentFile) {
+        java.nio.file.Path baseDir =
+                documentFile == null ? null : documentFile.toAbsolutePath().getParent();
+        return "<div style=\"" + ROOT_STYLE + "\">\n" + render(markdown, mathEnabled, baseDir, true) + "</div>";
+    }
+
+    /**
+     * The same document as plain HTML <em>markup</em>, for pasting into an HTML file: semantic tags only — no
+     * inline styles, and the task-list classes and cell alignment the file export writes. Like the rich
+     * fragment it carries no raw HTML from the document and no script-capable URL.
+     */
+    public static String toMarkup(String markdown, boolean mathEnabled) {
+        return render(markdown, mathEnabled, null, false);
+    }
+
+    private static String render(String markdown, boolean mathEnabled, java.nio.file.Path baseDir, boolean styled) {
         String src = markdown == null ? "" : markdown;
         java.util.Set<String> mathTags = new java.util.HashSet<>();
         if (mathEnabled) {
@@ -70,13 +97,64 @@ public final class MarkdownClipboardHtml {
         // above: those are ours, matched exactly, and inline data: PNGs.
         HtmlRenderer renderer = HtmlRenderer.builder()
                 .extensions(MarkdownRenderer.EXTENSIONS)
-                .attributeProviderFactory(ctx -> new InlineStyles())
+                .attributeProviderFactory(
+                        ctx -> styled ? new InlineStyles(baseDir) : new MarkdownHtmlExport.SemanticAttributes())
                 .escapeHtml(true)
                 .sanitizeUrls(true)
                 .nodeRendererFactory(ctx -> new OwnMathOnly(ctx.getWriter(), mathTags))
                 .build();
-        String body = renderer.render(MarkdownRenderer.parseToDocument(src));
-        return "<div style=\"" + ROOT_STYLE + "\">\n" + body + "</div>";
+        return renderer.render(MarkdownRenderer.parseToDocument(src));
+    }
+
+    /**
+     * The {@code src} a pasted picture can still be found by: a web or {@code data:} address as it is; a
+     * local file's bytes as a {@code data:} URI (an SVG rasterized, as the word processors that receive the
+     * paste cannot show one), or its absolute {@code file:} URI when it is too large to inline. Null: leave
+     * the source as written (nothing to resolve it against, or no such file).
+     */
+    static String portableImageSrc(String src, java.nio.file.Path baseDir) {
+        if (src == null || src.isBlank() || baseDir == null || src.matches("(?i)^[a-z][a-z0-9+.-]+:.*")) {
+            return null;
+        }
+        try {
+            String path = src.strip();
+            int cut = path.indexOf('#') >= 0 ? path.indexOf('#') : path.indexOf('?');
+            java.nio.file.Path file = baseDir.resolve(java.net.URLDecoder.decode(
+                            (cut < 0 ? path : path.substring(0, cut)).replace("+", "%2B"),
+                            java.nio.charset.StandardCharsets.UTF_8))
+                    .normalize();
+            if (!java.nio.file.Files.isRegularFile(file)) {
+                return null;
+            }
+            if (java.nio.file.Files.size(file) > MAX_INLINE_IMAGE_BYTES) {
+                return file.toUri().toString();
+            }
+            byte[] bytes = java.nio.file.Files.readAllBytes(file);
+            if (PreviewImageLoader.looksLikeSvg(bytes)) {
+                byte[] png = PreviewImageLoader.svgToPng(bytes);
+                if (png == null) {
+                    return file.toUri().toString();
+                }
+                bytes = png;
+            }
+            return "data:" + mediaType(bytes) + ";base64,"
+                    + java.util.Base64.getEncoder().encodeToString(bytes);
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static String mediaType(byte[] b) {
+        if (b.length > 2 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8) {
+            return "image/jpeg";
+        }
+        if (b.length > 2 && b[0] == 'G' && b[1] == 'I' && b[2] == 'F') {
+            return "image/gif";
+        }
+        if (b.length > 11 && b[0] == 'R' && b[1] == 'I' && b[8] == 'W' && b[9] == 'E') {
+            return "image/webp";
+        }
+        return b.length > 1 && b[0] == 'B' && b[1] == 'M' ? "image/bmp" : "image/png";
     }
 
     /**
@@ -147,9 +225,21 @@ public final class MarkdownClipboardHtml {
      */
     private static final class InlineStyles implements AttributeProvider {
 
+        private final java.nio.file.Path baseDir;
+
+        InlineStyles(java.nio.file.Path baseDir) {
+            this.baseDir = baseDir;
+        }
+
         @Override
         public void setAttributes(Node node, String tagName, Map<String, String> attributes) {
             attributes.remove("rel", "nofollow"); // a side effect of sanitizeUrls; meaningless in a paste
+            if (node instanceof Image image && "img".equals(tagName)) {
+                String portable = portableImageSrc(image.getDestination(), baseDir);
+                if (portable != null) {
+                    attributes.put("src", portable);
+                }
+            }
             String style = styleFor(node, tagName);
             if (style == null) {
                 return;

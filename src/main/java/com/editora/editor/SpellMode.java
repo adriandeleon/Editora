@@ -9,7 +9,7 @@ import java.util.function.IntFunction;
  *
  * <ul>
  *   <li>{@link #PROSE} and {@link #MARKDOWN}: every word, except inline code and links (and, in Markdown,
- *       fenced code blocks).
+ *       fenced code blocks, front matter, link targets and definitions, HTML tags and lint directives).
  *   <li>{@link #HTML} and {@link #TYPST}: the document's text content — what is left once tags, attributes,
  *       strings, math and code are taken out — plus comments. They used to be treated as code, so the prose
  *       of a web page or a Typst paper was never checked at all.
@@ -94,11 +94,71 @@ public enum SpellMode {
 
     public BitSet codeLines(int count, IntFunction<String> lineAt) {
         return switch (this) {
-            case MARKDOWN -> SpellCheckOverlay.fencedCodeLines(count, lineAt);
+            case MARKDOWN -> markdownCodeLines(count, lineAt);
             case HTML -> htmlCodeLines(count, lineAt);
             case TYPST -> typstCodeLines(count, lineAt);
             default -> new BitSet();
         };
+    }
+
+    /**
+     * Markdown's lines that hold no prose: fenced code, a leading YAML front-matter block (keys, slugs and
+     * tags are identifiers), and link reference definitions ({@code [label]: target "title"} — a label and a
+     * URL; a footnote definition {@code [^1]: …} is prose and stays checked).
+     */
+    static BitSet markdownCodeLines(int count, IntFunction<String> lineAt) {
+        BitSet code = SpellCheckOverlay.fencedCodeLines(count, lineAt);
+        if (count > 1 && lineAt.apply(0).strip().equals("---")) {
+            for (int i = 1; i < count; i++) {
+                String line = lineAt.apply(i).strip();
+                if (line.equals("---") || line.equals("...")) {
+                    code.set(0, i + 1);
+                    break;
+                }
+            }
+        }
+        for (int i = code.nextClearBit(0); i < count; i = code.nextClearBit(i + 1)) {
+            if (REFERENCE_DEFINITION.matcher(lineAt.apply(i)).lookingAt()) {
+                code.set(i);
+            }
+        }
+        return code;
+    }
+
+    private static final java.util.regex.Pattern REFERENCE_DEFINITION =
+            java.util.regex.Pattern.compile(" {0,3}\\[(?!\\^)[^\\]]+\\]:\\s*\\S");
+
+    /** What {@link #prose} blanks in a Markdown line; see there. */
+    private static final java.util.regex.Pattern MARKDOWN_NOT_PROSE = java.util.regex.Pattern.compile(
+            // a link's or image's target, "(dest "title")", behind the closing bracket of its text
+            "(?<=\\])\\((?:<[^>\\n]*>|[^()\\s]*(?:\\([^()]*\\)[^()\\s]*)*)(?:\\s+(?:\"[^\"]*\"|'[^']*'))?\\s*\\)"
+                    // a reference link's label, "[text][label]"
+                    + "|(?<=\\])\\[[^\\]]*\\]"
+                    // the linter's own directives
+                    + "|<!--\\s*markdownlint-[^>]*-->"
+                    // an HTML tag or an <autolink>
+                    + "|</?[A-Za-z][^<>]*>");
+
+    /**
+     * {@code line} with what is not prose blanked out, same length, for cutting into words. Only Markdown
+     * changes it: a link's target, a reference label, an HTML tag and a lint directive become spaces. That
+     * both drops them and separates what they touched — the checker judges a whole whitespace-delimited
+     * token at once, so {@code [text](https://…)} or {@code <kbd>Ctrl</kbd>} read as one URL-like token and
+     * the text in it was never checked.
+     */
+    public String prose(String line) {
+        if (this != MARKDOWN || (line.indexOf(']') < 0 && line.indexOf('<') < 0)) {
+            return line;
+        }
+        java.util.regex.Matcher m = MARKDOWN_NOT_PROSE.matcher(line);
+        if (!m.find()) {
+            return line;
+        }
+        char[] out = line.toCharArray();
+        do {
+            java.util.Arrays.fill(out, m.start(), m.end(), ' ');
+        } while (m.find());
+        return new String(out);
     }
 
     private static final String[] HTML_CODE_BLOCKS = {"script", "style", "pre"};

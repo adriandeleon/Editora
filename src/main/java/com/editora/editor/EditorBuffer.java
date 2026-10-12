@@ -4985,7 +4985,7 @@ public class EditorBuffer implements TabContent {
         javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
         cc.putString(text == null ? "" : text);
         if (isMarkdown()) {
-            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled(), path));
         }
         Clipboard.getSystemClipboard().setContent(cc);
     }
@@ -4999,7 +4999,7 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+        cc.putString(MarkdownClipboardHtml.toMarkup(getContent(), MathImages.isEnabled()));
         Clipboard.getSystemClipboard().setContent(cc);
         return true;
     }

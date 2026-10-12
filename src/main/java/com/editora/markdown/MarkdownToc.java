@@ -206,7 +206,7 @@ public final class MarkdownToc {
     }
 
     /** GitHub appends {@code -1}, {@code -2}… to a slug that has already been used. */
-    private static String uniqueAnchor(String base, Map<String, Integer> seen) {
+    public static String uniqueAnchor(String base, Map<String, Integer> seen) {
         Integer n = seen.get(base);
         if (n == null) {
             seen.put(base, 0);

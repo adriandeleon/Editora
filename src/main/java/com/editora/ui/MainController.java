@@ -1159,6 +1159,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
+        exports.systemOpener = hostServices == null
+                ? null
+                : f -> hostServices.showDocument(f.toUri().toString());
     }
 
     /**
@@ -8288,8 +8291,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
-        buffer.setOpenUrlHandler(u -> ExternalLinks.open(
-                u, buffer.getPath(), windowProjectRoot(), hostServices, fileWorkflows::openPath, this::setStatus));
+        java.util.function.Function<Path, EditorBuffer> open = this::openBufferFor;
+        buffer.setOpenUrlHandler(u -> HeadingLinks.open(
+                u, buffer, windowProjectRoot(), hostServices, fileWorkflows, open, this::openAndGoto, this::setStatus));
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
         buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button

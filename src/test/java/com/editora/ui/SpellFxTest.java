@@ -285,6 +285,42 @@ class SpellFxTest {
         }
     }
 
+    /**
+     * Markdown's own syntax around prose: the text of a link is checked even though it touches its target,
+     * and what is an identifier rather than a word — front matter, a reference definition, an HTML attribute,
+     * the linter's directive — is not.
+     */
+    @Test
+    void markdownLinkTextIsCheckedAndMarkupThatIsNotProseIsNot() throws Exception {
+        EditorBuffer md = open(
+                "links.md",
+                "---\ntitle: Notes\nslug: speling-in-frontmatter\n---\n\n"
+                        + "A [linktexxt](https://exampleurlword.com/pathword) and [reftexxt][reflabell] and "
+                        + "![altexxt](imgpathword.png \"titlewordd\").\n\n"
+                        + "[reflabell]: https://refurlword.example \"reftitlle\"\n\n"
+                        + "Press <kbd>Ctrll</kbd> or <span class=\"navbarr\">spantexxt</span>. "
+                        + "<!-- markdownlint-disable-line MD034 -->\n\n<!-- commentwordd -->\n");
+        List<String> flagged = squiggled(md);
+        assertTrue(
+                flagged.containsAll(List.of("linktexxt", "reftexxt", "altexxt", "Ctrll", "spantexxt", "commentwordd")),
+                "prose that touches markup is checked: " + flagged);
+        for (String fine : List.of(
+                "speling",
+                "frontmatter",
+                "exampleurlword",
+                "pathword",
+                "reflabell",
+                "imgpathword",
+                "titlewordd",
+                "refurlword",
+                "reftitlle",
+                "navbarr",
+                "kbd",
+                "markdownlint")) {
+            assertFalse(flagged.contains(fine), fine + " must not be flagged: " + flagged);
+        }
+    }
+
     // ------------------------------------------------------------------------ S14 / S15 / S20: the menu
 
     @Test

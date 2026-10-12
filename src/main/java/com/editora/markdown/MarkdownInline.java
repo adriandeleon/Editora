@@ -1,8 +1,5 @@
 package com.editora.markdown;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
  * Pure (no-toolkit, unit-tested) inline Markdown formatting: wrap/unwrap a selection in a symmetric
  * marker ({@code **} bold, {@code *} italic, {@code ~~} strikethrough, {@code `} code), turn a selection
@@ -10,11 +7,6 @@ import java.util.regex.Pattern;
  * applies the returned {@link MarkdownEdit}.
  */
 public final class MarkdownInline {
-
-    /** Inline link {@code [text](url "title")} — captures the URL (group 1), title optional, ignored. */
-    private static final Pattern INLINE_LINK = Pattern.compile("\\[[^\\]]*\\]\\(\\s*([^)\\s]+)(?:\\s+[^)]*)?\\)");
-    /** A bare http(s) URL. */
-    private static final Pattern BARE_URL = Pattern.compile("https?://[^\\s)<>\"']+");
 
     private MarkdownInline() {}
 
@@ -56,26 +48,11 @@ public final class MarkdownInline {
     }
 
     /**
-     * The URL of the link (inline {@code [..](url)} or a bare {@code http(s)://…}) whose span contains
-     * {@code caret}, or {@code null} when the caret is not on a link.
+     * The destination of the link whose span contains {@code caret} — inline, reference, autolink or bare
+     * URL — or {@code null} when the caret is not on a link. See {@link MarkdownLinkAt}.
      */
     public static String linkAround(String text, int caret) {
-        if (text == null || caret < 0 || caret > text.length()) {
-            return null;
-        }
-        Matcher m = INLINE_LINK.matcher(text);
-        while (m.find()) {
-            if (caret >= m.start() && caret <= m.end()) {
-                return m.group(1);
-            }
-        }
-        Matcher b = BARE_URL.matcher(text);
-        while (b.find()) {
-            if (caret >= b.start() && caret <= b.end()) {
-                return b.group();
-            }
-        }
-        return null;
+        return MarkdownLinkAt.destination(text, caret);
     }
 
     /** Link text may hold brackets only in pairs: a stray {@code [} or {@code ]} is backslash-escaped. */
