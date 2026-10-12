@@ -40,13 +40,20 @@ import static com.editora.i18n.Messages.tr;
 final class ExternalLinks {
 
     /** What to do with a link. */
-    sealed interface Target permits Browser, InEditor, Refused {}
+    sealed interface Target permits Browser, InEditor, InDocument, Refused {}
 
     /** Hand {@code url} to the OS opener — an {@code http(s)} or {@code mailto} URL, nothing else. */
     record Browser(String url) implements Target {}
 
     /** Open {@code file} in an editor tab. */
     record InEditor(Path file) implements Target {}
+
+    /**
+     * Go to the place {@code fragment} names (a heading's anchor, without the {@code #}) in {@code file} — or,
+     * when {@code file} is null, in the document the link was clicked in. Only {@link #classify(String, Path,
+     * Path, boolean)} with {@code anchors} set produces it.
+     */
+    record InDocument(Path file, String fragment) implements Target {}
 
     /** Do nothing but say why: {@code messageKey} is a catalog key taking {@code detail} as its argument. */
     record Refused(String messageKey, String detail) implements Target {}
@@ -73,6 +80,37 @@ final class ExternalLinks {
      * projectRoot} the window's project root (null: none).
      */
     static Target classify(String link, Path documentFile, Path projectRoot) {
+        return classify(link, documentFile, projectRoot, false);
+    }
+
+    /**
+     * {@link #classify(String, Path, Path)} for a caller that can follow a link to a place <em>inside</em> a
+     * document ({@code anchors}): {@code #installation} is then {@link InDocument} in the clicked document —
+     * saved or not — and {@code guide.md#installation} is {@link InDocument} in that file once the file
+     * itself has passed the same checks as any relative link. Without {@code anchors} a bare fragment is
+     * refused and a file's fragment is dropped, as before.
+     */
+    static Target classify(String link, Path documentFile, Path projectRoot, boolean anchors) {
+        Target target = classify0(link, documentFile, projectRoot, anchors);
+        if (anchors && target instanceof InEditor(Path file)) {
+            String fragment = fragmentOf(link.strip());
+            if (!fragment.isEmpty()) {
+                return new InDocument(file, fragment);
+            }
+        }
+        return target;
+    }
+
+    /** The percent-decoded {@code #fragment} of a scheme-less link, or "" when it has none. */
+    private static String fragmentOf(String link) {
+        if (SCHEME.matcher(link).find()) {
+            return "";
+        }
+        int hash = link.indexOf('#');
+        return hash < 0 ? "" : percentDecode(link.substring(hash + 1)).strip();
+    }
+
+    private static Target classify0(String link, Path documentFile, Path projectRoot, boolean anchors) {
         if (link == null || link.isBlank()) {
             return new Refused(KEY_INVALID, "");
         }
@@ -82,6 +120,9 @@ final class ExternalLinks {
         }
         Matcher m = SCHEME.matcher(s);
         if (!m.find()) {
+            if (anchors && s.startsWith("#") && !fragmentOf(s).isEmpty()) {
+                return new InDocument(null, fragmentOf(s));
+            }
             return local(s, s, false, documentFile, projectRoot);
         }
         String scheme = m.group(1).toLowerCase(Locale.ROOT);
@@ -222,10 +263,27 @@ final class ExternalLinks {
             Consumer<String> browser,
             Consumer<Path> editor,
             Consumer<String> status) {
+        open(link, documentFile, projectRoot, browser, editor, null, status);
+    }
+
+    /**
+     * {@link #open(String, Path, Path, Consumer, Consumer, Consumer)} for a caller that can go to a heading:
+     * {@code anchor} receives the file (null: the clicked document) and the fragment of an
+     * {@link InDocument} link. Null {@code anchor}: such links are classified as they always were.
+     */
+    static void open(
+            String link,
+            Path documentFile,
+            Path projectRoot,
+            Consumer<String> browser,
+            Consumer<Path> editor,
+            java.util.function.BiConsumer<Path, String> anchor,
+            Consumer<String> status) {
         if (link == null) {
             return; // nothing was asked for (an item with no URL) — not a refusal worth reporting
         }
-        switch (classify(link, documentFile, projectRoot)) {
+        switch (classify(link, documentFile, projectRoot, anchor != null)) {
+            case InDocument d -> anchor.accept(d.file(), d.fragment());
             case Browser b -> {
                 if (browser != null) {
                     browser.accept(b.url());
@@ -245,5 +303,18 @@ final class ExternalLinks {
             Consumer<Path> editor,
             Consumer<String> status) {
         open(link, documentFile, projectRoot, hostServices == null ? null : hostServices::showDocument, editor, status);
+    }
+
+    /** {@link #open(String, Path, Path, Consumer, Consumer, java.util.function.BiConsumer, Consumer)} with the JavaFX {@code HostServices}. */
+    static void open(
+            String link,
+            Path documentFile,
+            Path projectRoot,
+            javafx.application.HostServices hostServices,
+            Consumer<Path> editor,
+            java.util.function.BiConsumer<Path, String> anchor,
+            Consumer<String> status) {
+        Consumer<String> browser = hostServices == null ? null : hostServices::showDocument;
+        open(link, documentFile, projectRoot, browser, editor, anchor, status);
     }
 }

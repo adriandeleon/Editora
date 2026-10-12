@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import com.editora.ui.ExternalLinks.Browser;
+import com.editora.ui.ExternalLinks.InDocument;
 import com.editora.ui.ExternalLinks.InEditor;
 import com.editora.ui.ExternalLinks.Refused;
 import com.editora.ui.ExternalLinks.Target;
@@ -120,6 +121,53 @@ class ExternalLinksTest {
         assertEquals(ExternalLinks.KEY_MISSING, refusal(ExternalLinks.classify("nope.md", readme, null)));
         assertEquals(ExternalLinks.KEY_MISSING, refusal(ExternalLinks.classify("sub", readme, null)), "a folder");
         assertEquals(ExternalLinks.KEY_INVALID, refusal(ExternalLinks.classify("#heading", readme, null)));
+    }
+
+    @Test
+    void aFragmentIsAPlaceInADocumentForACallerThatCanGoThere(@TempDir Path tmp) throws IOException {
+        Path docs = Files.createDirectories(tmp.resolve("notes"));
+        Path readme = Files.writeString(docs.resolve("README.md"), "# hi");
+        Path other = Files.writeString(docs.resolve("other file.md"), "x");
+        assertEquals(new InDocument(null, "set-up"), ExternalLinks.classify("#set-up", readme, null, true));
+        assertEquals(
+                new InDocument(null, "set-up"),
+                ExternalLinks.classify("#set-up", null, null, true),
+                "an unsaved document has headings too");
+        assertEquals(new InDocument(null, "über uns"), ExternalLinks.classify("#%C3%BCber%20uns", readme, null, true));
+        assertEquals(
+                new InDocument(other, "section"),
+                ExternalLinks.classify("./other%20file.md#section", readme, null, true));
+        assertEquals(new InEditor(other), ExternalLinks.classify("other%20file.md", readme, null, true));
+        assertEquals(new InEditor(other), ExternalLinks.classify("other%20file.md#", readme, null, true));
+        assertEquals(ExternalLinks.KEY_INVALID, refusal(ExternalLinks.classify("#", readme, null, true)));
+        // a fragment does not get a file past the checks every relative link goes through
+        assertEquals(ExternalLinks.KEY_MISSING, refusal(ExternalLinks.classify("nope.md#a", readme, null, true)));
+        assertEquals(ExternalLinks.KEY_OUTSIDE, refusal(ExternalLinks.classify("../x.md#a", readme, null, true)));
+        assertEquals(
+                new Browser("https://example.com/a#b"),
+                ExternalLinks.classify("https://example.com/a#b", readme, null, true));
+    }
+
+    @Test
+    void openHandsAnAnchorToTheCallerThatAskedForThem(@TempDir Path tmp) throws IOException {
+        Path readme = Files.writeString(tmp.resolve("README.md"), "# hi");
+        Path guide = Files.writeString(tmp.resolve("guide.md"), "# g");
+        List<String> anchors = new ArrayList<>();
+        List<Path> editor = new ArrayList<>();
+        List<String> status = new ArrayList<>();
+        java.util.function.BiConsumer<Path, String> anchor = (f, frag) -> anchors.add(f + " " + frag);
+        Consumer<String> noBrowser = null;
+        ExternalLinks.open("#top", readme, tmp, noBrowser, editor::add, anchor, status::add);
+        ExternalLinks.open("guide.md#install", readme, tmp, noBrowser, editor::add, anchor, status::add);
+        ExternalLinks.open("guide.md", readme, tmp, noBrowser, editor::add, anchor, status::add);
+        assertEquals(List.of("null top", guide + " install"), anchors);
+        assertEquals(List.of(guide), editor);
+        assertEquals(List.of(), status);
+        // without an anchor handler nothing changes: the fragment of a file is dropped, a bare one refused
+        ExternalLinks.open("guide.md#install", readme, tmp, noBrowser, editor::add, status::add);
+        ExternalLinks.open("#top", readme, tmp, noBrowser, editor::add, status::add);
+        assertEquals(List.of(guide, guide), editor);
+        assertEquals(1, status.size());
     }
 
     @Test
