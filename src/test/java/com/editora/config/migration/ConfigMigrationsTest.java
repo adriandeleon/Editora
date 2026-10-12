@@ -653,13 +653,40 @@ class ConfigMigrationsTest {
                 none.get("schemaVersion").asInt());
     }
 
+    // --- v117→118: + wordWrapProse and the Markdown preview/paste/TOC keys (additive) --------------------
+
+    @Test
+    void upgradingASettingsFileFromV117KeepsTheWordWrapChoiceAndWritesNoNewKeys() throws Exception {
+        for (boolean wrap : new boolean[] {true, false}) {
+            ObjectNode up = ConfigMigrations.upgrade(
+                    ConfigSchema.SETTINGS,
+                    mapper.readTree("{\"schemaVersion\":117,\"wordWrap\":" + wrap + "}"),
+                    mapper);
+            assertEquals(118, up.get("schemaVersion").asInt(), "the step is registered");
+            assertEquals(wrap, up.get("wordWrap").asBoolean(), "the stored switch is kept; it now means code");
+            // Absent means wrapped prose, remote images on, "assets", levels 1–6: the new defaults.
+            for (String key : new String[] {
+                "wordWrapProse",
+                "markdownRemoteImages",
+                "markdownAssetsFolder",
+                "markdownTocMinLevel",
+                "markdownTocMaxLevel"
+            }) {
+                assertFalse(up.has(key), key);
+            }
+        }
+    }
+
     // --- v116→117: + pdfOrientation / pdfMargins / pdfCodeFontSize (additive) ---------------------------
 
     @Test
     void upgradingASettingsFileFromV116AddsNoPdfPageKeysAndKeepsStoredOnes() throws Exception {
         ObjectNode plain = ConfigMigrations.upgrade(
                 ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":116,\"pdfPageSize\":\"a4\"}"), mapper);
-        assertEquals(117, plain.get("schemaVersion").asInt(), "the step is registered");
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(),
+                plain.get("schemaVersion").asInt(),
+                "the step is registered");
         assertEquals("a4", plain.get("pdfPageSize").asText());
         // Absent means portrait, the writers' own margins and 9 pt — nothing is written for the upgrade.
         for (String key : new String[] {"pdfOrientation", "pdfMargins", "pdfCodeFontSize"}) {

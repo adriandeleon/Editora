@@ -1105,6 +1105,7 @@ public class EditorBuffer implements TabContent {
                 .filter(c -> !logView.adjusting())
                 .subscribe(c -> dirtyAfterEdit(
                         c.getRemoved().length() == c.getInserted().length()));
+        area.plainTextChanges().subscribe(c -> wrap.inserted(c.getInserted())); // a giant token holds wrap off
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -6921,15 +6922,11 @@ public class EditorBuffer implements TabContent {
         return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
     }
 
-    /** A load found a line too long to wrap cheaply: the word-wrap preference is held off for this buffer. */
-    private boolean wrapSuppressed;
+    private final WordWrap wrap = new WordWrap(this::setWordWrap);
 
-    public boolean isWrapSuppressed() {
-        return wrapSuppressed;
-    }
-
-    public void setWrapSuppressed(boolean wrapSuppressed) {
-        this.wrapSuppressed = wrapSuppressed;
+    /** This buffer's word-wrap preference (per kind of file) and its long-line hold; see {@link WordWrap}. */
+    public WordWrap wrap() {
+        return wrap;
     }
 
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
@@ -7367,6 +7364,7 @@ public class EditorBuffer implements TabContent {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
+        wrap.languageChanged(language); // prose wraps by one preference, code by another
         // Which words are checked, which lines are code, and whether this language is checked at all all
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
         // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.

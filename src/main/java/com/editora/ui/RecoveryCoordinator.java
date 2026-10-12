@@ -494,7 +494,7 @@ final class RecoveryCoordinator {
             buffer.setLargeFile(true); // before the text goes in, as a load does
         }
         if (longLine) {
-            buffer.setWrapSuppressed(true);
+            buffer.wrap().setSuppressed(true);
             buffer.setWordWrap(false);
         }
         buffer.setInitialContent(LineEndings.apply(text, record.lineEnding()), longLine);
