@@ -247,7 +247,7 @@ class EditingImagesFxTest {
         assertEquals(List.of("image.png"), names(assets(b)));
         BufferedImage saved = ImageIO.read(assets(b).resolve("image.png").toFile());
         assertEquals(0xFFFF0000, saved.getRGB(0, 0));
-        assertEquals("![](assets/image.png)", text(b));
+        assertEquals("![image](assets/image.png)", text(b));
         assertEquals(tr("status.markdown.imageDropped", 1), status());
     }
 
@@ -264,7 +264,7 @@ class EditingImagesFxTest {
                 bytes,
                 Files.readAllBytes(assets(b).resolve("image.png")),
                 "the address's own bytes, not a re-encoding");
-        assertEquals("![](assets/image.png)", text(b));
+        assertEquals("![image](assets/image.png)", text(b));
     }
 
     @Test
@@ -273,7 +273,7 @@ class EditingImagesFxTest {
         FxTestSupport.runOnFx(() -> editing.insertWebImage(withPixels, pixels(), "data:image/png;base64,"));
         awaitWebImage();
         assertEquals(List.of("image.png"), names(assets(withPixels)), "the dragged pixels were saved instead");
-        assertEquals("![](assets/image.png)", text(withPixels));
+        assertEquals("![image](assets/image.png)", text(withPixels));
 
         EditorBuffer addressOnly = document("notes.md", "");
         FxTestSupport.runOnFx(() -> editing.insertWebImage(addressOnly, null, "data:image/png;base64,"));
@@ -331,7 +331,7 @@ class EditingImagesFxTest {
         try {
             FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
             assertEquals(List.of("pasted-image.png"), names(assets(b)));
-            assertEquals("see: ![](assets/pasted-image.png)", text(b));
+            assertEquals("see: ![pasted-image](assets/pasted-image.png)", text(b));
             assertEquals(tr("status.markdown.imagePasted", "assets/pasted-image.png"), status());
 
             FxTestSupport.runOnFx(() -> registry.run("edit.paste"));

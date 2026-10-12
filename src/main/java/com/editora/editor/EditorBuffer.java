@@ -47,13 +47,9 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.logviewer.LogLevel;
-import com.editora.markdown.MarkdownEdit;
-import com.editora.markdown.MarkdownHeading;
 import com.editora.markdown.MarkdownInline;
-import com.editora.markdown.MarkdownLines;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
-import com.editora.markdown.MarkdownToc;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
@@ -511,9 +507,8 @@ public class EditorBuffer implements TabContent {
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     private java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
-    private Runnable insertTableHandler;
-
     private Runnable insertTypstTableHandler;
+
     private Runnable typstImagePasteHandler;
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
     private Runnable previewExportPdfHandler = () -> {};
@@ -673,7 +668,7 @@ public class EditorBuffer implements TabContent {
     private String mdLintTooltipText;
     /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
     private final ImageDrop imageDrop =
-            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::caretToDrop);
+            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -1301,6 +1296,7 @@ public class EditorBuffer implements TabContent {
      *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
+        MarkdownFormatBar.trackMouse(a, this::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
@@ -1506,45 +1502,15 @@ public class EditorBuffer implements TabContent {
                 && isEditable()
                 && !hugeFile
                 && markdownViewMode != MarkdownViewMode.PREVIEW
-                && a.getSelection().getLength() > 0;
+                && MarkdownFormatBar.wanted(a);
         if (!show) {
-            hideFormatBar();
-            return;
-        }
-        int selStart = a.getSelection().getStart();
-        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
-                .orElse(null);
-        if (screen == null) {
-            hideFormatBar();
-            return;
-        }
-        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
-        Bounds local = targetPane.screenToLocal(screen);
-        if (local == null) {
             hideFormatBar();
             return;
         }
         if (formatBar == null) {
             formatBar = new MarkdownFormatBar(this);
         }
-        javafx.scene.Node bar = formatBar.node();
-        if (bar.getParent() != targetPane) {
-            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
-                ap.getChildren().remove(bar);
-            }
-            targetPane.getChildren().add(bar);
-        }
-        bar.setVisible(true);
-        bar.applyCss();
-        double w = bar.prefWidth(-1);
-        double h = bar.prefHeight(-1);
-        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
-        double y = local.getMinY() - h - 4;
-        if (y < 0) {
-            y = local.getMaxY() + 4; // no room above the selection — place below it
-        }
-        bar.resizeRelocate(x, y, w, h);
-        bar.toFront();
+        formatBar.showFor(a, (a == area2 && root2 != null) ? root2 : root);
     }
 
     /** Injects the Explain/Rewrite callbacks (wired once from the controller, like {@link #setOpenUrlHandler}) —
@@ -1655,16 +1621,6 @@ public class EditorBuffer implements TabContent {
         return (isMarkdown() || isTypst()) && isEditable();
     }
 
-    private void applyMarkdownEdit(MarkdownEdit edit) {
-        if (edit == null) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        a.replaceText(edit.from(), edit.to(), edit.replacement());
-        a.selectRange(edit.selStart(), edit.selEnd());
-        a.requestFocus();
-    }
-
     /**
      * True when this buffer's language has comment syntax and the buffer is editable — i.e. the
      * "Comment / Uncomment" action is offered (right-click menu) and would do something. Plaintext has
@@ -1700,35 +1656,101 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Toggles an inline marker ({@code **}/{@code *}/{@code ~~}/{@code `}) around the selection. */
+    // ---- Markdown / Typst markup commands: see MarkdownEditing ----
+
+    private final MarkdownEditing markdownEditing = new MarkdownEditing(this);
+
+    /** The markup editing commands of this buffer (inline markers, headings, lists, tables, TOC). */
+    public MarkdownEditing markdown() {
+        return markdownEditing;
+    }
+
     public void formatInline(String marker) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownInline.toggle(a.getText(), sel.getStart(), sel.getEnd(), marker));
+        markdownEditing.formatInline(marker);
     }
 
-    /** Wraps the selection as a link with {@code url} — Markdown {@code [sel](url)} or Typst
-     *  {@code #link("url")[sel]}; a blank {@code url} leaves the caret in the empty destination slot. */
     public void formatLink(String url) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.link(a.getText(), sel.getStart(), sel.getEnd(), url)
-                        : MarkdownInline.link(a.getText(), sel.getStart(), sel.getEnd(), url));
+        markdownEditing.formatLink(url);
     }
 
-    /** Link button / make-link command: use a clipboard URL when present, else an empty link. */
     public void formatLinkFromClipboard() {
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
-        String url = clip != null && clip.strip().matches("(?i)(https?|ftp|mailto):\\S+") ? clip.strip() : "";
-        formatLink(url);
+        markdownEditing.formatLinkFromClipboard();
+    }
+
+    public boolean trySmartLinkPaste() {
+        return markdownEditing.trySmartLinkPaste();
+    }
+
+    public void formatHeading(int delta) {
+        markdownEditing.formatHeading(delta);
+    }
+
+    public void setHeadingLevel(int level) {
+        markdownEditing.setHeadingLevel(level);
+    }
+
+    public void formatBulletList() {
+        markdownEditing.formatBulletList();
+    }
+
+    public void formatTaskList() {
+        markdownEditing.formatTaskList();
+    }
+
+    public boolean reflowTable() {
+        return markdownEditing.reflowTable();
+    }
+
+    public void insertTable(int rowsTotal, int cols) {
+        markdownEditing.insertTable(rowsTotal, cols);
+    }
+
+    public void insertTableInteractive() {
+        markdownEditing.insertTableInteractive();
+    }
+
+    public void setInsertTableHandler(Runnable handler) {
+        markdownEditing.setInsertTableHandler(handler);
+    }
+
+    public boolean tableAddRow() {
+        return markdownEditing.tableAddRow();
+    }
+
+    public boolean tableDeleteRow() {
+        return markdownEditing.tableDeleteRow();
+    }
+
+    public boolean tableAddColumn() {
+        return markdownEditing.tableAddColumn();
+    }
+
+    public boolean tableDeleteColumn() {
+        return markdownEditing.tableDeleteColumn();
+    }
+
+    public boolean tableSetAlignment(MarkdownTable.Align align) {
+        return markdownEditing.tableSetAlignment(align);
+    }
+
+    public boolean tableFromCsv() {
+        return markdownEditing.tableFromCsv();
+    }
+
+    public boolean tableToCsv() {
+        return markdownEditing.tableToCsv();
+    }
+
+    public void setTableFileExporter(java.util.function.BiConsumer<String, String> exporter) {
+        markdownEditing.setTableFileExporter(exporter);
+    }
+
+    public boolean exportTableFile(String format) {
+        return markdownEditing.exportTableFile(format);
+    }
+
+    public boolean insertOrUpdateToc() {
+        return markdownEditing.insertOrUpdateToc();
     }
 
     /** Inserts {@code text} at the focused area's caret (replacing any selection), then focuses it. */
@@ -1736,125 +1758,6 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         a.replaceSelection(text);
         a.requestFocus();
-    }
-
-    /** Smart paste: if a URL is on the clipboard and a single-line selection is active, wrap it as a link
-     *  ({@code [selection](url)}) and return true; otherwise false so the caller does a normal paste. */
-    public boolean trySmartLinkPaste() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        if (sel.getLength() == 0 || a.getText(sel.getStart(), sel.getEnd()).contains("\n")) {
-            return false;
-        }
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
-        if (clip == null || !clip.strip().matches("(?i)(https?|ftp|mailto):\\S+")) {
-            return false;
-        }
-        formatLink(clip.strip());
-        return true;
-    }
-
-    /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s)
-     *  ({@code #} for Markdown, {@code =} for Typst). */
-    public void formatHeading(int delta) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.heading(a.getText(), sel.getStart(), sel.getEnd(), delta)
-                        : MarkdownHeading.apply(a.getText(), sel.getStart(), sel.getEnd(), delta));
-    }
-
-    /** Sets the selected line(s) to an absolute heading level (0 = Normal; {@code #} for Markdown,
-     *  {@code =} for Typst). */
-    public void setHeadingLevel(int level) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.setHeadingLevel(a.getText(), sel.getStart(), sel.getEnd(), level)
-                        : MarkdownHeading.setLevel(a.getText(), sel.getStart(), sel.getEnd(), level));
-    }
-
-    /** Toggles a {@code "- "} bullet on the selected line(s) (valid in both Markdown and Typst). */
-    public void formatBulletList() {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownLines.toggleBullet(a.getText(), sel.getStart(), sel.getEnd()));
-    }
-
-    /** Toggles a GFM task-list checkbox ({@code "- [ ] "}) on the selected line(s). */
-    public void formatTaskList() {
-        if (!canFormatMarkdown()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownLines.toggleTask(a.getText(), sel.getStart(), sel.getEnd()));
-    }
-
-    /** Reflows the GFM table around the caret; returns false when the caret is not on a table. */
-    public boolean reflowTable() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String block = a.getText().substring(b[0], b[1]);
-        String reflowed = MarkdownTable.reflow(block);
-        if (!reflowed.equals(block)) {
-            a.replaceText(b[0], b[1], reflowed);
-        }
-        a.requestFocus();
-        return true;
-    }
-
-    /** Inserts a fresh, aligned GFM table ({@code rowsTotal} rows incl. header × {@code cols}) at the caret. */
-    public void insertTable(int rowsTotal, int cols) {
-        if (!canFormatMarkdown()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        MarkdownTable.Nav g = MarkdownTable.generate(rowsTotal, cols);
-        int caret = a.getCaretPosition();
-        // Put the table on its own line(s): add a leading newline if not already at column 0, and a trailing one.
-        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-        String prefix = needLeading ? "\n" : "";
-        String text = prefix + g.block() + "\n";
-        a.replaceText(caret, caret, text);
-        int pos = caret
-                + prefix.length()
-                + Math.max(0, Math.min(g.caret(), g.block().length()));
-        a.moveTo(pos);
-        a.requestFollowCaret();
-        a.requestFocus();
-    }
-
-    /** Shows the interactive table-size picker (wired by the controller); a no-op until injected. */
-    public void insertTableInteractive() {
-        if (canFormatMarkdown() && insertTableHandler != null) {
-            insertTableHandler.run();
-        }
-    }
-
-    /** Injected by the controller: opens the table-size picker, then calls {@link #insertTable}. */
-    public void setInsertTableHandler(Runnable handler) {
-        this.insertTableHandler = handler;
     }
 
     /** Opens the size picker for a Typst {@code #table} (Typst buffers only); the controller runs the picker. */
@@ -1897,170 +1800,6 @@ public class EditorBuffer implements TabContent {
             return;
         }
         insertAtCaret(TypstMarkup.OUTLINE);
-    }
-
-    /** Adds a row below the caret's row in the GFM table; false when the caret is not on a table. */
-    public boolean tableAddRow() {
-        return applyTableNav(MarkdownTable::addRow);
-    }
-
-    /** Deletes the caret's data row; false when not on a table (or the caret is on the header/delimiter). */
-    public boolean tableDeleteRow() {
-        return applyTableNav(MarkdownTable::deleteRow);
-    }
-
-    /** Adds a column to the right of the caret's column; false when the caret is not on a table. */
-    public boolean tableAddColumn() {
-        return applyTableNav(MarkdownTable::addColumn);
-    }
-
-    /** Deletes the caret's column; false when not on a table (or only one column remains). */
-    public boolean tableDeleteColumn() {
-        return applyTableNav(MarkdownTable::deleteColumn);
-    }
-
-    /** Sets the caret column's alignment; false when the caret is not on a table. */
-    public boolean tableSetAlignment(MarkdownTable.Align align) {
-        return applyTableNav((block, caret) -> MarkdownTable.setAlignment(block, caret, align));
-    }
-
-    private boolean applyTableNav(java.util.function.BiFunction<String, Integer, MarkdownTable.Nav> op) {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int caret = a.getCaretPosition();
-        int[] b = MarkdownTable.blockBounds(a.getText(), caret);
-        if (b == null) {
-            return false;
-        }
-        MarkdownTable.Nav nav = op.apply(a.getText().substring(b[0], b[1]), caret - b[0]);
-        if (nav == null) {
-            return false;
-        }
-        a.replaceText(b[0], b[1], nav.block());
-        a.moveTo(b[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
-    }
-
-    /**
-     * Converts CSV into a Markdown table: the non-empty selection is treated as CSV and replaced in place,
-     * else the clipboard CSV is inserted as a table at the caret. Returns false when there's nothing
-     * parseable (no selection + empty/non-CSV clipboard, or a non-Markdown buffer).
-     */
-    public boolean tableFromCsv() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String sel = a.getSelectedText();
-        boolean fromSelection = sel != null && !sel.isBlank();
-        String csv = fromSelection
-                ? sel
-                : LineEndings.toLf(Clipboard.getSystemClipboard().getString());
-        if (csv == null || csv.isBlank()) {
-            return false;
-        }
-        String table = MarkdownTable.fromCsv(csv);
-        if (table == null) {
-            return false;
-        }
-        if (fromSelection) {
-            var s = a.getSelection();
-            a.replaceText(s.getStart(), s.getEnd(), table);
-            a.moveTo(s.getStart() + table.length());
-        } else {
-            int caret = a.getCaretPosition();
-            boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-            String text = (needLeading ? "\n" : "") + table + "\n";
-            a.replaceText(caret, caret, text);
-            a.moveTo(caret + text.length());
-        }
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
-    }
-
-    /** Copies the caret's Markdown table to the system clipboard as CSV; false when the caret isn't on a table. */
-    public boolean tableToCsv() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
-        if (csv == null) {
-            return false;
-        }
-        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(csv);
-        Clipboard.getSystemClipboard().setContent(content);
-        return true;
-    }
-
-    /** Injected file-export for the caret's Markdown table: {@code (csvText, format)}, {@code format} ∈
-     *  {@code csv}/{@code xlsx}/{@code ods}. The editor renders the table to CSV; the controller owns the
-     *  FileChooser + writers ({@code editor} can't depend on {@code ui}/{@code office}). */
-    private java.util.function.BiConsumer<String, String> tableFileExporter;
-
-    public void setTableFileExporter(java.util.function.BiConsumer<String, String> exporter) {
-        this.tableFileExporter = exporter;
-    }
-
-    /** Exports the caret's Markdown table to a file via the injected exporter ({@code format} =
-     *  {@code csv}/{@code xlsx}/{@code ods}); false when the caret isn't on a table or no exporter is wired. */
-    public boolean exportTableFile(String format) {
-        if (!canFormatMarkdown() || tableFileExporter == null) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
-        if (csv == null) {
-            return false;
-        }
-        tableFileExporter.accept(csv, format);
-        return true;
-    }
-
-    /**
-     * Inserts a Markdown table of contents (a nested list of heading links) wrapped in {@code <!-- toc -->}
-     * markers at the caret, or — when the document already has such a marker block — regenerates it in place.
-     * Returns false when not a Markdown buffer or the document has no headings.
-     */
-    public boolean insertOrUpdateToc() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String doc = a.getText();
-        String updated = MarkdownToc.updated(doc, 1, 6);
-        if (updated != null) {
-            replaceVisibleText(a, updated); // undoable; records only the TOC block that changed
-            a.requestFocus();
-            return true;
-        }
-        String body = MarkdownToc.build(doc, 1, 6);
-        if (body.isEmpty()) {
-            return false; // no headings to list
-        }
-        String block = MarkdownToc.wrapped(body);
-        int caret = a.getCaretPosition();
-        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-        String text = (needLeading ? "\n" : "") + block + "\n";
-        a.replaceText(caret, caret, text);
-        a.moveTo(caret + text.length());
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
     }
 
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
@@ -2223,7 +1962,7 @@ public class EditorBuffer implements TabContent {
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
             // top level above — they are the actions you reach for without reading the menu.
             if (canFormatMarkdown()) {
-                items.add(markupMenu(tr("editmenu.markdown"), markdownMenuItems()));
+                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this)));
                 items.add(new SeparatorMenuItem());
             } else if (isTypst() && isEditable()) {
                 items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
@@ -2375,29 +2114,6 @@ public class EditorBuffer implements TabContent {
         return item;
     }
 
-    /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
-    private List<MenuItem> markdownMenuItems() {
-        MenuItem bold = new MenuItem(tr("command.markdown.bold"));
-        bold.setGraphic(MenuIcons.bold());
-        bold.setOnAction(e -> formatInline("**"));
-        MenuItem italic = new MenuItem(tr("command.markdown.italic"));
-        italic.setGraphic(MenuIcons.italic());
-        italic.setOnAction(e -> formatInline("*"));
-        MenuItem strike = new MenuItem(tr("command.markdown.strikethrough"));
-        strike.setGraphic(MenuIcons.strikethrough());
-        strike.setOnAction(e -> formatInline("~~"));
-        MenuItem code = new MenuItem(tr("command.markdown.code"));
-        code.setGraphic(MenuIcons.code());
-        code.setOnAction(e -> formatInline("`"));
-        MenuItem link = new MenuItem(tr("command.markdown.link"));
-        link.setGraphic(MenuIcons.link());
-        link.setOnAction(e -> formatLinkFromClipboard());
-        MenuItem toc = new MenuItem(tr("command.markdown.toc"));
-        toc.setGraphic(MenuIcons.bulletList());
-        toc.setOnAction(e -> insertOrUpdateToc());
-        return List.of(bold, italic, strike, code, link, tableMenu(), toc);
-    }
-
     /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
      *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
     private List<MenuItem> typstMenuItems() {
@@ -2430,46 +2146,6 @@ public class EditorBuffer implements TabContent {
             }
         });
         return List.of(bold, emph, raw, link, bullet, table, outline, image);
-    }
-
-    /** The "Table" submenu: insert + add/delete row & column + column alignment. */
-    private javafx.scene.control.Menu tableMenu() {
-        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.markdown.table"));
-        menu.setGraphic(MenuIcons.table());
-        menu.getItems()
-                .addAll(
-                        tableItem("command.markdown.insertTable", MenuIcons.table(), this::insertTableInteractive),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem("command.markdown.tableAddRow", MenuIcons.add(), this::tableAddRow),
-                        tableItem("command.markdown.tableDeleteRow", MenuIcons.remove(), this::tableDeleteRow),
-                        tableItem("command.markdown.tableAddColumn", MenuIcons.add(), this::tableAddColumn),
-                        tableItem("command.markdown.tableDeleteColumn", MenuIcons.remove(), this::tableDeleteColumn),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem(
-                                "command.markdown.tableAlignLeft",
-                                MenuIcons.alignLeft(),
-                                () -> tableSetAlignment(MarkdownTable.Align.LEFT)),
-                        tableItem(
-                                "command.markdown.tableAlignCenter",
-                                MenuIcons.alignCenter(),
-                                () -> tableSetAlignment(MarkdownTable.Align.CENTER)),
-                        tableItem(
-                                "command.markdown.tableAlignRight",
-                                MenuIcons.alignRight(),
-                                () -> tableSetAlignment(MarkdownTable.Align.RIGHT)),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem("command.markdown.tableFromCsv", MenuIcons.paste(), this::tableFromCsv),
-                        tableItem("command.markdown.tableToCsv", MenuIcons.copy(), this::tableToCsv),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem(
-                                "command.markdown.tableExportCsv", MenuIcons.download(), () -> exportTableFile("csv")),
-                        tableItem(
-                                "command.markdown.tableExportExcel",
-                                MenuIcons.download(),
-                                () -> exportTableFile("xlsx")),
-                        tableItem(
-                                "command.markdown.tableExportOds", MenuIcons.download(), () -> exportTableFile("ods")));
-        return menu;
     }
 
     private static MenuItem tableItem(String key, Node icon, Runnable action) {
@@ -8399,8 +8075,8 @@ public class EditorBuffer implements TabContent {
                 // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
                 // always dedents). Skipped while a completion popup/ghost is showing, so Tab accepts
                 // the completion instead.
-                if (tryMarkdownTableTab(a, !e.isShiftDown())) {
-                    e.consume(); // Tab/Shift-Tab move between table cells (and reflow)
+                if (isMarkdown() && isEditable() && !hugeFile && markdownEditing.tab(a, !e.isShiftDown())) {
+                    e.consume(); // Tab/Shift-Tab: between table cells, or a list item in/out one level
                 } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
                     e.consume();
                 } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
@@ -8410,30 +8086,6 @@ public class EditorBuffer implements TabContent {
                 }
             }
         });
-    }
-
-    /** Tab/Shift-Tab cell navigation inside a Markdown pipe table (reflows + moves the caret). */
-    private boolean tryMarkdownTableTab(CodeArea a, boolean forward) {
-        if (!isMarkdown() || !isEditable() || hugeFile || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        if (!MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
-            return false; // the caret's line alone says "not in a table": no need for the document
-        }
-        String text = a.getText();
-        int caret = a.getCaretPosition();
-        int[] bounds = MarkdownTable.blockBounds(text, caret);
-        if (bounds == null) {
-            return false;
-        }
-        MarkdownTable.Nav nav = MarkdownTable.tab(text.substring(bounds[0], bounds[1]), caret - bounds[0], forward);
-        if (nav == null) {
-            return false;
-        }
-        a.replaceText(bounds[0], bounds[1], nav.block());
-        a.moveTo(bounds[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-        a.requestFollowCaret();
-        return true;
     }
 
     /**
@@ -8602,10 +8254,12 @@ public class EditorBuffer implements TabContent {
             }
             String line = a.getParagraph(par).getText();
             // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
-            // clears the whole marker → a blank line (the SDD "smart backspace" helper).
-            int marker = isTypst()
-                    ? TypstMarkup.emptyMarkerDeleteLength(line, col)
-                    : (isMarkdown() ? MarkdownLines.emptyMarkerDeleteLength(line, col) : 0);
+            // steps out one level (a nested item moves to its parent's level, a top-level one is cleared).
+            if (isMarkdown() && markdownEditing.backspace(a)) {
+                e.consume();
+                return;
+            }
+            int marker = isTypst() ? TypstMarkup.emptyMarkerDeleteLength(line, col) : 0;
             if (marker > 0) {
                 a.deleteText(caret - marker, caret);
                 e.consume();
@@ -8776,37 +8430,23 @@ public class EditorBuffer implements TabContent {
             a.replaceSelection("");
         }
         int caret = a.getCaretPosition();
-        // Markdown-only: Enter on a table's last row appends a new row.
-        if (isMarkdown() && MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
-            int[] tb = MarkdownTable.blockBounds(a.getText(), caret);
-            if (tb != null) {
-                MarkdownTable.Nav nav = MarkdownTable.enter(a.getText().substring(tb[0], tb[1]), caret - tb[0]);
-                if (nav != null) {
-                    a.replaceText(tb[0], tb[1], nav.block());
-                    a.moveTo(tb[0]
-                            + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-                    a.requestFollowCaret();
-                    return;
-                }
-            }
+        // Markdown: Enter inside a table or a list/quote item (continue it, or step out of an empty one).
+        if (isMarkdown() && markdownEditing.enter(a)) {
+            return;
         }
-        // List continuation (Markdown + Typst): continue the marker on the next line, or end the list when
-        // Enter is pressed on an empty item. Typst uses its own markers (-, +, N. — never *, which is bold).
-        if (isMarkdown() || isTypst()) {
+        // Typst list continuation, with its own markers (-, +, N. — never *, which is bold).
+        if (isTypst()) {
             int par = a.getCurrentParagraph();
             int lineStart = a.getAbsolutePosition(par, 0);
             String line = a.getParagraph(par).getText();
-            int markerLen = isTypst()
-                    ? TypstMarkup.markerLength(line)
-                    : MarkdownLines.listMarkerLength(a::getText, lineStart, line);
+            int markerLen = TypstMarkup.markerLength(line);
             if (markerLen > 0 && caret - lineStart >= markerLen) {
-                boolean empty = isTypst() ? TypstMarkup.isEmptyItem(line) : MarkdownLines.isEmptyItem(line);
-                if (empty) {
+                if (TypstMarkup.isEmptyItem(line)) {
                     a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
                     a.requestFollowCaret();
                     return;
                 }
-                String cont = isTypst() ? TypstMarkup.continuation(line) : MarkdownLines.continuation(line);
+                String cont = TypstMarkup.continuation(line);
                 if (cont != null) {
                     a.replaceText(caret, caret, "\n" + cont);
                     a.moveTo(caret + 1 + cont.length());
@@ -8834,7 +8474,8 @@ public class EditorBuffer implements TabContent {
             return true; // html/xml: the > completed an open tag and the closer was inserted
         }
         if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-            return false; // not a bracket or quote
+            // Markdown: an emphasis character typed over a selection wraps it, like ` [ ( and " already do.
+            return isMarkdown() && markdownEditing.wrapSelection(a, c);
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();

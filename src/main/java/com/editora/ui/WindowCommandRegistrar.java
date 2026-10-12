@@ -1480,29 +1480,44 @@ final class WindowCommandRegistrar {
                         "markdown.taskList", () -> host.previews().withMarkdown(EditorBuffer::formatTaskList)));
         host.registry().register(Command.of("markdown.insertTable", host.previews()::markdownInsertTableViaText));
         host.registry()
-                .register(
-                        Command.of("markdown.tableAddRow", () -> host.previews().withMarkdown(b -> b.tableAddRow())));
+                .register(Command.of(
+                        "markdown.tableAddRow",
+                        () -> host.previews().markdownTable(b -> b.tableAddRow(), "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableDeleteRow", () -> host.previews().withMarkdown(b -> b.tableDeleteRow())));
+                        "markdown.tableDeleteRow",
+                        () -> host.previews()
+                                .markdownTable(b -> b.tableDeleteRow(), "status.markdown.tableHeaderRow")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableAddColumn", () -> host.previews().withMarkdown(b -> b.tableAddColumn())));
+                        "markdown.tableAddColumn",
+                        () -> host.previews().markdownTable(b -> b.tableAddColumn(), "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableDeleteColumn", () -> host.previews().withMarkdown(b -> b.tableDeleteColumn())));
+                        "markdown.tableDeleteColumn",
+                        () -> host.previews()
+                                .markdownTable(b -> b.tableDeleteColumn(), "status.markdown.tableLastColumn")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignLeft",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.LEFT))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.LEFT),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignCenter",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.CENTER))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.CENTER),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignRight",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.headingPromote", () -> host.previews().withMarkdown(b -> b.formatHeading(-1))));
