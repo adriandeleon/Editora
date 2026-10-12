@@ -202,6 +202,15 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
+        public com.editora.snippet.TabExpansion.Match snippetTrigger(CodeArea a, boolean tabOnly) {
+            if (tabOnly && !snippetTabExpansion) {
+                return null;
+            }
+            return SnippetTyping.triggerAtCaret(
+                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider);
+        }
+
+        @Override
         public int lspOffset(CodeArea a, int line, int col) {
             return LspEditPlacement.offset(a, line, col);
         }
@@ -528,6 +537,9 @@ public class EditorBuffer implements TabContent {
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
+
+    /** As {@link #snippetProvider}, including the triggers a completion offers but Tab alone leaves be. */
+    private java.util.function.BiFunction<String, String, Snippet> snippetOfferProvider = (lang, prefix) -> null;
 
     private boolean snippetTabExpansion = true;
     private java.util.function.UnaryOperator<Path> snippetWorkspaceRoot = file -> null;
@@ -8285,6 +8297,13 @@ public class EditorBuffer implements TabContent {
     public void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
         if (provider != null) {
             this.snippetProvider = provider;
+        }
+    }
+
+    /** Injects the lookup for every snippet a completion may offer for a typed trigger, list-only ones too. */
+    public void setSnippetOfferProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
+        if (provider != null) {
+            this.snippetOfferProvider = provider;
         }
     }
 

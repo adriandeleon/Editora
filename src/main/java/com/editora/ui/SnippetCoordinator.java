@@ -89,6 +89,7 @@ final class SnippetCoordinator {
     /** Gives a new buffer its snippet lookup, the Tab-expansion setting and the session hint. */
     void wireBuffer(EditorBuffer buffer) {
         buffer.setSnippetProvider(manager::byTabTrigger);
+        buffer.setSnippetOfferProvider(manager::byPrefix);
         buffer.setSnippetTabExpansion(host.settings().isSnippetTabExpansion());
         buffer.setSnippetHooks(file -> ops.projectRoot(), progress -> sessionMoved(buffer, progress));
     }
