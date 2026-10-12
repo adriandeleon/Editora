@@ -131,6 +131,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Snippets: a trigger typed out in full is no longer taken over by another completion. In Markdown and
+  plain text, the dictionary's inline suggestion (`date` offered `d` for "dated") is not shown over a
+  trigger, so Tab expands it; the bundled `date` and `time`, which Tab alone leaves be, are offered inline
+  instead (`date → Current date (YYYY-MM-DD)`) and Tab expands them. With a language server, the typed
+  trigger's snippet leads the completion list and is the highlighted row, where Tab used to accept the
+  server's first row. An AI inline suggestion is likewise not shown over a trigger Tab expands.
 - **`editora --help` described `--no-session` with `--single-window`'s second line.** The "instead of
   restoring all windows; doesn't change the saved layout" continuation now sits under `--single-window`,
   the option it explains, as the README already had it.

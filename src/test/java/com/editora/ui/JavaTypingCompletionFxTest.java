@@ -741,4 +741,25 @@ class JavaTypingCompletionFxTest {
         assertEquals("System.out.println(user.)", FxTestSupport.callOnFx(buffer::text));
         assertTrue(FxTestSupport.callOnFx(buffer::hasActiveSnippet), "the argument's session is still running");
     }
+
+    @Test
+    void aTypedSnippetTriggerIsTheHighlightedRowSoTabExpandsItNotTheServersFirstRow() throws Exception {
+        var sout = new com.editora.snippet.Snippet("Print", "sout", "System.out.println();", "Print a line", "java");
+        FxTestSupport.runOnFx(() -> {
+            buffer.setSnippetProvider((lang, p) -> "sout".equals(p) ? sout : null);
+            buffer.setContent("sout");
+            buffer.getArea().moveTo(4);
+        });
+        scope.awaitFx();
+        invoke();
+        respond(
+                FxTestSupport.callOnFx(requests::size) - 1,
+                false,
+                Completion.lsp("south", "south", ""),
+                Completion.lsp("southern", "southern", ""));
+        expectCompletion("sout");
+        assertEquals("sout", FxTestSupport.callOnFx(() -> popup().selected().label()));
+        press("TAB");
+        assertEquals("System.out.println();", FxTestSupport.callOnFx(buffer::text));
+    }
 }

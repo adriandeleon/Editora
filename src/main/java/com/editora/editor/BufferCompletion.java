@@ -80,6 +80,16 @@ final class BufferCompletion {
 
         void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent);
 
+        /**
+         * The snippet whose trigger ends at the caret and where that trigger starts, or null. With
+         * {@code tabOnly}, only one the Tab key expands by itself: Tab expansion is on and the trigger is not
+         * one of the list-only ones ({@code date}, {@code time}). Without it, any snippet a completion may
+         * offer for the text as typed.
+         */
+        default com.editora.snippet.TabExpansion.Match snippetTrigger(CodeArea a, boolean tabOnly) {
+            return null;
+        }
+
         int lspOffset(CodeArea a, int line, int col);
 
         int[] lspPosition(CodeArea a, int offset);
@@ -195,6 +205,9 @@ final class BufferCompletion {
     String ghostSuffix;
 
     CodeArea ghostArea;
+
+    /** The snippet the ghost offers in place of text to insert (Tab expands it), or null for a text ghost. */
+    Snippet ghostSnippet;
 
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
     int[] braceMatch;
@@ -884,7 +897,23 @@ final class BufferCompletion {
         // never overlaps following text). Code: the multi-choice popup. Handle prose BEFORE any
         // empty-items return, so the dictionary-load retry still gets registered on the first keystrokes.
         if (host.isProse()) {
+            // A snippet trigger typed out in full outranks a dictionary word that merely continues it:
+            // `date` offered a ghost `d` (dated) and Tab took that, so the snippet could not be reached by
+            // typing at all. A trigger Tab expands by itself gets no ghost — the key then goes to the
+            // expansion. A list-only one is offered as the ghost, since the popup that lists it elsewhere
+            // never opens in prose.
+            if (host.snippetTrigger(a, true) != null) {
+                hideCompletion();
+                return;
+            }
             String after = a.getParagraph(a.getCurrentParagraph()).getText().substring(a.getCaretColumn());
+            var offer = autocompleteSnippets && after.isBlank() ? host.snippetTrigger(a, false) : null;
+            if (offer != null) {
+                hidePopup();
+                showGhost(a, snippetGhostText(offer.snippet()));
+                if (ghostVisible()) ghostSnippet = offer.snippet();
+                return;
+            }
             String suffix = after.isBlank() ? bestGhostSuffix(items, prefix) : null;
             if (suffix != null && !suffix.isEmpty()) {
                 hidePopup();
@@ -1031,7 +1060,8 @@ final class BufferCompletion {
                     || result.isBlank()
                     || !a.isFocused()
                     || a.getCaretPosition() != caret
-                    || completionPopupShowing()) {
+                    || completionPopupShowing()
+                    || host.snippetTrigger(a, true) != null) { // Tab belongs to the typed trigger
                 return;
             }
             String oneLine = result.lines().findFirst().orElse("").stripTrailing();
@@ -1056,6 +1086,12 @@ final class BufferCompletion {
         return null;
     }
 
+    /** What the ghost shows for a snippet offer: an arrow and what the trigger turns into. Pure. */
+    static String snippetGhostText(Snippet s) {
+        String what = s.description() == null || s.description().isBlank() ? s.name() : s.description();
+        return " \u2192 " + (what == null ? "" : what.strip());
+    }
+
     Label ghostLabel() {
         if (ghostLabel == null) {
             ghostLabel = new Label();
@@ -1075,6 +1111,7 @@ final class BufferCompletion {
 
     /** Draws the ghost suffix as a muted overlay label starting exactly at the caret. */
     void showGhost(CodeArea a, String suffix) {
+        ghostSnippet = null;
         int caret = a.getCaretPosition();
         // At end-of-line there's no glyph *at* the caret, so measure the char *before* it and use its
         // right edge as the start x (getCharacterBoundsOnScreen(caret, caret) would be empty there).
@@ -1120,7 +1157,25 @@ final class BufferCompletion {
         }
         CodeArea a = ghostArea;
         String s = ghostSuffix;
+        Snippet offered = ghostSnippet;
         hideGhost();
+        if (offered != null) {
+            // The ghost described the snippet; nothing of it is inserted. The trigger is looked up again so
+            // the expansion replaces exactly what stands before the caret now.
+            var m = host.snippetTrigger(a, false);
+            if (m == null || !offered.equals(m.snippet())) {
+                return;
+            }
+            Runnable endUndo = host.beginCompletionUndo();
+            try {
+                host.startSnippet(a, offered, m.start(), a.getCaretPosition(), true);
+            } finally {
+                endUndo.run();
+            }
+            suppressCompletionAtVersion = host.docVersion();
+            a.requestFocus();
+            return;
+        }
         a.insertText(a.getCaretPosition(), s);
         // Stamped AFTER the edit (which bumps docVersion), so the auto-trigger that edit schedules is the
         // one suppressed — the user typing on afterwards bumps the version again and re-enables it.
@@ -1134,6 +1189,7 @@ final class BufferCompletion {
         }
         ghostSuffix = null;
         ghostArea = null;
+        ghostSnippet = null;
     }
 
     void hidePopup() {
@@ -1281,8 +1337,22 @@ final class BufferCompletion {
                     localShown = false;
                     a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
                     docPopupActive = completionDocEnabled;
+                    // A trigger typed out in full is what Tab expands when no list is up; the server's rows
+                    // must not take that away, so its snippet leads the list and is the highlighted row.
+                    var rows = merged;
+                    int select = preselectIndexOf(merged);
+                    var exact = host.snippetTrigger(a, true);
+                    if (exact != null) {
+                        var at = a.offsetToPosition(
+                                exact.start(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
+                        rows = withTypedTrigger(
+                                merged,
+                                exact.snippet(),
+                                Completion.ReplaceRange.startingAt(at.getMajor(), at.getMinor()));
+                        select = 0;
+                    }
                     completionPopup().setQuery(prefix);
-                    completionPopup().show(a.getScene().getWindow(), bounds, merged, preselectIndexOf(merged));
+                    completionPopup().show(a.getScene().getWindow(), bounds, rows, select);
                     CompletionTrace.elapsed("popup-model", display);
                 }));
     }
@@ -1329,6 +1399,21 @@ final class BufferCompletion {
             }
         }
         return 0;
+    }
+
+    /**
+     * {@code items} with the row for {@code typed} — the snippet whose trigger stands before the caret —
+     * first, replacing {@code range}. A row the list already had for it is moved rather than repeated.
+     * Pure.
+     */
+    static java.util.List<Completion> withTypedTrigger(
+            java.util.List<Completion> items, Snippet typed, Completion.ReplaceRange range) {
+        var out = new java.util.ArrayList<Completion>(items.size() + 1);
+        out.add(Completion.ofSnippet(typed).withReplaceRange(range));
+        for (Completion c : items) {
+            if (c.kind() != Completion.Kind.SNIPPET || !typed.equals(c.snippet())) out.add(c);
+        }
+        return out;
     }
 
     /** Preserves server overloads; removes only duplicate local snippets and caps the displayed list. */
