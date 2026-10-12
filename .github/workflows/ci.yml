@@ -73,8 +73,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends ripgrep
           rg --version
 
+      # A test that fails is run again, twice at most. One that then passes is a flake: the build stays
+      # green and the step after this one names it, so it is fixed rather than forgotten.
       - name: Build and test
-        run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true verify
+        run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 verify
+
+      - name: Report flaky tests
+        if: always()
+        run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
       # A skip that is not on the allow-list means the runner lost something a test needs.
       - name: Check for unexpected skipped tests
@@ -135,7 +141,12 @@ jobs:
 
       - name: Test (pure suite)
         shell: bash
-        run: ./mvnw -B --no-transfer-progress -DexcludedGroups=fx test
+        run: ./mvnw -B --no-transfer-progress -DexcludedGroups=fx -Dsurefire.rerunFailingTestsCount=2 test
+
+      - name: Report flaky tests
+        if: always()
+        shell: bash
+        run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
   # The release and packaging scripts have their own unit tests (the release-asset manifest, the tarball
   # installer, the .deb maintainer scripts run against a scratch root, the pinned-download check). They are
@@ -163,7 +174,11 @@ jobs:
           cache: maven
 
       - name: Test (FX suite)
-        run: ./mvnw -B --no-transfer-progress -Dgroups=fx test
+        run: ./mvnw -B --no-transfer-progress -Dgroups=fx -Dsurefire.rerunFailingTestsCount=2 test
+
+      - name: Report flaky tests
+        if: always()
+        run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
   scripts:
     name: Release & packaging scripts

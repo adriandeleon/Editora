@@ -70,7 +70,10 @@ class DiagnosticPanelsKeysFxTest {
     }
 
     private static KeyEvent key(KeyCode code, boolean ctrl, boolean alt, boolean shortcut) {
-        return new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, ctrl || shortcut, alt, false);
+        // The platform shortcut is Command on macOS and Ctrl everywhere else.
+        boolean mac = com.editora.command.KeymapManager.isMac();
+        return new KeyEvent(
+                KeyEvent.KEY_PRESSED, "", "", code, false, ctrl || (shortcut && !mac), alt, shortcut && mac);
     }
 
     private static void press(javafx.scene.Node target, KeyCode code) {

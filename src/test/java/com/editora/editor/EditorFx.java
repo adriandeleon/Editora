@@ -400,6 +400,31 @@ final class EditorFx {
             double sy,
             boolean shortcut,
             int clicks) {
+        return mouse(type, x, y, sx, sy, shortcut, false, clicks);
+    }
+
+    /** {@link #mouse} holding the platform's shortcut key: Command on macOS, Ctrl everywhere else. */
+    static javafx.scene.input.MouseEvent mouseWithShortcut(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type,
+            double x,
+            double y,
+            double sx,
+            double sy,
+            boolean shortcut,
+            int clicks) {
+        boolean mac = com.editora.command.KeymapManager.isMac();
+        return mouse(type, x, y, sx, sy, shortcut && !mac, shortcut && mac, clicks);
+    }
+
+    private static javafx.scene.input.MouseEvent mouse(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type,
+            double x,
+            double y,
+            double sx,
+            double sy,
+            boolean control,
+            boolean meta,
+            int clicks) {
         boolean pressed = type != javafx.scene.input.MouseEvent.MOUSE_MOVED;
         return new javafx.scene.input.MouseEvent(
                 type,
@@ -410,9 +435,9 @@ final class EditorFx {
                 pressed ? javafx.scene.input.MouseButton.PRIMARY : javafx.scene.input.MouseButton.NONE,
                 clicks,
                 false,
-                shortcut,
+                control,
                 false,
-                false,
+                meta,
                 pressed,
                 false,
                 false,
