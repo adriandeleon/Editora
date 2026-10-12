@@ -18,6 +18,10 @@ import static com.editora.i18n.Messages.tr;
  * moving the caret to the heading the fragment names ({@link MarkdownAnchors}). The entries of a generated
  * table of contents are all such links.
  *
+ * <p>A buffer that shows its preview has the preview scrolled to the same heading
+ * ({@code EditorBuffer.scrollPreviewToAnchor}), so a link clicked in the preview — a table of contents entry —
+ * visibly goes somewhere whether or not the source is on screen.
+ *
  * <p>The move is an ordinary jump: it is recorded in the navigation history, so Back returns to the link.
  * A fragment nothing in the document answers to still opens the file (when the link names one) and says so
  * in the status bar; it never fails silently and never guesses a nearby heading.
@@ -69,22 +73,32 @@ final class HeadingLinks {
             Consumer<String> status) {
         if (file == null) {
             int line = clicked.isMarkdown() ? MarkdownAnchors.lineOf(clicked.getContent(), fragment) : -1;
-            if (line < 0) {
-                status.accept(tr("status.link.noAnchor", "#" + fragment));
-            } else if (clicked.getPath() == null) {
+            if (line >= 0 && clicked.getPath() == null) {
                 clicked.jumpToLine(line); // an unsaved buffer has no place in the jump history
-            } else {
+            } else if (line >= 0) {
                 jump.to(clicked.getPath(), line, 0);
+            }
+            // The preview goes there too — it is all there is to see when only the preview is showing — and
+            // knows anchors the source scan does not (a heading inside a quote or a list item).
+            boolean shown = clicked.scrollPreviewToAnchor(fragment);
+            if (line < 0 && !shown) {
+                status.accept(tr("status.link.noAnchor", "#" + fragment));
             }
             return;
         }
         int line = lineIn(file, openBuffer.apply(file), fragment);
-        if (line < 0) {
-            // Said once the file is showing: the load reports "Opened …" and would replace it otherwise.
-            openThen.accept(file, () -> status.accept(tr("status.link.noAnchor", "#" + fragment)));
-        } else {
+        if (line >= 0) {
             jump.to(file, line, 0);
         }
+        // Once the file is showing: its preview is taken to the heading as well, and a fragment nothing
+        // answered to is said then (the load reports "Opened …" and would replace an earlier message).
+        openThen.accept(file, () -> {
+            EditorBuffer opened = openBuffer.apply(file);
+            boolean shown = opened != null && opened.scrollPreviewToAnchor(fragment);
+            if (line < 0 && !shown) {
+                status.accept(tr("status.link.noAnchor", "#" + fragment));
+            }
+        });
     }
 
     /** The line {@code fragment} names in {@code file}: from its open buffer (unsaved edits count), else from disk. */
