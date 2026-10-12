@@ -718,6 +718,27 @@
 .markdown-preview .md-details-summary:focused .md-text { -fx-underline: true; }
 .markdown-preview .md-details-arrow { -fx-text-fill: -color-fg-muted; -fx-min-width: 14; }
 .markdown-preview .md-details-body { -fx-spacing: 14; -fx-padding: 4 0 4 20; }
+/* A preview too large to follow edits: a note and a Refresh button at its foot. */
+.md-preview-paused {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10 6 12;
+}
+.md-preview-paused-label { -fx-text-fill: -color-fg-default; -fx-font-size: 12px; }
+.md-preview-paused-button { -fx-font-size: 12px; -fx-padding: 2 10 2 10; }
+/* Find in the preview: a match is a label cut out of its run of text (a Text has no background). */
+.markdown-preview .md-find-match {
+    -fx-background-color: -color-warning-muted;
+    -fx-background-radius: 2;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 0;
+}
+.markdown-preview .md-find-match.md-find-current {
+    -fx-background-color: -color-warning-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
+}
 /* An image that could not be shown: its alt text, muted, where the picture would be. */
 .markdown-preview .md-inline-code.md-image-missing { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 /* Footnote reference: a small, raised, accent-colored [label] marker. */
@@ -794,6 +815,8 @@
 }
 .markdown-preview .md-frontmatter-row { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
 
+/* The "back to where it was referred to" arrow at the end of a footnote definition. */
+.markdown-preview .md-footnote-back { -fx-font-size: 0.9em; }
 /* Footnote definitions: a small marker beside the definition body. */
 .markdown-preview .md-footnote-def { -fx-spacing: 8; -fx-padding: 1 0 1 0; }
 .markdown-preview .md-footnote-def-marker { -fx-text-fill: -color-accent-fg; -fx-min-width: 28; }

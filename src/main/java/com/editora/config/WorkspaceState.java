@@ -41,7 +41,7 @@ public class WorkspaceState {
      * <p>v13 → v14 added {@code collapsedBranchSections} (the branch dropdown's folded sections). Additive;
      * empty means every section open, as before.
      */
-    public static final int SCHEMA_VERSION = 14;
+    public static final int SCHEMA_VERSION = 15;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -112,6 +112,9 @@ public class WorkspaceState {
     private Map<String, List<Integer>> manualFoldRegions = new LinkedHashMap<>();
     /** Persisted Markdown view mode per file: absolute path -> "EDITOR"|"SPLIT"|"PREVIEW". */
     private Map<String, String> markdownViewModes = new LinkedHashMap<>();
+    /** Persisted preview zoom and Split divider per file: absolute path -> {@code "<zoom>;<divider>"} (see
+     *  {@code editor/PreviewLayout}); additive in schema v15, absent = 100% and the middle. */
+    private Map<String, String> markdownPreviewLayouts = new LinkedHashMap<>();
     /** Persisted Markwhen preview renderer per file: absolute path -> "TIMELINE"|"CALENDAR". */
     private Map<String, String> markwhenViews = new LinkedHashMap<>();
     /** Per-file spell-check dictionary override: absolute path -> language id (e.g. "en_GB"). */
@@ -375,6 +378,14 @@ public class WorkspaceState {
 
     public Map<String, String> getMarkwhenViews() {
         return markwhenViews;
+    }
+
+    public Map<String, String> getMarkdownPreviewLayouts() {
+        return markdownPreviewLayouts;
+    }
+
+    public void setMarkdownPreviewLayouts(Map<String, String> markdownPreviewLayouts) {
+        this.markdownPreviewLayouts = markdownPreviewLayouts == null ? new LinkedHashMap<>() : markdownPreviewLayouts;
     }
 
     public void setMarkwhenViews(Map<String, String> markwhenViews) {
