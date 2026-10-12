@@ -19,34 +19,24 @@ public final class MarkdownInline {
     private MarkdownInline() {}
 
     /**
-     * Toggles {@code marker} around {@code [selStart, selEnd)}. If the markers already sit just outside
-     * or just inside the selection they are removed; an empty selection inserts an empty pair with the
-     * caret between; otherwise the selection is wrapped (and re-selected so repeated toggles work).
+     * Toggles {@code marker} ({@code **}, {@code *}, {@code ~~}, {@code `}) on {@code [selStart, selEnd)} with
+     * Markdown's run semantics: the marker is removed when the text already carries it and added otherwise,
+     * whitespace at the ends stays outside, and a selection over several lines is marked line by line. A
+     * collapsed caret inside a word toggles that word; anywhere else it inserts an empty pair with the caret
+     * between (or removes the one it sits in). Returns {@code null} when there is nothing to mark.
      */
     public static MarkdownEdit toggle(String text, int selStart, int selEnd, String marker) {
-        int len = marker.length();
-        // Markers immediately OUTSIDE the selection -> unwrap them.
-        if (selStart >= len
-                && selEnd + len <= text.length()
-                && text.startsWith(marker, selStart - len)
-                && text.startsWith(marker, selEnd)
-                && !partOfLongerRun(text, selStart, selEnd, marker)) {
-            String inner = text.substring(selStart, selEnd);
-            return new MarkdownEdit(
-                    selStart - len, selEnd + len, inner, selStart - len, selStart - len + inner.length());
-        }
-        String sel = text.substring(selStart, selEnd);
-        // Markers INSIDE the selection -> strip them.
-        if (sel.length() >= 2 * len && sel.startsWith(marker) && sel.endsWith(marker)) {
-            String inner = sel.substring(len, sel.length() - len);
-            return new MarkdownEdit(selStart, selEnd, inner, selStart, selStart + inner.length());
-        }
-        if (selStart == selEnd) {
-            // Empty selection: insert the pair, caret between the markers. (see partOfLongerRun below)
-            return new MarkdownEdit(selStart, selEnd, marker + marker, selStart + len, selStart + len);
-        }
-        String wrapped = marker + sel + marker;
-        return new MarkdownEdit(selStart, selEnd, wrapped, selStart + len, selEnd + len);
+        return MarkdownEmphasis.toggle(text, selStart, selEnd, marker, true);
+    }
+
+    /** {@link #toggle} for a plain symmetric marker with no run semantics (Typst's {@code *bold*}, {@code _emph_}). */
+    public static MarkdownEdit toggleSymmetric(String text, int selStart, int selEnd, String marker) {
+        return MarkdownEmphasis.toggle(text, selStart, selEnd, marker, false);
+    }
+
+    /** Whether the selection (or the word around a collapsed caret) already carries {@code marker}. */
+    public static boolean isMarked(String text, int selStart, int selEnd, String marker) {
+        return MarkdownEmphasis.isMarked(text, selStart, selEnd, marker, true);
     }
 
     /**
@@ -54,7 +44,7 @@ public final class MarkdownInline {
      * the caret is placed inside the empty {@code ()} slot; otherwise the link text is selected.
      */
     public static MarkdownEdit link(String text, int selStart, int selEnd, String url) {
-        String sel = text.substring(selStart, selEnd);
+        String sel = escapeUnbalancedBrackets(text.substring(selStart, selEnd));
         String u = url == null ? "" : url.strip();
         String replacement = "[" + sel + "](" + u + ")";
         if (u.isEmpty()) {
@@ -88,25 +78,61 @@ public final class MarkdownInline {
         return null;
     }
 
-    /**
-     * True when the markers found just outside the selection are really part of a <b>longer run</b> of the
-     * same character — i.e. the {@code *} we matched on either side of {@code **bold**} is the inner
-     * asterisk of the bold pair, not italics of its own.
-     *
-     * <p>Without this, toggling italic over bold text unwrapped one layer of the bold instead:
-     * {@code **bold**} became {@code *bold*} — the bold silently lost — where every other editor produces
-     * {@code ***bold***}. Only same-character markers ({@code *}, {@code _}, {@code ~}, {@code `}) can form
-     * a run, so a run check on the char just beyond each marker is enough.
-     */
-    private static boolean partOfLongerRun(String text, int selStart, int selEnd, String marker) {
-        char c = marker.charAt(0);
-        for (int i = 0; i < marker.length(); i++) {
-            if (marker.charAt(i) != c) {
-                return false; // not a single-character run marker — nothing to disambiguate
+    /** Link text may hold brackets only in pairs: a stray {@code [} or {@code ]} is backslash-escaped. */
+    static String escapeUnbalancedBrackets(String s) {
+        boolean[] escape = new boolean[s.length()];
+        java.util.ArrayDeque<Integer> open = new java.util.ArrayDeque<>();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '[') {
+                open.push(i);
+            } else if (c == ']') {
+                if (open.isEmpty()) {
+                    escape[i] = true;
+                } else {
+                    open.pop();
+                }
             }
         }
-        int before = selStart - marker.length() - 1;
-        int after = selEnd + marker.length();
-        return (before >= 0 && text.charAt(before) == c) || (after < text.length() && text.charAt(after) == c);
+        open.forEach(i -> escape[i] = true);
+        StringBuilder sb = new StringBuilder(s.length() + 2);
+        for (int i = 0; i < s.length(); i++) {
+            if (escape[i]) {
+                sb.append('\\');
+            }
+            sb.append(s.charAt(i));
+        }
+        return sb.toString();
+    }
+
+    private static final Pattern URL_ONLY = Pattern.compile("(?i)(https?|ftp|mailto):\\S+");
+
+    /** Whether {@code s} (stripped) is a URL a link can point at — what "paste a URL over a selection" needs. */
+    public static boolean isUrl(String s) {
+        return s != null && URL_ONLY.matcher(s.strip()).matches();
+    }
+
+    /**
+     * Whether pasting a URL over {@code [selStart, selEnd)} should turn the selection into a link: not when
+     * the selection spans lines or is blank, is itself a URL (the paste replaces it), already is the text of
+     * a link, or sits inside inline code.
+     */
+    public static boolean wrapsAsLink(String text, int selStart, int selEnd) {
+        String sel = text.substring(selStart, selEnd);
+        if (sel.isBlank() || sel.indexOf('\n') >= 0 || isUrl(sel)) {
+            return false;
+        }
+        int ls = text.lastIndexOf('\n', selStart - 1) + 1;
+        int le = text.indexOf('\n', selEnd);
+        String before = text.substring(ls, selStart);
+        String after = text.substring(selEnd, le < 0 ? text.length() : le);
+        long ticks = before.chars().filter(c -> c == '`').count();
+        if (ticks % 2 == 1 && after.indexOf('`') >= 0) {
+            return false; // inside a code span
+        }
+        boolean opened = before.lastIndexOf('[') > before.lastIndexOf(']');
+        return !(opened && after.matches("^[^\\[\\]]*\\]\\(.*"));
     }
 }

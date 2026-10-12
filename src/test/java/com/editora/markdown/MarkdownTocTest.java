@@ -61,4 +61,70 @@ class MarkdownTocTest {
         assertNull(MarkdownToc.updated("# Doc\n\ntext", 1, 6));
         assertNull(MarkdownToc.updated(null, 1, 6));
     }
+
+    @Test
+    void anEntryShowsTheHeadingsPlainTextAndLinksToItsAnchor() {
+        // The raw title used to go in: a link nested in the entry's link, and an anchor made from the URL.
+        assertEquals("- [A link b](#a-link-b)\n", MarkdownToc.build("## A [link](http://x) b"));
+        assertEquals("- [code & em u](#code--em-u)\n", MarkdownToc.build("## `code` & *em* _u_"));
+        assertEquals("- [html](#html)\n", MarkdownToc.build("## <b>html</b>"));
+        assertEquals("- [C++ / C# & \\[brackets\\]](#c--c--brackets)\n", MarkdownToc.build("## C++ / C# & [brackets]"));
+        assertEquals("- [pic alt](#pic-alt)\n", MarkdownToc.build("## pic ![alt](x.png)"));
+    }
+
+    @Test
+    void entriesNestByTheHeadingsAboveThemNotByRawLevel() {
+        // Two spaces per level skipped made an indented code block of "    - [a]" and of an H1 → H5 jump.
+        assertEquals("- [a](#a)\n- [b](#b)\n  - [c](#c)\n", MarkdownToc.build("### a\n# b\n##### c\n"));
+        assertEquals("- [a](#a)\n  - [b](#b)\n  - [c](#c)\n", MarkdownToc.build("# a\n#### b\n## c\n"));
+    }
+
+    @Test
+    void anchorsCountEveryHeadingEvenTheOnesNotListed() {
+        assertEquals("- [Notes](#notes-1)\n", MarkdownToc.build("# Notes\n## Notes", 2, 6));
+    }
+
+    @Test
+    void theHeadingTheTocSitsUnderIsNotAnEntry() {
+        String doc = "# Doc\n## Contents\n\n<!-- toc -->\n<!-- /toc -->\n## A\n";
+        assertEquals(
+                "# Doc\n## Contents\n\n<!-- toc -->\n- [Doc](#doc)\n  - [A](#a)\n<!-- /toc -->\n## A\n",
+                MarkdownToc.updated(doc, 1, 6));
+        String fresh = "# Doc\n\n## Contents\n\n## A\n";
+        assertEquals(
+                "<!-- toc -->\n- [Doc](#doc)\n  - [A](#a)\n<!-- /toc -->",
+                MarkdownToc.insertion(fresh, fresh.indexOf("\n## A"), 1, 6));
+        assertEquals("", MarkdownToc.insertion("text", 0, 1, 6));
+    }
+
+    @Test
+    void aMarkerInAFencedBlockIsAnExample() {
+        String doc = "# T\n```\n<!-- toc -->\nexample\n<!-- /toc -->\n```\n## S\n";
+        assertNull(MarkdownToc.updated(doc, 1, 6));
+        String both = doc + "<!-- toc -->\n<!-- /toc -->\n";
+        assertTrue(
+                MarkdownToc.updated(both, 1, 6).startsWith(doc + "<!-- toc -->\n- [T](#t)"), "the real one is updated");
+    }
+
+    @Test
+    void markersMatchWhateverTheirCaseAndSpacing() {
+        assertEquals(
+                "<!-- toc -->\n- [T](#t)\n<!-- /toc -->\n# T",
+                MarkdownToc.updated("<!--TOC-->\n<!--/toc -->\n# T", 1, 6));
+    }
+
+    @Test
+    void anOpeningMarkerWithoutItsEndTakesTheListUnderItAsTheStaleToc() {
+        assertEquals(
+                "<!-- toc -->\n- [T](#t)\n<!-- /toc -->\n\n# T\n",
+                MarkdownToc.updated("<!-- toc -->\n- [Old](#old)\n  - [Gone](#gone)\n\n# T\n", 1, 6));
+    }
+
+    @Test
+    void theUpdateIsAnEditOfTheBlockOnly() {
+        String doc = "intro\n<!-- toc -->\nold\n<!-- /toc -->\n# T\n";
+        MarkdownEdit e = MarkdownToc.update(doc, 1, 6);
+        assertEquals(6, e.from());
+        assertEquals(doc.indexOf("\n# T"), e.to());
+    }
 }
