@@ -17,9 +17,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Runs an external command via {@link ProcessBuilder}, capturing stdout, stderr, and the exit code
- * with a hard timeout. Both streams are drained concurrently so a chatty command can't deadlock on a
- * full pipe buffer.
+ * Runs an external command on the {@link ExecTarget} of its working directory, capturing stdout, stderr,
+ * and the exit code with a hard timeout. Both streams are drained concurrently so a chatty command can't
+ * deadlock on a full pipe buffer.
  *
  * <p>This is the single place Editora shells out (used by {@code git} integration and the Mermaid
  * CLI). It does no threading itself beyond the stderr drainer, so callers must run it off the JavaFX
@@ -318,20 +318,14 @@ public final class ProcessRunner {
             java.util.function.Predicate<String> stopAfterLine,
             LiveOutput live,
             Cancellation cancel) {
-        // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
-        // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
-        // child env we set below — so without this, mmdc/npx still wouldn't be found.
-        ProcessBuilder pb = new ProcessBuilder(resolveExecutable(command));
-        if (scrubSecrets) {
-            SecretEnv.scrub(pb.environment());
-        }
-        if (workingDir != null) {
-            pb.directory(workingDir.toFile());
-        }
-        childEnvironment(pb.environment(), userLocale, extraEnv);
+        // The directory decides where the command runs: here, or on the host a remote folder lives on. No
+        // directory means here, so a version probe never leaves this machine.
+        ExecSpec spec = ExecSpec.of(
+                        command, workingDir, extraEnv, userLocale ? ExecSpec.Locale.USER : ExecSpec.Locale.PARSE_STABLE)
+                .withScrubbedSecrets(scrubSecrets);
         Process process;
         try {
-            process = pb.start();
+            process = ExecTargets.forPath(workingDir).start(spec);
         } catch (IOException e) {
             return new BytesResult(-1, new byte[0], e.getMessage() == null ? "failed to start" : e.getMessage());
         }

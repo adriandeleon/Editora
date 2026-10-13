@@ -171,7 +171,7 @@ save of an older snapshot therefore never authorizes disposal of newer text type
 | `lsp/` `dap/` | Language Server / Debug Adapter Protocol integration (lsp4j). |
 | `git/` `diff/` | Native-CLI git, the diff/merge viewer. |
 | `search/` `todo/` `snippet/` `template/` `completion/` `pdf/` `print/` `mermaid/` `http/` `web/` `macro/` `externaltool/` `logviewer/` `editorconfig/` `vfs/` `plugin/` `run/` | Feature packages, each largely self-contained and wired in `MainController`. |
-| `process/` | `ProcessRunner` (the only place a subprocess is spawned) + `ProcessRegistry` (lifecycle of spawned servers). |
+| `process/` | `ProcessRunner` (the only place a subprocess is spawned) + `ProcessRegistry` (lifecycle of spawned servers). `ExecTarget` is where a command runs: `ExecTargets.forPath(dir)` answers the local machine for a local (or no) directory and the registered remote engine's target otherwise; `ProcessRunner` dispatches on its working directory. No remote engine registers one yet, so everything still runs locally. `PosixShell` builds the single command line a POSIX host is sent; a `RemoteProcess` is a `Process` without a local pid or `ProcessHandle`. |
 
 Dependency direction (arrows point at what a package depends on). The key invariants: `ui`
 depends on everything and wires it together; `editor` and `completion` **never** depend on `ui`;

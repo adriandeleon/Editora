@@ -123,6 +123,11 @@ public final class ProcessRegistry {
             return;
         }
         LIVE.add(p);
+        if (p instanceof RemoteProcess) {
+            // No ledger row: the pid belongs to another machine, where the connection's own end reaps it.
+            p.onExit().thenRun(() -> untrack(p));
+            return;
+        }
         LedgerEntry entry = LedgerEntry.of(p);
         LEDGER.put(p.pid(), entry);
         writeLedger();
@@ -137,7 +142,7 @@ public final class ProcessRegistry {
             return;
         }
         LIVE.remove(p);
-        if (LEDGER.remove(p.pid()) != null) {
+        if (!(p instanceof RemoteProcess) && LEDGER.remove(p.pid()) != null) {
             writeLedger();
         }
     }
@@ -186,6 +191,10 @@ public final class ProcessRegistry {
             return;
         }
         EXITING.remove(p); // its owner's wait is over; from here it is killed, not waited for
+        if (p instanceof RemoteProcess remote) {
+            killRemoteTree(remote);
+            return;
+        }
         List<ProcessHandle> descendants = descendantsOf(p);
         retainPending(descendants);
         destroyHandles(descendants, false);
@@ -212,6 +221,33 @@ public final class ProcessRegistry {
             destroyTree(p, true);
             releaseDeadPending();
             untrack(p);
+        }
+    }
+
+    /** {@link #killTree} for a child on another machine: the target signals the group, there are no handles. */
+    private static void killRemoteTree(RemoteProcess p) {
+        signalRemote(p, false);
+        try {
+            SCHEDULER.schedule(
+                    () -> {
+                        signalRemote(p, true);
+                        untrack(p);
+                    },
+                    GRACE_MS,
+                    TimeUnit.MILLISECONDS);
+        } catch (RuntimeException ex) {
+            signalRemote(p, true);
+            untrack(p);
+        }
+    }
+
+    private static void signalRemote(RemoteProcess p, boolean force) {
+        try {
+            if (p.isAlive()) {
+                p.signalTree(force);
+            }
+        } catch (RuntimeException ignored) {
+            // best effort: the connection may already be gone, and with it the process
         }
     }
 
@@ -317,7 +353,14 @@ public final class ProcessRegistry {
         destroyHandles(List.copyOf(PENDING_REAPS), true);
         List<Process> roots = List.copyOf(LIVE);
         List<ProcessHandle> asked = new ArrayList<>();
+        List<RemoteProcess> remote = new ArrayList<>();
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(GRACE_MS);
         for (Process p : roots) {
+            if (p instanceof RemoteProcess r) {
+                signalRemote(r, false);
+                remote.add(r);
+                continue;
+            }
             List<ProcessHandle> tree = descendantsOf(p);
             destroyHandles(tree, false);
             destroyRoot(p, false);
@@ -327,7 +370,17 @@ public final class ProcessRegistry {
         awaitExit(asked, GRACE_MS);
         destroyHandles(asked, true); // the handles captured above: a child is reparented once its wrapper exits
         for (Process p : roots) {
-            destroyTree(p, true); // and anything forked during the grace period
+            if (!(p instanceof RemoteProcess)) {
+                destroyTree(p, true); // and anything forked during the grace period
+            }
+        }
+        for (RemoteProcess r : remote) {
+            try {
+                r.waitFor(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS); // the same grace
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            signalRemote(r, true);
         }
         PENDING_REAPS.clear();
         LIVE.clear();
