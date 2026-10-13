@@ -226,7 +226,10 @@ public enum ConfigSchema {
                     // sync, hide front matter, smart typography, table-of-contents options, pasted-image name and
                     // alt prompt, lint fix-on-save / opt-in rules / severities, link updates on rename), typewriter
                     // mode, status-bar word count and the two HTML-export switches. All additive; absent = default.
-                    Map.entry(118, (Migration) ConfigMigrations::identity)),
+                    Map.entry(118, (Migration) ConfigMigrations::identity),
+                    // v119→120: + remoteExecution (additive; absent means off — nobody's editor starts
+                    // running commands on a server it only ever edited files on).
+                    Map.entry(119, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

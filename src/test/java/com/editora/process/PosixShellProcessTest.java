@@ -15,6 +15,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Hands {@link PosixShell}'s command line to a real {@code sh}, the way an SSH server hands it to a login shell. */
@@ -96,5 +97,76 @@ class PosixShellProcessTest {
         assertEquals("", ran.out());
         assertTrue(
                 ran.err().startsWith(PosixShell.PID_MARK) && ran.err().lines().count() == 1, ran.err());
+    }
+
+    /**
+     * Starts {@code spec} the way an SSH server does: in its own session and group, as the child of a process
+     * (standing in for the per-connection server process) that the test can kill. Returns that parent; the
+     * child's pid is read from its pid line.
+     */
+    private static Process startUnderAParent(ExecSpec spec) throws IOException {
+        String line = PosixShell.commandLine(spec, null, null, null);
+        return new ProcessBuilder("/bin/sh", "-c", "setsid /bin/sh -c " + PosixShell.quote(line) + " & wait").start();
+    }
+
+    private static long pidLine(Process parent) throws IOException {
+        var reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(parent.getErrorStream(), StandardCharsets.UTF_8));
+        String line = reader.readLine();
+        assertTrue(line != null && line.startsWith(PosixShell.PID_MARK), "no pid line: " + line);
+        return Long.parseLong(line.substring(PosixShell.PID_MARK.length()).strip());
+    }
+
+    private static boolean goneWithin(long pid, long millis) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis);
+        while (System.nanoTime() < deadline) {
+            if (ProcessHandle.of(pid).map(h -> !h.isAlive()).orElse(true)) {
+                return true;
+            }
+            Thread.sleep(50);
+        }
+        return false;
+    }
+
+    private static final List<String> TREE = List.of("sh", "-c", "sleep 600 & exec sleep 600");
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledOnOs(OS.LINUX) // setsid(1)
+    void aLongLivedTreeDiesWhenTheProcessThatStartedItDoes() throws Exception {
+        Process parent = startUnderAParent(
+                ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER).withLongLived(true));
+        long pid = pidLine(parent);
+        List<ProcessHandle> group = new java.util.ArrayList<>(
+                ProcessHandle.of(pid).orElseThrow().children().toList());
+
+        parent.destroyForcibly(); // the connection drops
+
+        assertTrue(goneWithin(pid, 8000), "the command outlived its connection");
+        for (ProcessHandle member : group) {
+            assertTrue(goneWithin(member.pid(), 8000), "a child of the command outlived the connection");
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledOnOs(OS.LINUX) // setsid(1)
+    void aOneShotCommandIsLeftToFinishAndTheKillCommandStopsItsGroup() throws Exception {
+        Process parent = startUnderAParent(ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER));
+        long pid = pidLine(parent);
+        List<ProcessHandle> children =
+                ProcessHandle.of(pid).orElseThrow().children().toList();
+        try {
+            parent.destroyForcibly();
+            assertFalse(goneWithin(pid, 3000), "no watchdog: a one-shot command may finish after a drop");
+
+            assertEquals(0, run(PosixShell.killCommandLine(pid, false)).exit());
+
+            assertTrue(goneWithin(pid, 3000));
+            for (ProcessHandle child : children) {
+                assertTrue(goneWithin(child.pid(), 3000), "the kill reached only the group leader");
+            }
+        } finally {
+            ProcessHandle.of(pid).ifPresent(ProcessHandle::destroyForcibly);
+            children.forEach(ProcessHandle::destroyForcibly);
+        }
     }
 }

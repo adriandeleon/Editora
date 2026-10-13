@@ -467,4 +467,13 @@ final class RemoteCoordinator {
             remoteFs = null;
         }
     }
+
+    /** Flips {@code Settings.remoteExecution}: whether commands for a remote folder may run on its host. */
+    void toggleExecution() {
+        com.editora.config.Settings s = host.settings();
+        s.setRemoteExecution(!s.isRemoteExecution());
+        host.requestSave();
+        host.syncSettingsWindow();
+        host.setStatus(tr("status.toggle.remoteExecution", tr(s.isRemoteExecution() ? "common.on" : "common.off")));
+    }
 }

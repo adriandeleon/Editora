@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 119;
+    public static final int SCHEMA_VERSION = 120;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -256,6 +256,8 @@ public class Settings {
     private boolean autocompleteSnippets = true;
     /** Tab expands the snippet trigger before the caret; off leaves snippets to the popup and the picker. */
     private boolean snippetTabExpansion = true;
+
+    private boolean remoteExecution = false;
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
@@ -1435,6 +1437,18 @@ public class Settings {
 
     public void setAutocompleteSnippets(boolean autocompleteSnippets) {
         this.autocompleteSnippets = autocompleteSnippets;
+    }
+
+    /**
+     * Whether commands for a remote (SFTP) folder may run on its host. Off by default: connecting to a
+     * server to edit its files must not, by itself, let the editor start programs there.
+     */
+    public boolean isRemoteExecution() {
+        return remoteExecution;
+    }
+
+    public void setRemoteExecution(boolean remoteExecution) {
+        this.remoteExecution = remoteExecution;
     }
 
     public boolean isSnippetTabExpansion() {

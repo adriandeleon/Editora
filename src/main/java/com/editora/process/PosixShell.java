@@ -21,6 +21,21 @@ public final class PosixShell {
      */
     public static final String PID_MARK = "\u001eEDITORA ";
 
+    /**
+     * Ends a long-lived child when the connection that started it goes away. An SSH server gives a command
+     * without a terminal its own session and process group, and exits its per-connection process when the
+     * client disappears, but it signals nobody: the command is re-parented and runs on. This subshell waits
+     * for that parent ({@code $PPID}) to die, then stops the whole group, politely and then for good. It
+     * leaves by itself when the command ends first, and its streams are detached so it never holds the
+     * channel open. ({@code kill -s TERM -- -N} is the spelling dash accepts; it rejects {@code kill -TERM --}.)
+     */
+    private static final String WATCHDOG = """
+            ( trap '' TERM
+              while kill -0 "$PPID" 2>/dev/null && kill -0 $$ 2>/dev/null; do sleep 2; done
+              kill -0 $$ 2>/dev/null && { kill -s TERM -- -$$; sleep 3; kill -s KILL -- -$$; }
+            ) </dev/null >/dev/null 2>&1 &
+            """;
+
     private static final Pattern VARIABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private PosixShell() {}
@@ -49,9 +64,25 @@ public final class PosixShell {
         return line.toString();
     }
 
+    /**
+     * The command line that signals the process group a {@link #commandLine} child leads: {@code TERM}, or
+     * {@code KILL} with {@code force}. Falls back to the one process when it leads no group.
+     */
+    public static String killCommandLine(long pid, boolean force) {
+        if (pid <= 1) {
+            throw new IllegalArgumentException("not a process to signal: " + pid);
+        }
+        String signal = force ? "KILL" : "TERM";
+        return "exec /bin/sh -c "
+                + quote("kill -s " + signal + " -- -" + pid + " 2>/dev/null || kill -s " + signal + " " + pid);
+    }
+
     /** The {@code sh} script that sets the child up and then becomes it, so the pid it printed stays true. */
     static String script(ExecSpec spec, String cwd, String path, Map<String, String> userLocale) {
         StringBuilder script = new StringBuilder("printf '\\036EDITORA %s\\n' \"$$\" >&2\n");
+        if (spec.longLived()) {
+            script.append(WATCHDOG);
+        }
         if (cwd != null) {
             script.append("cd -- ").append(quote(cwd)).append(" || exit 126\n");
         }

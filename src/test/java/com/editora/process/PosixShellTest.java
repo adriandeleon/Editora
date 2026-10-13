@@ -80,4 +80,25 @@ class PosixShellTest {
         ExecSpec injected = spec(ExecSpec.Locale.USER, Map.of("X; rm -rf ~", "1"), "true");
         assertThrows(IllegalArgumentException.class, () -> PosixShell.commandLine(injected, null, null, null));
     }
+
+    @Test
+    void onlyALongLivedChildGetsTheWatchdog() {
+        ExecSpec oneShot = spec(ExecSpec.Locale.PARSE_STABLE, Map.of(), "git");
+        assertFalse(PosixShell.script(oneShot, null, null, null).contains("PPID"));
+
+        String script = PosixShell.script(oneShot.withLongLived(true), "/srv", null, null);
+        assertTrue(script.indexOf("EDITORA") < script.indexOf("$PPID"), script);
+        assertTrue(script.indexOf("$PPID") < script.indexOf("cd -- "), script);
+        assertTrue(script.contains("kill -s TERM -- -$$"), "the form dash accepts");
+    }
+
+    @Test
+    void theKillCommandSignalsTheGroupAndFallsBackToTheProcess() {
+        assertEquals(
+                "exec /bin/sh -c 'kill -s TERM -- -4242 2>/dev/null || kill -s TERM 4242'",
+                PosixShell.killCommandLine(4242, false));
+        assertTrue(PosixShell.killCommandLine(4242, true).contains("kill -s KILL -- -4242"));
+        assertThrows(IllegalArgumentException.class, () -> PosixShell.killCommandLine(1, true));
+        assertThrows(IllegalArgumentException.class, () -> PosixShell.killCommandLine(-1, true));
+    }
 }

@@ -367,6 +367,7 @@ public class SettingsWindow {
     private SnippetsEditor snippetsEditor;
 
     private CheckBox snippetTabExpansionCheck;
+    private CheckBox remoteExecutionCheck;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -4956,6 +4957,17 @@ public class SettingsWindow {
         note.setWrapText(true);
         note.setMaxWidth(460);
         cardRow(mainCard, Category.REMOTE, note, "remote secret password passphrase not stored security");
+        Card execCard = card(p, tr("settings.remote.execution.title"));
+        remoteExecutionCheck = viewCheck(tr("settings.remote.execution"), Settings::setRemoteExecution);
+        cardRow(
+                execCard,
+                Category.REMOTE,
+                remoteExecutionCheck,
+                "remote run command execute ssh host server build git");
+        Label execNote = note(tr("settings.remote.execution.desc"));
+        execNote.setWrapText(true);
+        execNote.setMaxWidth(460);
+        cardRow(execCard, Category.REMOTE, execNote, "remote run command execute ssh host server");
         return p;
     }
 
@@ -8156,6 +8168,7 @@ public class SettingsWindow {
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
             snippetTabExpansionCheck.setSelected(settings.isSnippetTabExpansion());
+            remoteExecutionCheck.setSelected(settings.isRemoteExecution());
             autocompleteMermaidCheck.setSelected(settings.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());

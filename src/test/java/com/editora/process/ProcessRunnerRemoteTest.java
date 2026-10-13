@@ -21,6 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** {@link ProcessRunner} sends a command to the target that owns its working directory. */
 class ProcessRunnerRemoteTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void allowRemoteExecution() {
+        ExecTargets.setRemoteEnabled(() -> true);
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void restoreTheDefault() {
+        ExecTargets.setRemoteEnabled(null);
+    }
+
     /** Records what it is asked to start and answers with whatever {@code reply} makes of it. */
     private static final class RecordingTarget implements ExecTarget {
         final List<ExecSpec> started = new ArrayList<>();
@@ -51,6 +61,11 @@ class ProcessRunnerRemoteTest {
         public Process start(ExecSpec spec) {
             started.add(spec);
             return reply.apply(spec);
+        }
+
+        @Override
+        public PortForward forwardLocal(String host, int port) {
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -146,7 +161,7 @@ class ProcessRunnerRemoteTest {
                     ProcessRunner.run(zip.getPath("/srv/app"), Duration.ofSeconds(5), List.of("git", "status"));
 
             assertEquals(-1, r.exit());
-            assertEquals("no connection to run git on", r.err());
+            assertEquals("no connection to run commands on", r.err());
         }
     }
 }

@@ -17,6 +17,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExecTargetsTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void allowRemoteExecution() {
+        ExecTargets.setRemoteEnabled(() -> true);
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void restoreTheDefault() {
+        ExecTargets.setRemoteEnabled(null);
+    }
+
     @Test
     void noPathAndALocalPathRunHere(@TempDir Path dir) {
         assertSame(ExecTargets.local(), ExecTargets.forPath(null));
@@ -80,6 +90,44 @@ class ExecTargetsTest {
     }
 
     @Test
+    void whileTheSettingIsOffNoRemotePathCanRunAnything(@TempDir Path dir) throws IOException {
+        try (FileSystem zip = NonDefaultPaths.open(dir)) {
+            Path remote = zip.getPath("/srv/app");
+            boolean[] allowed = {false};
+            ExecTargets.Resolver owner = path -> new StubTarget();
+            ExecTargets.register(owner);
+            ExecTargets.setRemoteEnabled(() -> allowed[0]);
+            try {
+                ExecTarget off = ExecTargets.forPath(remote);
+                assertFalse(off.isAvailable(), "the owning engine is not even asked");
+                ExecSpec spec = ExecSpec.of(List.of("git"), remote, Map.of(), ExecSpec.Locale.USER);
+                IOException refused = assertThrows(IOException.class, () -> off.start(spec));
+                assertEquals("running commands on remote hosts is turned off", refused.getMessage());
+                assertSame(ExecTargets.local(), ExecTargets.forPath(dir), "local commands are untouched");
+
+                allowed[0] = true; // read on every lookup: no restart, no re-registration
+                assertTrue(ExecTargets.forPath(remote).isAvailable());
+            } finally {
+                ExecTargets.unregister(owner);
+            }
+        }
+    }
+
+    @Test
+    void theDefaultIsOff(@TempDir Path dir) throws IOException {
+        ExecTargets.setRemoteEnabled(null);
+        try (FileSystem zip = NonDefaultPaths.open(dir)) {
+            ExecTargets.Resolver owner = path -> new StubTarget();
+            ExecTargets.register(owner);
+            try {
+                assertFalse(ExecTargets.forPath(zip.getPath("/srv")).isAvailable());
+            } finally {
+                ExecTargets.unregister(owner);
+            }
+        }
+    }
+
+    @Test
     void aSpecNeedsACommandAndALocale() {
         assertThrows(
                 IllegalArgumentException.class, () -> ExecSpec.of(List.of(), null, Map.of(), ExecSpec.Locale.USER));
@@ -107,6 +155,11 @@ class ExecTargetsTest {
 
         @Override
         public Process start(ExecSpec spec) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PortForward forwardLocal(String host, int port) {
             throw new UnsupportedOperationException();
         }
 

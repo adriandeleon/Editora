@@ -92,6 +92,9 @@ public class App extends Application {
         // Only a dead owner's children are reaped: a live second instance's servers are left alone.
         com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
         com.editora.process.ProcessRegistry.reapOrphans();
+        // Commands for a remote folder run on its host only while the user's setting allows it.
+        com.editora.process.ExecTargets.setRemoteEnabled(
+                () -> shared.getSettings().isRemoteExecution());
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
         // token. Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
         com.editora.mcp.McpServer.reapStaleEndpoint(shared.getConfigDir());

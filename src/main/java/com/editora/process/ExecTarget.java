@@ -35,6 +35,12 @@ public interface ExecTarget {
     Path toPath(String targetPath);
 
     /**
+     * A loopback port on this machine connected to {@code port} on the target (as the target itself would
+     * reach it on {@code host}, normally {@code 127.0.0.1}). On the local target that is the port itself.
+     */
+    PortForward forwardLocal(String host, int port) throws IOException;
+
+    /**
      * A path a tool printed: taken as is when absolute, else resolved against {@code base} (the directory the
      * tool ran in).
      */

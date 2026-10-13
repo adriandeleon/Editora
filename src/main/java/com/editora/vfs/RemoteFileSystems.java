@@ -18,10 +18,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.process.ExecTarget;
+import com.editora.process.ExecTargets;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
@@ -31,6 +34,9 @@ import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
+import org.apache.sshd.common.session.Session;
+import org.apache.sshd.common.session.SessionListener;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.apache.sshd.sftp.client.SftpClientFactory;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 
@@ -40,7 +46,7 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  * the rest of the app keeps using {@link Path} unchanged. Connect/auth run off the FX thread (the
  * {@code GitService} idiom: a daemon executor + {@link Platform#runLater} callbacks).
  */
-public final class RemoteFileSystems implements Vfs.RemoteProvider {
+public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.Resolver {
 
     /** The result of a connect attempt: {@code root} is the remote start directory (the connection's last
      *  path, else the SFTP home) when {@code ok}, else {@code error} explains the failure. */
@@ -72,7 +78,13 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
         t.setDaemon(true);
         return t;
     });
+    private static final Duration HEARTBEAT = Duration.ofSeconds(30);
+
+    private final List<BiConsumer<String, Boolean>> connectionListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Map<String, SftpFileSystem> byAuthority = new ConcurrentHashMap<>();
+    /** Where commands for each open connection's paths run; dropped with the connection. */
+    private final Map<FileSystem, SshExecTarget> execTargets = new ConcurrentHashMap<>();
     /** Authority identity for closed/replaced filesystems that are still retained by an open buffer Path. */
     private final Map<FileSystem, String> knownAuthorities = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -117,10 +129,48 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
         // written to the file only once the user accepts; and a known host presenting a DIFFERENT key is
         // refused outright, without asking. That last case is the man-in-the-middle, and it is the point.
         client.setServerKeyVerifier(new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts));
+        keepAlive(client, HEARTBEAT);
+        // A language server's messages are small and wait for each other: never hold one back to fill a packet.
+        CoreModuleProperties.TCP_NODELAY.set(client, true);
         client.start();
         // Register this window's engine in the Vfs provider registry (one per window). resolve()/storable() only
         // answer for authorities/filesystems this instance owns, so windows never clobber each other (#436).
         Vfs.registerRemoteProvider(this);
+        ExecTargets.register(this);
+    }
+
+    /**
+     * The host that runs commands for {@code path}, when it is on a connection this engine holds open. A path
+     * left over from a closed connection has no target: nothing can run for it until it is reconnected.
+     */
+    @Override
+    public ExecTarget forPath(Path path) {
+        return path == null ? null : execTargets.get(path.getFileSystem());
+    }
+
+    /**
+     * Has every session ask the server "are you there?" each {@code interval} ({@code keepalive@openssh.com},
+     * what {@code ssh}'s ServerAliveInterval sends). Two reasons: a connection that only carries a quiet
+     * language server is otherwise idle long enough for a NAT or firewall to forget it, and a peer that has
+     * vanished is otherwise noticed only when something next tries to use it.
+     */
+    static void keepAlive(SshClient client, Duration interval) {
+        CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, interval);
+        CoreModuleProperties.HEARTBEAT_REQUEST.set(client, "keepalive@openssh.com");
+    }
+
+    /**
+     * Registers {@code listener} to be told, on the FX thread, when a connection comes up ({@code true}) and
+     * when its session ends ({@code false}) — closed here, dropped by the network, or ended by the server.
+     */
+    public void addConnectionListener(BiConsumer<String, Boolean> listener) {
+        if (listener != null) {
+            connectionListeners.add(listener);
+        }
+    }
+
+    private void notifyConnection(String authority, boolean up) {
+        Platform.runLater(() -> connectionListeners.forEach(l -> l.accept(authority, up)));
     }
 
     /** {@code ~/.ssh/known_hosts} — shared with OpenSSH deliberately (see the constructor). */
@@ -185,8 +235,19 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
             try {
                 SftpFileSystem fs = open(conn, secret);
                 knownAuthorities.put(fs, conn.id());
+                execTargets.put(fs, new SshExecTarget(conn.id(), fs));
+                String authority = conn.id();
+                fs.getSession().addSessionListener(new SessionListener() {
+                    @Override
+                    public void sessionClosed(Session session) {
+                        execTargets.remove(fs);
+                        notifyConnection(authority, false);
+                    }
+                });
+                notifyConnection(authority, true);
                 SftpFileSystem prev = byAuthority.put(conn.id(), fs);
                 if (prev != null && prev != fs) {
+                    execTargets.remove(prev);
                     closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
                 }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
@@ -389,6 +450,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
 
     public void disconnect(String authority) {
         SftpFileSystem fs = byAuthority.remove(authority);
+        if (fs != null) {
+            execTargets.remove(fs);
+        }
         close(fs);
     }
 
@@ -402,6 +466,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
      */
     public void shutdown() {
         Vfs.unregisterRemoteProvider(this);
+        ExecTargets.unregister(this);
+        execTargets.clear();
         byAuthority.values().forEach(RemoteFileSystems::close);
         byAuthority.clear();
         client.stop();
@@ -410,10 +476,18 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
 
     private static void close(SftpFileSystem fs) {
         if (fs != null) {
+            ClientSession session = null;
             try {
+                session = fs.getSession();
                 fs.close();
-            } catch (IOException ignore) {
+            } catch (IOException | RuntimeException ignore) {
                 // best-effort on disconnect/shutdown
+            }
+            // Closing the filesystem ends only its SFTP channel. The SSH session under it carries the commands
+            // and forwarded ports as well, and is ours to end: left open, it kept the connection (and
+            // anything running over it) alive after "Disconnect".
+            if (session != null) {
+                session.close(true);
             }
         }
     }

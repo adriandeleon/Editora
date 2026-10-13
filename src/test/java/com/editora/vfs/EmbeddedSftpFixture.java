@@ -52,8 +52,11 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
 
     private volatile Path remoteRoot;
 
-    private EmbeddedSftpFixture(Path base) throws Exception {
-        serverRoot = Files.createDirectories(base.resolve("remote-root"));
+    /** Every command line the server was asked to run (real-shell mode), in order. */
+    private final List<String> commands = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    private EmbeddedSftpFixture(Path base, boolean realShell) throws Exception {
+        serverRoot = Files.createDirectories(base.resolve("remote-root")).toRealPath();
         SftpSubsystemFactory sftp = new LinkCountingSubsystemFactory();
         sftp.addSftpEventListener(new FaultListener());
         server = SshServer.setUpDefaultServer();
@@ -61,18 +64,47 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         server.setPort(0);
         server.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(base.resolve("host-key.ser")));
         server.setPasswordAuthenticator(AcceptAllPasswordAuthenticator.INSTANCE);
-        server.setFileSystemFactory(new VirtualFileSystemFactory(serverRoot));
+        if (realShell) {
+            // No chroot, so a path means the same file to SFTP and to the commands the server runs.
+            server.setFileSystemFactory(org.apache.sshd.common.file.nativefs.NativeFileSystemFactory.INSTANCE);
+            server.setForwardingFilter(org.apache.sshd.server.forward.AcceptAllForwardingFilter.INSTANCE);
+            server.setCommandFactory((channel, command) -> {
+                commands.add(command);
+                return new ShellCommand(command);
+            });
+        } else {
+            server.setFileSystemFactory(new VirtualFileSystemFactory(serverRoot));
+        }
         server.setSubsystemFactories(List.of(sftp));
         server.start();
 
         connection = new RemoteConnection(
-                "127.0.0.1", server.getPort(), "tester", RemoteConnection.AuthMethod.PASSWORD, "", "fixture", "/");
+                "127.0.0.1",
+                server.getPort(),
+                "tester",
+                RemoteConnection.AuthMethod.PASSWORD,
+                "",
+                "fixture",
+                realShell ? serverRoot.toString() : "/");
         fileSystems = new RemoteFileSystems((host, port, keyType, fingerprint) -> true, base.resolve("known_hosts"));
         connect();
     }
 
     public static EmbeddedSftpFixture start(Path base) throws Exception {
-        return new EmbeddedSftpFixture(base);
+        return new EmbeddedSftpFixture(base, false);
+    }
+
+    /**
+     * A server that also <b>runs commands</b>, with a real {@code /bin/sh}, the way an SSH server hands a
+     * command line to the account's shell. Its files are not chrooted: the remote root is {@code base}'s own
+     * directory, so what a command sees is what SFTP sees. POSIX only.
+     */
+    public static EmbeddedSftpFixture startWithShell(Path base) throws Exception {
+        return new EmbeddedSftpFixture(base, true);
+    }
+
+    public List<String> commands() {
+        return commands;
     }
 
     public RemoteFileSystems fileSystems() {
@@ -152,6 +184,96 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         }
         fileSystems.shutdown();
         server.stop(true);
+    }
+
+    /**
+     * One command line run by a real {@code /bin/sh}. On Linux it is started through {@code setsid}, so it
+     * leads its own session and process group as it does under OpenSSH. Like OpenSSH, closing the channel
+     * signals nobody.
+     */
+    private static final class ShellCommand implements Command {
+        private final String commandLine;
+        private java.io.InputStream in;
+        private java.io.OutputStream out;
+        private java.io.OutputStream err;
+        private org.apache.sshd.server.ExitCallback exit;
+        private volatile Process process;
+
+        ShellCommand(String commandLine) {
+            this.commandLine = commandLine;
+        }
+
+        @Override
+        public void setInputStream(java.io.InputStream in) {
+            this.in = in;
+        }
+
+        @Override
+        public void setOutputStream(java.io.OutputStream out) {
+            this.out = out;
+        }
+
+        @Override
+        public void setErrorStream(java.io.OutputStream err) {
+            this.err = err;
+        }
+
+        @Override
+        public void setExitCallback(org.apache.sshd.server.ExitCallback callback) {
+            this.exit = callback;
+        }
+
+        @Override
+        public void start(ChannelSession channel, org.apache.sshd.server.Environment env) throws IOException {
+            boolean linux = System.getProperty("os.name", "")
+                    .toLowerCase(java.util.Locale.ROOT)
+                    .contains("linux");
+            List<String> argv =
+                    linux ? List.of("setsid", "/bin/sh", "-c", commandLine) : List.of("/bin/sh", "-c", commandLine);
+            Process started = new ProcessBuilder(argv).start();
+            process = started;
+            Thread stdout = pump(started.getInputStream(), out, false);
+            Thread stderr = pump(started.getErrorStream(), err, false);
+            pump(in, started.getOutputStream(), true);
+            Thread.ofVirtual().start(() -> {
+                try {
+                    int code = started.waitFor();
+                    stdout.join(2000);
+                    stderr.join(2000);
+                    exit.onExit(code);
+                } catch (InterruptedException e) {
+                    exit.onExit(-1);
+                }
+            });
+        }
+
+        private static Thread pump(java.io.InputStream from, java.io.OutputStream to, boolean closeTarget) {
+            return Thread.ofVirtual().start(() -> {
+                byte[] buffer = new byte[8192];
+                try {
+                    int n;
+                    while ((n = from.read(buffer)) != -1) {
+                        to.write(buffer, 0, n);
+                        to.flush();
+                    }
+                } catch (IOException gone) {
+                    // one side closed: stop pumping
+                } finally {
+                    if (closeTarget) {
+                        try {
+                            to.close();
+                        } catch (IOException ignored) {
+                            // already closed
+                        }
+                    }
+                }
+            });
+        }
+
+        @Override
+        public void destroy(ChannelSession channel) {
+            // Deliberately nothing: an SSH server does not kill the command when its channel closes.
+        }
     }
 
     private static boolean staged(Path path) {
