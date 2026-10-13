@@ -132,7 +132,7 @@ public final class MarkdownCompletions implements CompletionProvider {
                     case PATH -> paths(ctx);
                     case ANCHOR -> anchors(ctx, document);
                     case REFERENCE -> references(ctx, document, manual);
-                    case EMOJI -> List.of();
+                    case EMOJI -> emoji(ctx);
                 };
         return items.isEmpty() ? null : new Offer(ctx.start(), ctx.partial(), items);
     }
@@ -282,5 +282,31 @@ public final class MarkdownCompletions implements CompletionProvider {
             }
         }
         return out;
+    }
+
+    /** Shortcodes from the table the renderer uses: the ones that start with what was typed, then the rest. */
+    private static List<Completion> emoji(Context ctx) {
+        String p = ctx.partial().toLowerCase(Locale.ROOT);
+        List<Completion> starts = new ArrayList<>();
+        List<Completion> contains = new ArrayList<>();
+        for (var e : com.editora.markdown.MarkdownEmoji.table().entrySet()) {
+            String code = e.getKey();
+            boolean prefix = code.startsWith(p);
+            if (!prefix && !code.contains(p)) {
+                continue;
+            }
+            List<Completion> into = prefix ? starts : contains;
+            if (into.size() < MAX_ITEMS) {
+                String written = ":" + code + ":";
+                into.add(row(written, written, e.getValue(), CompletionIconKind.OTHER));
+            }
+        }
+        for (Completion c : contains) {
+            if (starts.size() >= MAX_ITEMS) {
+                break;
+            }
+            starts.add(c);
+        }
+        return starts;
     }
 }

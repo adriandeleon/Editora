@@ -1761,8 +1761,8 @@ public class Settings {
     public static final String DEFAULT_MARKDOWN_IMAGE_NAME = "pasted-image";
     public static final int MIN_PREVIEW_FONT_SIZE = 8;
     public static final int MAX_PREVIEW_FONT_SIZE = 40;
-    public static final int MIN_PREVIEW_WIDTH = 400;
-    public static final int MAX_PREVIEW_WIDTH = 3000;
+    public static final int MIN_PREVIEW_WIDTH = 320;
+    public static final int MAX_PREVIEW_WIDTH = 4000;
 
     /** "editor", "split" or "preview"; any other stored value reads as "editor". */
     public String getMarkdownDefaultViewMode() {

@@ -146,4 +146,17 @@ class MarkdownCompletionsTest {
         CompletionProvider base = (a, b, c, d, e) -> List.of();
         assertSame(List.of(), MarkdownCompletions.provider(base, () -> null).complete("java", "en", "x", "x", false));
     }
+
+    @Test
+    void aColonOffersEmojiShortcodesPrefixMatchesFirst() {
+        MarkdownCompletions.Offer offer = at("Nice :smil");
+        assertEquals(5, offer.start(), "the colon is replaced too");
+        List<String> inserts = inserts(offer);
+        assertEquals(":smile:", inserts.get(0));
+        assertTrue(inserts.contains(":smiley:") && inserts.contains(":sweat_smile:"), inserts.toString());
+        assertTrue(inserts.indexOf(":smiley:") < inserts.indexOf(":sweat_smile:"), "prefix matches come first");
+        assertEquals("\uD83D\uDE04", offer.items().get(0).detail());
+        assertNull(at("at 10:30"), "a time is not a shortcode");
+        assertNull(at("Nice :zzzzqq"), "nothing matches");
+    }
 }
