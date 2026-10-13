@@ -103,6 +103,14 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         return new EmbeddedSftpFixture(base, true);
     }
 
+    /**
+     * Another window's connection engine for this server: its own SSH client, a throwaway {@code known_hosts}
+     * and a host-key prompt that says yes — never the user's own file, never a dialog. The caller shuts it down.
+     */
+    public RemoteFileSystems newEngine(Path base) {
+        return new RemoteFileSystems((host, port, keyType, fingerprint) -> true, base.resolve("known_hosts-2"));
+    }
+
     public List<String> commands() {
         return commands;
     }

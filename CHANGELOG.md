@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
+  a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
+  opens the window and asks to connect; while it is not connected the Project panel says so and offers
+  Reconnect, and the tabs you had open come back when the connection does. A lost connection is shown the same
+  way. The window you connected from is left as it was.
 - **Markdown: more syntax, in the preview and in every export.** GitHub alerts (`> [!NOTE]`, `[!TIP]`,
   `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), emoji shortcodes (`:rocket:`), `==highlight==`, `^superscript^` and
   `~subscript~`, definition lists, ```` ```math ```` fences and `\(…\)` / `\[…\]` math. In the preview: task
@@ -109,6 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
+  other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
 - **Markdown Lint: Fix Issues no longer rewrites code.** Indented code blocks, fences nested in lists and block
   quotes, HTML blocks and comments, and YAML or TOML front matter are left exactly as written, by lint and by Fix.
   A closing fence with an info string no longer flips code and prose for the rest of the file. MD026 no longer cuts

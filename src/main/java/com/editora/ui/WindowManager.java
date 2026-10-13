@@ -931,6 +931,12 @@ public class WindowManager {
         return stage;
     }
 
+    /** The controller of {@code project}'s open window, or null when it has none. */
+    MainController controllerOf(Project project) {
+        Holder holder = project == null ? null : findHolder(project.id());
+        return holder == null ? null : holder.controller();
+    }
+
     /**
      * Opens (or focuses) a remote {@code project}'s window and has it connect to its host with
      * {@code secret}, which is wiped either way. The window that shows a remote folder must hold the
@@ -938,9 +944,9 @@ public class WindowManager {
      */
     void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
         openOrFocus(project);
-        Holder holder = findHolder(project.id());
-        if (holder != null && holder.controller() != null) {
-            holder.controller().remoteCoordinator().connectForWindowProject(conn, secret);
+        MainController window = controllerOf(project);
+        if (window != null) {
+            window.remoteCoordinator().connectForWindowProject(conn, secret);
         } else if (secret != null) {
             java.util.Arrays.fill(secret, '\0');
         }
