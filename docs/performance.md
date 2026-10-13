@@ -153,6 +153,18 @@ style-only change that still ended a succession — skips the draw and the snaps
 - The project watcher re-lists only directories whose entries were created or deleted and reconciles the
   rows (`ChildReconciler`); Editora's own saves are registered through `ProjectPanel.noteLocalWrite` so
   they are not treated as external changes.
+- The Markdown preview rebuilds only the **blocks that changed** (`MarkdownPreview`). The document is cut
+  into its top-level blocks off the FX thread, each keyed by its exact source text (plus the link
+  definitions it could use and the size/mtime of the local images it shows); a render keeps every node
+  whose key is unchanged, in place, and builds the rest. Its column (`BlockColumn`) remembers each block's
+  height per width and measures only blocks that asked for layout, and a long document's first render is
+  built `MarkdownPreview.SLICE` blocks per pulse. A 5,000-line document went from ~0.6 s of frozen UI per
+  typing pause to ~10 ms, a 20,000-line one from seconds to ~20–50 ms. What is left at that size is
+  JavaFX walking the scene graph each pulse (`Parent.updateBounds`); only virtualizing the block list
+  would remove it. See [gotchas.md](gotchas.md#applycss-restyles-everything-below-the-node-it-is-called-on).
+- Each rendered block records its **source lines**, so the split view's scroll sync, the position kept
+  across a re-render and across Editor/Split/Preview switches map a source line to a preview offset
+  (`MarkdownPreview.yOfLine` / `lineAtY`, `PreviewScrollSync`), not a scroll fraction.
 
 ### 4. Don't defeat the per-node CSS style cache
 

@@ -735,6 +735,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
         this.settingsWindow.setStatusSink(this::setStatus);
+        this.settingsWindow.setMarkdownLintConfigNote(() -> previews.markdownLintConfigNote());
         this.settingsWindow.setHistoryLimits((perFile, ageDays, totalMb, owner, done) ->
                 historyCoordinator.changeLimits(perFile, ageDays, totalMb, owner, done));
         this.pluginCoordinator = new PluginCoordinator(
@@ -1159,6 +1160,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
+        exports.systemOpener = hostServices == null
+                ? null
+                : f -> hostServices.showDocument(f.toUri().toString());
     }
 
     /**
@@ -1308,7 +1312,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The Markdown Lint panel, built on its first use (the window's open runs the scan that fills it). */
     private MarkdownLintPanel markdownLintPanel() {
         if (markdownLintPanel == null) {
-            markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
+            markdownLintPanel = new MarkdownLintPanel(previews.lint(), new MarkdownLintPanel.Actions() {
                 @Override
                 public void open(java.nio.file.Path file, int line, int col) {
                     fileWorkflows.openPath(file);
@@ -1973,6 +1977,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         String key = path.toString();
         ws.getFoldedRegions().remove(key);
         ws.getMarkdownViewModes().remove(key);
+        ws.getMarkdownPreviewLayouts().remove(key);
         ws.getSpellLanguages().remove(key);
         ws.getReadOnlyFiles().remove(key);
         if (recentFiles != null) {
@@ -2801,6 +2806,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
         com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
+        com.editora.editor.PreviewImageLoader.setRemoteImages(
+                config.getSettings().isMarkdownRemoteImages());
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.hasPreview()) {
@@ -4486,6 +4493,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public MarkdownLintPanel markdownLintPanel() {
             return MainController.this.markdownLintPanel();
+        }
+
+        @Override
+        public void openExternalUrl(String url) {
+            MainController.this.openExternalUrl(url);
+        }
+
+        @Override
+        public Path activeProjectRoot() {
+            return MainController.this.activeProjectRoot();
         }
 
         @Override
@@ -8278,8 +8295,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         debugCoordinator.wireBuffer(buffer);
         buffer.setAddNoteHandler(notesCoordinator::addNoteFromContext);
         buffer.setNotesEnabled(notesCoordinator.isEnabled());
-        buffer.setOpenUrlHandler(u -> ExternalLinks.open(
-                u, buffer.getPath(), windowProjectRoot(), hostServices, fileWorkflows::openPath, this::setStatus));
+        java.util.function.Function<Path, EditorBuffer> open = this::openBufferFor;
+        buffer.setOpenUrlHandler(u -> HeadingLinks.open(
+                u, buffer, windowProjectRoot(), hostServices, fileWorkflows, open, this::openAndGoto, this::setStatus));
         buffer.setAiActionHandlers(aiCoordinator::explainSelection, aiCoordinator::rewriteSelection); // AI sel. bar
         buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
@@ -8307,7 +8325,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // project tree's cannot disagree about when it appears.
         buffer.setBuildMenuContributor(() -> {
             javafx.scene.control.Menu maven = mavenProjectCoordinator.mavenMenu(buffer.getPath());
-            return maven == null ? List.of() : List.of(maven);
+            return maven == null ? previews.lint().editorMenu(buffer) : List.of(maven);
         });
         buffer.setMenuContributor(
                 () -> { // External Tools submenu + plugin-contributed right-click items
@@ -8328,14 +8346,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         mermaid.wireBuffer(buffer); // live maid validator + initial lint state
         // Markdown linting: the overlay gets the diagnostics; the Lint tool window mirrors them live when
         // this buffer is the active one and the window is open.
-        buffer.setMarkdownLintValidator((text, cb) -> previews.lintMarkdown(buffer, text, diags -> {
-            cb.accept(diags);
-            if (activeBuffer() == buffer
-                    && markdownLintToolWindow != null
-                    && toolWindows.isOpen(markdownLintToolWindow)) {
-                markdownLintPanel().setResults(buffer.getPath(), diags);
-            }
-        }));
+        buffer.setMarkdownLintValidator((text, cb) -> previews.lintMarkdown(buffer, text, cb));
         buffer.setMarkdownLintEnabled(previews.markdownLintEnabled());
         buffer.setImageDropHandler(
                 files -> editing.insertDroppedImages(buffer, files)); // drag image → assets/ + ![](…)
@@ -9214,10 +9225,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (todoToolWindow != null) {
             toolWindows.setAvailable(todoToolWindow, buffer);
         }
-        if (markdownLintToolWindow != null) {
-            toolWindows.setAvailable(
-                    markdownLintToolWindow, buffer && b.isMarkdown() && previews.markdownLintEnabled());
-        }
+        previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }

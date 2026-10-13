@@ -278,7 +278,7 @@ class SplitViewFxTest {
 
     @Test
     void theSecondPaneHonoursTheViewSettings() throws Exception {
-        EditorBuffer b = open("view.txt", lines(30));
+        EditorBuffer b = open("view.java", lines(30)); // code: unwrapped until the toggle below
         CodeArea first = b.getArea();
         boolean highlight = FxTestSupport.callOnFx(first::isLineHighlighterOn);
         run("view.toggleWordWrap");

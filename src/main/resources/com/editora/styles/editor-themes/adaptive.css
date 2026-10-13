@@ -48,6 +48,9 @@
 .text.link       { -fx-fill: -color-accent-fg; -fx-underline: true; }
 .text.bold       { -fx-fill: -color-fg-default; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: -color-fg-default; -fx-font-style: italic; }
+.text.strikethrough { -fx-fill: -color-fg-muted; -fx-strikethrough: true; }
+.text.quote      { -fx-fill: -color-fg-muted; }
+.text.md-marker  { -fx-fill: -color-danger-fg; }
 
 /* LSP semantic tokens — mirror the lexical token colors (overlaid on TextMate). */
 .text.sem-parameter { -fx-fill: -color-fg-default; -fx-font-style: italic; }

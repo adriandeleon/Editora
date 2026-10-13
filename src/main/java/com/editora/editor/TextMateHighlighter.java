@@ -741,6 +741,21 @@ public final class TextMateHighlighter {
         if (scope.startsWith("meta.diff") || scope.startsWith("meta.separator.diff")) {
             return "diff-header";
         }
+        // Markdown structure (only the bundled text.html.markdown grammar emits these): the characters that
+        // make a line a list item, a quote or a table row, and the text of a quote or a struck-out phrase.
+        if (scope.endsWith(".markdown")
+                && (scope.startsWith("punctuation.definition.list.begin")
+                        || scope.startsWith("punctuation.definition.quote.begin")
+                        || scope.startsWith("punctuation.definition.table")
+                        || scope.startsWith("punctuation.separator.table"))) {
+            return "md-marker";
+        }
+        if (scope.startsWith("markup.strikethrough")) {
+            return "strikethrough";
+        }
+        if (scope.startsWith("markup.quote")) {
+            return "quote";
+        }
         if (scope.startsWith("markup.bold")) {
             return "bold";
         }

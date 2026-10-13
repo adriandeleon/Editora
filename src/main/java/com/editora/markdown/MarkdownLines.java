@@ -1,6 +1,5 @@
 package com.editora.markdown;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -11,13 +10,6 @@ import java.util.regex.Pattern;
  */
 public final class MarkdownLines {
 
-    //              indent       bullet/quote                 task box                 content
-    private static final Pattern BULLET = Pattern.compile("^(\\s*)([-*+])(\\s+)(\\[[ xX]\\]\\s+)?(.*)$");
-    private static final Pattern ORDERED = Pattern.compile("^(\\s*)(\\d+)([.)])(\\s+)(.*)$");
-    private static final Pattern QUOTE = Pattern.compile("^(\\s*)((?:>\\s?)+)(.*)$");
-    private static final Pattern BULLET_PREFIX = Pattern.compile("^(\\s*)[-*+]\\s+");
-    private static final Pattern TASK_PREFIX = Pattern.compile("^(\\s*)[-*+]\\s+\\[[ xX]\\]\\s+");
-
     private MarkdownLines() {}
 
     /** The length of the leading list/quote marker on {@code line} (where content begins), or 0 if none. */
@@ -25,25 +17,12 @@ public final class MarkdownLines {
         if (line == null) {
             return 0;
         }
-        Matcher b = BULLET.matcher(line);
-        if (b.matches()) {
-            return b.start(5);
-        }
-        Matcher o = ORDERED.matcher(line);
-        if (o.matches()) {
-            return o.start(5);
-        }
-        Matcher q = QUOTE.matcher(line);
-        if (q.matches()) {
-            return q.start(3);
-        }
-        return 0;
+        MarkdownLine l = MarkdownLine.parse(line);
+        return l.isListItem() || !l.quote().isEmpty() ? l.prefixLength() : 0;
     }
 
     /** A thematic break written with spaces ({@code - - -}, {@code * * *}): a rule, not a list item. */
     private static final Pattern SPACED_RULE = Pattern.compile("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$");
-
-    private static final Pattern FENCE = Pattern.compile("^ {0,3}(`{3,}|~{3,})(.*)$");
 
     /**
      * {@link #markerLength} for the Enter key: 0 when {@code line} — which starts at {@code lineStart} in
@@ -68,218 +47,480 @@ public final class MarkdownLines {
         return marker;
     }
 
-    /** Whether the line starting at {@code lineStart} lies inside a fenced code block that is still open. */
+    /**
+     * Whether the line starting at {@code lineStart} is something other than Markdown text — a line of a
+     * fenced or indented code block (fences nested in a list item or a quote included), of the front matter,
+     * of an HTML comment or a verbatim HTML block — as {@link MarkdownBlocks} classifies it. The editing
+     * helpers leave such a line alone: a {@code -} there is YAML or a diff, a pipe is program output.
+     *
+     * <p>Only the text up to the end of that line is scanned where that is enough: what a line is depends on
+     * the lines above it.
+     */
     static boolean insideFence(String text, int lineStart) {
-        String open = null; // the fence run that opened the current block, null outside one
-        int end = Math.min(lineStart, text.length());
-        int at = 0;
-        while (at < end) {
-            int eol = text.indexOf('\n', at);
-            if (eol < 0 || eol > end) {
-                eol = end;
-            }
-            Matcher m = FENCE.matcher(text.substring(at, eol));
-            if (m.matches()) {
-                String run = m.group(1);
-                if (open == null) {
-                    // A backtick fence's info string cannot itself contain a backtick (that is inline code).
-                    if (run.charAt(0) != '`' || m.group(2).indexOf('`') < 0) {
-                        open = run;
-                    }
-                } else if (run.charAt(0) == open.charAt(0)
-                        && run.length() >= open.length()
-                        && m.group(2).isBlank()) {
-                    open = null;
-                }
-            }
-            at = eol + 1;
+        return !kindAt(text, lineStart).equals(MarkdownBlocks.Kind.TEXT);
+    }
+
+    /** Whether the line starting at {@code lineStart} is a line of a fenced or indented code block. */
+    static boolean insideCode(String text, int lineStart) {
+        return switch (kindAt(text, lineStart)) {
+            case FENCE_OPEN, FENCE_BODY, FENCE_CLOSE, INDENTED_CODE -> true;
+            default -> false;
+        };
+    }
+
+    private static MarkdownBlocks.Kind kindAt(String text, int lineStart) {
+        int start = Math.max(0, Math.min(lineStart, text.length()));
+        int eol = text.indexOf('\n', start);
+        // Front matter is only front matter once it is closed, which may be below this line: then scan it all.
+        boolean wholeDocument = eol < 0 || text.startsWith("---") || text.startsWith("+++");
+        MarkdownBlocks blocks = MarkdownBlocks.scan(wholeDocument ? text : text.substring(0, eol));
+        int line = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < start; i = text.indexOf('\n', i + 1)) {
+            line++;
         }
-        return open != null;
+        return blocks.kind(Math.min(line, blocks.lineCount() - 1));
     }
 
     /**
-     * Toggles a {@code "- "} bullet on every line the selection covers: removes it when <em>all</em>
-     * non-blank lines are already bullets, otherwise adds it. Returns a {@link MarkdownEdit} spanning the
-     * affected line block.
+     * Toggles a {@code "- "} bullet on every line the selection covers: removes the list marker (and a task
+     * box with it) when <em>all</em> non-blank lines are already bullets, otherwise makes each one a bullet —
+     * an ordered item's number is replaced, not kept behind a second marker. Returns {@code null} when
+     * nothing changes.
      */
     public static MarkdownEdit toggleBullet(String text, int selStart, int selEnd) {
-        int blockStart = lineStartAt(text, selStart);
-        int blockEnd = lineEndAt(text, Math.max(selStart, selEnd));
-        String[] lines = text.substring(blockStart, blockEnd).split("\n", -1);
-        boolean anyContent = false;
-        boolean allBullets = true;
-        for (String l : lines) {
-            if (l.isBlank()) {
-                continue;
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
+            boolean remove = all(lines, l -> l.isListItem() && !l.isOrdered());
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].isBlank()) {
+                    continue;
+                }
+                MarkdownLine l = MarkdownLine.parse(lines[i]);
+                if (remove) {
+                    lines[i] = l.withMarker("").text();
+                } else if (l.isOrdered() || !l.isListItem()) {
+                    lines[i] = l.withMarker("- ").text();
+                }
             }
-            anyContent = true;
-            if (!BULLET_PREFIX.matcher(l).find()) {
-                allBullets = false;
-            }
-        }
-        boolean remove = anyContent && allBullets;
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < lines.length; i++) {
-            if (i > 0) {
-                out.append('\n');
-            }
-            out.append(remove ? unbullet(lines[i]) : addBullet(lines[i]));
-        }
-        String repl = out.toString();
-        return new MarkdownEdit(blockStart, blockEnd, repl, blockStart, blockStart + repl.length());
-    }
-
-    private static String addBullet(String line) {
-        if (line.isBlank()) {
-            return line;
-        }
-        String indent = leadingWhitespace(line);
-        return indent + "- " + line.substring(indent.length());
-    }
-
-    private static String unbullet(String line) {
-        Matcher m = BULLET_PREFIX.matcher(line);
-        if (m.find()) {
-            return m.group(1) + line.substring(m.end());
-        }
-        return line;
+            return lines;
+        });
     }
 
     /**
-     * Toggles a GFM task-list checkbox ({@code "- [ ] "}) on every line the selection covers: removes it
-     * when <em>all</em> non-blank lines are already task items, otherwise adds it (a plain {@code "- "}
-     * bullet gains a {@code "[ ] "} box; a bare line becomes {@code "- [ ] "}). Returns a
-     * {@link MarkdownEdit} spanning the affected line block.
+     * Toggles a GFM task-list checkbox on every line the selection covers: removes the box (the list marker
+     * stays) when <em>all</em> non-blank lines are already task items, otherwise adds one — a list item,
+     * bulleted or numbered, gains a {@code "[ ] "} box and a bare line becomes {@code "- [ ] "}. Returns
+     * {@code null} when nothing changes.
      */
     public static MarkdownEdit toggleTask(String text, int selStart, int selEnd) {
-        int blockStart = lineStartAt(text, selStart);
-        int blockEnd = lineEndAt(text, Math.max(selStart, selEnd));
-        String[] lines = text.substring(blockStart, blockEnd).split("\n", -1);
-        boolean anyContent = false;
-        boolean allTasks = true;
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
+            boolean remove = all(lines, MarkdownLine::isTask);
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].isBlank()) {
+                    continue;
+                }
+                MarkdownLine l = MarkdownLine.parse(lines[i]);
+                if (remove) {
+                    lines[i] = l.withTask("").text();
+                } else if (!l.isTask()) {
+                    lines[i] = (l.isListItem() ? l : l.withMarker("- "))
+                            .withTask("[ ] ")
+                            .text();
+                }
+            }
+            return lines;
+        });
+    }
+
+    /** Whether every non-blank line passes {@code test} (and there is at least one). */
+    private static boolean all(String[] lines, java.util.function.Predicate<MarkdownLine> test) {
+        boolean any = false;
         for (String l : lines) {
             if (l.isBlank()) {
                 continue;
             }
-            anyContent = true;
-            if (!TASK_PREFIX.matcher(l).find()) {
-                allTasks = false;
+            any = true;
+            if (!test.test(MarkdownLine.parse(l))) {
+                return false;
             }
         }
-        boolean remove = anyContent && allTasks;
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < lines.length; i++) {
-            if (i > 0) {
-                out.append('\n');
-            }
-            out.append(remove ? untask(lines[i]) : addTask(lines[i]));
-        }
-        String repl = out.toString();
-        return new MarkdownEdit(blockStart, blockEnd, repl, blockStart, blockStart + repl.length());
-    }
-
-    private static String addTask(String line) {
-        if (line.isBlank() || TASK_PREFIX.matcher(line).find()) {
-            return line; // blank, or already a task item
-        }
-        Matcher b = BULLET_PREFIX.matcher(line);
-        if (b.find()) {
-            return line.substring(0, b.end()) + "[ ] " + line.substring(b.end()); // bullet → bullet + box
-        }
-        String indent = leadingWhitespace(line);
-        return indent + "- [ ] " + line.substring(indent.length());
-    }
-
-    private static String untask(String line) {
-        Matcher m = TASK_PREFIX.matcher(line);
-        if (m.find()) {
-            return m.group(1) + line.substring(m.end()); // drop the "- [ ] " marker, keep indent + content
-        }
-        return line;
-    }
-
-    private static String leadingWhitespace(String line) {
-        int i = 0;
-        while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
-            i++;
-        }
-        return line.substring(0, i);
-    }
-
-    private static int lineStartAt(String text, int offset) {
-        int nl = text.lastIndexOf('\n', Math.max(0, offset - 1));
-        return nl < 0 ? 0 : nl + 1;
-    }
-
-    private static int lineEndAt(String text, int offset) {
-        int nl = text.indexOf('\n', offset);
-        return nl < 0 ? text.length() : nl;
+        return any;
     }
 
     /**
      * The marker to insert after a newline so the list/quote continues, or {@code null} when {@code line}
      * is not a list or blockquote item. Ordered lists auto-increment; task items reset to {@code [ ]};
-     * leading indentation is preserved.
+     * indentation and a blockquote prefix in front of the marker are preserved.
      */
     public static String continuation(String line) {
         if (line == null) {
             return null;
         }
-        Matcher b = BULLET.matcher(line);
-        if (b.matches()) {
-            String task = b.group(4) != null ? "[ ] " : "";
-            return b.group(1) + b.group(2) + b.group(3) + task;
+        MarkdownLine l = MarkdownLine.parse(line);
+        if (!l.isListItem()) {
+            return l.quote().isEmpty() ? null : l.indent() + l.quote();
         }
-        Matcher o = ORDERED.matcher(line);
-        if (o.matches()) {
-            // The regex accepts an unbounded digit run; a number that overflows a long can't be
-            // auto-incremented, so don't continue the list (Enter falls back to a plain newline) rather
-            // than throwing NumberFormatException out of the Enter key filter.
-            long n;
-            try {
-                n = Long.parseLong(o.group(2));
-            } catch (NumberFormatException overflow) {
-                return null;
-            }
-            return o.group(1) + (n + 1) + o.group(3) + o.group(4);
-        }
-        Matcher q = QUOTE.matcher(line);
-        if (q.matches()) {
-            return q.group(1) + q.group(2);
-        }
-        return null;
+        String marker = l.isOrdered() ? l.markerNumbered(l.number() + 1) : l.marker();
+        return l.indent() + l.quote() + marker + (l.isTask() ? "[ ] " : "");
     }
 
     /**
      * Whether {@code line} is a list/quote item whose content is empty (just the marker, possibly an empty
-     * task box) — pressing Enter here should terminate the list (clear the marker) instead of continuing.
+     * task box) — pressing Enter here should step out of the list instead of continuing it.
      */
     public static boolean isEmptyItem(String line) {
         if (line == null) {
             return false;
         }
-        Matcher b = BULLET.matcher(line);
-        if (b.matches()) {
-            return b.group(5).isBlank();
-        }
-        Matcher o = ORDERED.matcher(line);
-        if (o.matches()) {
-            return o.group(5).isBlank();
-        }
-        Matcher q = QUOTE.matcher(line);
-        if (q.matches()) {
-            return q.group(3).isBlank();
-        }
-        return false;
+        MarkdownLine l = MarkdownLine.parse(line);
+        return (l.isListItem() || !l.quote().isEmpty()) && l.isBlank();
     }
 
     /**
      * Smart Backspace: when the caret (column {@code col}) sits at the end of a line that is <em>only</em> an
-     * empty list/blockquote marker (a {@code "- "}/{@code "1. "}/{@code "> "}/{@code "- [ ] "} item with no
-     * content), the number of leading characters to delete to clear the whole marker (back to the line start),
-     * leaving an empty line — else 0 (caller does a normal single-char Backspace).
+     * empty list/blockquote marker, the number of leading characters to delete to clear the whole marker —
+     * else 0. {@link #backspace} is the document-aware form the editor uses.
      */
     public static int emptyMarkerDeleteLength(String line, int col) {
         return (line != null && col == line.length() && isEmptyItem(line)) ? col : 0;
+    }
+
+    // ---- Enter / Backspace / Tab on a list item (document-aware) ----
+
+    /**
+     * Enter in a list or blockquote item, with the caret at {@code caret}: continue the item on a new line
+     * (renumbering the ordered items that follow), or — on an empty item — step out one level. Returns
+     * {@code null} when the caret's line is not an item (or only looks like one: a thematic break, a line
+     * inside a fenced block, the caret still inside the marker), so the caller inserts a plain newline.
+     */
+    public static MarkdownEdit enter(String text, int caret) {
+        int ls = lineStart(text, caret);
+        int le = lineEnd(text, caret);
+        String line = text.substring(ls, le);
+        MarkdownLine l = MarkdownLine.parse(line);
+        if ((!l.isListItem() && l.quote().isEmpty())
+                || caret - ls < l.prefixLength()
+                || SPACED_RULE.matcher(line).matches()
+                || insideFence(text, ls)) {
+            return null;
+        }
+        if (l.isBlank()) {
+            return stepOut(text, ls, le, l);
+        }
+        // Text moved to the new item starts at its first character, not at the blank that preceded it.
+        int rest = caret;
+        while (rest < le && text.charAt(rest) == ' ') {
+            rest++;
+        }
+        // A list numbered 1. 1. 1. stays that way; any other gets the next number and its tail shifted.
+        MarkdownLine next = l.isOrdered() ? nextSibling(text, le, l) : null;
+        boolean lazy = next != null && next.number() == l.number();
+        String cont = l.isOrdered() && lazy
+                ? l.indent() + l.quote() + l.marker() + (l.isTask() ? "[ ] " : "")
+                : continuation(line);
+        int at = caret + 1 + cont.length();
+        if (l.isOrdered() && !lazy) {
+            int end = runEnd(text, le, l);
+            String tail = text.substring(le, end);
+            String shifted = renumberTail(tail, l, l.number() + 2);
+            if (!shifted.equals(tail)) {
+                return new MarkdownEdit(caret, end, "\n" + cont + text.substring(rest, le) + shifted, at, at);
+            }
+        }
+        return new MarkdownEdit(caret, rest, "\n" + cont, at, at);
+    }
+
+    /**
+     * Backspace at the end of an empty list/quote item: step out one level, like Enter there. Returns
+     * {@code null} anywhere else (the caller does a normal Backspace).
+     */
+    public static MarkdownEdit backspace(String text, int caret) {
+        int ls = lineStart(text, caret);
+        int le = lineEnd(text, caret);
+        if (caret != le || caret == ls) {
+            return null;
+        }
+        MarkdownLine l = MarkdownLine.parse(text.substring(ls, le));
+        return (l.isListItem() || !l.quote().isEmpty()) && l.isBlank() ? stepOut(text, ls, le, l) : null;
+    }
+
+    /** An empty item one level out: a nested item moves to its parent's level, a top-level one loses its marker. */
+    private static MarkdownEdit stepOut(String text, int ls, int le, MarkdownLine l) {
+        if (l.isListItem() && !l.indent().isEmpty()) {
+            MarkdownEdit out = shift(text, ls, le, l, true);
+            if (out != null) {
+                int at = ls + firstLine(out.replacement()).length();
+                return new MarkdownEdit(out.from(), out.to(), out.replacement(), at, at);
+            }
+        }
+        String left = l.isListItem() && !l.quote().isEmpty() ? l.indent() + l.quote() : "";
+        return new MarkdownEdit(ls, le, left, ls + left.length(), ls + left.length());
+    }
+
+    /**
+     * Tab ({@code outdent} false) or Shift-Tab on a list item: nest it under the item above, or move it out
+     * to its parent's level; an ordered item is renumbered for its new level, as are the items after it.
+     * Returns {@code null} when the caret's line is not a list item, and when there is nothing to outdent, so
+     * the caller's ordinary Tab runs; an item that cannot be nested any deeper is an edit that changes
+     * nothing (Tab is still consumed: spaces in the middle of the item are never what was meant).
+     */
+    public static MarkdownEdit indentItem(String text, int caret, boolean outdent) {
+        int ls = lineStart(text, caret);
+        int le = lineEnd(text, caret);
+        String line = text.substring(ls, le);
+        MarkdownLine l = MarkdownLine.parse(line);
+        if (!l.isListItem() || SPACED_RULE.matcher(line).matches() || insideFence(text, ls)) {
+            return null;
+        }
+        if (outdent && l.indent().isEmpty()) {
+            return null;
+        }
+        MarkdownEdit e = shift(text, ls, le, l, outdent);
+        if (e == null) {
+            return new MarkdownEdit(caret, caret, "", caret, caret);
+        }
+        int col = LineEdits.mapColumn(caret - ls, line, firstLine(e.replacement()));
+        return new MarkdownEdit(e.from(), e.to(), e.replacement(), ls + col, ls + col);
+    }
+
+    private static String firstLine(String s) {
+        int nl = s.indexOf('\n');
+        return nl < 0 ? s : s.substring(0, nl);
+    }
+
+    /** Moves the item on {@code [ls, le)} one level in or out; null when there is no level to move to. */
+    private static MarkdownEdit shift(String text, int ls, int le, MarkdownLine l, boolean outdent) {
+        int width = l.indent().length();
+        // Walk up: the nearest item that is not deeper than this one (indent), or shallower (outdent).
+        MarkdownLine anchor = null;
+        int at = ls;
+        while (at > 0) {
+            int prevStart = lineStart(text, at - 1);
+            String prev = text.substring(prevStart, at - 1);
+            at = prevStart;
+            if (prev.isBlank()) {
+                continue; // a loose list: blank lines between its items
+            }
+            MarkdownLine p = MarkdownLine.parse(prev);
+            if (!p.quote().equals(l.quote())) {
+                break;
+            }
+            if (!p.isListItem()) {
+                if (p.indent().isEmpty()) {
+                    break; // a paragraph at the margin ends the list above
+                }
+                continue; // a continuation line of some item
+            }
+            int w = p.indent().length();
+            if (outdent ? w < width : w <= width) {
+                anchor = p;
+                break;
+            }
+        }
+        String indent;
+        long number;
+        if (outdent) {
+            indent = anchor == null ? "" : anchor.indent();
+            number = anchor != null && anchor.isOrdered() && anchor.markerKind() == l.markerKind()
+                    ? anchor.number() + 1
+                    : 1;
+        } else {
+            if (anchor == null || anchor.indent().length() < width) {
+                return null; // first item of its list, or already the first child of the item above
+            }
+            indent = anchor.indent() + " ".repeat(anchor.marker().length());
+            number = 1;
+            long sibling = lastChildNumber(text, ls, indent.length(), l);
+            if (sibling > 0) {
+                number = sibling + 1;
+            }
+        }
+        MarkdownLine moved = l.withIndent(indent);
+        if (l.isOrdered()) {
+            moved = moved.withMarker(l.markerNumbered(number));
+        }
+        // The items after it: those at its new level carry on from it, those at its old level close the gap.
+        String tail = text.substring(le, runEnd(text, le, l.withIndent(outdent ? indent : l.indent())));
+        int end = le + tail.length();
+        if (!tail.isEmpty()) {
+            long oldLevelNext = outdent ? 1 : (anchor != null && anchor.isOrdered() ? anchor.number() + 1 : l.number());
+            tail = renumberTail(tail, moved, l.isOrdered() ? number + 1 : -1);
+            tail = renumberTail(tail, l, l.isOrdered() && (outdent || anchor.isOrdered()) ? oldLevelNext : -1);
+        }
+        return new MarkdownEdit(ls, end, moved.text() + tail, ls, ls);
+    }
+
+    /**
+     * Numbers the ordered list around {@code offset} in sequence again, from the smallest number it holds —
+     * after a line was moved up or down inside it. Returns {@code null} when the offset's line is not an
+     * ordered item, the list is numbered lazily (every item the same number) or is already in order; the
+     * edit's caret is {@code offset} on its text.
+     */
+    public static MarkdownEdit renumber(String text, int offset) {
+        int ls = lineStart(text, offset);
+        int le = lineEnd(text, offset);
+        String line = text.substring(ls, le);
+        MarkdownLine l = MarkdownLine.parse(line);
+        if (!l.isOrdered() || insideFence(text, ls)) {
+            return null;
+        }
+        // Up to the first item of the run: siblings at this level, with their deeper lines in between.
+        int first = ls;
+        int at = ls;
+        while (at > 0) {
+            int prevStart = lineStart(text, at - 1);
+            String prev = text.substring(prevStart, at - 1);
+            MarkdownLine p = MarkdownLine.parse(prev);
+            int w = p.indent().length();
+            if (prev.isBlank() || w < l.indent().length() || !sameQuote(p, l)) {
+                break;
+            }
+            at = prevStart;
+            if (w == l.indent().length()) {
+                if (!p.isOrdered() || p.markerKind() != l.markerKind()) {
+                    break;
+                }
+                first = prevStart;
+            }
+        }
+        int firstEnd = lineEnd(text, first);
+        MarkdownLine head = MarkdownLine.parse(text.substring(first, firstEnd));
+        int end = runEnd(text, firstEnd, head);
+        long min = head.number();
+        boolean lazy = true;
+        for (String s : text.substring(firstEnd, end).split("\n", -1)) {
+            MarkdownLine n = MarkdownLine.parse(s);
+            if (n.isOrdered() && n.indent().length() == head.indent().length()) {
+                lazy &= n.number() == head.number();
+                min = Math.min(min, n.number());
+            }
+        }
+        String before = text.substring(first, end);
+        String after = head.withMarker(head.markerNumbered(min)).text()
+                + renumberTail(text.substring(firstEnd, end), head, min + 1);
+        if (lazy || after.equals(before)) {
+            return null;
+        }
+        // The caret's line may have changed width in front of it and in its own marker.
+        int lineIndex =
+                (int) text.substring(first, ls).chars().filter(c -> c == '\n').count();
+        String[] lines = after.split("\n", -1);
+        int newStart = first;
+        for (int i = 0; i < lineIndex; i++) {
+            newStart += lines[i].length() + 1;
+        }
+        int caret = newStart + LineEdits.mapColumn(offset - ls, line, lines[lineIndex]);
+        return new MarkdownEdit(first, end, after, caret, caret);
+    }
+
+    /** The number of the last ordered item directly above {@code ls} at exactly {@code width} columns; 0 if none. */
+    private static long lastChildNumber(String text, int ls, int width, MarkdownLine l) {
+        int at = ls;
+        while (at > 0) {
+            int prevStart = lineStart(text, at - 1);
+            String prev = text.substring(prevStart, at - 1);
+            at = prevStart;
+            if (prev.isBlank()) {
+                continue;
+            }
+            MarkdownLine p = MarkdownLine.parse(prev);
+            int w = p.indent().length();
+            if (!p.isListItem()) {
+                if (w == 0) {
+                    return 0;
+                }
+                continue;
+            }
+            if (w < width) {
+                return 0;
+            }
+            if (w == width) {
+                return p.isOrdered() && p.markerKind() == l.markerKind() ? p.number() : 0;
+            }
+        }
+        return 0;
+    }
+
+    /** The next item after offset {@code le} at the level of {@code l}, or null. */
+    private static MarkdownLine nextSibling(String text, int le, MarkdownLine l) {
+        int at = le;
+        while (at < text.length()) {
+            int end = lineEnd(text, at + 1);
+            String line = text.substring(at + 1, end);
+            at = end;
+            if (line.isBlank()) {
+                return null;
+            }
+            MarkdownLine n = MarkdownLine.parse(line);
+            int w = n.indent().length();
+            if (w > l.indent().length()) {
+                continue;
+            }
+            return w == l.indent().length() && n.isOrdered() && n.markerKind() == l.markerKind() && sameQuote(n, l)
+                    ? n
+                    : null;
+        }
+        return null;
+    }
+
+    private static boolean sameQuote(MarkdownLine a, MarkdownLine b) {
+        return a.quote().strip().equals(b.quote().strip());
+    }
+
+    /** End of the run of lines after {@code le} that belong to the list of {@code l} (up to a blank line). */
+    private static int runEnd(String text, int le, MarkdownLine l) {
+        int at = le;
+        while (at < text.length()) {
+            int end = lineEnd(text, at + 1);
+            String line = text.substring(at + 1, end);
+            if (line.isBlank()) {
+                break;
+            }
+            MarkdownLine n = MarkdownLine.parse(line);
+            if (n.indent().length() < l.indent().length() || !sameQuote(n, l)) {
+                break;
+            }
+            if (n.indent().length() == l.indent().length() && !n.isListItem()) {
+                break;
+            }
+            at = end;
+        }
+        return at;
+    }
+
+    /**
+     * {@code tail} (starts with a newline, or is empty) with the ordered siblings of {@code level} numbered
+     * from {@code next}; deeper lines are left alone and the first shallower one ends the run. A negative
+     * {@code next} changes nothing.
+     */
+    private static String renumberTail(String tail, MarkdownLine level, long next) {
+        if (next < 0 || tail.isEmpty()) {
+            return tail;
+        }
+        String[] lines = tail.split("\n", -1);
+        int width = level.indent().length();
+        for (int i = 1; i < lines.length; i++) {
+            MarkdownLine n = MarkdownLine.parse(lines[i]);
+            int w = n.indent().length();
+            if (w > width) {
+                continue;
+            }
+            if (w < width || !n.isOrdered() || n.markerKind() != level.markerKind()) {
+                break;
+            }
+            lines[i] = n.withMarker(n.markerNumbered(next++)).text();
+        }
+        return String.join("\n", lines);
+    }
+
+    private static int lineStart(String text, int offset) {
+        int nl = text.lastIndexOf('\n', offset - 1);
+        return nl < 0 ? 0 : nl + 1;
+    }
+
+    private static int lineEnd(String text, int offset) {
+        int nl = text.indexOf('\n', offset);
+        return nl < 0 ? text.length() : nl;
     }
 }

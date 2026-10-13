@@ -478,6 +478,13 @@ class EditorInteractionFxTest {
             assertTrue(titles.contains("Maven: Package"), titles.toString());
             assertTrue(titles.contains("Plugin: Shout"));
             assertTrue(titles.contains(tr("editmenu.markdown")));
+            // Under "Markdown ▸ Table" an item is "Add Row", not "Table: Add Row" — and every action the
+            // format bar has is here too.
+            assertTrue(titles.contains("Add Row") && titles.contains("Bold"), titles.toString());
+            assertTrue(titles.stream().noneMatch(t -> t.startsWith("Table: ") || t.startsWith("Markdown: ")));
+            assertTrue(titles.containsAll(List.of("Bulleted List", "Task List", "Promote Heading", "Reformat")));
+            assertFalse(EditorFx.menuItem(menu.getItems(), "Add Row").isDisable(), "the caret is in a table");
+            assertTrue(EditorFx.menuItem(menu.getItems(), "Open Link").isDisable(), "no link under the caret");
             assertTrue(titles.contains(tr("editmenu.addBookmark")));
             assertTrue(titles.contains(tr("editmenu.addNote")));
             assertTrue(
@@ -489,19 +496,19 @@ class EditorInteractionFxTest {
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.cut")).isDisable());
             assertTrue(EditorFx.menuItem(menu.getItems(), tr("editmenu.copy")).isDisable());
 
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableAlignRight"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableAlignRight")))
                     .fire();
             assertTrue(area.getText().lines().skip(1).findFirst().orElseThrow().contains("-:"), area.getText());
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableAlignLeft"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableAlignLeft")))
                     .fire();
             assertTrue(area.getText().lines().skip(1).findFirst().orElseThrow().contains(":-"), area.getText());
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableAlignCenter"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableAlignCenter")))
                     .fire();
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableExportExcel"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableExportExcel")))
                     .fire();
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableExportCsv"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableExportCsv")))
                     .fire();
-            EditorFx.menuItem(menu.getItems(), tr("command.markdown.tableExportOds"))
+            EditorFx.menuItem(menu.getItems(), MarkdownMenus.label(tr("command.markdown.tableExportOds")))
                     .fire();
             EditorFx.menuItem(menu.getItems(), tr("editmenu.addBookmark")).fire();
             EditorFx.menuItem(menu.getItems(), tr("editmenu.addNote")).fire();
@@ -674,7 +681,11 @@ class EditorInteractionFxTest {
             Stage mdStage = EditorFx.show(markdown, 600, 300);
             markdown.setMarkdownLintEnabled(true);
             markdown.getArea().fireEvent(mouseAt(markdown, 3, false, false));
-            Tooltip mdTip = EditorFx.field(markdown, "mdLintTooltip");
+            Tooltip mdTip = javafx.stage.Window.getWindows().stream()
+                    .filter(w -> w instanceof Tooltip t && t.getText().startsWith("MD018"))
+                    .map(w -> (Tooltip) w)
+                    .findFirst()
+                    .orElse(null);
             assertNotNull(mdTip);
             assertTrue(mdTip.isShowing());
             assertEquals("MD018: No space after #", mdTip.getText());

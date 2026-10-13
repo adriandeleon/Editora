@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -43,7 +42,9 @@ class WordWrapToggleFxTest {
         Files.writeString(file, content);
         FxWindowFixture fx = FxWindowFixture.create();
         try {
-            assertFalse(fx.shared.getSettings().isWordWrap(), "word wrap defaults to off");
+            // A plain-text file wraps by default; this is about switching wrap on over lines already laid
+            // out unwrapped, so it starts with the prose preference off.
+            fx.shared.getSettings().setWordWrapProse(false);
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     FxTestSupport.field(fx.controller, "fileWorkflows"),
                     "openPath",

@@ -47,13 +47,9 @@ import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.logviewer.LogLevel;
-import com.editora.markdown.MarkdownEdit;
-import com.editora.markdown.MarkdownHeading;
 import com.editora.markdown.MarkdownInline;
-import com.editora.markdown.MarkdownLines;
 import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
-import com.editora.markdown.MarkdownToc;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
@@ -336,8 +332,10 @@ public class EditorBuffer implements TabContent {
     private MarkwhenView markwhenView = MarkwhenView.TIMELINE;
     /** Fired (FX thread) when the Markwhen view flips, so the controller persists it. */
     private Runnable onMarkwhenViewChanged = () -> {};
-    /** Re-entrancy guard for the SPLIT-mode editor↔preview scroll sync. */
-    private boolean syncingScroll;
+    /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
+    private PreviewScrollSync scrollSync;
+    /** The rendered Markdown document shown in {@link #previewPane} (lazy; see {@link MarkdownPreview}). */
+    private MarkdownPreview markdownPreview;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
@@ -360,6 +358,10 @@ public class EditorBuffer implements TabContent {
     private Runnable previewThemeToggle = () -> {};
     /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
     private double previewFontScale = 1.0;
+    /** Where the Split view's divider sits (the editor's share), kept across mode switches and per file. */
+    private double previewDivider = 0.5;
+    /** Told when the zoom or the divider changed by the user's hand (the controller persists them). */
+    private Runnable onPreviewLayoutChanged = () -> {};
     /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
     private static final double BASE_PREVIEW_FONT = 15;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
@@ -511,27 +513,30 @@ public class EditorBuffer implements TabContent {
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     private java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
-    private Runnable insertTableHandler;
-
     private Runnable insertTypstTableHandler;
+
     private Runnable typstImagePasteHandler;
     /** Preview right-click menu actions (injected from the controller's export/print commands). */
-    private Runnable previewExportPdfHandler = () -> {};
+    Runnable previewExportPdfHandler = () -> {};
     /** Runs the {@code pom.toggleView} command (summary ⇄ XML tree) from the preview's right-click menu. */
     private Runnable pomViewToggleHandler = () -> {};
     /** The menu item for that switch — relabelled per show, and hidden for a non-pom tree preview. */
     private MenuItem pomViewItem;
 
-    private Runnable previewExportPngHandler = () -> {};
-    private Runnable previewExportSvgHandler = () -> {};
+    Runnable previewExportPngHandler = () -> {};
+    Runnable previewExportSvgHandler = () -> {};
 
-    private Runnable previewPrintHandler = () -> {};
-    private Runnable previewExportDocxHandler = () -> {};
-    private Runnable previewExportOdtHandler = () -> {};
+    Runnable previewPrintHandler = () -> {};
+    Runnable previewExportDocxHandler = () -> {};
+    Runnable previewExportOdtHandler = () -> {};
     /** Markwhen preview "Export to JSON" action (controller command); null = no-op. */
-    private Runnable previewExportJsonHandler = () -> {};
+    Runnable previewExportJsonHandler = () -> {};
 
     private javafx.scene.control.ContextMenu previewContextMenu;
+    /** The link destination / code block under the pointer when the preview menu was last asked for. */
+    String previewMenuLink;
+
+    String previewMenuCode;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
@@ -669,11 +674,9 @@ public class EditorBuffer implements TabContent {
             markdownLintValidator;
 
     private boolean markdownLintEnabled;
-    private javafx.scene.control.Tooltip mdLintTooltip;
-    private String mdLintTooltipText;
     /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
     private final ImageDrop imageDrop =
-            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::caretToDrop);
+            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -1106,6 +1109,7 @@ public class EditorBuffer implements TabContent {
                 .filter(c -> !logView.adjusting())
                 .subscribe(c -> dirtyAfterEdit(
                         c.getRemoved().length() == c.getInserted().length()));
+        area.plainTextChanges().subscribe(c -> wrap.inserted(c.getInserted())); // a giant token holds wrap off
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -1123,7 +1127,7 @@ public class EditorBuffer implements TabContent {
         });
         installContextMenu(area);
         installFormatBarListeners(area);
-        installSplitScrollSync();
+        scrollSync = new PreviewScrollSync(area, () -> markdownViewMode, () -> previewPane, () -> markdownPreview);
         installOverlays();
     }
 
@@ -1142,12 +1146,12 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(
                 Duration.ofMillis(250),
                 () -> (isHtml() && htmlPreviewDirtyListener != null)
-                        || (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR),
+                        || (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR),
                 () -> {
                     if (isHtml() && htmlPreviewDirtyListener != null) {
                         htmlPreviewDirtyListener.run();
                     }
-                    if (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR) {
+                    if (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR) {
                         scheduleRenderPreview();
                     }
                 });
@@ -1194,113 +1198,23 @@ public class EditorBuffer implements TabContent {
                 () -> completionActions.maybeRequestAiCompletion(focusedArea));
     }
 
-    /**
-     * Keeps the editor and the rendered preview aligned in Markdown SPLIT mode: the pane the mouse is over
-     * drives the other, mapped by scroll <i>fraction</i> so the two track even though their content heights
-     * differ. Gating on which pane is <b>hovered</b> (the wheel target) makes the sync strictly
-     * one-directional at any moment — the mouse is over at most one pane — so it cannot oscillate (RichTextFX
-     * refines {@code estimatedScrollY} as paragraphs are measured, and a naïve bidirectional copy would feed
-     * that back, the same pitfall {@code DiffViewerPane} guards against). A {@code syncingScroll} re-entrancy
-     * flag wraps each programmatic set as a second guard. The preview→editor half is wired in
-     * {@link #previewPane()}.
-     */
-    private void installSplitScrollSync() {
-        area.estimatedScrollYProperty().addListener((o, ov, nv) -> {
-            if (markdownViewMode == MarkdownViewMode.SPLIT
-                    && !syncingScroll
-                    && previewPane != null
-                    && !previewPane.isHover()) {
-                syncPreviewToEditorScroll();
-            }
-        });
-    }
-
-    /** Preview content height last seen by the scroll-sync listener; see the listener in {@link #previewPane()}. */
-    private double previewContentHeight = -1;
-    /** When the preview's content height last changed, so layout-driven vvalue moves can be ignored. */
-    private long previewLayoutChangedAt;
-    /** How long after a preview content-height change to keep treating vvalue moves as layout, not scrolling. */
-    private static final long PREVIEW_SETTLE_NANOS = 250_000_000L;
+    /** A Markdown document up to this long keeps its live preview even in large-file mode (see below). */
+    static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
 
     /**
-     * Whether the preview's content height moved enough to call this vvalue change layout-driven. Pure.
-     * The epsilon keeps sub-pixel layout noise from being mistaken for a real resize.
+     * Whether an edit refreshes the preview. Large-file mode stops it — except for a Markdown document that
+     * is "large" only for one very long line (a pasted {@code data:} image passes the 64K-character line
+     * limit at once): its preview used to render once and then silently stay as it was.
      */
-    static boolean previewHeightChanged(double lastHeight, double newHeight) {
-        return Math.abs(newHeight - lastHeight) > 0.5;
-    }
-
-    /**
-     * Whether we're still inside the settle window after the preview's content last resized, i.e. a vvalue
-     * change should be read as the pane re-anchoring rather than as the user scrolling. Pure.
-     *
-     * <p>A window rather than a single-event check because a progressive render (typst pages, diagrams,
-     * images) resizes over many pulses, and the vvalue changes it provokes don't all land on the same pulse
-     * as the resize itself.
-     */
-    static boolean previewSettling(long nanosSinceResize, long settleNanos) {
-        return nanosSinceResize < settleNanos;
-    }
-
-    /** The rendered preview's current content height, or -1 when there's nothing to measure. */
-    private double previewContentHeight() {
-        javafx.scene.Node c = previewPane == null ? null : previewPane.getContent();
-        return c == null ? -1 : c.getLayoutBounds().getHeight();
-    }
-
-    /** editor → preview: copy the editor's scroll fraction onto the preview's vvalue. */
-    private void syncPreviewToEditorScroll() {
-        if (previewPane == null) {
-            return;
-        }
-        double scrollable = editorScrollableHeight();
-        if (scrollable <= 1) {
-            return;
-        }
-        Double y = area.estimatedScrollYProperty().getValue();
-        double frac = clamp01((y == null ? 0 : y) / scrollable);
-        double vmin = previewPane.getVmin();
-        double vmax = previewPane.getVmax();
-        syncingScroll = true;
-        try {
-            previewPane.setVvalue(vmin + frac * (vmax - vmin));
-        } finally {
-            syncingScroll = false;
-        }
-    }
-
-    /** preview → editor: copy the preview's scroll fraction onto the editor's estimated scroll-Y. */
-    private void syncEditorToPreviewScroll() {
-        if (previewPane == null) {
-            return;
-        }
-        double scrollable = editorScrollableHeight();
-        if (scrollable <= 1) {
-            return;
-        }
-        double range = previewPane.getVmax() - previewPane.getVmin();
-        double frac = range > 0 ? clamp01((previewPane.getVvalue() - previewPane.getVmin()) / range) : 0;
-        syncingScroll = true;
-        try {
-            area.estimatedScrollYProperty().setValue(frac * scrollable);
-        } finally {
-            syncingScroll = false;
-        }
-    }
-
-    private double editorScrollableHeight() {
-        Double total = area.totalHeightEstimateProperty().getValue();
-        return (total == null ? 0 : total) - area.getHeight();
-    }
-
-    private static double clamp01(double v) {
-        return v < 0 ? 0 : (v > 1 ? 1 : v);
+    private boolean previewLive() {
+        return !largeFile || (isMarkdown() && area.getLength() <= PREVIEW_LIVE_MAX_CHARS);
     }
 
     /** Show/reposition the Markdown format bar + the AI selection-actions bar as the selection or scroll
      *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
+        MarkdownFormatBar.trackMouse(a, this::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
@@ -1506,45 +1420,15 @@ public class EditorBuffer implements TabContent {
                 && isEditable()
                 && !hugeFile
                 && markdownViewMode != MarkdownViewMode.PREVIEW
-                && a.getSelection().getLength() > 0;
+                && MarkdownFormatBar.wanted(a);
         if (!show) {
-            hideFormatBar();
-            return;
-        }
-        int selStart = a.getSelection().getStart();
-        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
-                .orElse(null);
-        if (screen == null) {
-            hideFormatBar();
-            return;
-        }
-        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
-        Bounds local = targetPane.screenToLocal(screen);
-        if (local == null) {
             hideFormatBar();
             return;
         }
         if (formatBar == null) {
             formatBar = new MarkdownFormatBar(this);
         }
-        javafx.scene.Node bar = formatBar.node();
-        if (bar.getParent() != targetPane) {
-            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
-                ap.getChildren().remove(bar);
-            }
-            targetPane.getChildren().add(bar);
-        }
-        bar.setVisible(true);
-        bar.applyCss();
-        double w = bar.prefWidth(-1);
-        double h = bar.prefHeight(-1);
-        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
-        double y = local.getMinY() - h - 4;
-        if (y < 0) {
-            y = local.getMaxY() + 4; // no room above the selection — place below it
-        }
-        bar.resizeRelocate(x, y, w, h);
-        bar.toFront();
+        formatBar.showFor(a, (a == area2 && root2 != null) ? root2 : root);
     }
 
     /** Injects the Explain/Rewrite callbacks (wired once from the controller, like {@link #setOpenUrlHandler}) —
@@ -1655,16 +1539,6 @@ public class EditorBuffer implements TabContent {
         return (isMarkdown() || isTypst()) && isEditable();
     }
 
-    private void applyMarkdownEdit(MarkdownEdit edit) {
-        if (edit == null) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        a.replaceText(edit.from(), edit.to(), edit.replacement());
-        a.selectRange(edit.selStart(), edit.selEnd());
-        a.requestFocus();
-    }
-
     /**
      * True when this buffer's language has comment syntax and the buffer is editable — i.e. the
      * "Comment / Uncomment" action is offered (right-click menu) and would do something. Plaintext has
@@ -1700,35 +1574,101 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Toggles an inline marker ({@code **}/{@code *}/{@code ~~}/{@code `}) around the selection. */
+    // ---- Markdown / Typst markup commands: see MarkdownEditing ----
+
+    private final MarkdownEditing markdownEditing = new MarkdownEditing(this);
+
+    /** The markup editing commands of this buffer (inline markers, headings, lists, tables, TOC). */
+    public MarkdownEditing markdown() {
+        return markdownEditing;
+    }
+
     public void formatInline(String marker) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownInline.toggle(a.getText(), sel.getStart(), sel.getEnd(), marker));
+        markdownEditing.formatInline(marker);
     }
 
-    /** Wraps the selection as a link with {@code url} — Markdown {@code [sel](url)} or Typst
-     *  {@code #link("url")[sel]}; a blank {@code url} leaves the caret in the empty destination slot. */
     public void formatLink(String url) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.link(a.getText(), sel.getStart(), sel.getEnd(), url)
-                        : MarkdownInline.link(a.getText(), sel.getStart(), sel.getEnd(), url));
+        markdownEditing.formatLink(url);
     }
 
-    /** Link button / make-link command: use a clipboard URL when present, else an empty link. */
     public void formatLinkFromClipboard() {
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
-        String url = clip != null && clip.strip().matches("(?i)(https?|ftp|mailto):\\S+") ? clip.strip() : "";
-        formatLink(url);
+        markdownEditing.formatLinkFromClipboard();
+    }
+
+    public boolean trySmartLinkPaste() {
+        return markdownEditing.trySmartLinkPaste();
+    }
+
+    public void formatHeading(int delta) {
+        markdownEditing.formatHeading(delta);
+    }
+
+    public void setHeadingLevel(int level) {
+        markdownEditing.setHeadingLevel(level);
+    }
+
+    public void formatBulletList() {
+        markdownEditing.formatBulletList();
+    }
+
+    public void formatTaskList() {
+        markdownEditing.formatTaskList();
+    }
+
+    public boolean reflowTable() {
+        return markdownEditing.reflowTable();
+    }
+
+    public void insertTable(int rowsTotal, int cols) {
+        markdownEditing.insertTable(rowsTotal, cols);
+    }
+
+    public void insertTableInteractive() {
+        markdownEditing.insertTableInteractive();
+    }
+
+    public void setInsertTableHandler(Runnable handler) {
+        markdownEditing.setInsertTableHandler(handler);
+    }
+
+    public boolean tableAddRow() {
+        return markdownEditing.tableAddRow();
+    }
+
+    public boolean tableDeleteRow() {
+        return markdownEditing.tableDeleteRow();
+    }
+
+    public boolean tableAddColumn() {
+        return markdownEditing.tableAddColumn();
+    }
+
+    public boolean tableDeleteColumn() {
+        return markdownEditing.tableDeleteColumn();
+    }
+
+    public boolean tableSetAlignment(MarkdownTable.Align align) {
+        return markdownEditing.tableSetAlignment(align);
+    }
+
+    public boolean tableFromCsv() {
+        return markdownEditing.tableFromCsv();
+    }
+
+    public boolean tableToCsv() {
+        return markdownEditing.tableToCsv();
+    }
+
+    public void setTableFileExporter(java.util.function.BiConsumer<String, String> exporter) {
+        markdownEditing.setTableFileExporter(exporter);
+    }
+
+    public boolean exportTableFile(String format) {
+        return markdownEditing.exportTableFile(format);
+    }
+
+    public boolean insertOrUpdateToc() {
+        return markdownEditing.insertOrUpdateToc();
     }
 
     /** Inserts {@code text} at the focused area's caret (replacing any selection), then focuses it. */
@@ -1736,125 +1676,6 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         a.replaceSelection(text);
         a.requestFocus();
-    }
-
-    /** Smart paste: if a URL is on the clipboard and a single-line selection is active, wrap it as a link
-     *  ({@code [selection](url)}) and return true; otherwise false so the caller does a normal paste. */
-    public boolean trySmartLinkPaste() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        if (sel.getLength() == 0 || a.getText(sel.getStart(), sel.getEnd()).contains("\n")) {
-            return false;
-        }
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().getString();
-        if (clip == null || !clip.strip().matches("(?i)(https?|ftp|mailto):\\S+")) {
-            return false;
-        }
-        formatLink(clip.strip());
-        return true;
-    }
-
-    /** Promote ({@code delta<0}) / demote ({@code delta>0}) the heading level of the selected line(s)
-     *  ({@code #} for Markdown, {@code =} for Typst). */
-    public void formatHeading(int delta) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.heading(a.getText(), sel.getStart(), sel.getEnd(), delta)
-                        : MarkdownHeading.apply(a.getText(), sel.getStart(), sel.getEnd(), delta));
-    }
-
-    /** Sets the selected line(s) to an absolute heading level (0 = Normal; {@code #} for Markdown,
-     *  {@code =} for Typst). */
-    public void setHeadingLevel(int level) {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(
-                isTypst()
-                        ? TypstMarkup.setHeadingLevel(a.getText(), sel.getStart(), sel.getEnd(), level)
-                        : MarkdownHeading.setLevel(a.getText(), sel.getStart(), sel.getEnd(), level));
-    }
-
-    /** Toggles a {@code "- "} bullet on the selected line(s) (valid in both Markdown and Typst). */
-    public void formatBulletList() {
-        if (!canFormatMarkup()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownLines.toggleBullet(a.getText(), sel.getStart(), sel.getEnd()));
-    }
-
-    /** Toggles a GFM task-list checkbox ({@code "- [ ] "}) on the selected line(s). */
-    public void formatTaskList() {
-        if (!canFormatMarkdown()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        var sel = a.getSelection();
-        applyMarkdownEdit(MarkdownLines.toggleTask(a.getText(), sel.getStart(), sel.getEnd()));
-    }
-
-    /** Reflows the GFM table around the caret; returns false when the caret is not on a table. */
-    public boolean reflowTable() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String block = a.getText().substring(b[0], b[1]);
-        String reflowed = MarkdownTable.reflow(block);
-        if (!reflowed.equals(block)) {
-            a.replaceText(b[0], b[1], reflowed);
-        }
-        a.requestFocus();
-        return true;
-    }
-
-    /** Inserts a fresh, aligned GFM table ({@code rowsTotal} rows incl. header × {@code cols}) at the caret. */
-    public void insertTable(int rowsTotal, int cols) {
-        if (!canFormatMarkdown()) {
-            return;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        MarkdownTable.Nav g = MarkdownTable.generate(rowsTotal, cols);
-        int caret = a.getCaretPosition();
-        // Put the table on its own line(s): add a leading newline if not already at column 0, and a trailing one.
-        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-        String prefix = needLeading ? "\n" : "";
-        String text = prefix + g.block() + "\n";
-        a.replaceText(caret, caret, text);
-        int pos = caret
-                + prefix.length()
-                + Math.max(0, Math.min(g.caret(), g.block().length()));
-        a.moveTo(pos);
-        a.requestFollowCaret();
-        a.requestFocus();
-    }
-
-    /** Shows the interactive table-size picker (wired by the controller); a no-op until injected. */
-    public void insertTableInteractive() {
-        if (canFormatMarkdown() && insertTableHandler != null) {
-            insertTableHandler.run();
-        }
-    }
-
-    /** Injected by the controller: opens the table-size picker, then calls {@link #insertTable}. */
-    public void setInsertTableHandler(Runnable handler) {
-        this.insertTableHandler = handler;
     }
 
     /** Opens the size picker for a Typst {@code #table} (Typst buffers only); the controller runs the picker. */
@@ -1897,170 +1718,6 @@ public class EditorBuffer implements TabContent {
             return;
         }
         insertAtCaret(TypstMarkup.OUTLINE);
-    }
-
-    /** Adds a row below the caret's row in the GFM table; false when the caret is not on a table. */
-    public boolean tableAddRow() {
-        return applyTableNav(MarkdownTable::addRow);
-    }
-
-    /** Deletes the caret's data row; false when not on a table (or the caret is on the header/delimiter). */
-    public boolean tableDeleteRow() {
-        return applyTableNav(MarkdownTable::deleteRow);
-    }
-
-    /** Adds a column to the right of the caret's column; false when the caret is not on a table. */
-    public boolean tableAddColumn() {
-        return applyTableNav(MarkdownTable::addColumn);
-    }
-
-    /** Deletes the caret's column; false when not on a table (or only one column remains). */
-    public boolean tableDeleteColumn() {
-        return applyTableNav(MarkdownTable::deleteColumn);
-    }
-
-    /** Sets the caret column's alignment; false when the caret is not on a table. */
-    public boolean tableSetAlignment(MarkdownTable.Align align) {
-        return applyTableNav((block, caret) -> MarkdownTable.setAlignment(block, caret, align));
-    }
-
-    private boolean applyTableNav(java.util.function.BiFunction<String, Integer, MarkdownTable.Nav> op) {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int caret = a.getCaretPosition();
-        int[] b = MarkdownTable.blockBounds(a.getText(), caret);
-        if (b == null) {
-            return false;
-        }
-        MarkdownTable.Nav nav = op.apply(a.getText().substring(b[0], b[1]), caret - b[0]);
-        if (nav == null) {
-            return false;
-        }
-        a.replaceText(b[0], b[1], nav.block());
-        a.moveTo(b[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
-    }
-
-    /**
-     * Converts CSV into a Markdown table: the non-empty selection is treated as CSV and replaced in place,
-     * else the clipboard CSV is inserted as a table at the caret. Returns false when there's nothing
-     * parseable (no selection + empty/non-CSV clipboard, or a non-Markdown buffer).
-     */
-    public boolean tableFromCsv() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String sel = a.getSelectedText();
-        boolean fromSelection = sel != null && !sel.isBlank();
-        String csv = fromSelection
-                ? sel
-                : LineEndings.toLf(Clipboard.getSystemClipboard().getString());
-        if (csv == null || csv.isBlank()) {
-            return false;
-        }
-        String table = MarkdownTable.fromCsv(csv);
-        if (table == null) {
-            return false;
-        }
-        if (fromSelection) {
-            var s = a.getSelection();
-            a.replaceText(s.getStart(), s.getEnd(), table);
-            a.moveTo(s.getStart() + table.length());
-        } else {
-            int caret = a.getCaretPosition();
-            boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-            String text = (needLeading ? "\n" : "") + table + "\n";
-            a.replaceText(caret, caret, text);
-            a.moveTo(caret + text.length());
-        }
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
-    }
-
-    /** Copies the caret's Markdown table to the system clipboard as CSV; false when the caret isn't on a table. */
-    public boolean tableToCsv() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
-        if (csv == null) {
-            return false;
-        }
-        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(csv);
-        Clipboard.getSystemClipboard().setContent(content);
-        return true;
-    }
-
-    /** Injected file-export for the caret's Markdown table: {@code (csvText, format)}, {@code format} ∈
-     *  {@code csv}/{@code xlsx}/{@code ods}. The editor renders the table to CSV; the controller owns the
-     *  FileChooser + writers ({@code editor} can't depend on {@code ui}/{@code office}). */
-    private java.util.function.BiConsumer<String, String> tableFileExporter;
-
-    public void setTableFileExporter(java.util.function.BiConsumer<String, String> exporter) {
-        this.tableFileExporter = exporter;
-    }
-
-    /** Exports the caret's Markdown table to a file via the injected exporter ({@code format} =
-     *  {@code csv}/{@code xlsx}/{@code ods}); false when the caret isn't on a table or no exporter is wired. */
-    public boolean exportTableFile(String format) {
-        if (!canFormatMarkdown() || tableFileExporter == null) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
-        if (b == null) {
-            return false;
-        }
-        String csv = MarkdownTable.toCsv(a.getText().substring(b[0], b[1]));
-        if (csv == null) {
-            return false;
-        }
-        tableFileExporter.accept(csv, format);
-        return true;
-    }
-
-    /**
-     * Inserts a Markdown table of contents (a nested list of heading links) wrapped in {@code <!-- toc -->}
-     * markers at the caret, or — when the document already has such a marker block — regenerates it in place.
-     * Returns false when not a Markdown buffer or the document has no headings.
-     */
-    public boolean insertOrUpdateToc() {
-        if (!canFormatMarkdown()) {
-            return false;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String doc = a.getText();
-        String updated = MarkdownToc.updated(doc, 1, 6);
-        if (updated != null) {
-            replaceVisibleText(a, updated); // undoable; records only the TOC block that changed
-            a.requestFocus();
-            return true;
-        }
-        String body = MarkdownToc.build(doc, 1, 6);
-        if (body.isEmpty()) {
-            return false; // no headings to list
-        }
-        String block = MarkdownToc.wrapped(body);
-        int caret = a.getCaretPosition();
-        boolean needLeading = caret > 0 && a.getText().charAt(caret - 1) != '\n';
-        String text = (needLeading ? "\n" : "") + block + "\n";
-        a.replaceText(caret, caret, text);
-        a.moveTo(caret + text.length());
-        a.requestFollowCaret();
-        a.requestFocus();
-        return true;
     }
 
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
@@ -2223,7 +1880,7 @@ public class EditorBuffer implements TabContent {
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
             // top level above — they are the actions you reach for without reading the menu.
             if (canFormatMarkdown()) {
-                items.add(markupMenu(tr("editmenu.markdown"), markdownMenuItems()));
+                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this)));
                 items.add(new SeparatorMenuItem());
             } else if (isTypst() && isEditable()) {
                 items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
@@ -2375,29 +2032,6 @@ public class EditorBuffer implements TabContent {
         return item;
     }
 
-    /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
-    private List<MenuItem> markdownMenuItems() {
-        MenuItem bold = new MenuItem(tr("command.markdown.bold"));
-        bold.setGraphic(MenuIcons.bold());
-        bold.setOnAction(e -> formatInline("**"));
-        MenuItem italic = new MenuItem(tr("command.markdown.italic"));
-        italic.setGraphic(MenuIcons.italic());
-        italic.setOnAction(e -> formatInline("*"));
-        MenuItem strike = new MenuItem(tr("command.markdown.strikethrough"));
-        strike.setGraphic(MenuIcons.strikethrough());
-        strike.setOnAction(e -> formatInline("~~"));
-        MenuItem code = new MenuItem(tr("command.markdown.code"));
-        code.setGraphic(MenuIcons.code());
-        code.setOnAction(e -> formatInline("`"));
-        MenuItem link = new MenuItem(tr("command.markdown.link"));
-        link.setGraphic(MenuIcons.link());
-        link.setOnAction(e -> formatLinkFromClipboard());
-        MenuItem toc = new MenuItem(tr("command.markdown.toc"));
-        toc.setGraphic(MenuIcons.bulletList());
-        toc.setOnAction(e -> insertOrUpdateToc());
-        return List.of(bold, italic, strike, code, link, tableMenu(), toc);
-    }
-
     /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
      *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
     private List<MenuItem> typstMenuItems() {
@@ -2430,46 +2064,6 @@ public class EditorBuffer implements TabContent {
             }
         });
         return List.of(bold, emph, raw, link, bullet, table, outline, image);
-    }
-
-    /** The "Table" submenu: insert + add/delete row & column + column alignment. */
-    private javafx.scene.control.Menu tableMenu() {
-        javafx.scene.control.Menu menu = new javafx.scene.control.Menu(tr("menu.markdown.table"));
-        menu.setGraphic(MenuIcons.table());
-        menu.getItems()
-                .addAll(
-                        tableItem("command.markdown.insertTable", MenuIcons.table(), this::insertTableInteractive),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem("command.markdown.tableAddRow", MenuIcons.add(), this::tableAddRow),
-                        tableItem("command.markdown.tableDeleteRow", MenuIcons.remove(), this::tableDeleteRow),
-                        tableItem("command.markdown.tableAddColumn", MenuIcons.add(), this::tableAddColumn),
-                        tableItem("command.markdown.tableDeleteColumn", MenuIcons.remove(), this::tableDeleteColumn),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem(
-                                "command.markdown.tableAlignLeft",
-                                MenuIcons.alignLeft(),
-                                () -> tableSetAlignment(MarkdownTable.Align.LEFT)),
-                        tableItem(
-                                "command.markdown.tableAlignCenter",
-                                MenuIcons.alignCenter(),
-                                () -> tableSetAlignment(MarkdownTable.Align.CENTER)),
-                        tableItem(
-                                "command.markdown.tableAlignRight",
-                                MenuIcons.alignRight(),
-                                () -> tableSetAlignment(MarkdownTable.Align.RIGHT)),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem("command.markdown.tableFromCsv", MenuIcons.paste(), this::tableFromCsv),
-                        tableItem("command.markdown.tableToCsv", MenuIcons.copy(), this::tableToCsv),
-                        new javafx.scene.control.SeparatorMenuItem(),
-                        tableItem(
-                                "command.markdown.tableExportCsv", MenuIcons.download(), () -> exportTableFile("csv")),
-                        tableItem(
-                                "command.markdown.tableExportExcel",
-                                MenuIcons.download(),
-                                () -> exportTableFile("xlsx")),
-                        tableItem(
-                                "command.markdown.tableExportOds", MenuIcons.download(), () -> exportTableFile("ods")));
-        return menu;
     }
 
     private static MenuItem tableItem(String key, Node icon, Runnable action) {
@@ -3667,57 +3261,9 @@ public class EditorBuffer implements TabContent {
         minimap.setLintMarks(diags);
     }
 
-    /** Shows the lint message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
-    private void installMarkdownLintHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!markdownLintEnabled
-                    || mdLintOverlay == null
-                    || mdLintOverlay.diagnostics().isEmpty()) {
-                if (mdLintTooltip != null) {
-                    mdLintTooltip.hide();
-                }
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                var hits = mdLintOverlay.at(pos.getMajor(), pos.getMinor());
-                if (hits.isEmpty()) {
-                    if (mdLintTooltip != null) {
-                        mdLintTooltip.hide();
-                    }
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (var d : hits) {
-                    if (sb.length() > 0) {
-                        sb.append('\n');
-                    }
-                    sb.append(d.code()).append(": ").append(d.message());
-                }
-                String text = sb.toString();
-                if (mdLintTooltip != null && mdLintTooltip.isShowing() && text.equals(mdLintTooltipText)) {
-                    return;
-                }
-                if (mdLintTooltip == null) {
-                    mdLintTooltip = new javafx.scene.control.Tooltip();
-                    mdLintTooltip.getStyleClass().add("mermaid-lint-tooltip");
-                    mdLintTooltip.setWrapText(true);
-                    mdLintTooltip.setMaxWidth(420);
-                }
-                mdLintTooltip.setText(text);
-                mdLintTooltipText = text;
-                mdLintTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            if (mdLintTooltip != null) {
-                mdLintTooltip.hide();
-            }
-        });
+    /** The diagnostics currently underlined in this buffer (empty while linting is off). */
+    public java.util.List<MarkdownLint.Diagnostic> markdownLintDiagnostics() {
+        return markdownLintEnabled && mdLintOverlay != null ? mdLintOverlay.diagnostics() : java.util.List.of();
     }
 
     /** Injects the handler for image files dropped onto a Markdown buffer; null disables the drop affordance. */
@@ -4366,7 +3912,7 @@ public class EditorBuffer implements TabContent {
     private void updateMarkdownLintStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
-        boolean on = markdownLintEnabled && !largeFile;
+        boolean on = markdownLintEnabled && !largeFile && !minimapShown; // the minimap carries the same marks
         if (on || mdLintStripe != null) {
             AnchorPane.setRightAnchor(mdLintStripe(), base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
             mdLintStripe.setActive(on);
@@ -4380,7 +3926,7 @@ public class EditorBuffer implements TabContent {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
-                + (markdownLintEnabled && !largeFile ? MarkdownLintStripe.WIDTH : 0d);
+                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d);
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
             todoStripe.setActive(todoEnabled && !largeFile);
@@ -5207,12 +4753,18 @@ public class EditorBuffer implements TabContent {
     public void setMarkdownViewMode(MarkdownViewMode mode) {
         MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
         boolean changed = this.markdownViewMode != target;
+        MarkdownViewMode from = this.markdownViewMode;
+        if (changed) {
+            scrollSync.leaving(from); // the view that comes on screen takes over this one's place
+        }
         this.markdownViewMode = target;
         scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
         scheduleAiActionsBar(); // same, for the AI selection-actions bar
         if (target != MarkdownViewMode.EDITOR) {
             this.split = Split.NONE; // preview supersedes any code split
             scheduleRenderPreview();
+        } else if (markdownPreview != null) {
+            markdownPreview.clear(); // nothing shows it: give its nodes back
         }
         rebuildViewHost();
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
@@ -5222,10 +4774,8 @@ public class EditorBuffer implements TabContent {
             if (target == MarkdownViewMode.PREVIEW) {
                 // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
                 Platform.runLater(previewPane()::requestFocus);
-            } else if (target == MarkdownViewMode.SPLIT) {
-                // Align the freshly-shown preview to the editor's current scroll position (metrics settle first).
-                Platform.runLater(this::syncPreviewToEditorScroll);
             }
+            scrollSync.entered(from, target); // same source line in the view that is now showing
         }
         if (changed) {
             onViewModeChanged.run();
@@ -5255,8 +4805,11 @@ public class EditorBuffer implements TabContent {
                 }
                 previewPane.requestFocus();
             });
-            // Right-click menu: Select All / Copy (rendered plain text) + Export to PDF / Print.
+            // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
             previewPane.setOnContextMenuRequested(e -> {
+                Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
+                previewMenuLink = MarkdownRenderer.property(hit, MarkdownRenderer.LINK_KEY);
+                previewMenuCode = MarkdownRenderer.property(hit, MarkdownRenderer.CODE_KEY);
                 showPreviewContextMenu(e.getScreenX(), e.getScreenY());
                 e.consume();
             });
@@ -5265,44 +4818,14 @@ public class EditorBuffer implements TabContent {
                     return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
                 }
                 if (e.getCode() == KeyCode.SPACE || e.getCode() == KeyCode.PAGE_DOWN) {
-                    scrollPreviewPage(true);
+                    scrollPreviewPage(0.9);
                     e.consume();
                 } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
-                    scrollPreviewPage(false);
+                    scrollPreviewPage(-0.9);
                     e.consume();
                 }
             });
-            // SPLIT-mode scroll sync (preview → editor); the editor → preview half is in installSplitScrollSync.
-            previewPane.vvalueProperty().addListener((o, ov, nv) -> {
-                if (syncingScroll) {
-                    return; // our own programmatic set
-                }
-                // A ScrollPane's vvalue moves for two quite different reasons: the user wheeling, and the
-                // pane re-anchoring as its content grows. isHover() can't tell them apart, and a preview
-                // that renders progressively (typst pages, Mermaid diagrams, images resolving) changes
-                // height many times over a second or two — each one arriving here looking exactly like a
-                // scroll and dragging the editor with it. That was visible as the editor drifting ~100
-                // lines down and back over ~2 s after opening a file in SPLIT, with the mouse merely
-                // resting over the preview.
-                double h = previewContentHeight();
-                if (previewHeightChanged(previewContentHeight, h)) {
-                    previewContentHeight = h;
-                    previewLayoutChangedAt = System.nanoTime();
-                }
-                if (previewSettling(System.nanoTime() - previewLayoutChangedAt, PREVIEW_SETTLE_NANOS)) {
-                    // Still settling: the editor is the source of truth, so re-anchor the preview to it
-                    // rather than letting a layout-driven vvalue move the editor. Only in SPLIT: in PREVIEW
-                    // the editor is off screen, and following its stale scroll position threw away the
-                    // user's paging (and the position kept across a re-render).
-                    if (markdownViewMode == MarkdownViewMode.SPLIT) {
-                        syncPreviewToEditorScroll();
-                    }
-                    return;
-                }
-                if (markdownViewMode == MarkdownViewMode.SPLIT && previewPane.isHover()) {
-                    syncEditorToPreviewScroll();
-                }
-            });
+            scrollSync.install(previewPane); // SPLIT-mode scroll sync, preview → editor half
         }
         return previewPane;
     }
@@ -5359,7 +4882,7 @@ public class EditorBuffer implements TabContent {
         javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
         cc.putString(text == null ? "" : text);
         if (isMarkdown()) {
-            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled(), path));
         }
         Clipboard.getSystemClipboard().setContent(cc);
     }
@@ -5373,84 +4896,21 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled()));
+        cc.putString(MarkdownClipboardHtml.toMarkup(getContent(), MathImages.isEnabled()));
         Clipboard.getSystemClipboard().setContent(cc);
         return true;
     }
 
     private void showPreviewContextMenu(double screenX, double screenY) {
         if (previewContextMenu == null) {
-            MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
-            selectAll.setGraphic(MenuIcons.selectAll());
-            selectAll.setOnAction(ev -> copyPreviewToClipboard());
-            MenuItem copy = new MenuItem(tr("editmenu.copy"));
-            copy.setGraphic(MenuIcons.copy());
-            copy.setOnAction(ev -> copyPreviewToClipboard());
-            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy);
-            if (isMarkdown()) {
-                // Copy puts rendered rich text on the clipboard; this one puts the HTML markup itself.
-                MenuItem copyHtml = new MenuItem(tr("command.preview.copyHtml"));
-                copyHtml.setGraphic(MenuIcons.code());
-                copyHtml.setOnAction(ev -> copyPreviewHtmlSource());
-                previewContextMenu.getItems().add(copyHtml);
-            }
-            previewContextMenu.getItems().add(new SeparatorMenuItem());
-            if (isMarkwhen()) {
-                // Markwhen: JSON export + a timeline⇄calendar view switch (PDF/Word/Print don't apply).
-                MenuItem json = new MenuItem(tr("command.markwhen.exportJson"));
-                json.setGraphic(MenuIcons.download());
-                json.setOnAction(ev -> previewExportJsonHandler.run());
-                MenuItem viewToggle = new MenuItem();
-                viewToggle.setGraphic(MenuIcons.table());
-                viewToggle.setOnAction(ev -> toggleMarkwhenView());
-                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
-                pdf.setGraphic(MenuIcons.download());
-                pdf.setOnAction(ev -> previewExportPdfHandler.run());
-                MenuItem print = new MenuItem(tr("command.preview.print"));
-                print.setGraphic(MenuIcons.print());
-                print.setOnAction(ev -> previewPrintHandler.run());
-                previewContextMenu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf, print);
-                previewContextMenu.setOnShowing(ev -> viewToggle.setText(
-                        markwhenView == MarkwhenView.TIMELINE
-                                ? tr("markwhen.switchToCalendar")
-                                : tr("markwhen.switchToTimeline")));
-            } else {
-                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
-                pdf.setGraphic(MenuIcons.download());
-                pdf.setOnAction(ev -> previewExportPdfHandler.run());
-                previewContextMenu.getItems().add(pdf);
-                // Typst also exports to PNG / SVG natively (typst -f png/svg).
-                if (isTypst()) {
-                    MenuItem png = new MenuItem(tr("command.typst.exportPng"));
-                    png.setGraphic(MenuIcons.download());
-                    png.setOnAction(ev -> previewExportPngHandler.run());
-                    MenuItem svg = new MenuItem(tr("command.typst.exportSvg"));
-                    svg.setGraphic(MenuIcons.download());
-                    svg.setOnAction(ev -> previewExportSvgHandler.run());
-                    previewContextMenu.getItems().addAll(png, svg);
-                }
-                // Word / OpenDocument export — Markdown only (not standalone diagrams).
-                if (isMarkdown()) {
-                    MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));
-                    docx.setGraphic(MenuIcons.download());
-                    docx.setOnAction(ev -> previewExportDocxHandler.run());
-                    MenuItem odt = new MenuItem(tr("command.preview.exportOdt"));
-                    odt.setGraphic(MenuIcons.download());
-                    odt.setOnAction(ev -> previewExportOdtHandler.run());
-                    previewContextMenu.getItems().addAll(docx, odt);
-                }
-                MenuItem print = new MenuItem(tr("command.preview.print"));
-                print.setGraphic(MenuIcons.print());
-                print.setOnAction(ev -> previewPrintHandler.run());
-                previewContextMenu.getItems().addAll(new SeparatorMenuItem(), print);
-            }
-            previewContextMenu.getStyleClass().add("editor-context-menu");
+            previewContextMenu = PreviewMenu.build(this);
         }
         previewContextMenu.show(previewPane, screenX, screenY);
     }
 
-    /** Scrolls the preview by ~one viewport page (down or up); no-op if there's nothing to scroll. */
-    private void scrollPreviewPage(boolean down) {
+    /** Scrolls the preview by {@code pages} viewport heights (negative: up; infinite: to that end); no-op if
+     *  there's nothing to scroll. A "page" of 0.9 leaves a little overlap. */
+    private void scrollPreviewPage(double pages) {
         if (previewPane == null || previewPane.getContent() == null) {
             return;
         }
@@ -5460,9 +4920,10 @@ public class EditorBuffer implements TabContent {
         if (scrollable <= 0) {
             return; // content fits — nothing to page
         }
-        double pageFraction = (viewport * 0.9) / scrollable; // ~90% of a page, leaving a little overlap
         double range = previewPane.getVmax() - previewPane.getVmin();
-        double next = previewPane.getVvalue() + (down ? pageFraction : -pageFraction) * range;
+        double next = Double.isInfinite(pages)
+                ? (pages > 0 ? previewPane.getVmax() : previewPane.getVmin())
+                : previewPane.getVvalue() + (viewport * pages) / scrollable * range;
         previewPane.setVvalue(Math.max(previewPane.getVmin(), Math.min(previewPane.getVmax(), next)));
     }
 
@@ -5472,12 +4933,19 @@ public class EditorBuffer implements TabContent {
      * instead of the hidden/unfocused editor. Returns whether it handled the request.
      */
     public boolean pagePreview(boolean down) {
-        boolean previewActive =
-                markdownViewMode == MarkdownViewMode.PREVIEW || (previewPane != null && previewPane.isFocusWithin());
+        return scrollPreview(down ? 0.9 : -0.9);
+    }
+
+    /** As {@link #pagePreview}, by {@code pages} viewport heights: a small fraction for a line, an infinite
+     *  one for the start or end of the document. */
+    public boolean scrollPreview(double pages) {
+        // (Split only: a pane taken off the scene on the way back to Editor can still report focus.)
+        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
+                || (markdownViewMode == MarkdownViewMode.SPLIT && previewPane != null && previewPane.isFocusWithin());
         if (!previewActive || previewPane == null) {
             return false;
         }
-        scrollPreviewPage(down);
+        scrollPreviewPage(pages);
         return true;
     }
 
@@ -5780,6 +5248,31 @@ public class EditorBuffer implements TabContent {
      */
     public void refreshPreview() {
         scheduleRenderPreview();
+    }
+
+    /**
+     * Scrolls the rendered Markdown preview so the heading with the GitHub-style anchor {@code slug} (as
+     * {@code MarkdownToc} writes them; a leading {@code #}, case and {@code %XX} escapes are tolerated) is at
+     * its top. False when the preview is not showing, has not rendered yet, or has no such heading.
+     */
+    /**
+     * Whether only a rendering of this buffer is on screen (Preview mode; not the CSV grid, which edits). Its
+     * text is then out of sight, so editing commands are refused rather than applied at an invisible caret.
+     */
+    public boolean isPreviewOnly() {
+        return markdownViewMode == MarkdownViewMode.PREVIEW && !hasCsvPreview();
+    }
+
+    /** The search over the rendered Markdown preview (the Find bar uses it while {@link #isPreviewOnly()}),
+     *  or null when this buffer has rendered none. */
+    public PreviewFind previewFind() {
+        return markdownPreview == null ? null : markdownPreview.find();
+    }
+
+    public boolean scrollPreviewToAnchor(String slug) {
+        return markdownViewMode != MarkdownViewMode.EDITOR
+                && markdownPreview != null
+                && markdownPreview.scrollToAnchor(slug);
     }
 
     private void scheduleRenderPreview() {
@@ -6091,15 +5584,19 @@ public class EditorBuffer implements TabContent {
             // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
             // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
             try {
-                org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir); // parse + per-block keys
                 Platform.runLater(() -> {
                     if (gen != previewGen) {
                         return; // a newer render superseded this one
                     }
-                    double v = previewPane().getVvalue();
-                    previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir, openUrlHandler));
+                    if (markdownPreview == null) {
+                        markdownPreview = new MarkdownPreview();
+                        markdownPreview.attach(previewPane());
+                    }
+                    // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
+                    Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
+                    markdownPreview.show(plan, openUrlHandler, dark, scrollSync.anchorLine());
                     applyPreviewScale(); // keep the current zoom on the freshly rendered content
-                    Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
                 });
             } catch (Throwable t) {
                 surfaceMarkdownPreviewError(gen, t);
@@ -6127,7 +5624,13 @@ public class EditorBuffer implements TabContent {
             if (markdownViewMode == MarkdownViewMode.SPLIT) {
                 SplitPane pane = new SplitPane(root, host);
                 pane.setOrientation(Orientation.HORIZONTAL);
-                pane.setDividerPositions(0.5);
+                pane.setDividerPositions(previewDivider); // where it was left, not back to the middle
+                pane.getDividers().get(0).positionProperty().addListener((o, was, now) -> {
+                    if (pane.isPressed() && Math.abs(now.doubleValue() - previewDivider) > 0.002) { // a drag
+                        previewDivider = now.doubleValue();
+                        onPreviewLayoutChanged.run();
+                    }
+                });
                 attachControlToCodePane();
                 content = pane;
             }
@@ -6186,6 +5689,10 @@ public class EditorBuffer implements TabContent {
         StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
         StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
         StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
+        if (isMarkdown() && !previewLive()) {
+            // Too large to follow every edit: say so, and offer the render the pulse no longer does.
+            previewHost.getChildren().add(PreviewButtons.pausedStrip(this::refreshPreview));
+        }
         return previewHost;
     }
 
@@ -6412,8 +5919,12 @@ public class EditorBuffer implements TabContent {
      * looked-up colors for the preview subtree) and refreshes the toggle glyph.
      */
     public void applyPreviewTheme(String mode, boolean appDark) {
+        boolean changed = !previewThemeMode.equals(mode == null ? "" : mode);
         this.previewThemeMode = mode == null ? "" : mode;
         this.previewAppDark = appDark;
+        if (changed && isMarkdown()) {
+            scheduleRenderPreview(); // formulas and diagrams are bitmaps: draw them for the new theme
+        }
         if (previewPane != null) {
             previewPane.getStyleClass().removeAll("md-light", "md-dark");
             if ("light".equals(previewThemeMode)) {
@@ -6425,19 +5936,14 @@ public class EditorBuffer implements TabContent {
         updateThemeButtonGlyph();
     }
 
-    /** Whether the preview currently renders dark: explicit "dark", or "follow app" with a dark app theme. */
-    private boolean previewEffectiveDark() {
-        return "dark".equals(previewThemeMode) || (previewThemeMode.isEmpty() && previewAppDark);
-    }
-
     private void updateThemeButtonGlyph() {
         if (previewThemeButton == null) {
             return;
         }
-        boolean dark = previewEffectiveDark();
-        previewThemeButton.setText(dark ? "☀" : "☾"); // ☀ (→ light) when dark; ☾ (→ dark) when light
-        PreviewButtons.name(
-                previewThemeButton, tr(dark ? "markdown.previewTheme.toLight" : "markdown.previewTheme.toDark"));
+        // The glyph and name say what a click switches TO: ☀ light, ☾ dark, ◐ back to following the app.
+        String next = PreviewButtons.nextTheme(previewThemeMode, previewAppDark);
+        previewThemeButton.setText(next.isEmpty() ? "◐" : next.equals("light") ? "☀" : "☾");
+        PreviewButtons.name(previewThemeButton, tr(PreviewButtons.themeActionKey(next)));
     }
 
     /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
@@ -6454,8 +5960,24 @@ public class EditorBuffer implements TabContent {
     }
 
     private void setPreviewFontScale(double scale) {
-        previewFontScale = Math.max(0.5, Math.min(3.0, scale));
+        previewFontScale = Math.max(PreviewLayout.MIN_ZOOM, Math.min(PreviewLayout.MAX_ZOOM, scale));
         applyPreviewScale();
+        onPreviewLayoutChanged.run();
+    }
+
+    /** The preview's zoom and Split divider as they are now. */
+    public PreviewLayout getPreviewLayout() {
+        return new PreviewLayout(previewFontScale, previewDivider);
+    }
+
+    /** Restores a remembered zoom and divider (no change notification); {@code onChange} hears later ones. */
+    public void restorePreviewLayout(PreviewLayout layout, Runnable onChange) {
+        this.onPreviewLayoutChanged = onChange == null ? () -> {} : onChange;
+        if (layout != null) {
+            previewFontScale = layout.zoom();
+            previewDivider = layout.divider();
+            applyPreviewScale();
+        }
     }
 
     /** Applies the current zoom: re-fits a diagram to the scaled width, else overrides the preview's base
@@ -6473,6 +5995,9 @@ public class EditorBuffer implements TabContent {
             return;
         }
         previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
+        if (markdownPreview != null) {
+            markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
+        }
     }
 
     /** Removes the floating corner control(s) from whichever pane currently hosts them. */
@@ -7171,7 +6696,7 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        installMarkdownLintHover(a);
+        MarkdownLintHover.install(a, () -> markdownLintEnabled ? mdLintOverlay : null);
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);
@@ -7311,7 +6836,7 @@ public class EditorBuffer implements TabContent {
         javafx.scene.Node node;
         try {
             node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(body), path != null ? path.getParent() : null);
+                    MarkdownRenderer.parseForRender(body), path != null ? path.getParent() : null);
         } catch (RuntimeException ex) {
             javafx.scene.control.Label fallback = new javafx.scene.control.Label(body);
             fallback.setWrapText(true);
@@ -7385,15 +6910,11 @@ public class EditorBuffer implements TabContent {
         return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
     }
 
-    /** A load found a line too long to wrap cheaply: the word-wrap preference is held off for this buffer. */
-    private boolean wrapSuppressed;
+    private final WordWrap wrap = new WordWrap(this::setWordWrap);
 
-    public boolean isWrapSuppressed() {
-        return wrapSuppressed;
-    }
-
-    public void setWrapSuppressed(boolean wrapSuppressed) {
-        this.wrapSuppressed = wrapSuppressed;
+    /** This buffer's word-wrap preference (per kind of file) and its long-line hold; see {@link WordWrap}. */
+    public WordWrap wrap() {
+        return wrap;
     }
 
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
@@ -7831,6 +7352,7 @@ public class EditorBuffer implements TabContent {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
+        wrap.languageChanged(language); // prose wraps by one preference, code by another
         // Which words are checked, which lines are code, and whether this language is checked at all all
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
         // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
@@ -8399,8 +7921,8 @@ public class EditorBuffer implements TabContent {
                 // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
                 // always dedents). Skipped while a completion popup/ghost is showing, so Tab accepts
                 // the completion instead.
-                if (tryMarkdownTableTab(a, !e.isShiftDown())) {
-                    e.consume(); // Tab/Shift-Tab move between table cells (and reflow)
+                if (isMarkdown() && isEditable() && !hugeFile && markdownEditing.tab(a, !e.isShiftDown())) {
+                    e.consume(); // Tab/Shift-Tab: between table cells, or a list item in/out one level
                 } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
                     e.consume();
                 } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
@@ -8410,30 +7932,6 @@ public class EditorBuffer implements TabContent {
                 }
             }
         });
-    }
-
-    /** Tab/Shift-Tab cell navigation inside a Markdown pipe table (reflows + moves the caret). */
-    private boolean tryMarkdownTableTab(CodeArea a, boolean forward) {
-        if (!isMarkdown() || !isEditable() || hugeFile || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        if (!MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
-            return false; // the caret's line alone says "not in a table": no need for the document
-        }
-        String text = a.getText();
-        int caret = a.getCaretPosition();
-        int[] bounds = MarkdownTable.blockBounds(text, caret);
-        if (bounds == null) {
-            return false;
-        }
-        MarkdownTable.Nav nav = MarkdownTable.tab(text.substring(bounds[0], bounds[1]), caret - bounds[0], forward);
-        if (nav == null) {
-            return false;
-        }
-        a.replaceText(bounds[0], bounds[1], nav.block());
-        a.moveTo(bounds[0] + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-        a.requestFollowCaret();
-        return true;
     }
 
     /**
@@ -8602,10 +8100,12 @@ public class EditorBuffer implements TabContent {
             }
             String line = a.getParagraph(par).getText();
             // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
-            // clears the whole marker → a blank line (the SDD "smart backspace" helper).
-            int marker = isTypst()
-                    ? TypstMarkup.emptyMarkerDeleteLength(line, col)
-                    : (isMarkdown() ? MarkdownLines.emptyMarkerDeleteLength(line, col) : 0);
+            // steps out one level (a nested item moves to its parent's level, a top-level one is cleared).
+            if (isMarkdown() && markdownEditing.backspace(a)) {
+                e.consume();
+                return;
+            }
+            int marker = isTypst() ? TypstMarkup.emptyMarkerDeleteLength(line, col) : 0;
             if (marker > 0) {
                 a.deleteText(caret - marker, caret);
                 e.consume();
@@ -8776,37 +8276,23 @@ public class EditorBuffer implements TabContent {
             a.replaceSelection("");
         }
         int caret = a.getCaretPosition();
-        // Markdown-only: Enter on a table's last row appends a new row.
-        if (isMarkdown() && MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
-            int[] tb = MarkdownTable.blockBounds(a.getText(), caret);
-            if (tb != null) {
-                MarkdownTable.Nav nav = MarkdownTable.enter(a.getText().substring(tb[0], tb[1]), caret - tb[0]);
-                if (nav != null) {
-                    a.replaceText(tb[0], tb[1], nav.block());
-                    a.moveTo(tb[0]
-                            + Math.max(0, Math.min(nav.caret(), nav.block().length())));
-                    a.requestFollowCaret();
-                    return;
-                }
-            }
+        // Markdown: Enter inside a table or a list/quote item (continue it, or step out of an empty one).
+        if (isMarkdown() && markdownEditing.enter(a)) {
+            return;
         }
-        // List continuation (Markdown + Typst): continue the marker on the next line, or end the list when
-        // Enter is pressed on an empty item. Typst uses its own markers (-, +, N. — never *, which is bold).
-        if (isMarkdown() || isTypst()) {
+        // Typst list continuation, with its own markers (-, +, N. — never *, which is bold).
+        if (isTypst()) {
             int par = a.getCurrentParagraph();
             int lineStart = a.getAbsolutePosition(par, 0);
             String line = a.getParagraph(par).getText();
-            int markerLen = isTypst()
-                    ? TypstMarkup.markerLength(line)
-                    : MarkdownLines.listMarkerLength(a::getText, lineStart, line);
+            int markerLen = TypstMarkup.markerLength(line);
             if (markerLen > 0 && caret - lineStart >= markerLen) {
-                boolean empty = isTypst() ? TypstMarkup.isEmptyItem(line) : MarkdownLines.isEmptyItem(line);
-                if (empty) {
+                if (TypstMarkup.isEmptyItem(line)) {
                     a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
                     a.requestFollowCaret();
                     return;
                 }
-                String cont = isTypst() ? TypstMarkup.continuation(line) : MarkdownLines.continuation(line);
+                String cont = TypstMarkup.continuation(line);
                 if (cont != null) {
                     a.replaceText(caret, caret, "\n" + cont);
                     a.moveTo(caret + 1 + cont.length());
@@ -8834,7 +8320,8 @@ public class EditorBuffer implements TabContent {
             return true; // html/xml: the > completed an open tag and the closer was inserted
         }
         if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-            return false; // not a bracket or quote
+            // Markdown: an emphasis character typed over a selection wraps it, like ` [ ( and " already do.
+            return isMarkdown() && markdownEditing.wrapSelection(a, c);
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();

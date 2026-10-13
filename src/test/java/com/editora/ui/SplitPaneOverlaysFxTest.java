@@ -272,6 +272,10 @@ class SplitPaneOverlaysFxTest {
             b.setMarkdownLintEnabled(true);
         });
         Node marks = drawn(b, "markdown-lint-overlay");
+        // The minimap carries the same marks on its right edge: beside it the scrollbar stripe would show
+        // every issue twice (C20), so it only paints once the minimap is off.
+        assertEquals(0, ink(overlay(pane2(b), "markdown-lint-stripe")), "no second column of marks");
+        FxTestSupport.runOnFx(() -> b.setMinimapVisible(false));
         drawn(b, "markdown-lint-stripe");
         shot("split-markdown-lint");
         scrollTo(second, 40);

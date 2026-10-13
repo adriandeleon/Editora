@@ -62,6 +62,11 @@ final class ExportCoordinator {
     private AutoCloseable pdfExportTask;
     /** The file this window last exported successfully, for {@code file.openLastExport}; null before any. */
     private Path lastExported;
+    /**
+     * Hands a file this window exported to the application the system opens it with (the window sets it to
+     * the JavaFX {@code HostServices}; null: none). Only ever given {@link #lastExported}.
+     */
+    Consumer<Path> systemOpener;
     /** Told the path of every export that has replaced its destination; the window reloads a viewer tab on it. */
     Consumer<Path> exported = path -> {};
 
@@ -358,7 +363,13 @@ final class ExportCoordinator {
         }
         String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
         if (name.endsWith(".docx") || name.endsWith(".odt") || name.endsWith(".xlsx") || name.endsWith(".ods")) {
-            host.openExternalUrl(file.toUri().toString());
+            // Not host.openExternalUrl: that is the choke point for links found in documents, which refuses
+            // a file: URL outside the project — so it refused every document this window had just written.
+            if (systemOpener == null) {
+                host.setStatus(tr("status.office.exported", file.toString())); // nothing to open it: say where it is
+            } else {
+                systemOpener.accept(file);
+            }
         } else {
             openPath.accept(file);
         }
@@ -947,10 +958,14 @@ final class ExportCoordinator {
             String html = com.editora.editor.MarkdownHtmlExport.toHtml(
                     b.getContent(), title, host.settings().isMathSupport());
             com.editora.io.StagedExport.writeString(f.toPath(), html);
+            lastExported = f.toPath();
             host.setStatus(tr("status.html.exported", f.toString()));
             openPath.accept(f.toPath()); // show the generated HTML in a tab
         } catch (Exception ex) {
-            host.setStatus(tr("status.html.exportFailed", String.valueOf(ex.getMessage())));
+            String msg = failureDetail(ex.getMessage());
+            host.setStatus(tr("status.html.exportFailed", msg));
+            failureAlert(tr("dialog.htmlExport.title"), tr("dialog.htmlExport.failed"), msg)
+                    .showAndWait();
         }
     }
 

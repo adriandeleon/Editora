@@ -63,8 +63,8 @@ class StoreShapeGuardTest {
         ROOTS.put(ConfigSchema.ABBREVIATIONS, AbbrevStore.class);
         ROOTS.put(ConfigSchema.TRUST, TrustStore.class);
 
-        PINNED.put(ConfigSchema.SETTINGS, "117:5b359bfb1eea3b2a");
-        PINNED.put(ConfigSchema.WORKSPACE, "14:468b5902dcae9394");
+        PINNED.put(ConfigSchema.SETTINGS, "118:ad84e197a5ac9e02");
+        PINNED.put(ConfigSchema.WORKSPACE, "15:a693e0e38385a29b");
         PINNED.put(ConfigSchema.BOOKMARKS, "2:c932fc9b729bab63");
         PINNED.put(ConfigSchema.BREAKPOINTS, "1:618a4b785df0ae84");
         PINNED.put(ConfigSchema.PROJECTS, "2:a373bb1579a65406");

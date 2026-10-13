@@ -40,8 +40,7 @@ class PdfPageSettingsTest {
         Settings s = config.load();
         assertTodaysPage(s);
         assertEquals("a4", s.getPdfPageSize());
-        assertEquals(117, s.getSchemaVersion());
-        assertEquals(117, Settings.SCHEMA_VERSION);
+        assertEquals(Settings.SCHEMA_VERSION, s.getSchemaVersion());
     }
 
     @Test

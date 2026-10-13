@@ -384,6 +384,7 @@ public class FindReplaceBar extends HBox {
         EditorBuffer buffer = activeBuffer.get();
         if (buffer != null) {
             buffer.clearSearchMatches();
+            clearPreviewMarks(buffer);
             buffer.getFocusedArea().requestFocus();
         }
         forgetMatches();
@@ -401,6 +402,7 @@ public class FindReplaceBar extends HBox {
     private void releaseBoundBuffer() {
         if (boundBuffer != null) {
             boundBuffer.clearSearchMatches();
+            clearPreviewMarks(boundBuffer);
             boundBuffer = null;
         }
     }
@@ -519,6 +521,9 @@ public class FindReplaceBar extends HBox {
         }
         onActiveBufferChanged();
         EditorBuffer buffer = activeBuffer.get();
+        if (searchPreview(buffer, announce)) {
+            return;
+        }
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
         if (area == null || query.isEmpty()) {
@@ -682,8 +687,67 @@ public class FindReplaceBar extends HBox {
         replaceAll();
     }
 
+    /**
+     * When only the buffer's rendered preview is showing, the search is over what is rendered — the source is
+     * out of sight, and its matches with it. Returns whether that was the case (the search has then run).
+     */
+    private boolean searchPreview(EditorBuffer buffer, boolean announce) {
+        com.editora.editor.PreviewFind preview = previewOf(buffer);
+        if (preview == null) {
+            return false;
+        }
+        forgetMatches();
+        buffer.clearSearchMatches();
+        String query = findField.getText();
+        int found = preview.search(query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
+        countLabel.setText(found == 0 ? "" : tr("find.count", preview.current() + 1, found));
+        if (found == 0 && !query.isEmpty() && announce) {
+            status.accept(tr("find.notFound", query));
+        }
+        return true;
+    }
+
+    /** The preview search to use for {@code buffer}: only while its preview is all that is showing. */
+    private static com.editora.editor.PreviewFind previewOf(EditorBuffer buffer) {
+        return buffer != null && buffer.isPreviewOnly() ? buffer.previewFind() : null;
+    }
+
+    private static void clearPreviewMarks(EditorBuffer buffer) {
+        com.editora.editor.PreviewFind preview = buffer.previewFind();
+        if (preview != null) {
+            preview.clear();
+        }
+    }
+
+    /** Replace needs the text on screen: with only the preview showing it is refused, and says so. */
+    private boolean refusedInPreview(EditorBuffer buffer) {
+        if (buffer.isPreviewOnly()) {
+            status.accept(tr("status.previewCannotEdit"));
+            return true;
+        }
+        return false;
+    }
+
+    /** Steps through the preview's matches; false when the editor is what is being searched. */
+    private boolean navigatePreview(EditorBuffer buffer, boolean forward) {
+        com.editora.editor.PreviewFind preview = previewOf(buffer);
+        if (preview == null) {
+            return false;
+        }
+        if (preview.count() == 0) {
+            searchPreview(buffer, true);
+        } else {
+            preview.step(forward);
+            countLabel.setText(tr("find.count", preview.current() + 1, preview.count()));
+        }
+        return true;
+    }
+
     private void navigate(boolean forward) {
         EditorBuffer buffer = activeBuffer.get();
+        if (navigatePreview(buffer, forward)) {
+            return;
+        }
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         if (area == null) {
             return;
@@ -760,6 +824,9 @@ public class FindReplaceBar extends HBox {
         if (area == null || !buffer.isEditable()) {
             return;
         }
+        if (refusedInPreview(buffer)) {
+            return;
+        }
         onActiveBufferChanged();
         int start = area.getSelection().getStart();
         int end = area.getSelection().getEnd();
@@ -825,7 +892,7 @@ public class FindReplaceBar extends HBox {
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
-        if (area == null || query.isEmpty() || !buffer.isEditable()) {
+        if (area == null || query.isEmpty() || !buffer.isEditable() || refusedInPreview(buffer)) {
             return;
         }
         onActiveBufferChanged();

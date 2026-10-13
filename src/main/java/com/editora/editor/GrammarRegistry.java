@@ -60,6 +60,7 @@ public final class GrammarRegistry {
         // The resource base name doubles as the language name (see LanguageRegistry), so the
         // inverse of scopeToResource resolves a language name to its scope.
         scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
+        languageNameToScope.remove("html-derivative"); // only ever embedded; not a language to pick for a file
         registry = new Registry(new IRegistryOptions() {
             @Override
             public IGrammarSource getGrammarSource(String scopeName) {
@@ -180,6 +181,9 @@ public final class GrammarRegistry {
         scopeToResource.put("source.json", "json");
         scopeToResource.put("source.css", "css");
         scopeToResource.put("text.html.basic", "html");
+        // The flavour of HTML other grammars embed: Markdown includes it for raw HTML, and without it every
+        // tag in a Markdown file was plain text (and one of the grammar's HTML block rules was dropped at load).
+        scopeToResource.put("text.html.derivative", "html-derivative");
         scopeToResource.put("source.astro", "astro");
         // Astro embeds JavaScript and stylesheet dialect scopes. Reuse the bundled TypeScript/CSS
         // grammars for aliases we can faithfully tokenize; unsupported preprocessors degrade to plain text.
@@ -242,7 +246,7 @@ public final class GrammarRegistry {
         mapExtensions("source.rust", "rs");
         mapExtensions("source.go", "go");
         mapExtensions("source.cs", "cs", "csx");
-        mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd");
+        mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
         mapExtensions("source.json", "json", "jsonc", "json5");
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");

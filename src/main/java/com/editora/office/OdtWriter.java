@@ -7,15 +7,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.imageio.ImageIO;
 
+import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.MathSpans;
+import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
@@ -51,14 +54,33 @@ public final class OdtWriter {
     /** An image embedded under {@code Pictures/}. */
     record Embedded(String name, byte[] bytes, String mediaType) {}
 
+    /**
+     * What the content walk carries: the pictures collected for {@code Pictures/}, where relative image
+     * paths resolve, and the heading anchors ({@code bookmarks} is their set, for link targets).
+     */
+    private record Pictures(List<Embedded> list, Path baseDir, Map<Heading, String> anchors, Set<String> bookmarks) {}
+
+    /** {@code meta.xml}: the document's title and the application that wrote it. */
+    static String metaXml(String title) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<office:document-meta xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
+                + " xmlns:dc=\"http://purl.org/dc/elements/1.1/\""
+                + " xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\" office:version=\"1.2\">"
+                + "<office:meta><meta:generator>Editora</meta:generator>"
+                + (title == null || title.isBlank() ? "" : "<dc:title>" + esc(title) + "</dc:title>")
+                + "</office:meta></office:document-meta>";
+    }
+
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
         List<Embedded> images = new ArrayList<>();
         String content = contentXml(markdown, baseDir, mmdc, images);
+        String title = MarkdownDocInfo.title(MarkdownRenderer.parseForRender(markdown), DocxWriter.fileTitle(out));
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(out))) {
             // The ODF spec requires `mimetype` to be the first entry and STORED (uncompressed).
             stored(zip, "mimetype", MIMETYPE.getBytes(StandardCharsets.US_ASCII));
             deflated(zip, "content.xml", content.getBytes(StandardCharsets.UTF_8));
             deflated(zip, "styles.xml", STYLES_XML.getBytes(StandardCharsets.UTF_8));
+            deflated(zip, "meta.xml", metaXml(title).getBytes(StandardCharsets.UTF_8));
             deflated(zip, "META-INF/manifest.xml", manifest(images).getBytes(StandardCharsets.UTF_8));
             for (Embedded e : images) {
                 deflated(zip, e.name(), e.bytes());
@@ -68,8 +90,10 @@ public final class OdtWriter {
 
     // ---- content.xml (pure, unit-tested) ----
 
-    static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> images) {
-        Node ast = MarkdownRenderer.parseToDocument(markdown);
+    static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
+        Node ast = MarkdownRenderer.parseForRender(markdown);
+        Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
+        Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();
         b.append(CONTENT_HEAD);
         for (Node n = ast.getFirstChild(); n != null; n = n.getNext()) {
@@ -82,7 +106,7 @@ public final class OdtWriter {
         return b.toString();
     }
 
-    private static void block(StringBuilder b, Node n, Path baseDir, List<String> mmdc, List<Embedded> images) {
+    private static void block(StringBuilder b, Node n, Path baseDir, List<String> mmdc, Pictures images) {
         if (n instanceof Heading h) {
             int lvl = Math.min(6, h.getLevel());
             b.append("<text:h text:style-name=\"Heading_20_")
@@ -90,8 +114,20 @@ public final class OdtWriter {
                     .append("\" text:outline-level=\"")
                     .append(lvl)
                     .append("\">");
+            String anchor = images.anchors().get(h);
+            if (anchor != null) {
+                b.append("<text:bookmark text:name=\"").append(escAttr(anchor)).append("\"/>");
+            }
             inline(b, InlineRun.flatten(h), images);
             b.append("</text:h>");
+        } else if (n instanceof MarkdownMath.Block block) {
+            // A $$ block: a picture when it is a finished formula that renders, else what was typed.
+            byte[] png = block.isClosed() ? OfficeImages.renderMath(block.getLatex(), true) : null;
+            b.append("<text:p text:style-name=\"Standard\">");
+            if (png == null || !imageFrameBytes(b, png, images)) {
+                b.append(esc(MarkdownMath.source(block)));
+            }
+            b.append("</text:p>");
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
             byte[] mathPng = math == null ? null : OfficeImages.renderMath(math, true);
@@ -135,8 +171,9 @@ public final class OdtWriter {
             tableXml(b, t, images);
         } else if (n instanceof HtmlBlock hb) {
             // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
-            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
-                codeBlock(b, hb.getLiteral());
+            String shown = MarkdownDocInfo.htmlSourceShown(hb.getLiteral()); // "<!-- c --> text" keeps the text
+            if (!shown.isEmpty()) {
+                codeBlock(b, shown);
             }
         } else if (n instanceof FootnoteDefinition) {
             // written at the end of the document by contentXml()
@@ -151,7 +188,7 @@ public final class OdtWriter {
 
     /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
     private static void footnote(
-            StringBuilder b, FootnoteDefinition def, Path baseDir, List<String> mmdc, List<Embedded> images) {
+            StringBuilder b, FootnoteDefinition def, Path baseDir, List<String> mmdc, Pictures images) {
         List<InlineRun> marker = List.of(InlineRun.plain(InlineRun.footnoteMarker(def.getLabel()) + " "));
         boolean first = true;
         for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
@@ -172,7 +209,7 @@ public final class OdtWriter {
         }
     }
 
-    private static void paragraph(StringBuilder b, String style, List<InlineRun> runs, List<Embedded> images) {
+    private static void paragraph(StringBuilder b, String style, List<InlineRun> runs, Pictures images) {
         b.append("<text:p text:style-name=\"").append(style).append("\">");
         inline(b, runs, images);
         b.append("</text:p>");
@@ -192,7 +229,7 @@ public final class OdtWriter {
     }
 
     private static void listXml(
-            StringBuilder b, Node listNode, boolean ordered, Path baseDir, List<String> mmdc, List<Embedded> images) {
+            StringBuilder b, Node listNode, boolean ordered, Path baseDir, List<String> mmdc, Pictures images) {
         b.append("<text:list text:style-name=\"").append(ordered ? "L2" : "L1").append("\">");
         for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
             if (!(item instanceof ListItem)) {
@@ -224,7 +261,7 @@ public final class OdtWriter {
         b.append("</text:list>");
     }
 
-    private static void tableXml(StringBuilder b, TableBlock t, List<Embedded> images) {
+    private static void tableXml(StringBuilder b, TableBlock t, Pictures images) {
         List<List<TableCell>> rows = new ArrayList<>();
         for (Node section = t.getFirstChild(); section != null; section = section.getNext()) {
             for (Node r = section.getFirstChild(); r != null; r = r.getNext()) {
@@ -252,7 +289,9 @@ public final class OdtWriter {
             b.append("<table:table-row>");
             for (int ci = 0; ci < ncol; ci++) {
                 b.append("<table:table-cell office:value-type=\"string\">");
-                b.append("<text:p text:style-name=\"Standard\">");
+                b.append("<text:p text:style-name=\"")
+                        .append(ci < row.size() ? cellStyle(row.get(ci).getAlignment()) : "Standard")
+                        .append("\">");
                 if (ci < row.size()) {
                     inline(b, InlineRun.flatten(row.get(ci)), images);
                 }
@@ -263,17 +302,26 @@ public final class OdtWriter {
         b.append("</table:table>");
     }
 
+    /** The paragraph style of a cell in a column aligned by the table's {@code :---:} / {@code ---:} row. */
+    private static String cellStyle(TableCell.Alignment a) {
+        if (a == TableCell.Alignment.CENTER) {
+            return "PCenter";
+        }
+        return a == TableCell.Alignment.RIGHT ? "PRight" : "Standard";
+    }
+
     /** Appends inline runs, wrapping each in nested {@code <text:span>}s per active style + {@code <text:a>} links. */
-    private static void inline(StringBuilder b, List<InlineRun> runs, List<Embedded> images) {
+    private static void inline(StringBuilder b, List<InlineRun> runs, Pictures images) {
         for (InlineRun r : runs) {
             if (r.isBreak()) {
                 b.append("<text:line-break/>");
                 continue;
             }
-            boolean link = r.href() != null && !r.href().isBlank();
+            String href = href(r.href(), images);
+            boolean link = href != null;
             if (link) {
                 b.append("<text:a xlink:type=\"simple\" xlink:href=\"")
-                        .append(escAttr(r.href()))
+                        .append(escAttr(href))
                         .append("\">");
             }
             int spans = 0;
@@ -297,7 +345,9 @@ public final class OdtWriter {
                 b.append("<text:span text:style-name=\"TCode\">");
                 spans++;
             }
-            emitText(b, r, images);
+            if (r.image() == null || !imageFrameBytes(b, OfficeImages.load(r.image(), images.baseDir()), images)) {
+                emitText(b, r, images); // a picture that cannot be embedded is written as its alt text
+            }
             for (int i = 0; i < spans; i++) {
                 b.append("</text:span>");
             }
@@ -307,28 +357,35 @@ public final class OdtWriter {
         }
     }
 
-    /** Appends a run's text, splitting non-code text on inline {@code $…$}/{@code $$…$$} math → as-char frames. */
-    private static void emitText(StringBuilder b, InlineRun r, List<Embedded> images) {
-        if (r.code() || r.text().indexOf('$') < 0 || !MathImages.isEnabled()) {
-            b.append(esc(r.text()));
-            return;
+    /**
+     * The target a link is written with, or null to write its text plain: a link to one of this document's
+     * headings points at that heading's bookmark, and only a web or mail address or a relative reference
+     * stays live ({@link InlineRun#isSafeHref}).
+     */
+    private static String href(String href, Pictures ctx) {
+        if (href == null || href.isBlank()) {
+            return null;
         }
-        for (MathSpans.Segment seg : MathSpans.segments(r.text())) {
-            if (seg.text() != null) {
-                b.append(esc(seg.text()));
-            } else {
-                byte[] png =
-                        OfficeImages.renderMath(seg.span().latex(), seg.span().display());
-                if (!mathFrame(b, png, images, seg.span().display())) {
-                    String d = seg.span().display() ? "$$" : "$";
-                    b.append(esc(d + seg.span().latex() + d));
-                }
+        String fragment = MarkdownDocInfo.fragment(href.strip());
+        if (fragment != null) {
+            return ctx.bookmarks().contains(fragment) ? "#" + fragment : null;
+        }
+        return InlineRun.isSafeHref(href) ? href.strip() : null;
+    }
+
+    /** Appends a run's text; a formula ({@link InlineRun#isMath}) as an as-char picture, else as its source. */
+    private static void emitText(StringBuilder b, InlineRun r, Pictures images) {
+        if (r.isMath()) {
+            boolean display = r.text().startsWith("$$");
+            if (mathFrame(b, OfficeImages.renderMath(r.latex(), display), images, display)) {
+                return;
             }
         }
+        b.append(esc(r.text()));
     }
 
     /** Embeds {@code png} as an as-char {@code <draw:frame>} sized to roughly the line height; false if undecodable. */
-    private static boolean mathFrame(StringBuilder b, byte[] png, List<Embedded> images, boolean display) {
+    private static boolean mathFrame(StringBuilder b, byte[] png, Pictures images, boolean display) {
         if (png == null) {
             return false;
         }
@@ -339,8 +396,8 @@ public final class OdtWriter {
             }
             double hCm = display ? 0.85 : 0.42; // ~ line height
             double wCm = bi.getWidth() * (hCm / bi.getHeight());
-            String name = "Pictures/math" + images.size() + "." + OfficeImages.extension(png);
-            images.add(new Embedded(name, png, OfficeImages.mediaType(png)));
+            String name = "Pictures/math" + images.list().size() + "." + OfficeImages.extension(png);
+            images.list().add(new Embedded(name, png, OfficeImages.mediaType(png)));
             b.append("<draw:frame text:anchor-type=\"as-char\" svg:width=\"")
                     .append(String.format(java.util.Locale.ROOT, "%.3fcm", wCm))
                     .append("\" svg:height=\"")
@@ -354,7 +411,7 @@ public final class OdtWriter {
         }
     }
 
-    private static void imageFrame(StringBuilder b, Image img, Path baseDir, List<Embedded> images) {
+    private static void imageFrame(StringBuilder b, Image img, Path baseDir, Pictures images) {
         byte[] bytes = OfficeImages.load(img.getDestination(), baseDir);
         if (!imageFrameBytes(b, bytes, images)) {
             String alt = InlineRun.textOf(img);
@@ -363,7 +420,7 @@ public final class OdtWriter {
     }
 
     /** Embeds raster {@code bytes} as a {@code <draw:frame>} + a {@code Pictures/} entry; false if undecodable. */
-    private static boolean imageFrameBytes(StringBuilder b, byte[] bytes, List<Embedded> images) {
+    private static boolean imageFrameBytes(StringBuilder b, byte[] bytes, Pictures images) {
         if (bytes == null) {
             return false;
         }
@@ -375,8 +432,8 @@ public final class OdtWriter {
             double scale = Math.min(1.0, 480.0 / Math.max(1, bi.getWidth()));
             double wCm = bi.getWidth() * scale / 96.0 * 2.54;
             double hCm = bi.getHeight() * scale / 96.0 * 2.54;
-            String name = "Pictures/img" + images.size() + "." + OfficeImages.extension(bytes);
-            images.add(new Embedded(name, bytes, OfficeImages.mediaType(bytes)));
+            String name = "Pictures/img" + images.list().size() + "." + OfficeImages.extension(bytes);
+            images.list().add(new Embedded(name, bytes, OfficeImages.mediaType(bytes)));
             b.append("<draw:frame text:anchor-type=\"as-char\" svg:width=\"")
                     .append(String.format(java.util.Locale.ROOT, "%.3fcm", wCm))
                     .append("\" svg:height=\"")
@@ -405,6 +462,7 @@ public final class OdtWriter {
                 .append("\"/>");
         b.append("<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>");
         b.append("<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>");
+        b.append("<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>");
         for (Embedded e : images) {
             b.append("<manifest:file-entry manifest:full-path=\"")
                     .append(e.name())
@@ -546,6 +604,8 @@ public final class OdtWriter {
             + "<style:style style:name=\"TStrike\" style:family=\"text\"><style:text-properties style:text-line-through-style=\"solid\"/></style:style>"
             + "<style:style style:name=\"TUnderline\" style:family=\"text\"><style:text-properties style:text-underline-style=\"solid\" style:text-underline-width=\"auto\" style:text-underline-color=\"font-color\"/></style:style>"
             + "<style:style style:name=\"TCode\" style:family=\"text\"><style:text-properties style:font-name=\"Mono\"/></style:style>"
+            + "<style:style style:name=\"PCenter\" style:family=\"paragraph\" style:parent-style-name=\"Standard\"><style:paragraph-properties fo:text-align=\"center\"/></style:style>"
+            + "<style:style style:name=\"PRight\" style:family=\"paragraph\" style:parent-style-name=\"Standard\"><style:paragraph-properties fo:text-align=\"end\"/></style:style>"
             + "<text:list-style style:name=\"L1\">"
             + listLevels(false)
             + "</text:list-style>"

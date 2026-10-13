@@ -244,33 +244,25 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         return fencedCodeLines(lines.length, i -> lines[i]);
     }
 
-    /** {@link #fencedCodeLines(String)} over {@code count} lines supplied one at a time. Pure. */
+    /**
+     * {@link #fencedCodeLines(String)} over {@code count} lines supplied one at a time: every line of a code
+     * block as the document's block scan has it ({@link com.editora.markdown.MarkdownBlocks}) — backtick and
+     * tilde fences by their own marker and length (a fence inside a longer one is content), an unterminated
+     * fence to the end, and indented code. Pure.
+     */
     static BitSet fencedCodeLines(int count, java.util.function.IntFunction<String> lineAt) {
-        BitSet code = new BitSet();
-        int fenceStart = -1;
+        String[] lines = new String[count];
         for (int i = 0; i < count; i++) {
-            if (isFence(lineAt.apply(i))) {
-                if (fenceStart < 0) {
-                    fenceStart = i;
-                } else {
-                    code.set(fenceStart, i + 1); // mark the whole fence, delimiters included
-                    fenceStart = -1;
-                }
+            lines[i] = lineAt.apply(i);
+        }
+        com.editora.markdown.MarkdownBlocks blocks = com.editora.markdown.MarkdownBlocks.scan(lines);
+        BitSet code = new BitSet();
+        for (int i = 0; i < count; i++) {
+            if (blocks.isCode(i)) {
+                code.set(i);
             }
         }
-        if (fenceStart >= 0) {
-            code.set(fenceStart, count); // an unterminated fence runs to EOF (as editors render it)
-        }
         return code;
-    }
-
-    /** Whether {@code line}, ignoring leading whitespace as {@code trim()} does, opens or closes a fence. */
-    private static boolean isFence(String line) {
-        int i = 0;
-        while (i < line.length() && line.charAt(i) <= ' ') {
-            i++;
-        }
-        return line.startsWith("```", i) || line.startsWith("~~~", i);
     }
 
     /**
@@ -638,7 +630,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         linesScanned++;
         List<int[]> flagged = null;
         // checkableWords has already left out every word of a structured token, each token judged once.
-        for (int[] span : SpellChecker.checkableWords(line, mode.syntax())) {
+        for (int[] span : SpellChecker.checkableWords(mode.prose(line), mode.syntax())) {
             int start = span[0];
             int end = span[1];
             if (spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {

@@ -373,7 +373,7 @@ final class BufferCompletion {
         if (doc != null && !doc.isBlank()) {
             try {
                 rendered = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseToDocument(doc.strip()),
+                        MarkdownRenderer.parseForRender(doc.strip()),
                         null,
                         null,
                         MarkdownRenderer.ImagePolicy.DATA_ONLY);

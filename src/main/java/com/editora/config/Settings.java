@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 117;
+    public static final int SCHEMA_VERSION = 118;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -130,7 +130,10 @@ public class Settings {
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
     private boolean showWhitespace = false;
+    /** Soft-wrap long lines in code (every language but Markdown and plain text). Off by default. */
     private boolean wordWrap = false;
+    /** Soft-wrap long lines in Markdown and plain text, where a line is a paragraph. On by default. */
+    private boolean wordWrapProse = true;
     /** Save-as-administrator: offer to write a non-writable file via the OS auth agent (pkexec, Linux). Off. */
     private boolean adminSave = false;
     /** Personal Notes feature: on by default — the tool window, commands, gutter/highlight, and the editor
@@ -144,6 +147,15 @@ public class Settings {
     private String markdownPreviewTheme = "";
     /** Show the floating format bar on a text selection in Markdown buffers. */
     private boolean markdownFormatBar = true;
+    /** Load remote ({@code http}/{@code https}) images in the Markdown preview. On by default; off shows
+     *  each remote image's alt text instead and nothing is fetched. */
+    private boolean markdownRemoteImages = true;
+    /** Folder, relative to the document, that pasted and dropped images are written to. */
+    private String markdownAssetsFolder = "assets";
+    /** Shallowest and deepest heading level listed by "Markdown: Insert/Update Table of Contents" (1–6). */
+    private int markdownTocMinLevel = 1;
+
+    private int markdownTocMaxLevel = 6;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
@@ -1289,6 +1301,24 @@ public class Settings {
         this.wordWrap = wordWrap;
     }
 
+    public boolean isWordWrapProse() {
+        return wordWrapProse;
+    }
+
+    public void setWordWrapProse(boolean wordWrapProse) {
+        this.wordWrapProse = wordWrapProse;
+    }
+
+    /** Whether lines wrap in a buffer of {@code language} (a {@code LanguageRegistry} name; null = plain text). */
+    public boolean wrapsLanguage(String language) {
+        return isProseLanguage(language) ? wordWrapProse : wordWrap;
+    }
+
+    /** Markdown and plain text: the languages whose lines are paragraphs, governed by {@link #wordWrapProse}. */
+    public static boolean isProseLanguage(String language) {
+        return language == null || language.equals("plaintext") || language.equals("markdown");
+    }
+
     public boolean isAdminSave() {
         return adminSave;
     }
@@ -1588,9 +1618,18 @@ public class Settings {
         this.spellDisabledLanguages = languages == null ? new java.util.ArrayList<>() : languages;
     }
 
-    /** "" (follow app theme), "light", or "dark" — the Markdown preview's independent color theme. */
+    /** The values of {@link #getMarkdownPreviewTheme()}: follow the app theme, light, dark. */
+    public static final java.util.List<String> MARKDOWN_PREVIEW_THEMES = java.util.List.of("", "light", "dark");
+
+    /** Default of {@link #getMarkdownAssetsFolder()}. */
+    public static final String DEFAULT_MARKDOWN_ASSETS_FOLDER = "assets";
+
+    /**
+     * "" (follow app theme), "light", or "dark" — the Markdown preview's independent color theme. Any other
+     * stored value reads as "" (a hand-edited file must not leave the preview without a theme).
+     */
     public String getMarkdownPreviewTheme() {
-        return markdownPreviewTheme == null ? "" : markdownPreviewTheme;
+        return MARKDOWN_PREVIEW_THEMES.contains(markdownPreviewTheme) ? markdownPreviewTheme : "";
     }
 
     public void setMarkdownPreviewTheme(String markdownPreviewTheme) {
@@ -1603,6 +1642,68 @@ public class Settings {
 
     public void setMarkdownFormatBar(boolean markdownFormatBar) {
         this.markdownFormatBar = markdownFormatBar;
+    }
+
+    public boolean isMarkdownRemoteImages() {
+        return markdownRemoteImages;
+    }
+
+    public void setMarkdownRemoteImages(boolean markdownRemoteImages) {
+        this.markdownRemoteImages = markdownRemoteImages;
+    }
+
+    /**
+     * The folder pasted and dropped images go to, relative to the document, with {@code /} separators. A
+     * value that is blank or would leave the document's folder (absolute, a drive, a {@code ..} segment)
+     * reads as the default: an image is never written somewhere a typo or a hand-edited file points to.
+     */
+    public String getMarkdownAssetsFolder() {
+        return normalizeAssetsFolder(markdownAssetsFolder);
+    }
+
+    public void setMarkdownAssetsFolder(String markdownAssetsFolder) {
+        this.markdownAssetsFolder = normalizeAssetsFolder(markdownAssetsFolder);
+    }
+
+    /** See {@link #getMarkdownAssetsFolder()}. Pure. */
+    public static String normalizeAssetsFolder(String folder) {
+        if (folder == null) {
+            return DEFAULT_MARKDOWN_ASSETS_FOLDER;
+        }
+        String f = folder.strip().replace('\\', '/');
+        while (f.startsWith("./")) {
+            f = f.substring(2);
+        }
+        while (f.endsWith("/")) {
+            f = f.substring(0, f.length() - 1);
+        }
+        boolean escapes = f.isEmpty()
+                || f.startsWith("/")
+                || f.startsWith("~")
+                || f.matches("^[A-Za-z]:.*")
+                || f.chars().anyMatch(c -> c < 0x20 || "<>:\"|?*".indexOf(c) >= 0);
+        for (String segment : f.split("/", -1)) {
+            escapes |= segment.isBlank() || segment.equals("..") || segment.equals(".");
+        }
+        return escapes ? DEFAULT_MARKDOWN_ASSETS_FOLDER : f;
+    }
+
+    /** 1–6, and never deeper than {@link #getMarkdownTocMaxLevel()}. */
+    public int getMarkdownTocMinLevel() {
+        return Math.min(Math.clamp(markdownTocMinLevel, 1, 6), Math.clamp(markdownTocMaxLevel, 1, 6));
+    }
+
+    public void setMarkdownTocMinLevel(int markdownTocMinLevel) {
+        this.markdownTocMinLevel = Math.clamp(markdownTocMinLevel, 1, 6);
+    }
+
+    /** 1–6, and never shallower than the stored minimum. */
+    public int getMarkdownTocMaxLevel() {
+        return Math.clamp(markdownTocMaxLevel, 1, 6);
+    }
+
+    public void setMarkdownTocMaxLevel(int markdownTocMaxLevel) {
+        this.markdownTocMaxLevel = Math.clamp(markdownTocMaxLevel, 1, 6);
     }
 
     public boolean isMultiCaret() {

@@ -14,7 +14,7 @@ import org.scilab.forge.jlatexmath.TeXConstants;
 import org.scilab.forge.jlatexmath.TeXFormula;
 
 /**
- * Renders LaTeX math (from {@link MathSpans}) to JavaFX nodes via JLaTeXMath. JLaTeXMath is pure-Java
+ * Renders LaTeX math (the {@code MarkdownMath} nodes of the parse) to JavaFX nodes via JLaTeXMath. JLaTeXMath is pure-Java
  * and fast, so rendering is synchronous on the FX thread; results are cached in a bounded LRU map keyed
  * by {@code (theme, style, size, latex)} so the debounced whole-document re-render never re-rasterizes an
  * unchanged formula. Rasterization uses headless Java2D (a {@link BufferedImage}) → a JavaFX
@@ -43,6 +43,7 @@ public final class MathImages {
     /** Enables math rendering and sets the glyph color theme; clears the cache when either changes. */
     public static void configure(boolean on, boolean darkTheme) {
         if (enabled != on || dark != darkTheme) {
+            EPOCH.incrementAndGet();
             CACHE.clear();
         }
         enabled = on;
@@ -51,6 +52,13 @@ public final class MathImages {
 
     public static boolean isEnabled() {
         return enabled;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong EPOCH = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Changes when the feature switch or the app theme did: a formula node built before is out of date. */
+    static long epoch() {
+        return EPOCH.get();
     }
 
     public static Node inlineNode(String latex, double fontSize) {
@@ -77,7 +85,7 @@ public final class MathImages {
             ImageView v = new ImageView(img);
             v.getStyleClass().add(display ? "md-math-block" : "md-math-inline");
             v.setPreserveRatio(true);
-            v.setFitWidth(img.getWidth() / RENDER_SCALE);
+            PreviewImageLoader.fit(v, img.getWidth() / RENDER_SCALE);
             return v;
         } catch (RuntimeException ex) {
             // Invalid LaTeX (ParseException, etc.): show the raw source so the error is visible, not lost.

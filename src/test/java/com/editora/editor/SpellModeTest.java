@@ -133,4 +133,90 @@ class SpellModeTest {
         assertTrue(codeLines(SpellMode.PROSE, "text\n```\ncode\n```\n").isEmpty());
         assertTrue(codeLines(SpellMode.CODE, "<script>\nx\n</script>\n").isEmpty());
     }
+
+    // --- Markdown: what is not prose ----------------------------------------------------------------------
+
+    @Test
+    void frontMatterAndReferenceDefinitionsAreNotProse() {
+        String md = "---\ntitle: Notes\nslug: speling-here\n---\n\nText [a][ref] and more[^n].\n\n"
+                + "[ref]: https://example.com \"Titel\"\n   [Other Ref]: <my file.md>\n[^n]: A footnote is prose.\n"
+                + "[not a definition] : text\n";
+        BitSet code = SpellMode.MARKDOWN.codeLines(md);
+        for (int line : new int[] {0, 1, 2, 3, 7, 8}) {
+            assertTrue(code.get(line), "line " + line + " is skipped");
+        }
+        for (int line : new int[] {4, 5, 6, 9, 10}) {
+            assertFalse(code.get(line), "line " + line + " is checked");
+        }
+        assertEquals(new BitSet(), SpellMode.MARKDOWN.codeLines("---\nno closing delimiter\n"), "not front matter");
+        assertFalse(SpellMode.MARKDOWN.codeLines("text\n\n---\nkey: v\n---\n").get(3), "only at the very top");
+        assertTrue(SpellMode.MARKDOWN.codeLines("---\nkey: v\n...\n").get(1), "three dots close it too");
+        // a definition inside a fence is just code, and stays within the fence's own range
+        assertEquals(3, SpellMode.MARKDOWN.codeLines("```\n[a]: b\n```\ntext\n").cardinality());
+    }
+
+    @Test
+    void codeLinesFollowTheDocumentsBlocks() {
+        String md = "prose\n~~~\ntilde code\n~~~\n````\n```\nnested\n```\n````\nprose again\n\n    indented code\n\n"
+                + "<!-- a comment is prose -->\n```\nunterminated\nto the end\n";
+        BitSet code = SpellMode.MARKDOWN.codeLines(md);
+        for (int line : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 11, 14, 15, 16}) {
+            assertTrue(code.get(line), "line " + line + " is code");
+        }
+        for (int line : new int[] {0, 9, 13}) {
+            assertFalse(code.get(line), "line " + line + " is prose");
+        }
+    }
+
+    private static String prose(String line) {
+        String out = SpellMode.MARKDOWN.prose(line);
+        assertEquals(line.length(), out.length(), "offsets into the line stay valid");
+        return out;
+    }
+
+    /** {@code line} with each of {@code parts} (in order of appearance) replaced by as many spaces. */
+    private static String blanked(String line, String... parts) {
+        String out = line;
+        int from = 0;
+        for (String part : parts) {
+            int at = out.indexOf(part, from);
+            assertTrue(at >= 0, "'" + part + "' is in the line");
+            out = out.substring(0, at) + " ".repeat(part.length()) + out.substring(at + part.length());
+            from = at + part.length();
+        }
+        return out;
+    }
+
+    private static void assertBlanks(String line, String... parts) {
+        assertEquals(blanked(line, parts), prose(line));
+    }
+
+    @Test
+    void aLinksTargetIsBlankedSoItsTextIsAWordOfItsOwn() {
+        assertBlanks("see [the text](https://example.com/path).", "(https://example.com/path)");
+        assertBlanks("![alt words](img/pic.png \"A title\") end", "(img/pic.png \"A title\")");
+        assertBlanks("[a](<my file.md>) and [b](x_(y).md 't')", "(<my file.md>)", "(x_(y).md 't')");
+        assertBlanks("[text][labell] and [text][]", "[labell]", "[]");
+        assertBlanks("[just brackets] (and parens)");
+        assertBlanks("a [x] task");
+    }
+
+    @Test
+    void htmlTagsAndLintDirectivesAreBlanked() {
+        assertBlanks("Press <kbd>Ctrl</kbd> now", "<kbd>", "</kbd>");
+        assertBlanks("<span class=\"navbarr\">words</span>", "<span class=\"navbarr\">", "</span>");
+        assertBlanks("see <https://example.com> here", "<https://example.com>");
+        assertBlanks("text. <!-- markdownlint-disable-line MD034 -->", "<!-- markdownlint-disable-line MD034 -->");
+        assertBlanks("<!-- an ordinary comment is prose -->");
+        assertBlanks("a < b and c > d");
+    }
+
+    @Test
+    void onlyMarkdownIsMasked() {
+        String line = "see [the text](https://example.com) <b>x</b>";
+        for (SpellMode mode : List.of(SpellMode.PROSE, SpellMode.HTML, SpellMode.TYPST, SpellMode.CODE)) {
+            assertEquals(line, mode.prose(line), mode.toString());
+        }
+        assertEquals("plain words", SpellMode.MARKDOWN.prose("plain words"));
+    }
 }

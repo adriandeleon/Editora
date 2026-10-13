@@ -80,4 +80,63 @@ class MarkdownOutlineTest {
         assertEquals(List.of(new Heading(2, "Title", 0)), MarkdownOutline.headings("Title\n---\n"));
         assertEquals(List.of(new Heading(1, "Title", 0)), MarkdownOutline.headings("Title\n===\n"));
     }
+
+    /** CommonMark: the whole paragraph above the underline is the heading, not just its last line. */
+    @Test
+    void aSetextHeadingMayRunOverSeveralLines() {
+        List<Heading> h = MarkdownOutline.headings("intro\n\nMulti line\nsetext heading\n==============\n\nafter\n");
+        assertEquals(List.of(new Heading(1, "Multi line setext heading", 2)), h);
+    }
+
+    @Test
+    void aParagraphWithoutAnUnderlineIsNotAHeadingAndWhatEndsItIsStillRead() {
+        String md =
+                "one\ntwo\n# Atx ends the paragraph\n\nthree\nfour\n\n---\n\nfive\n- item\n---\n\nsix\n```\n===\n```\n";
+        assertEquals(List.of(new Heading(1, "Atx ends the paragraph", 2)), MarkdownOutline.headings(md));
+    }
+
+    @Test
+    void aLongParagraphIsScannedOnce() {
+        String md = "word\n".repeat(200_000) + "\nTitle\n=====\n";
+        long start = System.nanoTime();
+        List<Heading> h = MarkdownOutline.headings(md);
+        assertEquals(List.of(new Heading(1, "Title", 200_001)), h);
+        assertTrue(System.nanoTime() - start < 5_000_000_000L, "linear, not quadratic, in the paragraph's length");
+    }
+
+    /** A commented-out section and a raw HTML block are not Markdown: their "# …" lines are not headings. */
+    @Test
+    void headingsInHtmlCommentsAndHtmlBlocksAreNotListed() {
+        String md = "# Real\n\n<!--\n# commented out\n## also\n-->\n\n<!-- # one line -->\n\n"
+                + "<div>\n# inside a div\n</div>\n\n<details>\n\n## Markdown again after the blank line\n\n</details>\n\n"
+                + "## After\n";
+        assertEquals(
+                List.of("Real", "Markdown again after the blank line", "After"),
+                MarkdownOutline.headings(md).stream().map(Heading::title).toList());
+    }
+
+    @Test
+    void headingsInTildeNestedAndIndentedCodeAreNotListed() {
+        String md = "# Real\n\n~~~\n# in tildes\n~~~\n\n````\n```\n# in a nested fence\n```\n````\n\n"
+                + "    # indented code\n\n+++\n# not front matter here\n+++\n";
+        assertEquals(
+                List.of("Real", "not front matter here"),
+                MarkdownOutline.headings(md).stream().map(Heading::title).toList());
+        assertEquals(
+                List.of("After"),
+                MarkdownOutline.headings("+++\ntitle = \"x\"\n# toml comment\n+++\n\n# After\n").stream()
+                        .map(Heading::title)
+                        .toList(),
+                "TOML front matter is skipped like YAML");
+    }
+
+    @Test
+    void aRuleNeitherStartsNorContinuesASetextParagraph() {
+        assertEquals(
+                List.of(new Heading(2, "key: value", 3)),
+                MarkdownOutline.headings("intro\n\n---\nkey: value\n---\n"),
+                "the first --- is a rule, not the first line of the heading");
+        assertEquals(List.of(), MarkdownOutline.headings("text\n\n* * *\n___\n\nmore\n"));
+        assertEquals(List.of(new Heading(2, "text", 0)), MarkdownOutline.headings("text\n---\n***\n"));
+    }
 }

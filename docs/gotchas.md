@@ -231,6 +231,80 @@ listener.
 forces work the [hot path](glossary.md#hot-path) can't afford. Defer it (e.g. read it on the next
 pulse) rather than mid-event. See [performance.md](performance.md#3-work-incrementally-and-only-on-whats-visible).
 
+## `applyCss()` restyles everything below the node it is called on
+
+**Symptom:** a change to one node of a large scene graph (one block of a long Markdown preview) costs
+as much as building the whole thing: hundreds of milliseconds in `CssStyleHelper.transitionToState`,
+then again in layout.
+
+**Why/fix:** `Node.applyCss()` is not "process whatever is dirty". It marks the node `UPDATE`, and a
+parent in that state pushes it down to **every** descendant, clean or not; each restyled `Text` then
+reports new layout bounds, so its parent asks for layout and the whole tree is measured again. Call it
+on the nodes that are new (`MarkdownPreview.show` does: `fresh.forEach(Node::applyCss)`), never on the
+scene root or a big container, when all you need is the new nodes styled before measuring. The pulse's
+own CSS pass *is* incremental; `layout()` is too.
+
+## A `VBox` measures every width-biased child on every layout pass
+
+**Symptom:** a column of thousands of wrapping `TextFlow`s (or tables) takes hundreds of milliseconds
+to lay out although one child changed; the profile is all `TextFlow.computePrefHeight`.
+
+**Why/fix:** JavaFX caches a region's size only for the unconstrained (`-1`) case. A child whose height
+depends on its width is asked again each pass — twice, in a `ScrollPane`, which measures its content
+with and without room for a scrollbar. `BlockColumn` (the Markdown preview's column) keeps each child's
+height per width and re-measures only children whose `isNeedsLayout()` is set: `requestLayout()` is the
+one thing that can change a region's size, and it sets that flag until the child is laid out.
+
+## Math in Markdown is part of the parse, not found in the text afterwards
+
+**Symptom:** `\,` renders as a comma, `\\` (a row break) disappears, `$a*b*c$` comes out half italic,
+`\$5` is typeset as a formula.
+
+**Why/fix:** CommonMark has consumed backslash escapes and turned `*`/`_` into emphasis by the time a
+renderer sees text nodes, so `$…$` cannot be recovered from them. `markdown/MarkdownMath` recognises
+math in the inline/block parser, on the raw line, and yields `MarkdownMath.Inline` / `Block` nodes
+carrying the LaTeX verbatim. `MarkdownRenderer.parseForRender` uses it, and so does everything that draws
+a document: the preview, print, the popups, and every export (the HTML page, the clipboard fragment, DOCX,
+ODT, PDF). A new renderer takes its math from those nodes too — never from a scan of its own, and never
+from the raw source: the HTML export once did that and turned `$HOME:$PATH` inside a code span into an
+image tag. `MarkdownDocInfo.blockFormula` is the one rule for "this block is a centred formula";
+`ExportMathAgreementTest` holds the five outputs to the parse.
+
+## Word wrap on by default meets text that cannot wrap
+
+**Symptom:** opening a Markdown or plain-text file freezes the window for seconds to a minute.
+
+**Why/fix:** prose wraps by default (`Settings.wordWrapProse`), and RichTextFX lays a wrapped paragraph
+out pathologically when it has nowhere to break: one unbroken 10,000-character token took 14 s to open
+and 20,000 took 79 s (a pasted `data:` image is such a token). `editor/WordWrap` holds wrapping off for
+a buffer that receives a piece of text with an unbroken run of 2,000 characters or a line of 10,000,
+before the next layout; *Toggle Word Wrap* opts back in. Keep that hold in front of any new way text
+gets into a wrapped buffer.
+
+## A buffer in Preview mode is not "read-only" — it refuses *commands*
+
+**Symptom:** an agent, MCP or AI edit of a file whose tab shows only its rendered preview is refused; or
+the reverse, a new editing command changes text nobody can see.
+
+**Why/fix:** with only the preview on screen (`EditorBuffer.isPreviewOnly()`), an edit at the hidden caret
+is refused — but by the *command* guards (`EditingCoordinator.activeEditable()`, undo/redo, the Markdown
+and lint entry points, Replace), not by `isEditable()`. `isEditable()` must stay true: programmatic writers
+(the AI "explain" stream that fills a buffer it has just put in Preview, an agent or language-server edit,
+a reload) still write, and the preview follows. A new command that edits the active buffer goes through
+`activeEditable()` like the others; `CommandSweepFxTest`'s `MARKDOWN_PREVIEW` state fails if one changes
+the text of a buffer it leaves in Preview. Find in that state searches the rendering (`PreviewFind`).
+
+## The preview's image fetch opens its own socket
+
+**Symptom:** a remote image loads in a browser but not in the preview behind an unusual network setup; or
+a temptation to "simplify" `PreviewImageLoader.fetch` back to `URLConnection`.
+
+**Why/fix:** the loader refuses internal addresses, and decides that from what the host resolves to.
+`URLConnection` resolves the host again to connect, so a rebinding DNS server could pass the check and
+then answer `127.0.0.1`. `PinnedHttp` connects to the address that was checked and uses the name only
+for `Host`, SNI and the certificate. When the system routes the URL through a proxy
+(`ProxySelector`), the `URLConnection` path is used instead — the proxy makes the connection.
+
 ## GUI-launched `.app` inherits a stripped PATH
 
 **Symptom:** `mmdc`/`npx`/`git`/an LSP server "not found" only when Editora is launched from Finder

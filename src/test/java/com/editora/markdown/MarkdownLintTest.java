@@ -203,4 +203,428 @@ class MarkdownLintTest {
                 "two spaces at end of document breaks nothing");
         assertEquals("three spaces\nnext\n", MarkdownLintFix.fix("three spaces   \nnext\n", java.util.Set.of(), 4));
     }
+
+    private static List<String> at(String md) {
+        return MarkdownLint.lint(md).stream()
+                .map(d -> d.code() + "@" + d.line() + ":" + d.column() + "+" + d.length())
+                .toList();
+    }
+
+    // --- C1: code at any nesting is never linted -------------------------------------------------------
+
+    @Test
+    void nothingIsReportedInsideAFenceNestedInLists() {
+        String md = "# T\n\n1. Step one\n    - Create the Makefile:\n\n        ```make\n        build:\n"
+                + "        \tgcc -o app main.c   \n\n\n        #comment http://x.io [a][b]\n        ```\n\n2. Next\n";
+        assertEquals(List.of(), at(md));
+    }
+
+    @Test
+    void nothingIsReportedInsideAFenceUnderAFourColumnListItem() {
+        String md = "# T\n\n1.  Run:\n\n    ```sh\n    #!/bin/sh\n    curl https://example.com/i.sh\t| sh  \n    ```\n";
+        assertEquals(List.of(), at(md));
+    }
+
+    @Test
+    void nothingIsReportedInsideAnIndentedCodeBlock() {
+        String md = "# T\n\nPara\n\n    # not a heading\n    http://x.io a[i][j]\n    a\tb   \n\n\n    more\n\nPara\n";
+        assertEquals(List.of(), at(md));
+    }
+
+    @Test
+    void nothingIsReportedInsideAFenceInABlockQuote() {
+        assertEquals(List.of(), at("# T\n\n> ```text\n> # not a heading\n> http://x.io\n> ```\n"));
+    }
+
+    @Test
+    void fenceRulesPointAtTheFenceWhereverItIsIndented() {
+        assertEquals(List.of("MD040@5:3+3", "MD031@7:3+3"), at("# T\n\n- item\n\n  ```\n  code\n  ```\n  text\n"));
+    }
+
+    // --- C6: closing fences and info strings -----------------------------------------------------------
+
+    @Test
+    void aFenceLineWithAnInfoStringDoesNotCloseTheBlock() {
+        assertEquals(List.of(), at("# T\n\n```js\ncode\n```js\n# still code\t\n```\n"));
+    }
+
+    @Test
+    void aLineStartingWithAnInlineTripleBacktickSpanDoesNotOpenAFence() {
+        String md = "# T\n\n```not a fence``` text\n\n# Second\n";
+        assertEquals(List.of("MD025@5:1+1"), at(md));
+    }
+
+    // --- C8: code spans by run length ------------------------------------------------------------------
+
+    @Test
+    void multiBacktickSpansDoNotFlipCodeAndProse() {
+        assertEquals(List.of(), at("# T\n\nUse `` ` `` then `[+-]?d[.d][e±n]` and `http://x.io` here\n"));
+        assertEquals(List.of("MD034@3:17+11"), at("# T\n\nUse `` ` `` and http://x.io here\n"));
+    }
+
+    // --- C9: raw HTML ----------------------------------------------------------------------------------
+
+    @Test
+    void commentedOutTextIsNotLinted() {
+        assertEquals(List.of(), at("# T\n\n<!--\n# hidden\nhttp://x.io\n[a][b]\n-->\n"));
+        assertEquals(List.of(), at("# T\n\ntext <!-- http://x.io [a][b] --> more\n"));
+    }
+
+    @Test
+    void preBlocksAreNotLinted() {
+        assertEquals(List.of(), at("# T\n\n<pre>\na\tb   \n\n\n# x\n</pre>\n"));
+    }
+
+    @Test
+    void urlsInAMultiLineTagOrInsideAnAnchorAreNotBare() {
+        assertEquals(List.of(), at("# T\n\n<a\n  href=\"http://a.io\">x</a>\n"));
+        assertEquals(List.of(), at("# T\n\n<img\n  alt=\"x\"\n  src=\"https://a.io/a.png\">\n"));
+        assertEquals(List.of(), at("# T\n\n<a href=\"http://x.io\">http://x.io</a>\n"));
+        assertEquals(List.of("MD034@4:19+11"), at("# T\n\n<a\n  href=\"/x\">x</a> http://b.io\n"));
+    }
+
+    // --- C10: front matter -----------------------------------------------------------------------------
+
+    @Test
+    void tomlFrontMatterIsSkipped() {
+        assertEquals(List.of(), at("+++\ndraft = true\n# c\nurl = \"http://x.io\"   \n+++\n\n# T\n"));
+    }
+
+    @Test
+    void yamlFrontMatterClosedByDotsAndFenceLookalikesInsideIt() {
+        assertEquals(List.of(), at("---\ndraft: true\n...\n\n# T\n"));
+        assertEquals(List.of(), at("---\na: |\n  ```\n---\n# T\n"));
+    }
+
+    // --- C2: MD041 / MD025 and titles ------------------------------------------------------------------
+
+    @Test
+    void aFrontMatterTitleIsTheTopLevelHeading() {
+        assertEquals(List.of(), at("---\ntitle: X\n---\n\nSome text.\n"));
+        assertEquals(List.of(), at("+++\ntitle = \"X\"\n+++\n\nSome text.\n"));
+        assertEquals(List.of("MD025@5:1+1"), at("---\ntitle: X\n---\n\n# T\n"));
+        assertEquals(List.of("MD041@5:1+10"), at("---\ndraft: true\n---\n\nSome text.\n"));
+    }
+
+    @Test
+    void aFrontMatterCorpusWithTitlesIsClean() {
+        String[] bodies = {
+            "Intro paragraph.\n\n## Section\n\nText.\n",
+            "![cover](a.png)\n\nText.\n",
+            "## Straight to a section\n\nText.\n",
+            "<!-- note -->\n\nText with a [link](https://x.io).\n"
+        };
+        String[] fronts = {
+            "---\ntitle: A page\ndescription: d\n---\n\n",
+            "---\nlayout: post\ntitle: \"Quoted\"\ntags: [a, b]\n---\n",
+            "+++\ntitle = \"Hugo\"\ndate = 2026-01-01\n+++\n\n",
+            "---\n\"title\": json-ish\n...\n\n"
+        };
+        for (String front : fronts) {
+            for (String body : bodies) {
+                assertFalse(has(front + body, "MD041"), front + body);
+                assertFalse(has(front + body, "MD025"), front + body);
+            }
+        }
+    }
+
+    @Test
+    void setextAndHtmlTitlesAndLeadingCommentsSatisfyMd041() {
+        assertEquals(List.of(), at("Title\n=====\n\ntext\n"));
+        assertEquals(List.of(), at("<h1 align=\"center\">X</h1>\n\ntext\n"));
+        assertEquals(List.of(), at("<!--\nlicense\n-->\n\n# T\n"));
+        assertEquals(List.of("MD041@1:1+5"), at("Title\n-----\n\ntext\n")); // an H2 is not a title
+    }
+
+    // --- C7: MD026 -------------------------------------------------------------------------------------
+
+    @Test
+    void md026LeavesEntitiesAndFlagsFullWidthPunctuation() {
+        assertFalse(has("# T\n\n## Entity &copy;\n\n## Entity &amp;\n\n## Num &#169;\n\n## Hex &#xA9;\n", "MD026"));
+        assertTrue(has("# T\n\n## Not an entity;\n", "MD026"));
+        assertEquals(List.of("MD026@3:8+1"), at("# T\n\n## Full。\n"));
+        assertEquals(List.of("MD026@3:9+1"), at("# T\n\n## Colon：\n"));
+    }
+
+    // --- C18 -------------------------------------------------------------------------------------------
+
+    @Test
+    void md010ReportsEveryTabRun() {
+        assertEquals(List.of("MD010@3:2+1", "MD010@3:4+2"), at("# T\n\na\tb\t\tc\n"));
+    }
+
+    @Test
+    void aHashTagContinuingAParagraphIsNotAHeading() {
+        assertEquals(List.of(), at("# T\n\nSee\n#123 for details\n#tag too\n"));
+        assertEquals(List.of("MD018@3:1+1"), at("# T\n\n#Title\n")); // a line of its own still is
+        assertEquals(
+                "# T\n\nSee\n#123 for details\n", MarkdownLintFix.fix("# T\n\nSee\n#123 for details\n", Set.of(), 4));
+    }
+
+    @Test
+    void aHeadingAtItsListItemsContentColumnIsNotIndented() {
+        assertFalse(has("# T\n\n- item\n\n  ## In the item\n\n1. x\n\n   ## Also\n", "MD023"));
+        assertEquals(List.of("MD023@5:3+1"), at("# T\n\n- item\n\n   ## One too many\n"));
+    }
+
+    @Test
+    void md034RangeStopsBeforeSentencePunctuationAndKeepsBalancedParentheses() {
+        assertEquals(List.of("MD034@3:5+11"), at("# T\n\nSee http://k.io.\n"));
+        assertEquals(List.of("MD034@3:6+11"), at("# T\n\nSee \"http://j.io\", ok\n"));
+        assertEquals(List.of("MD034@3:1+17"), at("# T\n\nhttp://q.io/a_(b) x\n"));
+        assertEquals(List.of("MD034@3:5+11"), at("# T\n\nfoo http://x.io) bar\n"));
+    }
+
+    @Test
+    void md034KnowsLinkDestinationsAndDefinitionsWrittenLoosely() {
+        assertEquals(List.of(), at("# T\n\n[text](  http://s.io ) [t](<http://t.io>)\n"));
+        assertEquals(List.of(), at("# T\n\n[label]:\n  http://b.io\n"));
+    }
+
+    @Test
+    void md052EscapesCollapsedReferencesAndWhereDefinitionsCount() {
+        assertEquals(List.of(), at("# T\n\n\\[not\\][ref] is literal\n"));
+        assertEquals(List.of("MD052@3:1+5"), at("# T\n\n[c][] collapsed\n"));
+        assertEquals(List.of(), at("# T\n\n[c][] collapsed\n\n[c]: /u\n"));
+        assertEquals(List.of("MD052@3:1+6"), at("# T\n\n[a][b]\n\n```text\n[b]: http://x.io\n```\n"));
+        assertEquals(List.of(), at("# T\n\n[x][y]\n\n[y]:\n  /multi\n"));
+    }
+
+    @Test
+    void aFileThatIsOnlyANewlineIsClean() {
+        assertEquals(List.of(), at("\n"));
+        assertEquals("\n", MarkdownLintFix.fix("\n", Set.of(), 4));
+        assertEquals("", MarkdownLintFix.fix("\n\n\n", Set.of(), 4));
+    }
+
+    // --- C13: ranges -----------------------------------------------------------------------------------
+
+    @Test
+    void structuralDiagnosticsCoverSomethingVisible() {
+        assertEquals(List.of("MD041@1:1+11"), at("Not a title\n"));
+        assertEquals(List.of("MD001@3:1+3"), at("# A\n\n### C\n"));
+        assertEquals(List.of("MD025@3:1+1"), at("# A\n\n# B\n"));
+        assertEquals(
+                List.of("MD025@4:1+7"),
+                at("# A\n\n\nTitle 2\n=======\n").stream()
+                        .filter(s -> s.startsWith("MD025"))
+                        .toList());
+        assertEquals(List.of("MD047@1:3+1"), at("# T")); // at the end of the last line
+    }
+
+    // --- C15: catalog keys -----------------------------------------------------------------------------
+
+    @Test
+    void everyDiagnosticCarriesACatalogKeyAndItsEnglishText() {
+        String md = "x\n### h.\n#Bad\n##  two\n  ## in\ntext\t  \n\n\n# A\n### deep\n# B\n```\n```\nhttp://x.io [a][b]";
+        List<Diagnostic> all = MarkdownLint.lint(md);
+        Set<String> seen = all.stream().map(Diagnostic::code).collect(Collectors.toSet());
+        assertEquals(MarkdownLint.CODES, seen, "the sample trips every rule");
+        for (Diagnostic d : all) {
+            assertTrue(MarkdownLint.messageKeys().contains(d.key()), d.toString());
+            assertFalse(d.message().isBlank());
+        }
+    }
+
+    @Test
+    void namesResolveToRules() {
+        assertEquals(Set.of("MD009"), MarkdownLint.resolve("no-trailing-spaces"));
+        assertEquals(Set.of("MD009"), MarkdownLint.resolve(" md009 "));
+        assertEquals(Set.of("MD009", "MD010", "MD012"), MarkdownLint.resolve("whitespace"));
+        assertEquals(Set.of("MD033"), MarkdownLint.resolve("MD033")); // not implemented, still only itself
+        assertEquals(Set.of(), MarkdownLint.resolve("no-inline-html"));
+        assertEquals(Set.of(), MarkdownLint.resolve(null));
+        assertTrue(MarkdownLint.fixable("MD009"));
+        assertFalse(MarkdownLint.fixable("MD034"));
+        assertFalse(MarkdownLint.fixable("MD999"));
+    }
+
+    // --- C17: long lines stay linear -------------------------------------------------------------------
+
+    @Test
+    void pathologicalLongLinesLintQuickly() {
+        String spans = "# T\n\n" + "`a` http://x.io [a][b] ".repeat(20_000) + "\n";
+        String brackets = "# T\n\n" + "[".repeat(50_000) + "\n";
+        String tags = "# T\n\n" + "<a http://x.io ".repeat(20_000) + "\n";
+        long start = System.nanoTime();
+        assertEquals(40_001, MarkdownLint.lint(spans).size()); // + the trailing space
+        MarkdownLint.lint(brackets);
+        MarkdownLint.lint(tags);
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(ms < 3_000, "took " + ms + " ms (was ~10 s)");
+    }
+
+    // --- wave 2 — C9: block-level HTML ------------------------------------------------------------------
+
+    @Test
+    void blockLevelHtmlIsNotLinted() {
+        assertEquals(List.of(), at("# T\n\n<div>\n# not a heading\nhttp://x.io\n\t<p>x</p>   \n</div>\n"));
+        assertEquals(
+                List.of(),
+                at(
+                        "# T\n\n<p align=\"center\">\n  <a href=\"https://x.io\"><img src=\"https://x.io/a.png\"></a>\n</p>\n"));
+        assertEquals(List.of(), at("# T\n\n<table>\n<tr><td>[a][b] http://x.io</td></tr>\n</table>\n"));
+    }
+
+    @Test
+    void markdownBetweenBlankLinesInsideDetailsIsStillLinted() {
+        assertEquals(
+                List.of("MD034@6:5+11"),
+                at("# T\n\n<details>\n<summary>More http://quiet.io</summary>\n\nsee http://x.io\n\n</details>\n"));
+    }
+
+    @Test
+    void anHtmlHeadingStillSatisfiesMd041() {
+        assertEquals(List.of(), at("<h1 align=\"center\">X</h1>\n\ntext\n"));
+        assertEquals(List.of("MD041@1:1+12"), at("<h2>Sub</h2>\n\ntext\n"));
+    }
+
+    // --- wave 2 — C18: bare e-mail addresses -------------------------------------------------------------
+
+    @Test
+    void md034FlagsABareEmailAddress() {
+        assertEquals(List.of("MD034@3:7+16"), at("# T\n\nWrite jane@example.com today.\n"));
+        assertEquals(List.of("MD034@3:1+21"), at("# T\n\njane.doe+x@mail.co.uk, please\n"));
+        assertEquals(List.of("MD034@3:2+9"), at("# T\n\n(joe@x.org)\n"));
+    }
+
+    @Test
+    void md034LeavesLinkedQuotedAndLookalikeAddressesAlone() {
+        assertEquals(List.of(), at("# T\n\n<jane@example.com> and [mail](mailto:jane@example.com)\n"));
+        assertEquals(List.of(), at("# T\n\n[jane@example.com](mailto:jane@example.com) `jane@example.com`\n"));
+        assertEquals(List.of(), at("# T\n\n<a href=\"mailto:jane@example.com\">write</a> <!-- jane@example.com -->\n"));
+        assertEquals(List.of(), at("# T\n\nclone git@github.com:owner/repo.git or scp user@host.example:/tmp\n"));
+        assertEquals(List.of(), at("# T\n\ninstall pkg@1.2.3 and @scope/name@2.0.0, mention @someone\n"));
+        assertEquals(List.of(), at("# T\n\n[x](https://user@host.example/path)\n\n[ref]: jane@example.com\n"));
+        assertEquals(List.of(), at("# T\n\n    jane@example.com\n\n```text\njane@example.com\n```\n"));
+    }
+
+    @Test
+    void aLineOfAtSignsLintsQuickly() {
+        long start = System.nanoTime();
+        MarkdownLint.lint("# T\n\n" + "a@".repeat(50_000) + "\n" + "x".repeat(200_000) + "@example.com\n");
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(ms < 2_000, "took " + ms + " ms");
+    }
+
+    // --- wave 2 — C11: rule options ----------------------------------------------------------------------
+
+    private static List<String> at(String md, MarkdownLintOptions options) {
+        return MarkdownLint.lint(md, Set.of(), options).stream()
+                .map(d -> d.code() + "@" + d.line() + ":" + d.column() + "+" + d.length())
+                .toList();
+    }
+
+    private static MarkdownLintOptions with(String code, String option, Object value) {
+        return MarkdownLintOptions.DEFAULT.with(code, option, value);
+    }
+
+    @Test
+    void md009BrSpaces() {
+        String md = "# T\n\ntwo  \nthree   \nend\n";
+        assertEquals(List.of("MD009@4:6+3"), at(md));
+        assertEquals(List.of("MD009@3:4+2"), at(md, with("MD009", "br_spaces", 3)));
+        assertEquals(List.of("MD009@3:4+2", "MD009@4:6+3"), at(md, with("MD009", "br_spaces", 0)));
+        assertEquals(
+                "# T\n\ntwo\nthree   \nend\n",
+                MarkdownLintFix.fix(md, Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD009", "br_spaces", 3))
+                        .text());
+    }
+
+    @Test
+    void md026Punctuation() {
+        String md = "# T\n\n## Why?\n\n## Done.\n";
+        assertEquals(List.of("MD026@5:8+1"), at(md));
+        MarkdownLintOptions question = with("MD026", "punctuation", "?");
+        assertEquals(List.of("MD026@3:7+1"), at(md, question));
+        assertEquals(
+                "# T\n\n## Why\n\n## Done.\n",
+                MarkdownLintFix.fix(md, Set.of(), 4, MarkdownLintFix.Scope.ALL, question)
+                        .text());
+    }
+
+    @Test
+    void frontMatterTitleAndLevels() {
+        String titled = "---\nheadline: X\n---\n\ntext\n";
+        assertEquals(List.of("MD041@5:1+4"), at(titled));
+        assertEquals(List.of(), at(titled, with("MD041", "front_matter_title", "^\\s*headline\\s*:")));
+        // "" switches the front-matter title off: the body needs its own heading again.
+        assertEquals(
+                List.of("MD041@5:1+4"), at("---\ntitle: X\n---\n\ntext\n", with("MD025", "front_matter_title", "")));
+
+        String sections = "## A\n\n## B\n";
+        assertEquals(List.of("MD041@1:1+4"), at(sections));
+        assertEquals(List.of(), at(sections, with("MD041", "level", 2)));
+        assertEquals(List.of("MD041@1:1+4", "MD025@3:1+2"), at(sections, with("MD025", "level", 2)));
+        assertEquals(List.of(), at("<h2>A</h2>\n\ntext\n", with("MD041", "level", 2)));
+    }
+
+    @Test
+    void md010CodeBlocksAndMd012Maximum() {
+        String code = "# T\n\n```make\nall:\n\tgcc\n```\n";
+        assertEquals(List.of(), at(code));
+        assertEquals(List.of("MD010@5:1+1"), at(code, with("MD010", "code_blocks", true)));
+        assertEquals(
+                code,
+                MarkdownLintFix.fix(code, Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD010", "code_blocks", true))
+                        .text(),
+                "reported when asked for, never rewritten");
+
+        String blanks = "# T\n\n\n\n\ntext\n";
+        assertEquals(List.of("MD012@3:1+1", "MD012@4:1+1", "MD012@5:1+1"), at(blanks));
+        MarkdownLintOptions two = with("MD012", "maximum", 2);
+        assertEquals(List.of("MD012@4:1+1", "MD012@5:1+1"), at(blanks, two));
+        assertEquals(
+                "# T\n\n\ntext\n",
+                MarkdownLintFix.fix(blanks, Set.of(), 4, MarkdownLintFix.Scope.ALL, two)
+                        .text());
+    }
+
+    @Test
+    void md010SpacesPerTabDrivesTheFix() {
+        assertEquals(
+                "a  b\n",
+                MarkdownLintFix.fix(
+                                "a\tb\n", Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD010", "spaces_per_tab", 2))
+                        .text());
+        assertEquals(
+                "a    b\n",
+                MarkdownLintFix.fix("a\tb\n", Set.of(), 4, MarkdownLintFix.Scope.ALL, MarkdownLintOptions.DEFAULT)
+                        .text());
+    }
+
+    @Test
+    void md022LinesAboveAndBelow() {
+        String md = "# T\n\ntext\n## B\ntext\n";
+        assertEquals(List.of("MD022@4:1+2", "MD022@4:1+2"), at(md));
+        assertEquals(List.of("MD022@4:1+2"), at(md, with("MD022", "lines_above", 0)));
+        assertEquals(List.of(), at(md, with("MD022", "lines_above", 0).with("MD022", "lines_below", -1)));
+        String one = "# T\n\ntext\n\n## B\n\ntext\n";
+        assertEquals(List.of(), at(one));
+        assertEquals(List.of("MD022@5:1+2"), at(one, with("MD022", "lines_above", 2)));
+    }
+
+    @Test
+    void optionsThatAreUnknownOrMalformedChangeNothing() {
+        MarkdownLintOptions d = MarkdownLintOptions.DEFAULT;
+        assertEquals(d, d.with("MD009", "strict", true));
+        assertEquals(d, d.with("MD013", "line_length", 120));
+        assertEquals(d, d.with("MD009", "br_spaces", "two"));
+        assertEquals(d, d.with("MD041", "level", 9));
+        assertEquals(d, d.with("MD025", "front_matter_title", "([unclosed"));
+        assertEquals(d, d.with("MD012", "maximum", 0));
+        assertEquals(d, d.with("MD010", "spaces_per_tab", 0));
+    }
+
+    @Test
+    void aConfigureFileCommentCarriesOptionsToo() {
+        String md =
+                "<!-- markdownlint-configure-file { \"MD026\": { \"punctuation\": \"?\" }, \"MD012\": { \"maximum\": 2 } } -->\n"
+                        + "# T\n\n\n## Done.\n\n## Why?\n";
+        assertEquals(List.of("MD026@7:7+1"), at(md));
+        assertEquals(
+                "<!-- markdownlint-configure-file { \"MD026\": { \"punctuation\": \"?\" }, \"MD012\": { \"maximum\": 2 } } -->\n"
+                        + "# T\n\n\n## Done.\n\n## Why\n",
+                MarkdownLintFix.fix(md, Set.of(), 4));
+    }
 }

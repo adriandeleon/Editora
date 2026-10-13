@@ -72,6 +72,39 @@ public final class TabExpansion {
         return s == null ? null : new Match(ident, s);
     }
 
+    /**
+     * Whether a snippet {@code body} is a block of its own — a heading, a quote or alert, a list, a table, a
+     * fenced block, or anything of several lines — rather than something that goes inside a sentence.
+     */
+    public static boolean blockLevel(String body) {
+        return body.indexOf('\n') >= 0
+                || body.startsWith("#")
+                || body.startsWith(">")
+                || body.startsWith("- ")
+                || body.startsWith("|")
+                || body.startsWith("```");
+    }
+
+    /**
+     * Whether Tab may expand {@code snippet} in prose when its trigger starts at {@code start} of the line
+     * text {@code before}: a block-level snippet only at the start of the line (indentation and {@code >}
+     * quote marks aside). The bundled Markdown triggers are ordinary words — {@code note}, {@code tip},
+     * {@code table}, {@code task} — and "take a note" followed by Tab is not a request for an alert box in
+     * the middle of the sentence.
+     */
+    public static boolean fitsInProse(String before, int start, Snippet snippet) {
+        if (!blockLevel(snippet.body())) {
+            return true;
+        }
+        for (int i = 0; i < start; i++) {
+            char c = before.charAt(i);
+            if (c != ' ' && c != '\t' && c != '>') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean isIdentifierPart(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
     }

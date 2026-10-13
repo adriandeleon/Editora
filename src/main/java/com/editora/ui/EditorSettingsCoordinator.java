@@ -188,24 +188,87 @@ final class EditorSettingsCoordinator {
         host.setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
     }
 
+    /**
+     * {@code view.toggleWordWrap}: flips the preference that governs the active buffer — the one for
+     * Markdown and plain text when that is what it holds, else the one for code — and says which.
+     */
     void toggleWordWrap() {
         Settings s = host.config().getSettings();
         EditorBuffer active = host.activeBuffer();
-        if (active != null && active.isWrapSuppressed()) {
+        boolean prose = active != null && Settings.isProseLanguage(active.getLanguage());
+        String key = prose ? "status.toggle.wordWrapProse" : "status.toggle.wordWrap";
+        if (active != null && active.wrap().isSuppressed()) {
             // Wrap was held off for this long-line file. Asking for it here is the explicit opt-in: if the
             // preference is already on, wrap this buffer rather than turning wrap off everywhere else.
-            active.setWrapSuppressed(false);
-            if (s.isWordWrap()) {
+            active.wrap().setSuppressed(false);
+            if (s.wrapsLanguage(active.getLanguage())) {
                 active.setWordWrap(true);
-                host.setStatus(tr("status.toggle.wordWrap", tr("common.on")));
+                host.setStatus(tr(key, tr("common.on")));
                 return;
             }
         }
-        s.setWordWrap(!s.isWordWrap());
+        boolean next = !(prose ? s.isWordWrapProse() : s.isWordWrap());
+        if (prose) {
+            s.setWordWrapProse(next);
+        } else {
+            s.setWordWrap(next);
+        }
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
         syncSettingsViewChecks();
-        host.setStatus(tr("status.toggle.wordWrap", tr(s.isWordWrap() ? "common.on" : "common.off")));
+        host.setStatus(tr(key, tr(next ? "common.on" : "common.off")));
+    }
+
+    // --- Markdown settings from the palette (the Settings page's rows; see SettingsWindow.markdownPage) ---
+
+    void toggleMarkdownRemoteImages() {
+        Settings s = host.config().getSettings();
+        toggleSetting(
+                "view.toggleMarkdownRemoteImages",
+                s::isMarkdownRemoteImages,
+                s::setMarkdownRemoteImages,
+                () -> applyViewSettingsToAllBuffers(s));
+    }
+
+    void promptMarkdownAssetsFolder() {
+        Settings s = host.config().getSettings();
+        host.promptText(
+                commandTitle("markdown.setAssetsFolder"),
+                tr("palette.setting.value"),
+                s.getMarkdownAssetsFolder(),
+                v -> {
+                    s.setMarkdownAssetsFolder(v);
+                    host.requestSave();
+                    if (host.settingsWindow() != null) {
+                        host.settingsWindow().syncAll();
+                    }
+                    // The folder as kept, which is the default when the entry would leave the document's folder.
+                    host.setStatus(tr(
+                            "status.settingChanged",
+                            commandTitle("markdown.setAssetsFolder"),
+                            s.getMarkdownAssetsFolder()));
+                });
+    }
+
+    /** Prompts for the shallowest ({@code max} false) or deepest heading level of the table of contents. */
+    void promptMarkdownTocLevel(boolean max) {
+        Settings s = host.config().getSettings();
+        promptIntSetting(
+                max ? "markdown.setTocMaxLevel" : "markdown.setTocMinLevel",
+                max ? s::getMarkdownTocMaxLevel : s::getMarkdownTocMinLevel,
+                1,
+                6,
+                level -> {
+                    // The range stays a range: the other end follows when this one passes it.
+                    if (max) {
+                        s.setMarkdownTocMinLevel(Math.min(s.getMarkdownTocMinLevel(), level));
+                        s.setMarkdownTocMaxLevel(level);
+                    } else {
+                        s.setMarkdownTocMaxLevel(Math.max(s.getMarkdownTocMaxLevel(), level));
+                        s.setMarkdownTocMinLevel(level);
+                    }
+                },
+                null);
     }
 
     void toggleWhitespace() {
@@ -804,7 +867,7 @@ final class EditorSettingsCoordinator {
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.setWordWrap(s.isWordWrap() && !buffer.isWrapSuppressed());
+        buffer.wrap().setPreference(s.isWordWrap(), s.isWordWrapProse()); // applied by the buffer's language
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
@@ -819,6 +882,11 @@ final class EditorSettingsCoordinator {
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
         spell.apply(buffer, s); // dictionary (per-file choice, else the default), switches, file types
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
+        buffer.markdown()
+                .configure(
+                        s.getMarkdownTocMinLevel(),
+                        s.getMarkdownTocMaxLevel(),
+                        id -> host.keymap() == null ? null : host.keymap().displayChord(id));
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)

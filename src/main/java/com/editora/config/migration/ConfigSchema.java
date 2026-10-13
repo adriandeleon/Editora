@@ -214,7 +214,14 @@ public enum ConfigSchema {
                     // v116→117: + pdfOrientation, pdfMargins, pdfCodeFontSize (additive; absent means
                     // portrait, each writer's own margin and 9 pt — the page every PDF had before the
                     // settings existed).
-                    Map.entry(116, (Migration) ConfigMigrations::identity)),
+                    Map.entry(116, (Migration) ConfigMigrations::identity),
+                    // v117→118: + wordWrapProse (word wrap is now per kind of file: on for Markdown and plain
+                    // text, off for code), markdownRemoteImages, markdownAssetsFolder, markdownTocMinLevel/
+                    // MaxLevel (additive). wordWrap keeps its stored value and now means "in code": a user
+                    // who had switched wrapping on still has it on everywhere, and one who never touched it
+                    // gets the new default — wrapped prose, unwrapped code. Absent means remote images load,
+                    // images go to "assets" and the table of contents lists levels 1–6, as before.
+                    Map.entry(117, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -257,7 +264,9 @@ public enum ConfigSchema {
                     // missing means Tree with both options on, which is what every window did before). A
                     // stored projectMapFlow is left as it is: only a file without one gets the new default.
                     Map.entry(12, ConfigMigrations::identity),
-                    Map.entry(13, ConfigMigrations::identity))), // v13→14: + collapsedBranchSections (additive)
+                    Map.entry(13, ConfigMigrations::identity), // v13→14: + collapsedBranchSections (additive)
+                    // v14→15: + markdownPreviewLayouts (additive; missing means 100% zoom, divider in the middle)
+                    Map.entry(14, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

@@ -89,6 +89,7 @@ class RenamedFileStateTest {
         ws.getManualFoldRegions().put(a, List.of(2, 4));
         ws.getMarkdownViewModes().put(a, "SPLIT");
         ws.getMarkwhenViews().put(a, "CALENDAR");
+        ws.getMarkdownPreviewLayouts().put(a, "1.21;0.35");
         ws.getSpellLanguages().put(a, "en_GB");
         ws.getProgramArgs().put(a, "--x");
         ws.getReadOnlyFiles().add(a);
@@ -100,6 +101,7 @@ class RenamedFileStateTest {
         assertEquals(Map.of(moved, List.of(2, 4)), ws.getManualFoldRegions());
         assertEquals(Map.of(moved, "SPLIT"), ws.getMarkdownViewModes());
         assertEquals(Map.of(moved, "CALENDAR"), ws.getMarkwhenViews());
+        assertEquals(Map.of(moved, "1.21;0.35"), ws.getMarkdownPreviewLayouts());
         assertEquals(Map.of(moved, "en_GB"), ws.getSpellLanguages());
         assertEquals(Map.of(moved, "--x"), ws.getProgramArgs());
         assertEquals(List.of(moved), ws.getReadOnlyFiles());

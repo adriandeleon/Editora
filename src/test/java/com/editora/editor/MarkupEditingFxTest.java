@@ -49,8 +49,11 @@ class MarkupEditingFxTest {
             buffer.insertTable(3, 2);
 
             MarkdownTable.Nav skeleton = MarkdownTable.generate(3, 2);
-            assertEquals("intro\n" + skeleton.block() + "\n", area.getText(), "a mid-line caret gets a line break");
-            assertEquals(6 + skeleton.caret(), area.getCaretPosition());
+            assertEquals(
+                    "intro\n\n" + skeleton.block() + "\n",
+                    area.getText(),
+                    "a mid-line caret gets a line break and a blank line: a row under a paragraph line joins it");
+            assertEquals(7 + skeleton.caret(), area.getCaretPosition());
             assertTrue(area.getText().contains("Column 1"), "the header names its columns");
             assertEquals(
                     4,
@@ -204,13 +207,16 @@ class MarkupEditingFxTest {
             assertTrue(prose.getArea().getText().endsWith("plain"));
             assertTrue(prose.getArea().getText().length() > 5, "the line was indented");
 
-            // A selection inside a table is indented too: cell navigation needs a bare caret.
+            // A selection inside a table still moves between cells: indenting the row would break the table.
             EditorBuffer selected = buffer("markdown", TABLE);
             selected.getArea().selectRange(2, 3);
             selected.getArea().fireEvent(EditorFx.pressed(KeyCode.TAB, false, false));
-            assertFalse(selected.getArea()
-                    .getText()
-                    .equals(MarkdownTable.tab(TABLE, 2, true).block()));
+            assertEquals(
+                    MarkdownTable.tab(TABLE, 3, true).block(),
+                    selected.getArea().getText());
+            assertEquals(
+                    MarkdownTable.tab(TABLE, 3, true).caret(),
+                    selected.getArea().getCaretPosition());
             buffer.dispose();
             prose.dispose();
             selected.dispose();
@@ -233,7 +239,7 @@ class MarkupEditingFxTest {
             assertTrue(target.tableFromCsv());
             String table = MarkdownTable.fromCsv(
                     LineEndings.toLf(Clipboard.getSystemClipboard().getString()));
-            assertEquals("see\n" + table + "\n", target.getArea().getText());
+            assertEquals("see\n\n" + table + "\n", target.getArea().getText());
             assertEquals(target.getArea().getLength(), target.getArea().getCaretPosition(), "caret after the table");
 
             // A selection wins over the clipboard and is replaced in place.
@@ -284,7 +290,7 @@ class MarkupEditingFxTest {
             buffer.getArea().moveTo(5); // end of "intro"
             assertTrue(buffer.insertOrUpdateToc());
             String withToc = buffer.getArea().getText();
-            assertTrue(withToc.startsWith("intro\n<!-- toc -->"), "inserted on its own line: " + withToc);
+            assertTrue(withToc.startsWith("intro\n\n<!-- toc -->"), "inserted on its own line: " + withToc);
             assertTrue(withToc.contains("[One](#one)"));
             assertTrue(withToc.contains("[Two](#two)"));
 

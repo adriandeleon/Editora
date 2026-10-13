@@ -232,6 +232,12 @@ public class SettingsWindow {
     private CheckBox lineNumbersCheck;
     private CheckBox minimapCheck;
     private CheckBox wordWrapCheck;
+    private CheckBox wordWrapProseCheck;
+    private CheckBox markdownRemoteImagesCheck;
+    private TextField markdownAssetsField;
+    private Spinner<Integer> markdownTocMinSpinner;
+    private Spinner<Integer> markdownTocMaxSpinner;
+    private ComboBox<String> markdownPreviewThemeCombo;
     private CheckBox adminSaveCheck;
     private CheckBox whitespaceCheck;
     private CheckBox notesCheck;
@@ -601,6 +607,26 @@ public class SettingsWindow {
         this.snippetManager = snippetManager;
     }
 
+    /**
+     * What the active file's project markdownlint config does to the rule list below, as one localized line
+     * ("" when none applies). Not observable: read again whenever the Markdown page is shown or synced.
+     */
+    public void setMarkdownLintConfigNote(java.util.function.Supplier<String> note) {
+        this.markdownLintConfigNote = note == null ? () -> "" : note;
+        refreshMarkdownLintConfigNote();
+    }
+
+    private java.util.function.Supplier<String> markdownLintConfigNote = () -> "";
+    private final Label markdownLintConfigNoteLabel = new Label();
+
+    private void refreshMarkdownLintConfigNote() {
+        String note = markdownLintConfigNote.get();
+        boolean show = note != null && !note.isBlank();
+        markdownLintConfigNoteLabel.setText(show ? note : "");
+        markdownLintConfigNoteLabel.setVisible(show);
+        markdownLintConfigNoteLabel.setManaged(show);
+    }
+
     /** Where a message about something this window did goes: the owning window's status bar. */
     public void setStatusSink(Consumer<String> onStatus) {
         this.onStatus = onStatus;
@@ -918,6 +944,9 @@ public class SettingsWindow {
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category) { // group headers aren't pages
                 showContent();
+                if (b == Category.MARKDOWN) {
+                    refreshMarkdownLintConfigNote(); // the active file may have changed since last shown
+                }
                 // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
                 // opening a short page after scrolling down a long one landed mid-page — and on a page
                 // that fits, silently nowhere at all. Deferred: the new content has not been laid out
@@ -1194,6 +1223,8 @@ public class SettingsWindow {
         lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
         wordWrapCheck = viewCheck(tr("settings.wordWrap"), Settings::setWordWrap);
+        wordWrapProseCheck = viewCheck(tr("settings.wordWrapProse"), Settings::setWordWrapProse);
+        buildMarkdownControls();
         adminSaveCheck = viewCheck(tr("settings.adminSave"), Settings::setAdminSave);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
@@ -2482,7 +2513,13 @@ public class SettingsWindow {
                 bracketColorsCheck,
                 null,
                 "bracket pair colorization colors nesting depth rainbow brackets parentheses braces vs code");
-        checkRow(display, Category.EDITOR, wordWrapCheck, null, "word wrap soft wrap long lines");
+        checkRow(display, Category.EDITOR, wordWrapCheck, null, "word wrap soft wrap long lines code");
+        checkRow(
+                display,
+                Category.EDITOR,
+                wordWrapProseCheck,
+                null,
+                "word wrap soft wrap long lines markdown plain text prose paragraph");
         checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
         checkRow(
                 display,
@@ -2716,7 +2753,36 @@ public class SettingsWindow {
                 markdownFormatBarCheck,
                 null,
                 "markdown format bar selection bold italic toolbar floating");
+        controlRow(
+                editing,
+                Category.MARKDOWN,
+                tr("settings.markdownAssetsFolder"),
+                tr("settings.markdownAssetsFolder.desc"),
+                markdownAssetsField,
+                "markdown image paste drop assets folder directory screenshots pictures");
+        HBox tocLevels = new HBox(6, markdownTocMinSpinner, new Label("–"), markdownTocMaxSpinner);
+        tocLevels.setAlignment(Pos.CENTER_LEFT);
+        controlRow(
+                editing,
+                Category.MARKDOWN,
+                tr("settings.markdownTocLevels"),
+                tr("settings.markdownTocLevels.desc"),
+                tocLevels,
+                "markdown table of contents toc heading levels depth minimum maximum");
         Card preview = card(p, tr("settings.section.markdownPreview"));
+        controlRow(
+                preview,
+                Category.MARKDOWN,
+                tr("settings.markdownPreviewTheme"),
+                null,
+                markdownPreviewThemeCombo,
+                "markdown preview theme light dark follow app color colour");
+        checkRow(
+                preview,
+                Category.MARKDOWN,
+                markdownRemoteImagesCheck,
+                tr("settings.markdownRemoteImages.desc"),
+                "markdown preview remote images web http network privacy tracking badge");
         checkRow(
                 preview,
                 Category.MARKDOWN,
@@ -2725,12 +2791,107 @@ public class SettingsWindow {
                 "markdown math latex katex formula equation dollar");
         Card lint = card(p, tr("settings.section.markdownLint"));
         checkRow(lint, Category.MARKDOWN, markdownLintCheck, null, "markdown lint linting warnings squiggles rules");
+        // A project's .markdownlint file changes which of the rules below apply to the active file; say so
+        // here too, or a rule ticked in this list that the project switches off looks broken.
+        markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
+        markdownLintConfigNoteLabel.setWrapText(true);
+        refreshMarkdownLintConfigNote();
+        cardRow(
+                lint,
+                Category.MARKDOWN,
+                markdownLintConfigNoteLabel,
+                "markdown lint project config markdownlint rules");
         cardRow(
                 lint,
                 Category.MARKDOWN,
                 markdownLintRulesEditor(),
                 "markdown lint rules MD009 MD040 MD034 disable enable per-rule checklist");
         return p;
+    }
+
+    /** The Markdown page's controls beyond its on/off switches; each writes its own setting and applies. */
+    private void buildMarkdownControls() {
+        markdownRemoteImagesCheck = viewCheck(tr("settings.markdownRemoteImages"), Settings::setMarkdownRemoteImages);
+        markdownAssetsField = new TextField();
+        markdownAssetsField.setPromptText(Settings.DEFAULT_MARKDOWN_ASSETS_FOLDER);
+        markdownAssetsField.setPrefWidth(220);
+        markdownAssetsField.setAccessibleText(tr("settings.markdownAssetsFolder"));
+        commitOnEnterOrBlur(markdownAssetsField, () -> config.getSettings().getMarkdownAssetsFolder(), now -> {
+            config.getSettings().setMarkdownAssetsFolder(now);
+            // What was typed may not be what is kept (a path out of the document's folder is not): show it.
+            markdownAssetsField.setText(config.getSettings().getMarkdownAssetsFolder());
+            apply();
+        });
+        markdownTocMinSpinner = IntSpinners.editable(1, 6, 1, 1);
+        markdownTocMaxSpinner = IntSpinners.editable(1, 6, 6, 1);
+        markdownTocMinSpinner.setPrefWidth(80);
+        markdownTocMaxSpinner.setPrefWidth(80);
+        markdownTocMinSpinner.setAccessibleText(tr("settings.markdownTocLevels.min"));
+        markdownTocMaxSpinner.setAccessibleText(tr("settings.markdownTocLevels.max"));
+        markdownTocMinSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            Settings st = config.getSettings();
+            st.setMarkdownTocMinLevel(now);
+            if (now > st.getMarkdownTocMaxLevel()) {
+                st.setMarkdownTocMaxLevel(now); // the range stays a range: the other end follows
+            }
+            syncMarkdownControls(st);
+            apply();
+        });
+        markdownTocMaxSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            Settings st = config.getSettings();
+            if (now < st.getMarkdownTocMinLevel()) {
+                st.setMarkdownTocMinLevel(now);
+            }
+            st.setMarkdownTocMaxLevel(now);
+            syncMarkdownControls(st);
+            apply();
+        });
+        markdownPreviewThemeCombo = new ComboBox<>();
+        markdownPreviewThemeCombo.getItems().setAll(Settings.MARKDOWN_PREVIEW_THEMES);
+        markdownPreviewThemeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return key == null || key.isEmpty()
+                        ? tr("markdown.previewTheme.follow")
+                        : tr("markdown.previewTheme." + key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        markdownPreviewThemeCombo.setMinWidth(170);
+        markdownPreviewThemeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setMarkdownPreviewTheme(now);
+            apply();
+        });
+    }
+
+    /** Shows the stored Markdown values in their controls without writing anything back. */
+    private void syncMarkdownControls(Settings s) {
+        boolean prev = loading;
+        loading = true;
+        try {
+            wordWrapProseCheck.setSelected(s.isWordWrapProse());
+            markdownRemoteImagesCheck.setSelected(s.isMarkdownRemoteImages());
+            markdownAssetsField.setText(s.getMarkdownAssetsFolder());
+            markdownTocMinSpinner.getValueFactory().setValue(s.getMarkdownTocMinLevel());
+            markdownTocMaxSpinner.getValueFactory().setValue(s.getMarkdownTocMaxLevel());
+            markdownPreviewThemeCombo.setValue(s.getMarkdownPreviewTheme());
+            refreshMarkdownLintConfigNote();
+        } finally {
+            loading = prev;
+        }
     }
 
     /** The Markdown-lint per-rule checklist: one checkbox per rule (checked = enabled). Toggling writes the
@@ -7698,6 +7859,7 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(settings.isShowLineNumbers());
             minimapCheck.setSelected(settings.isShowMinimap());
             wordWrapCheck.setSelected(settings.isWordWrap());
+            syncMarkdownControls(settings);
             adminSaveCheck.setSelected(settings.isAdminSave());
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             notesCheck.setSelected(settings.isNotesSupport());
@@ -8423,6 +8585,7 @@ public class SettingsWindow {
             lineNumbersCheck.setSelected(s.isShowLineNumbers());
             minimapCheck.setSelected(s.isShowMinimap());
             wordWrapCheck.setSelected(s.isWordWrap());
+            syncMarkdownControls(s);
             adminSaveCheck.setSelected(s.isAdminSave());
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());

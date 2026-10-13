@@ -214,15 +214,25 @@ final class EditingCoordinator {
     }
 
     void onUndo() {
-        if (!undoIsOff()) {
+        if (!undoIsOff() && !previewOnly()) {
             undoOrRedo(false);
         }
     }
 
     void onRedo() {
-        if (!undoIsOff()) {
+        if (!undoIsOff() && !previewOnly()) {
             undoOrRedo(true);
         }
+    }
+
+    /** Whether the active buffer shows only its preview — an edit there is refused, with a message. */
+    private boolean previewOnly() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null && buffer.isPreviewOnly()) {
+            host.setStatus(tr("status.previewCannotEdit"));
+            return true;
+        }
+        return false;
     }
 
     /** Through the buffer, which keeps multiple carets in place and usable across the replayed edit. */
@@ -492,7 +502,11 @@ final class EditingCoordinator {
         if ((!b.isMarkdown() && !b.isTypst()) || !b.isEditable()) {
             return false;
         }
-        if (!javafx.scene.input.Clipboard.getSystemClipboard().hasImage()) {
+        javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
+        // A spreadsheet or a word processor puts a picture of the copied cells beside their text: the text
+        // is what was copied. Only a clipboard that holds nothing but an image is pasted as one.
+        String text = clipboard.hasString() ? clipboard.getString() : null;
+        if (!clipboard.hasImage() || (text != null && !text.isBlank())) {
             return false;
         }
         if (!host.isLocalBuffer(b) || b.getPath() == null) {
@@ -506,14 +520,15 @@ final class EditingCoordinator {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
             String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                     n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
             String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(markupImageSnippet(b, rel, ""));
+            b.insertAtCaret(markupImageSnippet(b, rel, stripExtension(name))); // an image wants alt text
             host.setStatus(tr("status.markdown.imagePasted", rel));
         } catch (Exception ex) {
             host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
@@ -529,16 +544,21 @@ final class EditingCoordinator {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
             StringBuilder out = new StringBuilder();
             for (java.io.File f : files) {
                 String ext = extensionOf(f.getName());
                 String base = stripExtension(f.getName());
-                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                        n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
-                java.nio.file.Path target = assets.resolve(name);
-                java.nio.file.Files.copy(f.toPath(), target);
+                java.nio.file.Path source = f.toPath().toAbsolutePath().normalize();
+                java.nio.file.Path target = source;
+                if (!source.startsWith(baseDir.normalize())) { // already beside the document: link it, no copy
+                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                            n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
+                    target = assets.resolve(name);
+                    java.nio.file.Files.copy(source, target);
+                }
                 String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
                 if (out.length() > 0) {
                     out.append('\n');
@@ -566,66 +586,97 @@ final class EditingCoordinator {
         // Encode a raw dragged image now, on the FX thread (PixelReader), before going off-thread.
         byte[] inlinePng = image != null ? com.editora.editor.PreviewImageLoader.imageToPng(image) : null;
         java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
+        // The drop moved the caret to where the image goes; the download may end after the caret left.
+        CodeArea view = b.getFocusedArea();
+        int at = view.getCaretPosition();
         host.setStatus(tr("status.markdown.imageDownloading"));
         new Thread(
                         () -> {
-                            byte[] bytes = null;
-                            String ext = "png";
-                            if (url != null && !url.isBlank()) {
+                            WebImage found = resolveWebImage(url, inlinePng, u -> {
                                 try {
-                                    bytes = com.editora.editor.PreviewImageLoader.fetchBytes(url);
-                                    if (bytes != null && bytes.length > 0) {
-                                        ext = com.editora.markdown.MarkdownImagePaste.extensionForUrl(
-                                                url,
-                                                com.editora.editor.PreviewImageLoader.looksLikeSvg(bytes)
-                                                        ? "svg"
-                                                        : "png");
-                                    } else {
-                                        bytes = null;
-                                    }
-                                } catch (Exception ignore) {
-                                    bytes = null; // fall back to the encoded image / remote reference below
+                                    return com.editora.editor.PreviewImageLoader.fetchBytes(u);
+                                } catch (Exception e) {
+                                    return null; // fall back to the encoded image / a remote reference
                                 }
-                            }
-                            if (bytes == null) {
-                                bytes = inlinePng;
-                                ext = "png";
-                            }
-                            if (bytes == null) {
-                                javafx.application.Platform.runLater(() -> {
-                                    if (url != null && !url.isBlank()) { // a blank address names nothing
-                                        b.insertAtCaret(markupImageSnippet(b, url, ""));
-                                        host.setStatus(tr("status.markdown.imageDropped", 1));
-                                    } else {
-                                        host.setStatus(tr("status.markdown.imageFailed", ""));
-                                    }
-                                });
-                                return;
-                            }
-                            byte[] finalBytes = bytes;
-                            String finalExt = ext;
+                            });
+                            String snippet;
                             try {
-                                java.nio.file.Path assets =
-                                        baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
-                                java.nio.file.Files.createDirectories(assets);
-                                String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                                        n -> java.nio.file.Files.exists(assets.resolve(n)),
-                                        webImageBaseName(url),
-                                        finalExt);
-                                java.nio.file.Path target = assets.resolve(name);
-                                java.nio.file.Files.write(target, finalBytes);
-                                String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-                                javafx.application.Platform.runLater(() -> {
-                                    b.insertAtCaret(markupImageSnippet(b, rel, ""));
-                                    host.setStatus(tr("status.markdown.imageDropped", 1));
-                                });
+                                if (found.bytes() != null) {
+                                    java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                                            baseDir, host.config().getSettings().getMarkdownAssetsFolder());
+                                    java.nio.file.Files.createDirectories(assets);
+                                    String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
+                                            n -> java.nio.file.Files.exists(assets.resolve(n)),
+                                            webImageBaseName(url),
+                                            found.ext());
+                                    java.nio.file.Path target = assets.resolve(name);
+                                    java.nio.file.Files.write(target, found.bytes());
+                                    snippet = markupImageSnippet(
+                                            b,
+                                            com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target),
+                                            stripExtension(name));
+                                } else if (found.remote()) {
+                                    snippet = markupImageSnippet(b, url, "");
+                                } else {
+                                    snippet = found.link();
+                                }
                             } catch (Exception ex) {
                                 javafx.application.Platform.runLater(() -> host.setStatus(
                                         tr("status.markdown.imageFailed", String.valueOf(ex.getMessage()))));
+                                return;
                             }
+                            javafx.application.Platform.runLater(() -> {
+                                if (snippet == null) {
+                                    host.setStatus(tr("status.markdown.imageFailed", ""));
+                                } else if (insertAtDrop(view, at, snippet)) {
+                                    host.setStatus(tr("status.markdown.imageDropped", 1));
+                                }
+                            });
                         },
                         "md-web-image")
                 .start();
+    }
+
+    /**
+     * What a dropped web image turned out to be: {@code bytes} of an image to save as {@code .ext}; else a
+     * {@code remote} image to reference by its address (it could not be fetched now); else a {@code link}
+     * to insert because the address did not hold an image; all empty when there is nothing to insert.
+     */
+    record WebImage(byte[] bytes, String ext, boolean remote, String link) {}
+
+    /**
+     * Decides what to insert for a web image drop of {@code url} (may be null) and/or an already encoded
+     * {@code inlinePng}. The downloaded bytes count only when they <em>are</em> an image
+     * ({@link com.editora.markdown.MarkdownImagePaste#sniffImageType}) — a page of HTML is never written into
+     * {@code assets/} under an image's name — and their type decides the extension when the address has none.
+     */
+    static WebImage resolveWebImage(String url, byte[] inlinePng, java.util.function.Function<String, byte[]> fetch) {
+        boolean hasUrl = url != null && !url.isBlank();
+        byte[] fetched = hasUrl ? fetch.apply(url) : null;
+        String type = com.editora.markdown.MarkdownImagePaste.sniffImageType(fetched);
+        if (type != null) {
+            return new WebImage(
+                    fetched, com.editora.markdown.MarkdownImagePaste.extensionForUrl(url, type), false, null);
+        }
+        if (inlinePng != null) {
+            return new WebImage(inlinePng, "png", false, null);
+        }
+        if (!hasUrl) {
+            return new WebImage(null, null, false, null);
+        }
+        boolean unreachable = fetched == null || fetched.length == 0;
+        return unreachable
+                ? new WebImage(null, null, true, null)
+                : new WebImage(null, null, false, com.editora.markdown.MarkdownImagePaste.linkFromDrag(url, null));
+    }
+
+    /** Inserts {@code text} at {@code offset} of {@code view} unless its buffer has been closed meanwhile. */
+    static boolean insertAtDrop(CodeArea view, int offset, String text) {
+        if (view.getScene() == null) {
+            return false;
+        }
+        view.insertText(Math.max(0, Math.min(offset, view.getLength())), text);
+        return true;
     }
 
     /** A file-name base for a dragged web image: the URL's last path segment (sans extension), else "image". */
@@ -780,6 +831,11 @@ final class EditingCoordinator {
             host.setStatus(ChordHint.tr("status.bufferReadOnly", "view.toggleReadOnly"));
             return false;
         }
+        if (buffer != null && buffer.isPreviewOnly()) {
+            // Only the rendering is on screen: an edit would land at a caret nobody can see.
+            host.setStatus(tr("status.previewCannotEdit"));
+            return false;
+        }
         return true;
     }
 
@@ -846,6 +902,16 @@ final class EditingCoordinator {
     /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
     void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
         lineOp(op, null);
+    }
+
+    /** Move line up/down: the move, then — in an ordered Markdown list — the list numbered in sequence again. */
+    void moveLines(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
+        lineOp(op, blockOp);
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null && buffer.isMarkdown()) {
+            buffer.markdown().renumberListAtCaret();
+        }
     }
 
     private static int paragraphOf(CodeArea area, int offset) {

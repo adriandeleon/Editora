@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -216,5 +217,37 @@ class PreviewImageLoaderTest {
         assertNull(PreviewImageLoader.fetchForExport(null, dir));
         // data: still works
         assertEquals(3, PreviewImageLoader.fetchForExport("data:image/png;base64,AQID", dir).length);
+    }
+
+    @Test
+    void aLocalFilesStampChangesWhenTheFileDoes(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path img = dir.resolve("a.png");
+        java.nio.file.Files.write(img, new byte[] {1, 2, 3});
+        String url = img.toUri().toString();
+        String first = PreviewImageLoader.fileStamp(url);
+        assertFalse(first.isEmpty());
+        assertEquals(first, PreviewImageLoader.fileStamp(url), "unchanged file, same stamp");
+        java.nio.file.Files.write(img, new byte[] {1, 2, 3, 4});
+        assertNotEquals(first, PreviewImageLoader.fileStamp(url), "exported again: the cached picture is stale");
+        assertEquals(
+                "",
+                PreviewImageLoader.fileStamp(dir.resolve("missing.png").toUri().toString()));
+        assertEquals("", PreviewImageLoader.fileStamp("https://example.org/a.png"), "only local files have one");
+        assertEquals("", PreviewImageLoader.fileStamp("data:image/png;base64,AAAA"));
+        assertEquals("", PreviewImageLoader.fileStamp(null));
+    }
+
+    @Test
+    void aVeryWideImageIsDecodedAtABoundedWidth() throws Exception {
+        java.awt.image.BufferedImage big =
+                new java.awt.image.BufferedImage(6000, 4, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(big, "png", out);
+        assertEquals(6000, PreviewImageLoader.naturalWidth(out.toByteArray()), "read from the header, not by decoding");
+        assertEquals(0, PreviewImageLoader.naturalWidth(new byte[] {1, 2, 3}), "not an image");
+        assertEquals(PreviewImageLoader.MAX_DECODE_WIDTH, PreviewImageLoader.decodeWidth(6000));
+        assertEquals(0, PreviewImageLoader.decodeWidth(800), "an ordinary image is decoded as it is");
+        assertEquals(0, PreviewImageLoader.decodeWidth(0));
     }
 }

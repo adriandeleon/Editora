@@ -100,6 +100,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private Runnable onDetach = () -> {};
     /** Receives the prompt text when the user sends (coordinator → agent). */
     private Consumer<String> onSend;
+
+    private Consumer<String> onOpenLink;
     /** Cancels the in-flight turn (the header ■ + the Send→Stop toggle + Esc all run this). */
     private final Runnable onStop;
     /** True while a prompt turn is in flight (drives the Send↔Stop toggle + the Esc-stops shortcut). */
@@ -235,6 +237,14 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     public void setOnSend(Consumer<String> onSend) {
         this.onSend = onSend;
+    }
+
+    /**
+     * Sets what a click on a link in an answer does (the window's link choke point). Null leaves links
+     * inert, which is how they were before: shown as links, doing nothing.
+     */
+    public void setOnOpenLink(Consumer<String> onOpenLink) {
+        this.onOpenLink = onOpenLink;
     }
 
     /** Sets the detach/pop-out handler (coordinator moves this panel between the dock and a floating window). */
@@ -430,7 +440,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         Node rendered;
         try {
             rendered = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(md), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(md), null, onOpenLink, MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException ex) {
             Label fallback = new Label(md);
             fallback.setWrapText(true);

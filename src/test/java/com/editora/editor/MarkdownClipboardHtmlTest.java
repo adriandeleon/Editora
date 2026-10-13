@@ -131,4 +131,76 @@ class MarkdownClipboardHtmlTest {
         assertTrue(
                 out.contains("&lt;img class=&quot;md-math md-math-inline&quot;"), () -> "it is shown as text: " + out);
     }
+
+    // --- pictures travel with the fragment ----------------------------------------------------------------
+
+    private static byte[] png() throws java.io.IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(
+                new java.awt.image.BufferedImage(3, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", out);
+        return out.toByteArray();
+    }
+
+    @Test
+    void aLocalPictureIsInlinedSoThePasteStillShowsIt(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Files.createDirectories(dir.resolve("img dir"));
+        java.nio.file.Files.write(dir.resolve("img dir/shot.png"), png());
+        java.nio.file.Path doc = dir.resolve("notes.md");
+        String md = "![a](<img dir/shot.png>) ![b](img%20dir/shot.png) ![web](https://example.com/w.png) "
+                + "![gone](missing.png)\n";
+        String out = MarkdownClipboardHtml.toHtml(md, false, doc);
+        String data =
+                "src=\"data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png()) + "\"";
+        assertEquals(2, count(out, data), () -> "both spellings of the local path are inlined: " + out);
+        assertTrue(out.contains("src=\"https://example.com/w.png\""), "a web address already works anywhere");
+        assertTrue(out.contains("src=\"missing.png\""), "a file that is not there is left as written");
+        // Without a saved document there is nothing to resolve a relative path against.
+        assertTrue(MarkdownClipboardHtml.toHtml(md, false).contains("src=\"img%20dir/shot.png\""));
+        assertTrue(MarkdownClipboardHtml.toHtml(md, false, null).contains("src=\"img%20dir/shot.png\""));
+    }
+
+    @Test
+    void aPictureTooLargeToInlineIsNamedByItsAbsoluteFileUri(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path big = dir.resolve("big.png");
+        try (java.io.RandomAccessFile f = new java.io.RandomAccessFile(big.toFile(), "rw")) {
+            f.setLength(MarkdownClipboardHtml.MAX_INLINE_IMAGE_BYTES + 1L);
+        }
+        assertEquals(big.toUri().toString(), MarkdownClipboardHtml.portableImageSrc("big.png", dir));
+        assertEquals(null, MarkdownClipboardHtml.portableImageSrc("data:image/png;base64,AAAA", dir));
+        assertEquals(null, MarkdownClipboardHtml.portableImageSrc("file:///etc/passwd", dir));
+        assertEquals(null, MarkdownClipboardHtml.portableImageSrc("dir-not-file", dir.getParent()));
+        assertEquals(null, MarkdownClipboardHtml.portableImageSrc(" ", dir));
+    }
+
+    // --- "Copy as HTML": markup for an HTML file, not a styled paste ---------------------------------------
+
+    @Test
+    void theMarkupFormHasNoInlineStylesAndNoWrapper() {
+        String out = MarkdownClipboardHtml.toMarkup(
+                "# Title\n\nSome `code` and a [link](https://example.com).\n\n- [x] done\n- [ ] todo\n\n"
+                        + "| L | R |\n| :-- | --: |\n| a | b |\n\n```java\nint x;\n```\n",
+                false);
+        assertTrue(out.startsWith("<h1>Title</h1>"), out);
+        assertFalse(out.contains("<div"), out);
+        assertEquals(
+                4, count(out, "style=\""), () -> "only the cells of the two aligned columns carry a style: " + out);
+        assertTrue(out.contains("<td style=\"text-align:right\">b</td>"), out);
+        assertFalse(out.contains("align=\""), "not the obsolete attribute");
+        assertTrue(out.contains("<ul class=\"contains-task-list\">"), out);
+        assertTrue(out.contains("<li class=\"task-list-item\">"), out);
+        assertTrue(out.contains("<pre><code class=\"language-java\">int x;"), out);
+        assertTrue(out.contains("<a href=\"https://example.com\">link</a>"), out);
+    }
+
+    @Test
+    void theMarkupFormKeepsTheSameSafetyAsTheRichFragment() {
+        String out = MarkdownClipboardHtml.toMarkup(
+                "<script>alert(1)</script>\n\n[x](javascript:alert(1)) <kbd>K</kbd>\n", false);
+        assertFalse(out.contains("<script"), out);
+        assertFalse(out.contains("javascript:"), out);
+        assertTrue(out.contains("&lt;kbd&gt;"), out);
+        assertEquals("", MarkdownClipboardHtml.toMarkup(null, false));
+    }
 }

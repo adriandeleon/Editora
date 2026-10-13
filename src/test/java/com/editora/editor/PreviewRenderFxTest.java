@@ -444,11 +444,12 @@ class PreviewRenderFxTest {
             EditorBuffer buffer = buffer("markdown", longMarkdown());
             assertFalse(buffer.pagePreview(true), "no preview yet: the editor keeps the paging keys");
             buffer.applyPreviewTheme("dark", false); // chosen before the pane exists
+            buffer.getArea().moveTo(0);
             stage[0] = EditorFx.show(buffer, 640, 320);
-            // Leave the editor scrolled to its end: once the preview replaces it, where the (now hidden)
-            // editor was must not decide where the preview scrolls to.
-            buffer.getArea().estimatedScrollYProperty().setValue(1.0e7);
-            assertTrue(buffer.getArea().estimatedScrollYProperty().getValue() > 100);
+            buffer.getArea().estimatedScrollYProperty().setValue(0.0);
+            buffer.getArea().layout(); // the area applies a scroll request when it is next laid out
+            // The editor is at its top: the preview that replaces it comes up at its top too. (Scrolled
+            // elsewhere, the preview comes up at that line — MarkdownPreviewFxTest covers the hand-over.)
             ref[0] = buffer;
         });
         EditorBuffer buffer = ref[0];
@@ -535,7 +536,7 @@ class PreviewRenderFxTest {
     }
 
     @Test
-    void theSplitPreviewScrollsTheEditorToTheSameFraction() throws Exception {
+    void theSplitPreviewAndTheEditorReachTheirEndsTogether() throws Exception {
         EditorBuffer[] ref = new EditorBuffer[1];
         Stage[] stage = new Stage[1];
         EditorFx.onFx(() -> {
@@ -554,25 +555,24 @@ class PreviewRenderFxTest {
         EditorFx.onFx(() -> {
             ScrollPane pane = pane(buffer);
             var editorY = buffer.getArea().estimatedScrollYProperty();
-            double scrollable = EditorFx.<Double>call(buffer, "editorScrollableHeight");
+            Object sync = EditorFx.field(buffer, "scrollSync");
+            double scrollable = EditorFx.<Double>call(sync, "editorScrollableHeight");
             assertTrue(scrollable > 1, "the editor has more text than fits");
             editorY.setValue(0.0);
             buffer.getArea().layout(); // the area applies a scroll request when it is next laid out
             assertEquals(0.0, editorY.getValue(), 1e-6);
             EditorFx.setField(
-                    buffer,
-                    "previewContentHeight",
-                    pane.getContent().getLayoutBounds().getHeight());
+                    sync, "contentHeight", pane.getContent().getLayoutBounds().getHeight());
 
             // While a render is still settling, a vvalue move is the pane re-anchoring, not the user: the
             // preview is put back where the editor is and the editor does not move.
-            EditorFx.setField(buffer, "previewLayoutChangedAt", System.nanoTime() + HOUR_NANOS);
+            EditorFx.setField(sync, "layoutChangedAt", System.nanoTime() + HOUR_NANOS);
             pane.setVvalue(pane.getVmax());
             assertEquals(pane.getVmin(), pane.getVvalue(), 1e-9, "re-anchored to the editor's position");
             assertEquals(0.0, editorY.getValue(), 1e-6);
 
             // Settled, with the mouse elsewhere: the move is not the user's either, the editor stays.
-            EditorFx.setField(buffer, "previewLayoutChangedAt", System.nanoTime() - HOUR_NANOS);
+            EditorFx.setField(sync, "layoutChangedAt", System.nanoTime() - HOUR_NANOS);
             pane.setVvalue(pane.getVmax());
             assertEquals(pane.getVmax(), pane.getVvalue(), 1e-9);
             assertEquals(0.0, editorY.getValue(), 1e-6);
@@ -587,7 +587,7 @@ class PreviewRenderFxTest {
                     atEnd > scrollable * 0.95 && atEnd <= scrollable + 1,
                     "the preview at its end puts the editor at its end: " + atEnd + " of " + scrollable);
             assertEquals(pane.getVmax(), pane.getVvalue(), 1e-9, "the editor moving does not push the preview back");
-            assertFalse(EditorFx.<Boolean>field(buffer, "syncingScroll"), "the re-entrancy guard is released");
+            assertFalse(EditorFx.<Boolean>field(sync, "syncing"), "the re-entrancy guard is released");
 
             // The other direction: scrolling the editor (mouse not over the preview) moves the preview.
             EditorFx.hover(pane, false);
@@ -637,25 +637,25 @@ class PreviewRenderFxTest {
             assertTrue(menu.isShowing());
             ObservableList<MenuItem> items = menu.getItems();
             List<String> titles = EditorFx.titles(items);
-            assertTrue(titles.contains(tr("command.preview.exportDocx")), titles.toString());
-            assertTrue(titles.contains(tr("command.preview.exportOdt")), titles.toString());
+            assertTrue(titles.contains(tr("previewmenu.exportDocx")), titles.toString());
+            assertTrue(titles.contains(tr("previewmenu.exportOdt")), titles.toString());
             assertFalse(titles.contains(tr("command.typst.exportPng")), "PNG export is Typst's");
             assertFalse(titles.contains(tr("command.markwhen.exportJson")), "JSON export is Markwhen's");
 
             EditorFx.clipboard("stale");
-            EditorFx.menuItem(items, tr("editmenu.copy")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.copyAll")).fire();
             String copied = Clipboard.getSystemClipboard().getString();
             assertTrue(copied.contains("Title") && copied.contains("bold"), copied);
             assertFalse(copied.contains("**"), "the rendered text is copied, not the markup");
             assertTrue(Clipboard.getSystemClipboard().getHtml().contains("<strong>bold</strong>"));
 
-            EditorFx.menuItem(items, tr("command.preview.copyHtml")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.copyHtml")).fire();
             assertTrue(Clipboard.getSystemClipboard().getString().contains("<strong>bold</strong>"));
 
-            EditorFx.menuItem(items, tr("command.preview.exportPdf")).fire();
-            EditorFx.menuItem(items, tr("command.preview.exportDocx")).fire();
-            EditorFx.menuItem(items, tr("command.preview.exportOdt")).fire();
-            EditorFx.menuItem(items, tr("command.preview.print")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.exportPdf")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.exportDocx")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.exportOdt")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.print")).fire();
             assertEquals(List.of("pdf", "docx", "odt", "print"), ran);
 
             // A press in the preview dismisses the open menu (the ScrollPane swallows the auto-hide).
@@ -686,17 +686,17 @@ class PreviewRenderFxTest {
             menu[0] = previewMenu(buffer);
             ObservableList<MenuItem> items = menu[0].getItems();
             assertNotNull(EditorFx.findMenuItem(items, tr("markwhen.switchToCalendar")), "labelled as it opens");
-            assertNull(EditorFx.findMenuItem(items, tr("command.preview.copyHtml")), "Copy as HTML is Markdown's");
-            assertNull(EditorFx.findMenuItem(items, tr("command.preview.exportDocx")));
+            assertNull(EditorFx.findMenuItem(items, tr("previewmenu.copyHtml")), "Copy as HTML is Markdown's");
+            assertNull(EditorFx.findMenuItem(items, tr("previewmenu.exportDocx")));
 
             EditorFx.clipboard("stale");
-            EditorFx.menuItem(items, tr("editmenu.selectAll")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.copyAll")).fire();
             assertEquals("2026-03-01: Ship it\n", Clipboard.getSystemClipboard().getString(), "the source is copied");
             assertFalse(buffer.copyPreviewHtmlSource(), "only Markdown has HTML markup to copy");
 
             EditorFx.menuItem(items, tr("command.markwhen.exportJson")).fire();
-            EditorFx.menuItem(items, tr("command.preview.exportPdf")).fire();
-            EditorFx.menuItem(items, tr("command.preview.print")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.exportPdf")).fire();
+            EditorFx.menuItem(items, tr("previewmenu.print")).fire();
             assertEquals(List.of("json", "pdf", "print"), ran);
         });
         awaitPane(

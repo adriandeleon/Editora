@@ -345,6 +345,112 @@ class DiagnosticPanelsKeysFxTest {
         });
     }
 
+    @Test
+    void aLintRowOffersItsActionsAndTheListSaysWhoseItIs() throws Exception {
+        List<String> calls = new ArrayList<>();
+        Path file = Path.of("/proj/README.md");
+        FxTestSupport.runOnFx(() -> {
+            MarkdownLintPanel p = new MarkdownLintPanel(
+                    new MarkdownLintPanel.IssueActions() {
+                        @Override
+                        public void fixAll() {
+                            calls.add("fixAll");
+                        }
+
+                        @Override
+                        public void fix(MarkdownLint.Diagnostic d) {
+                            calls.add("fix " + d.code());
+                        }
+
+                        @Override
+                        public void disableLine(MarkdownLint.Diagnostic d) {
+                            calls.add("line " + d.code());
+                        }
+
+                        @Override
+                        public void disableRule(MarkdownLint.Diagnostic d) {
+                            calls.add("rule " + d.code());
+                        }
+
+                        @Override
+                        public void help(MarkdownLint.Diagnostic d) {
+                            calls.add("help " + d.code());
+                        }
+                    },
+                    new MarkdownLintPanel.Actions() {
+                        @Override
+                        public void open(Path f, int line, int col) {}
+
+                        @Override
+                        public void refresh() {}
+                    });
+            root.getChildren().addFirst(p);
+            ListView<MarkdownLint.Diagnostic> list = FxTestSupport.field(p, "list");
+            Label summary = FxTestSupport.field(p, "summary");
+            Label fileName = FxTestSupport.field(p, "fileName");
+            Label note = FxTestSupport.field(p, "configNote");
+            Button fixAll = FxTestSupport.field(p, "fixBtn");
+
+            // Real diagnostics: one fixable (trailing whitespace), one not (bare URL).
+            List<MarkdownLint.Diagnostic> real = MarkdownLint.lint("# T\n\nsee https://x.example   \n");
+            p.setResults(file, "README.md", real.subList(0, 1), "2 rules disabled by .markdownlint.json");
+            assertEquals("README.md", fileName.getText());
+            assertEquals(tr("markdownLint.summary", 1), summary.getText());
+            assertFalse(summary.getText().contains("issues"), "one issue is singular: " + summary.getText());
+            assertEquals("2 rules disabled by .markdownlint.json", note.getText());
+            assertTrue(fixAll.isDisable(), "nothing in the list can be fixed automatically");
+
+            p.setResults(file, "README.md", real, "");
+            assertEquals(tr("markdownLint.summary", 2), summary.getText());
+            assertFalse(fixAll.isDisable());
+            fixAll.fire();
+
+            // The row text is in the interface language, taken from the catalog.
+            ListCell<MarkdownLint.Diagnostic> cell = list.getCellFactory().call(list);
+            cell.updateListView(list);
+            cell.updateIndex(0);
+            assertEquals(tr("markdownLint.row", 3, 5) + "  MD034  " + tr("mdlint.msg.MD034"), cell.getText());
+
+            assertEquals(List.of(), p.rowMenu(null));
+            List<javafx.scene.control.MenuItem> url = p.rowMenu(real.get(0));
+            assertEquals(
+                    List.of(
+                            tr("markdownLint.menu.fix"),
+                            tr("markdownLint.menu.disableLine"),
+                            tr("markdownLint.menu.disableRule", "MD034"),
+                            tr("markdownLint.menu.help"),
+                            tr("markdownLint.menu.copy")),
+                    url.stream()
+                            .filter(i -> !(i instanceof javafx.scene.control.SeparatorMenuItem))
+                            .map(javafx.scene.control.MenuItem::getText)
+                            .toList());
+            assertTrue(url.get(0).isDisable(), "a bare URL has no automatic fix");
+            url.get(1).fire();
+            url.get(2).fire();
+            url.get(3).fire();
+            url.get(5).fire();
+            assertEquals(
+                    MarkdownLintPanel.rowText(real.get(0)),
+                    javafx.scene.input.Clipboard.getSystemClipboard().getString());
+            List<javafx.scene.control.MenuItem> space = p.rowMenu(real.get(1));
+            assertFalse(space.get(0).isDisable());
+            space.get(0).fire();
+            assertEquals(List.of("fixAll", "line MD034", "rule MD034", "help MD034", "fix MD009"), calls);
+
+            // A re-lint (every edit refills the list) keeps the selected row.
+            list.getSelectionModel().select(1);
+            p.setResults(file, "README.md", MarkdownLint.lint("# T\n\nsee https://x.example   \n"), "");
+            assertEquals(1, list.getSelectionModel().getSelectedIndex());
+
+            p.showNotLinted(Path.of("/proj/notes.txt"));
+            assertEquals(tr("status.markdownLint.notMarkdown"), summary.getText());
+            assertEquals("notes.txt", fileName.getText());
+            assertTrue(list.getItems().isEmpty());
+            assertEquals(1, p.rowMenu(real.get(0)).size(), "without a file only Copy is left");
+            root.getChildren().remove(p);
+        });
+    }
+
     // --- the message log --------------------------------------------------------------------------------
 
     @Test

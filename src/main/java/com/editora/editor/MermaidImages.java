@@ -139,6 +139,9 @@ public final class MermaidImages {
         if (maidCommand != null && !maidCommand.isEmpty()) {
             MermaidImages.maid = List.copyOf(maidCommand);
         }
+        if (toolChanged || MermaidImages.dark != dark) {
+            EPOCH.incrementAndGet();
+        }
         MermaidImages.dark = dark;
         if (toolChanged) {
             // The cache key is the source (+ theme), never the tool — so a different (or newly installed)
@@ -188,15 +191,37 @@ public final class MermaidImages {
      * in a {@code .mmd} can't pile up ~4 s Chromium renders (#458).
      */
     public static Node node(String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
+        return node(source, sizer, surfaceKey, null);
+    }
+
+    /**
+     * As {@link #node(String, java.util.function.DoubleUnaryOperator, String)}, drawn with the dark theme when
+     * {@code darkTheme} is true, the light one when false, and the app's when null. A diagram is a bitmap: in
+     * a Markdown preview toggled to the theme the app is not in, it has to be rendered for the preview.
+     */
+    public static Node node(
+            String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey, Boolean darkTheme) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-mermaid");
-        fill(host, source, sizer, surfaceKey);
+        fill(host, source, sizer, surfaceKey, darkTheme == null ? dark : darkTheme);
         return host;
     }
 
+    /** Bumped whenever the configuration changes what a render of the same source would give. */
+    private static final java.util.concurrent.atomic.AtomicLong EPOCH = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Changes when the tool, the feature switch or the app theme did: a node built before is out of date. */
+    static long epoch() {
+        return EPOCH.get();
+    }
+
     private static void fill(
-            StackPane host, String source, java.util.function.DoubleUnaryOperator sizer, String surfaceKey) {
-        String key = key(source, dark);
+            StackPane host,
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            String surfaceKey,
+            boolean useDark) {
+        String key = key(source, useDark);
         Cached hit = CACHE.get(key);
         if (hit != null && hit.expired()) {
             CACHE.remove(key);
@@ -210,7 +235,6 @@ public final class MermaidImages {
         List<String> exe = mmdc;
         List<String> maidExe = maid;
         boolean useMaid = maidAvailable;
-        boolean useDark = dark;
         long gen = surfaceKey == null ? -1 : SEQ.incrementAndGet();
         if (surfaceKey != null) {
             LATEST.put(surfaceKey, gen);
@@ -302,7 +326,9 @@ public final class MermaidImages {
             ImageView view = new ImageView(c.loaded().image());
             view.setPreserveRatio(true);
             view.setSmooth(true);
-            view.setFitWidth(Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
+            PreviewImageLoader.zoom(view, PreviewImageLoader.zoomOf(host)); // (1 outside a zoomed Markdown preview)
+            PreviewImageLoader.fit(
+                    view, Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
             host.getChildren().setAll(view);
         } else {
             host.getChildren().setAll(errorNode(c.error()));

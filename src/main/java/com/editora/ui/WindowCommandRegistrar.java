@@ -1480,29 +1480,44 @@ final class WindowCommandRegistrar {
                         "markdown.taskList", () -> host.previews().withMarkdown(EditorBuffer::formatTaskList)));
         host.registry().register(Command.of("markdown.insertTable", host.previews()::markdownInsertTableViaText));
         host.registry()
-                .register(
-                        Command.of("markdown.tableAddRow", () -> host.previews().withMarkdown(b -> b.tableAddRow())));
+                .register(Command.of(
+                        "markdown.tableAddRow",
+                        () -> host.previews().markdownTable(b -> b.tableAddRow(), "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableDeleteRow", () -> host.previews().withMarkdown(b -> b.tableDeleteRow())));
+                        "markdown.tableDeleteRow",
+                        () -> host.previews()
+                                .markdownTable(b -> b.tableDeleteRow(), "status.markdown.tableHeaderRow")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableAddColumn", () -> host.previews().withMarkdown(b -> b.tableAddColumn())));
+                        "markdown.tableAddColumn",
+                        () -> host.previews().markdownTable(b -> b.tableAddColumn(), "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
-                        "markdown.tableDeleteColumn", () -> host.previews().withMarkdown(b -> b.tableDeleteColumn())));
+                        "markdown.tableDeleteColumn",
+                        () -> host.previews()
+                                .markdownTable(b -> b.tableDeleteColumn(), "status.markdown.tableLastColumn")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignLeft",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.LEFT))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.LEFT),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignCenter",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.CENTER))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.CENTER),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.tableAlignRight",
-                        () -> host.previews().withMarkdown(b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT))));
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.tableSetAlignment(MarkdownTable.Align.RIGHT),
+                                        "status.markdown.notTable")));
         host.registry()
                 .register(Command.of(
                         "markdown.headingPromote", () -> host.previews().withMarkdown(b -> b.formatHeading(-1))));
@@ -1698,6 +1713,24 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("markdownLint.toggleRule", host.previews()::chooseMarkdownLintRule));
         host.registry()
                 .register(Command.of(
+                        "markdownLint.next", () -> host.previews().lint().go(1)));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.previous", () -> host.previews().lint().go(-1)));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.fixAtCaret", () -> host.previews().lint().fixAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableLine", () -> host.previews().lint().disableLineAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableRule", () -> host.previews().lint().disableRuleAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.ruleHelp", () -> host.previews().lint().ruleHelpAtCaret()));
+        host.registry()
+                .register(Command.of(
                         "view.toggleMath",
                         () -> host.editorSettings()
                                 .toggleSetting(
@@ -1705,6 +1738,17 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isMathSupport(),
                                         v -> host.config().getSettings().setMathSupport(v),
                                         host::applyMathSupport)));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleMarkdownRemoteImages", host.editorSettings()::toggleMarkdownRemoteImages));
+        host.registry()
+                .register(Command.of("markdown.setAssetsFolder", host.editorSettings()::promptMarkdownAssetsFolder));
+        host.registry()
+                .register(Command.of(
+                        "markdown.setTocMinLevel", () -> host.editorSettings().promptMarkdownTocLevel(false)));
+        host.registry()
+                .register(Command.of(
+                        "markdown.setTocMaxLevel", () -> host.editorSettings().promptMarkdownTocLevel(true)));
         host.registry().register(Command.of("nav.aceJump", host::startAceJump));
         host.registry().register(Command.of("nav.aceJumpLine", host::startAceJumpLine));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
@@ -2419,14 +2463,14 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.moveLineUp",
                         () -> host.editing()
-                                .lineOp(
+                                .moveLines(
                                         com.editora.editops.LineOps::moveLineUp,
                                         com.editora.editops.LineOps::moveLinesUp)));
         host.registry()
                 .register(Command.of(
                         "edit.moveLineDown",
                         () -> host.editing()
-                                .lineOp(
+                                .moveLines(
                                         com.editora.editops.LineOps::moveLineDown,
                                         com.editora.editops.LineOps::moveLinesDown)));
         // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
@@ -2545,20 +2589,24 @@ final class WindowCommandRegistrar {
             // killed the rest of it. The two are the same position when the line is not wrapped.
             host.editing().moveAndFollow(a -> a.paragraphEnd(host.selPolicy()));
         }));
-        host.registry()
-                .register(Command.of(
-                        "nav.docStart",
-                        () -> host.editing().moveAndFollow(a -> {
-                            host.editing().collapseCarets(); // one place in the document: one caret
-                            a.start(host.selPolicy());
-                        })));
-        host.registry()
-                .register(Command.of(
-                        "nav.docEnd",
-                        () -> host.editing().moveAndFollow(a -> {
-                            host.editing().collapseCarets();
-                            a.end(host.selPolicy());
-                        })));
+        host.registry().register(Command.of("nav.docStart", () -> {
+            if (host.previews().scrollActivePreview(Double.NEGATIVE_INFINITY)) {
+                return;
+            }
+            host.editing().moveAndFollow(a -> {
+                host.editing().collapseCarets(); // one place in the document: one caret
+                a.start(host.selPolicy());
+            });
+        }));
+        host.registry().register(Command.of("nav.docEnd", () -> {
+            if (host.previews().scrollActivePreview(Double.POSITIVE_INFINITY)) {
+                return;
+            }
+            host.editing().moveAndFollow(a -> {
+                host.editing().collapseCarets();
+                a.end(host.selPolicy());
+            });
+        }));
         host.registry().register(Command.of("nav.charForward", () -> {
             if (host.editing()
                     .multiCaretMove(
@@ -2576,8 +2624,16 @@ final class WindowCommandRegistrar {
             }
             host.editing().moveAndFollow(a -> a.previousChar(host.selPolicy()));
         }));
-        host.registry().register(Command.of("nav.lineDown", () -> host.editing().moveLine(1)));
-        host.registry().register(Command.of("nav.lineUp", () -> host.editing().moveLine(-1)));
+        host.registry().register(Command.of("nav.lineDown", () -> {
+            if (!host.previews().scrollActivePreview(PreviewCoordinator.PREVIEW_LINE)) {
+                host.editing().moveLine(1);
+            }
+        }));
+        host.registry().register(Command.of("nav.lineUp", () -> {
+            if (!host.previews().scrollActivePreview(-PreviewCoordinator.PREVIEW_LINE)) {
+                host.editing().moveLine(-1);
+            }
+        }));
         host.registry().register(Command.of("nav.wordForward", () -> {
             if (host.editing()
                     .multiCaretMove(

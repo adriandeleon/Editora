@@ -6,8 +6,9 @@ import java.util.List;
 /**
  * Pure extraction of a Markdown document's heading outline (ATX {@code # …} and Setext
  * {@code ===}/{@code ---} underlines), used to drive the Structure tool window for Markdown
- * buffers that have no LSP symbols. Fenced code blocks and a leading YAML front-matter block are
- * skipped so {@code #} comments inside code (or {@code ---} delimiters) don't show up as headings.
+ * buffers that have no LSP symbols. Code blocks (fenced with backticks or tildes, or indented), front
+ * matter, HTML comments and raw HTML blocks are skipped ({@link MarkdownBlocks}), so a {@code #} comment in
+ * code, a {@code ---} delimiter or a commented-out section doesn't show up as a heading.
  *
  * <p>Stateless and toolkit-free, so it is unit-tested directly.
  */
@@ -15,7 +16,10 @@ public final class MarkdownOutline {
 
     private MarkdownOutline() {}
 
-    /** A heading: its level (1–6), title text (markers stripped), and 0-based line. */
+    /**
+     * A heading: its level (1–6), title text (heading markers stripped, inline markup as written — see
+     * {@link MarkdownText#plain}), and the 0-based line it starts on.
+     */
     public record Heading(int level, String title, int line) {}
 
     public static List<Heading> headings(String text) {
@@ -23,39 +27,16 @@ public final class MarkdownOutline {
         if (text == null || text.isEmpty()) {
             return out;
         }
-        String[] lines = text.split("\n", -1);
-        int i = 0;
-
-        // Skip a leading YAML front-matter block: a "---" on the very first line up to the next "---".
-        if (lines.length > 0 && lines[0].strip().equals("---")) {
-            int j = 1;
-            while (j < lines.length && !lines[j].strip().equals("---")) {
-                j++;
+        // What is code, front matter, an HTML comment or a raw HTML block is not Markdown: a "# …" line in a
+        // ~~~ fence, under a <div>, or in a section commented out with <!-- … --> is not a heading.
+        MarkdownBlocks blocks = MarkdownBlocks.scan(text);
+        int count = blocks.lineCount();
+        for (int i = 0; i < count; i++) {
+            if (!blocks.isText(i)) {
+                continue;
             }
-            if (j < lines.length) {
-                i = j + 1; // consumed the closing delimiter too
-            }
-        }
-
-        String fence = null; // non-null while inside a fenced code block (the opening fence run)
-        for (; i < lines.length; i++) {
-            String line = stripCr(lines[i]);
+            String line = blocks.line(i);
             String trimmed = line.strip();
-
-            String openFence = fenceToken(line);
-            if (fence != null) {
-                // Inside a fence: only a matching closing fence (same char, ≥ length) ends it.
-                if (openFence != null
-                        && openFence.charAt(0) == fence.charAt(0)
-                        && openFence.length() >= fence.length()) {
-                    fence = null;
-                }
-                continue;
-            }
-            if (openFence != null) {
-                fence = openFence;
-                continue;
-            }
 
             int level = atxLevel(line);
             if (level > 0) {
@@ -63,35 +44,30 @@ public final class MarkdownOutline {
                 continue;
             }
 
-            // Setext: a *paragraph* line underlined by all '=' (H1) or all '-' (H2).
-            if (!trimmed.isEmpty() && i + 1 < lines.length && isParagraphStart(trimmed)) {
-                int setext = setextLevel(stripCr(lines[i + 1]));
-                if (setext > 0 && atxLevel(line) == 0 && fenceToken(line) == null) {
-                    out.add(new Heading(setext, trimmed, i));
-                    i++; // consume the underline line
+            // Setext: a *paragraph* underlined by all '=' (H1) or all '-' (H2). The paragraph may run over
+            // several lines — all of them are the heading — so look ahead to where it ends.
+            if (!trimmed.isEmpty() && isParagraphStart(trimmed)) {
+                StringBuilder title = new StringBuilder(trimmed);
+                for (int j = i + 1; j < count && blocks.isText(j); j++) {
+                    String next = blocks.line(j);
+                    int setext = setextLevel(next);
+                    if (setext > 0) {
+                        out.add(new Heading(setext, title.toString(), i));
+                        i = j; // consume the paragraph and its underline
+                        break;
+                    }
+                    String nextTrimmed = next.strip();
+                    if (nextTrimmed.isEmpty() || atxLevel(next) > 0 || !isParagraphStart(nextTrimmed)) {
+                        // The paragraph ended without an underline: none of its lines is a heading, so the
+                        // scan resumes at the line that ended it (which keeps a long paragraph linear).
+                        i = j - 1;
+                        break;
+                    }
+                    title.append(' ').append(nextTrimmed);
                 }
             }
         }
         return out;
-    }
-
-    /** The fence run ({@code ```} or {@code ~~~}, 3+) if {@code line} opens/closes a fence, else null. */
-    private static String fenceToken(String line) {
-        int indent = leadingSpaces(line);
-        if (indent > 3) {
-            return null;
-        }
-        int p = indent;
-        char c = p < line.length() ? line.charAt(p) : ' ';
-        if (c != '`' && c != '~') {
-            return null;
-        }
-        int n = 0;
-        while (p < line.length() && line.charAt(p) == c) {
-            p++;
-            n++;
-        }
-        return n >= 3 ? line.substring(indent, indent + n) : null;
     }
 
     /** The ATX heading level (1–6) if {@code line} is an ATX heading, else 0. */
@@ -138,6 +114,9 @@ public final class MarkdownOutline {
      */
     private static boolean isParagraphStart(String trimmed) {
         char c = trimmed.charAt(0);
+        if (isThematicBreak(trimmed)) {
+            return false; // "---", "* * *": a rule, which neither starts nor continues a paragraph
+        }
         if (c == '>' || c == '<') {
             return false; // blockquote / HTML block
         }
@@ -153,6 +132,24 @@ public final class MarkdownOutline {
                 && (trimmed.charAt(d) == '.' || trimmed.charAt(d) == ')')
                 && trimmed.charAt(d + 1) == ' ';
         return !ordered;
+    }
+
+    /** Three or more of the same {@code -}, {@code *} or {@code _}, with nothing but spaces between them. */
+    private static boolean isThematicBreak(String trimmed) {
+        char c = trimmed.charAt(0);
+        if (c != '-' && c != '*' && c != '_') {
+            return false;
+        }
+        int marks = 0;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            if (ch == c) {
+                marks++;
+            } else if (ch != ' ' && ch != '\t') {
+                return false;
+            }
+        }
+        return marks >= 3;
     }
 
     /** Setext underline level: 1 for all-'=', 2 for all-'-', else 0. */
@@ -183,9 +180,5 @@ public final class MarkdownOutline {
             n++;
         }
         return n;
-    }
-
-    private static String stripCr(String line) {
-        return !line.isEmpty() && line.charAt(line.length() - 1) == '\r' ? line.substring(0, line.length() - 1) : line;
     }
 }

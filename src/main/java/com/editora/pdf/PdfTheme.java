@@ -45,7 +45,10 @@ public final class PdfTheme {
             Map.entry("tag", hex("#116329")),
             Map.entry("code", hex("#0a3069")),
             Map.entry("heading", hex("#0550ae")),
-            Map.entry("link", hex("#0969da")));
+            Map.entry("link", hex("#0969da")),
+            Map.entry("quote", hex("#6e7781")),
+            Map.entry("strikethrough", hex("#6e7781")),
+            Map.entry("md-marker", hex("#cf222e")));
 
     private PdfTheme() {}
 

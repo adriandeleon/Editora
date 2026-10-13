@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,9 +89,129 @@ class MarkdownTableTest {
     }
 
     @Test
-    void enterMidTableReturnsNull() {
+    void enterMidTableMovesToTheRowBelowInsteadOfSplittingTheRow() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |";
+        assertEquals("| a   | b   |\n| --- | --- |\n| ‸1   | 2   |\n| 3   | 4   |", at(MarkdownTable.enter(block, 2)));
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| 1   | 2   |\n| 3   | ‸4   |",
+                at(MarkdownTable.enter(block, block.indexOf("2"))));
+    }
+
+    /** A {@link MarkdownTable.Nav} as text with {@code ‸} at its caret. */
+    private static String at(MarkdownTable.Nav n) {
+        return n == null
+                ? null
+                : n.block().substring(0, n.caret()) + "‸" + n.block().substring(n.caret());
+    }
+
+    @Test
+    void enterOnAnEmptyLastRowLeavesTheTable() {
+        // It used to add another empty row every time; at the end of a file there was no way out.
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |\n|   |   |";
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| 1   | 2   |\n‸", at(MarkdownTable.enter(block, block.length() - 3)));
+        String headerOnly = "| a | b |\n|---|---|";
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| ‸    |     |",
+                at(MarkdownTable.enter(headerOnly, headerOnly.length())));
+    }
+
+    @Test
+    void theTableStartsOneLineAboveItsDelimiterRow() {
+        String doc = "see a | b\n| a | b |\n|---|---|\n| 1 | 2 |\nnext a|b\n";
+        int[] b = MarkdownTable.blockBounds(doc, doc.indexOf("| 1"));
+        assertEquals("| a | b |\n|---|---|\n| 1 | 2 |\nnext a|b", doc.substring(b[0], b[1]));
+        assertNull(MarkdownTable.blockBounds(doc, 2), "a prose line above the header is not a row");
+        assertNull(MarkdownTable.blockBounds("| a | b |\n| c | d |", 2), "no delimiter row: not a table");
+    }
+
+    @Test
+    void aHeaderOfDashesIsNotTheDelimiterRow() {
+        assertEquals(
+                "| -   | -   |\n| --- | --- |\n| x   | y   |", MarkdownTable.reflow("| - | - |\n|---|---|\n| x | y |"));
+    }
+
+    @Test
+    void aTableInABlockquoteKeepsItsPrefix() {
+        String block = "> | a | b |\n> |---|---|\n> | 1 | 2 |";
+        assertEquals("> | a   | b   |\n> | --- | --- |\n> | 1   | 2   |", MarkdownTable.reflow(block));
+        assertEquals("> | a   | ‸b   |\n> | --- | --- |\n> | 1   | 2   |", at(MarkdownTable.tab(block, 4, true)));
+        assertEquals(
+                "> | a   | b   |\n> | --- | --- |\n> | 1   | 2   |\n> | ‸    |     |",
+                at(MarkdownTable.addRow(block, block.length() - 2)));
+        assertEquals("a,b\n1,2", MarkdownTable.toCsv(block));
+        String doc = "text\n\n" + block + "\n";
+        int[] b = MarkdownTable.blockBounds(doc, doc.indexOf("| 1"));
+        assertEquals(block, doc.substring(b[0], b[1]));
+        String leaving = block + "\n> |   |   |";
+        assertEquals(
+                "> | a   | b   |\n> | --- | --- |\n> | 1   | 2   |\n> ‸",
+                at(MarkdownTable.enter(leaving, leaving.length())));
+    }
+
+    @Test
+    void aTableStartedOnAListMarkerLineKeepsTheMarker() {
+        String block = "- | a | b |\n  |---|---|\n  | 1 | 2 |";
+        assertEquals("- | a   | b   |\n  | --- | --- |\n  | 1   | 2   |", MarkdownTable.reflow(block));
+        assertEquals(
+                "- | a   | b   |\n  | --- | --- |\n  | 1   | ‸2   |",
+                at(MarkdownTable.tab(block, block.indexOf("1"), true)));
+        String indented = "  | a | b |\n  |---|---|\n  | 1 | 2 |";
+        assertEquals(
+                "  | a   |     | b   |\n  | --- | --- | --- |\n  | 1   | ‸    | 2   |",
+                at(MarkdownTable.addColumn(indented, indented.indexOf("1"))));
+    }
+
+    @Test
+    void tabOnTheDelimiterRowLeavesIt() {
         String block = "| a | b |\n|---|---|\n| 1 | 2 |";
-        assertNull(MarkdownTable.enter(block, 2)); // header row, not the last row
+        assertEquals("| a   | b   |\n| --- | --- |\n| ‸1   | 2   |", at(MarkdownTable.tab(block, 12, true)));
+        assertEquals("| a   | ‸b   |\n| --- | --- |\n| 1   | 2   |", at(MarkdownTable.tab(block, 12, false)));
+        String noBody = "| a | b |\n|---|---|";
+        assertEquals("| a   | b   |\n| --- | --- |\n| ‸    |     |", at(MarkdownTable.tab(noBody, 12, true)));
+    }
+
+    @Test
+    void tabInFrontOfTheOpeningPipeGoesToTheFirstCell() {
+        String block = "| a | b |\n|---|---|\n| 1 | 2 |";
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| ‸1   | 2   |",
+                at(MarkdownTable.tab(block, block.indexOf("| 1"), true)));
+    }
+
+    @Test
+    void columnsAreAlignedByDisplayWidth() {
+        assertEquals(14, MarkdownTable.displayWidth("日本語テキスト"));
+        assertEquals(1, MarkdownTable.displayWidth("e\u0301"), "a combining accent takes no column");
+        assertEquals(2, MarkdownTable.displayWidth("😀"));
+        assertEquals(3, MarkdownTable.displayWidth("abc"));
+        assertEquals(
+                "| 名前           | n   |\n| -------------- | --- |\n| 日本語テキスト | 1   |\n| ab             | 2   |",
+                MarkdownTable.reflow("| 名前 | n |\n|---|---|\n| 日本語テキスト | 1 |\n| ab | 2 |"));
+    }
+
+    @Test
+    void reflowKeepsTheCaretInItsCell() {
+        String block = "| a | b |\n|---|---|\n| long cell | 2 |";
+        assertEquals(
+                "| a         | b   |\n| --------- | --- |\n| long ‸cell | 2   |",
+                at(MarkdownTable.reflowAt(block, block.indexOf("cell"))));
+        assertEquals(
+                "| a         | ‸b   |\n| --------- | --- |\n| long cell | 2   |", at(MarkdownTable.reflowAt(block, 6)));
+        assertNull(MarkdownTable.reflowAt("| a | b |", 2));
+    }
+
+    @Test
+    void generatedHeadersCanBeLocalised() {
+        assertEquals(
+                "| Spalte 1 |\n| -------- |",
+                MarkdownTable.generate(1, 1, i -> "Spalte " + i).block());
+    }
+
+    @Test
+    void csvImportDropsTheByteOrderMarkAndReadsAQuoteAfterABlank() {
+        assertEquals("| a   | b   |\n| --- | --- |\n| 1   | 2   |", MarkdownTable.fromCsv("\uFEFFa,b\n1,2"));
+        assertEquals("| a   | b,c |\n| --- | --- |\n| 1   | 2   |", MarkdownTable.fromCsv("a, \"b,c\"\n1,2"));
     }
 
     @Test
@@ -262,5 +383,18 @@ class MarkdownTableTest {
             }
         }
         assertEquals(0, line, "caret falls back to the header, not the '---' row");
+    }
+
+    @Test
+    void pipesInACodeBlockAreNotATable() {
+        // Tab and Enter used to reflow, and add rows to, a table shown as an example in a fenced block.
+        String fenced = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```\n";
+        assertNull(MarkdownTable.blockBounds(fenced, fenced.indexOf("| 1")));
+        String tilde = "- item\n\n      ~~~~\n      | a | b |\n      |---|---|\n      ~~~~\n";
+        assertNull(MarkdownTable.blockBounds(tilde, tilde.indexOf("| a")));
+        String indented = "text\n\n    | a | b |\n    |---|---|\n";
+        assertNull(MarkdownTable.blockBounds(indented, indented.indexOf("| a")));
+        String after = fenced + "\n| a | b |\n|---|---|\n";
+        assertNotNull(MarkdownTable.blockBounds(after, after.lastIndexOf("| a")), "a table after the block is one");
     }
 }

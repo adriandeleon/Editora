@@ -182,6 +182,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     this::resumeSessionPicker,
                     this::openPathCandidate);
             panel.setOnSend(this::sendPrompt);
+            panel.setOnOpenLink(host::openExternalUrl);
             panel.setOnDetach(this::toggleDetach);
             applyPanelFont();
         }

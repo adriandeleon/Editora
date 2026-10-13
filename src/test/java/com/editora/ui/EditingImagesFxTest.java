@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -30,6 +31,7 @@ import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -207,6 +209,93 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void aPictureAlreadyBesideTheDocumentIsLinkedNotCopiedAgain() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path own = Files.write(Files.createDirectories(assets(b)).resolve("logo.png"), png(2, 2));
+        Path sibling = Files.write(
+                Files.createDirectory(b.getPath().getParent().resolve("img")).resolve("a b.png"), png(2, 2));
+
+        FxTestSupport.runOnFx(() -> editing.insertDroppedImages(b, List.of(own.toFile(), sibling.toFile())));
+
+        assertEquals(List.of("logo.png"), names(assets(b)), "no logo-1.png");
+        assertEquals("![logo](assets/logo.png)\n![a b](<img/a b.png>)", text(b));
+    }
+
+    @Test
+    void aDownloadThatIsNotAPictureIsNeverSavedAsOne() throws Exception {
+        byte[] page = "<!doctype html><html><body>hello</body></html>".getBytes(StandardCharsets.UTF_8);
+        byte[] picture = png(2, 2);
+        // The address answered with a web page: a link, not assets/page.png holding HTML.
+        EditingCoordinator.WebImage link =
+                EditingCoordinator.resolveWebImage("https://example.com/page", null, u -> page);
+        assertNull(link.bytes());
+        assertEquals("<https://example.com/page>", link.link());
+        // The same address with the dragged pixels at hand: the pixels are the picture.
+        assertArrayEquals(
+                picture,
+                EditingCoordinator.resolveWebImage("https://example.com/page", picture, u -> page)
+                        .bytes());
+        // A picture served from an address without an extension gets its type from its bytes.
+        EditingCoordinator.WebImage typed =
+                EditingCoordinator.resolveWebImage("https://example.com/render?id=7", null, u -> picture);
+        assertEquals("png", typed.ext());
+        // Unreachable now: reference it by address, as before.
+        assertTrue(EditingCoordinator.resolveWebImage("https://example.com/a.png", null, u -> null)
+                .remote());
+        EditingCoordinator.WebImage nothing = EditingCoordinator.resolveWebImage(null, null, u -> null);
+        assertTrue(nothing.bytes() == null && !nothing.remote() && nothing.link() == null);
+    }
+
+    @Test
+    void aWebPictureLandsWhereItWasDroppedEvenIfTheCaretMovedOn() throws Exception {
+        EditorBuffer b = document("notes.md", "start end");
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(6); // the drop point
+            editing.insertWebImage(b, pixels(), null);
+            b.getArea().selectRange(0, 5); // the user carries on while the picture is being saved
+        });
+        awaitWebImage();
+        assertEquals("start ![image](assets/image.png)end", text(b), "not over the new selection");
+    }
+
+    @Test
+    void aClipboardWithTextAndAPictureOfItPastesTheText() throws Exception {
+        // What a spreadsheet puts on the clipboard for a copied range: the cells as text and as an image.
+        EditorBuffer b = document("notes.md", "");
+        FxTestSupport.runOnFx(() -> {
+            ClipboardContent content = new ClipboardContent();
+            content.putImage(pixels());
+            content.putString("cell A1\tcell B1");
+            Clipboard.getSystemClipboard().setContent(content);
+            assertFalse(editing.tryMarkdownImagePaste(b), "the text is what was copied");
+            registry.run("edit.paste");
+        });
+        assertEquals("cell A1\tcell B1", text(b));
+        assertEquals(List.of(), names(assets(b)), "no screenshot of the cells was written");
+        clearClipboard();
+    }
+
+    @Test
+    void picturesGoIntoTheConfiguredAssetsFolder() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path source = Files.write(Files.createDirectory(dir.resolve("src-cfg")).resolve("shot.png"), png(2, 2));
+        fx.shared.getSettings().setMarkdownAssetsFolder("img/shots");
+        try {
+            FxTestSupport.runOnFx(() -> editing.insertDroppedImages(b, List.of(source.toFile())));
+            assertEquals("![shot](img/shots/shot.png)", text(b));
+            assertTrue(Files.exists(b.getPath().getParent().resolve("img/shots/shot.png")));
+            fx.shared.getSettings().setMarkdownAssetsFolder("../outside");
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("");
+                editing.insertDroppedImages(b, List.of(source.toFile()));
+            });
+            assertEquals("![shot](assets/shot.png)", text(b), "a folder outside the document's falls back");
+        } finally {
+            fx.shared.getSettings().setMarkdownAssetsFolder("assets");
+        }
+    }
+
+    @Test
     void aTypstDocumentGetsAnImageCallInsteadOfAMarkdownLink() throws Exception {
         EditorBuffer b = document("paper.typ", "= Paper\n");
         Path picture = Files.write(Files.createDirectory(dir.resolve("src-typ")).resolve("fig.png"), png(2, 2));
@@ -247,7 +336,7 @@ class EditingImagesFxTest {
         assertEquals(List.of("image.png"), names(assets(b)));
         BufferedImage saved = ImageIO.read(assets(b).resolve("image.png").toFile());
         assertEquals(0xFFFF0000, saved.getRGB(0, 0));
-        assertEquals("![](assets/image.png)", text(b));
+        assertEquals("![image](assets/image.png)", text(b));
         assertEquals(tr("status.markdown.imageDropped", 1), status());
     }
 
@@ -264,7 +353,7 @@ class EditingImagesFxTest {
                 bytes,
                 Files.readAllBytes(assets(b).resolve("image.png")),
                 "the address's own bytes, not a re-encoding");
-        assertEquals("![](assets/image.png)", text(b));
+        assertEquals("![image](assets/image.png)", text(b));
     }
 
     @Test
@@ -273,7 +362,7 @@ class EditingImagesFxTest {
         FxTestSupport.runOnFx(() -> editing.insertWebImage(withPixels, pixels(), "data:image/png;base64,"));
         awaitWebImage();
         assertEquals(List.of("image.png"), names(assets(withPixels)), "the dragged pixels were saved instead");
-        assertEquals("![](assets/image.png)", text(withPixels));
+        assertEquals("![image](assets/image.png)", text(withPixels));
 
         EditorBuffer addressOnly = document("notes.md", "");
         FxTestSupport.runOnFx(() -> editing.insertWebImage(addressOnly, null, "data:image/png;base64,"));
@@ -331,7 +420,7 @@ class EditingImagesFxTest {
         try {
             FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
             assertEquals(List.of("pasted-image.png"), names(assets(b)));
-            assertEquals("see: ![](assets/pasted-image.png)", text(b));
+            assertEquals("see: ![pasted-image](assets/pasted-image.png)", text(b));
             assertEquals(tr("status.markdown.imagePasted", "assets/pasted-image.png"), status());
 
             FxTestSupport.runOnFx(() -> registry.run("edit.paste"));

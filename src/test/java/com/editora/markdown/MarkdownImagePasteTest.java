@@ -6,7 +6,9 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure Markdown image-paste helpers. */
 class MarkdownImagePasteTest {
@@ -132,5 +134,66 @@ class MarkdownImagePasteTest {
         assertEquals("png", MarkdownImagePaste.extensionForUrl("data:image/png;base64,zzz", "bin"));
         assertEquals("png", MarkdownImagePaste.extensionForUrl("https://ex.com/cdn/12345", "png"));
         assertEquals("png", MarkdownImagePaste.extensionForUrl(null, "png"));
+    }
+
+    @Test
+    void anOrdinaryLinkIsNotAnImage() {
+        // Every http(s) URL used to count: the page was downloaded and saved as assets/page.png.
+        assertNull(MarkdownImagePaste.imageUrlFromDrag("https://example.com/page.html", null, null));
+        assertNull(
+                MarkdownImagePaste.imageUrlFromDrag("https://example.com/article", "<a href='x'>An article</a>", null));
+        assertNull(MarkdownImagePaste.imageUrlFromDrag(null, null, "https://example.com/some article"));
+        assertEquals(
+                "https://e.com/render?id=7",
+                MarkdownImagePaste.imageUrlFromDrag(
+                        "https://e.com/page", "<a href='p'><img alt='a' src='https://e.com/render?id=7'></a>", null),
+                "an <img> is an image whatever its address looks like");
+        assertEquals(
+                "https://e.com/a.PNG?x=1", MarkdownImagePaste.imageUrlFromDrag("https://e.com/a.PNG?x=1", null, null));
+    }
+
+    @Test
+    void aDraggedLinkBecomesAMarkdownLink() {
+        assertEquals(
+                "[An article](<https://example.com/a_(b)>)",
+                MarkdownImagePaste.linkFromDrag(
+                        "https://example.com/a_(b)", "<a href=\"https://example.com/a_(b)\"><b>An</b>\n article</a>"));
+        assertEquals("<https://example.com/x>", MarkdownImagePaste.linkFromDrag("https://example.com/x", null));
+        assertEquals("[a\\] b](mailto:me@x.org)", MarkdownImagePaste.linkFromDrag("mailto:me@x.org", "<a>a] b</a>"));
+        assertNull(MarkdownImagePaste.linkFromDrag("file:///etc/passwd", null));
+        assertNull(MarkdownImagePaste.linkFromDrag(null, "<a>t</a>"));
+    }
+
+    @Test
+    void imageBytesAreRecognisedByTheirFirstBytes() {
+        assertEquals("png", MarkdownImagePaste.sniffImageType(new byte[] {(byte) 0x89, 'P', 'N', 'G', 13, 10}));
+        assertEquals("jpg", MarkdownImagePaste.sniffImageType(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0}));
+        assertEquals("gif", MarkdownImagePaste.sniffImageType("GIF89a".getBytes()));
+        assertEquals("webp", MarkdownImagePaste.sniffImageType("RIFF0000WEBPVP8 ".getBytes()));
+        assertEquals("svg", MarkdownImagePaste.sniffImageType("<?xml version='1.0'?><svg xmlns='x'/>".getBytes()));
+        assertNull(MarkdownImagePaste.sniffImageType("<!doctype html><html>".getBytes()));
+        assertNull(MarkdownImagePaste.sniffImageType(null));
+    }
+
+    @Test
+    void oneListOfImageExtensions() {
+        assertTrue(MarkdownImagePaste.isImageFileName("a.PNG"));
+        assertTrue(MarkdownImagePaste.isImageFileName("photo.avif"), "droppable like any other image type");
+        assertFalse(MarkdownImagePaste.isImageFileName("notes.md"));
+        assertFalse(MarkdownImagePaste.isImageFileName("noext"));
+    }
+
+    @Test
+    void theAssetsFolderComesFromTheSettingButStaysBesideTheDocument() {
+        Path base = Path.of("/docs/guide");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "assets"));
+        assertEquals(base.resolve("img/shots"), MarkdownImagePaste.assetsDir(base, " img/shots "));
+        assertEquals(base, MarkdownImagePaste.assetsDir(base, "."), "the document's own folder");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, ""), "blank: the default");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, null));
+        assertEquals(
+                base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "../elsewhere"), "never out of the folder");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "/tmp/x"));
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "C:\\pics"));
     }
 }

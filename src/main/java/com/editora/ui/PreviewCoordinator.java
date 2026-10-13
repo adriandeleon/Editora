@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
-import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -54,6 +53,12 @@ final class PreviewCoordinator {
         boolean appThemeDark();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
+
+        /** Opens {@code url} through the app's external-link opener (the rule documentation of a lint issue). */
+        void openExternalUrl(String url);
+
+        /** The active project's root, or null with no project open (bounds the lint-config lookup). */
+        java.nio.file.Path activeProjectRoot();
     }
 
     private final Host host;
@@ -69,6 +74,16 @@ final class PreviewCoordinator {
 
     final com.editora.editor.MarkdownLintService markdownLintService = new com.editora.editor.MarkdownLintService();
 
+    /** Acting on lint issues (fix, disable, rule help, next/previous) and the project's lint config. */
+    private MarkdownLintActions lintActions;
+
+    MarkdownLintActions lint() {
+        if (lintActions == null) {
+            lintActions = new MarkdownLintActions(host, this);
+        }
+        return lintActions;
+    }
+
     /** Whether Markdown linting is effective (the setting; the per-buffer gate adds Markdown + non-huge). */
     boolean markdownLintEnabled() {
         return host.config().getSettings().isMarkdownLint();
@@ -83,7 +98,28 @@ final class PreviewCoordinator {
                 b.setMarkdownLintEnabled(on);
             }
         }
-        if (host.markdownLintToolWindow() != null && host.toolWindows().isOpen(host.markdownLintToolWindow())) {
+        if (lintWindowOpen()) {
+            runMarkdownLintScan();
+        }
+    }
+
+    private boolean lintWindowOpen() {
+        return host.markdownLintToolWindow() != null && host.toolWindows().isOpen(host.markdownLintToolWindow());
+    }
+
+    /**
+     * The active tab changed to {@code buffer} (null for a non-editor tab): the Lint tool window follows it.
+     * Its stripe button is offered on a Markdown buffer; an <em>open</em> window stays open on any other tab —
+     * it says the file is not Markdown instead of closing, and fills again on the way back.
+     */
+    void activeBufferChanged(EditorBuffer buffer) {
+        if (host.markdownLintToolWindow() == null) {
+            return;
+        }
+        boolean markdown = buffer != null && buffer.isMarkdown();
+        host.toolWindows()
+                .setAvailable(host.markdownLintToolWindow(), markdownLintEnabled() && (markdown || lintWindowOpen()));
+        if (lintWindowOpen()) {
             runMarkdownLintScan();
         }
     }
@@ -92,22 +128,38 @@ final class PreviewCoordinator {
     void runMarkdownLintScan() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown() || !markdownLintEnabled()) {
-            host.markdownLintPanel().setResults(null, java.util.List.of());
+            host.markdownLintPanel().showNotLinted(b == null ? null : b.getPath());
             return;
         }
         markdownLintService.validate(
                 this, // the tool window's own request: it must not cancel a buffer's live lint
-                b.getContent(),
+                b.getVisibleContent(), // what the editor shows: the same lines the squiggles are drawn on
                 effectiveMarkdownLintDisabled(b),
-                diags -> host.markdownLintPanel().setResults(b.getPath(), diags));
+                lint().options(b),
+                diags -> showInLintPanel(b, diags));
     }
 
-    /** Lints {@code buffer}'s {@code text} for its live overlay; only a newer request for the same buffer supersedes it. */
+    /** Fills the Lint tool window with {@code buffer}'s diagnostics, when it is still the active buffer. */
+    private void showInLintPanel(
+            EditorBuffer buffer, java.util.List<com.editora.markdown.MarkdownLint.Diagnostic> diags) {
+        if (host.activeBuffer() == buffer && lintWindowOpen()) {
+            host.markdownLintPanel().setResults(buffer.getPath(), buffer.getTitle(), diags, lint().configNote(buffer));
+        }
+    }
+
+    /**
+     * Lints {@code buffer}'s {@code text} for its live overlay (only a newer request for the same buffer
+     * supersedes it) and mirrors the result into the Lint tool window while the buffer is the active one.
+     */
     void lintMarkdown(
             EditorBuffer buffer,
             String text,
             java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
-        markdownLintService.validate(buffer, text, effectiveMarkdownLintDisabled(buffer), onResult);
+        markdownLintService.validate(
+                buffer, text, effectiveMarkdownLintDisabled(buffer), lint().options(buffer), diags -> {
+                    onResult.accept(diags);
+                    showInLintPanel(buffer, diags);
+                });
     }
 
     /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
@@ -115,76 +167,59 @@ final class PreviewCoordinator {
         host.toolWindows().toggle(host.markdownLintToolWindow());
     }
 
-    private record MarkdownLintConfigEntry(long mtime, java.util.Set<String> disabled) {}
-
-    final java.util.Map<java.nio.file.Path, MarkdownLintConfigEntry> markdownLintConfigCache =
-            new java.util.HashMap<>();
-
-    /** The rule codes disabled for {@code buffer}: the Settings list ∪ the nearest {@code .markdownlint.json}. */
+    /**
+     * The rule codes disabled for {@code buffer}: the user's Settings list, minus the rules its project's
+     * markdownlint config switches on by name (the project's choice wins inside the project), plus the rules
+     * that config switches off. A narrowed buffer shows a fragment, so the two rules about the file's first and
+     * last line are off there.
+     */
     java.util.Set<String> effectiveMarkdownLintDisabled(EditorBuffer buffer) {
+        java.util.Set<String> off = settingsDisabledRules();
+        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
+        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
+            MarkdownLintActions.ConfigHit hit = lint().configFor(path);
+            if (hit != null) {
+                off.removeAll(hit.enabled());
+                off.addAll(hit.disabled());
+            }
+        }
+        if (buffer != null && buffer.isNarrowed()) {
+            off.addAll(java.util.List.of("MD041", "MD047"));
+        }
+        return off;
+    }
+
+    /** The rule codes switched off in Settings, normalized. */
+    java.util.Set<String> settingsDisabledRules() {
         java.util.Set<String> off = new java.util.HashSet<>();
         for (String code : host.config().getSettings().getMarkdownLintDisabledRules()) {
             if (code != null && !code.isBlank()) {
                 off.add(code.strip().toUpperCase(java.util.Locale.ROOT));
             }
         }
-        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
-        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
-            off.addAll(markdownLintConfigDisabled(path));
-        }
         return off;
     }
 
-    /** Walks up from {@code file} for the nearest {@code .markdownlint.json} and returns the rules it disables. */
+    /** The rules the nearest markdownlint config above {@code file} (inside its project) turns off. */
     java.util.Set<String> markdownLintConfigDisabled(java.nio.file.Path file) {
-        java.nio.file.Path dir = file.getParent();
-        while (dir != null) {
-            java.nio.file.Path cfg = dir.resolve(".markdownlint.json");
-            if (java.nio.file.Files.isRegularFile(cfg)) {
-                try {
-                    long mtime = java.nio.file.Files.getLastModifiedTime(cfg).toMillis();
-                    MarkdownLintConfigEntry cached = markdownLintConfigCache.get(cfg);
-                    if (cached == null || cached.mtime() != mtime) {
-                        java.util.Set<String> rules = com.editora.markdown.MarkdownLintConfig.disabledRules(
-                                java.nio.file.Files.readString(cfg));
-                        cached = new MarkdownLintConfigEntry(mtime, rules);
-                        markdownLintConfigCache.put(cfg, cached);
-                    }
-                    return cached.disabled();
-                } catch (java.io.IOException e) {
-                    return java.util.Set.of();
-                }
-            }
-            dir = dir.getParent();
-        }
-        return java.util.Set.of();
+        MarkdownLintActions.ConfigHit hit = lint().configFor(file);
+        return hit == null ? java.util.Set.of() : hit.disabled();
+    }
+
+    /**
+     * What the active buffer's project markdownlint config does to the rule list, as one localized line for
+     * display ("2 rules disabled by .markdownlint.json", or which rules it switches on over Settings); "" when no config applies (no file, not Markdown, a
+     * remote or unsaved buffer, or a config that changes nothing). The Lint tool window and the Settings card
+     * both show it; call on the FX thread.
+     */
+    String markdownLintConfigNote() {
+        EditorBuffer b = host.activeBuffer();
+        return b == null || !b.isMarkdown() ? "" : lint().configNote(b);
     }
 
     /** Applies the safe-to-automate Markdown-lint fixes to the active buffer (undoable). */
     void fixMarkdownLint() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            host.setStatus(tr("status.markdownLint.notMarkdown"));
-            return;
-        }
-        if (!markdownLintEnabled()) {
-            host.setStatus(tr("status.markdownLint.off"));
-            return;
-        }
-        String text = b.getContent();
-        String fixed = com.editora.markdown.MarkdownLintFix.fix(
-                text,
-                effectiveMarkdownLintDisabled(b),
-                host.config().getSettings().getTabSize());
-        if (fixed.equals(text)) {
-            host.setStatus(tr("status.markdownLint.fixNone"));
-            return;
-        }
-        if (!NoUndoGuard.allow(b, tr("command.markdownLint.fix"))) {
-            return;
-        }
-        b.replaceWholeDocument(fixed); // computed from getContent(): widens a narrowed buffer first (undoable)
-        host.setStatus(tr("status.markdownLint.fixed"));
+        lint().fixAll();
     }
 
     /** Picker to enable/disable an individual Markdown-lint rule (writes Settings + re-lints live). */
@@ -234,6 +269,16 @@ final class PreviewCoordinator {
         return b != null && b.pagePreview(down);
     }
 
+    /** A line's worth of the preview, as a fraction of its viewport (line up / line down). */
+    static final double PREVIEW_LINE = 0.08;
+
+    /** Scrolls the active buffer's preview by {@code pages} viewports when it is the scroll target: with
+     *  only the preview showing, line and start/end navigation move what is on screen, not a hidden caret. */
+    boolean scrollActivePreview(double pages) {
+        EditorBuffer b = host.activeBuffer();
+        return b != null && b.scrollPreview(pages);
+    }
+
     /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
     void persistMarkdownMode(EditorBuffer buffer) {
         Path file = buffer.getPath();
@@ -271,6 +316,7 @@ final class PreviewCoordinator {
                 toggle.sync();
             });
             buffer.setViewModeControl(toggle);
+            restorePreviewLayout(buffer);
             if (buffer.isMarkdown()) {
                 buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme);
                 buffer.applyPreviewTheme(host.config().getSettings().getMarkdownPreviewTheme(), host.appThemeDark());
@@ -281,6 +327,27 @@ final class PreviewCoordinator {
         }
         // Keep live linting in step when a Save As / rename flips the buffer to/from .mmd.
         host.mermaid().refreshLint(buffer);
+    }
+
+    /** Gives {@code buffer} the preview zoom and Split divider remembered for its file, and has later changes
+     *  of either stored (the default pair is not: a file left as it came takes no entry). */
+    private void restorePreviewLayout(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        var layouts = host.config().getWorkspaceState().getMarkdownPreviewLayouts();
+        String saved = file == null ? null : layouts.get(file.toString());
+        buffer.restorePreviewLayout(saved == null ? null : com.editora.editor.PreviewLayout.parse(saved), () -> {
+            Path now = buffer.getPath();
+            if (now == null) {
+                return;
+            }
+            com.editora.editor.PreviewLayout layout = buffer.getPreviewLayout();
+            if (layout.isDefault()) {
+                layouts.remove(now.toString());
+            } else {
+                layouts.put(now.toString(), layout.text());
+            }
+            host.requestSave();
+        });
     }
 
     /** Restores a Markdown/CSV/.http file's saved view mode after it is opened (and its toggle is wired). */
@@ -345,19 +412,52 @@ final class PreviewCoordinator {
 
     /** Runs a Markdown format action on the active buffer; reports when it isn't an editable Markdown file. */
     void withMarkdown(java.util.function.Consumer<EditorBuffer> action) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-            return;
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            action.accept(b);
         }
-        action.accept(b);
+    }
+
+    /**
+     * The active buffer when a Markdown editing command can run on it, else null after saying why not: not a
+     * Markdown file, or a read-only one (which is not "not a Markdown file"). The commands edit at one caret,
+     * so extra carets are dropped first — with a message, rather than silently changing one line of several.
+     */
+    private EditorBuffer editableMarkdown() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            host.setStatus(tr("status.notMarkdown"));
+            return null;
+        }
+        if (!b.canFormatMarkdown()) {
+            host.setStatus(tr("status.lsp.readOnly"));
+            return null;
+        }
+        if (!host.editing().activeEditable()) {
+            return null; // only the preview is showing: said so in the status line
+        }
+        if (b.hasMultipleCarets()) {
+            b.collapseCarets();
+            host.setStatus(tr("status.markdown.multiCaret"));
+        }
+        return b;
+    }
+
+    /**
+     * Runs a table command that needs the caret in a table, and says why when it did nothing: the caret is
+     * not on a table, or ({@code refusedKey}) the command does not apply to that row or column.
+     */
+    void markdownTable(java.util.function.Predicate<EditorBuffer> command, String refusedKey) {
+        EditorBuffer b = editableMarkdown();
+        if (b != null && !command.test(b)) {
+            host.setStatus(tr(b.markdown().caretInTable() ? refusedKey : "status.markdown.notTable"));
+        }
     }
 
     /** Opens the table-size grid picker; on pick, inserts a fresh GFM table into the active Markdown buffer. */
     void markdownInsertTable() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
             return;
         }
         showTableSizePicker((rows, cols) -> b.insertTable(rows, cols));
@@ -368,9 +468,8 @@ final class PreviewCoordinator {
      * mouse grid picker. The grid picker stays the format-bar button / right-click "Insert Table" UI.
      */
     void markdownInsertTableViaText() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
             return;
         }
         host.promptText(tr("table.size.title"), tr("table.size.label"), "3x3", input -> {
@@ -384,60 +483,26 @@ final class PreviewCoordinator {
     }
 
     /**
-     * A Typora/Word-style table-size grid picker shown as an in-scene overlay: hover to highlight an
-     * {@code R × C} block (rows include the header), click to commit. Max {@value #TABLE_PICKER_MAX_ROWS} ×
-     * {@value #TABLE_PICKER_MAX_COLS}.
+     * The table-size grid ({@link TableSizePicker}) as an in-scene overlay under the caret of the active
+     * editor: hover and click, or arrow keys and Enter, to pick {@code R × C} (rows include the header). Max
+     * {@value #TABLE_PICKER_MAX_ROWS} × {@value #TABLE_PICKER_MAX_COLS}.
      */
     void showTableSizePicker(java.util.function.BiConsumer<Integer, Integer> onPick) {
-        final int maxR = TABLE_PICKER_MAX_ROWS;
-        final int maxC = TABLE_PICKER_MAX_COLS;
-        javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(8);
-        card.getStyleClass().add("table-size-picker");
-        card.setPadding(new javafx.geometry.Insets(12));
-        // Hug the grid + padding — without a max-size cap the StackPane overlay stretches the card to fill
-        // the whole editor area (like QuickOpen's card, which caps to its preferred size).
-        card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
-        Label heading = new Label(tr("table.picker.prompt"));
-        heading.getStyleClass().add("table-size-label");
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(3);
-        grid.setVgap(3);
-        javafx.scene.shape.Rectangle[][] cells = new javafx.scene.shape.Rectangle[maxR][maxC];
-        int[] sel = {0, 0}; // selected rows, cols (1-based; 0 = nothing yet)
-        Runnable[] repaint = new Runnable[1];
-        repaint[0] = () -> {
-            for (int r = 0; r < maxR; r++) {
-                for (int c = 0; c < maxC; c++) {
-                    boolean on = r < sel[0] && c < sel[1];
-                    cells[r][c]
-                            .getStyleClass()
-                            .setAll("table-size-cell", on ? "table-size-cell-on" : "table-size-cell-off");
-                }
-            }
-            heading.setText(sel[0] == 0 ? tr("table.picker.prompt") : tr("table.picker.size", sel[0], sel[1]));
-        };
-        for (int r = 0; r < maxR; r++) {
-            for (int c = 0; c < maxC; c++) {
-                javafx.scene.shape.Rectangle cell = new javafx.scene.shape.Rectangle(16, 16);
-                cell.getStyleClass().setAll("table-size-cell", "table-size-cell-off");
-                final int rr = r + 1;
-                final int cc = c + 1;
-                cell.setOnMouseEntered(e -> {
-                    sel[0] = rr;
-                    sel[1] = cc;
-                    repaint[0].run();
-                });
-                cell.setOnMouseClicked(e -> {
-                    host.overlayHost().hide();
-                    onPick.accept(rr, cc);
-                });
-                cells[r][c] = cell;
-                grid.add(cell, c, r);
-            }
+        TableSizePicker picker =
+                new TableSizePicker(TABLE_PICKER_MAX_ROWS, TABLE_PICKER_MAX_COLS, host.overlayHost()::hide, onPick);
+        Runnable focus = picker.card()::requestFocus; // or the editor keeps the keyboard under the scrim
+        EditorBuffer b = host.activeBuffer();
+        org.fxmisc.richtext.CodeArea area = b == null ? null : b.getFocusedArea();
+        javafx.geometry.Bounds caret =
+                area == null ? null : area.getCaretBounds().orElse(null);
+        javafx.geometry.Bounds inScene =
+                caret == null || area.getScene() == null ? null : area.localToScene(area.screenToLocal(caret));
+        if (inScene == null) {
+            host.overlayHost().show(picker.card(), true, focus, () -> {}); // no caret on screen: centered
+        } else {
+            host.overlayHost()
+                    .showAt(picker.card(), inScene.getMinX(), inScene.getMaxY(), inScene.getMinY(), focus, () -> {});
         }
-        card.getChildren().addAll(heading, grid);
-        card.getProperties().put("editora.ownsKeys", true);
-        host.overlayHost().show(card, true, () -> {}, () -> {}); // centered — it's a small grid, not a top palette
     }
 
     void markdownInline(String marker) {
@@ -450,6 +515,9 @@ final class PreviewCoordinator {
         if (b == null || !b.isTypst() || !b.canFormatMarkup()) {
             host.setStatus(tr("status.typst.notTypst"));
             return;
+        }
+        if (!host.editing().activeEditable()) {
+            return; // only the preview is showing
         }
         action.accept(b);
     }
@@ -466,20 +534,22 @@ final class PreviewCoordinator {
 
     /** {@code markdown.reflowTable}: normalize/align the GFM table around the caret. */
     void markdownReflowTable() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.reflowTable()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.reflowTable()) {
             host.setStatus(tr("status.markdown.notTable"));
         }
     }
 
     /** {@code markdown.toc}: insert a table of contents at the caret, or regenerate the existing TOC block. */
     void markdownToc() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.insertOrUpdateToc()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.insertOrUpdateToc()) {
             host.setStatus(tr("status.markdown.tocNoHeadings"));
         } else {
             host.setStatus(tr("status.markdown.tocDone"));
@@ -488,20 +558,22 @@ final class PreviewCoordinator {
 
     /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
     void markdownTableFromCsv() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableFromCsv()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.tableFromCsv()) {
             host.setStatus(tr("status.markdown.csvEmpty"));
         }
     }
 
     /** {@code markdown.tableToCsv}: copy the caret's GFM table to the clipboard as CSV. */
     void markdownTableToCsv() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableToCsv()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.tableToCsv()) {
             host.setStatus(tr("status.markdown.notTable"));
         } else {
             host.setStatus(tr("status.markdown.csvCopied"));
@@ -510,10 +582,11 @@ final class PreviewCoordinator {
 
     /** {@code markdown.tableExport*}: file-export the caret's GFM table ({@code format} = csv|xlsx|ods). */
     void markdownTableExport(String format) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.exportTableFile(format)) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.exportTableFile(format)) {
             host.setStatus(tr("status.markdown.notTable"));
         }
     }
@@ -638,12 +711,17 @@ final class PreviewCoordinator {
      */
     void toggleMarkdownPreviewTheme() {
         String mode = host.config().getSettings().getMarkdownPreviewTheme();
-        boolean currentlyDark = "dark".equals(mode) || (mode.isEmpty() && host.appThemeDark());
-        String next = currentlyDark ? "light" : "dark";
+        // Three states, so the toggle can let go again: follow the app → the other theme → the app's own,
+        // pinned → follow the app.
+        String next = com.editora.editor.PreviewButtons.nextTheme(mode, host.appThemeDark());
         host.config().getSettings().setMarkdownPreviewTheme(next);
         host.requestSave();
         applyMarkdownPreviewTheme();
-        host.setStatus(tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + next)));
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll(); // the Markdown page shows the same three-state choice
+        }
+        host.setStatus(
+                tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + (next.isEmpty() ? "follow" : next))));
     }
 
     /** Zooms the active Markdown buffer's preview text: {@code >0} in, {@code <0} out, {@code 0} reset. */

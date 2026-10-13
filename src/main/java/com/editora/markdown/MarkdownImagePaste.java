@@ -20,6 +20,20 @@ public final class MarkdownImagePaste {
 
     private MarkdownImagePaste() {}
 
+    /**
+     * The folder pasted and dropped images go into for a document in {@code baseDir}: {@code folder} (the
+     * "assets folder" setting) relative to it. A blank value, an absolute path or one that climbs out with
+     * {@code ..} falls back to {@link #ASSETS_DIR}; {@code "."} is the document's own folder.
+     */
+    public static Path assetsDir(Path baseDir, String folder) {
+        String f = folder == null ? "" : folder.strip().replace('\\', '/');
+        boolean usable = !f.isEmpty() && !f.startsWith("/") && !f.matches("^[A-Za-z]:.*");
+        for (String part : f.split("/")) {
+            usable &= !part.equals("..");
+        }
+        return baseDir.resolve(usable ? f : ASSETS_DIR).normalize();
+    }
+
     /** A non-colliding file name {@code base.ext} / {@code base-N.ext}; {@code exists} tests the target dir. */
     public static String uniqueFileName(Predicate<String> exists, String base, String ext) {
         String name = base + "." + ext;
@@ -116,10 +130,20 @@ public final class MarkdownImagePaste {
     private static final Pattern IMG_SRC =
             Pattern.compile("<img\\b[^>]*?\\bsrc\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern ANCHOR =
+            Pattern.compile("<a\\b[^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** Whether {@code name} ends in an image extension — the one list drop, paste and download agree on. */
+    public static boolean isImageFileName(String name) {
+        int dot = name == null ? -1 : name.lastIndexOf('.');
+        return dot >= 0 && IMAGE_EXTS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
     /**
-     * The best image URL/data-URI carried by a browser drag: the explicit drag {@code url}, else an
-     * {@code <img src>} pulled from the dragged {@code html}, else {@code string} when it is itself an
-     * http(s)/data image reference. Returns {@code null} when none looks like an image source.
+     * The image a browser drag carries, or {@code null} when it carries none: an {@code <img src>} in the
+     * dragged {@code html}, else the drag {@code url} or {@code string} when that is a {@code data:image} URI
+     * or an http(s) address ending in an image extension. An ordinary link is not an image — taking every
+     * http(s) URL for one downloaded the page it pointed to and saved the HTML as {@code assets/page.png}.
      */
     public static String imageUrlFromDrag(String url, String html, String string) {
         String u = firstNonBlank(url);
@@ -130,7 +154,7 @@ public final class MarkdownImagePaste {
             Matcher m = IMG_SRC.matcher(html);
             if (m.find()) {
                 String src = m.group(1).trim();
-                if (isImageRef(src)) {
+                if (isWebRef(src)) {
                     return src;
                 }
             }
@@ -139,16 +163,92 @@ public final class MarkdownImagePaste {
         return isImageRef(s) ? s.trim() : null;
     }
 
-    /** True if {@code s} is a plausible image reference: a {@code data:image} URI, or an http(s) URL. */
-    private static boolean isImageRef(String s) {
+    /**
+     * The Markdown for a dragged hyperlink, or {@code null} when the drag carries no http(s)/mailto URL:
+     * {@code [text](url)} with the anchor text of the dragged {@code html}, else the bare {@code <url>}.
+     */
+    public static String linkFromDrag(String url, String html) {
+        String u = firstNonBlank(url);
+        if (u == null || !u.trim().matches("(?i)(https?://|mailto:)\\S+")) {
+            return null;
+        }
+        u = u.trim();
+        String text = "";
+        if (html != null) {
+            Matcher m = ANCHOR.matcher(html);
+            if (m.find()) {
+                text = m.group(1)
+                        .replaceAll("<[^>]*>", "")
+                        .replaceAll("\\s+", " ")
+                        .strip();
+            }
+        }
+        if (text.isEmpty() || text.equals(u)) {
+            return "<" + u + ">";
+        }
+        return "[" + MarkdownInline.escapeUnbalancedBrackets(text) + "](" + destination(u) + ")";
+    }
+
+    /** A {@code data:image} URI or an http(s) address: something an {@code <img>} may point at. */
+    private static boolean isWebRef(String s) {
         if (s == null) {
             return false;
         }
         String t = s.trim().toLowerCase(Locale.ROOT);
-        if (t.startsWith("data:image/")) {
-            return true;
+        return t.startsWith("data:image/")
+                || ((t.startsWith("http://") || t.startsWith("https://")) && !t.contains("\n"));
+    }
+
+    /** True if {@code s} names an image by itself: a {@code data:image} URI, or an http(s) URL with an image extension. */
+    private static boolean isImageRef(String s) {
+        if (!isWebRef(s) || s.trim().indexOf(' ') >= 0) {
+            return false;
         }
-        return (t.startsWith("http://") || t.startsWith("https://")) && !t.contains("\n");
+        return s.trim().toLowerCase(Locale.ROOT).startsWith("data:image/") || extensionForUrl(s, null) != null;
+    }
+
+    /**
+     * The image type of {@code bytes} by their first bytes ({@code png}, {@code jpg}, {@code gif},
+     * {@code webp}, {@code bmp}, {@code ico}, {@code avif}, {@code svg}), or {@code null} when they are not an
+     * image — which is how a download that turned out to be a web page is told from a picture.
+     */
+    public static String sniffImageType(byte[] bytes) {
+        if (bytes == null || bytes.length < 4) {
+            return null;
+        }
+        if (starts(bytes, 0x89, 'P', 'N', 'G')) {
+            return "png";
+        }
+        if (starts(bytes, 0xFF, 0xD8, 0xFF)) {
+            return "jpg";
+        }
+        if (starts(bytes, 'G', 'I', 'F', '8')) {
+            return "gif";
+        }
+        if (starts(bytes, 'B', 'M')) {
+            return "bmp";
+        }
+        if (starts(bytes, 0, 0, 1, 0)) {
+            return "ico";
+        }
+        if (bytes.length >= 12 && starts(bytes, 'R', 'I', 'F', 'F') && bytes[8] == 'W' && bytes[9] == 'E') {
+            return "webp";
+        }
+        if (bytes.length >= 12 && bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p') {
+            return "avif";
+        }
+        String head = new String(bytes, 0, Math.min(bytes.length, 512), java.nio.charset.StandardCharsets.UTF_8)
+                .toLowerCase(Locale.ROOT);
+        return head.contains("<svg") ? "svg" : null;
+    }
+
+    private static boolean starts(byte[] bytes, int... magic) {
+        for (int i = 0; i < magic.length; i++) {
+            if ((bytes[i] & 0xFF) != magic[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String firstNonBlank(String s) {

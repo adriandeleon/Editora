@@ -4,14 +4,17 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.imageio.ImageIO;
 
+import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.MathSpans;
+import com.editora.markdown.MarkdownMath;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Borders;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
@@ -40,36 +43,72 @@ import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.ThematicBreak;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBookmark;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBorder;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTHyperlink;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder;
 
 /**
  * Renders a Markdown document to a MS Word {@code .docx} via Apache POI's XWPF API, walking the same
- * CommonMark AST ({@link MarkdownRenderer#parseToDocument}) as the PDF/preview renderers. Covers headings,
- * paragraphs (bold/italic/strikethrough/underline/inline-code/links), bullet + ordered lists (one level of
- * nesting, prefix-numbered to avoid the heavy XWPF numbering API; task items keep their checkbox), block
- * quotes, fenced/indented code blocks, GFM tables, thematic breaks, and local/{@code data:} images.
- * Mermaid/unknown fenced blocks fall back to a monospace code block; remote/SVG images degrade to alt text.
+ * CommonMark AST ({@link MarkdownRenderer#parseToDocument}) as the PDF/preview renderers. Covers headings
+ * (real {@code Heading1}–{@code Heading6} styles with outline levels, each bookmarked with its anchor),
+ * paragraphs (bold/italic/strikethrough/underline/inline-code/links/inline pictures), bullet + ordered
+ * lists (real Word lists, nested, each ordered list with its own start number; task items keep their
+ * checkbox), block quotes (indented behind a rule, whatever they contain), fenced/indented code blocks, GFM
+ * tables with their column alignment, thematic breaks, and local/{@code data:} images. Mermaid/unknown fenced
+ * blocks fall back to a monospace code block; remote/SVG images degrade to alt text.
  *
  * <p>Nothing with text in it is skipped: a list item's non-paragraph children (a code block, a quote, a
  * table) go through the same block renderer, raw HTML is written as its source (as the preview shows it), a
  * block type this writer does not know becomes a plain paragraph, and footnote definitions are written at the
  * end of the document.
+ *
+ * <p>A link is live only when it is a web or mail address or a relative reference
+ * ({@link InlineRun#isSafeHref}); {@code [x](#heading)} becomes an internal link to that heading's bookmark.
  */
 public final class DocxWriter {
 
     private static final String MONO = "Consolas";
     private static final String LINK_COLOR = "0563C1";
+    private static final String QUOTE_RULE = "BFBFBF";
     private static final int MAX_IMAGE_PX = 480;
+    /** Twips a block quote moves its content right, per level of quoting. */
+    private static final int QUOTE_INDENT = 480;
+    /** Twips from a list item's number or bullet to its text. */
+    private static final int LIST_HANGING = 360;
 
     private DocxWriter() {}
 
+    /** What every block needs: the document, where pictures resolve, and the heading bookmarks. */
+    private record Ctx(
+            XWPFDocument doc,
+            Path baseDir,
+            List<String> mmdc,
+            DocxScaffold scaffold,
+            Map<Heading, String> anchors,
+            Map<String, String> bookmarks) {}
+
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
-        Node ast = MarkdownRenderer.parseToDocument(markdown);
+        Node ast = MarkdownRenderer.parseForRender(markdown); // the preview's parse: math is nodes
         try (XWPFDocument doc = new XWPFDocument()) {
+            Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
+            Map<String, String> bookmarks = new HashMap<>();
+            for (String anchor : anchors.values()) {
+                bookmarks.put(anchor, "h_" + (bookmarks.size() + 1)); // a bookmark name allows no hyphen
+            }
+            Ctx ctx = new Ctx(doc, baseDir, mmdc, new DocxScaffold(doc), anchors, bookmarks);
+            var core = doc.getProperties().getCoreProperties();
+            core.setCreator("Editora");
+            String title = MarkdownDocInfo.title(ast, fileTitle(out));
+            if (title != null) {
+                core.setTitle(title);
+            }
             for (Node n = ast.getFirstChild(); n != null; n = n.getNext()) {
-                block(doc, n, baseDir, mmdc, 0);
+                block(ctx, n, 0, 0);
             }
             for (FootnoteDefinition def : InlineRun.footnotes(ast)) {
-                footnote(doc, def, baseDir, mmdc);
+                footnote(ctx, def);
             }
             try (OutputStream os = Files.newOutputStream(out)) {
                 doc.write(os);
@@ -77,62 +116,77 @@ public final class DocxWriter {
         }
     }
 
-    private static void block(XWPFDocument doc, Node n, Path baseDir, List<String> mmdc, int indentLevel) {
+    /** The file name without its extension — the title of a document that states none. */
+    static String fileTitle(Path out) {
+        if (out == null || out.getFileName() == null) {
+            return null;
+        }
+        String name = out.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    /**
+     * Writes block {@code n} with its left edge {@code indent} twips in, inside {@code quotes} levels of
+     * block quote. Indentation is additive — a list in a quote in a list item ends up where it belongs —
+     * rather than set per construct, which flattened whatever a quote contained to one depth.
+     */
+    private static void block(Ctx ctx, Node n, int indent, int quotes) {
+        XWPFDocument doc = ctx.doc();
         if (n instanceof Heading h) {
-            XWPFParagraph p = doc.createParagraph();
-            p.setStyle("Heading" + Math.min(6, h.getLevel()));
-            int size =
-                    switch (h.getLevel()) {
-                        case 1 -> 22;
-                        case 2 -> 18;
-                        case 3 -> 15;
-                        case 4 -> 13;
-                        default -> 12;
-                    };
-            addRuns(p, InlineRun.flatten(h), baseDir, true, size);
+            XWPFParagraph p = paragraph(ctx, indent, quotes);
+            int level = Math.min(6, h.getLevel());
+            p.setStyle("Heading" + level);
+            String bookmark = ctx.bookmarks().get(ctx.anchors().get(h));
+            if (bookmark != null) {
+                BigInteger id = BigInteger.valueOf(Integer.parseInt(bookmark.substring(2)));
+                CTBookmark start = p.getCTP().addNewBookmarkStart();
+                start.setName(bookmark);
+                start.setId(id);
+                p.getCTP().addNewBookmarkEnd().setId(id);
+            }
+            addRuns(ctx, p, InlineRun.flatten(h), true, DocxScaffold.HEADING_POINTS[level - 1]);
+        } else if (n instanceof MarkdownMath.Block math) {
+            // A $$ block: a picture when it is a finished formula that renders, else what was typed.
+            if (!math.isClosed() || !embedBlock(doc, OfficeImages.renderMath(math.getLatex(), true))) {
+                paragraph(ctx, indent, quotes).createRun().setText(MarkdownMath.source(math));
+            }
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
             if (math != null && embedBlock(doc, OfficeImages.renderMath(math, true))) {
                 return; // rendered the $$…$$ block as an image
             }
             if (isBlockImage(p)) {
-                embedImage(doc.createParagraph(), (Image) p.getFirstChild(), baseDir);
+                embedImage(paragraph(ctx, indent, quotes), (Image) p.getFirstChild(), ctx.baseDir());
             } else {
-                XWPFParagraph par = doc.createParagraph();
-                if (indentLevel > 0) {
-                    par.setIndentationLeft(indentLevel * 360);
-                }
-                addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
+                addRuns(ctx, paragraph(ctx, indent, quotes), InlineRun.flatten(p), false, 0);
             }
         } else if (n instanceof BulletList bl) {
-            list(doc, bl, baseDir, mmdc, indentLevel, false, 0);
+            list(ctx, bl, indent, quotes, 0);
         } else if (n instanceof OrderedList ol) {
-            list(doc, ol, baseDir, mmdc, indentLevel, true, ol.getMarkerStartNumber());
+            list(ctx, ol, indent, quotes, 0);
         } else if (n instanceof BlockQuote bq) {
             for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
-                int before = doc.getParagraphs().size();
-                block(doc, c, baseDir, mmdc, indentLevel + 1);
-                for (int i = before; i < doc.getParagraphs().size(); i++) {
-                    doc.getParagraphs().get(i).setIndentationLeft((indentLevel + 1) * 480);
-                }
+                block(ctx, c, indent + QUOTE_INDENT, quotes + 1);
             }
         } else if (n instanceof FencedCodeBlock f) {
             if (InlineRun.isMermaidInfo(f.getInfo())
-                    && embedBlock(doc, OfficeImages.renderMermaid(mmdc, f.getLiteral()))) {
+                    && embedBlock(doc, OfficeImages.renderMermaid(ctx.mmdc(), f.getLiteral()))) {
                 return; // rendered the ```mermaid block as a diagram image
             }
-            codeBlock(doc, f.getLiteral(), indentLevel);
+            codeBlock(ctx, f.getLiteral(), indent, quotes);
         } else if (n instanceof IndentedCodeBlock ic) {
-            codeBlock(doc, ic.getLiteral(), indentLevel);
+            codeBlock(ctx, ic.getLiteral(), indent, quotes);
         } else if (n instanceof ThematicBreak) {
             XWPFParagraph p = doc.createParagraph();
             p.setBorderBottom(Borders.SINGLE);
         } else if (n instanceof TableBlock t) {
-            table(doc, t, baseDir);
+            table(ctx, t);
         } else if (n instanceof HtmlBlock hb) {
             // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
-            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
-                codeBlock(doc, hb.getLiteral(), indentLevel);
+            String shown = MarkdownDocInfo.htmlSourceShown(hb.getLiteral()); // "<!-- c --> text" keeps the text
+            if (!shown.isEmpty()) {
+                codeBlock(ctx, shown, indent, quotes);
             }
         } else if (n instanceof FootnoteDefinition) {
             // written at the end of the document by write()
@@ -140,84 +194,114 @@ public final class DocxWriter {
             // A block type with no dedicated rendering: keep its text rather than dropping it.
             List<InlineRun> runs = InlineRun.flatten(n);
             if (runs.stream().anyMatch(r -> !r.text().isBlank())) {
-                XWPFParagraph par = doc.createParagraph();
-                if (indentLevel > 0) {
-                    par.setIndentationLeft(indentLevel * 360);
-                }
-                addRuns(par, runs, baseDir, false, 0);
+                addRuns(ctx, paragraph(ctx, indent, quotes), runs, false, 0);
             }
         }
     }
 
+    /** A new body paragraph {@code indent} twips in; inside a block quote it carries the quote's rule. */
+    private static XWPFParagraph paragraph(Ctx ctx, int indent, int quotes) {
+        XWPFParagraph p = ctx.doc().createParagraph();
+        if (indent > 0) {
+            p.setIndentationLeft(indent);
+        }
+        if (quotes > 0) {
+            CTPPr ppr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
+            CTBorder left = (ppr.isSetPBdr() ? ppr.getPBdr() : ppr.addNewPBdr()).addNewLeft();
+            left.setVal(STBorder.SINGLE);
+            left.setSz(BigInteger.valueOf(12));
+            left.setSpace(BigInteger.valueOf(8));
+            left.setColor(QUOTE_RULE);
+        }
+        return p;
+    }
+
     /** A footnote definition: its {@code [label]} marker leading the first paragraph, then any further blocks. */
-    private static void footnote(XWPFDocument doc, FootnoteDefinition def, Path baseDir, List<String> mmdc) {
+    private static void footnote(Ctx ctx, FootnoteDefinition def) {
         String marker = InlineRun.footnoteMarker(def.getLabel()) + " ";
         boolean first = true;
         for (Node c = def.getFirstChild(); c != null; c = c.getNext()) {
             if (first && c instanceof Paragraph p) {
-                XWPFParagraph par = doc.createParagraph();
+                XWPFParagraph par = ctx.doc().createParagraph();
                 par.createRun().setText(marker);
-                addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
+                addRuns(ctx, par, InlineRun.flatten(p), false, 0);
             } else {
                 if (first) {
-                    doc.createParagraph().createRun().setText(marker);
+                    ctx.doc().createParagraph().createRun().setText(marker);
                 }
-                block(doc, c, baseDir, mmdc, 1);
+                block(ctx, c, LIST_HANGING, 0);
             }
             first = false;
         }
         if (first) {
-            doc.createParagraph().createRun().setText(marker); // an empty definition still shows its label
+            ctx.doc().createParagraph().createRun().setText(marker); // an empty definition still shows its label
         }
     }
 
-    private static void list(
-            XWPFDocument doc,
-            Node listNode,
-            Path baseDir,
-            List<String> mmdc,
-            int indentLevel,
-            boolean ordered,
-            int start) {
-        int idx = ordered ? Math.max(1, start) : 0;
+    /**
+     * A list as a Word list: each item's first paragraph carries the list's numbering at {@code level}, and
+     * everything else the item holds — further paragraphs, a code block, a quote, a table, a nested list —
+     * lines up with that paragraph's text.
+     */
+    private static void list(Ctx ctx, Node listNode, int indent, int quotes, int level) {
+        boolean ordered = listNode instanceof OrderedList;
+        int ilvl = Math.min(level, DocxScaffold.MAX_LEVEL);
+        BigInteger numId = ordered
+                ? ctx.scaffold().numberedList(ilvl, ((OrderedList) listNode).getMarkerStartNumber())
+                : ctx.scaffold().bulletList();
+        int textLeft = indent + 2 * LIST_HANGING;
         for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
             if (!(item instanceof ListItem)) {
                 continue;
             }
-            String marker = ordered ? (idx++ + ". ") : "• ";
+            String task = "";
             boolean first = true;
             for (Node c = item.getFirstChild(); c != null; c = c.getNext()) {
-                if (c instanceof TaskListItemMarker task) {
-                    marker += task.isChecked() ? "☑ " : "☐ "; // "- [x] done" keeps its state
-                } else if (c instanceof BulletList nestedB) {
-                    list(doc, nestedB, baseDir, mmdc, indentLevel + 1, false, 0);
-                } else if (c instanceof OrderedList nestedO) {
-                    list(doc, nestedO, baseDir, mmdc, indentLevel + 1, true, nestedO.getMarkerStartNumber());
-                } else if (c instanceof Paragraph p && !isBlockImage(p) && InlineRun.soleDisplayMath(p) == null) {
-                    XWPFParagraph par = doc.createParagraph();
-                    par.setIndentationLeft((indentLevel + 1) * 360);
+                if (c instanceof TaskListItemMarker marker) {
+                    task = marker.isChecked() ? "☑ " : "☐ "; // "- [x] done" keeps its state
+                } else if (c instanceof BulletList || c instanceof OrderedList) {
                     if (first) {
-                        XWPFRun m = par.createRun();
-                        m.setText(marker);
+                        listParagraph(ctx, numId, ilvl, textLeft, quotes, task);
+                        first = false;
                     }
-                    addRuns(par, InlineRun.flatten(p), baseDir, false, 0);
+                    list(ctx, c, textLeft - LIST_HANGING, quotes, level + 1);
+                } else if (c instanceof Paragraph p && !isBlockImage(p) && InlineRun.soleDisplayMath(p) == null) {
+                    XWPFParagraph par = first
+                            ? listParagraph(ctx, numId, ilvl, textLeft, quotes, task)
+                            : paragraph(ctx, textLeft, quotes);
+                    addRuns(ctx, par, InlineRun.flatten(p), false, 0);
                     first = false;
                 } else {
                     // Anything else in the item — a code block, a quote, a table, an image, a rule — used to be
                     // skipped, so "1. Run:" followed by a fenced command lost the command.
                     if (first) {
-                        XWPFParagraph par = doc.createParagraph();
-                        par.setIndentationLeft((indentLevel + 1) * 360);
-                        par.createRun().setText(marker);
+                        listParagraph(ctx, numId, ilvl, textLeft, quotes, task);
                         first = false;
                     }
-                    block(doc, c, baseDir, mmdc, indentLevel + 1);
+                    block(ctx, c, textLeft, quotes);
                 }
+            }
+            if (first) {
+                listParagraph(ctx, numId, ilvl, textLeft, quotes, task); // an empty item still counts
             }
         }
     }
 
-    private static void codeBlock(XWPFDocument doc, String text, int indentLevel) {
+    /** The numbered (or bulleted) paragraph that opens a list item, with the item's checkbox when it has one. */
+    private static XWPFParagraph listParagraph(
+            Ctx ctx, BigInteger numId, int ilvl, int textLeft, int quotes, String task) {
+        XWPFParagraph p = paragraph(ctx, textLeft, quotes);
+        p.setNumID(numId);
+        p.setNumILvl(BigInteger.valueOf(ilvl));
+        p.setIndentationLeft(textLeft); // after the numbering: an explicit indent wins over the level's own
+        p.setIndentationHanging(LIST_HANGING);
+        if (!task.isEmpty()) {
+            p.createRun().setText(task);
+        }
+        return p;
+    }
+
+    private static void codeBlock(Ctx ctx, String text, int indent, int quotes) {
         String[] lines = text.replace("\r\n", "\n").split("\n", -1);
         // drop a trailing empty line from the fence
         int end = lines.length;
@@ -225,11 +309,8 @@ public final class DocxWriter {
             end--;
         }
         for (int i = 0; i < end; i++) {
-            XWPFParagraph p = doc.createParagraph();
+            XWPFParagraph p = paragraph(ctx, indent, quotes); // stays under its list item / quote
             p.setSpacingAfter(0);
-            if (indentLevel > 0) {
-                p.setIndentationLeft(indentLevel * 360); // stays under its list item / quote
-            }
             XWPFRun r = p.createRun();
             r.setFontFamily(MONO);
             r.setFontSize(10);
@@ -237,7 +318,7 @@ public final class DocxWriter {
         }
     }
 
-    private static void table(XWPFDocument doc, TableBlock t, Path baseDir) {
+    private static void table(Ctx ctx, TableBlock t) {
         List<List<TableCell>> rows = new java.util.ArrayList<>();
         for (Node section = t.getFirstChild(); section != null; section = section.getNext()) {
             for (Node r = section.getFirstChild(); r != null; r = r.getNext()) {
@@ -257,7 +338,7 @@ public final class DocxWriter {
             return;
         }
         int ncol = rows.stream().mapToInt(List::size).max().orElse(1);
-        XWPFTable table = doc.createTable(rows.size(), ncol);
+        XWPFTable table = ctx.doc().createTable(rows.size(), ncol);
         for (int ri = 0; ri < rows.size(); ri++) {
             XWPFTableRow row = table.getRow(ri);
             List<TableCell> cells = rows.get(ri);
@@ -265,14 +346,23 @@ public final class DocxWriter {
                 XWPFTableCell cell = row.getCell(ci);
                 XWPFParagraph p = cell.getParagraphs().get(0);
                 if (ci < cells.size()) {
-                    addRuns(p, InlineRun.flatten(cells.get(ci)), baseDir, ri == 0, 0);
+                    addRuns(ctx, p, InlineRun.flatten(cells.get(ci)), ri == 0, 0);
+                    p.setAlignment(alignment(cells.get(ci).getAlignment()));
                 }
             }
         }
     }
 
+    /** The column alignment of a {@code | :--- | :---: | ---: |} delimiter row; unmarked columns read left. */
+    private static ParagraphAlignment alignment(TableCell.Alignment a) {
+        if (a == TableCell.Alignment.CENTER) {
+            return ParagraphAlignment.CENTER;
+        }
+        return a == TableCell.Alignment.RIGHT ? ParagraphAlignment.RIGHT : ParagraphAlignment.LEFT;
+    }
+
     /** Emits the styled inline runs into {@code p}; {@code forceBold}/{@code size} apply to headings/headers. */
-    private static void addRuns(XWPFParagraph p, List<InlineRun> runs, Path baseDir, boolean forceBold, int size) {
+    private static void addRuns(Ctx ctx, XWPFParagraph p, List<InlineRun> runs, boolean forceBold, int size) {
         XWPFRun last = null;
         for (InlineRun ir : runs) {
             if (ir.isBreak()) {
@@ -282,37 +372,39 @@ public final class DocxWriter {
                 last.addBreak();
                 continue;
             }
-            // Split non-code text on inline $…$ / $$…$$ math and embed each math span as an inline picture.
-            if (!ir.code() && ir.text().indexOf('$') >= 0 && MathImages.isEnabled()) {
-                for (MathSpans.Segment seg : MathSpans.segments(ir.text())) {
-                    if (seg.text() != null) {
-                        if (!seg.text().isEmpty()) {
-                            last = emitTextRun(p, ir, seg.text(), forceBold, size);
-                        }
-                    } else {
-                        byte[] png = OfficeImages.renderMath(
-                                seg.span().latex(), seg.span().display());
-                        XWPFRun m = embedInlineMath(p, png, seg.span().display());
-                        last = m != null ? m : emitTextRun(p, ir, rawMath(seg.span()), forceBold, size);
-                    }
+            if (ir.image() != null) {
+                // A picture inside a line. What cannot be embedded is written as its alt text, as before.
+                XWPFRun picture = p.createRun();
+                if (pictureInto(picture, OfficeImages.load(ir.image(), ctx.baseDir()), "image")) {
+                    last = picture;
+                    continue;
                 }
-                continue;
+                p.removeRun(p.getRuns().indexOf(picture));
+                if (ir.text().isEmpty()) {
+                    continue;
+                }
             }
-            last = emitTextRun(p, ir, ir.text(), forceBold, size);
-        }
-        if (forceBold) {
-            p.setAlignment(ParagraphAlignment.LEFT);
+            if (ir.isMath()) {
+                // A formula in the line: a picture, or its source when it cannot be drawn (or math is off).
+                boolean display = ir.text().startsWith("$$");
+                XWPFRun m = embedInlineMath(p, OfficeImages.renderMath(ir.latex(), display), display);
+                if (m != null) {
+                    last = m;
+                    continue;
+                }
+            }
+            last = emitTextRun(ctx, p, ir, ir.text(), forceBold, size);
         }
     }
 
     /** Creates one styled run carrying {@code text} (reusing {@code ir}'s styling/link). */
-    private static XWPFRun emitTextRun(XWPFParagraph p, InlineRun ir, String text, boolean forceBold, int size) {
-        XWPFRun r;
-        if (ir.href() != null && !ir.href().isBlank()) {
-            XWPFHyperlinkRun hr = p.createHyperlinkRun(ir.href());
-            hr.setColor(LINK_COLOR);
-            hr.setUnderline(UnderlinePatterns.SINGLE);
-            r = hr;
+    private static XWPFRun emitTextRun(
+            Ctx ctx, XWPFParagraph p, InlineRun ir, String text, boolean forceBold, int size) {
+        XWPFRun r = linkRun(ctx, p, ir.href());
+        boolean link = r != null;
+        if (link) {
+            r.setColor(LINK_COLOR);
+            r.setUnderline(UnderlinePatterns.SINGLE);
         } else {
             r = p.createRun();
         }
@@ -326,7 +418,7 @@ public final class DocxWriter {
         if (ir.strike()) {
             r.setStrikeThrough(true);
         }
-        if (ir.underline() && !(r instanceof XWPFHyperlinkRun)) {
+        if (ir.underline() && !link) {
             r.setUnderline(UnderlinePatterns.SINGLE);
         }
         if (ir.code()) {
@@ -338,10 +430,34 @@ public final class DocxWriter {
         return r;
     }
 
-    /** The original {@code $…$}/{@code $$…$$} source for a math span — used as a text fallback when render fails. */
-    private static String rawMath(MathSpans.Span s) {
-        String d = s.display() ? "$$" : "$";
-        return d + s.latex() + d;
+    /**
+     * A hyperlink run for {@code href}, or null when the text is to be written plain: no link, a link to a
+     * heading this document does not have, or a scheme a document must not carry live.
+     */
+    private static XWPFRun linkRun(Ctx ctx, XWPFParagraph p, String href) {
+        if (href == null || href.isBlank()) {
+            return null;
+        }
+        String fragment = MarkdownDocInfo.fragment(href.strip());
+        if (fragment != null) {
+            String bookmark = ctx.bookmarks().get(fragment);
+            if (bookmark == null) {
+                return null;
+            }
+            CTHyperlink link = p.getCTP().addNewHyperlink();
+            link.setAnchor(bookmark);
+            XWPFHyperlinkRun run = new XWPFHyperlinkRun(link, link.addNewR(), p);
+            p.addRun(run);
+            return run;
+        }
+        if (!InlineRun.isSafeHref(href)) {
+            return null;
+        }
+        try {
+            return p.createHyperlinkRun(href.strip().replace(" ", "%20"));
+        } catch (RuntimeException e) {
+            return null; // not a URI the package can hold a relationship to: keep the text
+        }
     }
 
     /** Embeds {@code png} as an inline picture sized to roughly the line height; null when it can't decode. */
@@ -384,6 +500,31 @@ public final class DocxWriter {
             XWPFRun r = p.createRun();
             r.setText(fallback);
             r.setItalic(true);
+        }
+    }
+
+    /** Puts raster {@code bytes} into {@code run}, scaled to the page; false when they cannot be decoded. */
+    private static boolean pictureInto(XWPFRun run, byte[] bytes, String name) {
+        if (bytes == null) {
+            return false;
+        }
+        try {
+            BufferedImage bi = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (bi == null) {
+                return false;
+            }
+            double scale = Math.min(1.0, (double) MAX_IMAGE_PX / Math.max(1, bi.getWidth()));
+            int w = (int) Math.round(bi.getWidth() * scale);
+            int h = (int) Math.round(bi.getHeight() * scale);
+            run.addPicture(
+                    new ByteArrayInputStream(bytes),
+                    OfficeImages.poiPictureType(bytes),
+                    name,
+                    Units.toEMU(w),
+                    Units.toEMU(h));
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

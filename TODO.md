@@ -998,6 +998,17 @@ A backlog of planned features and improvements. Unordered within each section.
       (`play` returns a boolean now); `runSaved` did not finalize an in-progress recording. Deferred → #449
       (nested-command record order, latent). Verified-clean: the `playing` guard's `finally`, replay never
       re-recorded, no assist double-application, persistence, multi-window broadcast, recorder lifecycle.
+- [x] Markdown review fix pass (2026-10) — 87-finding UI/UX + code review of the preview, editing commands, lint,
+      source highlighting/structure and the HTML/DOCX/ODT exports, fixed in two waves. Shared pieces: one pure block
+      scanner `markdown/MarkdownBlocks` (fences with container indent, indented code, YAML/TOML front matter, HTML
+      comments and blocks, code spans) used by lint, fix, folding, outline, spell, list/table editing and link
+      detection; parser-level math `markdown/MarkdownMath` used by the preview and every export; block-level preview
+      reuse with a source-line map (`editor/MarkdownPreview`). Settings schema 118 (`wordWrapProse`,
+      `markdownRemoteImages`, `markdownAssetsFolder`, TOC levels), WorkspaceState 15 (per-file preview zoom/divider).
+      **Left open:** key bindings for Markdown/preview commands outside the Emacs keymap (owner's choice); inline
+      snippet triggers that expand mid-sentence; relative images and unhighlighted code in exported HTML; links in
+      the completion-doc popup; no `.markdownlint` file watcher; palette cannot find `Table: …` by "markdown";
+      text selection in the preview; undoing an image paste leaves the file.
 - [x] Markdown audit (per-feature bug hunt) — 7 fixes: **`MarkdownTable.blockBounds` threw at caret 0 of a
       doc starting with `\n`** (the `Math.max(0, caret-1)` clamp made `lastIndexOf` find the leading newline →
       `substring(1,0)`; it runs on *every* Enter/Tab in a Markdown buffer, so the keystroke was swallowed);

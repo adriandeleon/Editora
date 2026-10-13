@@ -91,8 +91,33 @@ class MarkdownRendererFxTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(Cursor.HAND, link.getCursor(), "a clickable link shows the hand cursor");
-        link.getOnMouseClicked().handle(null); // the handler ignores its event arg
+        javafx.scene.input.MouseButton menuButton = javafx.scene.input.MouseButton.SECONDARY;
+        link.getOnMouseClicked().handle(click(menuButton));
+        assertEquals(List.of(), clicked, "the secondary button opens the menu, not the link");
+        link.getOnMouseClicked().handle(click(javafx.scene.input.MouseButton.PRIMARY));
         assertEquals(List.of("https://example.com"), clicked, "click fires with the link's raw destination");
+    }
+
+    private static javafx.scene.input.MouseEvent click(javafx.scene.input.MouseButton button) {
+        return new javafx.scene.input.MouseEvent(
+                javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                0,
+                0,
+                0,
+                0,
+                button,
+                1,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                null);
     }
 
     @Test

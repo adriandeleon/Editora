@@ -119,6 +119,7 @@ class ExportCoordinatorOutputsFxTest {
                         saveDialogs.add(chooser.getInitialFileName());
                         return destination;
                     });
+            exports.systemOpener = path -> host.opened.add("system " + path);
             exports.printJobs = () -> {
                 try {
                     PrintPreviewFxTest.FakeJob job = new PrintPreviewFxTest.FakeJob(PrintPreviewFxTest.letter());
@@ -338,10 +339,7 @@ class ExportCoordinatorOutputsFxTest {
         assertEquals(tr("status.office.exporting"), host.statuses.getFirst());
 
         fx(exports::openLastExport);
-        assertEquals(
-                List.of("external " + written.toPath().toUri()),
-                host.opened,
-                "an office file opens outside the editor");
+        assertEquals(List.of("system " + written.toPath()), host.opened, "an office file opens outside the editor");
     }
 
     @Test
@@ -461,7 +459,7 @@ class ExportCoordinatorOutputsFxTest {
         assertEquals(tr("status.html.exported", out.toString()), host.last());
         assertEquals(List.of("guide.final.html"), saveDialogs, "only the last extension is replaced");
         String html = Files.readString(out.toPath());
-        assertTrue(html.contains("<title>guide.final</title>"), html);
+        assertTrue(html.contains("<title>Guide</title>"), "the document's own title, from its heading: " + html);
         assertTrue(html.contains("Guide") && html.contains("Text."), html);
         assertEquals(List.of("tab " + out.toPath()), host.opened);
     }
@@ -475,9 +473,50 @@ class ExportCoordinatorOutputsFxTest {
         buffer("guide.md", "# Guide\n");
         Path blocker = Files.writeString(dir.resolve("not-a-folder"), "a file");
         destination = blocker.resolve("guide.html").toFile();
-        fx(exports::exportPreviewHtml);
+        DialogPane failed = FxDialogs.duringHeader(
+                exports::exportPreviewHtml, tr("dialog.htmlExport.failed"), ButtonBar.ButtonData.OK_DONE);
+        assertNotNull(failed, "a failed HTML export is shown in a dialog, like every other export");
+        assertFalse(failed.getContentText().isBlank(), "with its reason");
         assertTrue(host.last().startsWith(tr("status.html.exportFailed", "").strip()), host.last());
         assertEquals(List.of(), host.opened, "nothing to show");
+        fx(exports::openLastExport);
+        assertEquals(tr("status.export.none"), host.last(), "a failed export is not the last export");
+    }
+
+    @Test
+    void theLastHtmlExportOpensInATabAgain() throws Exception {
+        buffer("guide.md", "# Guide\n");
+        File out = target("guide.html");
+        fx(exports::exportPreviewHtml);
+        host.opened.clear();
+        fx(exports::openLastExport);
+        assertEquals(List.of("tab " + out.toPath()), host.opened);
+    }
+
+    /**
+     * An office document goes to the system's own application through the window's trusted opener — not
+     * through the link choke point, which refuses a file: URL outside the project and so refused every
+     * document that had just been exported.
+     */
+    @Test
+    void theLastOfficeExportIsHandedToTheSystemOpener() throws Exception {
+        buffer("notes.md", "# Title\n");
+        for (String ext : List.of("docx", "odt")) {
+            File out = target("notes." + ext);
+            List<Path> handed = new ArrayList<>();
+            fx(() -> exports.systemOpener = handed::add);
+            fx(ext.equals("docx") ? exports::exportPreviewDocx : exports::exportPreviewOdt);
+            host.await(tr("status.office.exported", out.toString())::equals);
+            fx(exports::openLastExport);
+            assertEquals(List.of(out.toPath()), handed, ext);
+            assertEquals(List.of(), host.opened, "neither a tab nor a link: " + host.opened);
+
+            // No opener (before the application has handed the window its HostServices): say where it is.
+            host.statuses.clear();
+            fx(() -> exports.systemOpener = null);
+            fx(exports::openLastExport);
+            assertEquals(tr("status.office.exported", out.toString()), host.last());
+        }
     }
 
     @Test

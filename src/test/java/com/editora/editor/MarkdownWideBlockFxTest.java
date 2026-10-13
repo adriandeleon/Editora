@@ -93,7 +93,7 @@ class MarkdownWideBlockFxTest {
                     + "$$" + formula + "$$\n\n"
                     + "Another paragraph after the wide block, which must wrap to the pane as well.\n";
             onFx(() -> {
-                Node rendered = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null);
+                Node rendered = MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(md), null);
                 ScrollPane pane = new ScrollPane(rendered);
                 pane.setFitToWidth(true);
                 Scene scene = new Scene(pane, 500, 600);

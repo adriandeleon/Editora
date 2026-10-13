@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -21,6 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * expected AST node types. Node→JavaFX rendering needs the FX thread, so it isn't unit-tested here.
  */
 class MarkdownRendererTest {
+
+    @org.junit.jupiter.api.BeforeAll
+    static void catalog() {
+        com.editora.i18n.Messages.init("en"); // the image placeholder is a catalog string
+    }
 
     @Test
     void tableColumnWeightReservesSpaceForCellPadding() {
@@ -113,23 +119,108 @@ class MarkdownRendererTest {
 
     @Test
     void multiLineDisplayMathIsRecognized() {
-        // $$ on its own line, content, then $$ — commonmark inserts SoftLineBreaks; paragraphText must
-        // span them so the paragraph is recognized as a sole $$…$$ display block (regression: it bailed
-        // on the first SoftLineBreak, so only single-line $$…$$ rendered).
-        org.commonmark.node.Node doc = MarkdownRenderer.parseToDocument("$$\n\\int_0^1 x^2 dx\n$$");
-        org.commonmark.node.Paragraph p = (org.commonmark.node.Paragraph) doc.getFirstChild();
-        String latex = MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p));
-        assertTrue(latex != null && latex.contains("\\int_0^1 x^2 dx"), "multi-line $$ block, got: " + latex);
+        // $$ on its own line, content, then $$ is one display formula, with its LaTeX untouched: "\\," used
+        // to reach the renderer as a comma and "\\\\" as one backslash, because math was looked for in text
+        // CommonMark had already unescaped.
+        org.commonmark.node.Node doc = MarkdownRenderer.parseForRender("$$\n\\int_0^1 x^2 \\, dx\n$$", true);
+        com.editora.markdown.MarkdownMath.Block block = (com.editora.markdown.MarkdownMath.Block) doc.getFirstChild();
+        assertEquals("\\int_0^1 x^2 \\, dx", block.getLatex());
 
         // single-line form still works
-        org.commonmark.node.Node doc2 = MarkdownRenderer.parseToDocument("$$ a^2 + b^2 = c^2 $$");
-        org.commonmark.node.Paragraph p2 = (org.commonmark.node.Paragraph) doc2.getFirstChild();
-        assertTrue(MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p2)) != null, "single-line $$");
+        org.commonmark.node.Node doc2 = MarkdownRenderer.parseForRender("$$ a^2 + b^2 = c^2 $$", true);
+        assertTrue(doc2.getFirstChild() instanceof com.editora.markdown.MarkdownMath.Block, "single-line $$");
 
-        // a normal paragraph is NOT display math
-        org.commonmark.node.Node doc3 = MarkdownRenderer.parseToDocument("just some prose here");
-        org.commonmark.node.Paragraph p3 = (org.commonmark.node.Paragraph) doc3.getFirstChild();
-        assertFalse(MarkdownRenderer.soleDisplayMath(MarkdownRenderer.paragraphText(p3)) != null, "prose");
+        // a normal paragraph is NOT display math, and with the feature off dollars are text
+        assertTrue(
+                MarkdownRenderer.parseForRender("just some prose here", true).getFirstChild()
+                        instanceof org.commonmark.node.Paragraph);
+        org.commonmark.node.Node off = MarkdownRenderer.parseForRender("a $x$ b", false);
+        assertTrue(off.getFirstChild().getFirstChild() instanceof org.commonmark.node.Text, "math off: plain text");
+        assertNull(off.getFirstChild().getFirstChild().getNext());
+    }
+
+    @Test
+    void theRenderParseReadsInlineFootnotesAndRecordsBlockLines() {
+        org.commonmark.node.Node doc = MarkdownRenderer.parseForRender("# T\n\ntext^[inline note] end\n", false);
+        org.commonmark.node.Node para = doc.getLastChild();
+        boolean found = false;
+        for (org.commonmark.node.Node c = para.getFirstChild(); c != null; c = c.getNext()) {
+            found |= c instanceof org.commonmark.ext.footnotes.InlineFootnote;
+        }
+        assertTrue(found, "^[…] is a footnote, not literal text (samples/markdown/extras.md)");
+        assertEquals(2, para.getSourceSpans().get(0).getLineIndex());
+    }
+
+    @Test
+    void aCommentWithTextAfterItOnItsLineIsNotInvisible() {
+        assertTrue(MarkdownRenderer.isHtmlComment("<!-- a --> <!-- b -->"));
+        assertFalse(MarkdownRenderer.isHtmlComment("<!-- note --> **Visible** text after a comment"));
+    }
+
+    @Test
+    void imagePathsAreReadAsTheWebWritesThem(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path docs = java.nio.file.Files.createDirectories(dir.resolve("repo/docs/guide"));
+        java.nio.file.Files.createDirectories(dir.resolve("repo/assets"));
+        java.nio.file.Files.write(dir.resolve("repo/assets/logo.png"), new byte[] {1});
+        assertEquals("img/my image.png", MarkdownRenderer.localPath("img/my%20image.png"));
+        assertEquals("img/a.png", MarkdownRenderer.localPath("img/a.png?raw=true"));
+        assertEquals("img/a.png", MarkdownRenderer.localPath("img/a.png#frag"));
+        assertEquals("100%.png", MarkdownRenderer.localPath("100%.png"), "a malformed escape is kept");
+        assertEquals("a+b.png", MarkdownRenderer.localPath("a+b.png"));
+        assertEquals(
+                docs.resolve("img/my image.png").toUri().toString(),
+                MarkdownRenderer.resolveUrl("img/my%20image.png", docs));
+        assertEquals(
+                docs.resolve("img/a.png").toUri().toString(), MarkdownRenderer.resolveUrl("img/a.png?raw=true", docs));
+        // "/assets/logo.png" in a README means "from the repository root": the nearest folder above that has it.
+        assertEquals(
+                dir.resolve("repo/assets/logo.png").toUri().toString(),
+                MarkdownRenderer.resolveUrl("/assets/logo.png", docs));
+        assertEquals("https://x/y.png", MarkdownRenderer.resolveUrl("https://x/y.png", docs));
+        assertNull(MarkdownRenderer.resolveUrl("img/a.png", null));
+        assertNull(MarkdownRenderer.resolveUrl("#only-a-fragment", docs));
+    }
+
+    @Test
+    void aLinkIsFollowedByAPlainPrimaryClickOnly() {
+        assertTrue(MarkdownRenderer.followsLink(javafx.scene.input.MouseButton.PRIMARY, true));
+        assertFalse(MarkdownRenderer.followsLink(javafx.scene.input.MouseButton.SECONDARY, true), "the menu button");
+        assertFalse(MarkdownRenderer.followsLink(javafx.scene.input.MouseButton.MIDDLE, true));
+        assertFalse(MarkdownRenderer.followsLink(javafx.scene.input.MouseButton.PRIMARY, false), "the end of a drag");
+        assertEquals("https://e.org", MarkdownRenderer.linkTooltip(null, "https://e.org"));
+        assertEquals("The title\nhttps://e.org", MarkdownRenderer.linkTooltip(" The title ", "https://e.org"));
+    }
+
+    @Test
+    void aTableIsNeverNarrowerThanItsLongestWordsNeed() {
+        // 16 equal columns: each has 1/16 of the width, so a 4-character word decides the table's minimum.
+        double[] share = new double[16];
+        java.util.Arrays.fill(share, 1.0 / 16);
+        java.util.List<Integer> words = java.util.Collections.nCopies(16, 4);
+        double min = MarkdownRenderer.tableMinWidth(words, share);
+        assertTrue(min >= 16 * (4 * 8.5 + 20) - 1, "every column fits \"v15 \" on one line: " + min);
+        // A very long word may break: it does not make the table arbitrarily wide.
+        assertEquals(
+                MarkdownRenderer.tableMinWidth(java.util.List.of(28), new double[] {1}),
+                MarkdownRenderer.tableMinWidth(java.util.List.of(500), new double[] {1}));
+        assertEquals(0, MarkdownRenderer.tableMinWidth(java.util.List.of(), new double[0]));
+    }
+
+    @Test
+    void tokensOfAFenceAreRememberedUpToACharacterBudget() {
+        MarkdownRenderer.TokenCache cache = new MarkdownRenderer.TokenCache(10);
+        java.util.List<MarkdownRenderer.Run> runs =
+                java.util.List.of(new MarkdownRenderer.Run("x", java.util.List.of()));
+        cache.put("aaaa", runs);
+        cache.put("bbbb", runs);
+        assertSame(runs, cache.get("aaaa"));
+        cache.put("cccc", runs); // 12 characters > 10: the least recently used ("bbbb") goes
+        assertNull(cache.get("bbbb"));
+        assertNotNull(cache.get("aaaa"));
+        assertNotNull(cache.get("cccc"));
+        cache.put("this key is longer than the whole budget", runs);
+        assertEquals(2, cache.size());
     }
 
     @Test

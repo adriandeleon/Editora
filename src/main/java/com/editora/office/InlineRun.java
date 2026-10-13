@@ -3,6 +3,8 @@ package com.editora.office;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.editor.MarkdownDocInfo;
+import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
@@ -21,18 +23,67 @@ import org.commonmark.node.Text;
  * A single styled run of inline text — the shared, pure (no-toolkit, unit-tested) intermediate the
  * {@code .docx} (POI) and hand-rolled {@code .odt} writers both consume. {@link #flatten(Node)} walks a
  * block's inline children (CommonMark + GFM) into a flat list, carrying bold/italic/strikethrough/
- * underline/code styling and an optional link {@code href}; soft/hard breaks become {@code "\n"} runs and
- * inline images degrade to their alt text (block images are handled by the writers).
+ * underline/code styling, an optional link {@code href} and, for an inline picture, its {@code image}
+ * destination (the text is then its alt text) or, for a formula, its {@code latex} (the text is then its
+ * source); a hard break becomes a {@code "\n"} run, a soft
+ * break (a source line ending inside a paragraph) a space.
  */
 public record InlineRun(
-        String text, boolean bold, boolean italic, boolean strike, boolean underline, boolean code, String href) {
+        String text,
+        boolean bold,
+        boolean italic,
+        boolean strike,
+        boolean underline,
+        boolean code,
+        String href,
+        String image,
+        String latex) {
+
+    /** A run of text (no picture). */
+    public InlineRun(
+            String text, boolean bold, boolean italic, boolean strike, boolean underline, boolean code, String href) {
+        this(text, bold, italic, strike, underline, code, href, null, null);
+    }
+
+    /** A formula in a line of text ({@code latex} non-null); its {@link #text} is its source, the fallback. */
+    public boolean isMath() {
+        return latex != null;
+    }
+
+    /**
+     * Whether a link may be written into a document as a live hyperlink: a web or mail address, or a
+     * relative reference. Anything else ({@code javascript:}, {@code file:}, {@code vbscript:}, a custom
+     * scheme) is written as its text only — the reader of an exported document did not write the link.
+     */
+    public static boolean isSafeHref(String href) {
+        if (href == null || href.isBlank()) {
+            return false;
+        }
+        String h = href.strip();
+        int colon = h.indexOf(':');
+        int stop = indexOfAny(h, "/?#");
+        if (colon < 0 || (stop >= 0 && stop < colon)) {
+            return true; // no scheme: relative
+        }
+        String scheme = h.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
+        return scheme.equals("http") || scheme.equals("https") || scheme.equals("mailto");
+    }
+
+    private static int indexOfAny(String s, String chars) {
+        for (int i = 0; i < s.length(); i++) {
+            if (chars.indexOf(s.charAt(i)) >= 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
 
     /** A plain (unstyled, no-link) run. */
     static InlineRun plain(String text) {
         return new InlineRun(text, false, false, false, false, false, null);
     }
 
-    /** A hard/soft line break within a paragraph. */
+    /** A hard line break within a paragraph. */
     boolean isBreak() {
         return "\n".equals(text);
     }
@@ -63,15 +114,24 @@ public record InlineRun(
         } else if (n instanceof Link link) {
             children(n, b, i, s, u, code, link.getDestination(), out);
         } else if (n instanceof Image img) {
-            // Inline image → alt text (block-level images are embedded by the writers).
+            // A picture in the middle of a line (a badge row, a screenshot in a sentence): the run names the
+            // picture and carries its alt text, which the writers fall back to when it cannot be embedded.
             String alt = textOf(img);
-            if (!alt.isEmpty()) {
-                out.add(new InlineRun(alt, b, i, s, u, code, href));
+            String dest = img.getDestination();
+            if (!alt.isEmpty() || (dest != null && !dest.isBlank())) {
+                out.add(new InlineRun(alt, b, i, s, u, code, href, dest == null || dest.isBlank() ? null : dest, null));
             }
+        } else if (n instanceof MarkdownMath.Inline math) {
+            // A formula the parser recognised (as the preview's does): the LaTeX exactly as written.
+            out.add(new InlineRun(MarkdownMath.source(math), b, i, s, u, code, href, null, math.getLatex()));
         } else if (n instanceof FootnoteReference ref) {
             out.add(new InlineRun(footnoteMarker(ref.getLabel()), b, i, s, u, code, href)); // was dropped
-        } else if (n instanceof SoftLineBreak || n instanceof HardLineBreak) {
+        } else if (n instanceof HardLineBreak) {
             out.add(new InlineRun("\n", b, i, s, u, code, href));
+        } else if (n instanceof SoftLineBreak) {
+            // A source line ending inside a paragraph is a space (CommonMark), not a break: written as one, a
+            // hard-wrapped paragraph came out of Word and LibreOffice with a manual break on every line.
+            out.add(new InlineRun(" ", b, i, s, u, code, href));
         } else {
             children(n, b, i, s, u, code, href, out); // unknown wrapper: descend
         }
@@ -116,29 +176,12 @@ public record InlineRun(
     }
 
     /**
-     * If {@code paragraph} is exactly one {@code $$…$$} display-math span, returns its LaTeX; else null
-     * (so the caller renders it as a normal paragraph). Mirrors the PDF writer's {@code soleDisplayMath}.
+     * If {@code block} is a formula on its own — a closed {@code $$} block or a paragraph that is exactly one
+     * display {@code $$…$$} — its LaTeX; else null (so the caller renders it as a normal paragraph). The
+     * rule every renderer shares: {@link MarkdownDocInfo#blockFormula}.
      */
-    public static String soleDisplayMath(Node paragraph) {
-        StringBuilder sb = new StringBuilder();
-        for (Node c = paragraph.getFirstChild(); c != null; c = c.getNext()) {
-            if (c instanceof Text t) {
-                sb.append(t.getLiteral());
-            } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
-                sb.append(' '); // a $$…$$ block spans lines as soft breaks — join them, don't bail
-            } else {
-                return null;
-            }
-        }
-        String trimmed = sb.toString().strip();
-        java.util.List<com.editora.editor.MathSpans.Span> spans = com.editora.editor.MathSpans.find(trimmed);
-        if (spans.size() == 1) {
-            com.editora.editor.MathSpans.Span s = spans.get(0);
-            if (s.display() && s.start() == 0 && s.end() == trimmed.length()) {
-                return s.latex();
-            }
-        }
-        return null;
+    public static String soleDisplayMath(Node block) {
+        return MarkdownDocInfo.blockFormula(block);
     }
 
     /** The concatenated plain text of a node's descendants (for image alt text). */

@@ -1,5 +1,6 @@
 {
 	"information_for_contributors": [
+		"Editora changes to the converted file: frontMatter is one begin/end rule whose body is a \\G begin/while (tm4e closed the original, an outer \\A look-ahead with the consuming rule nested in it, on its own opening line); fenced_code_block_kotlin/_toml/_mermaid are added for grammars Editora bundles. Re-apply both when updating from upstream; MarkdownSourceHighlightTest pins them.",
 		"This file has been converted from https://github.com/microsoft/vscode-markdown-tm-grammar/blob/master/syntaxes/markdown.tmLanguage",
 		"If you want to provide a fix or improvement, please create a pull request against the original repository.",
 		"Once accepted there, we are happy to receive an update request."
@@ -558,6 +559,105 @@
 					"patterns": [
 						{
 							"include": "source.yaml"
+						}
+					]
+				}
+			]
+		},
+		"fenced_code_block_kotlin": {
+			"begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(kotlin|kt|kts)((\\s+|:|,|\\{|\\?)[^`]*)?$)",
+			"name": "markup.fenced_code.block.markdown",
+			"end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
+			"beginCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				},
+				"4": {
+					"name": "fenced_code.block.language.markdown"
+				},
+				"5": {
+					"name": "fenced_code.block.language.attributes.markdown"
+				}
+			},
+			"endCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				}
+			},
+			"patterns": [
+				{
+					"begin": "(^|\\G)(\\s*)(.*)",
+					"while": "(^|\\G)(?!\\s*([`~]{3,})\\s*$)",
+					"contentName": "meta.embedded.block.kotlin",
+					"patterns": [
+						{
+							"include": "source.kotlin"
+						}
+					]
+				}
+			]
+		},
+		"fenced_code_block_toml": {
+			"begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(toml)((\\s+|:|,|\\{|\\?)[^`]*)?$)",
+			"name": "markup.fenced_code.block.markdown",
+			"end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
+			"beginCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				},
+				"4": {
+					"name": "fenced_code.block.language.markdown"
+				},
+				"5": {
+					"name": "fenced_code.block.language.attributes.markdown"
+				}
+			},
+			"endCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				}
+			},
+			"patterns": [
+				{
+					"begin": "(^|\\G)(\\s*)(.*)",
+					"while": "(^|\\G)(?!\\s*([`~]{3,})\\s*$)",
+					"contentName": "meta.embedded.block.toml",
+					"patterns": [
+						{
+							"include": "source.toml"
+						}
+					]
+				}
+			]
+		},
+		"fenced_code_block_mermaid": {
+			"begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(mermaid|mmd)((\\s+|:|,|\\{|\\?)[^`]*)?$)",
+			"name": "markup.fenced_code.block.markdown",
+			"end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
+			"beginCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				},
+				"4": {
+					"name": "fenced_code.block.language.markdown"
+				},
+				"5": {
+					"name": "fenced_code.block.language.attributes.markdown"
+				}
+			},
+			"endCaptures": {
+				"3": {
+					"name": "punctuation.definition.markdown"
+				}
+			},
+			"patterns": [
+				{
+					"begin": "(^|\\G)(\\s*)(.*)",
+					"while": "(^|\\G)(?!\\s*([`~]{3,})\\s*$)",
+					"contentName": "meta.embedded.block.mermaid",
+					"patterns": [
+						{
+							"include": "source.mermaid"
 						}
 					]
 				}
@@ -2267,6 +2367,15 @@
 					"include": "#fenced_code_block_restructuredtext"
 				},
 				{
+					"include": "#fenced_code_block_kotlin"
+				},
+				{
+					"include": "#fenced_code_block_toml"
+				},
+				{
+					"include": "#fenced_code_block_mermaid"
+				},
+				{
 					"include": "#fenced_code_block_unknown"
 				}
 			]
@@ -2660,9 +2769,16 @@
 			"name": "meta.separator.markdown"
 		},
 		"frontMatter": {
-			"begin": "\\A(?=(-{3,}))",
+			"begin": "\\A(-{3,})(.*)$",
+			"beginCaptures": {
+				"1": {
+					"name": "punctuation.definition.begin.frontmatter"
+				},
+				"2": {
+					"name": "comment.frontmatter"
+				}
+			},
 			"end": "^ {0,3}\\1-*[ \\t]*$|^[ \\t]*\\.{3}$",
-			"applyEndPatternLast": 1,
 			"endCaptures": {
 				"0": {
 					"name": "punctuation.definition.end.frontmatter"
@@ -2670,16 +2786,8 @@
 			},
 			"patterns": [
 				{
-					"begin": "\\A(-{3,})(.*)$",
-					"while": "^(?! {0,3}\\1-*[ \\t]*$|[ \\t]*\\.{3}$)",
-					"beginCaptures": {
-						"1": {
-							"name": "punctuation.definition.begin.frontmatter"
-						},
-						"2": {
-							"name": "comment.frontmatter"
-						}
-					},
+					"begin": "\\G",
+					"while": "^(?! {0,3}-{3,}[ \\t]*$|[ \\t]*\\.{3}$)",
 					"contentName": "meta.embedded.block.frontmatter",
 					"patterns": [
 						{

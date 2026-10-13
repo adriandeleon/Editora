@@ -241,7 +241,7 @@ public final class PrintService {
         PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
-                org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
+                org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(markdown);
                 deliver(onReady, new Prepared(markdownPaginator(ast, baseDir, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));

@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Markdown: links inside a document can be followed.** `Markdown: Open Link`, Ctrl/Cmd-click and a click in the
+  preview now follow `#heading`, `other.md#heading` and reference links (`[text][label]`); the jump is recorded, so
+  Back returns to the link. The table of contents Editora generates is navigable. Link destinations with
+  parentheses or in `<…>` form are read correctly.
+- **Markdown lint: act on an issue.** Next / Previous Issue, Fix This Issue, Disable for This Line, Disable Rule and
+  Open Rule Documentation, from the palette, the editor's right-click menu and the Lint tool window (which gained a
+  Fix button, a row menu with Copy, and the file name). Fix Issues reports how many issues it fixed and how many
+  need manual changes. Project configs are read as markdownlint reads them: comments, YAML, `.markdownlint-cli2`
+  files, rule aliases and tags, `extends`, and the options of the rules Editora implements; a rule the project
+  switches on wins over the global "off". Directives `disable-file`, `enable-file`, `capture`, `restore` and
+  `configure-file` are honoured. Bare e-mail addresses are reported under MD034.
+- **Markdown preview:** Find searches the rendered preview when only the preview is showing. A safe subset of HTML
+  is rendered (`<br>`, `<kbd>`, `<sub>`/`<sup>`, `<b>`/`<i>`/`<em>`/`<strong>`/`<code>`, `<a>`, `<img>`,
+  `<details>`/`<summary>`, `align="center"`). Footnotes are numbered and linked both ways, inline footnotes
+  (`^[…]`) are recognised, a code block has Copy, a link has Copy Link Address, and links can be reached with Tab.
+  The light/dark toggle can return to "follow the app theme"; zoom and the Split divider are remembered per file.
+- **Markdown settings:** load remote images (on by default), preview theme (Follows the app theme / Light / Dark),
+  folder for pasted images, and the heading levels listed by the table of contents.
+- **Markdown editing:** Tab / Shift-Tab indent and outdent a list item; Enter on an empty nested item steps out one
+  level; Enter on an empty last table row leaves the table; an ordered list is renumbered after Enter or a moved
+  line; bold/italic with no selection toggle the word under the caret; typing `*`, `_` or `~` over a selection wraps
+  it. The table-size picker works from the keyboard and opens at the caret. The format bar shows the current
+  heading level and which styles are active, and names each command's key binding when the keymap has one.
+- **Exports:** Word documents get real heading styles, numbered and bulleted lists, table alignment, inline images,
+  internal links for `#heading` and a document title; OpenDocument gets table alignment. `.mdx`, `.Rmd`, `.qmd`,
+  `.mdwn` and `.mkdn` open as Markdown.
+
+### Changed
+
+- **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
+  keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word
+  wrap on, everything still wraps. Toggle Word Wrap flips the preference that governs the file in front. A buffer
+  with a very long unbroken run of characters opens unwrapped until toggled.
+- **A buffer showing only the Markdown preview refuses editing commands** (with a status message) instead of
+  editing the hidden source; switch to Editor or Split to edit.
+- **Markdown preview:** entering Preview opens at the editor's position, and Split keeps the two panes on the same
+  block instead of the same scroll fraction. Code blocks and wide tables scroll sideways instead of wrapping or
+  being squeezed. The preview menu's "Select All" (which copied the document) is gone and "Copy" is "Copy All".
+- **Markdown lint:** a front-matter `title:` counts as the document's top-level heading (as in markdownlint); the
+  search for `.markdownlint.*` stops at the project or Git root; with the minimap visible the scrollbar lint stripe
+  is hidden, since the minimap shows the same marks.
+- **Markdown editing commands** keep the caret where it was instead of selecting the changed lines; promoting an H1
+  leaves it an H1; a heading command on a list or quote line puts the heading behind the marker; with several
+  carets a Markdown command collapses to one and says so. When the clipboard holds both a picture and text, paste
+  inserts the text. Pasted images get the file's name as alt text, and an image dropped from under the document's
+  own folder is linked in place instead of copied.
+- **Export command titles** are now "File: Export Preview to PDF… / Word (.docx)… / OpenDocument (.odt)… / HTML…";
+  OpenDocument export is in the File menu. The HTML and office document title comes from the front matter's
+  `title:`, then the first heading, then the file name. Exported HTML follows the reader's light/dark preference.
+
+### Fixed
+
+- **Markdown Lint: Fix Issues no longer rewrites code.** Indented code blocks, fences nested in lists and block
+  quotes, HTML blocks and comments, and YAML or TOML front matter are left exactly as written, by lint and by Fix.
+  A closing fence with an info string no longer flips code and prose for the rest of the file. MD026 no longer cuts
+  an HTML entity; a directive that names a rule by its alias no longer disables every rule; a config file with a
+  comment is no longer ignored. Fix keeps the caret and scroll position. The Lint tool window follows the active
+  tab. Squiggles are drawn on empty lines and on each row of a wrapped line. Lint messages are translated.
+- **Math is recognised when the document is parsed**, in the preview and in the HTML, clipboard, Word,
+  OpenDocument and PDF outputs alike: `\,`, `\\`, `\{` and `*` inside a formula survive, multi-line `$$` blocks
+  render everywhere, shell variables in prose (`$HOME/bin:$PATH`) and `$…$` inside code are no longer taken for
+  formulas. Math and Mermaid diagrams are drawn for the preview's own theme.
+- **The Markdown preview no longer rebuilds the whole document on every edit.** An edit rebuilds the block it
+  touches; a long document is built a slice at a time. Long inline code wraps instead of being clipped; a missing
+  image shows its alt text; a changed local image is reloaded; image paths with `%20`, `?raw=true` or a leading
+  `/` resolve; a document with one very long line keeps its live preview. Right-clicking a link no longer opens it.
+  Remote images are fetched from the address that was checked.
+- **Word and OpenDocument exports** write a soft line break as a space, so paragraphs reflow. File: Open Last
+  Exported File opens office and HTML exports. Exported HTML forbids scripts.
+- **Markdown source:** front matter and inline HTML are highlighted; strikethrough, quotes, list markers and table
+  pipes are styled; Kotlin, TOML and Mermaid fences are highlighted. Folding, the outline, spell check and list and
+  table editing share one reading of code fences, front matter and HTML blocks, so `~~~` fences, nested fences and
+  commented-out headings are handled the same everywhere. The outline and table of contents show a heading's text
+  without its markup, and their anchors match the exports. Spell check covers link text and image alt text and
+  skips front matter.
+- **Markdown editing:** line-wise commands stop at the selection's last line and skip blank lines; inline toggles
+  no longer produce markup that does not render; Enter in the middle of a table no longer splits the row; table
+  keys leave code blocks alone and work in block-quoted tables; columns align for CJK text; dragging a web link
+  onto a document inserts a link instead of saving the page as an image; block snippets (`note`, `tip`, …) expand
+  only at the start of a line; table commands say why they cannot apply.
+
 ## [0.21.0] - 2026-10-11
 
 ### Changed
