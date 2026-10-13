@@ -397,4 +397,67 @@ class MarkdownTableTest {
         String after = fenced + "\n| a | b |\n|---|---|\n";
         assertNotNull(MarkdownTable.blockBounds(after, after.lastIndexOf("| a")), "a table after the block is one");
     }
+
+    // ---- feature-gap pass: table tools ----
+
+    private static final String T = "| name | n |\n|:--|--:|\n| b | 10 |\n| a | 9 |\n| C |  |";
+
+    @Test
+    void rowsMoveUpAndDownButNotThroughTheHeader() {
+        assertEquals(
+                "| name |   n |\n| :--- | --: |\n| ‸a    |   9 |\n| b    |  10 |\n| C    |     |",
+                at(MarkdownTable.moveRow(T, T.indexOf("a |"), true)));
+        assertEquals(
+                "| name |   n |\n| :--- | --: |\n| a    |   9 |\n| ‸b    |  10 |\n| C    |     |",
+                at(MarkdownTable.moveRow(T, T.indexOf("b |"), false)));
+        assertNull(MarkdownTable.moveRow(T, T.indexOf("b |"), true), "the first body row stays under the header");
+        assertNull(MarkdownTable.moveRow(T, 2, false), "the header row does not move");
+        assertNull(MarkdownTable.moveRow(T, T.indexOf("C"), false));
+    }
+
+    @Test
+    void columnsMoveWithTheirAlignment() {
+        assertEquals(
+                "|   n | ‸name |\n| --: | :--- |\n|  10 | b    |\n|   9 | a    |\n|     | C    |",
+                at(MarkdownTable.moveColumn(T, 2, false)));
+        assertNull(MarkdownTable.moveColumn(T, 2, true), "nothing to the left of the first column");
+        assertNull(MarkdownTable.moveColumn("no table", 2, true));
+    }
+
+    @Test
+    void sortingIsNumericAwareStableAndKeepsEmptyCellsLast() {
+        assertEquals(
+                "| name |   ‸n |\n| :--- | --: |\n| a    |   9 |\n| b    |  10 |\n| C    |     |",
+                at(MarkdownTable.sort(T, T.indexOf("10"), true)),
+                "9 before 10");
+        assertEquals(
+                "| name |   ‸n |\n| :--- | --: |\n| b    |  10 |\n| a    |   9 |\n| C    |     |",
+                at(MarkdownTable.sort(T, T.indexOf("10"), false)),
+                "descending, the empty cell still last");
+        assertEquals(
+                "| ‸name |   n |\n| :--- | --: |\n| a    |   9 |\n| b    |  10 |\n| C    |     |",
+                at(MarkdownTable.sort(T, T.indexOf("b |"), true)),
+                "text without regard to case");
+        assertTrue(MarkdownTable.compareCells("1,200", "45 %", true) > 0);
+        assertTrue(MarkdownTable.compareCells("-3.5", "2", true) < 0);
+        assertTrue(MarkdownTable.compareCells("7", "seven", true) < 0, "numbers before text");
+    }
+
+    @Test
+    void aRowGoesInAboveAndAColumnToTheLeft() {
+        String t = "| a | b |\n|---|---|\n| 1 | 2 |";
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| ‸    |     |\n| 1   | 2   |",
+                at(MarkdownTable.addRowAbove(t, t.indexOf("1"))));
+        assertEquals(
+                "| a   | b   |\n| --- | --- |\n| ‸    |     |\n| 1   | 2   |",
+                at(MarkdownTable.addRowAbove(t, 2)),
+                "on the header: the new row is the first body row");
+        assertEquals(
+                "| a   |     | b   |\n| --- | --- | --- |\n| 1   | ‸    | 2   |",
+                at(MarkdownTable.addColumnLeft(t, t.indexOf("2"))));
+        assertEquals(
+                "> |     | a   |\n> | --- | --- |\n> | ‸    | 1   |",
+                at(MarkdownTable.addColumnLeft("> | a |\n> |---|\n> | 1 |", 16)));
+    }
 }
