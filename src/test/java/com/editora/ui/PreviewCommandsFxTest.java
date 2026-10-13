@@ -889,6 +889,14 @@ class PreviewCommandsFxTest {
         });
         run("file.save");
         assertEquals("# T\n\ntext\nmore\n", text(b));
+        // The write happens on the save executor: wait for it to be acknowledged before reading the file. Read
+        // straight away, the file still held the old text on the macOS runner.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (FxTestSupport.callOnFx(b::isDirty) && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+        assertFalse(FxTestSupport.callOnFx(b::isDirty), "the save was acknowledged");
         assertEquals("# T\n\ntext\nmore\n", Files.readString(b.getPath()), "what was written is what was fixed");
         FxTestSupport.runOnFx(() -> b.getArea().undo());
         assertEquals("# T\n\ntext   \nmore   \n", text(b), "the fix is one undo step");
