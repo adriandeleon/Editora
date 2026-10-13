@@ -602,6 +602,18 @@ final class EditorSettingsCoordinator {
         host.setStatus(tr(now ? "status.largeFileMode.on" : "status.largeFileMode.off"));
     }
 
+    /** The tail of a picker command that has just written its setting: save, re-apply, sync, say what was chosen. */
+    void settingChosen(String commandId, String shown, Runnable apply) {
+        host.requestSave();
+        if (apply != null) {
+            apply.run();
+        }
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll();
+        }
+        host.setStatus(tr("status.settingChanged", commandTitle(commandId), shown));
+    }
+
     /** Prompts for an integer setting (clamped to [min,max]); reports a parse error without changing it. */
     void promptIntSetting(
             String commandId,
