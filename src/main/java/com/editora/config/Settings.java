@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 118;
+    public static final int SCHEMA_VERSION = 119;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -156,6 +156,44 @@ public class Settings {
     private int markdownTocMinLevel = 1;
 
     private int markdownTocMaxLevel = 6;
+    /** View a Markdown file opens in when it has no remembered mode: "editor", "split" or "preview". */
+    private String markdownDefaultViewMode = "editor";
+    /** Base font size of the Markdown preview in px; 0 = the built-in size. */
+    private int markdownPreviewFontSize = 0;
+    /** Maximum width of the preview's text column in px; 0 = the built-in width. */
+    private int markdownPreviewWidth = 0;
+    /** Keep the editor and the preview aligned in Split. */
+    private boolean markdownScrollSync = true;
+    /** Hide the front-matter block in the preview. */
+    private boolean markdownHideFrontMatter = false;
+    /** Type curly quotes, dashes and an ellipsis in Markdown prose. */
+    private boolean markdownSmartTypography = false;
+    /** Leave the document title out of a generated table of contents. */
+    private boolean markdownTocSkipTitle = false;
+    /** Generate the table of contents as a numbered list. */
+    private boolean markdownTocOrdered = false;
+    /** Regenerate an existing table of contents when the file is saved. */
+    private boolean markdownTocUpdateOnSave = false;
+    /** Base file name for pasted images (a counter is added on a clash). */
+    private String markdownImageNamePattern = "pasted-image";
+    /** Ask for alt text when an image is pasted or dropped. */
+    private boolean markdownImageAltPrompt = false;
+    /** Run "Markdown Lint: Fix Issues" when a Markdown file is saved. */
+    private boolean markdownLintFixOnSave = false;
+    /** Markdown-lint rules that are off by default and the user has turned on. */
+    private java.util.List<String> markdownLintEnabledRules = new java.util.ArrayList<>();
+    /** Per-rule severity ({@code MDxxx} to "error", "warning" or "hint"); absent = warning. */
+    private java.util.Map<String, String> markdownLintSeverities = new java.util.LinkedHashMap<>();
+    /** Update Markdown links when a file is renamed or moved: "ask", "always" or "never". */
+    private String markdownUpdateLinksOnRename = "ask";
+    /** Keep the caret line vertically centred while typing. */
+    private boolean typewriterMode = false;
+    /** Show the word count of a Markdown or plain-text file in the status bar. */
+    private boolean statusBarWordCount = true;
+    /** Embed local images in an exported HTML page. */
+    private boolean htmlExportEmbedImages = true;
+    /** Syntax-highlight code blocks in an exported HTML page. */
+    private boolean htmlExportHighlightCode = true;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
@@ -1704,6 +1742,158 @@ public class Settings {
 
     public void setMarkdownTocMaxLevel(int markdownTocMaxLevel) {
         this.markdownTocMaxLevel = Math.clamp(markdownTocMaxLevel, 1, 6);
+    }
+
+    public String getMarkdownDefaultViewMode() {
+        return markdownDefaultViewMode;
+    }
+
+    public void setMarkdownDefaultViewMode(String markdownDefaultViewMode) {
+        this.markdownDefaultViewMode = markdownDefaultViewMode;
+    }
+
+    public int getMarkdownPreviewFontSize() {
+        return markdownPreviewFontSize;
+    }
+
+    public void setMarkdownPreviewFontSize(int markdownPreviewFontSize) {
+        this.markdownPreviewFontSize = markdownPreviewFontSize;
+    }
+
+    public int getMarkdownPreviewWidth() {
+        return markdownPreviewWidth;
+    }
+
+    public void setMarkdownPreviewWidth(int markdownPreviewWidth) {
+        this.markdownPreviewWidth = markdownPreviewWidth;
+    }
+
+    public boolean isMarkdownScrollSync() {
+        return markdownScrollSync;
+    }
+
+    public void setMarkdownScrollSync(boolean markdownScrollSync) {
+        this.markdownScrollSync = markdownScrollSync;
+    }
+
+    public boolean isMarkdownHideFrontMatter() {
+        return markdownHideFrontMatter;
+    }
+
+    public void setMarkdownHideFrontMatter(boolean markdownHideFrontMatter) {
+        this.markdownHideFrontMatter = markdownHideFrontMatter;
+    }
+
+    public boolean isMarkdownSmartTypography() {
+        return markdownSmartTypography;
+    }
+
+    public void setMarkdownSmartTypography(boolean markdownSmartTypography) {
+        this.markdownSmartTypography = markdownSmartTypography;
+    }
+
+    public boolean isMarkdownTocSkipTitle() {
+        return markdownTocSkipTitle;
+    }
+
+    public void setMarkdownTocSkipTitle(boolean markdownTocSkipTitle) {
+        this.markdownTocSkipTitle = markdownTocSkipTitle;
+    }
+
+    public boolean isMarkdownTocOrdered() {
+        return markdownTocOrdered;
+    }
+
+    public void setMarkdownTocOrdered(boolean markdownTocOrdered) {
+        this.markdownTocOrdered = markdownTocOrdered;
+    }
+
+    public boolean isMarkdownTocUpdateOnSave() {
+        return markdownTocUpdateOnSave;
+    }
+
+    public void setMarkdownTocUpdateOnSave(boolean markdownTocUpdateOnSave) {
+        this.markdownTocUpdateOnSave = markdownTocUpdateOnSave;
+    }
+
+    public String getMarkdownImageNamePattern() {
+        return markdownImageNamePattern;
+    }
+
+    public void setMarkdownImageNamePattern(String markdownImageNamePattern) {
+        this.markdownImageNamePattern = markdownImageNamePattern;
+    }
+
+    public boolean isMarkdownImageAltPrompt() {
+        return markdownImageAltPrompt;
+    }
+
+    public void setMarkdownImageAltPrompt(boolean markdownImageAltPrompt) {
+        this.markdownImageAltPrompt = markdownImageAltPrompt;
+    }
+
+    public boolean isMarkdownLintFixOnSave() {
+        return markdownLintFixOnSave;
+    }
+
+    public void setMarkdownLintFixOnSave(boolean markdownLintFixOnSave) {
+        this.markdownLintFixOnSave = markdownLintFixOnSave;
+    }
+
+    public java.util.List<String> getMarkdownLintEnabledRules() {
+        return markdownLintEnabledRules;
+    }
+
+    public void setMarkdownLintEnabledRules(java.util.List<String> markdownLintEnabledRules) {
+        this.markdownLintEnabledRules = markdownLintEnabledRules;
+    }
+
+    public java.util.Map<String, String> getMarkdownLintSeverities() {
+        return markdownLintSeverities;
+    }
+
+    public void setMarkdownLintSeverities(java.util.Map<String, String> markdownLintSeverities) {
+        this.markdownLintSeverities = markdownLintSeverities;
+    }
+
+    public String getMarkdownUpdateLinksOnRename() {
+        return markdownUpdateLinksOnRename;
+    }
+
+    public void setMarkdownUpdateLinksOnRename(String markdownUpdateLinksOnRename) {
+        this.markdownUpdateLinksOnRename = markdownUpdateLinksOnRename;
+    }
+
+    public boolean isTypewriterMode() {
+        return typewriterMode;
+    }
+
+    public void setTypewriterMode(boolean typewriterMode) {
+        this.typewriterMode = typewriterMode;
+    }
+
+    public boolean isStatusBarWordCount() {
+        return statusBarWordCount;
+    }
+
+    public void setStatusBarWordCount(boolean statusBarWordCount) {
+        this.statusBarWordCount = statusBarWordCount;
+    }
+
+    public boolean isHtmlExportEmbedImages() {
+        return htmlExportEmbedImages;
+    }
+
+    public void setHtmlExportEmbedImages(boolean htmlExportEmbedImages) {
+        this.htmlExportEmbedImages = htmlExportEmbedImages;
+    }
+
+    public boolean isHtmlExportHighlightCode() {
+        return htmlExportHighlightCode;
+    }
+
+    public void setHtmlExportHighlightCode(boolean htmlExportHighlightCode) {
+        this.htmlExportHighlightCode = htmlExportHighlightCode;
     }
 
     public boolean isMultiCaret() {
