@@ -3158,13 +3158,20 @@ public class SettingsWindow {
     /**
      * The Markdown-lint per-rule list: a checkbox per rule (checked = on in the user's settings — a rule that
      * is off by default is on only once ticked) and its severity. Each change writes
-     * {@code Settings} ({@link Settings#setMarkdownLintRuleOn}, {@link Settings#setMarkdownLintSeverity}) and
+     * {@code Settings} ({@link MarkdownLintRules#setEnabled}, {@link Settings#setMarkdownLintSeverity}) and
      * applies live.
      */
     private javafx.scene.Node markdownLintRulesEditor() {
         markdownLintRulesBox = new VBox(4);
         rebuildMarkdownLintRules();
-        return markdownLintRulesBox;
+        // Forty-odd rules: a window onto the list, so the card does not push the rest of the page away.
+        ScrollPane scroll = new ScrollPane(markdownLintRulesBox);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setPrefViewportHeight(300);
+        scroll.setMaxHeight(320);
+        scroll.getStyleClass().add("settings-lint-rules-scroll");
+        return scroll;
     }
 
     private void rebuildMarkdownLintRules() {
@@ -3187,9 +3194,10 @@ public class SettingsWindow {
             CheckBox cb = new CheckBox();
             cb.setGraphic(label);
             cb.setAccessibleText(code + " " + desc.getText()); // its visible name is a graphic, not text
-            cb.setSelected(config.getSettings().isMarkdownLintRuleOn(code));
+            // Rules that are off by default are opt-in: MarkdownLintRules knows which list holds which.
+            cb.setSelected(MarkdownLintRules.enabled(config.getSettings(), code));
             cb.selectedProperty().addListener((o, was, on) -> {
-                config.getSettings().setMarkdownLintRuleOn(code, on);
+                MarkdownLintRules.setEnabled(config.getSettings(), code, on);
                 apply();
             });
             ComboBox<String> severity = new ComboBox<>();

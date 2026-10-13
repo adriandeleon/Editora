@@ -228,4 +228,11 @@ class MarkdownSettingsTest {
         assertEquals("warning", s.markdownLintSeverity("MD001"));
         assertEquals("warning", s.markdownLintSeverity(null));
     }
+
+    @Test
+    void settingsAndTheLinterAgreeOnWhichRulesAreOffByDefault() {
+        assertEquals(com.editora.markdown.MarkdownLint.DEFAULT_OFF, Settings.MARKDOWN_LINT_DEFAULT_OFF);
+        assertEquals(
+                com.editora.markdown.MarkdownLintOptions.SEVERITIES, java.util.Set.copyOf(Settings.LINT_SEVERITIES));
+    }
 }

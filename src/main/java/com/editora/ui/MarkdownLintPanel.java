@@ -42,6 +42,30 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         void refresh();
     }
 
+    /** Opens {@code file} at a 1-based line and column. */
+    @FunctionalInterface
+    public interface Opener {
+        void open(Path file, int line, int col);
+    }
+
+    /** {@link Actions} from two lambdas. */
+    public static Actions actions(Opener opener, Runnable refresh) {
+        return new Actions() {
+            @Override
+            public void open(Path file, int line, int col) {
+                opener.open(file, line, col);
+            }
+
+            @Override
+            public void refresh() {
+                refresh.run();
+            }
+        };
+    }
+
+    /** One file of a project lint: where it is, what to call it, what was found in it. */
+    public record FileIssues(Path file, String name, List<MarkdownLint.Diagnostic> issues) {}
+
     /** What can be done about an issue of the active buffer. */
     public interface IssueActions {
         /** Applies every safe fix to the file. */
@@ -52,6 +76,12 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
         void disableLine(MarkdownLint.Diagnostic d);
 
         void disableRule(MarkdownLint.Diagnostic d);
+
+        /** Switches the issue's rule off for the whole file (a {@code markdownlint-disable-file} comment). */
+        default void disableFile(MarkdownLint.Diagnostic d) {}
+
+        /** Switches the issue's rule off in the project's markdownlint config. */
+        default void disableProject(MarkdownLint.Diagnostic d) {}
 
         /** Opens the rule's documentation. */
         void help(MarkdownLint.Diagnostic d);
@@ -65,6 +95,14 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
     private final ListView<MarkdownLint.Diagnostic> list = new ListView<>();
     private Button fixBtn;
     private Path file;
+    /** The rows as they came (document order), so the severity sort can be switched off again. */
+    private List<MarkdownLint.Diagnostic> unsorted = List.of();
+
+    private final javafx.scene.control.ToggleButton bySeverity = new javafx.scene.control.ToggleButton();
+    /** In a project listing: the file each row belongs to; empty while one file is listed. */
+    private final java.util.Map<MarkdownLint.Diagnostic, Path> fileOf = new java.util.IdentityHashMap<>();
+
+    private boolean project;
 
     public MarkdownLintPanel(Actions actions) {
         this(null, actions);
@@ -81,13 +119,20 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
     }
 
     private void build() {
-        Button refreshBtn = Icons.toolbarButton(Icons.refresh(), tr("markdownLint.refresh"), actions::refresh);
+        Button refreshBtn = Icons.toolbarButton(Icons.refresh(), tr("markdownLint.refresh"), () -> {
+            project = false; // Refresh goes back to the active file
+            actions.refresh();
+        });
+        bySeverity.setGraphic(Icons.arrowDown());
+        Icons.name(bySeverity, tr("markdownLint.sortBySeverity"));
+        bySeverity.setFocusTraversable(false);
+        bySeverity.selectedProperty().addListener((o, was, on) -> showRows());
         fileName.getStyleClass().add("markdown-lint-file");
         summary.getStyleClass().add("markdown-lint-summary");
         configNote.getStyleClass().add("markdown-lint-summary");
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox toolbar = new HBox(8, fileName, summary, configNote, gap, refreshBtn);
+        HBox toolbar = new HBox(8, fileName, summary, configNote, gap, bySeverity, refreshBtn);
         if (issues != null) {
             fixBtn = Icons.toolbarButton(Icons.check(), tr("command.markdownLint.fix"), issues::fixAll);
             fixBtn.setDisable(true);
@@ -119,21 +164,25 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
 
     /** The actions on row {@code d}: fix / disable / rule help (when the controller offers them), then Copy. */
     List<MenuItem> rowMenu(MarkdownLint.Diagnostic d) {
-        if (d == null) {
+        if (d == null || isHeader(d)) {
             return List.of();
         }
         List<MenuItem> items = new java.util.ArrayList<>();
-        if (issues != null && file != null) {
+        if (issues != null && file != null && !project) {
             MenuItem fix = new MenuItem(tr("markdownLint.menu.fix"));
             fix.setDisable(!MarkdownLint.fixable(d.code()));
             fix.setOnAction(e -> issues.fix(d));
             MenuItem line = new MenuItem(tr("markdownLint.menu.disableLine"));
             line.setOnAction(e -> issues.disableLine(d));
+            MenuItem inFile = new MenuItem(tr("markdownLint.menu.disableFile", d.code()));
+            inFile.setOnAction(e -> issues.disableFile(d));
+            MenuItem inProject = new MenuItem(tr("markdownLint.menu.disableProject", d.code()));
+            inProject.setOnAction(e -> issues.disableProject(d));
             MenuItem rule = new MenuItem(tr("markdownLint.menu.disableRule", d.code()));
             rule.setOnAction(e -> issues.disableRule(d));
             MenuItem help = new MenuItem(tr("markdownLint.menu.help"));
             help.setOnAction(e -> issues.help(d));
-            items.addAll(List.of(fix, line, rule, help, new SeparatorMenuItem()));
+            items.addAll(List.of(fix, line, inFile, inProject, rule, help, new SeparatorMenuItem()));
         }
         MenuItem copy = new MenuItem(tr("markdownLint.menu.copy"));
         copy.setOnAction(e -> Clipboard.getSystemClipboard().setContent(Map.of(DataFormat.PLAIN_TEXT, rowText(d))));
@@ -191,9 +240,75 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
 
     private void activateSelected() {
         MarkdownLint.Diagnostic d = list.getSelectionModel().getSelectedItem();
-        if (d != null && file != null) {
-            actions.open(file, d.line(), d.column());
+        Path target = d == null ? null : project ? fileOf.get(d) : file;
+        if (target != null) {
+            actions.open(target, Math.max(1, d.line()), Math.max(1, d.column()));
         }
+    }
+
+    /** Whether the list shows a project's results (kept until Refresh or the next project lint). */
+    public boolean showingProject() {
+        return project;
+    }
+
+    /** A project lint has started: says so until {@link #setProjectResults} arrives. */
+    public void showProjectScanning(String projectName) {
+        project = true;
+        file = null;
+        fileOf.clear();
+        unsorted = List.of();
+        list.getItems().clear();
+        fileName.setText(projectName == null ? "" : projectName);
+        summary.setText(tr("markdownLint.projectScanning"));
+        configNote.setText("");
+        if (fixBtn != null) {
+            fixBtn.setDisable(true);
+        }
+    }
+
+    /**
+     * Lists a project's issues grouped by file: one header row per file (its path inside the project), its
+     * issues under it. Activating a row opens that file there.
+     */
+    public void setProjectResults(String projectName, List<FileIssues> files, boolean truncated) {
+        project = true;
+        file = null;
+        fileOf.clear();
+        List<MarkdownLint.Diagnostic> rows = new java.util.ArrayList<>();
+        int total = 0;
+        for (FileIssues f : files) {
+            MarkdownLint.Diagnostic header = new MarkdownLint.Diagnostic(0, 0, 1, HEADER, "", f.name());
+            fileOf.put(header, f.file());
+            rows.add(header);
+            for (MarkdownLint.Diagnostic d : f.issues()) {
+                fileOf.put(d, f.file());
+                rows.add(d);
+            }
+            total += f.issues().size();
+        }
+        unsorted = rows;
+        list.getItems().setAll(rows);
+        fileName.setText(projectName == null ? "" : projectName);
+        summary.setText(total == 0 ? tr("markdownLint.none") : tr("markdownLint.projectSummary", total, files.size()));
+        configNote.setText(truncated ? tr("markdownLint.projectTruncated") : "");
+        if (fixBtn != null) {
+            fixBtn.setDisable(true);
+        }
+    }
+
+    private static final String HEADER = "file";
+
+    private static boolean isHeader(MarkdownLint.Diagnostic d) {
+        return HEADER.equals(d.severity());
+    }
+
+    /** Fills the list from {@link #unsorted}: as found, or most severe first (a project stays grouped by file). */
+    private void showRows() {
+        List<MarkdownLint.Diagnostic> rows = new java.util.ArrayList<>(unsorted);
+        if (bySeverity.isSelected() && !project) {
+            rows.sort(java.util.Comparator.comparingInt(MarkdownLint.Diagnostic::severityRank)); // stable
+        }
+        list.getItems().setAll(rows);
     }
 
     /** Populates the list from the active buffer's diagnostics (called on the FX thread by the controller). */
@@ -207,9 +322,12 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
      */
     public void setResults(Path file, String name, List<MarkdownLint.Diagnostic> diagnostics, String configNote) {
         this.file = file;
+        project = false;
+        fileOf.clear();
         // Keep the selected row across a re-lint (every edit refills the list): same rule on the same line.
         MarkdownLint.Diagnostic was = list.getSelectionModel().getSelectedItem();
-        list.getItems().setAll(diagnostics == null ? List.of() : diagnostics);
+        unsorted = diagnostics == null ? List.of() : diagnostics;
+        showRows();
         if (was != null) {
             for (MarkdownLint.Diagnostic d : list.getItems()) {
                 if (d.line() == was.line() && d.code().equals(was.code())) {
@@ -255,11 +373,19 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
             if (empty || d == null) {
                 setText(null);
                 setGraphic(null);
+                getStyleClass().remove("markdown-lint-file-row");
                 return;
             }
+            if (isHeader(d)) {
+                setGraphic(null);
+                setText(d.message());
+                getStyleClass().add("markdown-lint-file-row");
+                return;
+            }
+            getStyleClass().remove("markdown-lint-file-row");
             Region tag = new Region();
             tag.getStyleClass().add("markdown-lint-tag");
-            tag.getStyleClass().add(d.isError() ? "lint-error" : "lint-warning");
+            tag.getStyleClass().add(d.isError() ? "lint-error" : d.isHint() ? "lint-hint" : "lint-warning");
             tag.setMinSize(10, 10);
             tag.setPrefSize(10, 10);
             tag.setMaxSize(10, 10);

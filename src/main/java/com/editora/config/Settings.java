@@ -1883,6 +1883,9 @@ public class Settings {
     }
 
     public java.util.List<String> getMarkdownLintEnabledRules() {
+        if (markdownLintEnabledRules == null) {
+            markdownLintEnabledRules = new java.util.ArrayList<>();
+        }
         return markdownLintEnabledRules;
     }
 
@@ -1892,6 +1895,9 @@ public class Settings {
     }
 
     public java.util.Map<String, String> getMarkdownLintSeverities() {
+        if (markdownLintSeverities == null) {
+            markdownLintSeverities = new java.util.LinkedHashMap<>();
+        }
         return markdownLintSeverities;
     }
 
