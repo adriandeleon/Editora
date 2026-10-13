@@ -92,7 +92,8 @@ class ChildLocalePolicyTest {
             "dap/DapManager.java",
             "lsp/LanguageServerSession.java",
             "process/DesktopActions.java",
-            RUNNER, // run() itself, and the login-shell PATH probe
+            "process/LocalExecTarget.java", // what run() starts for a local working directory
+            RUNNER, // the login-shell PATH probe
             "run/RunService.java",
             "web/HtmlPreviewService.java");
 
