@@ -167,12 +167,24 @@ final class MarkdownPreview {
         return lastReused;
     }
 
+    private long builtTotal;
+
+    /** Every block built since this preview was created — a render that reuses everything adds nothing. */
+    long builtTotal() {
+        return builtTotal;
+    }
+
     /** Binds the scroll pane this document scrolls in; a gesture of the user's ends any anchoring. */
     void attach(ScrollPane scrollPane) {
         this.pane = scrollPane;
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> anchorUntil = 0);
+    }
+
+    /** Stops holding the last render's line in place: something else now decides where the document is. */
+    void releaseAnchor() {
+        anchorUntil = 0;
     }
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
@@ -464,6 +476,7 @@ final class MarkdownPreview {
         }
         entries = now;
         lastBuilt = built;
+        builtTotal += built;
         lastReused = shown - built;
         boolean complete = shown == n;
         int next = shown;
@@ -539,6 +552,7 @@ final class MarkdownPreview {
         column.getChildren().addAll(nodes);
         entries = now;
         lastBuilt += to - from;
+        builtTotal += to - from;
         if (to < units.size()) {
             javafx.application.Platform.runLater(() -> buildRest(seq, units, to, ctx, line));
             return;

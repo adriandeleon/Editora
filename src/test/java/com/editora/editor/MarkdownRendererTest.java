@@ -158,6 +158,18 @@ class MarkdownRendererTest {
         org.commonmark.node.Node para =
                 MarkdownRenderer.parseForRender("Go :rocket:", false).getFirstChild();
         assertTrue(para.getLastChild() instanceof com.editora.markdown.MarkdownEmoji.Emoji, "emoji shortcodes");
+        org.commonmark.node.Node marks = MarkdownRenderer.parseForRender("==a== b^2^ H~2~O ~gone~ ~~gone~~", false)
+                .getFirstChild();
+        java.util.List<String> kinds = new java.util.ArrayList<>();
+        for (org.commonmark.node.Node n = marks.getFirstChild(); n != null; n = n.getNext()) {
+            if (!(n instanceof org.commonmark.node.Text)) {
+                kinds.add(n.getClass().getSimpleName());
+            }
+        }
+        assertEquals(
+                java.util.List.of("Highlight", "Superscript", "Subscript", "Strikethrough", "Strikethrough"),
+                kinds,
+                "the marks, and both spellings of strikethrough as before");
     }
 
     @Test

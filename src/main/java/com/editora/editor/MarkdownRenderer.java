@@ -123,11 +123,15 @@ public final class MarkdownRenderer {
     public static List<org.commonmark.Extension> renderExtensions(boolean math) {
         List<org.commonmark.Extension> ext = new ArrayList<>();
         for (org.commonmark.Extension e : EXTENSIONS) {
-            if (!(e instanceof FootnotesExtension)) {
+            if (!(e instanceof FootnotesExtension) && !(e instanceof StrikethroughExtension)) {
                 ext.add(e);
             }
         }
         ext.add(FootnotesExtension.builder().inlineFootnotes(true).build());
+        // ==highlight==, ^sup^, and ~sub~ attached to a word. The marks take the single tilde over from the
+        // strikethrough extension and still make every other ~pair~ a strikethrough (MarkdownMarks).
+        ext.add(StrikethroughExtension.builder().requireTwoTildes(true).build());
+        ext.add(com.editora.markdown.MarkdownMarks.extension());
         if (math) {
             ext.add(MarkdownMath.extension());
         }

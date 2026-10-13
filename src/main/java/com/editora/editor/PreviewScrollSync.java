@@ -206,6 +206,7 @@ final class PreviewScrollSync {
                 }
                 syncing = true;
                 try {
+                    now.releaseAnchor(); // the editor decides where the preview is, not the last render
                     now.setScrollY(now.yOfLine(target));
                 } finally {
                     syncing = false;
@@ -253,6 +254,9 @@ final class PreviewScrollSync {
             return line;
         }
         if (mode.get() == MarkdownViewMode.SPLIT && (p == null || !p.isHover())) {
+            // The line read here can be a layout behind (the editor reports a scroll before it has laid the
+            // new lines out); follow again once the render is in and the editor has settled.
+            Platform.runLater(this::previewFollowsEditor);
             double scrollable = editorScrollableHeight();
             double target = previewTarget(editorScrollY(), scrollable, ScrollAnchor.firstVisibleLine(area));
             return Double.isInfinite(target) ? Double.MAX_VALUE : Math.max(0, target);

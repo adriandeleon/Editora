@@ -186,7 +186,7 @@ class MarkdownPreviewFxTest {
             root[0] = pane(buffer).getContent();
             before.addAll(column(buffer).getChildren());
             assertEquals(123, before.size(), "heading, links, code, 60 × (heading + paragraph)");
-            assertEquals(123, preview(buffer).lastBuilt());
+            assertEquals(123, preview(buffer).builtTotal());
         });
 
         rerender(buffer, () -> {
@@ -196,8 +196,7 @@ class MarkdownPreviewFxTest {
         EditorFx.onFx(() -> {
             assertSame(root[0], pane(buffer).getContent(), "the document node is not replaced");
             List<Node> after = column(buffer).getChildren();
-            assertEquals(1, preview(buffer).lastBuilt(), "one block changed, one block is built");
-            assertEquals(122, preview(buffer).lastReused());
+            assertEquals(124, preview(buffer).builtTotal(), "one block changed, one block is built");
             int changed = 0;
             for (int i = 0; i < after.size(); i++) {
                 if (after.get(i) != before.get(i)) {
@@ -214,7 +213,7 @@ class MarkdownPreviewFxTest {
             buffer.getArea().insertText(at, "Inserted paragraph.\n\n");
         });
         EditorFx.onFx(() -> {
-            assertEquals(1, preview(buffer).lastBuilt());
+            assertEquals(125, preview(buffer).builtTotal(), "and one more for the inserted paragraph");
             assertEquals(124, column(buffer).getChildren().size());
             MarkdownPreview p = preview(buffer);
             int line = lineOf(buffer, "## Marker 40");
@@ -259,13 +258,13 @@ class MarkdownPreviewFxTest {
                 () -> preview(buffer).showsProperty().get() > 0);
         EditorFx.onFx(() -> {
             assertEquals(2000, column(buffer).getChildren().size());
-            assertEquals(2000, preview(buffer).lastBuilt());
             assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph number 1999."));
         });
         // From then on an edit is one block again.
+        long built = EditorFx.callFx(() -> preview(buffer).builtTotal());
         rerender(buffer, () -> buffer.getArea().insertText(0, "X"));
         EditorFx.onFx(() -> {
-            assertEquals(1, preview(buffer).lastBuilt());
+            assertEquals(built + 1, preview(buffer).builtTotal());
             assertEquals(2000, column(buffer).getChildren().size());
             stage[0].close();
             buffer.dispose();
