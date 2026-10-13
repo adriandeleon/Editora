@@ -362,8 +362,6 @@ public class EditorBuffer implements TabContent {
     private double previewDivider = 0.5;
     /** Told when the zoom or the divider changed by the user's hand (the controller persists them). */
     private Runnable onPreviewLayoutChanged = () -> {};
-    /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
-    private static final double BASE_PREVIEW_FONT = 15;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
     /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
@@ -511,7 +509,7 @@ public class EditorBuffer implements TabContent {
     private Runnable aiExplainHandler = () -> {};
     private Runnable aiRewriteHandler = () -> {};
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
-    private java.util.function.Consumer<String> openUrlHandler = u -> {};
+    java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
     private Runnable insertTypstTableHandler;
 
@@ -5249,11 +5247,6 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Scrolls the rendered Markdown preview so the heading with the GitHub-style anchor {@code slug} (as
-     * {@code MarkdownToc} writes them; a leading {@code #}, case and {@code %XX} escapes are tolerated) is at
-     * its top. False when the preview is not showing, has not rendered yet, or has no such heading.
-     */
-    /**
      * Whether only a rendering of this buffer is on screen (Preview mode; not the CSV grid, which edits). Its
      * text is then out of sight, so editing commands are refused rather than applied at an invisible caret.
      */
@@ -5590,6 +5583,9 @@ public class EditorBuffer implements TabContent {
                     if (markdownPreview == null) {
                         markdownPreview = new MarkdownPreview();
                         markdownPreview.attach(previewPane());
+                        markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
+                        markdownPreview.onJumpToSource(
+                                l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));
                     }
                     // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
                     Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
@@ -5992,7 +5988,7 @@ public class EditorBuffer implements TabContent {
             scheduleRenderPreview(); // re-render the timeline at the new axis scale (parse is cheap + off-thread)
             return;
         }
-        previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
+        previewPane.getContent().setStyle(PreviewPrefs.fontStyle(previewFontScale));
         if (markdownPreview != null) {
             markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
         }

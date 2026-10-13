@@ -28,6 +28,10 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.i18n.Messages;
+import com.editora.markdown.MarkdownAlerts;
+import com.editora.markdown.MarkdownDefinitions;
+import com.editora.markdown.MarkdownEmoji;
+import com.editora.markdown.MarkdownMarks;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
@@ -80,9 +84,13 @@ import org.fxmisc.richtext.model.StyleSpans;
 public final class MarkdownRenderer {
 
     /** Readable column width (GitHub-style): the content is capped to this and centered in the pane. */
-    private static final double MAX_CONTENT_WIDTH = 860;
-    /** An image is shown at its own size up to the text width of that column (its 24px side padding off). */
-    private static final double MAX_IMAGE_WIDTH = MAX_CONTENT_WIDTH - 48;
+    private static final double MAX_CONTENT_WIDTH = PreviewPrefs.BASE_WIDTH;
+
+    /** An image is shown at its own size up to the text width of the column (its 24px side padding off):
+     *  the reader's column in the live preview, the built-in one on paper and in popups. */
+    private static double maxImageWidth(RenderContext ctx) {
+        return (ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH) - 48;
+    }
     /** Point sizes passed to JLaTeXMath for inline {@code $…$} and display {@code $$…$$} math. */
     private static final double INLINE_MATH_SIZE = 16;
 
@@ -123,14 +131,21 @@ public final class MarkdownRenderer {
     public static List<org.commonmark.Extension> renderExtensions(boolean math) {
         List<org.commonmark.Extension> ext = new ArrayList<>();
         for (org.commonmark.Extension e : EXTENSIONS) {
-            if (!(e instanceof FootnotesExtension)) {
+            if (!(e instanceof FootnotesExtension) && !(e instanceof StrikethroughExtension)) {
                 ext.add(e);
             }
         }
         ext.add(FootnotesExtension.builder().inlineFootnotes(true).build());
+        // ==highlight==, ^sup^, and ~sub~ attached to a word. The marks take the single tilde over from the
+        // strikethrough extension and still make every other ~pair~ a strikethrough (MarkdownMarks).
+        ext.add(StrikethroughExtension.builder().requireTwoTildes(true).build());
+        ext.add(MarkdownMarks.extension());
         if (math) {
             ext.add(MarkdownMath.extension());
         }
+        ext.add(MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
+        ext.add(MarkdownEmoji.extension()); // :rocket:
+        ext.add(MarkdownDefinitions.extension()); // Term / : definition
         return ext;
     }
 
@@ -228,6 +243,7 @@ public final class MarkdownRenderer {
                         false,
                         null,
                         null,
+                        null,
                         null));
     }
 
@@ -247,7 +263,8 @@ public final class MarkdownRenderer {
      * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
      */
     public static Node renderForPrint(org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets) {
-        return renderDocument(ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null));
+        return renderDocument(
+                ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null));
     }
 
     private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
@@ -260,7 +277,8 @@ public final class MarkdownRenderer {
                     ctx.print(),
                     ctx.assets(),
                     ctx.dark(),
-                    footnoteNumbers(ast));
+                    footnoteNumbers(ast),
+                    ctx.live());
             appendBlocks(ast, content, numbered);
         }
         return wrapColumn(content);
@@ -294,8 +312,41 @@ public final class MarkdownRenderer {
             Path baseDir,
             java.util.function.Consumer<String> onLinkClick,
             Boolean dark,
-            Map<String, Integer> footnotes) {
-        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes);
+            Map<String, Integer> footnotes,
+            Live live) {
+        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live);
+    }
+
+    /**
+     * What only the live document preview offers, and a popup or a printed page does not: a task box that can
+     * be ticked ({@code onTask} is told which box, and says whether the source took the change), a picture
+     * that opens enlarged ({@code onEnlarge}), and the reader's choice to leave front matter out.
+     */
+    record Live(
+            java.util.function.Predicate<CheckBox> onTask,
+            java.util.function.Consumer<Node> onEnlarge,
+            boolean hideFrontMatter) {}
+
+    /** Node property of a task box: the source line of its list item when it was built ({@link Live}). */
+    static final String TASK_LINE = "editora.md.taskLine";
+
+    /** The first source line of {@code block}, or -1 when the parse recorded none. */
+    static int lineOf(org.commonmark.node.Node block) {
+        List<org.commonmark.node.SourceSpan> spans = block.getSourceSpans();
+        return spans.isEmpty() ? -1 : spans.get(0).getLineIndex();
+    }
+
+    private static final java.util.regex.Pattern TASK_BOX =
+            java.util.regex.Pattern.compile("^\\s*(?:>\\s*)*(?:[-*+]|\\d{1,9}[.)])\\s+\\[([ xX])\\]");
+
+    /** The offset in {@code line} of the character inside a task item's {@code [ ]} / {@code [x]}, or -1 when
+     *  the line is not a task item. Pure. */
+    static int taskBoxOffset(String line) {
+        if (line == null) {
+            return -1;
+        }
+        java.util.regex.Matcher m = TASK_BOX.matcher(line);
+        return m.find() ? m.start(1) : -1;
     }
 
     /**
@@ -341,7 +392,8 @@ public final class MarkdownRenderer {
             boolean print,
             MarkdownPrintAssets assets,
             Boolean dark,
-            Map<String, Integer> footnotes) {
+            Map<String, Integer> footnotes,
+            Live live) {
 
         /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
         String footnoteMark(String label) {
@@ -459,6 +511,19 @@ public final class MarkdownRenderer {
             appendBlocks(node, box, ctx);
             return box;
         }
+        if (node instanceof MarkdownAlerts.Alert alert) {
+            return alertBlock(alert, ctx);
+        }
+        if (node instanceof MarkdownDefinitions.DefinitionList) {
+            VBox box = new VBox();
+            box.getStyleClass().add("md-deflist");
+            for (org.commonmark.node.Node n = node.getFirstChild(); n != null; n = n.getNext()) {
+                TextFlow tf = inlineFlow(n, ctx);
+                tf.getStyleClass().add(n instanceof MarkdownDefinitions.Term ? "md-def-term" : "md-def-desc");
+                box.getChildren().add(tf);
+            }
+            return box;
+        }
         if (node instanceof BulletList bl) {
             return renderList(bl, ctx, false, 1);
         }
@@ -475,15 +540,18 @@ public final class MarkdownRenderer {
                 }
                 // Show at natural size, but never wider than the reading column — and scaled down further
                 // when the pane itself is narrower (Split view), so the diagram never widens the column.
-                return new ShrinkToFit(MermaidImages.node(
-                        stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH), null, ctx.dark()));
+                double cap = ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH;
+                return enlargeable(
+                        new ShrinkToFit(MermaidImages.node(
+                                stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, cap), null, ctx.dark())),
+                        ctx);
             }
             if (ctx.print()) {
                 String code = stripTrailingNewline(f.getLiteral());
                 return printCodeBlock(
                         code, ctx.assets() == null ? null : ctx.assets().runs(f.getInfo(), code));
             }
-            return highlightedCodeBlock(f.getLiteral(), f.getInfo());
+            return languageLabelled(highlightedCodeBlock(f.getLiteral(), f.getInfo()), f.getInfo());
         }
         if (node instanceof IndentedCodeBlock i) {
             return codeBlock(i.getLiteral(), ctx); // indented blocks carry no language → plain
@@ -504,7 +572,7 @@ public final class MarkdownRenderer {
             return renderTable(tb, ctx);
         }
         if (node instanceof YamlFrontMatterBlock fm) {
-            return frontMatterBlock(fm);
+            return ctx.live() != null && ctx.live().hideFrontMatter() ? null : frontMatterBlock(fm);
         }
         if (node instanceof FootnoteDefinition def) {
             return footnoteDefinition(def, ctx);
@@ -521,6 +589,71 @@ public final class MarkdownRenderer {
         return literal != null
                 && literal.strip().startsWith("<!--")
                 && MarkdownHtml.strip(literal).isBlank();
+    }
+
+    /** The 24dp glyph of each alert kind: info, light bulb, announcement, warning triangle, stop octagon. */
+    private static final Map<MarkdownAlerts.Kind, String> ALERT_ICONS = Map.of(
+            MarkdownAlerts.Kind.NOTE,
+            "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41"
+                    + " 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+            MarkdownAlerts.Kind.TIP,
+            "M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0"
+                    + " .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z",
+            MarkdownAlerts.Kind.IMPORTANT,
+            "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z",
+            MarkdownAlerts.Kind.WARNING,
+            "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+            MarkdownAlerts.Kind.CAUTION,
+            "M15.73 3H8.27L3 8.27v7.46L8.27 21h7.46L21 15.73V8.27L15.73 3zM12 17.3c-.72 0-1.3-.58-1.3-1.3"
+                    + " 0-.72.58-1.3 1.3-1.3.72 0 1.3.58 1.3 1.3 0 .72-.58 1.3-1.3 1.3zm1-4.3h-2V7h2v6z");
+
+    /**
+     * A GitHub alert: a block with a coloured rule down its side, an icon and its title ("Note", "Warning", …
+     * in the UI language) in the kind's colour, then the content. The colour is one looked-up colour per kind
+     * ({@code .md-alert-note} … in app.css), defined for the app theme and for both preview themes.
+     */
+    private static Node alertBlock(MarkdownAlerts.Alert alert, RenderContext ctx) {
+        MarkdownAlerts.Kind kind = alert.getKind();
+        javafx.scene.shape.SVGPath glyph = new javafx.scene.shape.SVGPath();
+        glyph.setContent(ALERT_ICONS.get(kind));
+        glyph.getStyleClass().add("md-alert-icon");
+        glyph.setScaleX(0.7);
+        glyph.setScaleY(0.7);
+        Label title = new Label(Messages.tr("markdown.alert." + kind.slug()), new javafx.scene.Group(glyph));
+        title.getStyleClass().add("md-alert-title");
+        VBox box = new VBox(title);
+        box.getStyleClass().addAll("md-alert", "md-alert-" + kind.slug());
+        box.setAccessibleRole(javafx.scene.AccessibleRole.TEXT);
+        box.setAccessibleText(title.getText());
+        appendBlocks(alert, box, ctx);
+        return box;
+    }
+
+    /**
+     * Adds highlighted ({@code ==text==}) content. A {@code Text} has no background, and one label for the
+     * whole run could not wrap, so each run of text is cut at its spaces into labels that share the marker
+     * background: side by side they read as one stroke of a highlighter, and the line can still break.
+     */
+    private static void appendHighlight(
+            org.commonmark.node.Node mark, TextFlow flow, List<String> styles, RenderContext ctx) {
+        int from = flow.getChildren().size();
+        appendInline(mark, flow, with(styles, "md-mark"), ctx);
+        for (int i = from; i < flow.getChildren().size(); i++) {
+            if (!(flow.getChildren().get(i) instanceof Text text)
+                    || text.getText().equals("\n")) {
+                continue;
+            }
+            List<Node> words = new ArrayList<>();
+            for (String piece : text.getText().split("(?<= )(?=[^ ])")) { // after a run of spaces: "two " "words"
+                Label word = new Label(piece);
+                word.getStyleClass().addAll(text.getStyleClass());
+                word.getStyleClass().add("md-mark-word");
+                words.add(word);
+            }
+            flow.getChildren().remove(i);
+            flow.getChildren().addAll(i, words);
+            i += words.size() - 1;
+        }
     }
 
     /** A display formula on a line of its own, centered; a long one shrinks rather than widening the column. */
@@ -777,9 +910,21 @@ public final class MarkdownRenderer {
             if (task != null) {
                 CheckBox cb = new CheckBox();
                 cb.setSelected(task.isChecked());
-                cb.setDisable(true); // shows the source's state; styled at full strength (.md-task in app.css)
-                cb.setFocusTraversable(false);
                 cb.getStyleClass().add("md-task");
+                int line = lineOf(item);
+                if (ctx.live() != null && ctx.live().onTask() != null && line >= 0) {
+                    // Ticking it edits the source; when the source refuses (read-only), the box goes back.
+                    cb.getProperties().put(TASK_LINE, line);
+                    cb.setCursor(javafx.scene.Cursor.HAND);
+                    cb.setOnAction(e -> {
+                        if (!ctx.live().onTask().test(cb)) {
+                            cb.setSelected(!cb.isSelected());
+                        }
+                    });
+                } else {
+                    cb.setDisable(true); // shows the source's state; full strength (.md-task in app.css)
+                    cb.setFocusTraversable(false);
+                }
                 marker = cb;
             } else {
                 Label m = new Label(ordered ? (n + ".") : "•");
@@ -1208,19 +1353,76 @@ public final class MarkdownRenderer {
         return g;
     }
 
-    /** YAML front matter rendered as a muted key/value metadata block at the top of the document. */
+    /**
+     * YAML front matter as a two-column table at the top of the document: the key, then its value (a list's
+     * items one under the other). Null when it has no entries.
+     */
     private static Node frontMatterBlock(YamlFrontMatterBlock fm) {
-        VBox box = new VBox();
-        box.getStyleClass().add("md-frontmatter");
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("md-frontmatter");
+        int row = 0;
         for (org.commonmark.node.Node n = fm.getFirstChild(); n != null; n = n.getNext()) {
             if (n instanceof YamlFrontMatterNode meta) {
-                Label row = new Label(meta.getKey() + ": " + String.join(", ", meta.getValues()));
-                row.getStyleClass().add("md-frontmatter-row");
-                row.setWrapText(true);
-                box.getChildren().add(row);
+                Label key = new Label(meta.getKey());
+                key.getStyleClass().add("md-frontmatter-key");
+                key.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+                Label value = new Label(String.join("\n", meta.getValues()));
+                value.getStyleClass().add("md-frontmatter-value");
+                value.setWrapText(true);
+                GridPane.setValignment(key, javafx.geometry.VPos.TOP);
+                GridPane.setHgrow(value, javafx.scene.layout.Priority.ALWAYS);
+                grid.addRow(row++, key, value);
             }
         }
-        return box.getChildren().isEmpty() ? null : box;
+        return row == 0 ? null : grid;
+    }
+
+    /** Node property of a code block's wrapper holding the fence's language, as written. */
+    static final String LANGUAGE_KEY = "editora.md.language";
+
+    /**
+     * A fenced block with a language gets its name in the top right corner ({@code ```java} says "java"): the
+     * first word of the info string, as written. A block without one is returned as it is.
+     */
+    private static Node languageLabelled(Node block, String info) {
+        String language = info == null ? "" : info.strip().split("\\s+", 2)[0];
+        if (language.startsWith("{")) { // ```{.python} / ```{r, echo=FALSE}
+            language = language.replaceAll("^\\{\\.?|[,}].*$", "");
+        }
+        if (language.isEmpty() || language.length() > 24) {
+            return block;
+        }
+        Label label = new Label(language);
+        label.getStyleClass().add("md-code-lang");
+        label.setMouseTransparent(true);
+        StackPane wrap = new StackPane(block, label);
+        wrap.getStyleClass().add("md-code-wrap");
+        StackPane.setAlignment(label, Pos.TOP_RIGHT);
+        wrap.getProperties().put(LANGUAGE_KEY, language);
+        if (block.hasProperties() && block.getProperties().containsKey(CODE_KEY)) {
+            wrap.getProperties().put(CODE_KEY, block.getProperties().get(CODE_KEY));
+        }
+        return wrap;
+    }
+
+    /** Node property marking a picture or diagram that a click opens enlarged. */
+    static final String ENLARGE_KEY = "editora.md.enlarge";
+
+    /** In the live preview, a click on {@code picture} (an image's slot, a diagram) opens it enlarged. */
+    private static Node enlargeable(Node picture, RenderContext ctx) {
+        if (ctx.live() == null || ctx.live().onEnlarge() == null) {
+            return picture;
+        }
+        java.util.function.Consumer<Node> open = ctx.live().onEnlarge();
+        picture.getProperties().put(ENLARGE_KEY, Boolean.TRUE);
+        picture.setCursor(javafx.scene.Cursor.HAND);
+        picture.setOnMouseClicked(e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY && e.isStillSincePress()) {
+                open.accept(picture);
+                e.consume();
+            }
+        });
+        return picture;
     }
 
     /** A footnote definition: its label marker followed by the definition's block content. */
@@ -1372,6 +1574,16 @@ public final class MarkdownRenderer {
             appendInline(n, flow, with(styles, "md-strike"), ctx);
         } else if (n instanceof Ins) {
             appendInline(n, flow, with(styles, "md-ins"), ctx);
+        } else if (n instanceof MarkdownMarks.Highlight) {
+            appendHighlight(n, flow, styles, ctx);
+        } else if (n instanceof MarkdownMarks.Superscript) {
+            appendInline(n, flow, with(styles, "md-sup"), ctx);
+        } else if (n instanceof MarkdownMarks.Subscript) {
+            appendInline(n, flow, with(styles, "md-sub"), ctx);
+        } else if (n instanceof MarkdownEmoji.Emoji emoji) {
+            Text glyph = styledText(emoji.getEmoji(), with(styles, "md-emoji"));
+            glyph.setAccessibleText(emoji.getShortcode().replace('_', ' '));
+            flow.getChildren().add(glyph);
         } else if (n instanceof FootnoteReference ref) {
             int from = flow.getChildren().size();
             flow.getChildren().add(footnoteRef(ctx.footnoteMark(ref.getLabel())));
@@ -1652,7 +1864,8 @@ public final class MarkdownRenderer {
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");
         view.setPreserveRatio(true);
-        double max = width > 0 ? Math.min(width, MAX_IMAGE_WIDTH) : MAX_IMAGE_WIDTH;
+        double cap = maxImageWidth(ctx);
+        double max = width > 0 ? Math.min(width, cap) : cap;
         if (ctx.assets() != null) {
             // Print: the image was loaded beforehand, so its size is final when the page is measured. One
             // that did not load prints as its alt text — on paper an empty slot says nothing at all.
@@ -1681,7 +1894,7 @@ public final class MarkdownRenderer {
             Tooltip.install(view, new Tooltip(tip));
             view.setAccessibleText(tip);
         }
-        return slot;
+        return enlargeable(slot, ctx);
     }
 
     /** Longest URL tail shown in a blocked-image placeholder (a query string can be kilobytes). */

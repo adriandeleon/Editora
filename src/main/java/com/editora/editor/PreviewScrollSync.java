@@ -25,7 +25,7 @@ import org.fxmisc.richtext.CodeArea;
  * taller than the other. The fraction is still what the other previews in this pane use (a diagram, a
  * timeline): they have no lines to map.
  */
-final class PreviewScrollSync {
+public final class PreviewScrollSync {
 
     private final CodeArea area;
     private final Supplier<MarkdownViewMode> mode;
@@ -60,6 +60,7 @@ final class PreviewScrollSync {
         this.mode = mode;
         this.pane = pane;
         this.document = document;
+        area.currentParagraphProperty().addListener((o, was, now) -> markCaretBlock());
         area.estimatedScrollYProperty().addListener((o, ov, nv) -> {
             if (editorDrives() && !syncing) {
                 previewFollowsEditor();
@@ -67,10 +68,51 @@ final class PreviewScrollSync {
         });
     }
 
+    /**
+     * Tells the preview which block holds the caret (Split only — in Preview there is no caret to see, in
+     * Editor no preview). Called when the caret changes <em>line</em>, not on every keystroke.
+     */
+    void markCaretBlock() {
+        MarkdownPreview doc = document.get();
+        if (doc != null) {
+            doc.markLine(mode.get() == MarkdownViewMode.SPLIT ? area.getCurrentParagraph() : -1);
+        }
+    }
+
+    /**
+     * A block of the preview was double-clicked: the editor's caret goes to the source {@code line} it came
+     * from, and the editor takes the focus. With only the preview on screen, {@code showEditor} first brings
+     * the editor in beside it (Split), so the reader sees where they landed without losing the rendering.
+     */
+    void jumpToSource(int line, Runnable showEditor) {
+        if (mode.get() == MarkdownViewMode.PREVIEW) {
+            showEditor.run();
+        }
+        int target = Math.max(0, Math.min(line, area.getParagraphs().size() - 1));
+        Platform.runLater(() -> {
+            area.moveTo(target, 0);
+            area.requestFollowCaret();
+            area.requestFocus();
+            markCaretBlock();
+        });
+    }
+
+    private static volatile boolean enabled = true;
+
+    /** Whether editor and preview scroll together ({@code Settings.markdownScrollSync}; on by default). Off,
+     *  each pane stays where its reader put it; positions are still handed over on a mode switch. */
+    public static void setEnabled(boolean on) {
+        enabled = on;
+    }
+
+    public static boolean enabled() {
+        return enabled;
+    }
+
     /** Split, with the mouse anywhere but over the preview: the editor's position is the one that counts. */
     private boolean editorDrives() {
         ScrollPane p = pane.get();
-        return mode.get() == MarkdownViewMode.SPLIT && p != null && !p.isHover();
+        return enabled && mode.get() == MarkdownViewMode.SPLIT && p != null && !p.isHover();
     }
 
     /** Wires the preview → editor half onto the (just created) preview pane. */
@@ -97,12 +139,12 @@ final class PreviewScrollSync {
                 // than letting a layout-driven vvalue move the editor. Only in SPLIT: in PREVIEW the editor
                 // is off screen, and following its stale scroll position threw away the user's paging (and
                 // the position kept across a re-render).
-                if (mode.get() == MarkdownViewMode.SPLIT) {
+                if (enabled && mode.get() == MarkdownViewMode.SPLIT) {
                     previewFollowsEditor();
                 }
                 return;
             }
-            if (mode.get() == MarkdownViewMode.SPLIT && p.isHover()) {
+            if (enabled && mode.get() == MarkdownViewMode.SPLIT && p.isHover()) {
                 editorFollowsPreview();
             }
         });
@@ -206,6 +248,7 @@ final class PreviewScrollSync {
                 }
                 syncing = true;
                 try {
+                    now.releaseAnchor(); // the editor decides where the preview is, not the last render
                     now.setScrollY(now.yOfLine(target));
                 } finally {
                     syncing = false;
@@ -252,7 +295,10 @@ final class PreviewScrollSync {
             pendingLine = -1;
             return line;
         }
-        if (mode.get() == MarkdownViewMode.SPLIT && (p == null || !p.isHover())) {
+        if (enabled && mode.get() == MarkdownViewMode.SPLIT && (p == null || !p.isHover())) {
+            // The line read here can be a layout behind (the editor reports a scroll before it has laid the
+            // new lines out); follow again once the render is in and the editor has settled.
+            Platform.runLater(this::previewFollowsEditor);
             double scrollable = editorScrollableHeight();
             double target = previewTarget(editorScrollY(), scrollable, ScrollAnchor.firstVisibleLine(area));
             return Double.isInfinite(target) ? Double.MAX_VALUE : Math.max(0, target);
@@ -277,6 +323,7 @@ final class PreviewScrollSync {
      * leaving it put the editor back where it was before — pages away from what had just been read.
      */
     void entered(MarkdownViewMode from, MarkdownViewMode to) {
+        markCaretBlock(); // shown in Split only
         double line = carriedLine;
         carriedLine = -1;
         pendingLine = -1;

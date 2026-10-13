@@ -42,6 +42,12 @@ final class BlockColumn extends VBox {
     private final Map<Node, double[]> placed = new WeakHashMap<>();
 
     private long measured;
+    private Runnable afterLayout = () -> {};
+
+    /** Runs {@code hook} at the end of every layout pass (something drawn beside a block follows it). */
+    void afterLayout(Runnable hook) {
+        this.afterLayout = hook == null ? () -> {} : hook;
+    }
 
     /** How many times a child has been measured so far (the others kept their remembered height). */
     long measured() {
@@ -136,5 +142,6 @@ final class BlockColumn extends VBox {
             }
             y += h + spacing;
         }
+        afterLayout.run();
     }
 }

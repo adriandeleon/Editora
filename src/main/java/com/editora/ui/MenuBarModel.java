@@ -148,6 +148,7 @@ final class MenuBarModel {
                         List.of(
                                 "view.togglePreview",
                                 "view.toggleSplitPreview",
+                                "view.markdownPreviewToSide",
                                 SEPARATOR,
                                 "view.splitEditorRight",
                                 "view.splitEditorDown",
