@@ -1,6 +1,5 @@
 package com.editora.lsp;
 
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -8,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import com.editora.config.PathKeys;
 import com.editora.editor.LspTextEdit;
@@ -99,6 +99,11 @@ public final class WorkspaceEditMapper {
      * An empty edit is a valid no-op.
      */
     public static Mapped map(WorkspaceEdit edit) {
+        return map(edit, DocumentUris::toPath);
+    }
+
+    /** As {@link #map(WorkspaceEdit)}, reading the edit's URIs with {@code toPath} (the answering server's). */
+    static Mapped map(WorkspaceEdit edit, Function<String, Path> toPath) {
         if (edit == null) {
             return new Mapped(List.of(), List.of(), List.of(), List.of());
         }
@@ -123,10 +128,10 @@ public final class WorkspaceEditMapper {
                     List<TextEdit> plain = plainEdits(tde.getEdits());
                     if (tde.getTextDocument() == null
                             || plain == null
-                            || !addEdits(byFile, tde.getTextDocument().getUri(), plain)) {
+                            || !addEdits(byFile, toPath, tde.getTextDocument().getUri(), plain)) {
                         return null;
                     }
-                    Path file = filePath(tde.getTextDocument().getUri());
+                    Path file = toPath.apply(tde.getTextDocument().getUri());
                     Integer version = tde.getTextDocument().getVersion();
                     if (versions.containsKey(file) && !java.util.Objects.equals(versions.get(file), version)) {
                         return null; // contradictory versions for one document cannot be applied atomically
@@ -138,8 +143,8 @@ public final class WorkspaceEditMapper {
                         return null; // grouped staging cannot preserve a rename after a delete
                     }
                     resourcePhase = 1;
-                    Path from = filePath(rf.getOldUri());
-                    Path to = filePath(rf.getNewUri());
+                    Path from = toPath.apply(rf.getOldUri());
+                    Path to = toPath.apply(rf.getNewUri());
                     if (from == null || to == null) {
                         return null;
                     }
@@ -151,7 +156,7 @@ public final class WorkspaceEditMapper {
                     if (resourcePhase > 0) {
                         return null; // grouped staging applies every create before every rename/delete
                     }
-                    Path file = filePath(cf.getUri());
+                    Path file = toPath.apply(cf.getUri());
                     if (file == null) {
                         return null;
                     }
@@ -169,7 +174,7 @@ public final class WorkspaceEditMapper {
                     creates.add(new FileCreate(file, overwrite, ignore));
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.DeleteFile df) {
                     resourcePhase = 2;
-                    Path file = filePath(df.getUri());
+                    Path file = toPath.apply(df.getUri());
                     if (file == null) {
                         return null;
                     }
@@ -185,7 +190,7 @@ public final class WorkspaceEditMapper {
             }
         } else if (edit.getChanges() != null) {
             for (var entry : edit.getChanges().entrySet()) {
-                if (!addEdits(byFile, entry.getKey(), entry.getValue())) {
+                if (!addEdits(byFile, toPath, entry.getKey(), entry.getValue())) {
                     return null;
                 }
             }
@@ -260,8 +265,9 @@ public final class WorkspaceEditMapper {
      * Accumulates one document's edits under its resolved file; false when the URI isn't a local file or
      * an edit has no usable range.
      */
-    private static boolean addEdits(Map<Path, List<LspTextEdit>> byFile, String uri, List<TextEdit> edits) {
-        Path file = filePath(uri);
+    private static boolean addEdits(
+            Map<Path, List<LspTextEdit>> byFile, Function<String, Path> toPath, String uri, List<TextEdit> edits) {
+        Path file = toPath.apply(uri);
         if (file == null) {
             return false;
         }
@@ -293,16 +299,5 @@ public final class WorkspaceEditMapper {
             }
         }
         return true;
-    }
-
-    private static Path filePath(String uri) {
-        if (uri == null) {
-            return null;
-        }
-        try {
-            return Path.of(URI.create(uri));
-        } catch (RuntimeException e) {
-            return null; // jdt:// or another non-filesystem scheme — can't be edited as a file
-        }
     }
 }

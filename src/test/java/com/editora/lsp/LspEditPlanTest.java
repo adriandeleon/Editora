@@ -28,7 +28,7 @@ class LspEditPlanTest {
     }
 
     private static LspManager.EditBasis sentAt(long millis) {
-        return new LspManager.EditBasis(Map.of(), millis);
+        return new LspManager.EditBasis(Map.of(), millis, WireUris.LOCAL);
     }
 
     @Test
