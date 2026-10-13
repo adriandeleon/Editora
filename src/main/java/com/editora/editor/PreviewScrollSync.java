@@ -105,7 +105,7 @@ public final class PreviewScrollSync {
         enabled = on;
     }
 
-    static boolean enabled() {
+    public static boolean enabled() {
         return enabled;
     }
 

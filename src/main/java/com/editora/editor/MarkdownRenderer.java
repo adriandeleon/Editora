@@ -84,9 +84,13 @@ import org.fxmisc.richtext.model.StyleSpans;
 public final class MarkdownRenderer {
 
     /** Readable column width (GitHub-style): the content is capped to this and centered in the pane. */
-    private static final double MAX_CONTENT_WIDTH = 860;
-    /** An image is shown at its own size up to the text width of that column (its 24px side padding off). */
-    private static final double MAX_IMAGE_WIDTH = MAX_CONTENT_WIDTH - 48;
+    private static final double MAX_CONTENT_WIDTH = PreviewPrefs.BASE_WIDTH;
+
+    /** An image is shown at its own size up to the text width of the column (its 24px side padding off):
+     *  the reader's column in the live preview, the built-in one on paper and in popups. */
+    private static double maxImageWidth(RenderContext ctx) {
+        return (ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH) - 48;
+    }
     /** Point sizes passed to JLaTeXMath for inline {@code $…$} and display {@code $$…$$} math. */
     private static final double INLINE_MATH_SIZE = 16;
 
@@ -536,15 +540,18 @@ public final class MarkdownRenderer {
                 }
                 // Show at natural size, but never wider than the reading column — and scaled down further
                 // when the pane itself is narrower (Split view), so the diagram never widens the column.
-                return new ShrinkToFit(MermaidImages.node(
-                        stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH), null, ctx.dark()));
+                double cap = ctx.live() != null ? PreviewPrefs.contentWidth() : MAX_CONTENT_WIDTH;
+                return enlargeable(
+                        new ShrinkToFit(MermaidImages.node(
+                                stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, cap), null, ctx.dark())),
+                        ctx);
             }
             if (ctx.print()) {
                 String code = stripTrailingNewline(f.getLiteral());
                 return printCodeBlock(
                         code, ctx.assets() == null ? null : ctx.assets().runs(f.getInfo(), code));
             }
-            return highlightedCodeBlock(f.getLiteral(), f.getInfo());
+            return languageLabelled(highlightedCodeBlock(f.getLiteral(), f.getInfo()), f.getInfo());
         }
         if (node instanceof IndentedCodeBlock i) {
             return codeBlock(i.getLiteral(), ctx); // indented blocks carry no language → plain
@@ -565,7 +572,7 @@ public final class MarkdownRenderer {
             return renderTable(tb, ctx);
         }
         if (node instanceof YamlFrontMatterBlock fm) {
-            return frontMatterBlock(fm);
+            return ctx.live() != null && ctx.live().hideFrontMatter() ? null : frontMatterBlock(fm);
         }
         if (node instanceof FootnoteDefinition def) {
             return footnoteDefinition(def, ctx);
@@ -1346,19 +1353,76 @@ public final class MarkdownRenderer {
         return g;
     }
 
-    /** YAML front matter rendered as a muted key/value metadata block at the top of the document. */
+    /**
+     * YAML front matter as a two-column table at the top of the document: the key, then its value (a list's
+     * items one under the other). Null when it has no entries.
+     */
     private static Node frontMatterBlock(YamlFrontMatterBlock fm) {
-        VBox box = new VBox();
-        box.getStyleClass().add("md-frontmatter");
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("md-frontmatter");
+        int row = 0;
         for (org.commonmark.node.Node n = fm.getFirstChild(); n != null; n = n.getNext()) {
             if (n instanceof YamlFrontMatterNode meta) {
-                Label row = new Label(meta.getKey() + ": " + String.join(", ", meta.getValues()));
-                row.getStyleClass().add("md-frontmatter-row");
-                row.setWrapText(true);
-                box.getChildren().add(row);
+                Label key = new Label(meta.getKey());
+                key.getStyleClass().add("md-frontmatter-key");
+                key.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+                Label value = new Label(String.join("\n", meta.getValues()));
+                value.getStyleClass().add("md-frontmatter-value");
+                value.setWrapText(true);
+                GridPane.setValignment(key, javafx.geometry.VPos.TOP);
+                GridPane.setHgrow(value, javafx.scene.layout.Priority.ALWAYS);
+                grid.addRow(row++, key, value);
             }
         }
-        return box.getChildren().isEmpty() ? null : box;
+        return row == 0 ? null : grid;
+    }
+
+    /** Node property of a code block's wrapper holding the fence's language, as written. */
+    static final String LANGUAGE_KEY = "editora.md.language";
+
+    /**
+     * A fenced block with a language gets its name in the top right corner ({@code ```java} says "java"): the
+     * first word of the info string, as written. A block without one is returned as it is.
+     */
+    private static Node languageLabelled(Node block, String info) {
+        String language = info == null ? "" : info.strip().split("\\s+", 2)[0];
+        if (language.startsWith("{")) { // ```{.python} / ```{r, echo=FALSE}
+            language = language.replaceAll("^\\{\\.?|[,}].*$", "");
+        }
+        if (language.isEmpty() || language.length() > 24) {
+            return block;
+        }
+        Label label = new Label(language);
+        label.getStyleClass().add("md-code-lang");
+        label.setMouseTransparent(true);
+        StackPane wrap = new StackPane(block, label);
+        wrap.getStyleClass().add("md-code-wrap");
+        StackPane.setAlignment(label, Pos.TOP_RIGHT);
+        wrap.getProperties().put(LANGUAGE_KEY, language);
+        if (block.hasProperties() && block.getProperties().containsKey(CODE_KEY)) {
+            wrap.getProperties().put(CODE_KEY, block.getProperties().get(CODE_KEY));
+        }
+        return wrap;
+    }
+
+    /** Node property marking a picture or diagram that a click opens enlarged. */
+    static final String ENLARGE_KEY = "editora.md.enlarge";
+
+    /** In the live preview, a click on {@code picture} (an image's slot, a diagram) opens it enlarged. */
+    private static Node enlargeable(Node picture, RenderContext ctx) {
+        if (ctx.live() == null || ctx.live().onEnlarge() == null) {
+            return picture;
+        }
+        java.util.function.Consumer<Node> open = ctx.live().onEnlarge();
+        picture.getProperties().put(ENLARGE_KEY, Boolean.TRUE);
+        picture.setCursor(javafx.scene.Cursor.HAND);
+        picture.setOnMouseClicked(e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY && e.isStillSincePress()) {
+                open.accept(picture);
+                e.consume();
+            }
+        });
+        return picture;
     }
 
     /** A footnote definition: its label marker followed by the definition's block content. */
@@ -1800,7 +1864,8 @@ public final class MarkdownRenderer {
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");
         view.setPreserveRatio(true);
-        double max = width > 0 ? Math.min(width, MAX_IMAGE_WIDTH) : MAX_IMAGE_WIDTH;
+        double cap = maxImageWidth(ctx);
+        double max = width > 0 ? Math.min(width, cap) : cap;
         if (ctx.assets() != null) {
             // Print: the image was loaded beforehand, so its size is final when the page is measured. One
             // that did not load prints as its alt text — on paper an empty slot says nothing at all.
@@ -1829,7 +1894,7 @@ public final class MarkdownRenderer {
             Tooltip.install(view, new Tooltip(tip));
             view.setAccessibleText(tip);
         }
-        return slot;
+        return enlargeable(slot, ctx);
     }
 
     /** Longest URL tail shown in a blocked-image placeholder (a query string can be kilobytes). */

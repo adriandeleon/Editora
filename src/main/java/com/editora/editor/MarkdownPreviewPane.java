@@ -205,6 +205,7 @@ public final class MarkdownPreviewPane implements TabContent {
             preview.clear();
             return;
         }
+        preview.root().setStyle(PreviewPrefs.fontStyle(1));
         EditorBuffer from = source;
         String text = from.getContent();
         Path file = from.getPath();

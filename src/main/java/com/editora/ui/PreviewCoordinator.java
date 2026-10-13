@@ -385,6 +385,11 @@ final class PreviewCoordinator {
         }
         String saved = host.config().getWorkspaceState().getMarkdownViewModes().get(file.toString());
         if (saved == null) {
+            EditorBuffer.MarkdownViewMode preferred =
+                    defaultViewMode(host.config().getSettings().getMarkdownDefaultViewMode());
+            if (buffer.isMarkdown() && preferred != EditorBuffer.MarkdownViewMode.EDITOR) {
+                buffer.setMarkdownViewMode(preferred); // a Markdown file opened for the first time
+            }
             return;
         }
         try {
@@ -392,6 +397,18 @@ final class PreviewCoordinator {
         } catch (IllegalArgumentException ignored) {
             // unknown persisted value — leave in EDITOR mode
         }
+    }
+
+    /** The view mode the {@code markdownDefaultViewMode} setting names ("editor", "split", "preview"; any
+     *  case); the editor for anything else. Pure. */
+    static EditorBuffer.MarkdownViewMode defaultViewMode(String setting) {
+        String name = setting == null ? "" : setting.strip().toUpperCase(java.util.Locale.ROOT);
+        for (EditorBuffer.MarkdownViewMode mode : EditorBuffer.MarkdownViewMode.values()) {
+            if (mode.name().equals(name)) {
+                return mode;
+            }
+        }
+        return EditorBuffer.MarkdownViewMode.EDITOR;
     }
 
     /** Sets the active previewable buffer's view mode (Markdown or Mermaid; no-op otherwise). */
@@ -717,6 +734,8 @@ final class PreviewCoordinator {
         com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
         com.editora.editor.PreviewImageLoader.setRemoteImages(s.isMarkdownRemoteImages());
         com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
+        com.editora.editor.PreviewPrefs.set(
+                s.getMarkdownPreviewFontSize(), s.getMarkdownPreviewWidth(), s.isMarkdownHideFrontMatter());
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);
             if (b != null && b.hasPreview()) {

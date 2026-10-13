@@ -362,8 +362,6 @@ public class EditorBuffer implements TabContent {
     private double previewDivider = 0.5;
     /** Told when the zoom or the divider changed by the user's hand (the controller persists them). */
     private Runnable onPreviewLayoutChanged = () -> {};
-    /** Base preview font size in px (matches {@code .markdown-preview-wrap} in app.css); headings use em. */
-    private static final double BASE_PREVIEW_FONT = 15;
     /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
     private Node viewModeControl;
     /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
@@ -5251,11 +5249,6 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Scrolls the rendered Markdown preview so the heading with the GitHub-style anchor {@code slug} (as
-     * {@code MarkdownToc} writes them; a leading {@code #}, case and {@code %XX} escapes are tolerated) is at
-     * its top. False when the preview is not showing, has not rendered yet, or has no such heading.
-     */
-    /**
      * Whether only a rendering of this buffer is on screen (Preview mode; not the CSV grid, which edits). Its
      * text is then out of sight, so editing commands are refused rather than applied at an invisible caret.
      */
@@ -5997,7 +5990,7 @@ public class EditorBuffer implements TabContent {
             scheduleRenderPreview(); // re-render the timeline at the new axis scale (parse is cheap + off-thread)
             return;
         }
-        previewPane.getContent().setStyle("-fx-font-size: " + (BASE_PREVIEW_FONT * previewFontScale) + "px;");
+        previewPane.getContent().setStyle(PreviewPrefs.fontStyle(previewFontScale));
         if (markdownPreview != null) {
             markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
         }

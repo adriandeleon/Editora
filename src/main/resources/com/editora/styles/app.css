@@ -850,16 +850,31 @@
 .markdown-preview .md-table-dense .md-table-header { -fx-padding: 2 3 2 3; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
 
-/* YAML front matter: a muted metadata block at the top of the document. */
+/* YAML front matter: a muted key/value table at the top of the document. */
 .markdown-preview .md-frontmatter {
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: -color-border-muted;
     -fx-border-width: 0 0 0 3;
     -fx-background-radius: 6;
     -fx-padding: 8 12 8 12;
-    -fx-spacing: 2;
+    -fx-hgap: 16;
+    -fx-vgap: 3;
 }
-.markdown-preview .md-frontmatter-row { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
+.markdown-preview .md-frontmatter-key {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.92em;
+    -fx-font-weight: bold;
+}
+.markdown-preview .md-frontmatter-value { -fx-text-fill: -color-fg-default; -fx-font-size: 0.92em; }
+
+/* A fenced block's language, in its top right corner. Opaque, so a long first line passes under it. */
+.markdown-preview .md-code-lang {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 0 6 0 6;
+    -fx-font-size: 0.72em;
+    -fx-padding: 2 8 2 8;
+}
 
 /* The "back to where it was referred to" arrow at the end of a footnote definition. */
 .markdown-preview .md-footnote-back { -fx-font-size: 0.9em; }

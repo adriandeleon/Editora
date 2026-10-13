@@ -215,6 +215,30 @@ final class MarkdownPreview {
         }
     }
 
+    private PreviewLightbox lightbox;
+
+    /** A picture or a diagram was clicked: shows it enlarged over the window, until Esc or a click. */
+    private void enlarge(Node picture) {
+        javafx.scene.image.Image image = PreviewLightbox.imageOf(picture);
+        if (image == null || pane == null || pane.getScene() == null) {
+            return; // not loaded (a placeholder, an error): nothing to enlarge
+        }
+        closeLightbox();
+        lightbox = PreviewLightbox.show(pane, image);
+    }
+
+    /** The enlarged picture now showing, or null. */
+    PreviewLightbox lightbox() {
+        return lightbox != null && lightbox.isShowing() ? lightbox : null;
+    }
+
+    private void closeLightbox() {
+        if (lightbox != null) {
+            lightbox.close();
+            lightbox = null;
+        }
+    }
+
     /** The column of rendered blocks. */
     Parent column() {
         return column;
@@ -500,7 +524,9 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir();
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir() + "|"
+                + PreviewPrefs.signature();
+        column.setMaxWidth(PreviewPrefs.contentWidth());
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
             column.getChildren().clear();
@@ -511,7 +537,7 @@ final class MarkdownPreview {
                 this::follow,
                 dark,
                 plan.footnotes(),
-                new MarkdownRenderer.Live(this::taskClicked, null, false));
+                new MarkdownRenderer.Live(this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter()));
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
