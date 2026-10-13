@@ -100,10 +100,13 @@ final class RemoteCoordinator {
          */
         default void openRemoteProject(Project project, RemoteConnection conn, char[] secret) {}
 
-        /** Puts the not-connected message, with its reconnect button, where the Project tree would be. */
-        default void showDisconnected(String message, String buttonText, Runnable reconnect) {}
+        /** The Project panel, or null while it has not been built (it is built on first use). */
+        default ProjectPanel projectPanel() {
+            return null;
+        }
 
-        default void clearDisconnected() {}
+        /** Reopens the session's tabs that were waiting for this window's host to be connected. */
+        default void restoreSessionTabs() {}
     }
 
     private final CoordinatorHost host;
@@ -117,6 +120,8 @@ final class RemoteCoordinator {
     private boolean connecting;
 
     private boolean listening;
+    /** The not-connected state of this window's remote project, kept for a Project panel not built yet. */
+    private java.util.function.Consumer<ProjectPanel> disconnectedState;
 
     RemoteCoordinator(CoordinatorHost host, Ops ops) {
         this(host, ops, null);
@@ -477,10 +482,30 @@ final class RemoteCoordinator {
         if (location == null) {
             return;
         }
-        ops.showDisconnected(
-                tr("remote.project.disconnected", location.authority()),
-                tr("remote.project.reconnect"),
-                () -> connect(connectionFor(project)));
+        String message = tr("remote.project.disconnected", location.authority());
+        disconnectedState = panel ->
+                panel.showDisconnected(message, tr("remote.project.reconnect"), () -> connect(connectionFor(project)));
+        panelBuilt(ops.projectPanel());
+    }
+
+    /** Whether this window is saying its remote project is not connected (tests). */
+    boolean showsDisconnected() {
+        return disconnectedState != null;
+    }
+
+    /** The Project panel exists now (or still does): give it the not-connected state, if that is the state. */
+    void panelBuilt(ProjectPanel built) {
+        if (built != null && disconnectedState != null) {
+            disconnectedState.accept(built);
+        }
+    }
+
+    private void clearDisconnected() {
+        disconnectedState = null;
+        ProjectPanel built = ops.projectPanel();
+        if (built != null) {
+            built.clearDisconnected();
+        }
     }
 
     /** The connection under this window's mounted folder ended: by the network, the server, or Disconnect. */
@@ -491,9 +516,9 @@ final class RemoteCoordinator {
         Project project = ops.windowProject();
         if (project != null && project.remote()) {
             activeRemoteAuthority = null;
-            ops.setProjectRoot(null);
-            showDisconnected();
+            showDisconnected(); // first, so the emptied tree shows it at once and not "No project open"
             host.setStatus(tr("status.remote.lost", authority));
+            ops.setProjectRoot(null);
         }
     }
 
@@ -503,7 +528,7 @@ final class RemoteCoordinator {
             listening = true;
             remoteFs().addConnectionListener(this::connectionChanged);
         }
-        ops.clearDisconnected();
+        clearDisconnected();
         String previous = activeRemoteAuthority;
         activeRemoteAuthority = conn.id();
         if (previous != null
@@ -519,6 +544,7 @@ final class RemoteCoordinator {
         rebindOpenBuffers(conn.id());
         ops.setProjectRoot(root);
         ops.openProjectToolWindow();
+        ops.restoreSessionTabs();
         host.setStatus(tr("status.remote.connected", conn.displayLabel()));
     }
 
@@ -618,8 +644,8 @@ final class RemoteCoordinator {
         activeRemoteAuthority = null;
         Project project = ops.windowProject();
         if (project != null && project.remote()) {
-            ops.setProjectRoot(null); // this window is the remote folder's: there is no local tree to go back to
             showDisconnected();
+            ops.setProjectRoot(null); // this window is the remote folder's: there is no local tree to go back to
         } else {
             Path activeRoot = ops.activeProjectRoot();
             if (activeRoot != null) {

@@ -103,7 +103,7 @@ class RemoteProjectWindowFxTest {
         assertEquals(List.of(appRoot()), ops.roots);
         assertArrayEquals(new char[8], secret, "nobody else needs the login: wiped");
         assertTrue(sftp.fileSystems().isConnected(sftp.connection().id()));
-        assertEquals(0, ops.disconnectedShown.size());
+        assertFalse(remote.showsDisconnected());
     }
 
     @Test
@@ -149,7 +149,7 @@ class RemoteProjectWindowFxTest {
         FxTestSupport.runOnFx(() -> remote.connectForWindowProject(nowhere, "password".toCharArray()));
 
         assertTrue(failed.await(60, TimeUnit.SECONDS), "the failure was never reported");
-        assertEquals(List.of("Not connected to tester@127.0.0.1:1"), ops.disconnectedShown);
+        assertTrue(remote.showsDisconnected(), "the window says it is not connected");
         assertTrue(ops.roots.isEmpty());
     }
 
@@ -163,7 +163,7 @@ class RemoteProjectWindowFxTest {
 
         assertTrue(emptied.await(30, TimeUnit.SECONDS), "the tree kept showing a folder it cannot read");
         assertNull(ops.roots.getLast());
-        assertEquals(List.of("Not connected to " + sftp.connection().id()), ops.disconnectedShown);
+        assertTrue(remote.showsDisconnected(), "with the way back");
         assertEquals("The connection to " + sftp.connection().id() + " was lost", host.last);
         assertNull(ops.window.rootPath());
     }
@@ -175,12 +175,42 @@ class RemoteProjectWindowFxTest {
         CountDownLatch emptied = ops.expectRoot();
         sftp.disconnect();
         assertTrue(emptied.await(30, TimeUnit.SECONDS));
+        assertTrue(remote.showsDisconnected());
 
         Path again = sftp.reconnect().resolve("app");
         FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), again, null));
 
         assertEquals(again, ops.roots.getLast());
-        assertTrue(ops.cleared >= 2, "the not-connected message was left up");
+        assertFalse(remote.showsDisconnected(), "the not-connected message was left up");
+    }
+
+    @Test
+    void theProjectPanelSaysNotConnectedWithAButtonEvenWhenItIsBuiltLater() throws Exception {
+        ops.window = new Project("app", "app", "sftp://tester@127.0.0.1:1/app");
+        RemoteConnection nowhere =
+                new RemoteConnection("127.0.0.1", 1, "tester", RemoteConnection.AuthMethod.PASSWORD, "", null, "/app");
+        CountDownLatch failed = new CountDownLatch(1);
+        ops.onError = failed::countDown;
+        FxTestSupport.runOnFx(() -> remote.connectForWindowProject(nowhere, null));
+        assertTrue(failed.await(60, TimeUnit.SECONDS));
+
+        // The Project panel is built on its first use, which may be after the connection failed.
+        String shown = FxTestSupport.callOnFx(() -> {
+            FxWindowFixture window = FxWindowFixture.create();
+            try {
+                ProjectPanel panel = FxTestSupport.field(window.controller, "projectPanel");
+                if (panel == null) {
+                    return "no panel";
+                }
+                panel.setRoot(null);
+                remote.panelBuilt(panel);
+                return panel.showsDisconnected() ? "disconnected" : "placeholder";
+            } finally {
+                window.close();
+            }
+        });
+        org.junit.jupiter.api.Assumptions.assumeFalse("no panel".equals(shown), "the fixture built no Project panel");
+        assertEquals("disconnected", shown);
     }
 
     private static final class Host extends CoordinatorHostStub {
@@ -194,13 +224,11 @@ class RemoteProjectWindowFxTest {
 
     private final class Ops implements RemoteCoordinator.Ops {
         final List<Path> roots = new CopyOnWriteArrayList<>();
-        final List<String> disconnectedShown = new CopyOnWriteArrayList<>();
         final AtomicReference<Project> openedProject = new AtomicReference<>();
         final AtomicReference<RemoteConnection> openedWith = new AtomicReference<>();
         final AtomicReference<char[]> openedSecret = new AtomicReference<>();
         volatile Project window;
         volatile boolean projectsOn = true;
-        volatile int cleared;
         volatile Runnable onError = () -> {};
         private volatile CountDownLatch nextRoot;
 
@@ -273,16 +301,6 @@ class RemoteProjectWindowFxTest {
             openedProject.set(project);
             openedWith.set(conn);
             openedSecret.set(secret);
-        }
-
-        @Override
-        public void showDisconnected(String message, String buttonText, Runnable reconnect) {
-            disconnectedShown.add(message);
-        }
-
-        @Override
-        public void clearDisconnected() {
-            cleared++;
         }
     }
 }

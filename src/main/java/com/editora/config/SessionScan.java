@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import com.editora.vfs.Vfs;
+
 /**
  * Which of a saved session's open-file entries can be reopened right now, and which are kept although they
  * cannot be. The decision needs a stat per entry (three for one that cannot be read), each of which can stall
@@ -37,7 +39,8 @@ public record SessionScan(
 
     /**
      * The pure form. {@code resolve} may return {@code null} for an entry that cannot be resolved at all (a
-     * remote file whose connection is not open): such an entry is neither openable nor kept, as before.
+     * remote file whose connection is not open): a remote one is kept (see {@link #unreachableRemote}); anything
+     * else that does not resolve is neither openable nor kept.
      */
     public static SessionScan of(
             List<WorkspaceState.OpenFile> files,
@@ -52,11 +55,19 @@ public record SessionScan(
             Path path = stored == null || stored.isBlank() ? null : resolve.apply(stored);
             if (path != null && isReadable.test(path)) {
                 openable.add(f);
-            } else if (keepUnreadable(path, isDirectory, notExists)) {
+            } else if (keepUnreadable(path, isDirectory, notExists) || unreachableRemote(stored, path)) {
                 missing.add(f);
             }
         }
         return new SessionScan(files, openable, missing);
+    }
+
+    /**
+     * A remote file whose host is not connected: nothing is known about it either, so it is kept, like a file
+     * on a volume that is not mounted. Whether the window wants it back is the window's decision.
+     */
+    static boolean unreachableRemote(String stored, Path resolved) {
+        return resolved == null && stored != null && Vfs.isRemoteUri(stored);
     }
 
     /** Whether this scan is of exactly {@code files} (the list object, not an equal list). */

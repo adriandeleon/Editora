@@ -74,6 +74,16 @@ final class WindowSessionCoordinator {
 
         void setStatus(String message);
 
+        /** Whether {@code file} already has a tab in this window. */
+        default boolean isOpen(Path file) {
+            return false;
+        }
+
+        /** Whether any tab in this window shows a file (as opposed to Welcome or nothing). */
+        default boolean hasFileTabs() {
+            return true;
+        }
+
         Tab addBuffer(EditorBuffer buffer);
 
         Tab addBuffer(EditorBuffer buffer, boolean select);
@@ -99,6 +109,11 @@ final class WindowSessionCoordinator {
         Path tabPath(Tab tab);
 
         Path windowProjectRoot();
+
+        /** The project this window edits, or null. */
+        default Project windowProject() {
+            return null;
+        }
 
         /** Re-applies the file's stored folds, bookmarks, breakpoints, notes and read-only pin. */
         void restorePerFileState(EditorBuffer buffer);
@@ -144,7 +159,13 @@ final class WindowSessionCoordinator {
         List<WorkspaceState.OpenFile> files = new ArrayList<>(scan.openable());
         // Not openable right now, but not known to be gone either (its folder is missing — an unmounted
         // volume). Dropping these here made the next save persist a session without them.
-        missingSessionFiles.addAll(scan.missing());
+        Project project = host.windowProject();
+        for (WorkspaceState.OpenFile kept : scan.missing()) {
+            boolean resolves = com.editora.vfs.Vfs.parseStorable(kept.getPath()) != null;
+            if (SessionEntries.retainUnreachable(kept.getPath(), resolves, project == null ? null : project.root())) {
+                missingSessionFiles.add(kept);
+            }
+        }
         restoreStarted = true; // the saved list has been read: a live capture can no longer pre-empt it
         if (files.isEmpty()) {
             // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
@@ -879,6 +900,67 @@ final class WindowSessionCoordinator {
                 });
             }
         });
+    }
+
+    /**
+     * Reopens the session's tabs that were kept because their host was not connected when the window
+     * opened, now that it is: each comes back with its caret and pin, like a tab restored at startup. The
+     * files are examined off the FX thread, by the same rules as the startup scan: a readable one is
+     * reopened, one known to be gone (its folder is there, it is not) stops waiting, and one about which
+     * nothing can be learned keeps waiting.
+     */
+    void reopenUnreachable() {
+        if (!restoreStarted) {
+            return; // the session has not been read yet: the ordinary restore will find the connection open
+        }
+        List<WorkspaceState.OpenFile> waiting = new ArrayList<>();
+        for (WorkspaceState.OpenFile f : missingSessionFiles) {
+            if (com.editora.vfs.Vfs.isRemoteUri(f.getPath())
+                    && com.editora.vfs.Vfs.parseStorable(f.getPath()) != null) {
+                waiting.add(f);
+            }
+        }
+        if (waiting.isEmpty()) {
+            return;
+        }
+        Thread.ofVirtual().name("remote-session-scan").start(() -> {
+            com.editora.config.SessionScan scan =
+                    com.editora.config.SessionScan.of(waiting, com.editora.vfs.Vfs::parseStorable);
+            Platform.runLater(() -> reopen(waiting, scan));
+        });
+    }
+
+    private void reopen(List<WorkspaceState.OpenFile> waiting, com.editora.config.SessionScan scan) {
+        if (host.fileWorkflows().isShutdown()) {
+            return;
+        }
+        String active = host.config().getWorkspaceState().getActiveFile();
+        boolean first = true;
+        for (WorkspaceState.OpenFile f : waiting) {
+            if (!missingSessionFiles.contains(f)) {
+                continue; // opened by hand, or reopened by an earlier connect, while this scan ran
+            }
+            if (!scan.openable().contains(f)) {
+                if (!scan.missing().contains(f)) {
+                    missingSessionFiles.remove(f); // known to be gone: it stops waiting
+                }
+                continue;
+            }
+            missingSessionFiles.remove(f);
+            Path file = com.editora.vfs.Vfs.parseStorable(f.getPath());
+            if (file == null || host.isOpen(file)) {
+                continue;
+            }
+            EditorBuffer buffer = newShell(file);
+            boolean select = f.getPath().equals(active) || (first && !host.hasFileTabs());
+            first = false;
+            Tab tab = host.addBuffer(buffer, select, false);
+            if (f.isPinned()) {
+                host.pinned().add(tab);
+                host.updateTabMeta(tab, buffer);
+            }
+            fillSessionBuffer(f, file, buffer, () -> {});
+        }
     }
 
     /**

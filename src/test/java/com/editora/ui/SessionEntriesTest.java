@@ -60,4 +60,26 @@ class SessionEntriesTest {
         List<WorkspaceState.OpenFile> open = List.of(new WorkspaceState.OpenFile("/a", 0, false));
         assertSame(open, SessionEntries.withMissing(open, List.of()));
     }
+
+    @Test
+    void aTabOnAHostThatIsNotConnectedWaitsOnlyInThatHostsProjectWindow() {
+        String tab = "sftp://ana@build:22/srv/app/src/A.java";
+
+        assertTrue(
+                SessionEntries.retainUnreachable(tab, false, "sftp://ana@build:22/srv/app"),
+                "the window of a project on that host is going to connect: its tabs wait for it");
+        assertFalse(
+                SessionEntries.retainUnreachable(tab, false, "sftp://ana@other:22/srv/app"),
+                "a project on another host never connects to this one");
+        assertFalse(SessionEntries.retainUnreachable(tab, false, "/home/ana/app"), "nor does a local project");
+        assertFalse(SessionEntries.retainUnreachable(tab, false, null), "nor the No Project window");
+    }
+
+    @Test
+    void whatTheScanKeptForAnyOtherReasonStaysKept() {
+        assertTrue(SessionEntries.retainUnreachable("/vol/not-mounted/Main.java", true, null));
+        assertTrue(
+                SessionEntries.retainUnreachable("sftp://ana@build:22/srv/app/A.java", true, "/home/ana/app"),
+                "connected but unreadable right now: the scan's own rule decided");
+    }
 }
