@@ -186,7 +186,7 @@ class MarkdownPreviewFxTest {
             root[0] = pane(buffer).getContent();
             before.addAll(column(buffer).getChildren());
             assertEquals(123, before.size(), "heading, links, code, 60 × (heading + paragraph)");
-            assertEquals(123, preview(buffer).lastBuilt());
+            assertEquals(123, preview(buffer).builtTotal());
         });
 
         rerender(buffer, () -> {
@@ -196,8 +196,7 @@ class MarkdownPreviewFxTest {
         EditorFx.onFx(() -> {
             assertSame(root[0], pane(buffer).getContent(), "the document node is not replaced");
             List<Node> after = column(buffer).getChildren();
-            assertEquals(1, preview(buffer).lastBuilt(), "one block changed, one block is built");
-            assertEquals(122, preview(buffer).lastReused());
+            assertEquals(124, preview(buffer).builtTotal(), "one block changed, one block is built");
             int changed = 0;
             for (int i = 0; i < after.size(); i++) {
                 if (after.get(i) != before.get(i)) {
@@ -214,7 +213,7 @@ class MarkdownPreviewFxTest {
             buffer.getArea().insertText(at, "Inserted paragraph.\n\n");
         });
         EditorFx.onFx(() -> {
-            assertEquals(1, preview(buffer).lastBuilt());
+            assertEquals(125, preview(buffer).builtTotal(), "and one more for the inserted paragraph");
             assertEquals(124, column(buffer).getChildren().size());
             MarkdownPreview p = preview(buffer);
             int line = lineOf(buffer, "## Marker 40");
@@ -259,13 +258,13 @@ class MarkdownPreviewFxTest {
                 () -> preview(buffer).showsProperty().get() > 0);
         EditorFx.onFx(() -> {
             assertEquals(2000, column(buffer).getChildren().size());
-            assertEquals(2000, preview(buffer).lastBuilt());
             assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph number 1999."));
         });
         // From then on an edit is one block again.
+        long built = EditorFx.callFx(() -> preview(buffer).builtTotal());
         rerender(buffer, () -> buffer.getArea().insertText(0, "X"));
         EditorFx.onFx(() -> {
-            assertEquals(1, preview(buffer).lastBuilt());
+            assertEquals(built + 1, preview(buffer).builtTotal());
             assertEquals(2000, column(buffer).getChildren().size());
             stage[0].close();
             buffer.dispose();
@@ -406,6 +405,92 @@ class MarkdownPreviewFxTest {
         EditorFx.onFx(() -> {
             buffer.getArea().layout();
             assertEquals(target[0], ScrollAnchor.firstVisibleLine(buffer.getArea()), 1.0);
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
+    // --- double click to the source; the caret's block is marked ----------------------------------------
+
+    private static MouseEvent doubleClick(Node target) {
+        javafx.geometry.Bounds b = target.localToScene(target.getBoundsInLocal());
+        double x = b.getMinX() + 2;
+        double y = b.getMinY() + 2;
+        return new MouseEvent(
+                MouseEvent.MOUSE_CLICKED,
+                x,
+                y,
+                x,
+                y,
+                MouseButton.PRIMARY,
+                2,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                new PickResult(target, x, y));
+    }
+
+    @Test
+    void aDoubleClickOnABlockPutsTheCaretOnItsSourceLineAndSplitMarksTheCaretsBlock() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<String> opened = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(sections());
+            ref[0].setOpenUrlHandler(opened::add);
+            ref[0].getArea().moveTo(0);
+            stage[0] = EditorFx.show(ref[0], 900, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        // In Preview: the editor comes in beside the preview (Split) with its caret on that line.
+        EditorFx.onFx(() -> {
+            Text heading = textNode(pane(buffer).getContent(), "Marker 30");
+            heading.fireEvent(doubleClick(heading));
+        });
+        layout(buffer);
+        EditorFx.onFx(() -> {
+            assertEquals(MarkdownViewMode.SPLIT, buffer.getMarkdownViewMode(), "the source is shown beside it");
+            assertEquals(lineOf(buffer, "## Marker 30"), buffer.getArea().getCurrentParagraph());
+            // A double click on a link is the link's, not a jump.
+            int caret = buffer.getArea().getCurrentParagraph();
+            Text link = textNode(pane(buffer).getContent(), "out");
+            link.fireEvent(doubleClick(link));
+            assertEquals(caret, buffer.getArea().getCurrentParagraph());
+        });
+        layout(buffer);
+        // In Split the block holding the caret carries the marker, and it follows the caret's line.
+        EditorFx.onFx(() -> {
+            Node marker = EditorFx.styled(pane(buffer).getContent(), "md-caret-marker");
+            assertTrue(marker.isVisible());
+            Text heading = textNode(pane(buffer).getContent(), "Marker 30");
+            double markerY = marker.localToScene(marker.getBoundsInLocal()).getMinY();
+            double blockY = heading.getParent()
+                    .localToScene(heading.getParent().getBoundsInLocal())
+                    .getMinY();
+            assertEquals(blockY, markerY, 1.0, "beside the caret's block");
+
+            buffer.getArea().moveTo(lineOf(buffer, "Paragraph 31 of prose."), 3);
+            Text paragraph = textNode(pane(buffer).getContent(), "Paragraph 31 of prose.");
+            assertEquals(
+                    paragraph
+                            .getParent()
+                            .localToScene(paragraph.getParent().getBoundsInLocal())
+                            .getMinY(),
+                    marker.localToScene(marker.getBoundsInLocal()).getMinY(),
+                    1.0,
+                    "it moved with the caret");
+            double width = column(buffer).getWidth();
+            assertEquals(width, column(buffer).getWidth(), 0.0, "and nothing was laid out for it");
+            buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
+            assertFalse(marker.isVisible(), "no caret to point at in Preview");
             stage[0].close();
             buffer.dispose();
         });
@@ -675,6 +760,115 @@ class MarkdownPreviewFxTest {
             assertTrue(EditorFx.styled(details.get(1), "md-details-body").isVisible(), "<details open>");
             assertNotNull(textNode(root, "after"));
         });
+    }
+
+    // --- the extended syntax: alerts, emoji, highlight, sup/sub, definition lists ------------------------
+
+    @Test
+    void alertsEmojiMarksAndDefinitionListsAreRendered() throws Exception {
+        Node root = render(
+                "> [!WARNING]\n> Back up **first**.\n\n"
+                        + "> A plain quote.\n\n"
+                        + "Ship :rocket: now, ==mark these words== and H~2~O, x^2^, ~gone~.\n\n"
+                        + "Term one\n: Its *definition*.\n: A second one.\n",
+                null,
+                null);
+        EditorFx.onFx(() -> {
+            VBox alert = (VBox) EditorFx.styled(root, "md-alert");
+            assertNotNull(alert, "an alert is its own kind of block");
+            assertTrue(alert.getStyleClass().contains("md-alert-warning"));
+            Label title = (Label) EditorFx.styled(alert, "md-alert-title");
+            assertEquals(tr("markdown.alert.warning"), title.getText(), "titled in the UI language");
+            assertNotNull(title.getGraphic(), "with its icon");
+            assertFalse(EditorFx.textOf(alert).contains("[!WARNING]"), "the marker is not shown");
+            assertNotNull(textNode(alert, "first"));
+            assertEquals(
+                    1,
+                    collect(root, VBox.class).stream()
+                            .filter(b -> b.getStyleClass().contains("md-quote"))
+                            .count(),
+                    "a plain quote is still a quote");
+
+            Text rocket = textNode(root, "\uD83D\uDE80");
+            assertNotNull(rocket, "the shortcode is its emoji");
+            assertEquals("rocket", rocket.getAccessibleText());
+            List<String> marked = collect(root, Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-mark-word"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(
+                    List.of("mark ", "these ", "words"), marked, "highlighted, in pieces a line can break between");
+            assertTrue(textNode(root, "2").getStyleClass().contains("md-sub")
+                    || collect(root, Text.class).stream()
+                            .anyMatch(t ->
+                                    t.getText().equals("2") && t.getStyleClass().contains("md-sub")));
+            assertTrue(collect(root, Text.class).stream()
+                    .anyMatch(t -> t.getText().equals("2") && t.getStyleClass().contains("md-sup")));
+            assertTrue(textNode(root, "gone").getStyleClass().contains("md-strike"), "a lone ~pair~ is still struck");
+
+            VBox definitions = (VBox) EditorFx.styled(root, "md-deflist");
+            assertEquals(3, definitions.getChildren().size());
+            assertTrue(definitions.getChildren().get(0).getStyleClass().contains("md-def-term"));
+            assertTrue(definitions.getChildren().get(1).getStyleClass().contains("md-def-desc"));
+            assertTrue(textNode(definitions, "definition").getStyleClass().contains("md-italic"));
+            assertFalse(EditorFx.textOf(definitions).contains(": "), "the colons are markup");
+        });
+    }
+
+    // --- task boxes that tick the source ----------------------------------------------------------------
+
+    @Test
+    void tickingATaskBoxEditsItsSourceLineInOneUndoStep() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            ref[0] = markdown("# Tasks\n\n- [ ] one\n- [x] two\n  - [ ] nested\n\n> - [ ] quoted\n\nText.\n");
+            ref[0].getArea().getUndoManager().forgetHistory();
+            stage[0] = EditorFx.show(ref[0], 600, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        EditorFx.onFx(() -> {
+            List<javafx.scene.control.CheckBox> boxes =
+                    collect(pane(buffer).getContent(), javafx.scene.control.CheckBox.class);
+            assertEquals(4, boxes.size());
+            assertFalse(boxes.get(0).isDisabled(), "a box in the live preview can be ticked");
+            boxes.get(0).fire();
+            assertEquals("- [x] one", buffer.getArea().getParagraph(2).getText());
+            boxes.get(1).fire();
+            assertEquals("- [ ] two", buffer.getArea().getParagraph(3).getText(), "and unticked");
+            buffer.getArea().undo();
+            assertEquals("- [x] two", buffer.getArea().getParagraph(3).getText(), "one tick, one undo step");
+            assertEquals("- [x] one", buffer.getArea().getParagraph(2).getText());
+        });
+        // Text typed above moves the list down without rebuilding it: the boxes still know their lines.
+        rerender(buffer, () -> buffer.getArea().insertText(0, "Intro.\n\nMore intro.\n\n"));
+        EditorFx.onFx(() -> {
+            List<javafx.scene.control.CheckBox> boxes =
+                    collect(pane(buffer).getContent(), javafx.scene.control.CheckBox.class);
+            boxes.get(2).fire();
+            assertEquals("  - [x] nested", buffer.getArea().getParagraph(8).getText());
+            boxes.get(3).fire();
+            assertEquals("> - [x] quoted", buffer.getArea().getParagraph(10).getText(), "inside a quote too");
+        });
+        // A read-only buffer keeps its text, and the box goes back to what the source says.
+        rerender(buffer, () -> buffer.setReadOnly(true));
+        EditorFx.onFx(() -> {
+            String before = buffer.getArea().getText();
+            javafx.scene.control.CheckBox first = collect(
+                            pane(buffer).getContent(), javafx.scene.control.CheckBox.class)
+                    .get(0);
+            boolean was = first.isSelected();
+            first.fire();
+            assertEquals(before, buffer.getArea().getText());
+            assertEquals(was, first.isSelected());
+            stage[0].close();
+            buffer.dispose();
+        });
+        // A popup or any other surface shows the box but cannot tick it.
+        Node elsewhere = render("- [ ] not here\n", null, null);
+        EditorFx.onFx(() -> assertTrue(
+                collect(elsewhere, javafx.scene.control.CheckBox.class).get(0).isDisabled()));
     }
 
     // --- A6 / A14: nothing is cut off or squeezed ----------------------------------------------------
@@ -1055,7 +1249,7 @@ class MarkdownPreviewFxTest {
                     firstTop >= controlsBottom, "front matter at " + firstTop + ", controls end at " + controlsBottom);
             for (javafx.scene.control.CheckBox box : collect(pane.getContent(), javafx.scene.control.CheckBox.class)) {
                 assertEquals(1.0, box.getOpacity(), 1e-9, "a task box is content, drawn at full strength");
-                assertFalse(box.isFocusTraversable());
+                assertTrue(box.isFocusTraversable(), "in the live preview it is a control: reachable with Tab");
             }
             stage[0].close();
             buffer.dispose();

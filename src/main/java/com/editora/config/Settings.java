@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 119;
+    public static final int SCHEMA_VERSION = 120;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -156,6 +156,44 @@ public class Settings {
     private int markdownTocMinLevel = 1;
 
     private int markdownTocMaxLevel = 6;
+    /** View a Markdown file opens in when it has no remembered mode: "editor", "split" or "preview". */
+    private String markdownDefaultViewMode = "editor";
+    /** Base font size of the Markdown preview in px; 0 = the built-in size. */
+    private int markdownPreviewFontSize = 0;
+    /** Maximum width of the preview's text column in px; 0 = the built-in width. */
+    private int markdownPreviewWidth = 0;
+    /** Keep the editor and the preview aligned in Split. */
+    private boolean markdownScrollSync = true;
+    /** Hide the front-matter block in the preview. */
+    private boolean markdownHideFrontMatter = false;
+    /** Type curly quotes, dashes and an ellipsis in Markdown prose. */
+    private boolean markdownSmartTypography = false;
+    /** Leave the document title out of a generated table of contents. */
+    private boolean markdownTocSkipTitle = false;
+    /** Generate the table of contents as a numbered list. */
+    private boolean markdownTocOrdered = false;
+    /** Regenerate an existing table of contents when the file is saved. */
+    private boolean markdownTocUpdateOnSave = false;
+    /** Base file name for pasted images (a counter is added on a clash). */
+    private String markdownImageNamePattern = "pasted-image";
+    /** Ask for alt text when an image is pasted or dropped. */
+    private boolean markdownImageAltPrompt = false;
+    /** Run "Markdown Lint: Fix Issues" when a Markdown file is saved. */
+    private boolean markdownLintFixOnSave = false;
+    /** Markdown-lint rules that are off by default and the user has turned on. */
+    private java.util.List<String> markdownLintEnabledRules = new java.util.ArrayList<>();
+    /** Per-rule severity ({@code MDxxx} to "error", "warning" or "hint"); absent = warning. */
+    private java.util.Map<String, String> markdownLintSeverities = new java.util.LinkedHashMap<>();
+    /** Update Markdown links when a file is renamed or moved: "ask", "always" or "never". */
+    private String markdownUpdateLinksOnRename = "ask";
+    /** Keep the caret line vertically centred while typing. */
+    private boolean typewriterMode = false;
+    /** Show the word count of a Markdown or plain-text file in the status bar. */
+    private boolean statusBarWordCount = true;
+    /** Embed local images in an exported HTML page. */
+    private boolean htmlExportEmbedImages = true;
+    /** Syntax-highlight code blocks in an exported HTML page. */
+    private boolean htmlExportHighlightCode = true;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
@@ -1643,7 +1681,9 @@ public class Settings {
      * stored value reads as "" (a hand-edited file must not leave the preview without a theme).
      */
     public String getMarkdownPreviewTheme() {
-        return MARKDOWN_PREVIEW_THEMES.contains(markdownPreviewTheme) ? markdownPreviewTheme : "";
+        return markdownPreviewTheme != null && MARKDOWN_PREVIEW_THEMES.contains(markdownPreviewTheme)
+                ? markdownPreviewTheme
+                : "";
     }
 
     public void setMarkdownPreviewTheme(String markdownPreviewTheme) {
@@ -1718,6 +1758,268 @@ public class Settings {
 
     public void setMarkdownTocMaxLevel(int markdownTocMaxLevel) {
         this.markdownTocMaxLevel = Math.clamp(markdownTocMaxLevel, 1, 6);
+    }
+
+    /** The values of {@link #getMarkdownDefaultViewMode()}. */
+    public static final java.util.List<String> MARKDOWN_VIEW_MODES = java.util.List.of("editor", "split", "preview");
+
+    /** The values of {@link #getMarkdownUpdateLinksOnRename()}. */
+    public static final java.util.List<String> LINK_UPDATE_MODES = java.util.List.of("ask", "always", "never");
+
+    /** The values of {@link #markdownLintSeverity}; the first is the default. */
+    public static final java.util.List<String> LINT_SEVERITIES = java.util.List.of("warning", "error", "hint");
+
+    /** Markdown-lint rules that are off until the user turns them on ({@link #markdownLintEnabledRules}). */
+    public static final java.util.Set<String> MARKDOWN_LINT_DEFAULT_OFF = java.util.Set.of("MD013", "MD033");
+
+    public static final String DEFAULT_MARKDOWN_IMAGE_NAME = "pasted-image";
+    public static final int MIN_PREVIEW_FONT_SIZE = 8;
+    public static final int MAX_PREVIEW_FONT_SIZE = 40;
+    public static final int MIN_PREVIEW_WIDTH = 320;
+    public static final int MAX_PREVIEW_WIDTH = 4000;
+
+    /** "editor", "split" or "preview"; any other stored value reads as "editor". */
+    public String getMarkdownDefaultViewMode() {
+        return markdownDefaultViewMode != null && MARKDOWN_VIEW_MODES.contains(markdownDefaultViewMode)
+                ? markdownDefaultViewMode
+                : "editor";
+    }
+
+    public void setMarkdownDefaultViewMode(String markdownDefaultViewMode) {
+        this.markdownDefaultViewMode = markdownDefaultViewMode;
+    }
+
+    /** 0 (the built-in size) or {@link #MIN_PREVIEW_FONT_SIZE}–{@link #MAX_PREVIEW_FONT_SIZE} px. */
+    public int getMarkdownPreviewFontSize() {
+        return markdownPreviewFontSize <= 0
+                ? 0
+                : Math.clamp(markdownPreviewFontSize, MIN_PREVIEW_FONT_SIZE, MAX_PREVIEW_FONT_SIZE);
+    }
+
+    public void setMarkdownPreviewFontSize(int markdownPreviewFontSize) {
+        this.markdownPreviewFontSize = markdownPreviewFontSize;
+    }
+
+    /** 0 (the built-in width) or {@link #MIN_PREVIEW_WIDTH}–{@link #MAX_PREVIEW_WIDTH} px. */
+    public int getMarkdownPreviewWidth() {
+        return markdownPreviewWidth <= 0 ? 0 : Math.clamp(markdownPreviewWidth, MIN_PREVIEW_WIDTH, MAX_PREVIEW_WIDTH);
+    }
+
+    public void setMarkdownPreviewWidth(int markdownPreviewWidth) {
+        this.markdownPreviewWidth = markdownPreviewWidth;
+    }
+
+    public boolean isMarkdownScrollSync() {
+        return markdownScrollSync;
+    }
+
+    public void setMarkdownScrollSync(boolean markdownScrollSync) {
+        this.markdownScrollSync = markdownScrollSync;
+    }
+
+    public boolean isMarkdownHideFrontMatter() {
+        return markdownHideFrontMatter;
+    }
+
+    public void setMarkdownHideFrontMatter(boolean markdownHideFrontMatter) {
+        this.markdownHideFrontMatter = markdownHideFrontMatter;
+    }
+
+    public boolean isMarkdownSmartTypography() {
+        return markdownSmartTypography;
+    }
+
+    public void setMarkdownSmartTypography(boolean markdownSmartTypography) {
+        this.markdownSmartTypography = markdownSmartTypography;
+    }
+
+    public boolean isMarkdownTocSkipTitle() {
+        return markdownTocSkipTitle;
+    }
+
+    public void setMarkdownTocSkipTitle(boolean markdownTocSkipTitle) {
+        this.markdownTocSkipTitle = markdownTocSkipTitle;
+    }
+
+    public boolean isMarkdownTocOrdered() {
+        return markdownTocOrdered;
+    }
+
+    public void setMarkdownTocOrdered(boolean markdownTocOrdered) {
+        this.markdownTocOrdered = markdownTocOrdered;
+    }
+
+    public boolean isMarkdownTocUpdateOnSave() {
+        return markdownTocUpdateOnSave;
+    }
+
+    public void setMarkdownTocUpdateOnSave(boolean markdownTocUpdateOnSave) {
+        this.markdownTocUpdateOnSave = markdownTocUpdateOnSave;
+    }
+
+    /**
+     * The base file name (no extension, no folder) of a pasted image. A value that is blank or not a plain
+     * file name — a path separator, a character a file system refuses, a leading dot — reads as the default.
+     */
+    public String getMarkdownImageNamePattern() {
+        return normalizeImageName(markdownImageNamePattern);
+    }
+
+    public void setMarkdownImageNamePattern(String markdownImageNamePattern) {
+        this.markdownImageNamePattern = normalizeImageName(markdownImageNamePattern);
+    }
+
+    /** See {@link #getMarkdownImageNamePattern()}. Pure. */
+    public static String normalizeImageName(String name) {
+        String n = name == null ? "" : name.strip();
+        boolean bad = n.isEmpty()
+                || n.length() > 80
+                || n.startsWith(".")
+                || n.endsWith(".")
+                || n.chars().anyMatch(c -> c < 0x20 || "/\\<>:\"|?*".indexOf(c) >= 0);
+        return bad ? DEFAULT_MARKDOWN_IMAGE_NAME : n;
+    }
+
+    public boolean isMarkdownImageAltPrompt() {
+        return markdownImageAltPrompt;
+    }
+
+    public void setMarkdownImageAltPrompt(boolean markdownImageAltPrompt) {
+        this.markdownImageAltPrompt = markdownImageAltPrompt;
+    }
+
+    public boolean isMarkdownLintFixOnSave() {
+        return markdownLintFixOnSave;
+    }
+
+    public void setMarkdownLintFixOnSave(boolean markdownLintFixOnSave) {
+        this.markdownLintFixOnSave = markdownLintFixOnSave;
+    }
+
+    public java.util.List<String> getMarkdownLintEnabledRules() {
+        if (markdownLintEnabledRules == null) {
+            markdownLintEnabledRules = new java.util.ArrayList<>();
+        }
+        return markdownLintEnabledRules;
+    }
+
+    public void setMarkdownLintEnabledRules(java.util.List<String> markdownLintEnabledRules) {
+        this.markdownLintEnabledRules =
+                markdownLintEnabledRules == null ? new java.util.ArrayList<>() : markdownLintEnabledRules;
+    }
+
+    public java.util.Map<String, String> getMarkdownLintSeverities() {
+        if (markdownLintSeverities == null) {
+            markdownLintSeverities = new java.util.LinkedHashMap<>();
+        }
+        return markdownLintSeverities;
+    }
+
+    public void setMarkdownLintSeverities(java.util.Map<String, String> markdownLintSeverities) {
+        this.markdownLintSeverities =
+                markdownLintSeverities == null ? new java.util.LinkedHashMap<>() : markdownLintSeverities;
+    }
+
+    /**
+     * Whether the user's settings have Markdown-lint rule {@code code} on: a rule that is on by default
+     * unless it is in the disabled list, one that is off by default ({@link #MARKDOWN_LINT_DEFAULT_OFF}) only
+     * when it is in the enabled list. Codes compare without regard to case. (A project's own config is
+     * applied on top of this by the linter.)
+     */
+    public boolean isMarkdownLintRuleOn(String code) {
+        String c = code == null ? "" : code.strip().toUpperCase(java.util.Locale.ROOT);
+        java.util.function.Predicate<java.util.List<String>> lists =
+                list -> list != null && list.stream().anyMatch(x -> x != null && c.equalsIgnoreCase(x.strip()));
+        return MARKDOWN_LINT_DEFAULT_OFF.contains(c)
+                ? lists.test(markdownLintEnabledRules)
+                : !lists.test(getMarkdownLintDisabledRules());
+    }
+
+    /** Turns rule {@code code} on or off in whichever of the two lists governs it. */
+    public void setMarkdownLintRuleOn(String code, boolean on) {
+        String c = code.strip().toUpperCase(java.util.Locale.ROOT);
+        boolean optIn = MARKDOWN_LINT_DEFAULT_OFF.contains(c);
+        java.util.List<String> list =
+                new java.util.ArrayList<>(optIn ? getMarkdownLintEnabledRules() : getMarkdownLintDisabledRules());
+        list.removeIf(x -> x == null || c.equalsIgnoreCase(x.strip()));
+        if (on == optIn) {
+            list.add(c);
+        }
+        if (optIn) {
+            setMarkdownLintEnabledRules(list);
+        } else {
+            setMarkdownLintDisabledRules(list);
+        }
+    }
+
+    /** "warning" (the default), "error" or "hint" for rule {@code code}; an unknown stored value is "warning". */
+    public String markdownLintSeverity(String code) {
+        if (code != null && markdownLintSeverities != null) {
+            for (java.util.Map.Entry<String, String> e : markdownLintSeverities.entrySet()) {
+                if (e.getKey() != null
+                        && code.strip().equalsIgnoreCase(e.getKey().strip())
+                        && e.getValue() != null) {
+                    String v = e.getValue().strip().toLowerCase(java.util.Locale.ROOT);
+                    return LINT_SEVERITIES.contains(v) ? v : LINT_SEVERITIES.get(0);
+                }
+            }
+        }
+        return LINT_SEVERITIES.get(0);
+    }
+
+    /** Sets rule {@code code}'s severity; the default ("warning") is stored as no entry at all. */
+    public void setMarkdownLintSeverity(String code, String severity) {
+        String c = code.strip().toUpperCase(java.util.Locale.ROOT);
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>(getMarkdownLintSeverities());
+        map.keySet().removeIf(k -> k == null || c.equalsIgnoreCase(k.strip()));
+        String v = severity == null ? "" : severity.strip().toLowerCase(java.util.Locale.ROOT);
+        if (LINT_SEVERITIES.contains(v) && !v.equals(LINT_SEVERITIES.get(0))) {
+            map.put(c, v);
+        }
+        setMarkdownLintSeverities(map);
+    }
+
+    /** "ask", "always" or "never"; any other stored value reads as "ask". */
+    public String getMarkdownUpdateLinksOnRename() {
+        return markdownUpdateLinksOnRename != null && LINK_UPDATE_MODES.contains(markdownUpdateLinksOnRename)
+                ? markdownUpdateLinksOnRename
+                : "ask";
+    }
+
+    public void setMarkdownUpdateLinksOnRename(String markdownUpdateLinksOnRename) {
+        this.markdownUpdateLinksOnRename = markdownUpdateLinksOnRename;
+    }
+
+    public boolean isTypewriterMode() {
+        return typewriterMode;
+    }
+
+    public void setTypewriterMode(boolean typewriterMode) {
+        this.typewriterMode = typewriterMode;
+    }
+
+    public boolean isStatusBarWordCount() {
+        return statusBarWordCount;
+    }
+
+    public void setStatusBarWordCount(boolean statusBarWordCount) {
+        this.statusBarWordCount = statusBarWordCount;
+    }
+
+    public boolean isHtmlExportEmbedImages() {
+        return htmlExportEmbedImages;
+    }
+
+    public void setHtmlExportEmbedImages(boolean htmlExportEmbedImages) {
+        this.htmlExportEmbedImages = htmlExportEmbedImages;
+    }
+
+    public boolean isHtmlExportHighlightCode() {
+        return htmlExportHighlightCode;
+    }
+
+    public void setHtmlExportHighlightCode(boolean htmlExportHighlightCode) {
+        this.htmlExportHighlightCode = htmlExportHighlightCode;
     }
 
     public boolean isMultiCaret() {

@@ -185,6 +185,18 @@ class PreviewOnlyFxTest {
             bar.show(false);
             FxTestSupport.<TextField>field(bar, "findField").setText("needle");
             FxTestSupport.invoke(bar, "recompute");
+        });
+        // The marks sit on the rendered blocks, and a loaded machine may not have built them all yet.
+        for (int i = 0;
+                i < 500
+                        && FxTestSupport.callOnFx(
+                                () -> b.getNode().lookupAll(".md-find-match").size() < 4);
+                i++) {
+            Thread.sleep(10);
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(bar, "recompute"));
+        }
+        FxTestSupport.runOnFx(() -> {
             PreviewFind find = b.previewFind();
             // "needle" + "Needle" in the paragraph, the inline code and the plain code block (one each).
             assertEquals(4, find.count(), "found in what is rendered, case-insensitively");

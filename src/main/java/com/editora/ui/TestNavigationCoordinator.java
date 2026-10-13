@@ -116,8 +116,8 @@ final class TestNavigationCoordinator {
             return true;
         }
         try {
-            Path file = Path.of(java.net.URI.create(uri));
-            if (java.nio.file.Files.isRegularFile(file)) {
+            Path file = host.lspManager().pathForServerUri(anchor, uri);
+            if (file != null && java.nio.file.Files.isRegularFile(file)) {
                 host.openAndGoto(file, link.line() - 1, 0); // console lines are 1-based
                 return true;
             }

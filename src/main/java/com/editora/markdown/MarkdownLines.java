@@ -60,6 +60,11 @@ public final class MarkdownLines {
         return !kindAt(text, lineStart).equals(MarkdownBlocks.Kind.TEXT);
     }
 
+    /** Whether the line starting at {@code lineStart} is Markdown prose: not code, front matter or raw HTML. */
+    public static boolean isProse(String text, int lineStart) {
+        return !insideFence(text, lineStart);
+    }
+
     /** Whether the line starting at {@code lineStart} is a line of a fenced or indented code block. */
     static boolean insideCode(String text, int lineStart) {
         return switch (kindAt(text, lineStart)) {
@@ -126,6 +131,128 @@ public final class MarkdownLines {
                 } else if (!l.isTask()) {
                     lines[i] = (l.isListItem() ? l : l.withMarker("- "))
                             .withTask("[ ] ")
+                            .text();
+                }
+            }
+            return lines;
+        });
+    }
+
+    /**
+     * Toggles a numbered list on every line the selection covers: removes the markers when <em>all</em>
+     * non-blank lines are already numbered, otherwise numbers them 1, 2, 3… at each indentation level in
+     * turn — a bullet is replaced, a task box kept. Returns {@code null} when nothing changes.
+     */
+    public static MarkdownEdit toggleOrdered(String text, int selStart, int selEnd) {
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
+            boolean remove = all(lines, MarkdownLine::isOrdered);
+            java.util.Map<Integer, Long> next = new java.util.HashMap<>(); // indent width → next number
+            for (int i = 0; i < lines.length; i++) {
+                if (lines[i].isBlank()) {
+                    continue;
+                }
+                MarkdownLine l = MarkdownLine.parse(lines[i]);
+                if (remove) {
+                    lines[i] = l.withMarker("").text();
+                    continue;
+                }
+                int width = l.indent().length();
+                next.keySet().removeIf(w -> w > width); // a deeper list ended: it starts over next time
+                long n = next.merge(width, 1L, Long::sum);
+                String task = l.task();
+                lines[i] = l.withMarker(n + ". ").withTask(task).text();
+            }
+            return lines;
+        });
+    }
+
+    private static final Pattern QUOTE_MARK = Pattern.compile("^( {0,3})> ?");
+
+    /**
+     * Toggles a blockquote on the lines the selection covers: removes one {@code >} level when <em>every</em>
+     * line (blank ones aside) is quoted, otherwise quotes them all — blank lines inside the block too, so it
+     * stays one quote. Returns {@code null} when nothing changes.
+     */
+    public static MarkdownEdit toggleQuote(String text, int selStart, int selEnd) {
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
+            boolean any = false;
+            boolean remove = true;
+            for (String l : lines) {
+                if (!l.isBlank()) {
+                    any = true;
+                    remove &= QUOTE_MARK.matcher(l).find();
+                }
+            }
+            for (int i = 0; i < lines.length; i++) {
+                if (remove && any) {
+                    java.util.regex.Matcher m = QUOTE_MARK.matcher(lines[i]);
+                    lines[i] = m.find() ? m.group(1) + lines[i].substring(m.end()) : lines[i];
+                } else {
+                    lines[i] = lines[i].isBlank() && lines.length > 1 ? ">" : "> " + lines[i];
+                }
+            }
+            return lines;
+        });
+    }
+
+    private static final Pattern FENCE_LINE = Pattern.compile("^ {0,3}(`{3,}|~{3,})[^`]*$");
+
+    /**
+     * Wraps the lines the selection covers in a fenced code block — or, when the selection is exactly the
+     * body of one (a fence line directly above and below), takes the fences away. The fence is longer than
+     * any run of backticks at the start of a wrapped line. After wrapping the caret is behind the opening
+     * fence, where the language goes.
+     */
+    public static MarkdownEdit toggleFence(String text, int selStart, int selEnd) {
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        int aboveStart = b[0] == 0 ? -1 : lineStart(text, b[0] - 1);
+        int belowEnd = b[1] >= text.length() ? -1 : lineEnd(text, b[1] + 1);
+        if (aboveStart >= 0
+                && belowEnd >= 0
+                && FENCE_LINE.matcher(text.substring(aboveStart, b[0] - 1)).matches()
+                && FENCE_LINE.matcher(text.substring(b[1] + 1, belowEnd)).matches()) {
+            String body = text.substring(b[0], b[1]);
+            int shift = b[0] - aboveStart;
+            return new MarkdownEdit(
+                    aboveStart,
+                    belowEnd,
+                    body,
+                    Math.max(aboveStart, Math.min(selStart, selEnd) - shift),
+                    Math.max(aboveStart, Math.max(selStart, selEnd) - shift));
+        }
+        String body = text.substring(b[0], b[1]);
+        int longest = 2;
+        for (String line : body.split("\n", -1)) {
+            String t = line.stripLeading();
+            int run = 0;
+            while (run < t.length() && t.charAt(run) == '`') {
+                run++;
+            }
+            longest = Math.max(longest, run);
+        }
+        String fence = "`".repeat(longest + 1);
+        int at = b[0] + fence.length();
+        return new MarkdownEdit(b[0], b[1], fence + "\n" + body + "\n" + fence, at, at);
+    }
+
+    /**
+     * Ticks or unticks the task items among the lines the selection covers: all are unticked when every one
+     * is ticked, otherwise all are ticked. Returns {@code null} when none of the lines is a task item.
+     */
+    public static MarkdownEdit toggleDone(String text, int selStart, int selEnd) {
+        int[] b = LineEdits.block(text, selStart, selEnd);
+        return LineEdits.rewrite(text, b[0], b[1], selStart, selEnd, lines -> {
+            boolean allDone = true;
+            for (String l : lines) {
+                MarkdownLine m = MarkdownLine.parse(l);
+                allDone &= !m.isTask() || m.task().charAt(1) != ' ';
+            }
+            for (int i = 0; i < lines.length; i++) {
+                MarkdownLine m = MarkdownLine.parse(lines[i]);
+                if (m.isTask()) {
+                    lines[i] = m.withTask("[" + (allDone ? ' ' : 'x') + m.task().substring(2))
                             .text();
                 }
             }
@@ -340,15 +467,67 @@ public final class MarkdownLines {
         if (l.isOrdered()) {
             moved = moved.withMarker(l.markerNumbered(number));
         }
+        // Its children — the deeper lines under it — move with it, by the same number of columns.
+        int childEnd = childrenEnd(text, le, width);
+        String children = reindent(text.substring(le, childEnd), indent.length() - width);
         // The items after it: those at its new level carry on from it, those at its old level close the gap.
-        String tail = text.substring(le, runEnd(text, le, l.withIndent(outdent ? indent : l.indent())));
-        int end = le + tail.length();
+        String tail = text.substring(childEnd, runEnd(text, childEnd, l.withIndent(outdent ? indent : l.indent())));
+        int end = childEnd + tail.length();
         if (!tail.isEmpty()) {
             long oldLevelNext = outdent ? 1 : (anchor != null && anchor.isOrdered() ? anchor.number() + 1 : l.number());
             tail = renumberTail(tail, moved, l.isOrdered() ? number + 1 : -1);
             tail = renumberTail(tail, l, l.isOrdered() && (outdent || anchor.isOrdered()) ? oldLevelNext : -1);
         }
-        return new MarkdownEdit(ls, end, moved.text() + tail, ls, ls);
+        return new MarkdownEdit(ls, end, moved.text() + children + tail, ls, ls);
+    }
+
+    /** End of the lines after {@code le} that are deeper than {@code width} columns: an item's children. */
+    private static int childrenEnd(String text, int le, int width) {
+        int at = le;
+        while (at < text.length()) {
+            int end = lineEnd(text, at + 1);
+            String line = text.substring(at + 1, end);
+            if (line.isBlank()) {
+                // A blank line belongs to the item only when something deeper follows it.
+                int next = end;
+                String after = "";
+                while (next < text.length() && after.isBlank()) {
+                    int nextEnd = lineEnd(text, next + 1);
+                    after = text.substring(next + 1, nextEnd);
+                    next = nextEnd;
+                }
+                if (after.isBlank() || MarkdownLine.parse(after).indent().length() <= width) {
+                    break;
+                }
+            } else if (MarkdownLine.parse(line).indent().length() <= width) {
+                break;
+            }
+            at = end;
+        }
+        return at;
+    }
+
+    /** {@code lines} (each starting with a newline) moved {@code delta} columns right (or left, if negative). */
+    private static String reindent(String lines, int delta) {
+        if (delta == 0 || lines.isEmpty()) {
+            return lines;
+        }
+        String[] parts = lines.split("\n", -1);
+        for (int i = 1; i < parts.length; i++) {
+            if (parts[i].isBlank()) {
+                continue;
+            }
+            if (delta > 0) {
+                parts[i] = " ".repeat(delta) + parts[i];
+            } else {
+                int cut = 0;
+                while (cut < -delta && cut < parts[i].length() && parts[i].charAt(cut) == ' ') {
+                    cut++;
+                }
+                parts[i] = parts[i].substring(cut);
+            }
+        }
+        return String.join("\n", parts);
     }
 
     /**
@@ -358,6 +537,15 @@ public final class MarkdownLines {
      * edit's caret is {@code offset} on its text.
      */
     public static MarkdownEdit renumber(String text, int offset) {
+        return renumber(text, offset, offset);
+    }
+
+    /**
+     * {@link #renumber(String, int)} for a selection (a block of lines that was moved): the list is the one
+     * the selection starts in, and both ends of the selection are mapped into the result.
+     */
+    public static MarkdownEdit renumber(String text, int selStart, int selEnd) {
+        int offset = Math.min(selStart, selEnd);
         int ls = lineStart(text, offset);
         int le = lineEnd(text, offset);
         String line = text.substring(ls, le);
@@ -402,16 +590,29 @@ public final class MarkdownLines {
         if (lazy || after.equals(before)) {
             return null;
         }
-        // The caret's line may have changed width in front of it and in its own marker.
-        int lineIndex =
-                (int) text.substring(first, ls).chars().filter(c -> c == '\n').count();
-        String[] lines = after.split("\n", -1);
-        int newStart = first;
-        for (int i = 0; i < lineIndex; i++) {
-            newStart += lines[i].length() + 1;
-        }
-        int caret = newStart + LineEdits.mapColumn(offset - ls, line, lines[lineIndex]);
-        return new MarkdownEdit(first, end, after, caret, caret);
+        // A line may have changed width in front of an offset and in its own marker.
+        String[] old = before.split("\n", -1);
+        String[] now = after.split("\n", -1);
+        int from = first;
+        int to = end;
+        java.util.function.IntUnaryOperator map = o -> {
+            if (o < from) {
+                return o;
+            }
+            if (o > to) {
+                return o + after.length() - before.length();
+            }
+            int oldStart = from;
+            int newStart = from;
+            int i = 0;
+            while (i < old.length - 1 && oldStart + old[i].length() < o) {
+                oldStart += old[i].length() + 1;
+                newStart += now[i].length() + 1;
+                i++;
+            }
+            return newStart + LineEdits.mapColumn(o - oldStart, old[i], now[i]);
+        };
+        return new MarkdownEdit(first, end, after, map.applyAsInt(selStart), map.applyAsInt(selEnd));
     }
 
     /** The number of the last ordered item directly above {@code ls} at exactly {@code width} columns; 0 if none. */

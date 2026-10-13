@@ -57,7 +57,10 @@ public class FileBreadcrumb extends StackPane {
      * height it is given — so all of the bar's slack collected below the text, leaving the row visibly
      * bottom-heavy. A centring holder splits that slack evenly instead.
      */
-    private final StackPane crumbHolder = new StackPane(breadcrumbs);
+    /** After the path: where the caret is in a Markdown document's headings. */
+    private final MarkdownHeadingCrumbs headingCrumbs = new MarkdownHeadingCrumbs();
+
+    private final StackPane crumbHolder = new StackPane(new javafx.scene.layout.HBox(breadcrumbs, headingCrumbs));
 
     private final ScrollPane scroll = new ScrollPane(crumbHolder);
 
@@ -92,6 +95,8 @@ public class FileBreadcrumb extends StackPane {
     private boolean enabled;
 
     private Path currentFile;
+
+    private com.editora.editor.EditorBuffer attached;
 
     public FileBreadcrumb(Consumer<Path> onOpenFile) {
         this(onOpenFile, () -> null);
@@ -145,7 +150,20 @@ public class FileBreadcrumb extends StackPane {
     /** Enables/disables the bar (the user setting). Hidden entirely when disabled. */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+        headingCrumbs.attach(enabled ? attached : null); // a hidden bar follows no caret
         updateVisibility();
+    }
+
+    /** Points the bar at {@code buffer}'s file, and at the caret's heading path when it is Markdown. */
+    public void setActiveBuffer(com.editora.editor.EditorBuffer buffer) {
+        setActiveFile(buffer == null ? null : buffer.getPath());
+        headingCrumbs.attach(enabled ? buffer : null);
+        attached = buffer;
+    }
+
+    /** The heading crumbs, for tests. */
+    MarkdownHeadingCrumbs headingCrumbs() {
+        return headingCrumbs;
     }
 
     /** Points the bar at {@code file} (shown as its home-collapsed path), or clears it when {@code null}. */

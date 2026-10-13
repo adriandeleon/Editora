@@ -704,6 +704,15 @@ command/enable pair; adding a DAP adapter is one `Def` entry in `DapServerRegist
   pipe or socket write happens on the FX thread. `didOpen` / `didChange` / `didSave` are JSON-encoded on the
   writer thread (`DeferredSyncConsumer`); the incremental diff is still computed by the caller.
 - **URIs.** `DocumentUris` caches `Path.toUri().toString()` per path (the JDK stats the file on each call).
+- **Keys and wire URIs.** Inside `LspManager` a document is identified by its *key* (`DocumentUris.of`). What
+  a server is sent, and what it answers with, is a *wire* URI. Each `LanguageServerSession` owns a `WireUris`
+  that converts between the two: `toWire` where a request is built (`doc(key)` in the session,
+  `LspManager.serverUri(file)` for command arguments), `toKey`/`toPath` on anything read from a server
+  (locations, workspace edits via `EditBasis.uris()`, published diagnostics). For a local server both are the
+  same `file:` string (`WireUris.LOCAL`), so nothing changes today; the seam exists so a server on another
+  machine can be given `file:` URIs of its own filesystem. `LspWireUriFxTest` runs the manager against a fake
+  that uses different wire URIs and fails if a key reaches the server unconverted. Objects handed back to a
+  server unchanged (hierarchy items, code actions, `jdt:` URIs) stay in wire form.
 - **Consoles.** The Run/Build pump delivers each drain inside a `process/OutputBatch`; `ui/ConsoleAppender`
   applies it as one append, one style application and one trim, and drains start at least 16 ms apart. The
   Java debuggee's console gets this through the Run pump.

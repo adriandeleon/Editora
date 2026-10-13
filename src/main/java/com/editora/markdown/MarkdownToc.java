@@ -25,11 +25,15 @@ public final class MarkdownToc {
     private MarkdownToc() {}
 
     /**
-     * Whether the document's title — a single level-1 heading that comes first — is listed. It is, as it
-     * always was; the method is the one place a later setting has to reach.
+     * What a table of contents lists and how.
+     *
+     * @param minLevel the shallowest heading level listed (1–6)
+     * @param maxLevel the deepest heading level listed
+     * @param skipTitle leave out the document's title: a level-1 heading that comes first and is the only one
+     * @param ordered number the entries ({@code 1.}) instead of bulleting them
      */
-    static boolean includesTitle() {
-        return true;
+    public record Style(int minLevel, int maxLevel, boolean skipTitle, boolean ordered) {
+        public static final Style DEFAULT = new Style(1, 6, false, false);
     }
 
     private static final java.util.regex.Pattern BEGIN_MARK =
@@ -37,7 +41,7 @@ public final class MarkdownToc {
     private static final java.util.regex.Pattern END_MARK =
             java.util.regex.Pattern.compile("<!--\\s*/toc\\s*-->", java.util.regex.Pattern.CASE_INSENSITIVE);
     private static final java.util.regex.Pattern ENTRY =
-            java.util.regex.Pattern.compile("^\\s*[-*+] \\[.*\\]\\(#[^)]*\\)\\s*$");
+            java.util.regex.Pattern.compile("^\\s*(?:[-*+]|\\d+\\.) \\[.*\\]\\(#[^)]*\\)\\s*$");
 
     /** The TOC body (no markers) for {@code markdown}, all heading levels — or {@code ""} when there are none. */
     public static String build(String markdown) {
@@ -59,17 +63,25 @@ public final class MarkdownToc {
      * TOC sits directly under ("Contents") is not an entry of it.
      */
     static String build(String markdown, int minLevel, int maxLevel, int tocLine) {
+        return build(markdown, tocLine, new Style(minLevel, maxLevel, false, false));
+    }
+
+    /** The TOC body in {@code style} for a TOC standing at 0-based line {@code tocLine} (-1: nowhere yet). */
+    static String build(String markdown, int tocLine, Style style) {
+        int minLevel = style.minLevel();
+        int maxLevel = style.maxLevel();
         List<MarkdownOutline.Heading> all = MarkdownOutline.headings(markdown);
         int own = ownHeading(markdown, all, tocLine);
         if (own == 0 && all.get(0).level() == 1) {
             own = -1; // directly under the title: that is the document's heading, not the TOC's own
         }
-        boolean skipTitle = !includesTitle()
+        boolean skipTitle = style.skipTitle()
                 && !all.isEmpty()
                 && all.get(0).level() == 1
                 && all.stream().filter(h -> h.level() == 1).count() == 1;
         Map<String, Integer> seen = new HashMap<>();
         java.util.ArrayDeque<Integer> open = new java.util.ArrayDeque<>(); // levels of the entries we are inside
+        Map<Integer, Long> counters = new HashMap<>(); // nesting depth → entries so far at that depth
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < all.size(); i++) {
             MarkdownOutline.Heading h = all.get(i);
@@ -82,8 +94,12 @@ public final class MarkdownToc {
             while (!open.isEmpty() && open.peek() >= h.level()) {
                 open.pop();
             }
-            sb.append("  ".repeat(open.size()))
-                    .append("- [")
+            // A numbered entry's children start under its text: four columns clears "1. " up to "99. ".
+            int depth = open.size();
+            long n = style.ordered() ? counters.merge(depth, 1L, Long::sum) : 0;
+            counters.keySet().removeIf(d -> d > depth);
+            sb.append((style.ordered() ? "    " : "  ").repeat(depth))
+                    .append(style.ordered() ? n + ". [" : "- [")
                     .append(text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]"))
                     .append("](#")
                     .append(anchor)
@@ -135,6 +151,11 @@ public final class MarkdownToc {
      * it as the stale TOC, so a second block is never added beside it. The edit's caret is its start.
      */
     public static MarkdownEdit update(String doc, int minLevel, int maxLevel) {
+        return update(doc, new Style(minLevel, maxLevel, false, false));
+    }
+
+    /** {@link #update(String, int, int)} in {@code style}. */
+    public static MarkdownEdit update(String doc, Style style) {
         if (doc == null) {
             return null;
         }
@@ -154,7 +175,7 @@ public final class MarkdownToc {
                     .chars()
                     .filter(c -> c == '\n')
                     .count();
-            String block = wrapped(build(doc, minLevel, maxLevel, line));
+            String block = wrapped(build(doc, line, style));
             return new MarkdownEdit(begin.start(), end, block, begin.start(), begin.start());
         }
         return null;
@@ -181,12 +202,17 @@ public final class MarkdownToc {
      * no heading to list.
      */
     public static String insertion(String doc, int offset, int minLevel, int maxLevel) {
+        return insertion(doc, offset, new Style(minLevel, maxLevel, false, false));
+    }
+
+    /** {@link #insertion(String, int, int, int)} in {@code style}. */
+    public static String insertion(String doc, int offset, Style style) {
         int at = Math.max(0, Math.min(offset, doc.length()));
         int line = (int) doc.substring(0, at).chars().filter(c -> c == '\n').count();
         if (at > 0 && doc.charAt(at - 1) != '\n') {
             line++; // mid-line: the block goes on a line of its own, below
         }
-        String body = build(doc, minLevel, maxLevel, line);
+        String body = build(doc, line, style);
         return body.isEmpty() ? "" : wrapped(body);
     }
 

@@ -998,6 +998,18 @@ A backlog of planned features and improvements. Unordered within each section.
       (`play` returns a boolean now); `runSaved` did not finalize an in-progress recording. Deferred → #449
       (nested-command record order, latent). Verified-clean: the `playing` guard's `finally`, replay never
       re-recorded, no assist double-application, persistence, multi-window broadcast, recorder lifecycle.
+- [x] Markdown feature-gap pass (2026-10) — the small and medium gaps from the same review: parse extensions for
+      alerts, emoji, highlight, sup/sub, definition lists and math fences (`markdown/MarkdownAlerts`, `MarkdownEmoji`,
+      `MarkdownMarks`, `MarkdownDefinitions`), rendered by the preview and every export; preview to the side / in a
+      tab; completion for paths, anchors, reference labels, emoji, fence languages; link updates on rename/move
+      (`MarkdownLinkUpdater`, bounded scan, no persistent index); heading breadcrumb and project heading picker;
+      23 editing commands (lists, quotes, fences, tasks, footnotes, table move/sort, link tools, Paste as Markdown);
+      formatter and heading numbering; 29 more lint rules (two default-off), severities, fix on save, project lint;
+      status-bar word count; typewriter mode; self-contained HTML export. Settings schema 119.
+      **Left open:** text selection in the preview, wiki links/backlinks, slide export, grammar check (out of scope);
+      key bindings (owner's choice); the side preview has no zoom/Find and is not restored with the session; link
+      updates give closed files no Local History entry and skip HTML `<img src>`; PDF writes emoji as shortcodes and
+      highlight/sup/sub as plain text; inline snippet triggers still expand mid-sentence; completion-doc popup links.
 - [x] Markdown review fix pass (2026-10) — 87-finding UI/UX + code review of the preview, editing commands, lint,
       source highlighting/structure and the HTML/DOCX/ODT exports, fixed in two waves. Shared pieces: one pure block
       scanner `markdown/MarkdownBlocks` (fences with container indent, indented code, YAML/TOML front matter, HTML

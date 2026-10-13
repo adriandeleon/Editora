@@ -1,6 +1,5 @@
 package com.editora.lsp;
 
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -578,7 +577,7 @@ public final class LspManager {
         }
         Path wanted = com.editora.config.PathKeys.canonical(file);
         for (var entry : sessionByDocUri.entrySet()) {
-            Path open = uriToPath(entry.getKey());
+            Path open = DocumentUris.toPath(entry.getKey());
             if (open != null && wanted.equals(com.editora.config.PathKeys.canonical(open))) {
                 return entry.getValue().documentVersion(entry.getKey());
             }
@@ -591,12 +590,18 @@ public final class LspManager {
      * was sent (keyed by local path, as opened and canonical), and the wall-clock instant it was sent
      * ({@code 0} when no request time is known, e.g. an edit handed in without the request that produced it).
      */
-    record EditBasis(Map<Path, String> documents, long sentAtMillis) {
-        static final EditBasis UNKNOWN = new EditBasis(Map.of(), 0);
+    record EditBasis(Map<Path, String> documents, long sentAtMillis, WireUris uris) {
+        /** Nothing known, for an edit no session stands behind. One that came from a session uses {@link #unknown}. */
+        static final EditBasis UNKNOWN = unknown(WireUris.LOCAL);
+
+        /** Nothing known about the documents, but the edit's URIs are still {@code uris}'s server's. */
+        static EditBasis unknown(WireUris uris) {
+            return new EditBasis(Map.of(), 0, uris);
+        }
 
         /** The same documents, re-stamped with the moment a follow-up request is sent. */
         EditBasis sentNow() {
-            return new EditBasis(documents, System.currentTimeMillis());
+            return new EditBasis(documents, System.currentTimeMillis(), uris);
         }
     }
 
@@ -607,14 +612,14 @@ public final class LspManager {
 
     /** Request-time text for every open document in a session, stamped with the current time. */
     private static EditBasis editBasis(LanguageServerSession session) {
-        return new EditBasis(expectedDocuments(session), System.currentTimeMillis());
+        return new EditBasis(expectedDocuments(session), System.currentTimeMillis(), session.uris());
     }
 
     /** Request-time text for every open document in a session, keyed by local path. */
     private static Map<Path, String> expectedDocuments(LanguageServerSession session) {
         Map<Path, String> out = new java.util.LinkedHashMap<>();
         session.documentSnapshots().forEach((uri, text) -> {
-            Path path = uriToPath(uri);
+            Path path = DocumentUris.toPath(uri);
             if (path != null) {
                 out.put(path, text);
                 out.put(com.editora.config.PathKeys.canonical(path), text);
@@ -628,7 +633,7 @@ public final class LspManager {
     private record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
 
     private static EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
-        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit);
+        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit, basis.uris()::toPath);
         if (mapped == null) {
             return null;
         }
@@ -1434,7 +1439,7 @@ public final class LspManager {
             return;
         }
         for (LanguageServerSession s : sessionsByRoot.values()) {
-            List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root());
+            List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
             }
@@ -1443,6 +1448,11 @@ public final class LspManager {
 
     /** Pure: the {@code FileEvent}s for the changes under {@code root} (path-component containment). */
     static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root) {
+        return eventsUnderRoot(changes, root, WireUris.LOCAL);
+    }
+
+    /** As above, with each file named the way {@code uris}'s server names it. */
+    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root, WireUris uris) {
         Path rootNorm = root.toAbsolutePath().normalize();
         List<org.eclipse.lsp4j.FileEvent> out = new ArrayList<>();
         for (WatchedFile c : changes) {
@@ -1459,7 +1469,7 @@ public final class LspManager {
                         case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
                         case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
                     };
-            out.add(new org.eclipse.lsp4j.FileEvent(p.toUri().toString(), type));
+            out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(p.toUri().toString()), type));
         }
         return out;
     }
@@ -1728,7 +1738,7 @@ public final class LspManager {
             if (e == null && items != null) {
                 for (var i : items) {
                     if (i != null) {
-                        out.add(callNode(i));
+                        out.add(callNode(i, s.uris()));
                     }
                 }
             }
@@ -1749,7 +1759,7 @@ public final class LspManager {
                 if (e == null && calls != null) {
                     for (var c : calls) {
                         if (c != null && c.getFrom() != null) {
-                            out.add(callNode(c.getFrom()));
+                            out.add(callNode(c.getFrom(), s.uris()));
                         }
                     }
                 }
@@ -1761,7 +1771,7 @@ public final class LspManager {
                 if (e == null && calls != null) {
                     for (var c : calls) {
                         if (c != null && c.getTo() != null) {
-                            out.add(callNode(c.getTo()));
+                            out.add(callNode(c.getTo(), s.uris()));
                         }
                     }
                 }
@@ -1782,7 +1792,7 @@ public final class LspManager {
             if (e == null && items != null) {
                 for (var i : items) {
                     if (i != null) {
-                        out.add(typeNode(i));
+                        out.add(typeNode(i, s.uris()));
                     }
                 }
             }
@@ -1803,7 +1813,7 @@ public final class LspManager {
             if (e == null && items != null) {
                 for (var i : items) {
                     if (i != null) {
-                        out.add(typeNode(i));
+                        out.add(typeNode(i, s.uris()));
                     }
                 }
             }
@@ -1811,7 +1821,7 @@ public final class LspManager {
         });
     }
 
-    private static HierarchyNode callNode(org.eclipse.lsp4j.CallHierarchyItem i) {
+    private static HierarchyNode callNode(org.eclipse.lsp4j.CallHierarchyItem i, WireUris uris) {
         var pos = i.getSelectionRange() != null
                 ? i.getSelectionRange().getStart()
                 : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
@@ -1819,13 +1829,13 @@ public final class LspManager {
                 i.getName() == null ? "" : i.getName(),
                 i.getDetail() == null ? "" : i.getDetail(),
                 i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
-                uriToPath(i.getUri()),
+                uris.toPath(i.getUri()),
                 pos.getLine(),
                 pos.getCharacter(),
                 i);
     }
 
-    private static HierarchyNode typeNode(org.eclipse.lsp4j.TypeHierarchyItem i) {
+    private static HierarchyNode typeNode(org.eclipse.lsp4j.TypeHierarchyItem i, WireUris uris) {
         var pos = i.getSelectionRange() != null
                 ? i.getSelectionRange().getStart()
                 : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
@@ -1833,7 +1843,7 @@ public final class LspManager {
                 i.getName() == null ? "" : i.getName(),
                 i.getDetail() == null ? "" : i.getDetail(),
                 i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
-                uriToPath(i.getUri()),
+                uris.toPath(i.getUri()),
                 pos.getLine(),
                 pos.getCharacter(),
                 i);
@@ -2304,11 +2314,11 @@ public final class LspManager {
             if (error == null && result != null) {
                 if (result.isLeft()) {
                     for (org.eclipse.lsp4j.SymbolInformation si : result.getLeft()) {
-                        addSymbol(out, si.getName(), si.getContainerName(), si.getKind(), si.getLocation());
+                        addSymbol(out, si.getName(), si.getContainerName(), si.getKind(), si.getLocation(), s.uris());
                     }
                 } else if (result.getRight() != null) {
                     for (org.eclipse.lsp4j.WorkspaceSymbol ws : result.getRight()) {
-                        addSymbol(out, ws.getName(), ws.getContainerName(), ws.getKind(), ws.getLocation());
+                        addSymbol(out, ws.getName(), ws.getContainerName(), ws.getKind(), ws.getLocation(), s.uris());
                     }
                 }
             }
@@ -2322,11 +2332,12 @@ public final class LspManager {
             String name,
             String container,
             org.eclipse.lsp4j.SymbolKind kind,
-            Location loc) {
+            Location loc,
+            WireUris uris) {
         if (loc == null) {
             return;
         }
-        Path p = uriToPath(loc.getUri());
+        Path p = uris.toPath(loc.getUri());
         if (p == null) {
             return;
         }
@@ -2340,14 +2351,15 @@ public final class LspManager {
             String name,
             String container,
             org.eclipse.lsp4j.SymbolKind kind,
-            org.eclipse.lsp4j.jsonrpc.messages.Either<Location, org.eclipse.lsp4j.WorkspaceSymbolLocation> loc) {
+            org.eclipse.lsp4j.jsonrpc.messages.Either<Location, org.eclipse.lsp4j.WorkspaceSymbolLocation> loc,
+            WireUris uris) {
         if (loc == null) {
             return;
         }
         if (loc.isLeft()) {
-            addSymbol(out, name, container, kind, loc.getLeft());
+            addSymbol(out, name, container, kind, loc.getLeft(), uris);
         } else if (loc.getRight() != null) {
-            Path p = uriToPath(loc.getRight().getUri());
+            Path p = uris.toPath(loc.getRight().getUri());
             if (p != null) {
                 out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, 0, 0));
             }
@@ -2714,7 +2726,7 @@ public final class LspManager {
                     for (Location l : result.getLeft()) {
                         var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
                         if (range != null) {
-                            addDefinitionTarget(targets, l.getUri(), range.getStart());
+                            addDefinitionTarget(targets, s.uris(), l.getUri(), range.getStart());
                         }
                     }
                 } else if (result.getRight() != null) {
@@ -2723,7 +2735,7 @@ public final class LspManager {
                                 ? ll.getTargetSelectionRange()
                                 : ll.getTargetRange();
                         if (range != null) {
-                            addDefinitionTarget(targets, ll.getTargetUri(), range.getStart());
+                            addDefinitionTarget(targets, s.uris(), ll.getTargetUri(), range.getStart());
                         }
                     }
                 }
@@ -2749,8 +2761,8 @@ public final class LspManager {
         }
 
         /** What an edit this action carries (or resolves to) was computed against. */
-        EditBasis basis() {
-            return new EditBasis(expectedDocuments, requestedAtMillis);
+        EditBasis basis(WireUris uris) {
+            return new EditBasis(expectedDocuments, requestedAtMillis, uris);
         }
     }
 
@@ -2889,7 +2901,7 @@ public final class LspManager {
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
-        EditBasis expected = s == null ? EditBasis.UNKNOWN : new EditBasis(expectedDocuments(s), 0);
+        EditBasis expected = s == null ? EditBasis.UNKNOWN : new EditBasis(expectedDocuments(s), 0, s.uris());
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
             executeCommandExpectingEdit(file, cmd, expected, cb);
             return;
@@ -2946,8 +2958,10 @@ public final class LspManager {
             return;
         }
         Object raw = item.raw();
+        LanguageServerSession owner = sessionFor(file);
+        EditBasis basis = item.basis(owner == null ? WireUris.LOCAL : owner.uris());
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
-            executeCommandExpectingEdit(file, cmd, item.basis(), cb);
+            executeCommandExpectingEdit(file, cmd, basis, cb);
             return;
         }
         if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
@@ -2955,7 +2969,7 @@ public final class LspManager {
             return;
         }
         if (action.getEdit() != null) {
-            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), item.basis(), cb));
+            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), basis, cb));
             return;
         }
         LanguageServerSession s = sessionFor(file);
@@ -2965,7 +2979,7 @@ public final class LspManager {
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
-            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), item.basis(), cb));
+            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), basis, cb));
         });
     }
 
@@ -3056,8 +3070,12 @@ public final class LspManager {
      * unknown and is refused as before.
      */
     static EditBasis versionedBasis(LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit) {
-        if (session == null || edit == null || edit.getDocumentChanges() == null) {
+        if (session == null) {
             return EditBasis.UNKNOWN;
+        }
+        WireUris uris = session.uris();
+        if (edit == null || edit.getDocumentChanges() == null) {
+            return EditBasis.unknown(uris);
         }
         Map<String, String> snapshots = null;
         Map<Path, String> documents = new java.util.LinkedHashMap<>();
@@ -3068,20 +3086,21 @@ public final class LspManager {
             if (id == null || id.getUri() == null || id.getVersion() == null) {
                 continue;
             }
-            Path path = uriToPath(id.getUri());
-            if (path == null || !id.getVersion().equals(session.documentVersion(id.getUri()))) {
+            Path path = uris.toPath(id.getUri());
+            String key = uris.toKey(id.getUri());
+            if (path == null || !id.getVersion().equals(session.documentVersion(key))) {
                 continue;
             }
             if (snapshots == null) {
                 snapshots = session.documentSnapshots();
             }
-            String text = snapshots.get(id.getUri());
+            String text = snapshots.get(key);
             if (text != null) {
                 documents.put(path, text);
                 documents.put(com.editora.config.PathKeys.canonical(path), text);
             }
         }
-        return documents.isEmpty() ? EditBasis.UNKNOWN : new EditBasis(Map.copyOf(documents), 0);
+        return documents.isEmpty() ? EditBasis.unknown(uris) : new EditBasis(Map.copyOf(documents), 0, uris);
     }
 
     /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */
@@ -3109,7 +3128,7 @@ public final class LspManager {
                 for (Location l : locations) {
                     var range = l.getRange(); // guard against a server omitting the spec-required range
                     if (range != null) {
-                        addTarget(targets, l.getUri(), range.getStart());
+                        addTarget(targets, s.uris(), l.getUri(), range.getStart());
                     }
                 }
             }
@@ -3520,11 +3539,15 @@ public final class LspManager {
     }
 
     private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
-        Path file = uriToPath(params.getUri());
-        if (file == null || source == null || source.isDisposed()) {
+        if (source == null || source.isDisposed()) {
             return;
         }
-        String sourceUri = managedDocumentUri(source, file, params.getUri());
+        String reported = source.uris().toKey(params.getUri());
+        Path file = DocumentUris.toPath(reported);
+        if (file == null) {
+            return;
+        }
+        String sourceUri = managedDocumentUri(source, file, reported);
         if (params.getVersion() != null
                 && (sourceUri == null
                         || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
@@ -3571,7 +3594,7 @@ public final class LspManager {
         Path canonical = null;
         for (var entry : sessionByDocUri.entrySet()) {
             if (entry.getValue() == source) {
-                Path openPath = uriToPath(entry.getKey());
+                Path openPath = DocumentUris.toPath(entry.getKey());
                 if (openPath == null) {
                     continue;
                 }
@@ -3591,8 +3614,8 @@ public final class LspManager {
         return null;
     }
 
-    private static void addTarget(List<Target> out, String uri, Position start) {
-        Path p = uriToPath(uri);
+    private static void addTarget(List<Target> out, WireUris uris, String uri, Position start) {
+        Path p = uris.toPath(uri);
         if (p != null && start != null) {
             out.add(new Target(p, start.getLine(), start.getCharacter()));
         }
@@ -3604,11 +3627,11 @@ public final class LspManager {
      * {@code String}/{@code List}/any dependency symbol report "no definition" — the most common Java
      * navigation (#665). References stay file-only (the References panel is file-based).
      */
-    private static void addDefinitionTarget(List<Target> out, String uri, Position start) {
+    private static void addDefinitionTarget(List<Target> out, WireUris uris, String uri, Position start) {
         if (start == null) {
             return;
         }
-        Path p = uriToPath(uri);
+        Path p = uris.toPath(uri);
         if (p != null) {
             out.add(new Target(p, start.getLine(), start.getCharacter()));
         } else if (uri != null && uri.startsWith(JDT_SCHEME)) {
@@ -3677,7 +3700,7 @@ public final class LspManager {
         }
         EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
                 ? editBasis(s)
-                : new EditBasis(expectedAtAction, System.currentTimeMillis());
+                : new EditBasis(expectedAtAction, System.currentTimeMillis(), s.uris());
         s.rawRequest(
                         kind.generateRequest(),
                         JdtlsGenerate.generateParams(
@@ -3730,7 +3753,7 @@ public final class LspManager {
         }
         EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
                 ? editBasis(s)
-                : new EditBasis(expectedAtAction, System.currentTimeMillis());
+                : new EditBasis(expectedAtAction, System.currentTimeMillis(), s.uris());
         s.rawRequest(method, params).whenComplete((r, e) -> {
             JsonElement json = e != null ? null : asJson(r);
             String refused = JdtlsRefactor.errorMessage(json);
@@ -3785,7 +3808,7 @@ public final class LspManager {
         // The params go over the wire as a STRINGIFIED json — an object argument deserializes to null
         // server-side (established empirically; see JdtlsPaste).
         String params = JdtlsPaste.paramsJson(
-                uri(file), startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces);
+                s.uris().toWire(uri(file)), startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces);
         EditBasis expected = editBasis(s);
         s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -3817,7 +3840,7 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        String params = JdtlsSmartSemicolon.paramsJson(uri(file), line, character);
+        String params = JdtlsSmartSemicolon.paramsJson(s.uris().toWire(uri(file)), line, character);
         s.executeCommand(JdtlsSmartSemicolon.COMMAND, List.of(params))
                 .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
@@ -3856,7 +3879,7 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        executeCommand(file, "java.project.isTestFile", List.of(uri(file)), (result, error) -> {
+        executeCommand(file, "java.project.isTestFile", List.of(serverUri(file)), (result, error) -> {
             Boolean answer = error != null ? null : asBoolean(result);
             cb.accept(answer);
         });
@@ -3945,7 +3968,7 @@ public final class LspManager {
         }
         var range = new org.eclipse.lsp4j.Range(new Position(0, 0), new Position(lastLine, lastChar));
         var params = new org.eclipse.lsp4j.CodeActionParams(
-                new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)),
+                new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)),
                 range,
                 new org.eclipse.lsp4j.CodeActionContext(List.of()));
         EditBasis expected = editBasis(s);
@@ -3974,7 +3997,7 @@ public final class LspManager {
             return;
         }
         var params = new org.eclipse.lsp4j.TextDocumentPositionParams(
-                new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)), new Position(line, character));
+                new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)), new Position(line, character));
         executeCommand(file, "java.getFullyQualifiedName", List.of(params), (result, error) -> {
             String name = error != null ? null : rawStringResult(result);
             cb.accept(name == null || name.isBlank() ? null : name);
@@ -3991,7 +4014,8 @@ public final class LspManager {
     public void reloadProjectConfiguration(Path file) {
         LanguageServerSession s = sessionFor(file);
         if (s != null && file != null) {
-            s.rawNotify("java/projectConfigurationUpdate", new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)));
+            s.rawNotify(
+                    "java/projectConfigurationUpdate", new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)));
         }
     }
 
@@ -4048,11 +4072,21 @@ public final class LspManager {
         return DocumentUris.of(file);
     }
 
-    private static Path uriToPath(String uri) {
-        try {
-            return Path.of(URI.create(uri));
-        } catch (RuntimeException e) {
-            return null;
-        }
+    /**
+     * {@code file}'s URI as its language server knows it — what a server command takes as an argument. The
+     * same string as the document's key for a server on this machine.
+     */
+    public String serverUri(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return (s == null ? WireUris.LOCAL : s.uris()).toWire(uri(file));
+    }
+
+    /**
+     * The file a URI answered by {@code anchorFile}'s server names, or {@code null} when it is not a file
+     * (a {@code jdt:} class file, say).
+     */
+    public Path pathForServerUri(Path anchorFile, String uri) {
+        LanguageServerSession s = sessionFor(anchorFile);
+        return (s == null ? WireUris.LOCAL : s.uris()).toPath(uri);
     }
 }

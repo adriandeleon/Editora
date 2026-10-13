@@ -92,6 +92,12 @@ final class LanguageServerSession implements LanguageClient {
         t.setDaemon(true);
         return t;
     });
+    /**
+     * How this server names documents. Every {@code String uri} parameter below is a document <em>key</em>
+     * (what {@code LspManager} routes by); it becomes the server's URI only where a request is built.
+     */
+    private volatile WireUris uris = WireUris.LOCAL;
+
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
     /** Per-document shadow of the text the server last received — the diff base for incremental sync
      *  (#678). Invariant: after every send, {@code shadows.get(uri)} equals the server's document. */
@@ -420,7 +426,7 @@ final class LanguageServerSession implements LanguageClient {
     private void sendInitialize() {
         InitializeParams ip = new InitializeParams();
         ip.setProcessId((int) ProcessHandle.current().pid());
-        String uri = root.toUri().toString();
+        String uri = uris.toWire(root.toUri().toString());
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));
         ip.setCapabilities(clientCapabilities());
@@ -741,6 +747,19 @@ final class LanguageServerSession implements LanguageClient {
      * <p>Flushes the pending queue exactly as the real handshake does, so a test can also exercise the
      * queue-until-ready path by calling document methods before attaching.
      */
+    WireUris uris() {
+        return uris;
+    }
+
+    /** TEST SEAM: a server that names documents differently from their keys, as a remote one will. */
+    void setUrisForTest(WireUris testUris) {
+        uris = testUris;
+    }
+
+    private TextDocumentIdentifier doc(String key) {
+        return new TextDocumentIdentifier(uris.toWire(key));
+    }
+
     void attachForTest(LanguageServer testServer, ServerCapabilities caps) {
         this.server = testServer;
         this.capabilities = caps;
@@ -862,7 +881,8 @@ final class LanguageServerSession implements LanguageClient {
             shadows.put(uri, text); // update in the same order as the wire notification
             sendsSinceResync.remove(uri);
             server.getTextDocumentService()
-                    .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, languageId, 1, text)));
+                    .didOpen(
+                            new DidOpenTextDocumentParams(new TextDocumentItem(uris.toWire(uri), languageId, 1, text)));
         });
     }
 
@@ -888,8 +908,8 @@ final class LanguageServerSession implements LanguageClient {
             }
             int version = versions.merge(uri, 1, Integer::sum);
             server.getTextDocumentService()
-                    .didChange(
-                            new DidChangeTextDocumentParams(new VersionedTextDocumentIdentifier(uri, version), events));
+                    .didChange(new DidChangeTextDocumentParams(
+                            new VersionedTextDocumentIdentifier(uris.toWire(uri), version), events));
         });
         return !identical[0]; // a send still queued for initialize has compared nothing yet: reported as sent
     }
@@ -948,8 +968,7 @@ final class LanguageServerSession implements LanguageClient {
     void didSave(String uri, String savedText) {
         whenReady(() -> {
             String text = saveIncludesText() ? savedText : null;
-            server.getTextDocumentService()
-                    .didSave(new DidSaveTextDocumentParams(new TextDocumentIdentifier(uri), text));
+            server.getTextDocumentService().didSave(new DidSaveTextDocumentParams(doc(uri), text));
         });
     }
 
@@ -978,7 +997,7 @@ final class LanguageServerSession implements LanguageClient {
             versions.remove(uri);
             shadows.remove(uri); // remove in wire order; queued changes before this still need their base
             sendsSinceResync.remove(uri);
-            server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(uri)));
+            server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(doc(uri)));
         });
     }
 
@@ -1127,7 +1146,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var context = new org.eclipse.lsp4j.CodeActionContext(diagnostics == null ? List.of() : diagnostics);
-        var params = new org.eclipse.lsp4j.CodeActionParams(new TextDocumentIdentifier(uri), range, context);
+        var params = new org.eclipse.lsp4j.CodeActionParams(doc(uri), range, context);
         return bounded(server.getTextDocumentService().codeAction(params))
                 .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(
                         l -> l == null ? List.of() : List.copyOf(l))
@@ -1247,7 +1266,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var params = new org.eclipse.lsp4j.SignatureHelpParams(new TextDocumentIdentifier(uri), pos);
+        var params = new org.eclipse.lsp4j.SignatureHelpParams(doc(uri), pos);
         var context = new org.eclipse.lsp4j.SignatureHelpContext();
         if (triggerChar == null) {
             context.setTriggerKind(
@@ -1271,7 +1290,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var params = new org.eclipse.lsp4j.DocumentHighlightParams(new TextDocumentIdentifier(uri), pos);
+        var params = new org.eclipse.lsp4j.DocumentHighlightParams(doc(uri), pos);
         var request = bounded(server.getTextDocumentService().documentHighlight(params));
         return cancelling(request, request.exceptionally(t -> List.of()));
     }
@@ -1287,7 +1306,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var params = new org.eclipse.lsp4j.PrepareRenameParams(new TextDocumentIdentifier(uri), pos);
+        var params = new org.eclipse.lsp4j.PrepareRenameParams(doc(uri), pos);
         return bounded(server.getTextDocumentService().prepareRename(params)).exceptionally(t -> null);
     }
 
@@ -1296,7 +1315,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var params = new org.eclipse.lsp4j.RenameParams(new TextDocumentIdentifier(uri), pos, newName);
+        var params = new org.eclipse.lsp4j.RenameParams(doc(uri), pos, newName);
         return bounded(server.getTextDocumentService().rename(params)).exceptionally(t -> null);
     }
 
@@ -1321,7 +1340,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var params = new org.eclipse.lsp4j.InlayHintParams(new TextDocumentIdentifier(uri), range);
+        var params = new org.eclipse.lsp4j.InlayHintParams(doc(uri), range);
         var request = bounded(server.getTextDocumentService().inlayHint(params));
         return cancelling(
                 request,
@@ -1342,8 +1361,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var request = bounded(server.getTextDocumentService()
-                .codeLens(new org.eclipse.lsp4j.CodeLensParams(new TextDocumentIdentifier(uri))));
+        var request = bounded(server.getTextDocumentService().codeLens(new org.eclipse.lsp4j.CodeLensParams(doc(uri))));
         var options = capabilities() == null ? null : capabilities().getCodeLensProvider();
         boolean resolves = options != null && Boolean.TRUE.equals(options.getResolveProvider());
         List<CompletableFuture<org.eclipse.lsp4j.CodeLens>> resolving =
@@ -1390,7 +1408,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var params = new org.eclipse.lsp4j.CallHierarchyPrepareParams(new TextDocumentIdentifier(uri), pos);
+        var params = new org.eclipse.lsp4j.CallHierarchyPrepareParams(doc(uri), pos);
         return bounded(server.getTextDocumentService().prepareCallHierarchy(params))
                 .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1427,7 +1445,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var params = new org.eclipse.lsp4j.TypeHierarchyPrepareParams(new TextDocumentIdentifier(uri), pos);
+        var params = new org.eclipse.lsp4j.TypeHierarchyPrepareParams(doc(uri), pos);
         return bounded(server.getTextDocumentService().prepareTypeHierarchy(params))
                 .<List<org.eclipse.lsp4j.TypeHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1463,7 +1481,7 @@ final class LanguageServerSession implements LanguageClient {
     CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
             String uri, Position pos, org.eclipse.lsp4j.CompletionContext context) {
         if (!ready()) return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-        var params = new CompletionParams(new TextDocumentIdentifier(uri), pos);
+        var params = new CompletionParams(doc(uri), pos);
         params.setContext(context);
         return bounded(server.getTextDocumentService().completion(params));
     }
@@ -1473,7 +1491,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        DocumentFormattingParams params = new DocumentFormattingParams(new TextDocumentIdentifier(uri), options);
+        DocumentFormattingParams params = new DocumentFormattingParams(doc(uri), options);
         return bounded(server.getTextDocumentService().formatting(params)).exceptionally(t -> List.of());
     }
 
@@ -1484,7 +1502,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         org.eclipse.lsp4j.DocumentRangeFormattingParams params =
-                new org.eclipse.lsp4j.DocumentRangeFormattingParams(new TextDocumentIdentifier(uri), options, range);
+                new org.eclipse.lsp4j.DocumentRangeFormattingParams(doc(uri), options, range);
         return bounded(server.getTextDocumentService().rangeFormatting(params)).exceptionally(t -> List.of());
     }
 
@@ -1506,7 +1524,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return bounded(server.getTextDocumentService().hover(new HoverParams(new TextDocumentIdentifier(uri), pos)));
+        return bounded(server.getTextDocumentService().hover(new HoverParams(doc(uri), pos)));
     }
 
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
@@ -1514,8 +1532,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(
-                server.getTextDocumentService().definition(new DefinitionParams(new TextDocumentIdentifier(uri), pos)));
+        return bounded(server.getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)));
     }
 
     /**
@@ -1527,8 +1544,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        var params =
-                new org.eclipse.lsp4j.DocumentOnTypeFormattingParams(new TextDocumentIdentifier(uri), options, pos, ch);
+        var params = new org.eclipse.lsp4j.DocumentOnTypeFormattingParams(doc(uri), options, pos, ch);
         return bounded(server.getTextDocumentService().onTypeFormatting(params))
                 .<List<org.eclipse.lsp4j.TextEdit>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
@@ -1542,7 +1558,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
         return bounded(server.getTextDocumentService()
-                .implementation(new org.eclipse.lsp4j.ImplementationParams(new TextDocumentIdentifier(uri), pos)));
+                .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
     }
 
     /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
@@ -1553,7 +1569,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
         return bounded(server.getTextDocumentService()
-                .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(new TextDocumentIdentifier(uri), pos)));
+                .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(doc(uri), pos)));
     }
 
     /** The declaration of the symbol at a position ({@code textDocument/declaration}); most servers alias
@@ -1563,8 +1579,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(Either.forLeft(List.of()));
         }
-        return bounded(server.getTextDocumentService()
-                .declaration(new org.eclipse.lsp4j.DeclarationParams(new TextDocumentIdentifier(uri), pos)));
+        return bounded(
+                server.getTextDocumentService().declaration(new org.eclipse.lsp4j.DeclarationParams(doc(uri), pos)));
     }
 
     /** Foldable regions for the whole document ({@code textDocument/foldingRange}, #738); empty on error. */
@@ -1573,7 +1589,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var request = bounded(server.getTextDocumentService()
-                .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(new TextDocumentIdentifier(uri))));
+                .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(doc(uri))));
         return cancelling(
                 request,
                 request.<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
@@ -1586,8 +1602,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         return bounded(server.getTextDocumentService()
-                        .selectionRange(
-                                new org.eclipse.lsp4j.SelectionRangeParams(new TextDocumentIdentifier(uri), positions)))
+                        .selectionRange(new org.eclipse.lsp4j.SelectionRangeParams(doc(uri), positions)))
                 .<List<org.eclipse.lsp4j.SelectionRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                 .exceptionally(t -> List.of());
     }
@@ -1596,7 +1611,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        ReferenceParams params = new ReferenceParams(new TextDocumentIdentifier(uri), pos, new ReferenceContext(true));
+        ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(true));
         return bounded(server.getTextDocumentService().references(params));
     }
 
@@ -1622,8 +1637,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(java.util.List.of());
         }
-        var request = bounded(server.getTextDocumentService()
-                .documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(new TextDocumentIdentifier(uri))));
+        var request = bounded(
+                server.getTextDocumentService().documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(doc(uri))));
         return cancelling(request, request.exceptionally(t -> java.util.List.of()));
     }
 
@@ -1632,8 +1647,8 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return bounded(server.getTextDocumentService()
-                .diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(new TextDocumentIdentifier(uri))));
+        return bounded(
+                server.getTextDocumentService().diagnostic(new org.eclipse.lsp4j.DocumentDiagnosticParams(doc(uri))));
     }
 
     /** Semantic tokens over {@code range} ({@code textDocument/semanticTokens/range}); null when not ready. */
@@ -1642,8 +1657,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var request = bounded(server.getTextDocumentService()
-                .semanticTokensRange(
-                        new org.eclipse.lsp4j.SemanticTokensRangeParams(new TextDocumentIdentifier(uri), range)));
+                .semanticTokensRange(new org.eclipse.lsp4j.SemanticTokensRangeParams(doc(uri), range)));
         return cancelling(request, request.exceptionally(t -> null));
     }
 
@@ -1656,7 +1670,7 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        var params = new org.eclipse.lsp4j.SemanticTokensDeltaParams(new TextDocumentIdentifier(uri), previousResultId);
+        var params = new org.eclipse.lsp4j.SemanticTokensDeltaParams(doc(uri), previousResultId);
         var request = bounded(server.getTextDocumentService().semanticTokensFullDelta(params));
         return cancelling(request, request.exceptionally(t -> null));
     }
@@ -1668,7 +1682,7 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var request = bounded(server.getTextDocumentService()
-                .semanticTokensFull(new org.eclipse.lsp4j.SemanticTokensParams(new TextDocumentIdentifier(uri))));
+                .semanticTokensFull(new org.eclipse.lsp4j.SemanticTokensParams(doc(uri))));
         return cancelling(request, request.exceptionally(t -> null));
     }
 

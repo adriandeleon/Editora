@@ -411,17 +411,17 @@ class ConfigMigrationsTest {
         assertEquals(java.util.List.of("yaml", "java"), kept.getSpellDisabledLanguages());
     }
 
-    /** v118→119: remoteExecution is new — nobody's editor starts running commands on a server on upgrade. */
+    /** v119→120: remoteExecution is new — nobody's editor starts running commands on a server on upgrade. */
     @Test
     void remoteExecutionArrivesOffWithoutTouchingAnythingElse() throws Exception {
-        JsonNode v118 = mapper.readTree("{\"schemaVersion\":118,\"fontSize\":15}");
+        JsonNode v119 = mapper.readTree("{\"schemaVersion\":119,\"fontSize\":15}");
 
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v118.deepCopy(), mapper);
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v119.deepCopy(), mapper);
 
         assertEquals(15, out.get("fontSize").asInt());
         assertFalse(out.has("remoteExecution"), "left to the default");
         assertFalse(mapper.treeToValue(out, com.editora.config.Settings.class).isRemoteExecution());
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":119,\"remoteExecution\":true}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":120,\"remoteExecution\":true}");
         assertTrue(mapper.treeToValue(chosen, com.editora.config.Settings.class).isRemoteExecution());
     }
 

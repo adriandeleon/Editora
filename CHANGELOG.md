@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown: more syntax, in the preview and in every export.** GitHub alerts (`> [!NOTE]`, `[!TIP]`,
+  `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), emoji shortcodes (`:rocket:`), `==highlight==`, `^superscript^` and
+  `~subscript~`, definition lists, ```` ```math ```` fences and `\(…\)` / `\[…\]` math. In the preview: task
+  checkboxes can be clicked to tick the source, a double-click on a block puts the caret on its source line, the
+  block holding the caret is marked in Split, code blocks show their language, an image or diagram enlarges on
+  click, front matter is a table (and can be hidden), and an empty document says so.
+- **Markdown preview to the side or in its own tab** (`View: Markdown Preview to the Side`, `View: Markdown Preview
+  in a Tab`), following the active Markdown file or locked to one.
+- **Markdown completion:** relative paths after `](`, heading anchors after `#` (this file and `file.md#`),
+  reference labels, emoji after `:`, languages after a fence, and Mermaid keywords inside a Mermaid fence.
+- **Markdown links follow a renamed or moved file.** Renaming or moving a file in the project offers to update the
+  Markdown links that point to it, and a moved document's own relative links; the setting chooses ask (default),
+  always or never.
+- **Markdown navigation:** the breadcrumb shows the path of headings at the caret, and
+  `Project: Go to Markdown Heading…` searches the headings of every Markdown file in the project.
+- **Markdown editing commands:** numbered list, block quote and code block toggles, Toggle Task Done, Renumber List,
+  Insert Footnote, Insert Date, Insert Horizontal Rule and Insert Image…; table tools to move a row or column, sort
+  by a column, insert a row above or a column to the left, and delete the table; link tools to edit a link, remove
+  it, or convert between inline and reference links; `Markdown: Paste as Markdown` turns copied HTML or spreadsheet
+  cells into Markdown, and an ordinary paste does the same for HTML that holds a table, link, list or heading. Tab
+  and Shift-Tab move a list item with its children; `*` and `_` are paired like other markers.
+- **Markdown: Format Document / Format Selection** normalises list markers and numbering, emphasis style, heading
+  style, blank lines around blocks, table alignment and trailing whitespace, leaving code, front matter and HTML
+  alone. `Markdown: Number Headings` and `Remove Heading Numbers` add, update and remove section numbers.
+- **Markdown lint: 29 more rules** — MD003, MD004, MD005, MD007, MD011, MD013, MD024, MD029, MD030, MD032, MD033,
+  MD035, MD036, MD037, MD038, MD039, MD042, MD045, MD046, MD048, MD049, MD050, MD051, MD053, MD055, MD056, MD058, and
+  two of Editora's own: `LINK001` (a relative link or image whose file does not exist) and `LINK002` (a link to a
+  heading that is not in the linked file). Eleven have fixes. MD013 (line length) and MD033 (inline HTML) are off
+  until enabled; MD024 flags repeated headings among siblings only. Also new: a severity per rule (error, warning,
+  hint), Fix on Save, Fix Issues in Selection, Disable for This File / This Project, `Markdown Lint: Lint Project`
+  with results grouped by file, an issue count in the status bar, and open files are re-linted when a
+  `.markdownlint` file changes.
+- **Markdown settings:** default view for Markdown files, preview font size and column width, scroll sync, hide
+  front matter, smart typography (curly quotes, dashes, ellipsis), table-of-contents options (skip the title,
+  numbered, update on save), name pattern and alt-text prompt for pasted images, lint fix-on-save and severities,
+  link updates on rename, and for HTML export: embed images and highlight code (both on).
+- **Status bar word count** for Markdown and plain text, with the selection's count and reading time; **typewriter
+  mode** keeps the caret line centred while typing. Lists and block quotes fold.
+- **Exported HTML is self-contained:** local images are embedded, code blocks are highlighted, and Mermaid diagrams
+  are drawn when the Mermaid CLI is available.
 - **Remote: a setting to run commands on the host (groundwork).** Settings → Remote has a new switch, off by
   default, and there is a `Remote: Toggle Running Commands on the Host` command. It allows the tools Editora
   drives to run on the host of a remote (SFTP) folder over the same SSH connection. No tool uses it yet: Run,
@@ -43,6 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Markdown strikethrough needs two tildes in the preview** (`~~struck~~`); a single tilde attached to a word is now
+  a subscript (`H~2~O`). An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
+  Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
 - **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
   keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word
   wrap on, everything still wraps. Toggle Word Wrap flips the preference that governs the file in front. A buffer

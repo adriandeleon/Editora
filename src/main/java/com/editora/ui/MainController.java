@@ -1312,18 +1312,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The Markdown Lint panel, built on its first use (the window's open runs the scan that fills it). */
     private MarkdownLintPanel markdownLintPanel() {
         if (markdownLintPanel == null) {
-            markdownLintPanel = new MarkdownLintPanel(previews.lint(), new MarkdownLintPanel.Actions() {
-                @Override
-                public void open(java.nio.file.Path file, int line, int col) {
-                    fileWorkflows.openPath(file);
-                    Platform.runLater(() -> sessions.gotoInFile(file, line, col));
-                }
-
-                @Override
-                public void refresh() {
-                    previews.runMarkdownLintScan();
-                }
-            });
+            markdownLintPanel = new MarkdownLintPanel(
+                    previews.lint(),
+                    MarkdownLintPanel.actions(
+                            (file, line, col) -> openAndGoto(file, line - 1, col - 1), previews::runMarkdownLintScan));
         }
         return markdownLintPanel;
     }
@@ -1366,6 +1358,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setOnExternalChanges((changes, complete) -> {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
             indexCoordinator.onExternalChanges(changes, complete);
+            previews.lint().onExternalChanges(changes); // a changed .markdownlint* re-lints open buffers
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
@@ -1504,7 +1497,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 historyCoordinator == null ? null : () -> historyCoordinator.shutdown(),
                 () -> searchCoordinator.shutdown(),
                 () -> todoCoordinator.shutdown(),
-                () -> previews.markdownLintService.shutdown(),
+                () -> previews.shutdownLint(),
                 () -> mermaid.shutdown(),
                 () -> diagram.shutdown(),
                 () -> typst.shutdown(),
@@ -2170,7 +2163,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             lspCoordinator.requestStructureSymbols(
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
-            breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            breadcrumb.setActiveBuffer(buffer);
             // Sort the Problems / TODO tool windows so the active file's group is on top (IDE convention).
             // Problems is keyed by canonical (LSP) paths; TODO by as-walked (scan) paths.
             Path activePath = buffer == null ? null : buffer.getPath();
@@ -2805,15 +2798,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
-        com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
-        com.editora.editor.PreviewImageLoader.setRemoteImages(
-                config.getSettings().isMarkdownRemoteImages());
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.hasPreview()) {
-                b.refreshPreview();
-            }
-        }
+        previews.applyPreviewSettings();
     }
 
     // --- Feature coordinators (each peeled off MainController; share one CoordinatorHost adapter) -----
@@ -4506,6 +4491,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public StatusBar statusBar() {
+            return statusBar;
+        }
+
+        @Override
         public ToolWindow markdownLintToolWindow() {
             return markdownLintToolWindow;
         }
@@ -4563,6 +4553,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean appThemeDark() {
             return MainController.this.appThemeDark();
+        }
+
+        @Override
+        public Tab addContentTab(com.editora.editor.TabContent content) {
+            return MainController.this.addContentTab(content, true);
         }
 
         @Override
@@ -8302,7 +8297,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
         buffer.setInsertTypstTableHandler(() -> previews.showTableSizePicker(buffer::insertTypstTable)); // Typst #table
-        buffer.setTypstImageHandler(() -> editing.insertTypstImageFromChooser(buffer)); // Typst "Insert Image" menu
+        buffer.setTypstImageHandler(() -> editing.insertImageFromChooser(buffer)); // Typst "Insert Image" menu
         buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
         buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).

@@ -366,6 +366,194 @@ class MarkdownEditingFxTest {
         });
     }
 
+    // ---- feature-gap pass ----
+
+    @Test
+    void theNewLineCommandsAreOneUndoStepEach() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("«a\nb»\n");
+            CodeArea area = buffer.getArea();
+            area.getUndoManager().forgetHistory();
+            buffer.markdown().formatOrderedList();
+            assertEquals("«1. a\n2. b»\n", shown(buffer));
+            area.undo();
+            assertEquals("a\nb\n", area.getText());
+
+            place(area, "qu‸ote\n");
+            buffer.markdown().formatBlockquote();
+            assertEquals("> qu‸ote\n", shown(buffer));
+
+            place(area, "«int x;»\n");
+            buffer.markdown().formatCodeFence();
+            assertEquals("```‸\nint x;\n```\n", shown(buffer), "the caret waits for the language");
+
+            place(area, "- [ ] ta‸sk\n");
+            assertTrue(buffer.markdown().toggleTaskDone());
+            assertEquals("- [x] ta‸sk\n", shown(buffer));
+            place(area, "pla‸in\n");
+            assertFalse(buffer.markdown().toggleTaskDone());
+
+            place(area, "A claim‸ here.\n");
+            area.getUndoManager().forgetHistory();
+            buffer.markdown().insertFootnote();
+            assertEquals("A claim[^1] here.\n\n[^1]: ‸", shown(buffer));
+            area.undo();
+            assertEquals("A claim here.\n", area.getText());
+
+            place(area, "text‸\nmore\n");
+            buffer.markdown().insertHorizontalRule();
+            assertEquals("text\n\n---\n‸\nmore\n", shown(buffer));
+
+            place(area, "on ‸\n");
+            buffer.markdown().insertDate();
+            assertTrue(area.getText().matches("on \\d{4}-\\d{2}-\\d{2}\n"), area.getText());
+
+            place(area, "3. a\n1. b‸\n");
+            assertTrue(buffer.markdown().renumberList(false));
+            assertEquals("1. a\n2. b‸\n", shown(buffer));
+            assertFalse(buffer.markdown().renumberList(false), "in order now");
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void theNewTableToolsMoveSortAndDelete() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("| n |\n|---|\n| 10 |\n| ‸9 |\n\nafter\n");
+            assertTrue(buffer.markdown().tableMoveRow(true));
+            assertEquals("| n   |\n| --- |\n| ‸9   |\n| 10  |\n\nafter\n", shown(buffer));
+            assertFalse(buffer.markdown().tableMoveRow(true), "not through the header");
+            assertTrue(buffer.markdown().tableSort(false));
+            assertEquals("| ‸n   |\n| --- |\n| 10  |\n| 9   |\n\nafter\n", shown(buffer));
+            assertTrue(buffer.markdown().tableAddColumnLeft());
+            assertTrue(buffer.markdown().tableMoveColumn(false));
+            assertFalse(buffer.markdown().tableMoveColumn(false));
+            assertTrue(buffer.markdown().tableAddRowAbove());
+            assertTrue(buffer.markdown().tableDelete());
+            assertEquals("‸\n\nafter\n", shown(buffer));
+            assertFalse(buffer.markdown().tableDelete());
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void linkToolsEditRemoveAndConvert() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("see [do‸cs](http://old) now\n");
+            buffer.markdown().setLink("the docs", "http://new");
+            assertEquals("see [the docs](http://new)‸ now\n", shown(buffer));
+            buffer.getArea().moveTo(6);
+            assertTrue(buffer.markdown().convertLink(false));
+            assertEquals("see [the docs][1]‸ now\n\n[1]: http://new\n", shown(buffer));
+            buffer.getArea().moveTo(6);
+            assertFalse(buffer.markdown().convertLink(false), "a reference already");
+            assertTrue(buffer.markdown().convertLink(true));
+            assertEquals("see [the docs](http://new)‸ now\n", shown(buffer));
+            buffer.getArea().moveTo(6);
+            assertTrue(buffer.markdown().removeLink());
+            assertEquals("see «the docs» now\n", shown(buffer));
+            assertFalse(buffer.markdown().removeLink());
+
+            place(buffer.getArea(), "make «this» a link\n");
+            assertEquals("this", buffer.markdown().linkTextCandidate());
+            buffer.markdown().setLink("this", "x.md");
+            assertEquals("make [this](x.md)‸ a link\n", shown(buffer));
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void emphasisMarkersArePairedAndSmartTypographyIsOptIn() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("a ‸\n");
+            type(buffer, "**b**");
+            assertEquals("a **b**‸\n", shown(buffer));
+            place(buffer.getArea(), "‸\n");
+            type(buffer, "* item");
+            assertEquals("* item‸\n", shown(buffer), "a bullet is not emphasis");
+            place(buffer.getArea(), "```\n‸\n```\n");
+            type(buffer, "a *");
+            assertEquals("```\na *‸\n```\n", shown(buffer), "not in a code block");
+
+            place(buffer.getArea(), "‸\n");
+            type(buffer, "\"q\" -- ...");
+            assertEquals("\"q\" -- ...‸\n", shown(buffer).replace("\"\"", "\""), "typography is off by default");
+            buffer.markdown().configureWriting(true, false, false);
+            place(buffer.getArea(), "‸\n");
+            type(buffer, "\"q\" it's a -- b...");
+            assertEquals("“q” it’s a – b…‸\n", shown(buffer));
+            place(buffer.getArea(), "`‸`\n");
+            type(buffer, "a -- b");
+            assertEquals("`a -- b‸`\n", shown(buffer), "never in code");
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void pasteAsMarkdownConvertsStructuredHtmlButNotPlainRichText() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("‸");
+            javafx.scene.input.ClipboardContent cells = new javafx.scene.input.ClipboardContent();
+            cells.putHtml("<table><tr><td>Name</td><td>Qty</td></tr><tr><td>a</td><td>1</td></tr></table>");
+            cells.putString("Name\tQty\na\t1");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cells);
+            assertTrue(buffer.markdown().pasteAsMarkdown(false), "a table: the ordinary paste converts it");
+            assertEquals(
+                    "| Name | Qty |\n| ---- | --- |\n| a    | 1   |",
+                    buffer.getArea().getText());
+
+            javafx.scene.input.ClipboardContent styled = new javafx.scene.input.ClipboardContent();
+            styled.putHtml("<span style=\"color:#333\">just <b>text</b></span>");
+            styled.putString("just text");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(styled);
+            assertFalse(buffer.markdown().pasteAsMarkdown(false), "styled text pastes as the text it is");
+            buffer.getArea().replaceText("");
+            assertTrue(buffer.markdown().pasteAsMarkdown(true), "the command converts whatever HTML there is");
+            assertEquals("just **text**", buffer.getArea().getText());
+
+            javafx.scene.input.ClipboardContent markdown = new javafx.scene.input.ClipboardContent();
+            markdown.putHtml("<ul><li>a</li></ul>");
+            markdown.putString("- a");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(markdown);
+            assertFalse(buffer.markdown().pasteAsMarkdown(false), "the plain text is Markdown already");
+
+            EditorFx.clipboard("x\ty\n1\t2");
+            assertFalse(buffer.markdown().pasteAsMarkdown(false));
+            buffer.getArea().replaceText("");
+            assertTrue(buffer.markdown().pasteAsMarkdown(true), "tab-separated text becomes a table on request");
+            assertTrue(buffer.getArea().getText().startsWith("| x   | y   |"));
+            EditorFx.clipboard("plain");
+            assertFalse(buffer.markdown().pasteAsMarkdown(true));
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void theTocFollowsItsStyleAndIsRefreshedForASave() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("# Doc\n\n<!-- toc -->\n<!-- /toc -->\n\n## A‸\n## B\n");
+            buffer.markdown().configureWriting(false, true, true);
+            buffer.getArea().getUndoManager().forgetHistory();
+            assertTrue(buffer.markdown().updateTocForSave());
+            assertEquals(
+                    "# Doc\n\n<!-- toc -->\n1. [A](#a)\n2. [B](#b)\n<!-- /toc -->\n\n## A‸\n## B\n", shown(buffer));
+            assertFalse(buffer.markdown().updateTocForSave(), "up to date: the buffer is not touched");
+            buffer.getArea().undo();
+            assertEquals(
+                    "# Doc\n\n<!-- toc -->\n<!-- /toc -->\n\n## A\n## B\n",
+                    buffer.getArea().getText());
+
+            EditorBuffer none = markdown("# Doc\n‸");
+            assertFalse(none.markdown().updateTocForSave(), "a save never inserts a table of contents");
+            EditorBuffer readOnly = markdown("<!-- toc -->\n<!-- /toc -->\n# T‸\n");
+            readOnly.setReadOnly(true);
+            assertFalse(readOnly.markdown().updateTocForSave());
+            for (EditorBuffer b : new EditorBuffer[] {buffer, none, readOnly}) {
+                b.dispose();
+            }
+        });
+    }
+
     @Test
     void theBarKeepsOffTheSelectedText() {
         // caret line at y 100–120 in a pane 400 tall, bar 40 tall

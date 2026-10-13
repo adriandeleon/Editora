@@ -214,6 +214,34 @@ public final class MarkdownLinkAt {
         return null;
     }
 
+    /** A link reference definition: its label as written and its destination. */
+    public record Definition(String label, String destination, int line) {}
+
+    /** Every {@code [label]: destination} of {@code text}, in order (not footnotes, not inside code). */
+    public static java.util.List<Definition> definitions(String text) {
+        java.util.List<Definition> out = new java.util.ArrayList<>();
+        if (text == null) {
+            return out;
+        }
+        MarkdownBlocks blocks = MarkdownBlocks.scan(text);
+        int line = 0;
+        for (int start = 0; start <= text.length(); line++) {
+            int end = lineEnd(text, start);
+            if (blocks.isText(line)) {
+                int close = definitionLabelEnd(text, start, end);
+                int open = close < 0 ? -1 : text.indexOf('[', start);
+                if (close > 0 && text.charAt(open + 1) != '^') {
+                    String dest = definitionDestination(text, close + 2, end);
+                    if (dest != null) {
+                        out.add(new Definition(text.substring(open + 1, close).strip(), dest, line));
+                    }
+                }
+            }
+            start = end + 1;
+        }
+        return out;
+    }
+
     /** The destination when {@code [start, end)} is a definition line {@code [label]: dest}, else null. */
     private static String definitionOn(String text, int start, int end) {
         int close = definitionLabelEnd(text, start, end);

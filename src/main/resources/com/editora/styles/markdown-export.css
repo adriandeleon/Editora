@@ -77,6 +77,28 @@ body {
   margin: 0;
   padding: 0 1em;
 }
+/* GitHub-style alerts (> [!NOTE] …): a titled, coloured quote. */
+.markdown-body .markdown-alert {
+  border-left: 4px solid var(--border);
+  margin: 1em 0;
+  padding: 0.25em 1em;
+}
+.markdown-body .markdown-alert > :first-child { margin-top: 0.4em; }
+.markdown-body .markdown-alert > :last-child { margin-bottom: 0.4em; }
+.markdown-body .markdown-alert-title { font-weight: 600; }
+.markdown-body .markdown-alert-note { border-left-color: #0969da; }
+.markdown-body .markdown-alert-note .markdown-alert-title { color: #0969da; }
+.markdown-body .markdown-alert-tip { border-left-color: #1a7f37; }
+.markdown-body .markdown-alert-tip .markdown-alert-title { color: #1a7f37; }
+.markdown-body .markdown-alert-important { border-left-color: #8250df; }
+.markdown-body .markdown-alert-important .markdown-alert-title { color: #8250df; }
+.markdown-body .markdown-alert-warning { border-left-color: #9a6700; }
+.markdown-body .markdown-alert-warning .markdown-alert-title { color: #9a6700; }
+.markdown-body .markdown-alert-caution { border-left-color: #cf222e; }
+.markdown-body .markdown-alert-caution .markdown-alert-title { color: #cf222e; }
+.markdown-body mark { background: #fff59d; color: #1f2328; padding: 0 0.15em; border-radius: 2px; }
+.markdown-body dt { font-weight: 600; margin-top: 0.8em; }
+.markdown-body dd { margin: 0.2em 0 0.2em 1.5em; }
 .markdown-body table { border-collapse: collapse; margin: 1em 0; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 13px; }
 .markdown-body th { background: var(--bg-subtle); }

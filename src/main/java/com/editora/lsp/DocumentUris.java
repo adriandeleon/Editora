@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,6 +47,21 @@ final class DocumentUris {
             CACHE.put(file, new Entry(spelling, uri));
         }
         return uri;
+    }
+
+    /**
+     * The file a document key names, or {@code null} when it is not one Editora can open as a path (a
+     * {@code jdt:} class file, a malformed URI).
+     */
+    static Path toPath(String key) {
+        if (key == null) {
+            return null;
+        }
+        try {
+            return Path.of(URI.create(key));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Drops {@code file}'s remembered URI (its document was closed). */

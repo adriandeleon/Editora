@@ -343,4 +343,76 @@ class MarkdownLinesTest {
         assertNull(MarkdownLines.renumber("- a\n- b", 5));
         assertNull(MarkdownLines.renumber("plain", 2));
     }
+
+    // ---- feature-gap pass: more line commands ----
+
+    @Test
+    void theNumberedListToggleNumbersConvertsAndRemoves() {
+        assertEquals("«1. a\n2. b\n\n3. c»", run("«a\nb\n\nc»", (t, s) -> MarkdownLines.toggleOrdered(t, s[0], s[1])));
+        assertEquals("1. it‸em", run("- it‸em", (t, s) -> MarkdownLines.toggleOrdered(t, s[0], s[1])));
+        assertEquals(
+                "1. [ ] t‸", run("- [ ] t‸", (t, s) -> MarkdownLines.toggleOrdered(t, s[0], s[1])), "the box stays");
+        assertEquals("«a\nb»", run("«1. a\n2. b»", (t, s) -> MarkdownLines.toggleOrdered(t, s[0], s[1])));
+        assertEquals(
+                "«1. a\n   1. x\n   2. y\n2. b»",
+                run("«- a\n   - x\n   - y\n- b»", (t, s) -> MarkdownLines.toggleOrdered(t, s[0], s[1])),
+                "each level counts for itself");
+        assertNull(MarkdownLines.toggleOrdered("", 0, 0));
+    }
+
+    @Test
+    void theQuoteToggleQuotesAWholeBlockAndTakesOneLevelOff() {
+        assertEquals("> a‸", run("a‸", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])));
+        assertEquals("«> a\n>\n> b»", run("«a\n\nb»", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])), "one quote");
+        assertEquals("«a\n\nb»", run("«> a\n>\n> b»", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])));
+        assertEquals("> q‸", run("> > q‸", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])), "one level at a time");
+        assertEquals("«> > a\n> b»", run("«> a\nb»", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])));
+        assertEquals(
+                "> ‸", run("‸", (t, s) -> MarkdownLines.toggleQuote(t, s[0], s[1])), "an empty line starts a quote");
+    }
+
+    @Test
+    void theFenceCommandWrapsLinesAndUnwrapsTheBodyOfABlock() {
+        assertEquals(
+                "```‸\nint x;\nint y;\n```",
+                run("«int x;\nint y;»", (t, s) -> MarkdownLines.toggleFence(t, s[0], s[1])));
+        assertEquals("a\n```‸\n\n```\nb", run("a\n‸\nb", (t, s) -> MarkdownLines.toggleFence(t, s[0], s[1])));
+        assertEquals(
+                "````‸\n```js\nx\n```\n````",
+                run("«```js\nx\n```»", (t, s) -> MarkdownLines.toggleFence(t, s[0], s[1])));
+        assertEquals(
+                "a\n«x\ny»\nb", run("a\n```sh\n«x\ny»\n```\nb", (t, s) -> MarkdownLines.toggleFence(t, s[0], s[1])));
+        assertEquals("x‸", run("~~~\nx‸\n~~~", (t, s) -> MarkdownLines.toggleFence(t, s[0], s[1])));
+    }
+
+    @Test
+    void toggleDoneTicksAndUnticksTaskItems() {
+        assertEquals("- [x] a‸", run("- [ ] a‸", (t, s) -> MarkdownLines.toggleDone(t, s[0], s[1])));
+        assertEquals("- [ ] a‸", run("- [x] a‸", (t, s) -> MarkdownLines.toggleDone(t, s[0], s[1])));
+        assertEquals(
+                "«- [x] a\ntext\n1. [x] b»",
+                run("«- [x] a\ntext\n1. [ ] b»", (t, s) -> MarkdownLines.toggleDone(t, s[0], s[1])),
+                "some open: all done; other lines untouched");
+        assertEquals(
+                "«- [ ] a\n- [ ] b»", run("«- [X] a\n- [x] b»", (t, s) -> MarkdownLines.toggleDone(t, s[0], s[1])));
+        assertNull(MarkdownLines.toggleDone("- plain", 3, 3), "no task item: nothing to do");
+    }
+
+    @Test
+    void tabAndShiftTabTakeAnItemsChildrenAlong() {
+        assertEquals("1. a\n   1. b‸\n      - kid\n\n      more\n2. c", tab("1. a\n2. b‸\n   - kid\n\n   more\n3. c"));
+        assertEquals(
+                "1. a\n   1. b\n2. c‸\n   - kid\n   1. d\n3. e",
+                shiftTab("1. a\n   1. b\n   2. c‸\n      - kid\n   3. d\n2. e"));
+        assertEquals("- a\n  - b‸\n    - kid\n- c", tab("- a\n- b‸\n  - kid\n- c"));
+    }
+
+    @Test
+    void renumberingMapsBothEndsOfASelection() {
+        MarkdownEdit e = MarkdownLines.renumber("9. a\n8. b\n10. c\n", 0, 10);
+        assertEquals("8. a\n9. b\n10. c", e.replacement());
+        assertEquals(0, e.selStart());
+        assertEquals(10, e.selEnd());
+        assertNull(MarkdownLines.renumber("text\n1. a", 0, 6), "the selection does not start in a list");
+    }
 }

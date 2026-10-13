@@ -1592,8 +1592,12 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
+        host.previews().lint().beforeSave(buffer); // "fix Markdown lint issues on save", one undo step
         if (buffer.getPath() == null) {
             return saveAs(buffer);
+        }
+        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
+            buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
         }
         if (adminSaveApplicable(buffer.getPath())) {
             saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
