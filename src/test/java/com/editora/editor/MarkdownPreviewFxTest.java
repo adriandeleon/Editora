@@ -676,6 +676,59 @@ class MarkdownPreviewFxTest {
         });
     }
 
+    // --- the extended syntax: alerts, emoji, highlight, sup/sub, definition lists ------------------------
+
+    @Test
+    void alertsEmojiMarksAndDefinitionListsAreRendered() throws Exception {
+        Node root = render(
+                "> [!WARNING]\n> Back up **first**.\n\n"
+                        + "> A plain quote.\n\n"
+                        + "Ship :rocket: now, ==mark these words== and H~2~O, x^2^, ~gone~.\n\n"
+                        + "Term one\n: Its *definition*.\n: A second one.\n",
+                null,
+                null);
+        EditorFx.onFx(() -> {
+            VBox alert = (VBox) EditorFx.styled(root, "md-alert");
+            assertNotNull(alert, "an alert is its own kind of block");
+            assertTrue(alert.getStyleClass().contains("md-alert-warning"));
+            Label title = (Label) EditorFx.styled(alert, "md-alert-title");
+            assertEquals(tr("markdown.alert.warning"), title.getText(), "titled in the UI language");
+            assertNotNull(title.getGraphic(), "with its icon");
+            assertFalse(EditorFx.textOf(alert).contains("[!WARNING]"), "the marker is not shown");
+            assertNotNull(textNode(alert, "first"));
+            assertEquals(
+                    1,
+                    collect(root, VBox.class).stream()
+                            .filter(b -> b.getStyleClass().contains("md-quote"))
+                            .count(),
+                    "a plain quote is still a quote");
+
+            Text rocket = textNode(root, "\uD83D\uDE80");
+            assertNotNull(rocket, "the shortcode is its emoji");
+            assertEquals("rocket", rocket.getAccessibleText());
+            List<String> marked = collect(root, Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-mark-word"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(
+                    List.of("mark ", "these ", "words"), marked, "highlighted, in pieces a line can break between");
+            assertTrue(textNode(root, "2").getStyleClass().contains("md-sub")
+                    || collect(root, Text.class).stream()
+                            .anyMatch(t ->
+                                    t.getText().equals("2") && t.getStyleClass().contains("md-sub")));
+            assertTrue(collect(root, Text.class).stream()
+                    .anyMatch(t -> t.getText().equals("2") && t.getStyleClass().contains("md-sup")));
+            assertTrue(textNode(root, "gone").getStyleClass().contains("md-strike"), "a lone ~pair~ is still struck");
+
+            VBox definitions = (VBox) EditorFx.styled(root, "md-deflist");
+            assertEquals(3, definitions.getChildren().size());
+            assertTrue(definitions.getChildren().get(0).getStyleClass().contains("md-def-term"));
+            assertTrue(definitions.getChildren().get(1).getStyleClass().contains("md-def-desc"));
+            assertTrue(textNode(definitions, "definition").getStyleClass().contains("md-italic"));
+            assertFalse(EditorFx.textOf(definitions).contains(": "), "the colons are markup");
+        });
+    }
+
     // --- A6 / A14: nothing is cut off or squeezed ----------------------------------------------------
 
     @Test

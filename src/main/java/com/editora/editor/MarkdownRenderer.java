@@ -28,6 +28,10 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
 import com.editora.i18n.Messages;
+import com.editora.markdown.MarkdownAlerts;
+import com.editora.markdown.MarkdownDefinitions;
+import com.editora.markdown.MarkdownEmoji;
+import com.editora.markdown.MarkdownMarks;
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
@@ -131,13 +135,13 @@ public final class MarkdownRenderer {
         // ==highlight==, ^sup^, and ~sub~ attached to a word. The marks take the single tilde over from the
         // strikethrough extension and still make every other ~pair~ a strikethrough (MarkdownMarks).
         ext.add(StrikethroughExtension.builder().requireTwoTildes(true).build());
-        ext.add(com.editora.markdown.MarkdownMarks.extension());
+        ext.add(MarkdownMarks.extension());
         if (math) {
             ext.add(MarkdownMath.extension());
         }
-        ext.add(com.editora.markdown.MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
-        ext.add(com.editora.markdown.MarkdownEmoji.extension()); // :rocket:
-        ext.add(com.editora.markdown.MarkdownDefinitions.extension()); // Term / : definition
+        ext.add(MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
+        ext.add(MarkdownEmoji.extension()); // :rocket:
+        ext.add(MarkdownDefinitions.extension()); // Term / : definition
         return ext;
     }
 
@@ -466,6 +470,19 @@ public final class MarkdownRenderer {
             appendBlocks(node, box, ctx);
             return box;
         }
+        if (node instanceof MarkdownAlerts.Alert alert) {
+            return alertBlock(alert, ctx);
+        }
+        if (node instanceof MarkdownDefinitions.DefinitionList) {
+            VBox box = new VBox();
+            box.getStyleClass().add("md-deflist");
+            for (org.commonmark.node.Node n = node.getFirstChild(); n != null; n = n.getNext()) {
+                TextFlow tf = inlineFlow(n, ctx);
+                tf.getStyleClass().add(n instanceof MarkdownDefinitions.Term ? "md-def-term" : "md-def-desc");
+                box.getChildren().add(tf);
+            }
+            return box;
+        }
         if (node instanceof BulletList bl) {
             return renderList(bl, ctx, false, 1);
         }
@@ -528,6 +545,71 @@ public final class MarkdownRenderer {
         return literal != null
                 && literal.strip().startsWith("<!--")
                 && MarkdownHtml.strip(literal).isBlank();
+    }
+
+    /** The 24dp glyph of each alert kind: info, light bulb, announcement, warning triangle, stop octagon. */
+    private static final Map<MarkdownAlerts.Kind, String> ALERT_ICONS = Map.of(
+            MarkdownAlerts.Kind.NOTE,
+            "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41"
+                    + " 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+            MarkdownAlerts.Kind.TIP,
+            "M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0"
+                    + " .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z",
+            MarkdownAlerts.Kind.IMPORTANT,
+            "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z",
+            MarkdownAlerts.Kind.WARNING,
+            "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+            MarkdownAlerts.Kind.CAUTION,
+            "M15.73 3H8.27L3 8.27v7.46L8.27 21h7.46L21 15.73V8.27L15.73 3zM12 17.3c-.72 0-1.3-.58-1.3-1.3"
+                    + " 0-.72.58-1.3 1.3-1.3.72 0 1.3.58 1.3 1.3 0 .72-.58 1.3-1.3 1.3zm1-4.3h-2V7h2v6z");
+
+    /**
+     * A GitHub alert: a block with a coloured rule down its side, an icon and its title ("Note", "Warning", …
+     * in the UI language) in the kind's colour, then the content. The colour is one looked-up colour per kind
+     * ({@code .md-alert-note} … in app.css), defined for the app theme and for both preview themes.
+     */
+    private static Node alertBlock(MarkdownAlerts.Alert alert, RenderContext ctx) {
+        MarkdownAlerts.Kind kind = alert.getKind();
+        javafx.scene.shape.SVGPath glyph = new javafx.scene.shape.SVGPath();
+        glyph.setContent(ALERT_ICONS.get(kind));
+        glyph.getStyleClass().add("md-alert-icon");
+        glyph.setScaleX(0.7);
+        glyph.setScaleY(0.7);
+        Label title = new Label(Messages.tr("markdown.alert." + kind.slug()), new javafx.scene.Group(glyph));
+        title.getStyleClass().add("md-alert-title");
+        VBox box = new VBox(title);
+        box.getStyleClass().addAll("md-alert", "md-alert-" + kind.slug());
+        box.setAccessibleRole(javafx.scene.AccessibleRole.TEXT);
+        box.setAccessibleText(title.getText());
+        appendBlocks(alert, box, ctx);
+        return box;
+    }
+
+    /**
+     * Adds highlighted ({@code ==text==}) content. A {@code Text} has no background, and one label for the
+     * whole run could not wrap, so each run of text is cut at its spaces into labels that share the marker
+     * background: side by side they read as one stroke of a highlighter, and the line can still break.
+     */
+    private static void appendHighlight(
+            org.commonmark.node.Node mark, TextFlow flow, List<String> styles, RenderContext ctx) {
+        int from = flow.getChildren().size();
+        appendInline(mark, flow, with(styles, "md-mark"), ctx);
+        for (int i = from; i < flow.getChildren().size(); i++) {
+            if (!(flow.getChildren().get(i) instanceof Text text)
+                    || text.getText().equals("\n")) {
+                continue;
+            }
+            List<Node> words = new ArrayList<>();
+            for (String piece : text.getText().split("(?<= )(?=[^ ])")) { // after a run of spaces: "two " "words"
+                Label word = new Label(piece);
+                word.getStyleClass().addAll(text.getStyleClass());
+                word.getStyleClass().add("md-mark-word");
+                words.add(word);
+            }
+            flow.getChildren().remove(i);
+            flow.getChildren().addAll(i, words);
+            i += words.size() - 1;
+        }
     }
 
     /** A display formula on a line of its own, centered; a long one shrinks rather than widening the column. */
@@ -1379,6 +1461,16 @@ public final class MarkdownRenderer {
             appendInline(n, flow, with(styles, "md-strike"), ctx);
         } else if (n instanceof Ins) {
             appendInline(n, flow, with(styles, "md-ins"), ctx);
+        } else if (n instanceof MarkdownMarks.Highlight) {
+            appendHighlight(n, flow, styles, ctx);
+        } else if (n instanceof MarkdownMarks.Superscript) {
+            appendInline(n, flow, with(styles, "md-sup"), ctx);
+        } else if (n instanceof MarkdownMarks.Subscript) {
+            appendInline(n, flow, with(styles, "md-sub"), ctx);
+        } else if (n instanceof MarkdownEmoji.Emoji emoji) {
+            Text glyph = styledText(emoji.getEmoji(), with(styles, "md-emoji"));
+            glyph.setAccessibleText(emoji.getShortcode().replace('_', ' '));
+            flow.getChildren().add(glyph);
         } else if (n instanceof FootnoteReference ref) {
             int from = flow.getChildren().size();
             flow.getChildren().add(footnoteRef(ctx.footnoteMark(ref.getLabel())));

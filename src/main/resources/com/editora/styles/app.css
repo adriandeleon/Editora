@@ -739,6 +739,38 @@
     -fx-background-color: -color-warning-emphasis;
     -fx-text-fill: -color-fg-emphasis;
 }
+/* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
+.markdown-preview .md-alert {
+    -md-alert: -color-accent-fg;
+    -fx-border-color: -md-alert;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 6 0 6 12;
+    -fx-spacing: 8;
+}
+.markdown-preview .md-alert-tip { -md-alert: -color-success-fg; }
+/* (The themes have no purple token: one that reads on light and dark; each preview theme has its own.) */
+.markdown-preview .md-alert-important { -md-alert: #8957e5; }
+.md-light .markdown-preview .md-alert-important { -md-alert: #8250df; }
+.md-dark .markdown-preview .md-alert-important { -md-alert: #a371f7; }
+.markdown-preview .md-alert-warning { -md-alert: -color-warning-fg; }
+.markdown-preview .md-alert-caution { -md-alert: -color-danger-fg; }
+.markdown-preview .md-alert-title {
+    -fx-text-fill: -md-alert;
+    -fx-font-weight: bold;
+    -fx-graphic-text-gap: 4;
+}
+.markdown-preview .md-alert-icon { -fx-fill: -md-alert; }
+/* ==highlight==: a marker stroke behind the words (labels cut at the spaces, so the line still breaks). */
+.markdown-preview .md-mark-word {
+    -fx-background-color: -color-warning-muted;
+    -fx-text-fill: -color-fg-default;
+    -fx-font-family: "Inter", "sans-serif";
+    -fx-padding: 0;
+}
+/* Definition lists: the term in bold, its definitions indented under it. */
+.markdown-preview .md-deflist { -fx-spacing: 3; }
+.markdown-preview .md-def-term .md-text { -fx-font-weight: bold; }
+.markdown-preview .md-def-desc { -fx-padding: 0 0 0 24; -fx-line-spacing: 5; }
 /* An image that could not be shown: its alt text, muted, where the picture would be. */
 .markdown-preview .md-inline-code.md-image-missing { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 /* Footnote reference: a small, raised, accent-colored [label] marker. */
@@ -1087,6 +1119,9 @@
     -color-accent-fg: #0969da;
     -color-border-default: #d0d7de;
     -color-danger-fg: #d1242f;
+    -color-success-fg: #1a7f37;
+    -color-warning-fg: #9a6700;
+    -color-warning-muted: #d4a72c66;
     -color-danger-subtle: #ffebe9;
     -color-danger-muted: #ff818266;
     -fx-background: #ffffff;
@@ -1100,6 +1135,9 @@
     -color-accent-fg: #2f81f7;
     -color-border-default: #30363d;
     -color-danger-fg: #f85149;
+    -color-success-fg: #3fb950;
+    -color-warning-fg: #d29922;
+    -color-warning-muted: #bb800966;
     -color-danger-subtle: #f8514926;
     -color-danger-muted: #f8514966;
     -fx-background: #0d1117;
