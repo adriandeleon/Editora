@@ -44,6 +44,21 @@ final class LocalExecTarget implements ExecTarget {
     }
 
     @Override
+    public PortForward forwardLocal(String host, int port) {
+        return new PortForward() {
+            @Override
+            public int localPort() {
+                return port;
+            }
+
+            @Override
+            public void close() {
+                // the port is the program's own; nothing was opened here
+            }
+        };
+    }
+
+    @Override
     public String toTargetPath(Path path) {
         return path.toString();
     }

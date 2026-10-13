@@ -67,6 +67,7 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         if (realShell) {
             // No chroot, so a path means the same file to SFTP and to the commands the server runs.
             server.setFileSystemFactory(org.apache.sshd.common.file.nativefs.NativeFileSystemFactory.INSTANCE);
+            server.setForwardingFilter(org.apache.sshd.server.forward.AcceptAllForwardingFilter.INSTANCE);
             server.setCommandFactory((channel, command) -> {
                 commands.add(command);
                 return new ShellCommand(command);

@@ -9,10 +9,13 @@ import java.util.EnumSet;
 
 import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;
+import com.editora.process.PortForward;
 import com.editora.process.PosixShell;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.client.session.forward.ExplicitPortForwardingTracker;
+import org.apache.sshd.common.util.net.SshdSocketAddress;
 import org.apache.sshd.sftp.client.fs.SftpFileSystem;
 
 /**
@@ -56,6 +59,29 @@ final class SshExecTarget implements ExecTarget {
         String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
         String line = PosixShell.commandLine(spec, cwd, known.path(), known.locale());
         return SshExecProcess.start(session, id, line, START_TIMEOUT);
+    }
+
+    @Override
+    public PortForward forwardLocal(String host, int port) throws IOException {
+        ExplicitPortForwardingTracker tracker = session()
+                .createLocalPortForwardingTracker(
+                        new SshdSocketAddress("127.0.0.1", 0), new SshdSocketAddress(host, port));
+        int localPort = tracker.getBoundAddress().getPort();
+        return new PortForward() {
+            @Override
+            public int localPort() {
+                return localPort;
+            }
+
+            @Override
+            public void close() {
+                try {
+                    tracker.close();
+                } catch (IOException | RuntimeException gone) {
+                    // the connection went first, and took the listener with it
+                }
+            }
+        };
     }
 
     @Override

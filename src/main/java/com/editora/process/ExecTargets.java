@@ -97,6 +97,11 @@ public final class ExecTargets {
         }
 
         @Override
+        public PortForward forwardLocal(String host, int port) throws IOException {
+            throw new IOException(reason);
+        }
+
+        @Override
         public String toTargetPath(Path path) {
             return path.toAbsolutePath().normalize().toString();
         }

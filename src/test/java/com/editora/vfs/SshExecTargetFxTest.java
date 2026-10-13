@@ -199,6 +199,86 @@ class SshExecTargetFxTest {
     }
 
     @Test
+    void aForwardedPortReachesAServerOnTheHostUntilItIsClosed() throws Exception {
+        try (java.net.ServerSocket onTheHost =
+                new java.net.ServerSocket(0, 5, java.net.InetAddress.getLoopbackAddress())) {
+            Thread.ofVirtual().start(() -> {
+                try (java.net.Socket peer = onTheHost.accept()) {
+                    peer.getOutputStream().write("from the host\n".getBytes(StandardCharsets.UTF_8));
+                } catch (IOException closed) {
+                    // the test ended first
+                }
+            });
+            ExecTarget target = ExecTargets.forPath(remoteDir);
+
+            com.editora.process.PortForward forward = target.forwardLocal("127.0.0.1", onTheHost.getLocalPort());
+            int local = forward.localPort();
+            assertTrue(local > 0 && local != onTheHost.getLocalPort(), "a port of its own on this machine");
+            try (java.net.Socket here = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), local)) {
+                here.setSoTimeout(10_000);
+                assertEquals(
+                        "from the host",
+                        new java.io.BufferedReader(
+                                        new java.io.InputStreamReader(here.getInputStream(), StandardCharsets.UTF_8))
+                                .readLine());
+            }
+
+            forward.close();
+            forward.close(); // harmless twice
+            assertThrows(
+                    IOException.class,
+                    () -> new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), local).close());
+        }
+        assertEquals(
+                4321, ExecTargets.local().forwardLocal("127.0.0.1", 4321).localPort(), "nothing to forward locally");
+    }
+
+    @Test
+    void listenersHearAConnectionComeUpAndGoDown() throws Exception {
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fixture.fileSystems().addConnectionListener((authority, up) -> heard.add(authority + (up ? " up" : " down")));
+        String id = fixture.connection().id();
+
+        fixture.disconnect();
+        awaitHeard(heard, id + " down");
+        fixture.reconnect();
+        awaitHeard(heard, id + " up");
+
+        assertEquals(List.of(id + " down", id + " up"), heard);
+        assertTrue(
+                ExecTargets.forPath(fixture.remotePath("project dir")).isAvailable(),
+                "a new target for the new connection");
+    }
+
+    private static void awaitHeard(List<String> heard, String event) throws InterruptedException {
+        for (int i = 0; i < 200 && !heard.contains(event); i++) {
+            Thread.sleep(25);
+        }
+        assertTrue(heard.contains(event), "never heard '" + event + "', only " + heard);
+    }
+
+    @Test
+    void keepAlivesDoNotEndAnIdleConnection() throws Exception {
+        try (org.apache.sshd.client.SshClient probe = org.apache.sshd.client.SshClient.setUpDefaultClient()) {
+            RemoteFileSystems.keepAlive(probe, Duration.ofMillis(100));
+            probe.setServerKeyVerifier(org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE);
+            probe.start();
+            RemoteConnection conn = fixture.connection();
+            try (var session = probe.connect(conn.user(), conn.host(), conn.port())
+                    .verify(TIMEOUT)
+                    .getSession()) {
+                session.addPasswordIdentity("password");
+                session.auth().verify(TIMEOUT);
+
+                Thread.sleep(1200); // a dozen keep-alives, each answered or the session would be closed
+
+                assertTrue(session.isOpen());
+                assertEquals("alive\n", session.executeRemoteCommand("echo alive"));
+            }
+        }
+    }
+
+    @Test
     void whatAStartupFilePrintsBeforeThePidLineIsDropped() throws Exception {
         byte[] stderr =
                 ("motd: welcome\n" + PosixShell.PID_MARK + "4242\nreal error\n").getBytes(StandardCharsets.UTF_8);

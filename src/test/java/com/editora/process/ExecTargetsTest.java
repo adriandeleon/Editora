@@ -159,6 +159,11 @@ class ExecTargetsTest {
         }
 
         @Override
+        public PortForward forwardLocal(String host, int port) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public String toTargetPath(Path path) {
             return path.toString();
         }
