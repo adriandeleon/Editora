@@ -22,6 +22,8 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.process.ExecTarget;
+import com.editora.process.ExecTargets;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
@@ -40,7 +42,7 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  * the rest of the app keeps using {@link Path} unchanged. Connect/auth run off the FX thread (the
  * {@code GitService} idiom: a daemon executor + {@link Platform#runLater} callbacks).
  */
-public final class RemoteFileSystems implements Vfs.RemoteProvider {
+public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.Resolver {
 
     /** The result of a connect attempt: {@code root} is the remote start directory (the connection's last
      *  path, else the SFTP home) when {@code ok}, else {@code error} explains the failure. */
@@ -73,6 +75,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
         return t;
     });
     private final Map<String, SftpFileSystem> byAuthority = new ConcurrentHashMap<>();
+    /** Where commands for each open connection's paths run; dropped with the connection. */
+    private final Map<FileSystem, SshExecTarget> execTargets = new ConcurrentHashMap<>();
     /** Authority identity for closed/replaced filesystems that are still retained by an open buffer Path. */
     private final Map<FileSystem, String> knownAuthorities = Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -121,6 +125,16 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
         // Register this window's engine in the Vfs provider registry (one per window). resolve()/storable() only
         // answer for authorities/filesystems this instance owns, so windows never clobber each other (#436).
         Vfs.registerRemoteProvider(this);
+        ExecTargets.register(this);
+    }
+
+    /**
+     * The host that runs commands for {@code path}, when it is on a connection this engine holds open. A path
+     * left over from a closed connection has no target: nothing can run for it until it is reconnected.
+     */
+    @Override
+    public ExecTarget forPath(Path path) {
+        return path == null ? null : execTargets.get(path.getFileSystem());
     }
 
     /** {@code ~/.ssh/known_hosts} — shared with OpenSSH deliberately (see the constructor). */
@@ -185,8 +199,10 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
             try {
                 SftpFileSystem fs = open(conn, secret);
                 knownAuthorities.put(fs, conn.id());
+                execTargets.put(fs, new SshExecTarget(conn.id(), fs));
                 SftpFileSystem prev = byAuthority.put(conn.id(), fs);
                 if (prev != null && prev != fs) {
+                    execTargets.remove(prev);
                     closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
                 }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
@@ -389,6 +405,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
 
     public void disconnect(String authority) {
         SftpFileSystem fs = byAuthority.remove(authority);
+        if (fs != null) {
+            execTargets.remove(fs);
+        }
         close(fs);
     }
 
@@ -402,6 +421,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
      */
     public void shutdown() {
         Vfs.unregisterRemoteProvider(this);
+        ExecTargets.unregister(this);
+        execTargets.clear();
         byAuthority.values().forEach(RemoteFileSystems::close);
         byAuthority.clear();
         client.stop();
