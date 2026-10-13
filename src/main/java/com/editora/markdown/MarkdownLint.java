@@ -467,7 +467,7 @@ public final class MarkdownLint {
             while (end > at + 1 && ".-".indexOf(line.charAt(end - 1)) >= 0) {
                 end--;
             }
-            int lastDot = line.lastIndexOf('.', end - 1);
+            int lastDot = lastDot(line, at + 1, end); // within the domain only: a whole-line search is quadratic
             if (s == at || lastDot <= at + 1 || end - lastDot < 3 || !letters(line, lastDot + 1, end)) {
                 continue; // no local part, no dot in the domain, or no letters-only last label
             }
@@ -487,6 +487,16 @@ public final class MarkdownLint {
             }
             emit.add(i + 1, s + 1, end - s, "MD034", "MD034");
         }
+    }
+
+    /** The last {@code '.'} in {@code [from, to)}, or -1. */
+    private static int lastDot(String s, int from, int to) {
+        for (int p = to - 1; p >= from; p--) {
+            if (s.charAt(p) == '.') {
+                return p;
+            }
+        }
+        return -1;
     }
 
     private static boolean localPartChar(char c) {
