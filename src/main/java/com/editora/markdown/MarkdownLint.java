@@ -44,6 +44,16 @@ public final class MarkdownLint {
         public boolean isError() {
             return "error".equalsIgnoreCase(severity);
         }
+
+        /** The mildest severity: shown, but not counted as a problem to fix. */
+        public boolean isHint() {
+            return "hint".equalsIgnoreCase(severity);
+        }
+
+        /** 0 for an error, 1 for a warning, 2 for a hint — the order a list sorted by severity uses. */
+        public int severityRank() {
+            return isError() ? 0 : isHint() ? 2 : 1;
+        }
     }
 
     /**
@@ -51,26 +61,72 @@ public final class MarkdownLint {
      * answers to in a directive or a config file ({@code aliases} name this rule, {@code tags} a group of rules).
      * Its display name is the catalog entry {@code mdlint.rule.<code>}.
      */
-    public record Rule(String code, boolean fixable, List<String> aliases, List<String> tags) {}
+    public record Rule(String code, boolean fixable, List<String> aliases, List<String> tags, boolean defaultEnabled) {
+        Rule(String code, boolean fixable, List<String> aliases, List<String> tags) {
+            this(code, fixable, aliases, tags, true);
+        }
+    }
+
+    private static Rule off(String code, boolean fixable, List<String> aliases, List<String> tags) {
+        return new Rule(code, fixable, aliases, tags, false);
+    }
+
+    /** A relative link or image whose file does not exist (not a markdownlint rule: Editora's own). */
+    public static final String LINK_FILE = "LINK001";
+
+    /** A link to a heading that does not exist in another Markdown file (Editora's own). */
+    public static final String LINK_ANCHOR = "LINK002";
 
     /** Every rule this linter can emit, in code order — the source of truth for the per-rule UI. */
     public static final List<Rule> RULES = List.of(
             new Rule("MD001", false, List.of("heading-increment"), List.of("headings")),
+            new Rule("MD003", false, List.of("heading-style"), List.of("headings")),
+            new Rule("MD004", true, List.of("ul-style"), List.of("bullet", "ul")),
+            new Rule("MD005", false, List.of("list-indent"), List.of("bullet", "ul", "indentation")),
+            new Rule("MD007", false, List.of("ul-indent"), List.of("bullet", "ul", "indentation")),
             new Rule("MD009", true, List.of("no-trailing-spaces"), List.of("whitespace")),
             new Rule("MD010", true, List.of("no-hard-tabs"), List.of("whitespace", "hard_tab")),
+            new Rule("MD011", true, List.of("no-reversed-links"), List.of("links")),
             new Rule("MD012", true, List.of("no-multiple-blanks"), List.of("whitespace", "blank_lines")),
+            off("MD013", false, List.of("line-length"), List.of("line_length")),
             new Rule("MD018", true, List.of("no-missing-space-atx"), List.of("headings", "atx", "spaces")),
             new Rule("MD019", true, List.of("no-multiple-space-atx"), List.of("headings", "atx", "spaces")),
             new Rule("MD022", false, List.of("blanks-around-headings"), List.of("headings", "blank_lines")),
             new Rule("MD023", true, List.of("heading-start-left"), List.of("headings", "spaces")),
+            new Rule("MD024", false, List.of("no-duplicate-heading"), List.of("headings")),
             new Rule("MD025", false, List.of("single-title", "single-h1"), List.of("headings")),
             new Rule("MD026", true, List.of("no-trailing-punctuation"), List.of("headings")),
+            new Rule("MD029", false, List.of("ol-prefix"), List.of("ol")),
+            new Rule("MD030", false, List.of("list-marker-space"), List.of("ol", "ul", "whitespace")),
             new Rule("MD031", false, List.of("blanks-around-fences"), List.of("code", "blank_lines")),
+            new Rule("MD032", true, List.of("blanks-around-lists"), List.of("bullet", "ul", "ol", "blank_lines")),
+            off("MD033", false, List.of("no-inline-html"), List.of("html")),
             new Rule("MD034", false, List.of("no-bare-urls"), List.of("links", "url")),
+            new Rule("MD035", true, List.of("hr-style"), List.of("hr")),
+            new Rule("MD036", false, List.of("no-emphasis-as-heading"), List.of("headings", "emphasis")),
+            new Rule("MD037", true, List.of("no-space-in-emphasis"), List.of("whitespace", "emphasis")),
+            new Rule("MD038", true, List.of("no-space-in-code"), List.of("whitespace", "code")),
+            new Rule("MD039", true, List.of("no-space-in-links"), List.of("whitespace", "links")),
             new Rule("MD040", false, List.of("fenced-code-language"), List.of("code", "language")),
             new Rule("MD041", false, List.of("first-line-heading", "first-line-h1"), List.of("headings")),
+            new Rule("MD042", false, List.of("no-empty-links"), List.of("links")),
+            new Rule("MD045", false, List.of("no-alt-text"), List.of("accessibility", "images")),
+            new Rule("MD046", false, List.of("code-block-style"), List.of("code")),
             new Rule("MD047", true, List.of("single-trailing-newline"), List.of("blank_lines")),
-            new Rule("MD052", false, List.of("reference-links-images"), List.of("images", "links")));
+            new Rule("MD048", false, List.of("code-fence-style"), List.of("code")),
+            new Rule("MD049", true, List.of("emphasis-style"), List.of("emphasis")),
+            new Rule("MD050", true, List.of("strong-style"), List.of("emphasis")),
+            new Rule("MD051", false, List.of("link-fragments"), List.of("links")),
+            new Rule("MD052", false, List.of("reference-links-images"), List.of("images", "links")),
+            new Rule("MD053", true, List.of("link-image-reference-definitions"), List.of("images", "links")),
+            new Rule("MD055", false, List.of("table-pipe-style"), List.of("table")),
+            new Rule("MD056", false, List.of("table-column-count"), List.of("table")),
+            new Rule("MD058", true, List.of("blanks-around-tables"), List.of("table")),
+            new Rule(LINK_FILE, false, List.of("link-file-exists"), List.of("links", "images")),
+            new Rule(LINK_ANCHOR, false, List.of("link-file-anchor"), List.of("links")));
+
+    /** The rules that are off until the user (or a project config, by name) switches them on. */
+    public static final Set<String> DEFAULT_OFF;
 
     /** The codes of {@link #RULES}. */
     public static final Set<String> CODES;
@@ -92,6 +148,13 @@ public final class MarkdownLint {
             }
         }
         CODES = java.util.Collections.unmodifiableSet(codes);
+        Set<String> offByDefault = new java.util.TreeSet<>();
+        for (Rule r : RULES) {
+            if (!r.defaultEnabled()) {
+                offByDefault.add(r.code());
+            }
+        }
+        DEFAULT_OFF = java.util.Collections.unmodifiableSet(offByDefault);
         BY_NAME = byName;
     }
 
@@ -143,7 +206,40 @@ public final class MarkdownLint {
             Map.entry("MD041", "First line in a file should be a top-level heading"),
             Map.entry("MD047.missing", "File should end with a newline"),
             Map.entry("MD047.multiple", "File should end with a single newline"),
-            Map.entry("MD052", "Reference link has no matching definition"));
+            Map.entry("MD052", "Reference link has no matching definition"),
+            Map.entry("MD003", "Heading style differs from the rest of the document"),
+            Map.entry("MD004", "List marker differs from the rest of the document"),
+            Map.entry("MD005", "List items at the same level are indented differently"),
+            Map.entry("MD007", "Nested list is not indented by the expected amount"),
+            Map.entry("MD011", "Reversed link syntax: (text)[url]"),
+            Map.entry("MD013", "Line is longer than the limit"),
+            Map.entry("MD024", "Another heading has the same text"),
+            Map.entry("MD029", "Ordered list number is out of sequence"),
+            Map.entry("MD030", "Wrong number of spaces after the list marker"),
+            Map.entry("MD032.before", "List should be preceded by a blank line"),
+            Map.entry("MD032.after", "List should be followed by a blank line"),
+            Map.entry("MD033", "Inline HTML"),
+            Map.entry("MD035", "Horizontal rule style differs from the rest of the document"),
+            Map.entry("MD036", "Emphasis used instead of a heading"),
+            Map.entry("MD037", "Spaces inside emphasis markers"),
+            Map.entry("MD038", "Spaces inside code span"),
+            Map.entry("MD039", "Spaces inside link text"),
+            Map.entry("MD042", "Link has no destination"),
+            Map.entry("MD045", "Image has no alternate text"),
+            Map.entry("MD046", "Code block style differs from the rest of the document"),
+            Map.entry("MD048", "Code fence style differs from the rest of the document"),
+            Map.entry("MD049", "Emphasis style differs from the rest of the document"),
+            Map.entry("MD050", "Strong style differs from the rest of the document"),
+            Map.entry("MD051", "No heading in this document matches the link fragment"),
+            Map.entry("MD053.unused", "Reference definition is not used"),
+            Map.entry("MD053.duplicate", "Reference definition is defined twice"),
+            Map.entry("MD055", "Table pipe style differs from the first row"),
+            Map.entry("MD056.few", "Table row has fewer cells than the header"),
+            Map.entry("MD056.many", "Table row has more cells than the header"),
+            Map.entry("MD058.before", "Table should be preceded by a blank line"),
+            Map.entry("MD058.after", "Table should be followed by a blank line"),
+            Map.entry("LINK001", "Linked file does not exist"),
+            Map.entry("LINK002", "Linked file has no such heading"));
 
     /** The catalog keys of every message this linter emits (for the catalog-parity test). */
     public static Set<String> messageKeys() {
@@ -167,9 +263,42 @@ public final class MarkdownLint {
             Pattern.compile("&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);$");
     private static final String URL_TAIL = ".,;:!?'\"*_~";
 
-    /** Lints with no rules disabled. */
+    /**
+     * Answers what a relative link points at — the one thing the linter cannot know from the text. Asked on the
+     * linting thread; implementations read the file system.
+     */
+    public interface LinkTargets {
+        /** Whether {@code path} (relative to the document, already URL-decoded) names an existing file or folder. */
+        boolean exists(String path);
+
+        /** The heading anchors of Markdown file {@code path}, or {@code null} when they cannot be known. */
+        Set<String> anchors(String path);
+    }
+
+    /**
+     * One text replacement that fixes a diagnostic: 0-based lines and columns, end exclusive; an insertion has
+     * {@code line == endLine} and {@code column == endColumn}.
+     */
+    record Edit(int line, int column, int endLine, int endColumn, String replacement) {
+        static Edit on(int line, int column, int endColumn, String replacement) {
+            return new Edit(line, column, line, endColumn, replacement);
+        }
+    }
+
+    /** A lint run: the diagnostics in document order and, for the fixable ones, the edits that fix them. */
+    record Report(List<Diagnostic> diagnostics, Map<Diagnostic, List<Edit>> edits) {}
+
+    /**
+     * Every anchor a link can name in {@code markdown}: its headings' GitHub-style slugs and its HTML
+     * {@code id}/{@code name} attributes — what {@link LinkTargets#anchors} answers for a file.
+     */
+    public static Set<String> anchors(String markdown) {
+        return MarkdownLintMore.anchorsOf(markdown == null ? "" : markdown);
+    }
+
+    /** Lints with the default rule set (every rule but the ones in {@link #DEFAULT_OFF}). */
     public static List<Diagnostic> lint(String text) {
-        return lint(text, Set.of());
+        return lint(text, DEFAULT_OFF);
     }
 
     /** Lints {@code text}; {@code disabled} rule codes (and inline directives) suppress those diagnostics. */
@@ -182,15 +311,31 @@ public final class MarkdownLint {
      * {@code markdownlint-configure-file} comment in the document refines both.
      */
     public static List<Diagnostic> lint(String text, Set<String> disabled, MarkdownLintOptions options) {
+        return lint(text, disabled, options, null);
+    }
+
+    /**
+     * As {@link #lint(String, Set, MarkdownLintOptions)}, also checking that relative links lead somewhere
+     * ({@link #LINK_FILE}, {@link #LINK_ANCHOR}) when {@code targets} can tell; with {@code null} those two rules
+     * report nothing.
+     */
+    public static List<Diagnostic> lint(
+            String text, Set<String> disabled, MarkdownLintOptions options, LinkTargets targets) {
+        return analyze(text, disabled, options, targets).diagnostics();
+    }
+
+    /** The lint run behind {@link #lint}, with the edits {@link MarkdownLintFix} applies. */
+    static Report analyze(String text, Set<String> disabled, MarkdownLintOptions options, LinkTargets targets) {
         List<Diagnostic> out = new ArrayList<>();
+        Map<Diagnostic, List<Edit>> edits = new java.util.IdentityHashMap<>();
         if (text == null || text.isEmpty()) {
-            return out;
+            return new Report(out, edits);
         }
         String[] lines = text.split("\n", -1);
         MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
         MarkdownLintDirectives directives = MarkdownLintDirectives.compute(blocks);
         MarkdownLintOptions opts = directives.options(options == null ? MarkdownLintOptions.DEFAULT : options);
-        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, directives, opts);
+        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, directives, opts, edits, targets);
         Set<String> defined = definitions(blocks);
         int n = blocks.lineCount();
 
@@ -237,6 +382,7 @@ public final class MarkdownLint {
 
         fenceRules(emit, blocks);
         structureRules(emit, blocks);
+        MarkdownLintMore.check(emit, blocks);
 
         // MD047: file should end with a single trailing newline.
         int lastLine = lines.length; // split("\n",-1): a trailing "\n" yields a final empty element
@@ -248,18 +394,46 @@ public final class MarkdownLint {
 
         out.sort((a, b) ->
                 a.line() != b.line() ? Integer.compare(a.line(), b.line()) : Integer.compare(a.column(), b.column()));
-        return out;
+        return new Report(out, edits);
     }
 
     /** Collects diagnostics, dropping the ones a setting or an inline directive turned off. */
-    private record Emitter(
-            List<Diagnostic> out, Set<String> off, MarkdownLintDirectives directives, MarkdownLintOptions options) {
-        void add(int line, int column, int length, String code, String message) {
+    record Emitter(
+            List<Diagnostic> out,
+            Set<String> off,
+            MarkdownLintDirectives directives,
+            MarkdownLintOptions options,
+            Map<Diagnostic, List<Edit>> edits,
+            LinkTargets targets) {
+
+        /** Whether rule {@code code} is switched on at all (a rule that is off need not do its work). */
+        boolean on(String code) {
+            return !off.contains(code);
+        }
+
+        /** Reports an issue at 1-based {@code line}/{@code column}; null when it is suppressed there. */
+        Diagnostic add(int line, int column, int length, String code, String message) {
             if (off.contains(code) || directives.disabled(line - 1, code)) {
-                return;
+                return null;
             }
-            out.add(new Diagnostic(
-                    line, column, Math.max(1, length), WARNING, code, ENGLISH.get(message), "mdlint.msg." + message));
+            Diagnostic d = new Diagnostic(
+                    line,
+                    Math.max(1, column),
+                    Math.max(1, length),
+                    options.severity(code),
+                    code,
+                    ENGLISH.get(message),
+                    "mdlint.msg." + message);
+            out.add(d);
+            return d;
+        }
+
+        /** As {@link #add(int, int, int, String, String)}, with the edits that fix the issue. */
+        void add(int line, int column, int length, String code, String message, Edit... fix) {
+            Diagnostic d = add(line, column, length, code, message);
+            if (d != null && fix.length > 0) {
+                edits.put(d, List.of(fix));
+            }
         }
     }
 
@@ -797,7 +971,7 @@ public final class MarkdownLint {
         return e - 1;
     }
 
-    private static String normalizeLabel(String label) {
+    static String normalizeLabel(String label) {
         return label == null ? "" : label.strip().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
     }
 

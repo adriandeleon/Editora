@@ -170,7 +170,7 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
                 if (p < first || p > last || p < 0 || p >= total || area.isFolded(p)) {
                     continue;
                 }
-                g.setStroke(d.isError() ? colors.error() : colors.warning());
+                g.setStroke(d.isError() ? colors.error() : d.isHint() ? colors.info() : colors.warning());
                 int lineLen = area.getParagraph(p).getText().length();
                 if (lineLen == 0) {
                     if (Double.isNaN(textLeft)) {

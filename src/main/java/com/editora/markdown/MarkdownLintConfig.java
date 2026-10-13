@@ -136,11 +136,15 @@ public final class MarkdownLintConfig {
                         options.put(o.getKey(), ov.asBoolean());
                     } else if (ov.isTextual()) {
                         options.put(o.getKey(), ov.asText());
+                    } else if (ov.isArray()) {
+                        List<String> items = new ArrayList<>();
+                        ov.forEach(item -> items.add(item.asText()));
+                        options.put(o.getKey(), items);
                     }
                 }
                 entries.add(new Entry(key, true, options)); // an options object: the rule is in use
             } else if (v.isTextual()) {
-                entries.add(new Entry(key, true)); // a severity: the rule is in use
+                entries.add(new Entry(key, true, Map.of("severity", v.asText()))); // a severity: in use
             }
         }
         return new Parsed(true, defaults, List.copyOf(entries), extendsPath);

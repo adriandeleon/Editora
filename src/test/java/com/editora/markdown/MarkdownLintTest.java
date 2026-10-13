@@ -14,8 +14,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Unit tests for the pure Markdown linter (one assertion group per rule). */
 class MarkdownLintTest {
 
+    /**
+     * The sixteen rules of the first linter. The tests of this class were written against them and assert exact
+     * lists; the rules added since have their own class ({@code MarkdownLintMoreTest}) and are left out here.
+     */
+    static final Set<String> FIRST_RULES = Set.of(
+            "MD001", "MD009", "MD010", "MD012", "MD018", "MD019", "MD022", "MD023", "MD025", "MD026", "MD031", "MD034",
+            "MD040", "MD041", "MD047", "MD052");
+
+    private static List<Diagnostic> first(List<Diagnostic> all) {
+        return all.stream().filter(d -> FIRST_RULES.contains(d.code())).toList();
+    }
+
     private static Set<String> codes(String md) {
-        return MarkdownLint.lint(md).stream().map(Diagnostic::code).collect(Collectors.toSet());
+        return first(MarkdownLint.lint(md)).stream().map(Diagnostic::code).collect(Collectors.toSet());
     }
 
     private static boolean has(String md, String code) {
@@ -205,7 +217,7 @@ class MarkdownLintTest {
     }
 
     private static List<String> at(String md) {
-        return MarkdownLint.lint(md).stream()
+        return first(MarkdownLint.lint(md)).stream()
                 .map(d -> d.code() + "@" + d.line() + ":" + d.column() + "+" + d.length())
                 .toList();
     }
@@ -419,7 +431,7 @@ class MarkdownLintTest {
         String md = "x\n### h.\n#Bad\n##  two\n  ## in\ntext\t  \n\n\n# A\n### deep\n# B\n```\n```\nhttp://x.io [a][b]";
         List<Diagnostic> all = MarkdownLint.lint(md);
         Set<String> seen = all.stream().map(Diagnostic::code).collect(Collectors.toSet());
-        assertEquals(MarkdownLint.CODES, seen, "the sample trips every rule");
+        assertTrue(seen.containsAll(FIRST_RULES), "the sample trips every one of the first rules: " + seen);
         for (Diagnostic d : all) {
             assertTrue(MarkdownLint.messageKeys().contains(d.key()), d.toString());
             assertFalse(d.message().isBlank());
@@ -430,9 +442,12 @@ class MarkdownLintTest {
     void namesResolveToRules() {
         assertEquals(Set.of("MD009"), MarkdownLint.resolve("no-trailing-spaces"));
         assertEquals(Set.of("MD009"), MarkdownLint.resolve(" md009 "));
-        assertEquals(Set.of("MD009", "MD010", "MD012"), MarkdownLint.resolve("whitespace"));
-        assertEquals(Set.of("MD033"), MarkdownLint.resolve("MD033")); // not implemented, still only itself
-        assertEquals(Set.of(), MarkdownLint.resolve("no-inline-html"));
+        assertEquals(
+                Set.of("MD009", "MD010", "MD012", "MD030", "MD037", "MD038", "MD039"),
+                MarkdownLint.resolve("whitespace"));
+        assertEquals(Set.of("MD043"), MarkdownLint.resolve("MD043")); // not implemented, still only itself
+        assertEquals(Set.of("MD033"), MarkdownLint.resolve("no-inline-html"));
+        assertEquals(Set.of(), MarkdownLint.resolve("no-such-rule"));
         assertEquals(Set.of(), MarkdownLint.resolve(null));
         assertTrue(MarkdownLint.fixable("MD009"));
         assertFalse(MarkdownLint.fixable("MD034"));
@@ -510,7 +525,7 @@ class MarkdownLintTest {
     // --- wave 2 — C11: rule options ----------------------------------------------------------------------
 
     private static List<String> at(String md, MarkdownLintOptions options) {
-        return MarkdownLint.lint(md, Set.of(), options).stream()
+        return first(MarkdownLint.lint(md, Set.of(), options)).stream()
                 .map(d -> d.code() + "@" + d.line() + ":" + d.column() + "+" + d.length())
                 .toList();
     }
@@ -608,7 +623,7 @@ class MarkdownLintTest {
     void optionsThatAreUnknownOrMalformedChangeNothing() {
         MarkdownLintOptions d = MarkdownLintOptions.DEFAULT;
         assertEquals(d, d.with("MD009", "strict", true));
-        assertEquals(d, d.with("MD013", "line_length", 120));
+        assertEquals(d, d.with("MD043", "headings", "x"));
         assertEquals(d, d.with("MD009", "br_spaces", "two"));
         assertEquals(d, d.with("MD041", "level", 9));
         assertEquals(d, d.with("MD025", "front_matter_title", "([unclosed"));

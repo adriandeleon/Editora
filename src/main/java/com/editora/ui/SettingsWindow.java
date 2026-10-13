@@ -2907,12 +2907,6 @@ public class SettingsWindow {
             return;
         }
         markdownLintRulesBox.getChildren().clear();
-        java.util.Set<String> disabled = new java.util.HashSet<>();
-        for (String c : config.getSettings().getMarkdownLintDisabledRules()) {
-            if (c != null) {
-                disabled.add(c.strip().toUpperCase(java.util.Locale.ROOT));
-            }
-        }
         // One row per rule: a checkbox whose label is the rule code (fixed-width so codes align) followed by
         // a muted one-line description — a readable vertical list instead of a wrapping grid of bare codes.
         for (com.editora.markdown.MarkdownLint.Rule rule : com.editora.markdown.MarkdownLint.RULES) {
@@ -2928,15 +2922,10 @@ public class SettingsWindow {
             CheckBox cb = new CheckBox();
             cb.setGraphic(label);
             cb.setAccessibleText(code + " " + desc.getText()); // its visible name is a graphic, not text
-            cb.setSelected(!disabled.contains(code));
+            // Rules that are off by default are opt-in: MarkdownLintRules knows which list holds which.
+            cb.setSelected(MarkdownLintRules.enabled(config.getSettings(), code));
             cb.selectedProperty().addListener((o, was, on) -> {
-                java.util.List<String> list =
-                        new java.util.ArrayList<>(config.getSettings().getMarkdownLintDisabledRules());
-                list.removeIf(c -> code.equalsIgnoreCase(c));
-                if (!on) {
-                    list.add(code);
-                }
-                config.getSettings().setMarkdownLintDisabledRules(list);
+                MarkdownLintRules.setEnabled(config.getSettings(), code, on);
                 apply();
             });
             markdownLintRulesBox.getChildren().add(cb);

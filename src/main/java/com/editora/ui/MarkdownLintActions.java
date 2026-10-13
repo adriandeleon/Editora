@@ -145,11 +145,66 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
     }
 
-    /** The project's rule options for {@code buffer} (markdownlint's defaults without a config). */
+    /**
+     * The rule options for {@code buffer}: the project config's (markdownlint's defaults without one), with the
+     * user's per-rule severities where the project has not set its own.
+     */
     MarkdownLintOptions options(EditorBuffer buffer) {
         Path path = buffer == null ? null : buffer.getPath();
         ConfigHit hit = path != null && com.editora.vfs.Vfs.isLocal(path) ? configFor(path) : null;
-        return hit == null ? MarkdownLintOptions.DEFAULT : hit.options();
+        return MarkdownLintRules.withSeverities(
+                host.config().getSettings(), hit == null ? MarkdownLintOptions.DEFAULT : hit.options());
+    }
+
+    /** Files larger than this are not read for their heading anchors. */
+    private static final long MAX_ANCHOR_FILE_BYTES = 1_000_000;
+
+    /**
+     * What {@code buffer}'s relative links point at, resolved against the saved file's folder; null for an
+     * unsaved or remote buffer (the link-target rules then say nothing). Asked on the lint thread: it reads the
+     * disk, and remembers what it read for the one lint run it serves.
+     */
+    MarkdownLint.LinkTargets linkTargets(EditorBuffer buffer) {
+        Path path = buffer == null ? null : buffer.getPath();
+        if (path == null || !com.editora.vfs.Vfs.isLocal(path) || path.getParent() == null) {
+            return null;
+        }
+        return linkTargets(path.getParent());
+    }
+
+    /** As {@link #linkTargets(EditorBuffer)}, for links written in a file of {@code folder}. */
+    static MarkdownLint.LinkTargets linkTargets(Path folder) {
+        Map<String, Boolean> exists = new HashMap<>();
+        Map<String, Set<String>> anchors = new HashMap<>();
+        return new MarkdownLint.LinkTargets() {
+            @Override
+            public boolean exists(String relative) {
+                return exists.computeIfAbsent(relative, r -> {
+                    try {
+                        return Files.exists(folder.resolve(r));
+                    } catch (RuntimeException e) {
+                        return true; // not a path this file system can express: not ours to judge
+                    }
+                });
+            }
+
+            @Override
+            public Set<String> anchors(String relative) {
+                if (!anchors.containsKey(relative)) {
+                    Set<String> found = null;
+                    try {
+                        Path file = folder.resolve(relative);
+                        if (Files.isRegularFile(file) && Files.size(file) <= MAX_ANCHOR_FILE_BYTES) {
+                            found = MarkdownLint.anchors(Files.readString(file));
+                        }
+                    } catch (IOException | RuntimeException e) {
+                        found = null; // unreadable (binary, wrong charset): unknown, not "missing"
+                    }
+                    anchors.put(relative, found);
+                }
+                return anchors.get(relative);
+            }
+        };
     }
 
     /**
