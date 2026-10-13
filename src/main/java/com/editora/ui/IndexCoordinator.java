@@ -103,10 +103,14 @@ final class IndexCoordinator {
     /** Markdown links follow a rename too; it rides this coordinator's rename hook and project seams. */
     final MarkdownLinkUpdater linkUpdater;
 
+    /** Go to Heading in Project: the same project, walk and overlay as Go to Symbol. */
+    final MarkdownHeadingPicker headingPicker;
+
     IndexCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
         this.linkUpdater = new MarkdownLinkUpdater(host, ops::projectRoot, ops::respectGitignore);
+        this.headingPicker = new MarkdownHeadingPicker(host, ops);
         this.picker = new QuickOpen<>(
                 tr("index.gotoSymbol.title"),
                 tr("index.gotoSymbol.prompt"),
@@ -123,6 +127,7 @@ final class IndexCoordinator {
 
     void setOverlayHost(OverlayHost overlayHost) {
         picker.setOverlayHost(overlayHost);
+        headingPicker.setOverlayHost(overlayHost);
     }
 
     /** {@code Container.name — path:line}, so two same-named symbols are told apart in the list. */
@@ -151,6 +156,7 @@ final class IndexCoordinator {
 
     /** Called when the window's project changes — the previous project's symbols are now meaningless. */
     void onProjectChanged() {
+        headingPicker.dispose(); // a scan of the project that was is of no use now
         generation.incrementAndGet();
         index.clear();
         projectFiles = List.of();
@@ -608,5 +614,6 @@ final class IndexCoordinator {
     void dispose() {
         worker.shutdownNow();
         linkUpdater.dispose();
+        headingPicker.dispose();
     }
 }

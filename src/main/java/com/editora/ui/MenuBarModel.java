@@ -177,6 +177,7 @@ final class MenuBarModel {
                                 "file.find",
                                 "buffer.jump",
                                 "lsp.gotoSymbol",
+                                "project.gotoMarkdownHeading",
                                 SEPARATOR,
                                 "nav.goToLine",
                                 "nav.back",

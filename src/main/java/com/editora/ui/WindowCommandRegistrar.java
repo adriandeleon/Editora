@@ -1851,6 +1851,7 @@ final class WindowCommandRegistrar {
                         "markdown.setTocMaxLevel", () -> host.editorSettings().promptMarkdownTocLevel(true)));
         MarkdownSettingCommands.register(
                 host.registry(), host.editorSettings(), () -> host.config().getSettings());
+        MarkdownSourceCommands.register(host);
         host.registry().register(Command.of("nav.aceJump", host::startAceJump));
         host.registry().register(Command.of("nav.aceJumpLine", host::startAceJumpLine));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
