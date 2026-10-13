@@ -2163,7 +2163,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             lspCoordinator.requestStructureSymbols(
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
-            breadcrumb.setActiveFile(buffer == null ? null : buffer.getPath());
+            breadcrumb.setActiveBuffer(buffer);
             // Sort the Problems / TODO tool windows so the active file's group is on top (IDE convention).
             // Problems is keyed by canonical (LSP) paths; TODO by as-walked (scan) paths.
             Path activePath = buffer == null ? null : buffer.getPath();

@@ -2520,6 +2520,22 @@ public class SettingsWindow {
                 wordWrapProseCheck,
                 null,
                 "word wrap soft wrap long lines markdown plain text prose paragraph");
+        switchRow(
+                display,
+                Category.EDITOR,
+                "typewriterMode",
+                true,
+                Settings::isTypewriterMode,
+                Settings::setTypewriterMode,
+                "typewriter mode centre center caret line middle scrolling focus writing");
+        switchRow(
+                display,
+                Category.EDITOR,
+                "statusBarWordCount",
+                true,
+                Settings::isStatusBarWordCount,
+                Settings::setStatusBarWordCount,
+                "status bar word count words reading time markdown plain text");
         checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
         checkRow(
                 display,
@@ -2769,7 +2785,107 @@ public class SettingsWindow {
                 tr("settings.markdownTocLevels.desc"),
                 tocLevels,
                 "markdown table of contents toc heading levels depth minimum maximum");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownTocSkipTitle",
+                false,
+                Settings::isMarkdownTocSkipTitle,
+                Settings::setMarkdownTocSkipTitle,
+                "markdown table of contents toc title first heading h1 skip omit");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownTocOrdered",
+                false,
+                Settings::isMarkdownTocOrdered,
+                Settings::setMarkdownTocOrdered,
+                "markdown table of contents toc numbered ordered list");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownTocUpdateOnSave",
+                false,
+                Settings::isMarkdownTocUpdateOnSave,
+                Settings::setMarkdownTocUpdateOnSave,
+                "markdown table of contents toc update regenerate on save automatic");
+        textRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownImageName",
+                Settings.DEFAULT_MARKDOWN_IMAGE_NAME,
+                Settings::getMarkdownImageNamePattern,
+                Settings::setMarkdownImageNamePattern,
+                "markdown image paste drop file name pattern screenshot");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownImageAltPrompt",
+                false,
+                Settings::isMarkdownImageAltPrompt,
+                Settings::setMarkdownImageAltPrompt,
+                "markdown image paste alt text description accessibility ask prompt");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownSmartTypography",
+                true,
+                Settings::isMarkdownSmartTypography,
+                Settings::setMarkdownSmartTypography,
+                "markdown smart typography curly quotes dashes ellipsis typographic");
+        choiceRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownUpdateLinks",
+                true,
+                Settings.LINK_UPDATE_MODES,
+                Settings::getMarkdownUpdateLinksOnRename,
+                Settings::setMarkdownUpdateLinksOnRename,
+                "markdown links update rename move file refactor ask always never");
         Card preview = card(p, tr("settings.section.markdownPreview"));
+        choiceRow(
+                preview,
+                Category.MARKDOWN,
+                "markdownDefaultView",
+                true,
+                Settings.MARKDOWN_VIEW_MODES,
+                Settings::getMarkdownDefaultViewMode,
+                Settings::setMarkdownDefaultViewMode,
+                "markdown default view mode open editor split preview side by side");
+        intRow(
+                preview,
+                Category.MARKDOWN,
+                "markdownPreviewFontSize",
+                Settings.MAX_PREVIEW_FONT_SIZE,
+                1,
+                Settings::getMarkdownPreviewFontSize,
+                Settings::setMarkdownPreviewFontSize,
+                "markdown preview font size text bigger smaller");
+        intRow(
+                preview,
+                Category.MARKDOWN,
+                "markdownPreviewWidth",
+                Settings.MAX_PREVIEW_WIDTH,
+                20,
+                Settings::getMarkdownPreviewWidth,
+                Settings::setMarkdownPreviewWidth,
+                "markdown preview width line length column measure");
+        switchRow(
+                preview,
+                Category.MARKDOWN,
+                "markdownScrollSync",
+                false,
+                Settings::isMarkdownScrollSync,
+                Settings::setMarkdownScrollSync,
+                "markdown preview scroll sync synchronize split together follow");
+        switchRow(
+                preview,
+                Category.MARKDOWN,
+                "markdownHideFrontMatter",
+                false,
+                Settings::isMarkdownHideFrontMatter,
+                Settings::setMarkdownHideFrontMatter,
+                "markdown preview front matter yaml metadata hide");
         controlRow(
                 preview,
                 Category.MARKDOWN,
@@ -2789,8 +2905,33 @@ public class SettingsWindow {
                 mathSupportCheck,
                 null,
                 "markdown math latex katex formula equation dollar");
+        Card export = card(p, tr("settings.section.markdownExport"));
+        switchRow(
+                export,
+                Category.MARKDOWN,
+                "htmlExportEmbedImages",
+                true,
+                Settings::isHtmlExportEmbedImages,
+                Settings::setHtmlExportEmbedImages,
+                "markdown html export embed images data uri self-contained standalone");
+        switchRow(
+                export,
+                Category.MARKDOWN,
+                "htmlExportHighlightCode",
+                false,
+                Settings::isHtmlExportHighlightCode,
+                Settings::setHtmlExportHighlightCode,
+                "markdown html export syntax highlight code blocks colors");
         Card lint = card(p, tr("settings.section.markdownLint"));
         checkRow(lint, Category.MARKDOWN, markdownLintCheck, null, "markdown lint linting warnings squiggles rules");
+        switchRow(
+                lint,
+                Category.MARKDOWN,
+                "markdownLintFixOnSave",
+                false,
+                Settings::isMarkdownLintFixOnSave,
+                Settings::setMarkdownLintFixOnSave,
+                "markdown lint fix issues on save automatic format");
         // A project's .markdownlint file changes which of the rules below apply to the active file; say so
         // here too, or a rule ticked in this list that the project switches off looks broken.
         markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
@@ -2805,7 +2946,8 @@ public class SettingsWindow {
                 lint,
                 Category.MARKDOWN,
                 markdownLintRulesEditor(),
-                "markdown lint rules MD009 MD040 MD034 disable enable per-rule checklist");
+                "markdown lint rules MD009 MD040 MD034 MD013 MD033 disable enable per-rule checklist severity error "
+                        + "warning hint");
         return p;
     }
 
@@ -2888,18 +3030,148 @@ public class SettingsWindow {
             markdownTocMinSpinner.getValueFactory().setValue(s.getMarkdownTocMinLevel());
             markdownTocMaxSpinner.getValueFactory().setValue(s.getMarkdownTocMaxLevel());
             markdownPreviewThemeCombo.setValue(s.getMarkdownPreviewTheme());
+            settingSyncs.forEach(sync -> sync.accept(s));
             refreshMarkdownLintConfigNote();
         } finally {
             loading = prev;
         }
     }
 
-    /** The Markdown-lint per-rule checklist: one checkbox per rule (checked = enabled). Toggling writes the
-     *  disabled rule codes to {@code Settings.markdownLintDisabledRules} and applies live. */
+    /** Shows a stored value in its control; run by {@link #syncMarkdownControls} for every row built below. */
+    private final java.util.List<Consumer<Settings>> settingSyncs = new java.util.ArrayList<>();
+
+    /** The control of each row built below, by its setting key (a switch row's is its bound checkbox). */
+    private final Map<String, javafx.scene.control.Control> settingControls = new java.util.HashMap<>();
+
+    /**
+     * An on/off row for one boolean setting: titled {@code settings.<key>} (described by
+     * {@code settings.<key>.desc} when {@code described}), written on change, shown again on every sync.
+     */
+    private CheckBox switchRow(
+            Card card,
+            Category cat,
+            String key,
+            boolean described,
+            java.util.function.Predicate<Settings> get,
+            java.util.function.BiConsumer<Settings, Boolean> set,
+            String keywords) {
+        CheckBox check = viewCheck(tr("settings." + key), set);
+        settingControls.put(key, check);
+        checkRow(card, cat, check, described ? tr("settings." + key + ".desc") : null, keywords);
+        settingSyncs.add(st -> check.setSelected(get.test(st)));
+        return check;
+    }
+
+    /** A row choosing one of {@code values}, each labelled {@code settings.<key>.<value>}. */
+    private void choiceRow(
+            Card card,
+            Category cat,
+            String key,
+            boolean described,
+            java.util.List<String> values,
+            java.util.function.Function<Settings, String> get,
+            java.util.function.BiConsumer<Settings, String> set,
+            String keywords) {
+        ComboBox<String> combo = new ComboBox<>();
+        combo.getItems().setAll(values);
+        combo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String value) {
+                return value == null ? "" : tr("settings." + key + "." + value);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        combo.setMinWidth(170);
+        settingControls.put(key, combo);
+        combo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            set.accept(config.getSettings(), now);
+            apply();
+        });
+        controlRow(
+                card, cat, tr("settings." + key), described ? tr("settings." + key + ".desc") : null, combo, keywords);
+        settingSyncs.add(st -> combo.setValue(get.apply(st)));
+    }
+
+    /** A row for a size in pixels where 0 means "the built-in one" (described by {@code settings.<key>.desc}). */
+    private void intRow(
+            Card card,
+            Category cat,
+            String key,
+            int max,
+            int step,
+            java.util.function.ToIntFunction<Settings> get,
+            java.util.function.BiConsumer<Settings, Integer> set,
+            String keywords) {
+        Spinner<Integer> spinner = IntSpinners.editable(0, max, 0, step);
+        spinner.setPrefWidth(100);
+        spinner.setAccessibleText(tr("settings." + key));
+        settingControls.put(key, spinner);
+        spinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            set.accept(config.getSettings(), now);
+            // What is kept may not be what was typed (a size below the smallest is raised to it): show it.
+            int kept = get.applyAsInt(config.getSettings());
+            if (kept != now) {
+                boolean prev = loading;
+                loading = true;
+                spinner.getValueFactory().setValue(kept);
+                loading = prev;
+            }
+            apply();
+        });
+        controlRow(card, cat, tr("settings." + key), tr("settings." + key + ".desc"), spinner, keywords);
+        settingSyncs.add(st -> spinner.getValueFactory().setValue(get.applyAsInt(st)));
+    }
+
+    /** A row for a short text value, committed on Enter or when focus leaves (described by {@code .desc}). */
+    private void textRow(
+            Card card,
+            Category cat,
+            String key,
+            String prompt,
+            java.util.function.Function<Settings, String> get,
+            java.util.function.BiConsumer<Settings, String> set,
+            String keywords) {
+        TextField field = new TextField();
+        field.setPromptText(prompt);
+        field.setPrefWidth(220);
+        field.setAccessibleText(tr("settings." + key));
+        settingControls.put(key, field);
+        commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
+            set.accept(config.getSettings(), now);
+            field.setText(get.apply(config.getSettings())); // as kept: a name that is not one reads as the default
+            apply();
+        });
+        controlRow(card, cat, tr("settings." + key), tr("settings." + key + ".desc"), field, keywords);
+        settingSyncs.add(st -> field.setText(get.apply(st)));
+    }
+
+    /**
+     * The Markdown-lint per-rule list: a checkbox per rule (checked = on in the user's settings — a rule that
+     * is off by default is on only once ticked) and its severity. Each change writes
+     * {@code Settings} ({@link MarkdownLintRules#setEnabled}, {@link Settings#setMarkdownLintSeverity}) and
+     * applies live.
+     */
     private javafx.scene.Node markdownLintRulesEditor() {
         markdownLintRulesBox = new VBox(4);
         rebuildMarkdownLintRules();
-        return markdownLintRulesBox;
+        // Forty-odd rules: a window onto the list, so the card does not push the rest of the page away.
+        ScrollPane scroll = new ScrollPane(markdownLintRulesBox);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setPrefViewportHeight(300);
+        scroll.setMaxHeight(320);
+        scroll.getStyleClass().add("settings-lint-rules-scroll");
+        return scroll;
     }
 
     private void rebuildMarkdownLintRules() {
@@ -2928,7 +3200,33 @@ public class SettingsWindow {
                 MarkdownLintRules.setEnabled(config.getSettings(), code, on);
                 apply();
             });
-            markdownLintRulesBox.getChildren().add(cb);
+            ComboBox<String> severity = new ComboBox<>();
+            severity.getItems().setAll(Settings.LINT_SEVERITIES);
+            severity.setConverter(new StringConverter<>() {
+                @Override
+                public String toString(String value) {
+                    return value == null ? "" : tr("settings.markdownLintSeverity." + value);
+                }
+
+                @Override
+                public String fromString(String shown) {
+                    return shown;
+                }
+            });
+            severity.setValue(config.getSettings().markdownLintSeverity(code));
+            severity.setAccessibleText(tr("settings.markdownLintSeverity") + " " + code);
+            severity.getProperties().put("editora.lintSeverity", code);
+            severity.valueProperty().addListener((o, was, now) -> {
+                if (now != null) {
+                    config.getSettings().setMarkdownLintSeverity(code, now);
+                    apply();
+                }
+            });
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            HBox row = new HBox(8, cb, gap, severity);
+            row.setAlignment(Pos.CENTER_LEFT);
+            markdownLintRulesBox.getChildren().add(row);
         }
     }
 

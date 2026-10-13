@@ -37,7 +37,33 @@ public record InlineRun(
         boolean code,
         String href,
         String image,
-        String latex) {
+        String latex,
+        boolean highlight,
+        int script) {
+
+    /** A run with no highlight, on the baseline. */
+    public InlineRun(
+            String text,
+            boolean bold,
+            boolean italic,
+            boolean strike,
+            boolean underline,
+            boolean code,
+            String href,
+            String image,
+            String latex) {
+        this(text, bold, italic, strike, underline, code, href, image, latex, false, 0);
+    }
+
+    /** {@code ^superscript^} text ({@link #script} &gt; 0). */
+    public boolean isSuperscript() {
+        return script > 0;
+    }
+
+    /** {@code ~subscript~} text ({@link #script} &lt; 0). */
+    public boolean isSubscript() {
+        return script < 0;
+    }
 
     /** A run of text (no picture). */
     public InlineRun(
@@ -97,6 +123,27 @@ public record InlineRun(
         return out;
     }
 
+    /** The runs {@code out} gained since {@code from}, restyled: highlighted, or raised / lowered. */
+    private static void mark(List<InlineRun> out, int from, boolean highlight, int script) {
+        for (int k = from; k < out.size(); k++) {
+            InlineRun r = out.get(k);
+            out.set(
+                    k,
+                    new InlineRun(
+                            r.text(),
+                            r.bold(),
+                            r.italic(),
+                            r.strike(),
+                            r.underline(),
+                            r.code(),
+                            r.href(),
+                            r.image(),
+                            r.latex(),
+                            r.highlight() || highlight,
+                            script != 0 ? script : r.script()));
+        }
+    }
+
     private static void collect(
             Node n, boolean b, boolean i, boolean s, boolean u, boolean code, String href, List<InlineRun> out) {
         if (n instanceof Text t) {
@@ -124,6 +171,20 @@ public record InlineRun(
         } else if (n instanceof MarkdownMath.Inline math) {
             // A formula the parser recognised (as the preview's does): the LaTeX exactly as written.
             out.add(new InlineRun(MarkdownMath.source(math), b, i, s, u, code, href, null, math.getLatex()));
+        } else if (n instanceof com.editora.markdown.MarkdownEmoji.Emoji emoji) {
+            out.add(new InlineRun(emoji.getEmoji(), b, i, s, u, code, href)); // the character, not ":name:"
+        } else if (n instanceof com.editora.markdown.MarkdownMarks.Highlight) {
+            int from = out.size();
+            children(n, b, i, s, u, code, href, out);
+            mark(out, from, true, 0);
+        } else if (n instanceof com.editora.markdown.MarkdownMarks.Superscript) {
+            int from = out.size();
+            children(n, b, i, s, u, code, href, out);
+            mark(out, from, false, 1);
+        } else if (n instanceof com.editora.markdown.MarkdownMarks.Subscript) {
+            int from = out.size();
+            children(n, b, i, s, u, code, href, out);
+            mark(out, from, false, -1);
         } else if (n instanceof FootnoteReference ref) {
             out.add(new InlineRun(footnoteMarker(ref.getLabel()), b, i, s, u, code, href)); // was dropped
         } else if (n instanceof HardLineBreak) {
@@ -192,6 +253,8 @@ public record InlineRun(
                 sb.append(t.getLiteral());
             } else if (c instanceof Code code) {
                 sb.append(code.getLiteral());
+            } else if (c instanceof com.editora.markdown.MarkdownEmoji.Emoji emoji) {
+                sb.append(emoji.getEmoji());
             } else {
                 sb.append(textOf(c));
             }

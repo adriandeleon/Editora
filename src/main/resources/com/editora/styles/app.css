@@ -2632,6 +2632,17 @@
     -fx-text-fill: -color-accent-fg;
 }
 
+/* The heading path of a Markdown document, after the file crumb (MarkdownHeadingCrumbs). */
+.file-breadcrumb .markdown-heading-divider {
+    -fx-font-size: 12px;
+    -fx-padding: 0 2 0 4;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.file-breadcrumb .markdown-heading-crumb {
+    -fx-text-fill: -color-fg-muted;
+}
+
 /* Shrink the "/" dividers between crumbs to match. */
 .file-breadcrumb .breadcrumbs > .label {
     -fx-font-size: 12px;

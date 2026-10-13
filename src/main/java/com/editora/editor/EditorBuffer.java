@@ -896,7 +896,7 @@ public class EditorBuffer implements TabContent {
     private static final int UNDO_HISTORY = 300;
 
     public void setCompletionProvider(CompletionProvider provider) {
-        completionActions.setCompletionProvider(provider);
+        completionActions.setCompletionProvider(MarkdownCompletions.provider(provider, this::getPath));
     }
 
     public void setAutocomplete(boolean enabled, boolean prose, boolean snippets, boolean mermaid) {

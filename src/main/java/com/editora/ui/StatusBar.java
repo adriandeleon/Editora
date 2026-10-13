@@ -112,6 +112,9 @@ public final class StatusBar extends HBox {
     /** File size; clicking it toggles the File Information tool window. */
     private final Label size = segment("tool.fileInformation", tr("statusbar.tip.fileSize"));
 
+    /** Words in a prose buffer (or in its selection); see {@link StatusWordCount}. */
+    final StatusWordCount wordCount;
+
     private final Label encoding = new Label("UTF-8");
 
     /**
@@ -177,6 +180,7 @@ public final class StatusBar extends HBox {
         this.activeBuffer = activeBuffer;
         this.registry = registry;
         this.settings = settings;
+        this.wordCount = new StatusWordCount(settings);
 
         getStyleClass().add("status-bar");
         echo.getStyleClass().addAll("status-message", "status-segment-clickable");
@@ -292,6 +296,7 @@ public final class StatusBar extends HBox {
                         snippet,
                         editorConfig,
                         formatGroup,
+                        wordCount.label(),
                         size);
         pinSegmentWidths();
         refresh();
@@ -878,6 +883,7 @@ public final class StatusBar extends HBox {
         if (!hasBuffer) {
             csvField.setVisible(false);
             csvField.setManaged(false);
+            wordCount.document(null, null, simpleMode);
             return;
         }
         refreshPositionAndCsv(buffer, buffer.getFocusedArea());
@@ -924,6 +930,7 @@ public final class StatusBar extends HBox {
         }
         position.setText(text);
         position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
+        wordCount.selection(area);
 
         // CSV/TSV column readout — "Field N of M". Two single-line scans (the header row for the column count,
         // the caret's line up to the caret for the field index). Approximation: a field whose quotes span
@@ -981,6 +988,7 @@ public final class StatusBar extends HBox {
     private void refreshSize(EditorBuffer buffer) {
         long gen = ++sizeGen;
         String content = buffer.getContent();
+        wordCount.document(buffer, content, simpleMode);
         if (content.length() <= INLINE_SIZE_CHARS) {
             showSize(buffer, utf8Length(content));
             return;

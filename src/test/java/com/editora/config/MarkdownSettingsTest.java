@@ -140,4 +140,99 @@ class MarkdownSettingsTest {
         assertEquals("assets", t.getMarkdownAssetsFolder());
         assertEquals("", t.getMarkdownPreviewTheme());
     }
+
+    // --- the feature-gap pass's fields: what a hand-edited value reads as -----------------------------------
+
+    @Test
+    void choicesReadAsOneOfTheirValues() {
+        Settings s = new Settings();
+        assertEquals("editor", s.getMarkdownDefaultViewMode());
+        assertEquals("ask", s.getMarkdownUpdateLinksOnRename());
+        s.setMarkdownDefaultViewMode("split");
+        s.setMarkdownUpdateLinksOnRename("never");
+        assertEquals("split", s.getMarkdownDefaultViewMode());
+        assertEquals("never", s.getMarkdownUpdateLinksOnRename());
+        s.setMarkdownDefaultViewMode("sideways");
+        s.setMarkdownUpdateLinksOnRename(null);
+        assertEquals("editor", s.getMarkdownDefaultViewMode());
+        assertEquals("ask", s.getMarkdownUpdateLinksOnRename(), "never silently 'always' on a bad value");
+    }
+
+    @Test
+    void previewSizesAreZeroOrWithinTheirRange() {
+        Settings s = new Settings();
+        assertEquals(0, s.getMarkdownPreviewFontSize());
+        assertEquals(0, s.getMarkdownPreviewWidth());
+        s.setMarkdownPreviewFontSize(3);
+        s.setMarkdownPreviewWidth(50);
+        assertEquals(Settings.MIN_PREVIEW_FONT_SIZE, s.getMarkdownPreviewFontSize());
+        assertEquals(Settings.MIN_PREVIEW_WIDTH, s.getMarkdownPreviewWidth());
+        s.setMarkdownPreviewFontSize(900);
+        s.setMarkdownPreviewWidth(90_000);
+        assertEquals(Settings.MAX_PREVIEW_FONT_SIZE, s.getMarkdownPreviewFontSize());
+        assertEquals(Settings.MAX_PREVIEW_WIDTH, s.getMarkdownPreviewWidth());
+        s.setMarkdownPreviewFontSize(-4);
+        assertEquals(0, s.getMarkdownPreviewFontSize(), "anything below one is 'the built-in size'");
+    }
+
+    @Test
+    void thePastedImageNameIsAPlainFileName() {
+        assertEquals("shot", Settings.normalizeImageName(" shot "));
+        assertEquals("my image-01", Settings.normalizeImageName("my image-01"));
+        for (String bad :
+                new String[] {null, "", " ", "a/b", "..\\up", ".hidden", "name.", "what?", "a:b", "x".repeat(81)}) {
+            assertEquals("pasted-image", Settings.normalizeImageName(bad), String.valueOf(bad));
+        }
+    }
+
+    @Test
+    void aLintRuleIsOnByItsDefaultAndTheListThatGovernsIt() {
+        Settings s = new Settings();
+        assertTrue(s.isMarkdownLintRuleOn("MD009"));
+        assertFalse(s.isMarkdownLintRuleOn("MD013"), "line length is off until turned on");
+        assertFalse(s.isMarkdownLintRuleOn("md033"));
+
+        s.setMarkdownLintRuleOn("md013", true);
+        s.setMarkdownLintRuleOn("MD009", false);
+        assertTrue(s.isMarkdownLintRuleOn("MD013"));
+        assertFalse(s.isMarkdownLintRuleOn("MD009"));
+        assertEquals(java.util.List.of("MD013"), s.getMarkdownLintEnabledRules());
+        assertEquals(java.util.List.of("MD009"), s.getMarkdownLintDisabledRules());
+
+        s.setMarkdownLintRuleOn("MD013", false);
+        s.setMarkdownLintRuleOn("MD009", true);
+        assertEquals(java.util.List.of(), s.getMarkdownLintEnabledRules(), "back to the default leaves no entry");
+        assertEquals(java.util.List.of(), s.getMarkdownLintDisabledRules());
+
+        // hand-edited lists: case, spaces, nulls
+        s.setMarkdownLintEnabledRules(new java.util.ArrayList<>(java.util.Arrays.asList(" md033 ", null)));
+        assertTrue(s.isMarkdownLintRuleOn("MD033"));
+        s.setMarkdownLintEnabledRules(null);
+        assertFalse(s.isMarkdownLintRuleOn("MD033"));
+    }
+
+    @Test
+    void aLintRulesSeverityIsWarningUnlessSaidOtherwise() {
+        Settings s = new Settings();
+        assertEquals("warning", s.markdownLintSeverity("MD009"));
+        s.setMarkdownLintSeverity("md009", "ERROR");
+        s.setMarkdownLintSeverity("MD040", "hint");
+        assertEquals("error", s.markdownLintSeverity("MD009"));
+        assertEquals("hint", s.markdownLintSeverity("md040"));
+        assertEquals(java.util.Map.of("MD009", "error", "MD040", "hint"), s.getMarkdownLintSeverities());
+        s.setMarkdownLintSeverity("MD009", "warning");
+        assertFalse(s.getMarkdownLintSeverities().containsKey("MD009"), "the default is stored as no entry");
+        s.setMarkdownLintSeverities(new java.util.LinkedHashMap<>(java.util.Map.of("MD001", "fatal")));
+        assertEquals("warning", s.markdownLintSeverity("MD001"), "an unknown stored value");
+        s.setMarkdownLintSeverities(null);
+        assertEquals("warning", s.markdownLintSeverity("MD001"));
+        assertEquals("warning", s.markdownLintSeverity(null));
+    }
+
+    @Test
+    void settingsAndTheLinterAgreeOnWhichRulesAreOffByDefault() {
+        assertEquals(com.editora.markdown.MarkdownLint.DEFAULT_OFF, Settings.MARKDOWN_LINT_DEFAULT_OFF);
+        assertEquals(
+                com.editora.markdown.MarkdownLintOptions.SEVERITIES, java.util.Set.copyOf(Settings.LINT_SEVERITIES));
+    }
 }
