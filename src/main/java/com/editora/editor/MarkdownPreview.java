@@ -404,8 +404,12 @@ final class MarkdownPreview {
             column.getChildren().clear();
             contextSignature = signature;
         }
-        MarkdownRenderer.RenderContext ctx =
-                MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark, plan.footnotes());
+        MarkdownRenderer.RenderContext ctx = MarkdownRenderer.previewContext(
+                plan.baseDir(),
+                this::follow,
+                dark,
+                plan.footnotes(),
+                new MarkdownRenderer.Live(this::taskClicked, null, false));
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
@@ -456,6 +460,7 @@ final class MarkdownPreview {
                 if (node != null) {
                     fresh.add(node);
                     zoomed(node);
+                    node.getProperties().put(BUILT_AT_LINE, u.startLine());
                 }
             }
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
@@ -544,6 +549,9 @@ final class MarkdownPreview {
         for (int i = from; i < to; i++) {
             Unit u = units.get(i);
             Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
+            if (node != null) {
+                node.getProperties().put(BUILT_AT_LINE, u.startLine());
+            }
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (node != null) {
                 nodes.add(node);
@@ -576,6 +584,56 @@ final class MarkdownPreview {
             PreviewImageLoader.zoomAll(node, zoom);
         }
         return node;
+    }
+
+    private java.util.function.IntPredicate taskToggle = line -> false;
+
+    /** Who toggles the task item on a source line when its box is ticked here; false = the source refused. */
+    void onTaskToggle(java.util.function.IntPredicate toggle) {
+        this.taskToggle = toggle == null ? line -> false : toggle;
+    }
+
+    /**
+     * A task box was ticked. It was built for a source line, but its block may have moved since without being
+     * rebuilt (text typed above it): the line is its block's line now, plus how far into the block the item
+     * was when the block was built.
+     */
+    private boolean taskClicked(javafx.scene.control.CheckBox box) {
+        if (!(box.getProperties().get(MarkdownRenderer.TASK_LINE) instanceof Integer builtLine)) {
+            return false;
+        }
+        Node block = box;
+        while (block != null && block.getParent() != column) {
+            block = block.getParent();
+        }
+        for (Entry e : entries) {
+            if (e.node() == block && e.startLine() >= 0) {
+                Object builtAt = block.getProperties().get(BUILT_AT_LINE);
+                int offset = builtLine - (builtAt instanceof Integer start ? start : e.startLine());
+                return taskToggle.test(e.startLine() + offset);
+            }
+        }
+        return false;
+    }
+
+    /** Node property of a top-level block: the source line it started at when it was built. */
+    private static final String BUILT_AT_LINE = "editora.md.builtAtLine";
+
+    /**
+     * Ticks or unticks the task item on {@code line} of {@code area}: one character replaced, so one undo
+     * step. False when that line is not a task item (the text has changed since the preview was rendered).
+     */
+    static boolean toggleTask(org.fxmisc.richtext.CodeArea area, int line) {
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return false;
+        }
+        String text = area.getParagraph(line).getText();
+        int at = MarkdownRenderer.taskBoxOffset(text);
+        if (at < 0) {
+            return false;
+        }
+        area.replaceText(line, at, line, at + 1, text.charAt(at) == ' ' ? "x" : " ");
+        return true;
     }
 
     /** A click on a rendered link: a {@code #slug} of this document scrolls to it, anything else is opened. */

@@ -178,6 +178,18 @@ class MarkdownRendererTest {
     }
 
     @Test
+    void theBoxOfATaskItemIsFoundOnItsSourceLine() {
+        assertEquals(3, MarkdownRenderer.taskBoxOffset("- [ ] one"));
+        assertEquals(5, MarkdownRenderer.taskBoxOffset("  * [x] nested"));
+        assertEquals(5, MarkdownRenderer.taskBoxOffset("12. [X] numbered"));
+        assertEquals(7, MarkdownRenderer.taskBoxOffset("> > - [ ] quoted"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("- not a task"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("text [ ] in prose"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("- [y] not a box"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset(null));
+    }
+
+    @Test
     void aCommentWithTextAfterItOnItsLineIsNotInvisible() {
         assertTrue(MarkdownRenderer.isHtmlComment("<!-- a --> <!-- b -->"));
         assertFalse(MarkdownRenderer.isHtmlComment("<!-- note --> **Visible** text after a comment"));

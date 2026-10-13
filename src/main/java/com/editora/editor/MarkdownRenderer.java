@@ -239,6 +239,7 @@ public final class MarkdownRenderer {
                         false,
                         null,
                         null,
+                        null,
                         null));
     }
 
@@ -258,7 +259,8 @@ public final class MarkdownRenderer {
      * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
      */
     public static Node renderForPrint(org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets) {
-        return renderDocument(ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null));
+        return renderDocument(
+                ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null));
     }
 
     private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
@@ -271,7 +273,8 @@ public final class MarkdownRenderer {
                     ctx.print(),
                     ctx.assets(),
                     ctx.dark(),
-                    footnoteNumbers(ast));
+                    footnoteNumbers(ast),
+                    ctx.live());
             appendBlocks(ast, content, numbered);
         }
         return wrapColumn(content);
@@ -305,8 +308,41 @@ public final class MarkdownRenderer {
             Path baseDir,
             java.util.function.Consumer<String> onLinkClick,
             Boolean dark,
-            Map<String, Integer> footnotes) {
-        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes);
+            Map<String, Integer> footnotes,
+            Live live) {
+        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live);
+    }
+
+    /**
+     * What only the live document preview offers, and a popup or a printed page does not: a task box that can
+     * be ticked ({@code onTask} is told which box, and says whether the source took the change), a picture
+     * that opens enlarged ({@code onEnlarge}), and the reader's choice to leave front matter out.
+     */
+    record Live(
+            java.util.function.Predicate<CheckBox> onTask,
+            java.util.function.Consumer<Node> onEnlarge,
+            boolean hideFrontMatter) {}
+
+    /** Node property of a task box: the source line of its list item when it was built ({@link Live}). */
+    static final String TASK_LINE = "editora.md.taskLine";
+
+    /** The first source line of {@code block}, or -1 when the parse recorded none. */
+    static int lineOf(org.commonmark.node.Node block) {
+        List<org.commonmark.node.SourceSpan> spans = block.getSourceSpans();
+        return spans.isEmpty() ? -1 : spans.get(0).getLineIndex();
+    }
+
+    private static final java.util.regex.Pattern TASK_BOX =
+            java.util.regex.Pattern.compile("^\\s*(?:>\\s*)*(?:[-*+]|\\d{1,9}[.)])\\s+\\[([ xX])\\]");
+
+    /** The offset in {@code line} of the character inside a task item's {@code [ ]} / {@code [x]}, or -1 when
+     *  the line is not a task item. Pure. */
+    static int taskBoxOffset(String line) {
+        if (line == null) {
+            return -1;
+        }
+        java.util.regex.Matcher m = TASK_BOX.matcher(line);
+        return m.find() ? m.start(1) : -1;
     }
 
     /**
@@ -352,7 +388,8 @@ public final class MarkdownRenderer {
             boolean print,
             MarkdownPrintAssets assets,
             Boolean dark,
-            Map<String, Integer> footnotes) {
+            Map<String, Integer> footnotes,
+            Live live) {
 
         /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
         String footnoteMark(String label) {
@@ -866,9 +903,21 @@ public final class MarkdownRenderer {
             if (task != null) {
                 CheckBox cb = new CheckBox();
                 cb.setSelected(task.isChecked());
-                cb.setDisable(true); // shows the source's state; styled at full strength (.md-task in app.css)
-                cb.setFocusTraversable(false);
                 cb.getStyleClass().add("md-task");
+                int line = lineOf(item);
+                if (ctx.live() != null && ctx.live().onTask() != null && line >= 0) {
+                    // Ticking it edits the source; when the source refuses (read-only), the box goes back.
+                    cb.getProperties().put(TASK_LINE, line);
+                    cb.setCursor(javafx.scene.Cursor.HAND);
+                    cb.setOnAction(e -> {
+                        if (!ctx.live().onTask().test(cb)) {
+                            cb.setSelected(!cb.isSelected());
+                        }
+                    });
+                } else {
+                    cb.setDisable(true); // shows the source's state; full strength (.md-task in app.css)
+                    cb.setFocusTraversable(false);
+                }
                 marker = cb;
             } else {
                 Label m = new Label(ordered ? (n + ".") : "•");

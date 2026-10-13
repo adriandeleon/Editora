@@ -729,6 +729,62 @@ class MarkdownPreviewFxTest {
         });
     }
 
+    // --- task boxes that tick the source ----------------------------------------------------------------
+
+    @Test
+    void tickingATaskBoxEditsItsSourceLineInOneUndoStep() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            ref[0] = markdown("# Tasks\n\n- [ ] one\n- [x] two\n  - [ ] nested\n\n> - [ ] quoted\n\nText.\n");
+            ref[0].getArea().getUndoManager().forgetHistory();
+            stage[0] = EditorFx.show(ref[0], 600, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        EditorFx.onFx(() -> {
+            List<javafx.scene.control.CheckBox> boxes =
+                    collect(pane(buffer).getContent(), javafx.scene.control.CheckBox.class);
+            assertEquals(4, boxes.size());
+            assertFalse(boxes.get(0).isDisabled(), "a box in the live preview can be ticked");
+            boxes.get(0).fire();
+            assertEquals("- [x] one", buffer.getArea().getParagraph(2).getText());
+            boxes.get(1).fire();
+            assertEquals("- [ ] two", buffer.getArea().getParagraph(3).getText(), "and unticked");
+            buffer.getArea().undo();
+            assertEquals("- [x] two", buffer.getArea().getParagraph(3).getText(), "one tick, one undo step");
+            assertEquals("- [x] one", buffer.getArea().getParagraph(2).getText());
+        });
+        // Text typed above moves the list down without rebuilding it: the boxes still know their lines.
+        rerender(buffer, () -> buffer.getArea().insertText(0, "Intro.\n\nMore intro.\n\n"));
+        EditorFx.onFx(() -> {
+            List<javafx.scene.control.CheckBox> boxes =
+                    collect(pane(buffer).getContent(), javafx.scene.control.CheckBox.class);
+            boxes.get(2).fire();
+            assertEquals("  - [x] nested", buffer.getArea().getParagraph(8).getText());
+            boxes.get(3).fire();
+            assertEquals("> - [x] quoted", buffer.getArea().getParagraph(10).getText(), "inside a quote too");
+        });
+        // A read-only buffer keeps its text, and the box goes back to what the source says.
+        rerender(buffer, () -> buffer.setReadOnly(true));
+        EditorFx.onFx(() -> {
+            String before = buffer.getArea().getText();
+            javafx.scene.control.CheckBox first = collect(
+                            pane(buffer).getContent(), javafx.scene.control.CheckBox.class)
+                    .get(0);
+            boolean was = first.isSelected();
+            first.fire();
+            assertEquals(before, buffer.getArea().getText());
+            assertEquals(was, first.isSelected());
+            stage[0].close();
+            buffer.dispose();
+        });
+        // A popup or any other surface shows the box but cannot tick it.
+        Node elsewhere = render("- [ ] not here\n", null, null);
+        EditorFx.onFx(() -> assertTrue(
+                collect(elsewhere, javafx.scene.control.CheckBox.class).get(0).isDisabled()));
+    }
+
     // --- A6 / A14: nothing is cut off or squeezed ----------------------------------------------------
 
     @Test
@@ -1107,7 +1163,7 @@ class MarkdownPreviewFxTest {
                     firstTop >= controlsBottom, "front matter at " + firstTop + ", controls end at " + controlsBottom);
             for (javafx.scene.control.CheckBox box : collect(pane.getContent(), javafx.scene.control.CheckBox.class)) {
                 assertEquals(1.0, box.getOpacity(), 1e-9, "a task box is content, drawn at full strength");
-                assertFalse(box.isFocusTraversable());
+                assertTrue(box.isFocusTraversable(), "in the live preview it is a control: reachable with Tab");
             }
             stage[0].close();
             buffer.dispose();
