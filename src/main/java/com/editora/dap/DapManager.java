@@ -636,7 +636,7 @@ public final class DapManager implements DapClient.Host {
      * test class, the anchor of Debug Test).
      */
     private void projectNameOf(Path file, Consumer<String> cb) {
-        String uri = file.toUri().toString();
+        String uri = lsp.serverUri(file);
         lsp.executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
             String name = err == null ? JavaLaunchSupport.projectName(res) : null;
             int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
