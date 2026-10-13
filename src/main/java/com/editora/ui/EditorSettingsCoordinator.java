@@ -867,6 +867,7 @@ final class EditorSettingsCoordinator {
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
         buffer.setFont(s.getFontFamily(), effectiveFont);
+        com.editora.editor.TypewriterMode.apply(buffer, s.isTypewriterMode());
         // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
         // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
