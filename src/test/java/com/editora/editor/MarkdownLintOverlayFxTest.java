@@ -107,20 +107,35 @@ class MarkdownLintOverlayFxTest {
             stage[0] = EditorFx.show(buffer[0], 600, 300);
             buffer[0].setMarkdownLintEnabled(true);
         });
-        List<int[]> bands = bands(buffer[0]);
+        // The gutter is sized on a later pulse than the first paint, and the text moves right when it is: a
+        // squiggle read off that first paint sits where the text used to start. Look again until the overlay
+        // has repainted for the settled layout (it never would if it failed to repaint, and the test fails).
+        List<int[]> bands = List.of();
+        double[] lineBox = new double[3];
+        for (int attempt = 0; attempt < 60; attempt++) {
+            bands = bands(buffer[0]);
+            lineBox = EditorFx.callFx(() -> {
+                CodeArea area = buffer[0].getArea();
+                Node overlay = EditorFx.field(buffer[0], "mdLintOverlay");
+                var box =
+                        overlay.screenToLocal(area.getParagraphBoundsOnScreen(2).orElseThrow());
+                var text = overlay.screenToLocal(
+                        area.getCharacterBoundsOnScreen(0, 1).orElseThrow());
+                return new double[] {box.getMinY(), box.getMaxY(), text.getMinX()};
+            });
+            if (bands.size() == 1 && Math.abs(bands.get(0)[2] - lineBox[2]) <= 2) {
+                break;
+            }
+            Thread.sleep(50);
+        }
         assertEquals(1, bands.size(), "one short squiggle on the blank line");
         int[] band = bands.get(0);
         assertTrue(band[3] - band[2] >= 8 && band[3] - band[2] <= 24, "about two characters wide");
-        double[] lineBox = EditorFx.callFx(() -> {
-            CodeArea area = buffer[0].getArea();
-            Node overlay = EditorFx.field(buffer[0], "mdLintOverlay");
-            var box = overlay.screenToLocal(area.getParagraphBoundsOnScreen(2).orElseThrow());
-            var text =
-                    overlay.screenToLocal(area.getCharacterBoundsOnScreen(0, 1).orElseThrow());
-            return new double[] {box.getMinY(), box.getMaxY(), text.getMinX()};
-        });
         assertTrue(band[0] >= lineBox[0] && band[1] <= lineBox[1] + 1, "inside line 3");
-        assertTrue(Math.abs(band[2] - lineBox[2]) <= 2, "starting where the text starts, not in the gutter");
+        assertTrue(
+                Math.abs(band[2] - lineBox[2]) <= 2,
+                "starting where the text starts, not in the gutter: squiggle at x=" + band[2] + ", text at x="
+                        + lineBox[2]);
         EditorFx.onFx(() -> {
             stage[0].close();
             buffer[0].dispose();
