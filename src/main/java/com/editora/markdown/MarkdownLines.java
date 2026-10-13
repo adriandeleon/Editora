@@ -60,6 +60,11 @@ public final class MarkdownLines {
         return !kindAt(text, lineStart).equals(MarkdownBlocks.Kind.TEXT);
     }
 
+    /** Whether the line starting at {@code lineStart} is Markdown prose: not code, front matter or raw HTML. */
+    public static boolean isProse(String text, int lineStart) {
+        return !insideFence(text, lineStart);
+    }
+
     /** Whether the line starting at {@code lineStart} is a line of a fenced or indented code block. */
     static boolean insideCode(String text, int lineStart) {
         return switch (kindAt(text, lineStart)) {

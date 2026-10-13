@@ -1550,8 +1550,7 @@ final class WindowCommandRegistrar {
                         Command.of("typst.outline", () -> host.previews().withTypst(EditorBuffer::insertTypstOutline)));
         host.registry()
                 .register(Command.of(
-                        "typst.insertImage",
-                        () -> host.previews().withTypst(host.editing()::insertTypstImageFromChooser)));
+                        "typst.insertImage", () -> host.previews().withTypst(host.editing()::insertImageFromChooser)));
         host.registry().register(Command.of("typst.exportPng", host.typst()::exportPng));
         host.registry().register(Command.of("typst.exportSvg", host.typst()::exportSvg));
         host.registry().register(Command.of("markdown.reflowTable", host.previews()::markdownReflowTable));
@@ -1571,6 +1570,107 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("csv.align", host.previews()::csvAlign));
         host.registry().register(Command.of("csv.shrink", host.previews()::csvShrink));
         host.registry().register(Command.of("markdown.toggleFormatBar", host.previews()::toggleMarkdownFormatBar));
+        // Markdown: more line, block, link and table commands (palette, right-click menu, format bar; unbound).
+        host.registry()
+                .register(Command.of(
+                        "markdown.orderedList",
+                        () -> host.previews().withMarkdown(b -> b.markdown().formatOrderedList())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.blockquote",
+                        () -> host.previews().withMarkdown(b -> b.markdown().formatBlockquote())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.codeFence",
+                        () -> host.previews().withMarkdown(b -> b.markdown().formatCodeFence())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.toggleTaskDone",
+                        () -> host.previews()
+                                .markdownOr(b -> b.markdown().toggleTaskDone(), "status.markdown.noTask")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.insertFootnote",
+                        () -> host.previews().withMarkdown(b -> b.markdown().insertFootnote())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.insertDate",
+                        () -> host.previews().withMarkdown(b -> b.markdown().insertDate())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.insertHorizontalRule",
+                        () -> host.previews().withMarkdown(b -> b.markdown().insertHorizontalRule())));
+        host.registry()
+                .register(Command.of(
+                        "markdown.renumberList",
+                        () -> host.previews()
+                                .markdownOr(
+                                        b -> b.markdown().renumberList(false), "status.markdown.noListToRenumber")));
+        host.registry().register(Command.of("markdown.pasteAsMarkdown", host.previews()::markdownPasteAsMarkdown));
+        host.registry().register(Command.of("markdown.editLink", host.previews()::markdownEditLink));
+        host.registry()
+                .register(Command.of(
+                        "markdown.removeLink",
+                        () -> host.previews().markdownOr(b -> b.markdown().removeLink(), "status.markdown.noLink")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.linkToReference", () -> host.previews().markdownConvertLink(false)));
+        host.registry()
+                .register(Command.of(
+                        "markdown.linkToInline", () -> host.previews().markdownConvertLink(true)));
+        host.registry()
+                .register(Command.of(
+                        "markdown.insertImage",
+                        () -> host.previews().withMarkdown(host.editing()::insertImageFromChooser)));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableAddRowAbove",
+                        () -> host.previews()
+                                .markdownTable(b -> b.markdown().tableAddRowAbove(), "status.markdown.notTable")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableAddColumnLeft",
+                        () -> host.previews()
+                                .markdownTable(b -> b.markdown().tableAddColumnLeft(), "status.markdown.notTable")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableMoveRowUp",
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.markdown().tableMoveRow(true), "status.markdown.tableCannotMove")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableMoveRowDown",
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.markdown().tableMoveRow(false), "status.markdown.tableCannotMove")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableMoveColumnLeft",
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.markdown().tableMoveColumn(true), "status.markdown.tableCannotMove")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableMoveColumnRight",
+                        () -> host.previews()
+                                .markdownTable(
+                                        b -> b.markdown().tableMoveColumn(false), "status.markdown.tableCannotMove")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableSortAscending",
+                        () -> host.previews()
+                                .markdownTable(b -> b.markdown().tableSort(true), "status.markdown.notTable")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableSortDescending",
+                        () -> host.previews()
+                                .markdownTable(b -> b.markdown().tableSort(false), "status.markdown.notTable")));
+        host.registry()
+                .register(Command.of(
+                        "markdown.tableDelete",
+                        () -> host.previews()
+                                .markdownTable(b -> b.markdown().tableDelete(), "status.markdown.notTable")));
         host.registry().register(Command.of("view.textZoomIn", () -> host.textZoom(1)));
         host.registry().register(Command.of("view.textZoomOut", () -> host.textZoom(-1)));
         host.registry().register(Command.of("view.textZoomReset", () -> host.textZoom(0)));
@@ -2787,7 +2887,10 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.killWholeLine",
                         () -> host.editing()
-                                .emacsKill(com.editora.editops.EmacsEdits::killWholeLine, KillRing.Direction.FORWARD)));
+                                .renumberingList(() -> host.editing()
+                                        .emacsKill(
+                                                com.editora.editops.EmacsEdits::killWholeLine,
+                                                KillRing.Direction.FORWARD))));
         host.registry().register(Command.of("edit.zapToChar", host.editing()::zapToChar));
         host.registry().register(Command.of("edit.killSexp", host.editing()::killSexp));
         host.registry().register(Command.of("edit.markSexp", host.editing()::markSexp));

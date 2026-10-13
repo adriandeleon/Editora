@@ -1595,6 +1595,9 @@ final class FileWorkflowCoordinator {
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
+        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
+            buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
+        }
         if (adminSaveApplicable(buffer.getPath())) {
             saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
             return true;

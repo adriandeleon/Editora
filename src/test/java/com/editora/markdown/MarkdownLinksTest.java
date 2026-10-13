@@ -96,7 +96,7 @@ class MarkdownLinksTest {
     void inlineToReferenceAndBack() {
         String t = "a [docs](http://x) b\n";
         String ref = apply(t, MarkdownLinks.toReference(t, MarkdownLinks.at(t, 3)));
-        assertEquals("a [docs][1]‸ b\n\n[1]: http://x", ref);
+        assertEquals("a [docs][1]‸ b\n\n[1]: http://x\n", ref);
         String two = "a [docs][1] and [more](http://y)\n\n[1]: http://x";
         assertEquals(
                 "a [docs][1] and [more][2]‸\n\n[1]: http://x\n[2]: http://y",

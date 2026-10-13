@@ -193,6 +193,129 @@ class MarkdownCommandsFxTest {
         assertEquals("- b\n- a\n", text(bullets));
     }
 
+    // ---- feature-gap pass ----
+
+    @Test
+    void theNewCommandsRunFromTheRegistryAndSayWhenThereIsNothingToDo() throws Exception {
+        EditorBuffer b = open("plain text\n", 3);
+        assertEquals(tr("status.markdown.noTask"), statusAfter("markdown.toggleTaskDone"));
+        assertEquals(tr("status.markdown.noListToRenumber"), statusAfter("markdown.renumberList"));
+        assertEquals(tr("status.markdown.noLink"), statusAfter("markdown.removeLink"));
+        assertEquals(tr("status.markdown.noLink"), statusAfter("markdown.linkToReference"));
+        assertEquals(tr("status.markdown.notTable"), statusAfter("markdown.tableSortAscending"));
+        assertEquals(tr("status.markdown.notTable"), statusAfter("markdown.tableDelete"));
+        assertEquals("plain text\n", text(b));
+        assertEquals("-", statusAfter("markdown.orderedList"));
+        assertEquals("1. plain text\n", text(b));
+        assertEquals("-", statusAfter("markdown.blockquote"));
+        assertEquals("> 1. plain text\n", text(b));
+
+        open(TABLE, 2);
+        assertEquals(tr("status.markdown.tableCannotMove"), statusAfter("markdown.tableMoveRowUp"));
+        assertEquals(tr("status.markdown.tableCannotMove"), statusAfter("markdown.tableMoveColumnLeft"));
+        EditorBuffer link = open("a [t][r] b\n\n[r]: u\n", 4);
+        assertEquals(tr("status.markdown.linkAlreadyReference"), statusAfter("markdown.linkToReference"));
+        assertEquals("-", statusAfter("markdown.linkToInline"));
+        assertEquals("a [t](u) b\n", text(link));
+        assertEquals(tr("status.markdown.linkNotReference"), statusAfter("markdown.linkToInline"));
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.input.ClipboardContent c = new javafx.scene.input.ClipboardContent();
+            c.putString("nothing tabular");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(c);
+        });
+        open("x\n", 0);
+        assertEquals(tr("status.markdown.nothingToConvert"), statusAfter("markdown.pasteAsMarkdown"));
+    }
+
+    @Test
+    void editLinkIsACardAtTheCaretDrivenFromTheKeyboard() throws Exception {
+        EditorBuffer b = open("see [docs](http://old) now\n", 6);
+        CodeArea area = FxTestSupport.callOnFx(b::getFocusedArea);
+        FxTestSupport.runOnFx(() -> registry.run("markdown.editLink"));
+        FxTestSupport.drainFx();
+        java.util.List<javafx.scene.control.TextField> fields = FxTestSupport.callOnFx(() -> java.util.List.of(
+                (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-text"),
+                (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-url")));
+        assertEquals("docs", FxTestSupport.callOnFx(() -> fields.get(0).getText()));
+        assertEquals("http://old", FxTestSupport.callOnFx(() -> fields.get(1).getText()));
+        FxTestSupport.runOnFx(() -> {
+            fields.get(0).setText("the docs");
+            fields.get(1).setText("http://new");
+            javafx.event.Event.fireEvent(fields.get(1), key(KeyEvent.KEY_PRESSED, "", KeyCode.ENTER));
+        });
+        FxTestSupport.drainFx();
+        assertEquals("see [the docs](http://new) now\n", text(b));
+
+        // On plain text the selection becomes the link's text.
+        EditorBuffer plain = open("make this a link\n", 0);
+        FxTestSupport.runOnFx(() -> {
+            plain.getFocusedArea().selectRange(5, 9);
+            plain.markdown().editLinkInteractive(); // the right-click menu's path
+        });
+        FxTestSupport.drainFx();
+        CodeArea second = FxTestSupport.callOnFx(plain::getFocusedArea);
+        java.util.List<javafx.scene.control.TextField> again = FxTestSupport.callOnFx(() -> java.util.List.of(
+                (javafx.scene.control.TextField) second.getScene().lookup("#link-edit-text"),
+                (javafx.scene.control.TextField) second.getScene().lookup("#link-edit-url")));
+        assertEquals("this", FxTestSupport.callOnFx(() -> again.get(0).getText()));
+        FxTestSupport.runOnFx(() -> {
+            again.get(1).setText("x.md");
+            javafx.event.Event.fireEvent(again.get(1), key(KeyEvent.KEY_PRESSED, "", KeyCode.ENTER));
+        });
+        FxTestSupport.drainFx();
+        assertEquals("make [this](x.md) a link\n", text(plain));
+    }
+
+    @Test
+    void deletingOrDuplicatingAnItemRenumbersTheListButNotOneNumberedByHand() throws Exception {
+        EditorBuffer b = open("1. a\n2. b\n3. c\n", 6);
+        FxTestSupport.runOnFx(() -> registry.run("edit.killWholeLine"));
+        assertEquals("1. a\n2. c\n", text(b));
+        FxTestSupport.runOnFx(() -> registry.run("edit.duplicateLine"));
+        assertEquals("1. a\n2. c\n3. c\n", text(b));
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().undo());
+        assertEquals("1. a\n2. c\n", text(b), "one undo takes back the duplicate and its renumbering");
+
+        EditorBuffer byHand = open("1. a\n5. b\n9. c\n", 6);
+        FxTestSupport.runOnFx(() -> registry.run("edit.duplicateLine"));
+        assertEquals("1. a\n5. b\n5. b\n9. c\n", text(byHand), "numbered on purpose: left alone");
+
+        EditorBuffer block = open("1. a\n2. b\n3. c\n", 0);
+        FxTestSupport.runOnFx(() -> {
+            block.getFocusedArea().selectRange(5, 14); // lines 2–3
+            registry.run("edit.moveLineUp");
+        });
+        assertEquals("1. b\n2. c\n3. a\n", text(block), "a moved block of lines");
+    }
+
+    @Test
+    void aSaveRefreshesTheTableOfContentsWhenAskedTo() throws Exception {
+        String doc = "# Doc\n\n<!-- toc -->\n<!-- /toc -->\n\n## A\n";
+        EditorBuffer off = open(doc, 0);
+        FxTestSupport.runOnFx(() -> {
+            off.getFocusedArea().insertText(off.getFocusedArea().getLength(), "## B\n");
+            registry.run("file.save");
+        });
+        assertFalse(text(off).contains("[B]"), "off by default");
+        fx.shared.getSettings().setMarkdownTocUpdateOnSave(true);
+        try {
+            EditorBuffer on = open(doc, 0);
+            FxTestSupport.runOnFx(() -> {
+                on.getFocusedArea().insertText(on.getFocusedArea().getLength(), "## B\n");
+                registry.run("file.save");
+            });
+            for (int i = 0; i < 20 && FxTestSupport.callOnFx(on::isDirty); i++) {
+                Thread.sleep(50);
+                FxTestSupport.drainFx();
+            }
+            assertTrue(text(on).contains("- [Doc](#doc)\n  - [A](#a)\n  - [B](#b)\n"), text(on));
+            assertTrue(Files.readString(on.getPath()).contains("[B](#b)"), "and that is what was written");
+        } finally {
+            fx.shared.getSettings().setMarkdownTocUpdateOnSave(false);
+        }
+    }
+
     @Test
     void tabExpandsABlockSnippetOnlyAtTheStartOfALine() throws Exception {
         EditorBuffer sentence = open("take a note\n", 11);

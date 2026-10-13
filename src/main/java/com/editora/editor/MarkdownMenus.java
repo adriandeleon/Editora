@@ -41,24 +41,47 @@ final class MarkdownMenus {
     }
 
     static List<MenuItem> items(EditorBuffer b) {
+        return items(b, null);
+    }
+
+    /** @param insertImage opens the image chooser (it lives in {@code ui}); null when none is wired */
+    static List<MenuItem> items(EditorBuffer b, Runnable insertImage) {
         MarkdownEditing md = b.markdown();
+        boolean onLink = md.linkAtCaret() != null;
         return List.of(
                 item("command.markdown.bold", MenuIcons.bold(), () -> md.formatInline("**")),
                 item("command.markdown.italic", MenuIcons.italic(), () -> md.formatInline("*")),
                 item("command.markdown.strikethrough", MenuIcons.strikethrough(), () -> md.formatInline("~~")),
                 item("command.markdown.code", MenuIcons.code(), () -> md.formatInline("`")),
+                new SeparatorMenuItem(),
                 item("command.markdown.link", MenuIcons.link(), md::formatLinkFromClipboard),
+                item("command.markdown.editLink", null, md::editLinkInteractive),
+                enabledWhen(item("command.markdown.removeLink", null, md::removeLink), () -> onLink),
+                enabledWhen(item("command.markdown.linkToReference", null, () -> md.convertLink(false)), () -> onLink),
+                enabledWhen(item("command.markdown.linkToInline", null, () -> md.convertLink(true)), () -> onLink),
                 enabledWhen(
                         item("command.markdown.openLink", null, b::openLinkUnderCaret),
                         () -> b.linkUnderCaret() != null),
                 new SeparatorMenuItem(),
                 item("command.markdown.bulletList", MenuIcons.bulletList(), md::formatBulletList),
+                item("command.markdown.orderedList", MenuIcons.orderedList(), md::formatOrderedList),
                 item("command.markdown.taskList", MenuIcons.taskList(), md::formatTaskList),
+                item("command.markdown.toggleTaskDone", null, md::toggleTaskDone),
+                item("command.markdown.renumberList", null, () -> md.renumberList(false)),
+                item("command.markdown.blockquote", MenuIcons.quote(), md::formatBlockquote),
+                item("command.markdown.codeFence", MenuIcons.code(), md::formatCodeFence),
                 item("command.markdown.headingPromote", null, () -> md.formatHeading(-1)),
                 item("command.markdown.headingDemote", null, () -> md.formatHeading(1)),
                 new SeparatorMenuItem(),
                 tableMenu(md),
-                item("command.markdown.toc", MenuIcons.bulletList(), md::insertOrUpdateToc));
+                item("command.markdown.toc", MenuIcons.bulletList(), md::insertOrUpdateToc),
+                item("command.markdown.insertFootnote", null, md::insertFootnote),
+                item("command.markdown.insertDate", null, md::insertDate),
+                item("command.markdown.insertHorizontalRule", null, md::insertHorizontalRule),
+                enabledWhen(
+                        item("command.markdown.insertImage", MenuIcons.download(), insertImage),
+                        () -> insertImage != null),
+                item("command.markdown.pasteAsMarkdown", MenuIcons.paste(), () -> md.pasteAsMarkdown(true)));
     }
 
     /** The "Table" submenu: insert, reformat, rows and columns, column alignment, CSV in and out. */
@@ -74,6 +97,13 @@ final class MarkdownMenus {
                         new SeparatorMenuItem(),
                         enabledWhen(item("command.markdown.tableAddRow", MenuIcons.add(), md::tableAddRow), onTable),
                         enabledWhen(
+                                item("command.markdown.tableAddRowAbove", MenuIcons.add(), md::tableAddRowAbove),
+                                onTable),
+                        enabledWhen(
+                                item("command.markdown.tableMoveRowUp", null, () -> md.tableMoveRow(true)), onTable),
+                        enabledWhen(
+                                item("command.markdown.tableMoveRowDown", null, () -> md.tableMoveRow(false)), onTable),
+                        enabledWhen(
                                 item("command.markdown.tableDeleteRow", MenuIcons.remove(), md::tableDeleteRow),
                                 onTable),
                         enabledWhen(
@@ -81,6 +111,21 @@ final class MarkdownMenus {
                         enabledWhen(
                                 item("command.markdown.tableDeleteColumn", MenuIcons.remove(), md::tableDeleteColumn),
                                 onTable),
+                        enabledWhen(
+                                item("command.markdown.tableAddColumnLeft", MenuIcons.add(), md::tableAddColumnLeft),
+                                onTable),
+                        enabledWhen(
+                                item("command.markdown.tableMoveColumnLeft", null, () -> md.tableMoveColumn(true)),
+                                onTable),
+                        enabledWhen(
+                                item("command.markdown.tableMoveColumnRight", null, () -> md.tableMoveColumn(false)),
+                                onTable),
+                        new SeparatorMenuItem(),
+                        enabledWhen(
+                                item("command.markdown.tableSortAscending", null, () -> md.tableSort(true)), onTable),
+                        enabledWhen(
+                                item("command.markdown.tableSortDescending", null, () -> md.tableSort(false)), onTable),
+                        enabledWhen(item("command.markdown.tableDelete", MenuIcons.remove(), md::tableDelete), onTable),
                         new SeparatorMenuItem(),
                         enabledWhen(
                                 item(

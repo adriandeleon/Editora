@@ -232,7 +232,8 @@ public final class MarkdownLinks {
         int lastLine = tail.lastIndexOf('\n') + 1;
         boolean afterDefinition = DEFINITION.matcher(tail.substring(lastLine)).matches();
         String made = use + tail + (afterDefinition ? "\n" : "\n\n") + "[" + label + "]: "
-                + MarkdownImagePaste.destination(link.destination());
+                + MarkdownImagePaste.destination(link.destination())
+                + (text.endsWith("\n") ? "\n" : ""); // the file keeps its final newline
         return new MarkdownEdit(link.start(), text.length(), made, caret, caret);
     }
 

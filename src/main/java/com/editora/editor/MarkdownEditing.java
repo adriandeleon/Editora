@@ -6,12 +6,16 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
 import com.editora.markdown.BlockInsert;
+import com.editora.markdown.HtmlToMarkdown;
 import com.editora.markdown.MarkdownEdit;
+import com.editora.markdown.MarkdownFootnote;
 import com.editora.markdown.MarkdownHeading;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLines;
+import com.editora.markdown.MarkdownLinks;
 import com.editora.markdown.MarkdownTable;
 import com.editora.markdown.MarkdownToc;
+import com.editora.markdown.MarkdownTyping;
 import com.editora.typst.TypstMarkup;
 import org.fxmisc.richtext.CodeArea;
 
@@ -29,10 +33,14 @@ public final class MarkdownEditing {
 
     private final EditorBuffer buffer;
     private Runnable insertTableHandler;
+    private Runnable editLinkHandler;
     private java.util.function.BiConsumer<String, String> tableFileExporter;
     private int tocMinLevel = 1;
     private int tocMaxLevel = 6;
     private java.util.function.Function<String, String> chords = id -> null;
+    private boolean smartTypography;
+    private boolean tocSkipTitle;
+    private boolean tocOrdered;
 
     MarkdownEditing(EditorBuffer buffer) {
         this.buffer = buffer;
@@ -46,6 +54,17 @@ public final class MarkdownEditing {
         this.tocMinLevel = Math.max(1, Math.min(6, tocMinLevel));
         this.tocMaxLevel = Math.max(this.tocMinLevel, Math.min(6, tocMaxLevel));
         this.chords = chords == null ? id -> null : chords;
+    }
+
+    /** Pushes the typing and table-of-contents choices of the settings. */
+    public void configureWriting(boolean smartTypography, boolean tocSkipTitle, boolean tocOrdered) {
+        this.smartTypography = smartTypography;
+        this.tocSkipTitle = tocSkipTitle;
+        this.tocOrdered = tocOrdered;
+    }
+
+    private MarkdownToc.Style tocStyle() {
+        return new MarkdownToc.Style(tocMinLevel, tocMaxLevel, tocSkipTitle, tocOrdered);
     }
 
     /** The chord bound to {@code commandId} in the active keymap, as it is displayed; null when unbound. */
@@ -291,10 +310,38 @@ public final class MarkdownEditing {
     }
 
     /**
+     * A character typed in a Markdown buffer that does more than insert itself: an emphasis character over a
+     * selection wraps it; {@code *} and {@code _} come in pairs; with smart typography on, quotes, double
+     * hyphens and three dots become their typographic forms. False for ordinary typing.
+     *
+     * <p>On the keystroke path: the line is read only for the few characters that can matter, and the
+     * document (to rule out a code block) only once the line itself says there is something to do.
+     */
+    boolean typed(CodeArea a, char c) {
+        if (a.getSelection().getLength() > 0) {
+            return wrapSelection(a, c);
+        }
+        if (!MarkdownTyping.interesting(c, smartTypography)) {
+            return false;
+        }
+        int par = a.getCurrentParagraph();
+        String line = a.getText(par);
+        int col = Math.min(a.getCaretColumn(), line.length());
+        MarkdownEdit e = MarkdownTyping.typed(line, col, c, smartTypography);
+        int lineStart = a.getAbsolutePosition(par, 0);
+        if (e == null || !MarkdownLines.isProse(a.getText(), lineStart)) {
+            return false;
+        }
+        a.replaceText(lineStart + e.from(), lineStart + e.to(), e.replacement());
+        a.moveTo(lineStart + e.selStart());
+        return true;
+    }
+
+    /**
      * An emphasis character ({@code *}, {@code _}, {@code ~}) typed over a single-line selection wraps the
      * selection instead of replacing it; false (ordinary typing) for anything else.
      */
-    boolean wrapSelection(CodeArea a, char c) {
+    private boolean wrapSelection(CodeArea a, char c) {
         String sel = a.getSelectedText();
         if ((c != '*' && c != '_' && c != '~') || sel.isBlank() || sel.indexOf('\n') >= 0) {
             return false;
@@ -310,20 +357,238 @@ public final class MarkdownEditing {
      * again, as part of the move's own undo step. A no-op anywhere else.
      */
     public void renumberListAtCaret() {
+        renumberList(true);
+    }
+
+    /** Whether the ordered list at the caret is numbered in sequence (true as well when there is no such list). */
+    public boolean listInOrder() {
+        CodeArea a = view();
+        return MarkdownLines.markerLength(a.getText(a.getCurrentParagraph())) == 0
+                || MarkdownLines.renumber(a.getText(), a.getSelection().getStart()) == null;
+    }
+
+    /**
+     * Numbers the ordered list at the caret (or where the selection starts) in sequence again; false when
+     * there is no such list or it is in order already. {@code joinLast}: as part of the previous edit's undo
+     * step (the move or delete that left the list out of order).
+     */
+    public boolean renumberList(boolean joinLast) {
+        if (!buffer.canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = view();
+        int start = a.getSelection().getStart();
+        if (MarkdownLines.markerLength(
+                        a.getText(a.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                                .getMajor()))
+                == 0) {
+            return false; // the line alone says "not a list": no need for the document
+        }
+        MarkdownEdit e = MarkdownLines.renumber(a.getText(), a.getAnchor(), a.getCaretPosition());
+        if (e == null) {
+            return false;
+        }
+        Runnable joined = joinLast ? CompletionUndoManager.joinLast(a) : () -> {};
+        a.replaceText(e.from(), e.to(), e.replacement());
+        a.selectRange(e.selStart(), e.selEnd());
+        joined.run();
+        return true;
+    }
+
+    // ---- more line and block commands ----
+
+    /** Toggles a numbered list on the selected line(s). */
+    public void formatOrderedList() {
+        if (buffer.canFormatMarkdown()) {
+            CodeArea a = view();
+            apply(MarkdownLines.toggleOrdered(a.getText(), a.getAnchor(), a.getCaretPosition()));
+        }
+    }
+
+    /** Toggles a blockquote on the selected line(s). */
+    public void formatBlockquote() {
+        if (buffer.canFormatMarkdown()) {
+            CodeArea a = view();
+            apply(MarkdownLines.toggleQuote(a.getText(), a.getAnchor(), a.getCaretPosition()));
+        }
+    }
+
+    /** Wraps the selected line(s) in a fenced code block, or unwraps the body of one. */
+    public void formatCodeFence() {
+        if (buffer.canFormatMarkdown()) {
+            CodeArea a = view();
+            apply(MarkdownLines.toggleFence(a.getText(), a.getAnchor(), a.getCaretPosition()));
+        }
+    }
+
+    /** Ticks / unticks the task items on the selected line(s); false when none of them is a task item. */
+    public boolean toggleTaskDone() {
+        if (!buffer.canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = view();
+        MarkdownEdit e = MarkdownLines.toggleDone(a.getText(), a.getAnchor(), a.getCaretPosition());
+        apply(e);
+        return e != null;
+    }
+
+    /** Inserts a footnote reference at the caret and its definition at the end of the document. */
+    public void insertFootnote() {
+        if (buffer.canFormatMarkdown()) {
+            CodeArea a = view();
+            apply(MarkdownFootnote.insert(a.getText(), a.getCaretPosition()));
+        }
+    }
+
+    /** Inserts today's date (ISO, {@code 2026-10-12}) at the caret, over any selection. */
+    public void insertDate() {
+        if (buffer.canFormatMarkdown()) {
+            buffer.insertAtCaret(java.time.LocalDate.now().toString());
+        }
+    }
+
+    /** Inserts a horizontal rule on a line of its own, with the blank line a rule needs above it. */
+    public void insertHorizontalRule() {
+        if (buffer.canFormatMarkdown()) {
+            CodeArea a = view();
+            a.moveTo(insertBlock(a, "---") + 4);
+            a.requestFollowCaret();
+            a.requestFocus();
+        }
+    }
+
+    // ---- links ----
+
+    /** Opens the Edit Link card (wired by the window); a no-op until injected. */
+    public void editLinkInteractive() {
+        if (buffer.canFormatMarkdown() && editLinkHandler != null) {
+            editLinkHandler.run();
+        }
+    }
+
+    public void setEditLinkHandler(Runnable handler) {
+        this.editLinkHandler = handler;
+    }
+
+    /** The link under the caret, or null. */
+    public MarkdownLinks.Link linkAtCaret() {
+        CodeArea a = view();
+        return MarkdownLinks.at(a.getText(), a.getCaretPosition());
+    }
+
+    /** The selected text when it is on one line — what a new link's text starts as; "" otherwise. */
+    public String linkTextCandidate() {
+        String sel = view().getSelectedText();
+        return sel.indexOf('\n') >= 0 ? "" : sel;
+    }
+
+    /**
+     * Makes the link under the caret — or, without one, the selection (or the caret position) — a link with
+     * {@code text} pointing at {@code destination}.
+     */
+    public void setLink(String text, String destination) {
         if (!buffer.canFormatMarkdown()) {
             return;
         }
         CodeArea a = view();
-        if (a.getSelection().getLength() > 0 || MarkdownLines.markerLength(a.getText(a.getCurrentParagraph())) == 0) {
-            return;
+        MarkdownLinks.Link link = linkAtCaret();
+        var sel = a.getSelection();
+        boolean oneLine = a.getSelectedText().indexOf('\n') < 0;
+        int from = oneLine ? sel.getStart() : a.getCaretPosition();
+        int to = oneLine ? sel.getEnd() : a.getCaretPosition();
+        apply(MarkdownLinks.set(a.getText(), link, from, to, text, destination));
+    }
+
+    /** Replaces the link under the caret by its text; false when the caret is not on a link. */
+    public boolean removeLink() {
+        MarkdownLinks.Link link = buffer.canFormatMarkdown() ? linkAtCaret() : null;
+        if (link != null) {
+            apply(MarkdownLinks.remove(link));
         }
-        MarkdownEdit e = MarkdownLines.renumber(a.getText(), a.getCaretPosition());
-        if (e != null) {
-            Runnable joined = CompletionUndoManager.joinLast(a);
-            a.replaceText(e.from(), e.to(), e.replacement());
-            a.moveTo(e.selStart());
-            joined.run();
+        return link != null;
+    }
+
+    /** Inline link → reference link (or, {@code toInline}, back); false when the caret's link is not of that kind. */
+    public boolean convertLink(boolean toInline) {
+        MarkdownLinks.Link link = buffer.canFormatMarkdown() ? linkAtCaret() : null;
+        if (link == null) {
+            return false;
         }
+        String text = view().getText();
+        MarkdownEdit e = toInline ? MarkdownLinks.toInline(text, link) : MarkdownLinks.toReference(text, link);
+        apply(e);
+        return e != null;
+    }
+
+    // ---- paste ----
+
+    /**
+     * Pastes the clipboard as Markdown: its HTML converted (a table, links, emphasis, lists, headings, code),
+     * else — for the explicit command — tab-separated text as a table. False when there is nothing to convert.
+     *
+     * <p>{@code explicit} false is the ordinary paste asking whether to step in, and it does so only for HTML
+     * that carries structure ({@link HtmlToMarkdown#hasStructure}), when the plain text beside it is not
+     * Markdown already and the conversion says something the plain text does not.
+     */
+    public boolean pasteAsMarkdown(boolean explicit) {
+        if (!buffer.canFormatMarkdown()) {
+            return false;
+        }
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        String html = clipboard.hasHtml() ? clipboard.getHtml() : null;
+        String plain = clipboard.hasString() ? LineEndings.toLf(clipboard.getString()) : null;
+        String markdown = null;
+        if (html != null
+                && (explicit || (HtmlToMarkdown.hasStructure(html) && !HtmlToMarkdown.looksLikeMarkdown(plain)))) {
+            markdown = HtmlToMarkdown.convert(html);
+        }
+        if ((markdown == null || markdown.isBlank()) && explicit && plain != null && plain.indexOf('\t') >= 0) {
+            markdown = MarkdownTable.fromCsv(plain);
+        }
+        if (markdown == null || markdown.isBlank() || (!explicit && plain != null && markdown.equals(plain.strip()))) {
+            return false;
+        }
+        buffer.insertAtCaret(markdown);
+        return true;
+    }
+
+    // ---- tables ----
+
+    public boolean tableAddRowAbove() {
+        return onTable(MarkdownTable::addRowAbove);
+    }
+
+    public boolean tableAddColumnLeft() {
+        return onTable(MarkdownTable::addColumnLeft);
+    }
+
+    /** False when not on a table, on the header or delimiter row, or with no body row on that side. */
+    public boolean tableMoveRow(boolean up) {
+        return onTable((block, caret) -> MarkdownTable.moveRow(block, caret, up));
+    }
+
+    /** False when not on a table or with no column on that side. */
+    public boolean tableMoveColumn(boolean left) {
+        return onTable((block, caret) -> MarkdownTable.moveColumn(block, caret, left));
+    }
+
+    public boolean tableSort(boolean ascending) {
+        return onTable((block, caret) -> MarkdownTable.sort(block, caret, ascending));
+    }
+
+    /** Deletes the caret's table, leaving an empty line; false when the caret is not on one. */
+    public boolean tableDelete() {
+        if (!buffer.canFormatMarkdown()) {
+            return false;
+        }
+        CodeArea a = view();
+        int[] b = MarkdownTable.blockBounds(a.getText(), a.getCaretPosition());
+        if (b == null) {
+            return false;
+        }
+        a.replaceText(b[0], b[1], "");
+        a.requestFocus();
+        return true;
     }
 
     // ---- tables ----
@@ -493,6 +758,30 @@ public final class MarkdownEditing {
     // ---- table of contents ----
 
     /**
+     * Before a save: regenerates the managed {@code <!-- toc -->} block when the document has one and it is
+     * out of date — never inserts one, and never on a read-only or preview-only buffer. One undo step; the
+     * caret stays. Returns whether the text changed.
+     */
+    public boolean updateTocForSave() {
+        if (!buffer.canFormatMarkdown() || buffer.isPreviewOnly()) {
+            return false;
+        }
+        CodeArea a = buffer.getArea();
+        String doc = a.getText();
+        MarkdownEdit e = MarkdownToc.update(doc, tocStyle());
+        if (e == null || e.replacement().equals(doc.substring(e.from(), e.to()))) {
+            return false;
+        }
+        int caret = a.getCaretPosition();
+        buffer.preventUndoMerge();
+        a.replaceText(e.from(), e.to(), e.replacement());
+        buffer.preventUndoMerge();
+        int delta = e.replacement().length() - (e.to() - e.from());
+        a.moveTo(caret <= e.from() ? caret : caret >= e.to() ? caret + delta : e.from());
+        return true;
+    }
+
+    /**
      * Regenerates the document's {@code <!-- toc -->} block in place (the caret stays where it was), or
      * inserts a new one at the caret. False when not an editable Markdown buffer, or there is no heading to list.
      */
@@ -503,7 +792,7 @@ public final class MarkdownEditing {
         CodeArea a = view();
         String doc = a.getText();
         int caret = a.getCaretPosition();
-        MarkdownEdit e = MarkdownToc.update(doc, tocMinLevel, tocMaxLevel);
+        MarkdownEdit e = MarkdownToc.update(doc, tocStyle());
         if (e != null) {
             if (!e.replacement().equals(doc.substring(e.from(), e.to()))) {
                 buffer.preventUndoMerge();
@@ -515,7 +804,7 @@ public final class MarkdownEditing {
             a.requestFocus();
             return true;
         }
-        String block = MarkdownToc.insertion(doc, caret, tocMinLevel, tocMaxLevel);
+        String block = MarkdownToc.insertion(doc, caret, tocStyle());
         if (block.isEmpty()) {
             return false; // no headings to list
         }
