@@ -152,6 +152,12 @@ class MarkdownRendererTest {
     }
 
     @Test
+    void theRenderParseKnowsTheExtendedSyntax() {
+        org.commonmark.node.Node alert = MarkdownRenderer.parseForRender("> [!NOTE]\n> Read this.\n", false);
+        assertTrue(alert.getFirstChild() instanceof com.editora.markdown.MarkdownAlerts.Alert, "GitHub alerts");
+    }
+
+    @Test
     void aCommentWithTextAfterItOnItsLineIsNotInvisible() {
         assertTrue(MarkdownRenderer.isHtmlComment("<!-- a --> <!-- b -->"));
         assertFalse(MarkdownRenderer.isHtmlComment("<!-- note --> **Visible** text after a comment"));

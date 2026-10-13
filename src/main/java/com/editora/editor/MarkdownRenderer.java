@@ -131,6 +131,7 @@ public final class MarkdownRenderer {
         if (math) {
             ext.add(MarkdownMath.extension());
         }
+        ext.add(com.editora.markdown.MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
         return ext;
     }
 
