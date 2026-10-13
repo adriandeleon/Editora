@@ -80,7 +80,94 @@ final class MarkdownPreview {
     /** How long after a render late-arriving content (images, diagrams) keeps the anchored line in place. */
     private static final long ANCHOR_HOLD_NANOS = 1_500_000_000L;
 
+    /** The thin bar beside the block that holds the editor's caret line (Split); unmanaged, so it moves
+     *  nothing. */
+    private final javafx.scene.layout.Region caretMarker = new javafx.scene.layout.Region();
+
+    private Node markedBlock;
+    private int markedLine = -1;
+    private java.util.function.IntConsumer jumpToSource = line -> {};
+
+    /** Who puts the editor's caret on a source line when a block is double-clicked here. */
+    void onJumpToSource(java.util.function.IntConsumer jump) {
+        this.jumpToSource = jump == null ? line -> {} : jump;
+    }
+
+    /**
+     * Shows which block the editor's caret is in: a bar beside the block that came from source {@code line};
+     * -1 removes it. Cheap enough for every change of line (a scan of the block list), and nothing is laid out
+     * for it.
+     */
+    void markLine(int line) {
+        markedLine = line;
+        Node block = null;
+        if (line >= 0) {
+            for (Entry e : entries) {
+                if (e.node() != null && e.startLine() >= 0 && e.startLine() <= line && line <= e.endLine()) {
+                    block = e.node();
+                    break;
+                }
+            }
+        }
+        markedBlock = block;
+        placeMarker();
+    }
+
+    private void placeMarker() {
+        boolean show = markedBlock != null && markedBlock.getParent() == column;
+        caretMarker.setVisible(show);
+        if (show) {
+            javafx.geometry.Bounds b = markedBlock.getBoundsInParent();
+            javafx.geometry.Bounds c = column.getBoundsInParent();
+            caretMarker.resizeRelocate(
+                    c.getMinX() + column.getInsets().getLeft() - 12, c.getMinY() + b.getMinY(), 3, b.getHeight());
+        }
+    }
+
+    /** The source line a point of the document belongs to: the block under it, and how far down the block. */
+    private int lineAt(Node target, double sceneY) {
+        Node block = target;
+        while (block != null && block.getParent() != column) {
+            block = block.getParent();
+        }
+        for (Entry e : entries) {
+            if (e.node() == block && e.startLine() >= 0) {
+                javafx.geometry.Bounds b = block.localToScene(block.getBoundsInLocal());
+                double frac = b.getHeight() <= 0 ? 0 : (sceneY - b.getMinY()) / b.getHeight();
+                int lines = e.endLine() - e.startLine() + 1;
+                return e.startLine() + (int) Math.max(0, Math.min(lines - 1, Math.floor(frac * lines)));
+            }
+        }
+        return -1;
+    }
+
     MarkdownPreview() {
+        caretMarker.getStyleClass().add("md-caret-marker");
+        caretMarker.setManaged(false);
+        caretMarker.setVisible(false);
+        caretMarker.setMouseTransparent(true);
+        root.getChildren().add(caretMarker);
+        column.afterLayout(this::placeMarker);
+        // A double click on a block puts the editor's caret on the line it came from (not on a link, a task
+        // box or a <details> summary: those have their own click).
+        column.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getClickCount() != 2 || e.getButton() != javafx.scene.input.MouseButton.PRIMARY) {
+                return;
+            }
+            Node target = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
+            for (Node n = target; n != null && n != column; n = n.getParent()) {
+                if (n instanceof javafx.scene.control.ButtonBase
+                        || n.getOnMouseClicked() != null
+                        || (n.hasProperties() && n.getProperties().containsKey(MarkdownRenderer.LINK_KEY))) {
+                    return;
+                }
+            }
+            int line = target == null ? -1 : lineAt(target, e.getSceneY());
+            if (line >= 0) {
+                jumpToSource.accept(line);
+                e.consume();
+            }
+        });
         root.heightProperty().addListener((o, was, now) -> {
             // The height changes in the middle of a layout pass: re-anchor once that pass is over.
             if (holdsAnchor() && !reanchorQueued) {
@@ -520,6 +607,7 @@ final class MarkdownPreview {
             setScrollY(yOfLine(anchorLine));
         }
         find.reapply(); // rebuilt blocks lost their marks
+        markLine(markedLine); // the caret's block may be a new node, or on other lines
         if (complete) {
             shows.set(shows.get() + 1);
         } else {

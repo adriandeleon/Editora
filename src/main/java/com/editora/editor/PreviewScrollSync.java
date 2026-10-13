@@ -60,10 +60,40 @@ final class PreviewScrollSync {
         this.mode = mode;
         this.pane = pane;
         this.document = document;
+        area.currentParagraphProperty().addListener((o, was, now) -> markCaretBlock());
         area.estimatedScrollYProperty().addListener((o, ov, nv) -> {
             if (editorDrives() && !syncing) {
                 previewFollowsEditor();
             }
+        });
+    }
+
+    /**
+     * Tells the preview which block holds the caret (Split only — in Preview there is no caret to see, in
+     * Editor no preview). Called when the caret changes <em>line</em>, not on every keystroke.
+     */
+    void markCaretBlock() {
+        MarkdownPreview doc = document.get();
+        if (doc != null) {
+            doc.markLine(mode.get() == MarkdownViewMode.SPLIT ? area.getCurrentParagraph() : -1);
+        }
+    }
+
+    /**
+     * A block of the preview was double-clicked: the editor's caret goes to the source {@code line} it came
+     * from, and the editor takes the focus. With only the preview on screen, {@code showEditor} first brings
+     * the editor in beside it (Split), so the reader sees where they landed without losing the rendering.
+     */
+    void jumpToSource(int line, Runnable showEditor) {
+        if (mode.get() == MarkdownViewMode.PREVIEW) {
+            showEditor.run();
+        }
+        int target = Math.max(0, Math.min(line, area.getParagraphs().size() - 1));
+        Platform.runLater(() -> {
+            area.moveTo(target, 0);
+            area.requestFollowCaret();
+            area.requestFocus();
+            markCaretBlock();
         });
     }
 
@@ -281,6 +311,7 @@ final class PreviewScrollSync {
      * leaving it put the editor back where it was before — pages away from what had just been read.
      */
     void entered(MarkdownViewMode from, MarkdownViewMode to) {
+        markCaretBlock(); // shown in Split only
         double line = carriedLine;
         carriedLine = -1;
         pendingLine = -1;

@@ -5593,6 +5593,8 @@ public class EditorBuffer implements TabContent {
                         markdownPreview = new MarkdownPreview();
                         markdownPreview.attach(previewPane());
                         markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
+                        markdownPreview.onJumpToSource(
+                                l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));
                     }
                     // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
                     Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));

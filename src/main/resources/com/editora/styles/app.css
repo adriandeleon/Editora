@@ -739,6 +739,8 @@
     -fx-background-color: -color-warning-emphasis;
     -fx-text-fill: -color-fg-emphasis;
 }
+/* Split view: a thin bar beside the block the editor's caret is in. */
+.md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
 /* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
 .markdown-preview .md-alert {
     -md-alert: -color-accent-fg;

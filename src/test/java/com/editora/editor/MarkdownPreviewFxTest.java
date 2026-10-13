@@ -410,6 +410,92 @@ class MarkdownPreviewFxTest {
         });
     }
 
+    // --- double click to the source; the caret's block is marked ----------------------------------------
+
+    private static MouseEvent doubleClick(Node target) {
+        javafx.geometry.Bounds b = target.localToScene(target.getBoundsInLocal());
+        double x = b.getMinX() + 2;
+        double y = b.getMinY() + 2;
+        return new MouseEvent(
+                MouseEvent.MOUSE_CLICKED,
+                x,
+                y,
+                x,
+                y,
+                MouseButton.PRIMARY,
+                2,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                new PickResult(target, x, y));
+    }
+
+    @Test
+    void aDoubleClickOnABlockPutsTheCaretOnItsSourceLineAndSplitMarksTheCaretsBlock() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<String> opened = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(sections());
+            ref[0].setOpenUrlHandler(opened::add);
+            ref[0].getArea().moveTo(0);
+            stage[0] = EditorFx.show(ref[0], 900, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        // In Preview: the editor comes in beside the preview (Split) with its caret on that line.
+        EditorFx.onFx(() -> {
+            Text heading = textNode(pane(buffer).getContent(), "Marker 30");
+            heading.fireEvent(doubleClick(heading));
+        });
+        layout(buffer);
+        EditorFx.onFx(() -> {
+            assertEquals(MarkdownViewMode.SPLIT, buffer.getMarkdownViewMode(), "the source is shown beside it");
+            assertEquals(lineOf(buffer, "## Marker 30"), buffer.getArea().getCurrentParagraph());
+            // A double click on a link is the link's, not a jump.
+            int caret = buffer.getArea().getCurrentParagraph();
+            Text link = textNode(pane(buffer).getContent(), "out");
+            link.fireEvent(doubleClick(link));
+            assertEquals(caret, buffer.getArea().getCurrentParagraph());
+        });
+        layout(buffer);
+        // In Split the block holding the caret carries the marker, and it follows the caret's line.
+        EditorFx.onFx(() -> {
+            Node marker = EditorFx.styled(pane(buffer).getContent(), "md-caret-marker");
+            assertTrue(marker.isVisible());
+            Text heading = textNode(pane(buffer).getContent(), "Marker 30");
+            double markerY = marker.localToScene(marker.getBoundsInLocal()).getMinY();
+            double blockY = heading.getParent()
+                    .localToScene(heading.getParent().getBoundsInLocal())
+                    .getMinY();
+            assertEquals(blockY, markerY, 1.0, "beside the caret's block");
+
+            buffer.getArea().moveTo(lineOf(buffer, "Paragraph 31 of prose."), 3);
+            Text paragraph = textNode(pane(buffer).getContent(), "Paragraph 31 of prose.");
+            assertEquals(
+                    paragraph
+                            .getParent()
+                            .localToScene(paragraph.getParent().getBoundsInLocal())
+                            .getMinY(),
+                    marker.localToScene(marker.getBoundsInLocal()).getMinY(),
+                    1.0,
+                    "it moved with the caret");
+            double width = column(buffer).getWidth();
+            assertEquals(width, column(buffer).getWidth(), 0.0, "and nothing was laid out for it");
+            buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
+            assertFalse(marker.isVisible(), "no caret to point at in Preview");
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
     // --- anchors and links (A4's preview half, A16, A20) -------------------------------------------
 
     @Test
