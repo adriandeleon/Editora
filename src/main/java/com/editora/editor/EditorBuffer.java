@@ -1574,8 +1574,6 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    // ---- Markdown / Typst markup commands: see MarkdownEditing ----
-
     private final MarkdownEditing markdownEditing = new MarkdownEditing(this);
 
     /** The markup editing commands of this buffer (inline markers, headings, lists, tables, TOC). */
@@ -1880,7 +1878,7 @@ public class EditorBuffer implements TabContent {
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
             // top level above — they are the actions you reach for without reading the menu.
             if (canFormatMarkdown()) {
-                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this)));
+                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this, typstImagePasteHandler)));
                 items.add(new SeparatorMenuItem());
             } else if (isTypst() && isEditable()) {
                 items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
@@ -8319,9 +8317,11 @@ public class EditorBuffer implements TabContent {
         if (c == '>' && applyTagAutoClose(a)) {
             return true; // html/xml: the > completed an open tag and the closer was inserted
         }
+        if (isMarkdown() && markdownEditing.typed(a, c)) {
+            return true; // emphasis wrap / pair, smart typography — before the generic bracket and quote pairs
+        }
         if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-            // Markdown: an emphasis character typed over a selection wraps it, like ` [ ( and " already do.
-            return isMarkdown() && markdownEditing.wrapSelection(a, c);
+            return false; // not a bracket or quote
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();

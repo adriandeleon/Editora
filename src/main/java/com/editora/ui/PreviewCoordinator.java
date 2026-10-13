@@ -490,7 +490,65 @@ final class PreviewCoordinator {
     void showTableSizePicker(java.util.function.BiConsumer<Integer, Integer> onPick) {
         TableSizePicker picker =
                 new TableSizePicker(TABLE_PICKER_MAX_ROWS, TABLE_PICKER_MAX_COLS, host.overlayHost()::hide, onPick);
-        Runnable focus = picker.card()::requestFocus; // or the editor keeps the keyboard under the scrim
+        // Focus the card, or the editor keeps the keyboard under the scrim.
+        showAtCaret(picker.card(), picker.card()::requestFocus);
+    }
+
+    /**
+     * Runs a Markdown command that can find nothing to do, and says so with {@code refusedKey} when it did
+     * nothing (the buffer itself being unsuitable is reported by {@link #editableMarkdown}).
+     */
+    void markdownOr(java.util.function.Predicate<EditorBuffer> command, String refusedKey) {
+        EditorBuffer b = editableMarkdown();
+        if (b != null && !command.test(b)) {
+            host.setStatus(tr(refusedKey));
+        }
+    }
+
+    /** {@code markdown.linkToReference} / {@code linkToInline}: converts the link at the caret, or says why not. */
+    void markdownConvertLink(boolean toInline) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (b.markdown().linkAtCaret() == null) {
+            host.setStatus(tr("status.markdown.noLink"));
+        } else if (!b.markdown().convertLink(toInline)) {
+            host.setStatus(tr(toInline ? "status.markdown.linkNotReference" : "status.markdown.linkAlreadyReference"));
+        }
+    }
+
+    /** {@code markdown.pasteAsMarkdown}: the clipboard's HTML (or tab-separated cells) pasted as Markdown. */
+    void markdownPasteAsMarkdown() {
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            host.setStatus(tr(
+                    b.markdown().pasteAsMarkdown(true)
+                            ? "status.markdown.pastedAsMarkdown"
+                            : "status.markdown.nothingToConvert"));
+        }
+    }
+
+    /**
+     * {@code markdown.editLink}: the text and address of the link at the caret — or of a new link made from
+     * the selection — in a small card at the caret.
+     */
+    void markdownEditLink() {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        com.editora.markdown.MarkdownLinks.Link link = b.markdown().linkAtCaret();
+        LinkEditCard card = new LinkEditCard(
+                link == null ? b.markdown().linkTextCandidate() : link.text(),
+                link == null ? "" : link.destination(),
+                host.overlayHost()::hide,
+                (text, url) -> b.markdown().setLink(text, url));
+        showAtCaret(card.card(), card::focus);
+    }
+
+    /** Shows {@code card} as an overlay under the active editor's caret (centered when it is off screen). */
+    private void showAtCaret(javafx.scene.Node card, Runnable focus) {
         EditorBuffer b = host.activeBuffer();
         org.fxmisc.richtext.CodeArea area = b == null ? null : b.getFocusedArea();
         javafx.geometry.Bounds caret =
@@ -498,10 +556,9 @@ final class PreviewCoordinator {
         javafx.geometry.Bounds inScene =
                 caret == null || area.getScene() == null ? null : area.localToScene(area.screenToLocal(caret));
         if (inScene == null) {
-            host.overlayHost().show(picker.card(), true, focus, () -> {}); // no caret on screen: centered
+            host.overlayHost().show(card, true, focus, () -> {}); // no caret on screen: centered
         } else {
-            host.overlayHost()
-                    .showAt(picker.card(), inScene.getMinX(), inScene.getMaxY(), inScene.getMinY(), focus, () -> {});
+            host.overlayHost().showAt(card, inScene.getMinX(), inScene.getMaxY(), inScene.getMinY(), focus, () -> {});
         }
     }
 

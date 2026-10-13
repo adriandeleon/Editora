@@ -899,6 +899,9 @@ final class EditorSettingsCoordinator {
                         s.getMarkdownTocMinLevel(),
                         s.getMarkdownTocMaxLevel(),
                         id -> host.keymap() == null ? null : host.keymap().displayChord(id));
+        buffer.markdown()
+                .configureWriting(s.isMarkdownSmartTypography(), s.isMarkdownTocSkipTitle(), s.isMarkdownTocOrdered());
+        buffer.markdown().setEditLinkHandler(host.previews()::markdownEditLink);
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)

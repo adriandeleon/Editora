@@ -561,6 +561,164 @@ public final class MarkdownTable {
         return new Nav(reflowed, cellContentOffset(reflowed, li, ci));
     }
 
+    /**
+     * Inserts an empty row above the caret's row (below the delimiter row when the caret is on the header or
+     * the delimiter: a header keeps its place). Returns {@code null} when not a GFM table.
+     */
+    public static Nav addRowAbove(String block, int caretInBlock) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            int delim = delimiterIndex(lines);
+            if (delim < 0) {
+                return null;
+            }
+            int li = lineIndexAt(b, caret);
+            int insertAt = Math.max(delim + 1, li);
+            List<List<String>> rows = rowsOf(b);
+            rows.add(insertAt, emptyCells(columnCount(lines), ""));
+            String out = reflowRows(joinRows(rows));
+            return new Nav(out, cellContentOffset(out, insertAt, 0));
+        });
+    }
+
+    /** Inserts an empty column to the left of the caret's column. Returns {@code null} when not a GFM table. */
+    public static Nav addColumnLeft(String block, int caretInBlock) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            int delim = delimiterIndex(lines);
+            if (delim < 0) {
+                return null;
+            }
+            int li = lineIndexAt(b, caret);
+            int ci = cellIndexAt(lines[li], caret - lineStartOffset(b, li));
+            List<List<String>> rows = squared(b, lines, delim);
+            for (int i = 0; i < rows.size(); i++) {
+                rows.get(i).add(ci, i == delim ? "---" : "");
+            }
+            String out = reflowRows(joinRows(rows));
+            return new Nav(out, cellContentOffset(out, li, ci));
+        });
+    }
+
+    /**
+     * Moves the caret's body row one row up or down; the caret goes with its cell. Returns {@code null} when
+     * not a GFM table, on the header or delimiter row, and when there is no body row to trade places with.
+     */
+    public static Nav moveRow(String block, int caretInBlock, boolean up) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            int delim = delimiterIndex(lines);
+            int li = lineIndexAt(b, caret);
+            int other = up ? li - 1 : li + 1;
+            if (delim < 0 || li <= delim || other <= delim || other >= lines.length) {
+                return null;
+            }
+            int ci = cellIndexAt(lines[li], caret - lineStartOffset(b, li));
+            List<List<String>> rows = rowsOf(b);
+            java.util.Collections.swap(rows, li, other);
+            String out = reflowRows(joinRows(rows));
+            return new Nav(out, cellContentOffset(out, other, ci));
+        });
+    }
+
+    /**
+     * Moves the caret's column one place left or right, its alignment with it; the caret goes with its cell.
+     * Returns {@code null} when not a GFM table or there is no column on that side.
+     */
+    public static Nav moveColumn(String block, int caretInBlock, boolean left) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            int delim = delimiterIndex(lines);
+            if (delim < 0) {
+                return null;
+            }
+            int li = lineIndexAt(b, caret);
+            int ci = cellIndexAt(lines[li], caret - lineStartOffset(b, li));
+            int other = left ? ci - 1 : ci + 1;
+            if (other < 0 || other >= columnCount(lines)) {
+                return null;
+            }
+            List<List<String>> rows = squared(b, lines, delim);
+            for (List<String> r : rows) {
+                java.util.Collections.swap(r, ci, other);
+            }
+            String out = reflowRows(joinRows(rows));
+            return new Nav(out, cellContentOffset(out, li, other));
+        });
+    }
+
+    /**
+     * Sorts the body rows by the caret's column, ascending or descending: numbers by value and before text
+     * ({@code 9} before {@code 10}; {@code 1,200}, {@code 45 %} and {@code -3.5} are numbers), text without
+     * regard to case, empty cells last, rows that compare equal in their old order. The caret goes to the
+     * column's header. Returns {@code null} when not a GFM table.
+     */
+    public static Nav sort(String block, int caretInBlock, boolean ascending) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            int delim = delimiterIndex(lines);
+            if (delim < 0) {
+                return null;
+            }
+            int li = lineIndexAt(b, caret);
+            int ci = cellIndexAt(lines[li], caret - lineStartOffset(b, li));
+            List<List<String>> rows = squared(b, lines, delim);
+            List<List<String>> body = new ArrayList<>(rows.subList(delim + 1, rows.size()));
+            java.util.Comparator<List<String>> order = (x, y) -> compareCells(x.get(ci), y.get(ci), ascending);
+            body.sort(order);
+            List<List<String>> sorted = new ArrayList<>(rows.subList(0, delim + 1));
+            sorted.addAll(body);
+            String out = reflowRows(joinRows(sorted));
+            return new Nav(out, cellContentOffset(out, delim - 1, ci));
+        });
+    }
+
+    private static final Pattern NUMBER = Pattern.compile("[-+]?(\\d[\\d,]*)(\\.\\d+)?\\s*%?");
+
+    private static Double number(String cell) {
+        String c = cell.strip();
+        if (!NUMBER.matcher(c).matches()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(c.replace(",", "").replace("%", "").strip());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Empty cells last whatever the direction; numbers before text; then by value. */
+    static int compareCells(String a, String b, boolean ascending) {
+        boolean ea = a.isBlank();
+        boolean eb = b.isBlank();
+        if (ea || eb) {
+            return Boolean.compare(ea, eb);
+        }
+        Double na = number(a);
+        Double nb = number(b);
+        int c;
+        if (na != null && nb != null) {
+            c = Double.compare(na, nb);
+        } else if (na != null || nb != null) {
+            c = na != null ? -1 : 1;
+        } else {
+            c = a.compareToIgnoreCase(b);
+        }
+        return ascending ? c : -c;
+    }
+
+    /** The rows of {@code block}, each padded to the table's column count (delimiter cells with {@code ---}). */
+    private static List<List<String>> squared(String block, String[] lines, int delim) {
+        int ncol = columnCount(lines);
+        List<List<String>> rows = rowsOf(block);
+        for (int i = 0; i < rows.size(); i++) {
+            while (rows.get(i).size() < ncol) {
+                rows.get(i).add(i == delim ? "---" : "");
+            }
+        }
+        return rows;
+    }
+
     private static List<String> emptyCells(int ncol, String fill) {
         List<String> r = new ArrayList<>();
         for (int c = 0; c < Math.max(1, ncol); c++) {

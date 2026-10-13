@@ -8302,7 +8302,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTableFileExporter(previews::exportMarkdownTableFile); // Markdown table → CSV/Excel/ODS file
         buffer.setInsertTableHandler(previews::markdownInsertTable); // Markdown format-bar "insert table" button
         buffer.setInsertTypstTableHandler(() -> previews.showTableSizePicker(buffer::insertTypstTable)); // Typst #table
-        buffer.setTypstImageHandler(() -> editing.insertTypstImageFromChooser(buffer)); // Typst "Insert Image" menu
+        buffer.setTypstImageHandler(() -> editing.insertImageFromChooser(buffer)); // Typst "Insert Image" menu
         buffer.setPreviewExportPngHandler(typst::exportPng); // Typst preview right-click → PNG
         buffer.setPreviewExportSvgHandler(typst::exportSvg); // Typst preview right-click → SVG
         // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).

@@ -296,6 +296,50 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void aPastedPictureIsNamedByThePatternAndItsAltTextCanBeAskedFor() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        fx.shared.getSettings().setMarkdownImageNamePattern("{name}-shot");
+        try {
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
+            assertEquals("![notes-shot](assets/notes-shot.png)", text(b));
+            assertEquals(List.of("notes-shot.png"), names(assets(b)));
+
+            // With the prompt on, nothing is written until the alt text is given.
+            fx.shared.getSettings().setMarkdownImageAltPrompt(true);
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("");
+                registry.run("edit.paste");
+            });
+            FxTestSupport.drainFx();
+            assertEquals("", text(b));
+            assertEquals(List.of("notes-shot.png"), names(assets(b)), "not yet");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.TextField field =
+                        (javafx.scene.control.TextField) b.getArea().getScene().getFocusOwner();
+                field.setText("A red pixel");
+                javafx.event.Event.fireEvent(
+                        field,
+                        new javafx.scene.input.KeyEvent(
+                                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                                "",
+                                "",
+                                javafx.scene.input.KeyCode.ENTER,
+                                false,
+                                false,
+                                false,
+                                false));
+            });
+            FxTestSupport.drainFx();
+            assertEquals("![A red pixel](assets/notes-shot-1.png)", text(b));
+        } finally {
+            fx.shared.getSettings().setMarkdownImageNamePattern("pasted-image");
+            fx.shared.getSettings().setMarkdownImageAltPrompt(false);
+            clearClipboard();
+        }
+    }
+
+    @Test
     void aTypstDocumentGetsAnImageCallInsteadOfAMarkdownLink() throws Exception {
         EditorBuffer b = document("paper.typ", "= Paper\n");
         Path picture = Files.write(Files.createDirectory(dir.resolve("src-typ")).resolve("fig.png"), png(2, 2));
