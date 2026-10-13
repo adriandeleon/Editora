@@ -58,9 +58,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     private record CacheEntry(
             long mtime, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options, boolean valid) {}
 
-    private final Map<Path, CacheEntry> cache = new HashMap<>();
+    private final Map<Path, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
     /** Unreadable configs already reported ({@code path@mtime}), so each is announced once. */
-    private final Set<String> reported = new HashSet<>();
+    private final Set<String> reported = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     MarkdownLintActions(PreviewCoordinator.Host host, PreviewCoordinator previews) {
         this.host = host;
@@ -72,7 +72,12 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
 
     /** The nearest markdownlint config governing {@code file}, or null when there is none. */
     ConfigHit configFor(Path file) {
-        Path stop = boundary(file);
+        return configFor(file, host.activeProjectRoot());
+    }
+
+    /** As {@link #configFor(Path)}, with the project root already in hand (a project lint asks off-thread). */
+    ConfigHit configFor(Path file, Path projectRoot) {
+        Path stop = boundary(file, projectRoot);
         for (Path dir = file.getParent(); dir != null; dir = dir.getParent()) {
             if (stop == null && isHomeOrRoot(dir)) {
                 break; // outside any project: a stray config in the home directory governs nothing
@@ -92,8 +97,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     /** The directory the walk-up stops at: the project root, else the Git repository root, else none. */
-    private Path boundary(Path file) {
-        Path project = host.activeProjectRoot();
+    private Path boundary(Path file, Path project) {
         if (project != null && file.startsWith(project)) {
             return project;
         }
@@ -137,7 +141,12 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                 cache.put(cfg, cached);
             }
             if (!cached.valid() && reported.add(cfg + "@" + mtime)) {
-                host.setStatus(tr("status.markdownLint.configError", cfg.getFileName()));
+                String message = tr("status.markdownLint.configError", cfg.getFileName());
+                if (javafx.application.Platform.isFxApplicationThread()) {
+                    host.setStatus(message);
+                } else {
+                    javafx.application.Platform.runLater(() -> host.setStatus(message));
+                }
             }
             return cached;
         } catch (IOException e) {
@@ -233,6 +242,49 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     // --- fixing ---------------------------------------------------------------------------------------
+
+    /** Fix Issues in Selection: the fixable issues on the selected lines (the caret's line without one). */
+    void fixSelection() {
+        EditorBuffer b = lintable();
+        if (b == null) {
+            return;
+        }
+        CodeArea area = b.getArea();
+        org.fxmisc.richtext.model.TwoDimensional.Bias forward = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
+        int from =
+                area.offsetToPosition(area.getSelection().getStart(), forward).getMajor();
+        int to = area.offsetToPosition(area.getSelection().getEnd(), forward).getMajor();
+        int first = Math.min(from, to);
+        int last = Math.max(from, to);
+        fix((line, code) -> line >= first && line <= last);
+    }
+
+    /**
+     * The save hook of "fix on save": applies the safe fixes to {@code buffer} just before it is written, as one
+     * undo step. Does nothing unless the setting is on and the buffer is an editable Markdown source the user is
+     * editing (not a read-only file, not a preview-only view, not a narrowed one).
+     */
+    void beforeSave(EditorBuffer buffer) {
+        if (buffer == null
+                || !host.config().getSettings().isMarkdownLintFixOnSave()
+                || !previews.markdownLintEnabled()
+                || !buffer.isMarkdown()
+                || !buffer.isEditable()
+                || buffer.isPreviewOnly()
+                || buffer.isNarrowed()) {
+            return;
+        }
+        String text = buffer.getContent();
+        MarkdownLintFix.Result fixed = MarkdownLintFix.fix(
+                text,
+                previews.effectiveMarkdownLintDisabled(buffer),
+                host.config().getSettings().getTabSize(),
+                MarkdownLintFix.Scope.ALL,
+                options(buffer));
+        if (!fixed.text().equals(text)) {
+            replaceKeepingPlace(buffer, fixed);
+        }
+    }
 
     /** Applies the safe-to-automate fixes in {@code scope} to the active buffer (one undo step). */
     void fix(MarkdownLintFix.Scope scope) {
@@ -365,6 +417,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         withIssueAtCaret(this::help);
     }
 
+    void disableFileAtCaret() {
+        withIssueAtCaret(this::disableFile);
+    }
+
+    void disableProjectAtCaret() {
+        withIssueAtCaret(this::disableProject);
+    }
+
     private void withIssueAtCaret(Consumer<Diagnostic> action) {
         EditorBuffer b = lintable();
         if (b == null) {
@@ -431,6 +491,250 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     }
 
     @Override
+    public void disableFile(Diagnostic d) {
+        EditorBuffer b = lintable();
+        if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableFile"))) {
+            return;
+        }
+        MarkdownLintFix.Result r = MarkdownLintFix.disableForFile(b.getContent(), d.code());
+        if (!r.text().equals(b.getContent())) {
+            replaceKeepingPlace(b, r);
+        }
+        host.setStatus(tr("status.markdownLint.fileDisabled", d.code()));
+    }
+
+    /**
+     * Switches the rule of {@code d} off in the project's markdownlint config: an existing JSON/JSONC config is
+     * edited in place (comments kept); with none, one is offered at the project root — the path is shown in a
+     * prompt and nothing is created until it is accepted. A YAML or cli2 config is the user's to edit.
+     */
+    @Override
+    public void disableProject(Diagnostic d) {
+        EditorBuffer b = lintable();
+        Path path = b == null ? null : b.getPath();
+        if (path == null || !com.editora.vfs.Vfs.isLocal(path)) {
+            if (b != null) {
+                host.setStatus(tr("status.markdownLint.noProjectConfig"));
+            }
+            return;
+        }
+        ConfigHit hit = configFor(path);
+        if (hit != null) {
+            String name = hit.file().getFileName().toString();
+            if (!(name.equals(".markdownlint.json") || name.equals(".markdownlint.jsonc"))) {
+                host.setStatus(tr("status.markdownLint.projectConfigManual", d.code(), name));
+                return;
+            }
+            writeRuleOff(hit.file(), d.code());
+            return;
+        }
+        Path root = boundary(path, host.activeProjectRoot());
+        Path proposed = (root == null ? path.getParent() : root).resolve(".markdownlint.json");
+        host.promptText(
+                tr("prompt.markdownLint.createConfig.title"),
+                tr("prompt.markdownLint.createConfig.label", d.code()),
+                proposed.toString(),
+                answer -> {
+                    if (answer != null && !answer.isBlank()) {
+                        writeRuleOff(Path.of(answer.strip()), d.code());
+                    }
+                });
+    }
+
+    private void writeRuleOff(Path config, String code) {
+        try {
+            String before = Files.isRegularFile(config) ? Files.readString(config) : "";
+            String after = MarkdownLintConfig.withRuleOff(before, code);
+            if (after == null) {
+                host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
+                return;
+            }
+            if (config.getParent() != null) {
+                Files.createDirectories(config.getParent());
+            }
+            Files.writeString(config, after);
+            cache.remove(config);
+            previews.applyMarkdownLint();
+            host.setStatus(tr("status.markdownLint.projectDisabled", code, config.getFileName()));
+        } catch (IOException | RuntimeException e) {
+            host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
+        }
+    }
+
+    // --- the project, the status bar, the config watcher ----------------------------------------------------
+
+    /** Bounds of a project lint: enough for a large documentation tree, never an afternoon. */
+    static final int PROJECT_MAX_FILES = 2_000;
+
+    static final int PROJECT_MAX_ISSUES = 5_000;
+    private static final long PROJECT_MAX_FILE_BYTES = 1_000_000;
+
+    private final java.util.concurrent.ExecutorService projectExec =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "markdown-lint-project");
+                t.setDaemon(true);
+                return t;
+            });
+    private final java.util.concurrent.atomic.AtomicLong projectRun = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Stops a running project lint (a newer one, or going back to the active file, supersedes it). */
+    void cancelProjectLint() {
+        projectRun.incrementAndGet();
+    }
+
+    void shutdown() {
+        projectExec.shutdownNow();
+    }
+
+    /**
+     * Lint Project: every Markdown file under the project root (ignore rules honoured as Find in Files does),
+     * off the FX thread, each with the config that governs it; open buffers are linted as they are in memory.
+     * The result fills the tool window grouped by file.
+     */
+    void lintProject() {
+        Path root = host.activeProjectRoot();
+        if (!previews.markdownLintEnabled()) {
+            host.setStatus(tr("status.markdownLint.off"));
+            return;
+        }
+        if (root == null || !com.editora.vfs.Vfs.isLocal(root)) {
+            host.setStatus(tr("status.markdownLint.noProject"));
+            return;
+        }
+        if (!host.toolWindows().isOpen(host.markdownLintToolWindow())) {
+            host.toolWindows().setAvailable(host.markdownLintToolWindow(), true);
+            host.toolWindows().open(host.markdownLintToolWindow());
+        }
+        MarkdownLintPanel panel = host.markdownLintPanel();
+        panel.showProjectScanning(String.valueOf(root.getFileName()));
+        Map<Path, String> open = new HashMap<>();
+        for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(tab);
+            if (b != null && b.isMarkdown() && b.getPath() != null) {
+                open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+            }
+        }
+        Set<String> userOff = previews.settingsDisabledRules();
+        com.editora.config.Settings settings = host.config().getSettings();
+        boolean gitignore = settings.isSearchRespectGitignore();
+        long mine = projectRun.incrementAndGet();
+        projectExec.submit(() -> {
+            ProjectResult result = lintTree(root, open, userOff, settings, gitignore, () -> projectRun.get() != mine);
+            javafx.application.Platform.runLater(() -> {
+                if (projectRun.get() == mine) {
+                    panel.setProjectResults(String.valueOf(root.getFileName()), result.files(), result.truncated());
+                }
+            });
+        });
+    }
+
+    /** What a project lint found. */
+    record ProjectResult(List<MarkdownLintPanel.FileIssues> files, boolean truncated) {}
+
+    /** The worker of {@link #lintProject} (no toolkit: callable from a test). */
+    ProjectResult lintTree(
+            Path root,
+            Map<Path, String> open,
+            Set<String> userOff,
+            com.editora.config.Settings settings,
+            boolean respectGitignore,
+            java.util.function.BooleanSupplier cancelled) {
+        List<Path> candidates = new java.util.ArrayList<>();
+        com.editora.search.GitignoreFilter filter = respectGitignore
+                ? com.editora.search.GitignoreFilter.load(root)
+                : com.editora.search.GitignoreFilter.NONE;
+        com.editora.search.ProjectWalk.Outcome walked = com.editora.search.ProjectWalk.walk(
+                root,
+                new com.editora.search.ProjectWalk.Options(25, PROJECT_MAX_FILES, filter, cancelled),
+                (file, rel, attrs) -> {
+                    String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+                    if (!attrs.isRegularFile()
+                            || attrs.size() > PROJECT_MAX_FILE_BYTES
+                            || !(name.endsWith(".md") || name.endsWith(".markdown"))) {
+                        return com.editora.search.ProjectWalk.Verdict.SKIP;
+                    }
+                    candidates.add(file);
+                    return com.editora.search.ProjectWalk.Verdict.ACCEPT;
+                });
+        candidates.sort((a, b) -> a.toString().compareToIgnoreCase(b.toString()));
+        List<MarkdownLintPanel.FileIssues> files = new java.util.ArrayList<>();
+        boolean truncated = walked.truncated();
+        int total = 0;
+        for (Path file : candidates) {
+            if (cancelled.getAsBoolean()) {
+                return new ProjectResult(List.of(), false);
+            }
+            String text = open.get(file.toAbsolutePath().normalize());
+            try {
+                text = text == null ? Files.readString(file) : text;
+            } catch (IOException | RuntimeException e) {
+                continue; // unreadable or not UTF-8: not a document we can judge
+            }
+            ConfigHit hit = configFor(file, root);
+            Set<String> off = new HashSet<>(userOff);
+            if (hit != null) {
+                off.removeAll(hit.enabled());
+                off.addAll(hit.disabled());
+            }
+            MarkdownLintOptions options = MarkdownLintRules.withSeverities(
+                    settings, hit == null ? MarkdownLintOptions.DEFAULT : hit.options());
+            List<Diagnostic> found = MarkdownLint.lint(
+                    text, off, options, file.getParent() == null ? null : linkTargets(file.getParent()));
+            if (found.isEmpty()) {
+                continue;
+            }
+            if (total + found.size() > PROJECT_MAX_ISSUES) {
+                found = found.subList(0, PROJECT_MAX_ISSUES - total);
+                truncated = true;
+            }
+            total += found.size();
+            files.add(
+                    new MarkdownLintPanel.FileIssues(file, root.relativize(file).toString(), List.copyOf(found)));
+            if (total >= PROJECT_MAX_ISSUES) {
+                break;
+            }
+        }
+        return new ProjectResult(files, truncated);
+    }
+
+    /** Shows {@code buffer}'s issue count in the status bar (hidden for anything that is not linted). */
+    void updateStatusBar(EditorBuffer buffer) {
+        StatusBar bar = host.statusBar();
+        if (bar == null) {
+            return;
+        }
+        if (buffer == null || !buffer.isMarkdown() || !previews.markdownLintEnabled()) {
+            bar.setMarkdownLint(-1, 0, 0);
+            return;
+        }
+        int errors = 0;
+        int warnings = 0;
+        int hints = 0;
+        for (Diagnostic d : buffer.markdownLintDiagnostics()) {
+            if (d.isError()) {
+                errors++;
+            } else if (d.isHint()) {
+                hints++;
+            } else {
+                warnings++;
+            }
+        }
+        bar.setMarkdownLint(errors, warnings, hints);
+    }
+
+    /** The project's file watcher saw changes: a touched markdownlint config re-lints the open buffers. */
+    void onExternalChanges(List<ProjectPanel.FsChange> changes) {
+        for (ProjectPanel.FsChange change : changes) {
+            Path name = change.path() == null ? null : change.path().getFileName();
+            if (name != null && name.toString().startsWith(".markdownlint")) {
+                cache.remove(change.path());
+                previews.applyMarkdownLint();
+                return;
+            }
+        }
+    }
+
+    @Override
     public void disableRule(Diagnostic d) {
         if (!previews.markdownLintRuleDisabled(d.code())) {
             previews.toggleMarkdownLintRule(d.code());
@@ -449,11 +753,15 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         fix.setOnAction(e -> fix(d));
         MenuItem line = new MenuItem(tr("markdownLint.menu.disableLine"));
         line.setOnAction(e -> disableLine(d));
+        MenuItem file = new MenuItem(tr("markdownLint.menu.disableFile", d.code()));
+        file.setOnAction(e -> disableFile(d));
+        MenuItem project = new MenuItem(tr("markdownLint.menu.disableProject", d.code()));
+        project.setOnAction(e -> disableProject(d));
         MenuItem rule = new MenuItem(tr("markdownLint.menu.disableRule", d.code()));
         rule.setOnAction(e -> disableRule(d));
         MenuItem help = new MenuItem(tr("markdownLint.menu.help"));
         help.setOnAction(e -> help(d));
-        return List.of(fix, line, rule, help);
+        return List.of(fix, line, file, project, rule, help);
     }
 
     /** The "Markdown Lint: MD034" submenu for the issue at {@code buffer}'s caret; empty when there is none. */

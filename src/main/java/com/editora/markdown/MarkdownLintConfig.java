@@ -199,6 +199,42 @@ public final class MarkdownLintConfig {
         return out;
     }
 
+    /**
+     * JSON/JSONC config {@code json} with rule {@code code} switched off, edited as text so that comments and
+     * layout survive: an existing {@code "CODE": …} entry gets the value {@code false}, otherwise the entry is
+     * added first in the object. {@code null} or blank input gives a new config; text that is not an object is
+     * returned as {@code null} (the caller must not write it).
+     */
+    public static String withRuleOff(String json, String code) {
+        if (json == null || json.isBlank()) {
+            return "{\n  \"" + code + "\": false\n}\n";
+        }
+        if (!parse(json).valid()) {
+            return null;
+        }
+        java.util.regex.Matcher entry = java.util.regex.Pattern.compile(
+                        "(\"" + java.util.regex.Pattern.quote(code)
+                                + "\"\\s*:\\s*)(true|false|\"[^\"]*\"|\\{[^{}]*\\})",
+                        java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(json);
+        if (entry.find()) {
+            return json.substring(0, entry.start(2)) + "false" + json.substring(entry.end(2));
+        }
+        int open = json.indexOf('{');
+        if (open < 0) {
+            return null;
+        }
+        String rest = json.substring(open + 1);
+        boolean empty = rest.strip().startsWith("}");
+        String eol = json.contains("\r\n") ? "\r\n" : "\n";
+        return json.substring(0, open + 1)
+                + eol
+                + "  \"" + code + "\": false"
+                + (empty
+                        ? eol + rest.stripLeading()
+                        : "," + (rest.startsWith("\n") || rest.startsWith("\r") ? "" : eol) + rest);
+    }
+
     /** The rule codes disabled by JSON/JSONC {@code json}; empty on malformed input. */
     public static Set<String> disabledRules(String json) {
         Set<String> disabled = new HashSet<>();

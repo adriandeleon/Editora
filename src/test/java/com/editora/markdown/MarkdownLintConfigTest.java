@@ -151,4 +151,26 @@ class MarkdownLintConfigTest {
         assertEquals(
                 Set.of("MD034", "MD009", "MD040"), on, "default: true names no rule; a later false takes MD010 back");
     }
+
+    // --- feature gaps: switching a rule off in a config file --------------------------------------------------
+
+    @Test
+    void withRuleOffEditsTheTextAndKeepsComments() {
+        assertEquals("{\n  \"MD034\": false\n}\n", MarkdownLintConfig.withRuleOff("", "MD034"));
+        assertEquals("{\n  \"MD034\": false\n}\n", MarkdownLintConfig.withRuleOff(null, "MD034"));
+        assertEquals("{\n  \"MD034\": false\n}", MarkdownLintConfig.withRuleOff("{}", "MD034"));
+        String commented = "{\n  // house style\n  \"MD013\": { \"line_length\": 120 },\n  \"MD009\": true\n}\n";
+        String edited = MarkdownLintConfig.withRuleOff(commented, "MD034");
+        assertEquals(
+                "{\n  \"MD034\": false,\n  // house style\n  \"MD013\": { \"line_length\": 120 },\n  \"MD009\": true\n}\n",
+                edited);
+        assertEquals(Set.of("MD034"), MarkdownLintConfig.disabledRules(edited));
+        // A rule the file already mentions gets the value false, whatever it had.
+        assertEquals(
+                "{\n  // house style\n  \"MD013\": false,\n  \"MD009\": true\n}\n",
+                MarkdownLintConfig.withRuleOff(commented, "MD013"));
+        assertEquals("{ \"MD009\": false }", MarkdownLintConfig.withRuleOff("{ \"MD009\": true }", "MD009"));
+        assertEquals(null, MarkdownLintConfig.withRuleOff("{ nope", "MD034"), "a broken file is not written to");
+        assertEquals(null, MarkdownLintConfig.withRuleOff("[1]", "MD034"));
+    }
 }

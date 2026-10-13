@@ -3609,6 +3609,8 @@
 .markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }
 .markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -color-danger-fg; }
 .markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -color-warning-fg; }
+.markdown-lint-panel .markdown-lint-tag.lint-hint { -fx-background-color: -color-accent-fg; }
+.markdown-lint-panel .markdown-lint-file-row { -fx-font-weight: bold; }
 /* Hover tooltip on a TODO scrollbar-overview stripe mark (the matched line's text). */
 .todo-stripe-tooltip {
     -fx-font-family: "JetBrains Mono", "Consolas", monospace;

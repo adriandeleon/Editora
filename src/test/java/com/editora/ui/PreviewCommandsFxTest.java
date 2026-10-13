@@ -589,6 +589,8 @@ class PreviewCommandsFxTest {
                 List.of(
                         tr("markdownLint.menu.fix"),
                         tr("markdownLint.menu.disableLine"),
+                        tr("markdownLint.menu.disableFile", "MD034"),
+                        tr("markdownLint.menu.disableProject", "MD034"),
                         tr("markdownLint.menu.disableRule", "MD034"),
                         tr("markdownLint.menu.help")),
                 sub.getItems().stream()
@@ -862,5 +864,170 @@ class PreviewCommandsFxTest {
                         .map(d -> d.code())
                         .filter(c -> c.startsWith("LINK"))
                         .toList());
+    }
+
+    // --- feature gaps: selection, save, file / project switches, project lint, status bar, watcher ------------
+
+    @Test
+    void fixIssuesInSelectionTouchesOnlyTheSelectedLines() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\na   \n\nb   \n\nc   \n");
+        FxTestSupport.runOnFx(() -> b.getArea().selectRange(4, 0, 4, 2));
+        run("markdownLint.fixSelection");
+        assertEquals("# T\n\na   \n\nb\n\nc   \n", text(b));
+    }
+
+    @Test
+    void fixOnSaveRunsOnlyWhenSwitchedOn() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\ntext   \n");
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "")); // nothing to do yet
+        run("file.save");
+        assertEquals("# T\n\ntext   \n", text(b), "off by default: saving changes nothing");
+
+        FxTestSupport.runOnFx(() -> {
+            fx.shared.getSettings().setMarkdownLintFixOnSave(true);
+            b.getArea().appendText("more   \n");
+        });
+        run("file.save");
+        assertEquals("# T\n\ntext\nmore\n", text(b));
+        assertEquals("# T\n\ntext\nmore\n", Files.readString(b.getPath()), "what was written is what was fixed");
+        FxTestSupport.runOnFx(() -> b.getArea().undo());
+        assertEquals("# T\n\ntext   \nmore   \n", text(b), "the fix is one undo step");
+        FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMarkdownLintFixOnSave(false));
+    }
+
+    @Test
+    void aRuleIsSwitchedOffForTheFile() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\nsee https://bare.example now\n");
+        caretAt(b, 2, 6);
+        run("markdownLint.disableFile");
+        assertEquals("<!-- markdownlint-disable-file MD034 -->\n# T\n\nsee https://bare.example now\n", text(b));
+        assertEquals(tr("status.markdownLint.fileDisabled", "MD034"), status());
+        assertArrayEquals(new int[] {3, 6}, caretOf(b));
+        assertEquals(List.of(), diagnosticsAfterRelint(b, 0));
+    }
+
+    @Test
+    void aRuleIsSwitchedOffForTheProject() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\nsee https://bare.example now\n");
+        Path folder = b.getPath().getParent();
+        caretAt(b, 2, 6);
+
+        // No config yet: the place is offered in a prompt, and nothing exists until it is accepted.
+        run("markdownLint.disableProject");
+        assertTrue(FxPrompts.showing(fx.controller));
+        assertTrue(FxPrompts.text(fx.controller).endsWith(".markdownlint.json"), FxPrompts.text(fx.controller));
+        Path config = folder.resolve(".markdownlint.json");
+        assertFalse(Files.exists(config));
+        FxPrompts.answer(fx.controller, config.toString());
+        assertEquals("{\n  \"MD034\": false\n}\n", Files.readString(config));
+        assertEquals(tr("status.markdownLint.projectDisabled", "MD034", ".markdownlint.json"), status());
+        assertEquals(List.of(), diagnosticsAfterRelint(b, 0));
+
+        // An existing JSON config is edited in place, comments kept.
+        Files.writeString(config, "{\n  // ours\n  \"MD009\": false\n}\n");
+        Files.setLastModifiedTime(
+                config,
+                java.nio.file.attribute.FileTime.fromMillis(
+                        Files.getLastModifiedTime(config).toMillis() + 5_000));
+        assertEquals(1, diagnosticsAfterRelintOnEdit(b, 1).size());
+        caretAt(b, 2, 6);
+        run("markdownLint.disableProject");
+        assertEquals("{\n  \"MD034\": false,\n  // ours\n  \"MD009\": false\n}\n", Files.readString(config));
+        Files.delete(config);
+
+        // A YAML config is the user's to edit.
+        Path yaml = Files.writeString(folder.resolve(".markdownlint.yaml"), "MD009: false\n");
+        assertEquals(1, diagnosticsAfterRelintOnEdit(b, 1).size());
+        caretAt(b, 2, 6);
+        run("markdownLint.disableProject");
+        assertEquals(tr("status.markdownLint.projectConfigManual", "MD034", ".markdownlint.yaml"), status());
+        assertEquals("MD009: false\n", Files.readString(yaml));
+        Files.delete(yaml);
+    }
+
+    /** Makes an edit that changes no diagnostic, then waits for the re-lint to leave {@code expected}. */
+    private List<com.editora.markdown.MarkdownLint.Diagnostic> diagnosticsAfterRelintOnEdit(
+            EditorBuffer b, int expected) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(2, "X");
+            b.getArea().deleteText(2, 3);
+        });
+        return diagnosticsAfterRelint(b, expected);
+    }
+
+    @Test
+    void aChangedConfigFileRelintsTheOpenBuffers() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\ntext   \n");
+        assertEquals(1, diagnosticsAfterRelint(b, 1).size());
+        Path config = Files.writeString(b.getPath().getParent().resolve(".markdownlint.json"), "{\"MD009\": false}");
+        FxTestSupport.runOnFx(() -> previews.lint()
+                .onExternalChanges(List.of(new ProjectPanel.FsChange(config, ProjectPanel.FsKind.CREATED))));
+        assertEquals(List.of(), diagnosticsAfterRelint(b, 0), "no edit was needed");
+        FxTestSupport.runOnFx(() -> previews.lint()
+                .onExternalChanges(List.of(new ProjectPanel.FsChange(b.getPath(), ProjectPanel.FsKind.CHANGED))));
+        Files.delete(config);
+    }
+
+    @Test
+    void theStatusBarCountsTheActiveBuffersIssues() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\ntext   \n\n[x]()\n");
+        assertEquals(2, diagnosticsAfterRelint(b, 2).size());
+        StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
+        Label segment = FxTestSupport.field(bar, "markdownLint");
+        FxTestSupport.drainFx();
+        assertTrue(FxTestSupport.callOnFx(segment::isVisible));
+        assertEquals(tr("statusbar.markdownLint", 2), FxTestSupport.callOnFx(segment::getText));
+        assertEquals(
+                tr("statusbar.tip.markdownLintCounts", 0, 2, 0),
+                FxTestSupport.callOnFx(() -> segment.getTooltip().getText()));
+
+        document("notes.txt", "plain   \n");
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(segment::isVisible), "not a linted buffer");
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(b.getPath(), 0));
+        FxTestSupport.drainFx();
+        assertTrue(FxTestSupport.callOnFx(segment::isVisible));
+    }
+
+    @Test
+    void theProjectIsLintedFileByFileHonouringIgnoreRulesAndConfigs() throws Exception {
+        Path root = Files.createDirectory(dir.resolve("project" + counter++));
+        Files.writeString(root.resolve(".gitignore"), "build/\n");
+        Files.writeString(root.resolve("README.md"), "# Readme\n\ntext   \n");
+        Files.writeString(
+                Files.createDirectory(root.resolve("docs")).resolve("guide.md"),
+                "# Guide\n\n[gone](missing.md) and  text   \n");
+        Files.writeString(root.resolve("docs").resolve(".markdownlint.json"), "{\"MD009\": false}");
+        Files.writeString(root.resolve("docs").resolve("clean.md"), "# Clean\n");
+        Files.writeString(Files.createDirectory(root.resolve("build")).resolve("generated.md"), "#Bad   \n");
+        Files.writeString(root.resolve("notes.txt"), "not markdown   \n");
+        Path open = root.resolve("open.md");
+        Files.writeString(open, "# On disk\n");
+
+        MarkdownLintActions.ProjectResult result = previews.lint()
+                .lintTree(
+                        root,
+                        Map.of(open.toAbsolutePath().normalize(), "# In memory\n\nedited   \n"),
+                        com.editora.markdown.MarkdownLint.DEFAULT_OFF,
+                        fx.shared.getSettings(),
+                        true,
+                        () -> false);
+        assertFalse(result.truncated());
+        assertEquals(
+                List.of("README.md [MD009]", "docs/guide.md [LINK001]", "open.md [MD009]"),
+                result.files().stream()
+                        .map(f -> f.name().replace('\\', '/') + " "
+                                + f.issues().stream().map(d -> d.code()).toList())
+                        .sorted()
+                        .toList());
+        assertEquals(
+                List.of(),
+                previews.lint()
+                        .lintTree(root, Map.of(), Set.of(), fx.shared.getSettings(), true, () -> true)
+                        .files(),
+                "a cancelled run reports nothing");
+
+        run("markdownLint.lintProject");
+        assertEquals(tr("status.markdownLint.noProject"), status());
     }
 }

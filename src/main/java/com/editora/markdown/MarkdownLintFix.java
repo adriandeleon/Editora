@@ -313,6 +313,45 @@ public final class MarkdownLintFix {
         return new Result(String.join("\n", out), lineMap);
     }
 
+    /**
+     * Returns {@code text} with rule {@code code} switched off for the whole file: {@code code} is added to the
+     * document's first {@code <!-- markdownlint-disable-file … -->} comment, or such a comment is inserted on a
+     * line of its own right after the front matter (at the top when there is none).
+     */
+    public static Result disableForFile(String text, String code) {
+        String[] lines = (text == null ? "" : text).split("\n", -1);
+        int[] lineMap = new int[lines.length];
+        for (int i = 0; i < lines.length; i++) {
+            lineMap[i] = i;
+        }
+        MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
+        boolean crlf = lines.length > 1 && lines[0].endsWith("\r");
+        List<String> out = new ArrayList<>(List.of(lines));
+        for (int i = 0; i < lines.length; i++) {
+            String line = blocks.line(i);
+            int at = blocks.isCode(i) ? -1 : line.indexOf("markdownlint-disable-file");
+            int close = at < 0 ? -1 : line.indexOf("-->", at);
+            if (close < 0) {
+                continue;
+            }
+            String names = line.substring(at + "markdownlint-disable-file".length(), close)
+                    .strip();
+            if (names.isEmpty() || java.util.Arrays.asList(names.split("\\s+")).contains(code)) {
+                return new Result(text, lineMap); // already covers it
+            }
+            String merged = line.substring(0, close).stripTrailing() + " " + code + " " + line.substring(close);
+            out.set(i, lines[i].endsWith("\r") ? merged + "\r" : merged);
+            return new Result(String.join("\n", out), lineMap);
+        }
+        int at = blocks.frontMatterEnd() + 1;
+        String comment = "<!-- markdownlint-disable-file " + code + " -->";
+        out.add(at, crlf ? comment + "\r" : comment);
+        for (int i = at; i < lines.length; i++) {
+            lineMap[i] = i + 1;
+        }
+        return new Result(String.join("\n", out), lineMap);
+    }
+
     /** The heading fixes (MD023, MD018/MD019, MD026) on a heading's text inside its container. */
     private static String fixHeading(String body, int hashes, Gate gate, int i, MarkdownLintOptions opts) {
         String fixed = body;
