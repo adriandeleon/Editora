@@ -59,6 +59,9 @@ final class PreviewCoordinator {
 
         /** The active project's root, or null with no project open (bounds the lint-config lookup). */
         java.nio.file.Path activeProjectRoot();
+
+        /** The window's status bar (the Markdown-lint issue count lives there). */
+        StatusBar statusBar();
     }
 
     private final Host host;
@@ -84,6 +87,14 @@ final class PreviewCoordinator {
         return lintActions;
     }
 
+    /** Stops the lint threads (the window is closing). */
+    void shutdownLint() {
+        markdownLintService.shutdown();
+        if (lintActions != null) {
+            lintActions.shutdown();
+        }
+    }
+
     /** Whether Markdown linting is effective (the setting; the per-buffer gate adds Markdown + non-huge). */
     boolean markdownLintEnabled() {
         return host.config().getSettings().isMarkdownLint();
@@ -101,6 +112,7 @@ final class PreviewCoordinator {
         if (lintWindowOpen()) {
             runMarkdownLintScan();
         }
+        lint().updateStatusBar(host.activeBuffer());
     }
 
     private boolean lintWindowOpen() {
@@ -119,13 +131,15 @@ final class PreviewCoordinator {
         boolean markdown = buffer != null && buffer.isMarkdown();
         host.toolWindows()
                 .setAvailable(host.markdownLintToolWindow(), markdownLintEnabled() && (markdown || lintWindowOpen()));
-        if (lintWindowOpen()) {
-            runMarkdownLintScan();
+        if (lintWindowOpen() && !host.markdownLintPanel().showingProject()) {
+            runMarkdownLintScan(); // a project's results stay up while the user walks through its files
         }
+        lint().updateStatusBar(buffer);
     }
 
     /** Lints the active Markdown buffer once and fills the Lint tool window (off-thread). */
     void runMarkdownLintScan() {
+        lint().cancelProjectLint();
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown() || !markdownLintEnabled()) {
             host.markdownLintPanel().showNotLinted(b == null ? null : b.getPath());
@@ -136,13 +150,19 @@ final class PreviewCoordinator {
                 b.getVisibleContent(), // what the editor shows: the same lines the squiggles are drawn on
                 effectiveMarkdownLintDisabled(b),
                 lint().options(b),
+                lint().linkTargets(b),
                 diags -> showInLintPanel(b, diags));
     }
 
     /** Fills the Lint tool window with {@code buffer}'s diagnostics, when it is still the active buffer. */
     private void showInLintPanel(
             EditorBuffer buffer, java.util.List<com.editora.markdown.MarkdownLint.Diagnostic> diags) {
-        if (host.activeBuffer() == buffer && lintWindowOpen()) {
+        if (host.activeBuffer() == buffer) {
+            lint().updateStatusBar(buffer);
+        }
+        if (host.activeBuffer() == buffer
+                && lintWindowOpen()
+                && !host.markdownLintPanel().showingProject()) {
             host.markdownLintPanel().setResults(buffer.getPath(), buffer.getTitle(), diags, lint().configNote(buffer));
         }
     }
@@ -156,7 +176,12 @@ final class PreviewCoordinator {
             String text,
             java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
         markdownLintService.validate(
-                buffer, text, effectiveMarkdownLintDisabled(buffer), lint().options(buffer), diags -> {
+                buffer,
+                text,
+                effectiveMarkdownLintDisabled(buffer),
+                lint().options(buffer),
+                lint().linkTargets(buffer),
+                diags -> {
                     onResult.accept(diags);
                     showInLintPanel(buffer, diags);
                 });
@@ -189,15 +214,9 @@ final class PreviewCoordinator {
         return off;
     }
 
-    /** The rule codes switched off in Settings, normalized. */
+    /** The rules the user has off in Settings (the opt-in ones that were never switched on included). */
     java.util.Set<String> settingsDisabledRules() {
-        java.util.Set<String> off = new java.util.HashSet<>();
-        for (String code : host.config().getSettings().getMarkdownLintDisabledRules()) {
-            if (code != null && !code.isBlank()) {
-                off.add(code.strip().toUpperCase(java.util.Locale.ROOT));
-            }
-        }
-        return off;
+        return MarkdownLintRules.off(host.config().getSettings());
     }
 
     /** The rules the nearest markdownlint config above {@code file} (inside its project) turns off. */
@@ -239,22 +258,12 @@ final class PreviewCoordinator {
     }
 
     boolean markdownLintRuleDisabled(String code) {
-        for (String c : host.config().getSettings().getMarkdownLintDisabledRules()) {
-            if (code.equalsIgnoreCase(c)) {
-                return true;
-            }
-        }
-        return false;
+        return !MarkdownLintRules.enabled(host.config().getSettings(), code);
     }
 
     void toggleMarkdownLintRule(String code) {
-        java.util.List<String> list =
-                new java.util.ArrayList<>(host.config().getSettings().getMarkdownLintDisabledRules());
-        boolean wasDisabled = list.removeIf(c -> code.equalsIgnoreCase(c));
-        if (!wasDisabled) {
-            list.add(code);
-        }
-        host.config().getSettings().setMarkdownLintDisabledRules(list);
+        boolean wasDisabled = markdownLintRuleDisabled(code);
+        MarkdownLintRules.setEnabled(host.config().getSettings(), code, wasDisabled);
         host.requestSave();
         applyMarkdownLint(); // re-kicks every buffer's validator (new disabled set) + refreshes the panel
         if (host.settingsWindow() != null) {

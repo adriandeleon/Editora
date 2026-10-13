@@ -68,6 +68,25 @@ public final class MarkdownLintFix {
      */
     public static Result fix(
             String text, Set<String> disabled, int spacesPerTab, Scope scope, MarkdownLintOptions options) {
+        Result result = fixOnce(text, disabled, spacesPerTab, scope, options);
+        // A whole-document fix runs until it settles: an edit of the second phase (a deleted definition, say)
+        // can leave something for the first (the blank line that was above it). A scoped fix is one issue.
+        for (int round = 0; round < 4 && scope == Scope.ALL && result.text() != text; round++) {
+            Result again = fixOnce(result.text(), disabled, spacesPerTab, scope, options);
+            if (again.text().equals(result.text())) {
+                break;
+            }
+            int[] composed = new int[result.lineMap().length];
+            for (int i = 0; i < composed.length; i++) {
+                composed[i] = again.mapLine(result.lineMap()[i]);
+            }
+            result = new Result(again.text(), composed);
+        }
+        return result;
+    }
+
+    private static Result fixOnce(
+            String text, Set<String> disabled, int spacesPerTab, Scope scope, MarkdownLintOptions options) {
         if (text == null || text.isEmpty()) {
             return new Result(text, new int[0]);
         }
@@ -141,14 +160,110 @@ public final class MarkdownLintFix {
                 result = ""; // nothing but blank lines (a lone newline is left as it is)
             }
         }
+        result = applyEdits(result, lineMap, off, gate.scope(), options, crlf ? "\r\n" : "\n");
         if (result.equals(text)) {
             return new Result(text, lineMap);
         }
         int last = Math.max(0, result.split("\n", -1).length - 1);
         for (int i = 0; i < lineMap.length; i++) {
-            lineMap[i] = Math.min(lineMap[i], last);
+            lineMap[i] = Math.max(0, Math.min(lineMap[i], last));
         }
         return new Result(result, lineMap);
+    }
+
+    /**
+     * The second phase: the rules whose fix is an edit the linter itself proposes (list markers, emphasis
+     * style, spaces inside emphasis / code / link text, reversed links, blank lines around lists and tables,
+     * unused definitions…). Linted, edited and linted again until nothing is left to fix, so one command is
+     * idempotent; {@code lineMap} (input line → line of {@code text}) is kept in step.
+     */
+    private static String applyEdits(
+            String text, int[] lineMap, Set<String> off, Scope scope, MarkdownLintOptions options, String eol) {
+        String current = text;
+        // For each line of the current text, the input line a scope is asked about.
+        int lineCount = current.split("\n", -1).length;
+        int[] origin = new int[lineCount];
+        java.util.Arrays.fill(origin, -1);
+        for (int i = 0; i < lineMap.length; i++) {
+            if (lineMap[i] >= 0 && lineMap[i] < lineCount && origin[lineMap[i]] < 0) {
+                origin[lineMap[i]] = i;
+            }
+        }
+        for (int pass = 0; pass < 6; pass++) {
+            MarkdownLint.Report report = MarkdownLint.analyze(current, off, options, null);
+            List<MarkdownLint.Edit> edits = new ArrayList<>();
+            for (MarkdownLint.Diagnostic d : report.diagnostics()) {
+                List<MarkdownLint.Edit> fix = report.edits().get(d);
+                int line = d.line() - 1;
+                int asked = line >= 0 && line < origin.length && origin[line] >= 0 ? origin[line] : line;
+                if (fix != null && scope.includes(asked, d.code())) {
+                    edits.addAll(fix);
+                }
+            }
+            if (edits.isEmpty()) {
+                break;
+            }
+            String[] lines = current.split("\n", -1);
+            int[] starts = new int[lines.length + 1];
+            for (int i = 0; i < lines.length; i++) {
+                starts[i + 1] = starts[i] + lines[i].length() + 1;
+            }
+            edits.sort((a, b) -> a.line() != b.line()
+                    ? Integer.compare(a.line(), b.line())
+                    : Integer.compare(a.column(), b.column()));
+            StringBuilder out = new StringBuilder(current.length() + 16);
+            int[] shift = new int[lines.length + 1]; // net lines added before each line, as a running difference
+            int consumed = 0;
+            boolean changed = false;
+            for (MarkdownLint.Edit e : edits) {
+                int from = offset(starts, lines, e.line(), e.column(), current.length());
+                int to = offset(starts, lines, e.endLine(), e.endColumn(), current.length());
+                if (from < consumed || to < from) {
+                    continue; // overlaps an edit already applied: the next pass picks it up
+                }
+                String replacement = e.replacement().replace("\n", eol);
+                out.append(current, consumed, from).append(replacement);
+                consumed = to;
+                changed = true;
+                int added = (int) replacement.chars().filter(ch -> ch == '\n').count();
+                int removed = Math.max(0, Math.min(e.endLine(), lines.length) - e.line());
+                boolean before = e.column() == 0; // an insertion at a line's start pushes that line down too
+                int at = Math.min(lines.length, before ? e.line() : e.line() + 1);
+                shift[at] += added - removed;
+            }
+            if (!changed) {
+                break;
+            }
+            out.append(current, consumed, current.length());
+            current = out.toString();
+            int[] moved = new int[lines.length];
+            int delta = 0;
+            for (int i = 0; i < lines.length; i++) {
+                delta += shift[i];
+                moved[i] = Math.max(0, i + delta);
+            }
+            for (int i = 0; i < lineMap.length; i++) {
+                lineMap[i] = moved[Math.max(0, Math.min(lineMap[i], moved.length - 1))];
+            }
+            int[] next = new int[current.split("\n", -1).length];
+            java.util.Arrays.fill(next, -1);
+            for (int i = 0; i < moved.length; i++) {
+                if (moved[i] < next.length && next[moved[i]] < 0) {
+                    next[moved[i]] = i < origin.length ? origin[i] : -1;
+                }
+            }
+            origin = next;
+        }
+        return current;
+    }
+
+    private static int offset(int[] starts, String[] lines, int line, int column, int length) {
+        if (line >= lines.length) {
+            return length;
+        }
+        String text = lines[line];
+        int visible = text.endsWith("\r") ? text.length() - 1 : text.length();
+        return Math.min(length, starts[line] + Math.max(0, Math.min(column, visible)));
     }
 
     /**
@@ -194,6 +309,45 @@ public final class MarkdownLintFix {
             for (int i = at; i < lines.length; i++) {
                 lineMap[i] = i + 1;
             }
+        }
+        return new Result(String.join("\n", out), lineMap);
+    }
+
+    /**
+     * Returns {@code text} with rule {@code code} switched off for the whole file: {@code code} is added to the
+     * document's first {@code <!-- markdownlint-disable-file … -->} comment, or such a comment is inserted on a
+     * line of its own right after the front matter (at the top when there is none).
+     */
+    public static Result disableForFile(String text, String code) {
+        String[] lines = (text == null ? "" : text).split("\n", -1);
+        int[] lineMap = new int[lines.length];
+        for (int i = 0; i < lines.length; i++) {
+            lineMap[i] = i;
+        }
+        MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
+        boolean crlf = lines.length > 1 && lines[0].endsWith("\r");
+        List<String> out = new ArrayList<>(List.of(lines));
+        for (int i = 0; i < lines.length; i++) {
+            String line = blocks.line(i);
+            int at = blocks.isCode(i) ? -1 : line.indexOf("markdownlint-disable-file");
+            int close = at < 0 ? -1 : line.indexOf("-->", at);
+            if (close < 0) {
+                continue;
+            }
+            String names = line.substring(at + "markdownlint-disable-file".length(), close)
+                    .strip();
+            if (names.isEmpty() || java.util.Arrays.asList(names.split("\\s+")).contains(code)) {
+                return new Result(text, lineMap); // already covers it
+            }
+            String merged = line.substring(0, close).stripTrailing() + " " + code + " " + line.substring(close);
+            out.set(i, lines[i].endsWith("\r") ? merged + "\r" : merged);
+            return new Result(String.join("\n", out), lineMap);
+        }
+        int at = blocks.frontMatterEnd() + 1;
+        String comment = "<!-- markdownlint-disable-file " + code + " -->";
+        out.add(at, crlf ? comment + "\r" : comment);
+        for (int i = at; i < lines.length; i++) {
+            lineMap[i] = i + 1;
         }
         return new Result(String.join("\n", out), lineMap);
     }

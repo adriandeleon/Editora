@@ -1813,6 +1813,20 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("markdownLint.toggleRule", host.previews()::chooseMarkdownLintRule));
         host.registry()
                 .register(Command.of(
+                        "markdownLint.fixSelection",
+                        () -> host.previews().lint().fixSelection()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableFile", () -> host.previews().lint().disableFileAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableProject",
+                        () -> host.previews().lint().disableProjectAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.lintProject", () -> host.previews().lint().lintProject()));
+        host.registry()
+                .register(Command.of(
                         "markdownLint.next", () -> host.previews().lint().go(1)));
         host.registry()
                 .register(Command.of(

@@ -1312,18 +1312,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The Markdown Lint panel, built on its first use (the window's open runs the scan that fills it). */
     private MarkdownLintPanel markdownLintPanel() {
         if (markdownLintPanel == null) {
-            markdownLintPanel = new MarkdownLintPanel(previews.lint(), new MarkdownLintPanel.Actions() {
-                @Override
-                public void open(java.nio.file.Path file, int line, int col) {
-                    fileWorkflows.openPath(file);
-                    Platform.runLater(() -> sessions.gotoInFile(file, line, col));
-                }
-
-                @Override
-                public void refresh() {
-                    previews.runMarkdownLintScan();
-                }
-            });
+            markdownLintPanel = new MarkdownLintPanel(
+                    previews.lint(),
+                    MarkdownLintPanel.actions(
+                            (file, line, col) -> openAndGoto(file, line - 1, col - 1), previews::runMarkdownLintScan));
         }
         return markdownLintPanel;
     }
@@ -1366,6 +1358,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setOnExternalChanges((changes, complete) -> {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
             indexCoordinator.onExternalChanges(changes, complete);
+            previews.lint().onExternalChanges(changes); // a changed .markdownlint* re-lints open buffers
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
@@ -1504,7 +1497,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 historyCoordinator == null ? null : () -> historyCoordinator.shutdown(),
                 () -> searchCoordinator.shutdown(),
                 () -> todoCoordinator.shutdown(),
-                () -> previews.markdownLintService.shutdown(),
+                () -> previews.shutdownLint(),
                 () -> mermaid.shutdown(),
                 () -> diagram.shutdown(),
                 () -> typst.shutdown(),
@@ -4503,6 +4496,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path activeProjectRoot() {
             return MainController.this.activeProjectRoot();
+        }
+
+        @Override
+        public StatusBar statusBar() {
+            return statusBar;
         }
 
         @Override

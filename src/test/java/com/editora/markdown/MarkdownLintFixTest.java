@@ -287,4 +287,42 @@ class MarkdownLintFixTest {
                 fix("# T\n\n<details>\n<summary>S</summary>   \n\n#Inside   \n\n</details>\n"),
                 "the Markdown between the tags is fixed, the tag lines are not");
     }
+
+    // --- feature gaps: disable for the file ----------------------------------------------------------------
+
+    @Test
+    void disableForFileAddsOrExtendsTheFileComment() {
+        assertEquals(
+                "<!-- markdownlint-disable-file MD034 -->\n# T\n\nsee http://x.io\n",
+                MarkdownLintFix.disableForFile("# T\n\nsee http://x.io\n", "MD034")
+                        .text());
+        MarkdownLintFix.Result afterFrontMatter =
+                MarkdownLintFix.disableForFile("---\ntitle: X\n---\n\ntext   \n", "MD009");
+        assertEquals(
+                "---\ntitle: X\n---\n<!-- markdownlint-disable-file MD009 -->\n\ntext   \n", afterFrontMatter.text());
+        assertEquals(5, afterFrontMatter.mapLine(4), "the lines below move down one");
+        assertEquals(2, afterFrontMatter.mapLine(2));
+        String once = "# T\n\ntext\n<!-- markdownlint-disable-file MD034 -->\n";
+        assertEquals(
+                "# T\n\ntext\n<!-- markdownlint-disable-file MD034 MD009 -->\n",
+                MarkdownLintFix.disableForFile(once, "MD009").text());
+        assertEquals(once, MarkdownLintFix.disableForFile(once, "MD034").text());
+        String all = "<!-- markdownlint-disable-file -->\n# T\n";
+        assertEquals(all, MarkdownLintFix.disableForFile(all, "MD034").text());
+        assertEquals(
+                "<!-- markdownlint-disable-file MD009 -->\r\n# T\r\n",
+                MarkdownLintFix.disableForFile("# T\r\n", "MD009").text());
+        assertTrue(MarkdownLint.lint(MarkdownLintFix.disableForFile("# T\n\nsee http://x.io\n", "MD034")
+                        .text())
+                .isEmpty());
+    }
+
+    @Test
+    void aSelectionScopeFixesOnlyItsLines() {
+        String md = "a   \n\nb   \n\n**c **\n";
+        assertEquals(
+                "a   \n\nb\n\n**c**\n",
+                MarkdownLintFix.fix(md, MarkdownLint.DEFAULT_OFF, 4, (line, code) -> line >= 2 && line <= 4)
+                        .text());
+    }
 }

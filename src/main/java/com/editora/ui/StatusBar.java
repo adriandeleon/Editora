@@ -72,6 +72,8 @@ public final class StatusBar extends HBox {
     /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
      *  the active buffer isn't served by LSP. */
     private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
+    /** The active Markdown buffer's lint issue count; click opens the Markdown Lint tool window. */
+    private final Label markdownLint = segment("tool.markdownLint", tr("statusbar.tip.markdownLint"));
     /** Indeterminate progress shown while a language server is starting/loading; hidden once ready. */
     // Starts determinate (0) — an *indeterminate* ProgressBar runs an animation timeline that pulses the
     // whole scene continuously (even while hidden), starving nearby repaints. setLspLoading() flips it to
@@ -278,6 +280,7 @@ public final class StatusBar extends HBox {
                         git,
                         githubChecks,
                         lsp,
+                        markdownLint,
                         mcp,
                         readOnly,
                         zoomGroup(),
@@ -664,6 +667,23 @@ public final class StatusBar extends HBox {
         boolean vis = githubChecksSummary != null && !simpleMode;
         githubChecks.setVisible(vis);
         githubChecks.setManaged(vis);
+    }
+
+    /**
+     * Shows the Markdown-lint issue count of the active buffer ("3 lint issues"; the tooltip splits it by
+     * severity), or hides the segment when {@code errors} is negative (not a linted buffer) or nothing is wrong.
+     */
+    public void setMarkdownLint(int errors, int warnings, int hints) {
+        int total = Math.max(0, errors) + warnings + hints;
+        boolean show = errors >= 0 && total > 0 && !simpleMode;
+        markdownLint.setText(show ? tr("statusbar.markdownLint", total) : "");
+        markdownLint.setTooltip(
+                show
+                        ? new javafx.scene.control.Tooltip(
+                                tr("statusbar.tip.markdownLintCounts", errors, warnings, hints))
+                        : null);
+        markdownLint.setVisible(show);
+        markdownLint.setManaged(show);
     }
 
     /**

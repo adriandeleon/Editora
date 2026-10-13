@@ -1592,6 +1592,7 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
+        host.previews().lint().beforeSave(buffer); // "fix Markdown lint issues on save", one undo step
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
