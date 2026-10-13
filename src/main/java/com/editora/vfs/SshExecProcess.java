@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.EnumSet;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.editora.process.PosixShell;
@@ -30,12 +31,20 @@ final class SshExecProcess extends RemoteProcess {
     private final ChannelExec channel;
     private final String targetId;
     private final long pid;
+    /** Released by the channel's own close notification, so a waiter never polls or misses it. */
+    private final CountDownLatch exited = new CountDownLatch(1);
 
     private SshExecProcess(ClientSession session, ChannelExec channel, String targetId, long pid) {
         this.session = session;
         this.channel = channel;
         this.targetId = targetId;
         this.pid = pid;
+        channel.addCloseFutureListener(closed -> exited.countDown());
+    }
+
+    /** Runs {@code action} once the channel has closed, at once if it already has. */
+    void whenClosed(Runnable action) {
+        channel.addCloseFutureListener(closed -> action.run());
     }
 
     /**
@@ -149,18 +158,13 @@ final class SshExecProcess extends RemoteProcess {
 
     @Override
     public int waitFor() throws InterruptedException {
-        while (!channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), Duration.ofMinutes(1))
-                .contains(ClientChannelEvent.CLOSED)) {
-            if (Thread.interrupted()) {
-                throw new InterruptedException();
-            }
-        }
+        exited.await();
         return exitValue();
     }
 
     @Override
     public int exitValue() {
-        if (!channel.isClosed()) {
+        if (exited.getCount() > 0) {
             throw new IllegalThreadStateException("process has not exited");
         }
         Integer status = channel.getExitStatus();

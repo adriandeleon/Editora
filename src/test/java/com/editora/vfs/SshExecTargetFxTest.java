@@ -150,8 +150,8 @@ class SshExecTargetFxTest {
             p.getOutputStream().close(); // cat sees the end of its input and the command finishes
             String printed = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
 
-            assertTrue(p.waitFor(20, TimeUnit.SECONDS));
-            assertEquals(0, p.exitValue());
+            assertEquals(0, p.onExit().get(20, TimeUnit.SECONDS).exitValue(), "onExit completes without polling");
+            assertEquals(0, p.waitFor());
             assertEquals(Long.parseLong(printed), remote.remotePid());
             assertFalse(remote.connectionLost());
             assertThrows(UnsupportedOperationException.class, p::pid);
@@ -274,6 +274,44 @@ class SshExecTargetFxTest {
 
                 assertTrue(session.isOpen());
                 assertEquals("alive\n", session.executeRemoteCommand("echo alive"));
+            }
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX)
+    void onlySoManyProgramsRunAtOnceAndAFinishedOneFreesItsPlace() throws Exception {
+        ExecTarget target = ExecTargets.forPath(remoteDir);
+        ExecSpec program = ExecSpec.of(List.of("sleep", "600"), remoteDir, Map.of(), ExecSpec.Locale.USER)
+                .withLongLived(true);
+        List<Process> running = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < SshExecTarget.MAX_LONG_LIVED; i++) {
+                running.add(target.start(program));
+            }
+            IOException refused = assertThrows(IOException.class, () -> target.start(program));
+            assertTrue(refused.getMessage().contains("too many programs are already running"), refused.getMessage());
+            // Short commands have their own share: a full house of programs does not stop git.
+            assertEquals(
+                    0, ProcessRunner.run(remoteDir, TIMEOUT, List.of("true")).exit());
+
+            Process first = running.removeFirst();
+            first.destroyForcibly();
+            assertTrue(first.waitFor(10, TimeUnit.SECONDS));
+            for (int i = 0; i < 100 && running.size() < SshExecTarget.MAX_LONG_LIVED; i++) {
+                try {
+                    running.add(target.start(program)); // the place is released just after the exit is seen
+                } catch (IOException notYet) {
+                    Thread.sleep(50);
+                }
+            }
+            assertEquals(SshExecTarget.MAX_LONG_LIVED, running.size());
+        } finally {
+            for (Process p : running) {
+                p.destroyForcibly();
+            }
+            for (Process p : running) {
+                p.waitFor(10, TimeUnit.SECONDS);
             }
         }
     }
