@@ -208,4 +208,50 @@ class MarkdownMathTest {
         });
         return n[0];
     }
+
+    @Test
+    void aMathFenceIsADisplayFormulaWithNothingToEscape() {
+        assertEquals(List.of("b:a &= b \\\\\nc &= d"), math("```math\na &= b \\\\\nc &= d\n```\n"));
+        assertEquals(List.of("b:x_1 * y_2 * z"), math("~~~ Math\nx_1 * y_2 * z\n~~~\n"), "any fence, any case");
+        assertEquals(List.of(), math("```mathematica\nPlot[x]\n```\n"), "another language is code");
+        assertEquals(List.of(), math("```\nmath\n```\n"));
+        assertInstanceOf(FencedCodeBlock.class, parse("```java\nint x;\n```\n").getFirstChild());
+        assertEquals(List.of("b:q"), math("> ```math\n> q\n> ```\n"));
+    }
+
+    @Test
+    void latexDelimitersAreMathWhenTheyHoldMath() {
+        assertEquals(List.of("i:x^2 + y^2"), math("so \\(x^2 + y^2\\) holds"));
+        assertEquals(List.of("i:\\frac{a}{b}"), math("\\(\\frac{a}{b}\\)"));
+        assertEquals(List.of("d:E = mc^2"), math("\\[E = mc^2\\]"));
+        assertEquals(
+                List.of("d:a = b,\nc = d"),
+                math("\\[\na = b,\nc = d\n\\]\n"),
+                "display may span the paragraph's lines");
+        assertEquals(List.of("i:a_i", "i:b_j"), math("\\(a_i\\) and $b_j$"));
+    }
+
+    @Test
+    void escapedBracketsInProseStayEscapedBrackets() {
+        assertEquals(List.of(), math("see \\(this note\\) and \\[not a link\\]"));
+        assertEquals(List.of(), math("[f\\(x\\)](https://example.org/f)"), "an escaped paren in link text");
+        assertEquals(List.of(), math("1\\) first, 2\\) second, a \\( alone"));
+        assertEquals(List.of(), math("\\(x^2\nacross lines\\)"), "inline math stays on its line");
+        assertEquals(List.of(), math("`\\(x^2\\)`"));
+        assertEquals(List.of(), math("\\(\\)"));
+        // What they render as is what they always did: the brackets, without the backslashes.
+        org.commonmark.renderer.text.TextContentRenderer text =
+                org.commonmark.renderer.text.TextContentRenderer.builder()
+                        .extensions(EXT)
+                        .build();
+        assertEquals(
+                "see (this note) and [not a link]",
+                text.render(parse("see \\(this note\\) and \\[not a link\\]")).strip());
+        assertTrue(MarkdownMath.looksLikeMath("x^2"));
+        assertTrue(MarkdownMath.looksLikeMath("\\alpha"));
+        assertFalse(MarkdownMath.looksLikeMath("this note"));
+        assertFalse(MarkdownMath.looksLikeMath("x"));
+        assertFalse(MarkdownMath.looksLikeMath(" "));
+        assertFalse(MarkdownMath.looksLikeMath(null));
+    }
 }

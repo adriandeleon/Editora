@@ -80,7 +80,104 @@ final class MarkdownPreview {
     /** How long after a render late-arriving content (images, diagrams) keeps the anchored line in place. */
     private static final long ANCHOR_HOLD_NANOS = 1_500_000_000L;
 
+    /** The thin bar beside the block that holds the editor's caret line (Split); unmanaged, so it moves
+     *  nothing. */
+    private final javafx.scene.layout.Region caretMarker = new javafx.scene.layout.Region();
+
+    private Node markedBlock;
+    private int markedLine = -1;
+    private java.util.function.IntConsumer jumpToSource = line -> {};
+
+    /** Who puts the editor's caret on a source line when a block is double-clicked here. */
+    void onJumpToSource(java.util.function.IntConsumer jump) {
+        this.jumpToSource = jump == null ? line -> {} : jump;
+    }
+
+    /**
+     * Shows which block the editor's caret is in: a bar beside the block that came from source {@code line};
+     * -1 removes it. Cheap enough for every change of line (a scan of the block list), and nothing is laid out
+     * for it.
+     */
+    void markLine(int line) {
+        markedLine = line;
+        Node block = null;
+        if (line >= 0) {
+            for (Entry e : entries) {
+                if (e.node() != null && e.startLine() >= 0 && e.startLine() <= line && line <= e.endLine()) {
+                    block = e.node();
+                    break;
+                }
+            }
+        }
+        markedBlock = block;
+        placeMarker();
+    }
+
+    private void placeMarker() {
+        boolean show = markedBlock != null && markedBlock.getParent() == column;
+        caretMarker.setVisible(show);
+        if (show) {
+            javafx.geometry.Bounds b = markedBlock.getBoundsInParent();
+            javafx.geometry.Bounds c = column.getBoundsInParent();
+            caretMarker.resizeRelocate(
+                    c.getMinX() + column.getInsets().getLeft() - 12, c.getMinY() + b.getMinY(), 3, b.getHeight());
+        }
+    }
+
+    /** The source line a point of the document belongs to: the block under it, and how far down the block. */
+    private int lineAt(Node target, double sceneY) {
+        Node block = target;
+        while (block != null && block.getParent() != column) {
+            block = block.getParent();
+        }
+        for (Entry e : entries) {
+            if (e.node() == block && e.startLine() >= 0) {
+                javafx.geometry.Bounds b = block.localToScene(block.getBoundsInLocal());
+                double frac = b.getHeight() <= 0 ? 0 : (sceneY - b.getMinY()) / b.getHeight();
+                int lines = e.endLine() - e.startLine() + 1;
+                return e.startLine() + (int) Math.max(0, Math.min(lines - 1, Math.floor(frac * lines)));
+            }
+        }
+        return -1;
+    }
+
+    /** Shown instead of a blank pane when the document renders to nothing (an empty file, only comments). */
+    private final javafx.scene.control.Label emptyNote =
+            new javafx.scene.control.Label(com.editora.i18n.Messages.tr("markdown.preview.empty"));
+
     MarkdownPreview() {
+        emptyNote.getStyleClass().add("md-preview-empty");
+        emptyNote.setVisible(false);
+        emptyNote.setManaged(false);
+        emptyNote.setMouseTransparent(true);
+        StackPane.setAlignment(emptyNote, javafx.geometry.Pos.TOP_CENTER);
+        root.getChildren().add(emptyNote);
+        caretMarker.getStyleClass().add("md-caret-marker");
+        caretMarker.setManaged(false);
+        caretMarker.setVisible(false);
+        caretMarker.setMouseTransparent(true);
+        root.getChildren().add(caretMarker);
+        column.afterLayout(this::placeMarker);
+        // A double click on a block puts the editor's caret on the line it came from (not on a link, a task
+        // box or a <details> summary: those have their own click).
+        column.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getClickCount() != 2 || e.getButton() != javafx.scene.input.MouseButton.PRIMARY) {
+                return;
+            }
+            Node target = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
+            for (Node n = target; n != null && n != column; n = n.getParent()) {
+                if (n instanceof javafx.scene.control.ButtonBase
+                        || n.getOnMouseClicked() != null
+                        || (n.hasProperties() && n.getProperties().containsKey(MarkdownRenderer.LINK_KEY))) {
+                    return;
+                }
+            }
+            int line = target == null ? -1 : lineAt(target, e.getSceneY());
+            if (line >= 0) {
+                jumpToSource.accept(line);
+                e.consume();
+            }
+        });
         root.heightProperty().addListener((o, was, now) -> {
             // The height changes in the middle of a layout pass: re-anchor once that pass is over.
             if (holdsAnchor() && !reanchorQueued) {
@@ -115,6 +212,30 @@ final class MarkdownPreview {
         if (Math.abs(zoom - this.zoom) > 1e-9) {
             this.zoom = zoom;
             PreviewImageLoader.zoomAll(column, zoom);
+        }
+    }
+
+    private PreviewLightbox lightbox;
+
+    /** A picture or a diagram was clicked: shows it enlarged over the window, until Esc or a click. */
+    private void enlarge(Node picture) {
+        javafx.scene.image.Image image = PreviewLightbox.imageOf(picture);
+        if (image == null || pane == null || pane.getScene() == null) {
+            return; // not loaded (a placeholder, an error): nothing to enlarge
+        }
+        closeLightbox();
+        lightbox = PreviewLightbox.show(pane, image);
+    }
+
+    /** The enlarged picture now showing, or null. */
+    PreviewLightbox lightbox() {
+        return lightbox != null && lightbox.isShowing() ? lightbox : null;
+    }
+
+    private void closeLightbox() {
+        if (lightbox != null) {
+            lightbox.close();
+            lightbox = null;
         }
     }
 
@@ -167,12 +288,29 @@ final class MarkdownPreview {
         return lastReused;
     }
 
+    private long builtTotal;
+
+    /** Every block built since this preview was created — a render that reuses everything adds nothing. */
+    long builtTotal() {
+        return builtTotal;
+    }
+
     /** Binds the scroll pane this document scrolls in; a gesture of the user's ends any anchoring. */
     void attach(ScrollPane scrollPane) {
         this.pane = scrollPane;
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> anchorUntil = 0);
+    }
+
+    private void showEmptyNote(boolean empty) {
+        emptyNote.setVisible(empty);
+        emptyNote.setManaged(empty);
+    }
+
+    /** Stops holding the last render's line in place: something else now decides where the document is. */
+    void releaseAnchor() {
+        anchorUntil = 0;
     }
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
@@ -386,14 +524,20 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir();
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir() + "|"
+                + PreviewPrefs.signature();
+        column.setMaxWidth(PreviewPrefs.contentWidth());
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
             column.getChildren().clear();
             contextSignature = signature;
         }
-        MarkdownRenderer.RenderContext ctx =
-                MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark, plan.footnotes());
+        MarkdownRenderer.RenderContext ctx = MarkdownRenderer.previewContext(
+                plan.baseDir(),
+                this::follow,
+                dark,
+                plan.footnotes(),
+                new MarkdownRenderer.Live(this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter()));
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
@@ -444,6 +588,7 @@ final class MarkdownPreview {
                 if (node != null) {
                     fresh.add(node);
                     zoomed(node);
+                    node.getProperties().put(BUILT_AT_LINE, u.startLine());
                 }
             }
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
@@ -464,6 +609,7 @@ final class MarkdownPreview {
         }
         entries = now;
         lastBuilt = built;
+        builtTotal += built;
         lastReused = shown - built;
         boolean complete = shown == n;
         int next = shown;
@@ -502,6 +648,8 @@ final class MarkdownPreview {
             setScrollY(yOfLine(anchorLine));
         }
         find.reapply(); // rebuilt blocks lost their marks
+        showEmptyNote(complete && column.getChildren().isEmpty());
+        markLine(markedLine); // the caret's block may be a new node, or on other lines
         if (complete) {
             shows.set(shows.get() + 1);
         } else {
@@ -531,6 +679,9 @@ final class MarkdownPreview {
         for (int i = from; i < to; i++) {
             Unit u = units.get(i);
             Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
+            if (node != null) {
+                node.getProperties().put(BUILT_AT_LINE, u.startLine());
+            }
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (node != null) {
                 nodes.add(node);
@@ -539,6 +690,7 @@ final class MarkdownPreview {
         column.getChildren().addAll(nodes);
         entries = now;
         lastBuilt += to - from;
+        builtTotal += to - from;
         if (to < units.size()) {
             javafx.application.Platform.runLater(() -> buildRest(seq, units, to, ctx, line));
             return;
@@ -562,6 +714,56 @@ final class MarkdownPreview {
             PreviewImageLoader.zoomAll(node, zoom);
         }
         return node;
+    }
+
+    private java.util.function.IntPredicate taskToggle = line -> false;
+
+    /** Who toggles the task item on a source line when its box is ticked here; false = the source refused. */
+    void onTaskToggle(java.util.function.IntPredicate toggle) {
+        this.taskToggle = toggle == null ? line -> false : toggle;
+    }
+
+    /**
+     * A task box was ticked. It was built for a source line, but its block may have moved since without being
+     * rebuilt (text typed above it): the line is its block's line now, plus how far into the block the item
+     * was when the block was built.
+     */
+    private boolean taskClicked(javafx.scene.control.CheckBox box) {
+        if (!(box.getProperties().get(MarkdownRenderer.TASK_LINE) instanceof Integer builtLine)) {
+            return false;
+        }
+        Node block = box;
+        while (block != null && block.getParent() != column) {
+            block = block.getParent();
+        }
+        for (Entry e : entries) {
+            if (e.node() == block && e.startLine() >= 0) {
+                Object builtAt = block.getProperties().get(BUILT_AT_LINE);
+                int offset = builtLine - (builtAt instanceof Integer start ? start : e.startLine());
+                return taskToggle.test(e.startLine() + offset);
+            }
+        }
+        return false;
+    }
+
+    /** Node property of a top-level block: the source line it started at when it was built. */
+    private static final String BUILT_AT_LINE = "editora.md.builtAtLine";
+
+    /**
+     * Ticks or unticks the task item on {@code line} of {@code area}: one character replaced, so one undo
+     * step. False when that line is not a task item (the text has changed since the preview was rendered).
+     */
+    static boolean toggleTask(org.fxmisc.richtext.CodeArea area, int line) {
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return false;
+        }
+        String text = area.getParagraph(line).getText();
+        int at = MarkdownRenderer.taskBoxOffset(text);
+        if (at < 0) {
+            return false;
+        }
+        area.replaceText(line, at, line, at + 1, text.charAt(at) == ' ' ? "x" : " ");
+        return true;
     }
 
     /** A click on a rendered link: a {@code #slug} of this document scrolls to it, anything else is opened. */
