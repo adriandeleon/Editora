@@ -12,7 +12,7 @@ The commit list, its graph, history search, commit details and tags. Back to
   into the filter box, parsed into `git log` options. Pure.
 - [`git/GitGraph`](../../src/main/java/com/editora/git/GitGraph.java) — lane layout from parent hashes.
   Pure and incremental.
-- [`git/GitRefName`](../../src/main/java/com/editora/git/GitRefName.java) — `git check-ref-format` for a
+- [`git/GitRefNames`](../../src/main/java/com/editora/git/GitRefNames.java) — `git check-ref-format` for a
   name the user types. Pure.
 - `GitService.logPage` / `commitDetails` / `diffFiles` — the reads, on their own lane.
 - [`ui/GitLogPanel`](../../src/main/java/com/editora/ui/GitLogPanel.java) — the view: rows, the graph

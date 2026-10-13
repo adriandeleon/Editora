@@ -34,6 +34,29 @@ public final class MarkdownImagePaste {
         return baseDir.resolve(usable ? f : ASSETS_DIR).normalize();
     }
 
+    /** The base name pasted images get when the pattern setting is blank or yields nothing usable. */
+    public static final String DEFAULT_NAME = "pasted-image";
+
+    /**
+     * The file base name (no extension) for a pasted image, from the "image name pattern" setting:
+     * {@code {name}} is the document's file name without its extension, {@code {date}} today as
+     * {@code yyyy-MM-dd}, {@code {time}} the time as {@code HHmmss}; anything else is literal. Characters a
+     * file name cannot hold everywhere become {@code -}; a blank result is {@link #DEFAULT_NAME}. A name that
+     * is taken gets {@code -1}, {@code -2}… from {@link #uniqueFileName}.
+     */
+    public static String baseName(String pattern, String documentFileName, java.time.LocalDateTime now) {
+        String doc = documentFileName == null ? "" : documentFileName;
+        int dot = doc.lastIndexOf('.');
+        doc = dot > 0 ? doc.substring(0, dot) : doc;
+        String p = pattern == null || pattern.isBlank() ? DEFAULT_NAME : pattern.strip();
+        String name = p.replace("{name}", doc)
+                .replace("{date}", now.toLocalDate().toString())
+                .replace("{time}", now.format(java.time.format.DateTimeFormatter.ofPattern("HHmmss")))
+                .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "-")
+                .replaceAll("^[.\\s-]+|[.\\s-]+$", "");
+        return name.isEmpty() ? DEFAULT_NAME : name;
+    }
+
     /** A non-colliding file name {@code base.ext} / {@code base-N.ext}; {@code exists} tests the target dir. */
     public static String uniqueFileName(Predicate<String> exists, String base, String ext) {
         String name = base + "." + ext;

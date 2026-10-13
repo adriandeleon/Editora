@@ -417,6 +417,8 @@ class DiagnosticPanelsKeysFxTest {
                     List.of(
                             tr("markdownLint.menu.fix"),
                             tr("markdownLint.menu.disableLine"),
+                            tr("markdownLint.menu.disableFile", "MD034"),
+                            tr("markdownLint.menu.disableProject", "MD034"),
                             tr("markdownLint.menu.disableRule", "MD034"),
                             tr("markdownLint.menu.help"),
                             tr("markdownLint.menu.copy")),
@@ -426,9 +428,9 @@ class DiagnosticPanelsKeysFxTest {
                             .toList());
             assertTrue(url.get(0).isDisable(), "a bare URL has no automatic fix");
             url.get(1).fire();
-            url.get(2).fire();
-            url.get(3).fire();
+            url.get(4).fire();
             url.get(5).fire();
+            url.get(7).fire();
             assertEquals(
                     MarkdownLintPanel.rowText(real.get(0)),
                     javafx.scene.input.Clipboard.getSystemClipboard().getString());
@@ -441,6 +443,58 @@ class DiagnosticPanelsKeysFxTest {
             list.getSelectionModel().select(1);
             p.setResults(file, "README.md", MarkdownLint.lint("# T\n\nsee https://x.example   \n"), "");
             assertEquals(1, list.getSelectionModel().getSelectedIndex());
+
+            // Severity: a class per level on the row's dot, and "most severe first" on request.
+            List<MarkdownLint.Diagnostic> mixed = List.of(
+                    new MarkdownLint.Diagnostic(1, 1, 1, "hint", "MD045", "h"),
+                    new MarkdownLint.Diagnostic(2, 1, 1, "warning", "MD009", "w"),
+                    new MarkdownLint.Diagnostic(3, 1, 1, "error", "MD042", "e"));
+            p.setResults(file, "README.md", mixed, "");
+            cell.updateIndex(0);
+            assertTrue(cell.getGraphic().getStyleClass().contains("lint-hint"));
+            javafx.scene.control.ToggleButton sort = FxTestSupport.field(p, "bySeverity");
+            sort.setSelected(true);
+            assertEquals(
+                    List.of("MD042", "MD009", "MD045"),
+                    list.getItems().stream().map(d -> d.code()).toList());
+            sort.setSelected(false);
+            assertEquals(
+                    List.of("MD045", "MD009", "MD042"),
+                    list.getItems().stream().map(d -> d.code()).toList());
+
+            // A project's results: a header row per file, its issues under it; a row opens its own file.
+            List<String> opened = new ArrayList<>();
+            MarkdownLintPanel grouped = new MarkdownLintPanel(
+                    null,
+                    MarkdownLintPanel.actions(
+                            (f, l, c) -> opened.add(f.getFileName() + ":" + l + ":" + c), () -> opened.add("refresh")));
+            ListView<MarkdownLint.Diagnostic> rows = FxTestSupport.field(grouped, "list");
+            Label total = FxTestSupport.field(grouped, "summary");
+            grouped.showProjectScanning("proj");
+            assertTrue(grouped.showingProject());
+            assertEquals(tr("markdownLint.projectScanning"), total.getText());
+            grouped.setProjectResults(
+                    "proj",
+                    List.of(
+                            new MarkdownLintPanel.FileIssues(Path.of("/proj/a.md"), "a.md", mixed.subList(0, 2)),
+                            new MarkdownLintPanel.FileIssues(
+                                    Path.of("/proj/docs/b.md"), "docs/b.md", mixed.subList(2, 3))),
+                    true);
+            assertEquals(5, rows.getItems().size());
+            assertEquals(tr("markdownLint.projectSummary", 3, 2), total.getText());
+            ListCell<MarkdownLint.Diagnostic> header = rows.getCellFactory().call(rows);
+            header.updateListView(rows);
+            header.updateIndex(3);
+            assertEquals("docs/b.md", header.getText());
+            rows.getSelectionModel().select(4);
+            press(rows, KeyCode.ENTER);
+            rows.getSelectionModel().select(0);
+            press(rows, KeyCode.ENTER);
+            assertEquals(List.of("b.md:3:1", "a.md:1:1"), opened);
+            assertEquals(List.of(), grouped.rowMenu(rows.getItems().get(0)), "a file row has no issue menu");
+            ((Button) grouped.lookup(".button")).fire();
+            assertEquals("refresh", opened.get(2));
+            assertFalse(grouped.showingProject(), "Refresh goes back to the active file");
 
             p.showNotLinted(Path.of("/proj/notes.txt"));
             assertEquals(tr("status.markdownLint.notMarkdown"), summary.getText());

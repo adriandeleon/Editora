@@ -148,6 +148,7 @@ final class MenuBarModel {
                         List.of(
                                 "view.togglePreview",
                                 "view.toggleSplitPreview",
+                                "view.markdownPreviewToSide",
                                 SEPARATOR,
                                 "view.splitEditorRight",
                                 "view.splitEditorDown",
@@ -177,6 +178,7 @@ final class MenuBarModel {
                                 "file.find",
                                 "buffer.jump",
                                 "lsp.gotoSymbol",
+                                "project.gotoMarkdownHeading",
                                 SEPARATOR,
                                 "nav.goToLine",
                                 "nav.back",

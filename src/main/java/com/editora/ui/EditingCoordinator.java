@@ -455,6 +455,11 @@ final class EditingCoordinator {
             host.setStatus(tr("status.pasted"));
             return;
         }
+        if (b != null && b.isMarkdown() && b.markdown().pasteAsMarkdown(false)) { // structured HTML → Markdown
+            deactivateMark();
+            host.setStatus(tr("status.markdown.pastedAsMarkdown"));
+            return;
+        }
         CodeArea area = host.activeArea();
         if (area == null) {
             return;
@@ -482,13 +487,13 @@ final class EditingCoordinator {
 
     /** The Typst "Insert Image" menu action: pick an image file, copy it into the doc's {@code assets/}
      *  dir, and insert {@code #image("assets/…")}. Requires a saved local buffer (so assets/ resolves). */
-    void insertTypstImageFromChooser(EditorBuffer b) {
+    void insertImageFromChooser(EditorBuffer b) {
         if (b.getPath() == null || !host.isLocalBuffer(b)) {
             host.setStatus(tr("status.markdown.imageNeedsSave"));
             return;
         }
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("command.typst.insertImage"));
+        chooser.setTitle(tr(b.isTypst() ? "command.typst.insertImage" : "command.markdown.insertImage"));
         chooser.getExtensionFilters()
                 .add(new javafx.stage.FileChooser.ExtensionFilter(
                         "Images", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg", "*.bmp"));
@@ -518,22 +523,48 @@ final class EditingCoordinator {
         if (img == null) {
             return false;
         }
+        withAltText(b, null, alt -> savePastedImage(b, img, alt));
+        return true;
+    }
+
+    /**
+     * Runs {@code insert} with the alt text of an image about to be inserted: asked for first when the
+     * "prompt for alt text" setting is on (Markdown only — Typst's {@code #image} has none), else
+     * {@code fallback} (null: the inserter picks its own, the file's name).
+     */
+    private void withAltText(EditorBuffer b, String fallback, java.util.function.Consumer<String> insert) {
+        if (b.isMarkdown() && host.config().getSettings().isMarkdownImageAltPrompt()) {
+            host.promptText(
+                    tr("image.alt.title"),
+                    tr("image.alt.label"),
+                    fallback == null ? "" : fallback,
+                    alt -> insert.accept(alt == null ? "" : alt.strip()));
+        } else {
+            insert.accept(fallback);
+        }
+    }
+
+    /** Writes a pasted image into the assets folder under the configured name pattern and links it. */
+    private void savePastedImage(EditorBuffer b, javafx.scene.image.Image img, String alt) {
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
             java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
                     baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
+            String base = com.editora.markdown.MarkdownImagePaste.baseName(
+                    host.config().getSettings().getMarkdownImageNamePattern(),
+                    b.getPath().getFileName().toString(),
+                    java.time.LocalDateTime.now());
             String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
-                    n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
+                    n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
             String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
-            b.insertAtCaret(markupImageSnippet(b, rel, stripExtension(name))); // an image wants alt text
+            b.insertAtCaret(markupImageSnippet(b, rel, alt == null ? stripExtension(name) : alt));
             host.setStatus(tr("status.markdown.imagePasted", rel));
         } catch (Exception ex) {
             host.setStatus(tr("status.markdown.imageFailed", String.valueOf(ex.getMessage())));
         }
-        return true;
     }
 
     /** Copies dropped image files into the Markdown file's {@code assets/} dir and inserts a link for each. */
@@ -542,6 +573,15 @@ final class EditingCoordinator {
             host.setStatus(tr("status.markdown.imageNeedsSave"));
             return;
         }
+        if (files.size() == 1) { // one image: its alt text can be asked for
+            withAltText(b, null, alt -> insertDroppedImages(b, files, alt));
+        } else {
+            insertDroppedImages(b, files, null);
+        }
+    }
+
+    /** {@code alt}: the alt text for every image; null gives each its file's name. */
+    private void insertDroppedImages(EditorBuffer b, java.util.List<java.io.File> files, String alt) {
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
             java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
@@ -563,7 +603,7 @@ final class EditingCoordinator {
                 if (out.length() > 0) {
                     out.append('\n');
                 }
-                out.append(markupImageSnippet(b, rel, base));
+                out.append(markupImageSnippet(b, rel, alt == null ? base : alt));
             }
             b.insertAtCaret(out.toString());
             host.setStatus(tr("status.markdown.imageDropped", files.size()));
@@ -908,10 +948,6 @@ final class EditingCoordinator {
     void moveLines(
             java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
         lineOp(op, blockOp);
-        EditorBuffer buffer = host.activeBuffer();
-        if (buffer != null && buffer.isMarkdown()) {
-            buffer.markdown().renumberListAtCaret();
-        }
     }
 
     private static int paragraphOf(CodeArea area, int offset) {
@@ -930,6 +966,27 @@ final class EditingCoordinator {
      * moved.
      */
     void lineOp(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
+        renumberingList(() -> applyLineOp(op, blockOp));
+    }
+
+    /**
+     * Runs a line command ({@code edit}: move, duplicate, delete a line) and, when it changed an ordered
+     * Markdown list that was numbered in sequence, numbers the list in sequence again as part of the same
+     * undo step. A list numbered out of sequence on purpose (or by hand) is left as its author numbered it.
+     */
+    void renumberingList(Runnable edit) {
+        EditorBuffer buffer = host.activeBuffer();
+        boolean markdown = buffer != null && buffer.isMarkdown() && activeEditable();
+        boolean inOrder = markdown && buffer.markdown().listInOrder();
+        long version = markdown ? buffer.docVersion() : 0;
+        edit.run();
+        if (inOrder && buffer.docVersion() != version) {
+            buffer.markdown().renumberListAtCaret();
+        }
+    }
+
+    private void applyLineOp(
             java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
         if (!activeEditable()) {
             return;

@@ -91,7 +91,7 @@ public final class OdtWriter {
     // ---- content.xml (pure, unit-tested) ----
 
     static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
-        Node ast = MarkdownRenderer.parseForRender(markdown);
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(MarkdownRenderer.parseForRender(markdown));
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
         Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();
@@ -335,6 +335,17 @@ public final class OdtWriter {
             }
             if (r.strike()) {
                 b.append("<text:span text:style-name=\"TStrike\">");
+                spans++;
+            }
+            if (r.highlight()) {
+                b.append("<text:span text:style-name=\"TMark\">");
+                spans++;
+            }
+            if (r.script() != 0) {
+                b.append(
+                        r.script() > 0
+                                ? "<text:span text:style-name=\"TSup\">"
+                                : "<text:span text:style-name=\"TSub\">");
                 spans++;
             }
             if (r.underline()) {
@@ -603,6 +614,9 @@ public final class OdtWriter {
             + "<style:style style:name=\"TItalic\" style:family=\"text\"><style:text-properties fo:font-style=\"italic\"/></style:style>"
             + "<style:style style:name=\"TStrike\" style:family=\"text\"><style:text-properties style:text-line-through-style=\"solid\"/></style:style>"
             + "<style:style style:name=\"TUnderline\" style:family=\"text\"><style:text-properties style:text-underline-style=\"solid\" style:text-underline-width=\"auto\" style:text-underline-color=\"font-color\"/></style:style>"
+            + "<style:style style:name=\"TMark\" style:family=\"text\"><style:text-properties fo:background-color=\"#fff59d\"/></style:style>"
+            + "<style:style style:name=\"TSup\" style:family=\"text\"><style:text-properties style:text-position=\"super 58%\"/></style:style>"
+            + "<style:style style:name=\"TSub\" style:family=\"text\"><style:text-properties style:text-position=\"sub 58%\"/></style:style>"
             + "<style:style style:name=\"TCode\" style:family=\"text\"><style:text-properties style:font-name=\"Mono\"/></style:style>"
             + "<style:style style:name=\"PCenter\" style:family=\"paragraph\" style:parent-style-name=\"Standard\"><style:paragraph-properties fo:text-align=\"center\"/></style:style>"
             + "<style:style style:name=\"PRight\" style:family=\"paragraph\" style:parent-style-name=\"Standard\"><style:paragraph-properties fo:text-align=\"end\"/></style:style>"

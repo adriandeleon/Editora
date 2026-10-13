@@ -136,11 +136,15 @@ public final class MarkdownLintConfig {
                         options.put(o.getKey(), ov.asBoolean());
                     } else if (ov.isTextual()) {
                         options.put(o.getKey(), ov.asText());
+                    } else if (ov.isArray()) {
+                        List<String> items = new ArrayList<>();
+                        ov.forEach(item -> items.add(item.asText()));
+                        options.put(o.getKey(), items);
                     }
                 }
                 entries.add(new Entry(key, true, options)); // an options object: the rule is in use
             } else if (v.isTextual()) {
-                entries.add(new Entry(key, true)); // a severity: the rule is in use
+                entries.add(new Entry(key, true, Map.of("severity", v.asText()))); // a severity: in use
             }
         }
         return new Parsed(true, defaults, List.copyOf(entries), extendsPath);
@@ -193,6 +197,42 @@ public final class MarkdownLintConfig {
             }
         }
         return out;
+    }
+
+    /**
+     * JSON/JSONC config {@code json} with rule {@code code} switched off, edited as text so that comments and
+     * layout survive: an existing {@code "CODE": …} entry gets the value {@code false}, otherwise the entry is
+     * added first in the object. {@code null} or blank input gives a new config; text that is not an object is
+     * returned as {@code null} (the caller must not write it).
+     */
+    public static String withRuleOff(String json, String code) {
+        if (json == null || json.isBlank()) {
+            return "{\n  \"" + code + "\": false\n}\n";
+        }
+        if (!parse(json).valid()) {
+            return null;
+        }
+        java.util.regex.Matcher entry = java.util.regex.Pattern.compile(
+                        "(\"" + java.util.regex.Pattern.quote(code)
+                                + "\"\\s*:\\s*)(true|false|\"[^\"]*\"|\\{[^{}]*\\})",
+                        java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(json);
+        if (entry.find()) {
+            return json.substring(0, entry.start(2)) + "false" + json.substring(entry.end(2));
+        }
+        int open = json.indexOf('{');
+        if (open < 0) {
+            return null;
+        }
+        String rest = json.substring(open + 1);
+        boolean empty = rest.strip().startsWith("}");
+        String eol = json.contains("\r\n") ? "\r\n" : "\n";
+        return json.substring(0, open + 1)
+                + eol
+                + "  \"" + code + "\": false"
+                + (empty
+                        ? eol + rest.stripLeading()
+                        : "," + (rest.startsWith("\n") || rest.startsWith("\r") ? "" : eol) + rest);
     }
 
     /** The rule codes disabled by JSON/JSONC {@code json}; empty on malformed input. */

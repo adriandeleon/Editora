@@ -196,4 +196,16 @@ class MarkdownImagePasteTest {
         assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "/tmp/x"));
         assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "C:\\pics"));
     }
+
+    @Test
+    void thePastedImageNameFollowsThePattern() {
+        java.time.LocalDateTime at = java.time.LocalDateTime.of(2026, 10, 12, 9, 5, 7);
+        assertEquals("pasted-image", MarkdownImagePaste.baseName("pasted-image", "notes.md", at));
+        assertEquals("notes-2026-10-12-090507", MarkdownImagePaste.baseName("{name}-{date}-{time}", "notes.md", at));
+        assertEquals("shot 2026-10-12", MarkdownImagePaste.baseName(" shot {date} ", "a.md", at));
+        assertEquals("a-b-c", MarkdownImagePaste.baseName("a/b\\c", "a.md", at), "never a path");
+        assertEquals("pasted-image", MarkdownImagePaste.baseName("", "a.md", at));
+        assertEquals("pasted-image", MarkdownImagePaste.baseName(null, null, at));
+        assertEquals("pasted-image", MarkdownImagePaste.baseName("../..", "a.md", at));
+    }
 }

@@ -30,6 +30,9 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
     /** The warning colour for the current editor background (see {@link OverlayPalette}). */
     private Color warning = OverlayPalette.of(Color.WHITE).warning();
 
+    private Color error = OverlayPalette.of(Color.WHITE).error();
+    private Color hint = OverlayPalette.of(Color.WHITE).info();
+
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
     private List<MarkdownLint.Diagnostic> marks = List.of();
@@ -54,6 +57,8 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         OverlayPalette.track(area, palette -> {
             warning = palette.warning(); // resolved on a theme change, not per paint
+            error = palette.error();
+            hint = palette.info();
             scheduleRedraw();
         });
         addEventHandler(MouseEvent.MOUSE_MOVED, this::onHover);
@@ -163,10 +168,15 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
             return;
         }
         double markH = markHeight(h, total);
-        g.setFill(warning);
-        for (MarkdownLint.Diagnostic d : marks) {
-            double y = yForLine(d.line() - 1, h, total);
-            g.fillRect(0, Math.min(y, h - markH), w, markH);
+        // Mildest first, so where two marks share a pixel the more severe one is the one seen.
+        for (int rank = 2; rank >= 0; rank--) {
+            g.setFill(rank == 0 ? error : rank == 2 ? hint : warning);
+            for (MarkdownLint.Diagnostic d : marks) {
+                if (d.severityRank() == rank) {
+                    double y = yForLine(d.line() - 1, h, total);
+                    g.fillRect(0, Math.min(y, h - markH), w, markH);
+                }
+            }
         }
     }
 

@@ -82,6 +82,14 @@ public final class MarkdownMath {
         private String latex = "";
         private boolean closed;
 
+        Block() {}
+
+        /** A complete block holding {@code latex} (a {@code ```math} fence, or a renderer's own). */
+        public Block(String latex) {
+            this.latex = latex == null ? "" : latex;
+            this.closed = true;
+        }
+
         public String getLatex() {
             return latex;
         }
@@ -113,7 +121,9 @@ public final class MarkdownMath {
         @Override
         public void extend(Parser.Builder builder) {
             builder.customInlineContentParserFactory(new InlineFactory());
+            builder.customInlineContentParserFactory(new BackslashFactory());
             builder.customBlockParserFactory(new BlockFactory());
+            builder.postProcessor(MarkdownMath::mathFences);
         }
 
         @Override
@@ -147,6 +157,103 @@ public final class MarkdownMath {
         public InlineContentParser create() {
             return MarkdownMath::tryParseInline;
         }
+    }
+
+    /** {@code \(…\)} and {@code \[…\]}: tried before CommonMark's own backslash escape. */
+    private static final class BackslashFactory implements InlineContentParserFactory {
+        @Override
+        public Set<Character> getTriggerCharacters() {
+            return Set.of('\\');
+        }
+
+        @Override
+        public InlineContentParser create() {
+            return MarkdownMath::tryParseBackslash;
+        }
+    }
+
+    /**
+     * LaTeX's own delimiters: {@code \(x^2\)} inline (one line) and {@code \[ … \]} display (may span the
+     * paragraph's lines). In Markdown {@code \(} and {@code \[} are also how a literal bracket is written
+     * ({@code \[not a link\]}, {@code [f\(x\)](url)}), so the pair is math only when what it holds looks
+     * like math ({@link #looksLikeMath}); anything else stays the escaped brackets it was.
+     */
+    private static ParsedInline tryParseBackslash(InlineParserState state) {
+        Scanner s = state.scanner();
+        s.next(); // the backslash
+        char open = s.peek();
+        if (open != '(' && open != '[') {
+            return ParsedInline.none();
+        }
+        char close = open == '(' ? ')' : ']';
+        boolean display = open == '[';
+        s.next();
+        Position start = s.position();
+        while (s.hasNext()) {
+            char c = s.peek();
+            if (c == '`' || (c == '\n' && !display)) {
+                return ParsedInline.none();
+            }
+            if (c == '\\') {
+                Position end = s.position();
+                s.next();
+                if (s.peek() == close) {
+                    String latex = s.getSource(start, end).getContent().strip();
+                    if (!looksLikeMath(latex)) {
+                        return ParsedInline.none();
+                    }
+                    s.next();
+                    return ParsedInline.of(new Inline(latex, display), s.position());
+                }
+                if (s.hasNext()) {
+                    s.next(); // an escaped character or a command's first letter
+                }
+                continue;
+            }
+            s.next();
+        }
+        return ParsedInline.none();
+    }
+
+    /**
+     * Whether the text between {@code \(…\)} or {@code \[…\]} is a formula rather than prose in escaped
+     * brackets: it uses something only math does — a command, a sub- or superscript, a brace, an equals,
+     * plus or comparison sign. A single variable ({@code \(x\)}) is not told apart from a word in brackets:
+     * write that one as {@code $x$}. Pure.
+     */
+    static boolean looksLikeMath(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            if ("\\^_={}+<>".indexOf(content.charAt(i)) >= 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Replaces every {@code ```math} fence under {@code document} by a {@link Block} (GitHub's spelling of
+     *  a display formula: nothing inside a fence is ever Markdown, so nothing needs escaping). */
+    static Node mathFences(Node document) {
+        java.util.List<org.commonmark.node.FencedCodeBlock> fences = new ArrayList<>();
+        document.accept(new org.commonmark.node.AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.FencedCodeBlock fence) {
+                String info = fence.getInfo() == null ? "" : fence.getInfo().strip();
+                if (info.split("\\s+", 2)[0].equalsIgnoreCase("math")) {
+                    fences.add(fence);
+                }
+            }
+        });
+        for (org.commonmark.node.FencedCodeBlock fence : fences) {
+            Block block = new Block(
+                    fence.getLiteral() == null ? "" : fence.getLiteral().strip());
+            block.setSourceSpans(fence.getSourceSpans());
+            fence.insertAfter(block);
+            fence.unlink();
+        }
+        return document;
     }
 
     private static ParsedInline tryParseInline(InlineParserState state) {

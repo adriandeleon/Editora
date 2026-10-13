@@ -139,4 +139,26 @@ class MarkdownOutlineTest {
         assertEquals(List.of(), MarkdownOutline.headings("text\n\n* * *\n___\n\nmore\n"));
         assertEquals(List.of(new Heading(2, "text", 0)), MarkdownOutline.headings("text\n---\n***\n"));
     }
+
+    @Test
+    void pathAtListsTheEnclosingHeadingsOutermostFirst() {
+        var headings = MarkdownOutline.headings("intro\n# A\n## B\n### C\n## D\ntext\n# E\n#### F\n");
+        assertEquals(java.util.List.of(), MarkdownOutline.pathAt(headings, 0));
+        assertEquals(
+                java.util.List.of("A", "B", "C"),
+                MarkdownOutline.pathAt(headings, 3).stream()
+                        .map(MarkdownOutline.Heading::title)
+                        .toList());
+        assertEquals(
+                java.util.List.of("A", "D"),
+                MarkdownOutline.pathAt(headings, 5).stream()
+                        .map(MarkdownOutline.Heading::title)
+                        .toList());
+        assertEquals(
+                java.util.List.of("E", "F"),
+                MarkdownOutline.pathAt(headings, 99).stream()
+                        .map(MarkdownOutline.Heading::title)
+                        .toList());
+        assertEquals(java.util.List.of(), MarkdownOutline.pathAt(null, 3));
+    }
 }

@@ -251,3 +251,28 @@ the vertical equivalent. Scope that before building on it.
   accepted files, and reports truncation. Do not hand-roll a `Files.walk` plus a filter. To find one
   source file from a class name or a stack frame, use `search/SourceFileFinder`.
 - The index is the floor. If a language server can answer, it answers.
+
+## Markdown: headings and links across the project
+
+Three features read the project's Markdown files, and all three do it the same way: on demand, off the FX
+thread, through `ui/MarkdownProjectFiles` — the shared `ProjectWalk` (so the ignore rules and directory
+pruning are Find in Files'), capped at 5,000 Markdown files of at most 2 MB each, cancellable. There is no
+standing index: nothing is read until one of them is asked for, and an open buffer contributes its current
+text instead of the file's.
+
+- **Heading path in the breadcrumb** (`ui/MarkdownHeadingCrumbs`, hosted by `FileBreadcrumb`): the headings
+  that enclose the caret, each a link to its line. A caret-line change or an edit only restarts a 180 ms
+  pause; headings are re-read when it ends and only if the text changed (`MarkdownOutline.pathAt` is pure).
+- **`project.gotoMarkdownHeading`** (`ui/MarkdownHeadingPicker`, owned by `IndexCoordinator` for its project
+  root, ignore setting and overlay): every heading of every Markdown file in a `QuickOpen`. A second run or a
+  project switch abandons a scan under way. It is in the `project.` family on purpose: `markdown.` commands
+  are gated on a Markdown buffer and `index.` ones on the symbol index, and this needs neither.
+- **Links follow a rename** (`ui/MarkdownLinkUpdater`, called from `IndexCoordinator.onFileRenamed`, which
+  every in-app rename, move and their undo already reach). `markdown/MarkdownLinkRewrite` (pure) finds the
+  relative inline and reference-definition destinations — never in code, front matter or HTML — and rewrites
+  the ones whose target moved; a document that itself moved has all its relative links recomputed.
+  `Settings.markdownUpdateLinksOnRename` is `ask` (a prompt listing files and counts), `always` or `never`.
+  Open buffers are edited as one undo step; closed files go through `AtomicFileWrite.replaceIfUnchanged`, so
+  a file that changed since it was read is reported, not overwritten. Only files under the project root are
+  read or written, and a symlinked Markdown file is skipped. One rename is handled once even when several
+  windows have the project open (a static in-flight key).

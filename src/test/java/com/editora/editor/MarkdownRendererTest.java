@@ -152,6 +152,44 @@ class MarkdownRendererTest {
     }
 
     @Test
+    void theRenderParseKnowsTheExtendedSyntax() {
+        org.commonmark.node.Node alert = MarkdownRenderer.parseForRender("> [!NOTE]\n> Read this.\n", false);
+        assertTrue(alert.getFirstChild() instanceof com.editora.markdown.MarkdownAlerts.Alert, "GitHub alerts");
+        org.commonmark.node.Node para =
+                MarkdownRenderer.parseForRender("Go :rocket:", false).getFirstChild();
+        assertTrue(para.getLastChild() instanceof com.editora.markdown.MarkdownEmoji.Emoji, "emoji shortcodes");
+        org.commonmark.node.Node marks = MarkdownRenderer.parseForRender("==a== b^2^ H~2~O ~gone~ ~~gone~~", false)
+                .getFirstChild();
+        java.util.List<String> kinds = new java.util.ArrayList<>();
+        for (org.commonmark.node.Node n = marks.getFirstChild(); n != null; n = n.getNext()) {
+            if (!(n instanceof org.commonmark.node.Text)) {
+                kinds.add(n.getClass().getSimpleName());
+            }
+        }
+        assertEquals(
+                java.util.List.of("Highlight", "Superscript", "Subscript", "Strikethrough", "Strikethrough"),
+                kinds,
+                "the marks, and both spellings of strikethrough as before");
+        assertTrue(
+                MarkdownRenderer.parseForRender("Term\n: Its definition.\n", false)
+                                .getFirstChild()
+                        instanceof com.editora.markdown.MarkdownDefinitions.DefinitionList,
+                "definition lists");
+    }
+
+    @Test
+    void theBoxOfATaskItemIsFoundOnItsSourceLine() {
+        assertEquals(3, MarkdownRenderer.taskBoxOffset("- [ ] one"));
+        assertEquals(5, MarkdownRenderer.taskBoxOffset("  * [x] nested"));
+        assertEquals(5, MarkdownRenderer.taskBoxOffset("12. [X] numbered"));
+        assertEquals(7, MarkdownRenderer.taskBoxOffset("> > - [ ] quoted"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("- not a task"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("text [ ] in prose"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset("- [y] not a box"));
+        assertEquals(-1, MarkdownRenderer.taskBoxOffset(null));
+    }
+
+    @Test
     void aCommentWithTextAfterItOnItsLineIsNotInvisible() {
         assertTrue(MarkdownRenderer.isHtmlComment("<!-- a --> <!-- b -->"));
         assertFalse(MarkdownRenderer.isHtmlComment("<!-- note --> **Visible** text after a comment"));

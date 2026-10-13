@@ -662,7 +662,10 @@ class ConfigMigrationsTest {
                     ConfigSchema.SETTINGS,
                     mapper.readTree("{\"schemaVersion\":117,\"wordWrap\":" + wrap + "}"),
                     mapper);
-            assertEquals(118, up.get("schemaVersion").asInt(), "the step is registered");
+            assertEquals(
+                    com.editora.config.Settings.SCHEMA_VERSION,
+                    up.get("schemaVersion").asInt(),
+                    "the step is registered");
             assertEquals(wrap, up.get("wordWrap").asBoolean(), "the stored switch is kept; it now means code");
             // Absent means wrapped prose, remote images on, "assets", levels 1–6: the new defaults.
             for (String key : new String[] {

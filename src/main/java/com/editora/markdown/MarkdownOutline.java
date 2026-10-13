@@ -152,6 +152,26 @@ public final class MarkdownOutline {
         return marks >= 3;
     }
 
+    /**
+     * The headings that enclose {@code line} (0-based), outermost first: the nearest heading at or above it,
+     * preceded by each ancestor of a lower level. Empty above the first heading.
+     */
+    public static List<Heading> pathAt(List<Heading> headings, int line) {
+        List<Heading> path = new ArrayList<>();
+        if (headings == null) {
+            return path;
+        }
+        int level = Integer.MAX_VALUE;
+        for (int i = headings.size() - 1; i >= 0 && level > 1; i--) {
+            Heading h = headings.get(i);
+            if (h.line() <= line && h.level() < level) {
+                path.add(0, h);
+                level = h.level();
+            }
+        }
+        return path;
+    }
+
     /** Setext underline level: 1 for all-'=', 2 for all-'-', else 0. */
     private static int setextLevel(String line) {
         int indent = leadingSpaces(line);

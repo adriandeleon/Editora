@@ -602,6 +602,18 @@ final class EditorSettingsCoordinator {
         host.setStatus(tr(now ? "status.largeFileMode.on" : "status.largeFileMode.off"));
     }
 
+    /** The tail of a picker command that has just written its setting: save, re-apply, sync, say what was chosen. */
+    void settingChosen(String commandId, String shown, Runnable apply) {
+        host.requestSave();
+        if (apply != null) {
+            apply.run();
+        }
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll();
+        }
+        host.setStatus(tr("status.settingChanged", commandTitle(commandId), shown));
+    }
+
     /** Prompts for an integer setting (clamped to [min,max]); reports a parse error without changing it. */
     void promptIntSetting(
             String commandId,
@@ -855,6 +867,7 @@ final class EditorSettingsCoordinator {
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
         buffer.setFont(s.getFontFamily(), effectiveFont);
+        com.editora.editor.TypewriterMode.apply(buffer, s.isTypewriterMode());
         // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
         // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
@@ -887,6 +900,9 @@ final class EditorSettingsCoordinator {
                         s.getMarkdownTocMinLevel(),
                         s.getMarkdownTocMaxLevel(),
                         id -> host.keymap() == null ? null : host.keymap().displayChord(id));
+        buffer.markdown()
+                .configureWriting(s.isMarkdownSmartTypography(), s.isMarkdownTocSkipTitle(), s.isMarkdownTocOrdered());
+        buffer.markdown().setEditLinkHandler(host.previews()::markdownEditLink);
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)

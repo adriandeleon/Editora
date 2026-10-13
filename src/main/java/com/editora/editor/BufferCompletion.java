@@ -787,8 +787,8 @@ final class BufferCompletion {
      * debounce). Kept open only when the caret is right after an LSP trigger char (member completion).
      */
     void dismissCompletionIfPrefixEmpty(CodeArea a) {
-        if (completionPopup == null || !completionPopup.isShowing()) {
-            return;
+        if (completionPopup == null || !completionPopup.isShowing() || markdownShown) {
+            return; // a Markdown offer (a path, an anchor) has no word prefix to lose; queueLocalSync keeps it honest
         }
         int caret = a.getCaretPosition();
         // Only the chars just before the caret matter — read a bounded window instead of materializing the
@@ -849,6 +849,9 @@ final class BufferCompletion {
             start--;
         }
         String prefix = text.substring(start);
+        if (showMarkdownOffer(a, caret, prefix, manual)) {
+            return;
+        }
         int min = manual && host.lspActive()
                 ? 0
                 : manual || (host.lspActive() && "java".equals(host.language())) ? 1 : CompletionEngine.MIN_PREFIX;
@@ -971,6 +974,72 @@ final class BufferCompletion {
         localManual = manual;
         localCaret = caret;
         localVersion = host.docVersion();
+    }
+
+    /** The local list on screen is a Markdown offer whose rows replace a range of their own (not a word). */
+    private boolean markdownShown;
+
+    /**
+     * In a Markdown buffer, shows what {@link MarkdownCompletions} has for the caret — files for a link
+     * target, headings for an anchor, reference labels, fence languages, Mermaid keywords in a mermaid
+     * fence — as the local list, and says whether it did. Otherwise the caller goes on as for any prose.
+     *
+     * <p>The document is only read when the caret's own line says something structural is being typed (or
+     * the nearest fence above it is a mermaid one): a typing pause in ordinary prose costs one line.
+     */
+    private boolean showMarkdownOffer(CodeArea a, int caret, String prefix, boolean manual) {
+        if (!(completionProvider instanceof MarkdownCompletions markdown) || !"markdown".equals(host.language())) {
+            return false;
+        }
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        String lineText = a.getParagraph(line).getText();
+        boolean structural = com.editora.markdown.MarkdownCompletionContext.at(lineText, column) != null;
+        if (!structural && !(autocompleteMermaid && !prefix.isEmpty() && mermaidFenceAbove(a, line))) {
+            return false;
+        }
+        MarkdownCompletions.Offer offer =
+                markdown.offer(a.getText(), line, column, prefix, host.getSpellLanguage(), manual);
+        if (offer == null || a.getScene() == null) {
+            return false;
+        }
+        List<Completion> items = offer.items();
+        if (offer.start() >= 0) {
+            Completion.ReplaceRange range = Completion.ReplaceRange.startingAt(line, offer.start());
+            items = items.stream().map(c -> c.withReplaceRange(range)).toList();
+        }
+        Bounds caretScreen = caretAnchorBounds(a);
+        if (caretScreen == null) {
+            return false;
+        }
+        hideGhost();
+        int anchorStart = offer.start() >= 0 ? caret - (column - offer.start()) : caret - prefix.length();
+        if (localShown && completionAnchorStart == anchorStart && completionAnchor != null) {
+            caretScreen = completionAnchor;
+        }
+        completionAnchorStart = anchorStart;
+        completionAnchor = caretScreen;
+        completionArea = a;
+        a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        completionPopup().setQuery(offer.partial().substring(offer.partial().lastIndexOf('/') + 1));
+        completionPopup().show(a.getScene().getWindow(), caretScreen, items, 0);
+        localShown = true;
+        markdownShown = offer.start() >= 0;
+        localManual = manual;
+        localCaret = caret;
+        localVersion = host.docVersion();
+        return true;
+    }
+
+    /** Whether the nearest fence line above {@code line} opens a mermaid block (a bounded look upwards). */
+    private static boolean mermaidFenceAbove(CodeArea a, int line) {
+        for (int i = line - 1; i >= Math.max(0, line - 400); i--) {
+            String t = a.getParagraph(i).getText().stripLeading();
+            if (t.startsWith("```") || t.startsWith("~~~")) {
+                return t.toLowerCase(java.util.Locale.ROOT).contains("mermaid");
+            }
+        }
+        return false;
     }
 
     /**
@@ -1202,6 +1271,7 @@ final class BufferCompletion {
         completionAnchor = null;
         completionAnchorStart = -1;
         localShown = false;
+        markdownShown = false;
         if (completionArea != null) {
             completionArea.getProperties().remove(OWNED_CHORDS); // release the C-n/C-p ownership
         }
@@ -1456,7 +1526,7 @@ final class BufferCompletion {
         }
         // The local list has no session to check: refuse a row the word before the caret has outgrown, or
         // Enter/Tab would replace what was typed with a snippet offered for an earlier prefix.
-        if (context == null && localShown && !localRowMatches(a, c)) {
+        if (context == null && localShown && !markdownShown && !localRowMatches(a, c)) {
             hideCompletion();
             return false;
         }

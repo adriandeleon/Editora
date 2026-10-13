@@ -72,6 +72,8 @@ public final class StatusBar extends HBox {
     /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
      *  the active buffer isn't served by LSP. */
     private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
+    /** The active Markdown buffer's lint issue count; click opens the Markdown Lint tool window. */
+    private final Label markdownLint = segment("tool.markdownLint", tr("statusbar.tip.markdownLint"));
     /** Indeterminate progress shown while a language server is starting/loading; hidden once ready. */
     // Starts determinate (0) — an *indeterminate* ProgressBar runs an animation timeline that pulses the
     // whole scene continuously (even while hidden), starving nearby repaints. setLspLoading() flips it to
@@ -109,6 +111,9 @@ public final class StatusBar extends HBox {
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     /** File size; clicking it toggles the File Information tool window. */
     private final Label size = segment("tool.fileInformation", tr("statusbar.tip.fileSize"));
+
+    /** Words in a prose buffer (or in its selection); see {@link StatusWordCount}. */
+    final StatusWordCount wordCount;
 
     private final Label encoding = new Label("UTF-8");
 
@@ -175,6 +180,7 @@ public final class StatusBar extends HBox {
         this.activeBuffer = activeBuffer;
         this.registry = registry;
         this.settings = settings;
+        this.wordCount = new StatusWordCount(settings);
 
         getStyleClass().add("status-bar");
         echo.getStyleClass().addAll("status-message", "status-segment-clickable");
@@ -278,6 +284,7 @@ public final class StatusBar extends HBox {
                         git,
                         githubChecks,
                         lsp,
+                        markdownLint,
                         mcp,
                         readOnly,
                         zoomGroup(),
@@ -289,6 +296,7 @@ public final class StatusBar extends HBox {
                         snippet,
                         editorConfig,
                         formatGroup,
+                        wordCount.label(),
                         size);
         pinSegmentWidths();
         refresh();
@@ -667,6 +675,23 @@ public final class StatusBar extends HBox {
     }
 
     /**
+     * Shows the Markdown-lint issue count of the active buffer ("3 lint issues"; the tooltip splits it by
+     * severity), or hides the segment when {@code errors} is negative (not a linted buffer) or nothing is wrong.
+     */
+    public void setMarkdownLint(int errors, int warnings, int hints) {
+        int total = Math.max(0, errors) + warnings + hints;
+        boolean show = errors >= 0 && total > 0 && !simpleMode;
+        markdownLint.setText(show ? tr("statusbar.markdownLint", total) : "");
+        markdownLint.setTooltip(
+                show
+                        ? new javafx.scene.control.Tooltip(
+                                tr("statusbar.tip.markdownLintCounts", errors, warnings, hints))
+                        : null);
+        markdownLint.setVisible(show);
+        markdownLint.setManaged(show);
+    }
+
+    /**
      * Shows/updates the LSP segment for the active file. {@code serverName} non-blank → "LSP: name"
      * (segment shown); null/blank → the segment is hidden (no language server for this file).
      */
@@ -858,6 +883,7 @@ public final class StatusBar extends HBox {
         if (!hasBuffer) {
             csvField.setVisible(false);
             csvField.setManaged(false);
+            wordCount.document(null, null, simpleMode);
             return;
         }
         refreshPositionAndCsv(buffer, buffer.getFocusedArea());
@@ -904,6 +930,7 @@ public final class StatusBar extends HBox {
         }
         position.setText(text);
         position.getTooltip().setText(tr("statusbar.tip.offset", area.getCaretPosition()));
+        wordCount.selection(area);
 
         // CSV/TSV column readout — "Field N of M". Two single-line scans (the header row for the column count,
         // the caret's line up to the caret for the field index). Approximation: a field whose quotes span
@@ -961,6 +988,7 @@ public final class StatusBar extends HBox {
     private void refreshSize(EditorBuffer buffer) {
         long gen = ++sizeGen;
         String content = buffer.getContent();
+        wordCount.document(buffer, content, simpleMode);
         if (content.length() <= INLINE_SIZE_CHARS) {
             showSize(buffer, utf8Length(content));
             return;

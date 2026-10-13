@@ -739,6 +739,52 @@
     -fx-background-color: -color-warning-emphasis;
     -fx-text-fill: -color-fg-emphasis;
 }
+/* A preview in a tab of its own: a slim header naming the file it shows, with the follow/lock switch. */
+.md-side-preview-header {
+    -fx-padding: 3 10 3 12;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 1 0;
+}
+.md-side-preview-name { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
+.md-side-preview-lock { -fx-font-size: 11px; -fx-padding: 2 8 2 8; -fx-text-fill: -color-fg-muted; }
+.md-side-preview-lock:selected { -fx-text-fill: -color-accent-fg; -fx-background-color: -state-sel; }
+/* An empty document: one muted line where the rendering will be. */
+.md-preview-empty { -fx-text-fill: -color-fg-muted; -fx-font-size: 13px; -fx-padding: 48 0 0 0; }
+/* Split view: a thin bar beside the block the editor's caret is in. */
+.md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
+/* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
+.markdown-preview .md-alert {
+    -md-alert: -color-accent-fg;
+    -fx-border-color: -md-alert;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 6 0 6 12;
+    -fx-spacing: 8;
+}
+.markdown-preview .md-alert-tip { -md-alert: -color-success-fg; }
+/* (The themes have no purple token: one that reads on light and dark; each preview theme has its own.) */
+.markdown-preview .md-alert-important { -md-alert: #8957e5; }
+.md-light .markdown-preview .md-alert-important { -md-alert: #8250df; }
+.md-dark .markdown-preview .md-alert-important { -md-alert: #a371f7; }
+.markdown-preview .md-alert-warning { -md-alert: -color-warning-fg; }
+.markdown-preview .md-alert-caution { -md-alert: -color-danger-fg; }
+.markdown-preview .md-alert-title {
+    -fx-text-fill: -md-alert;
+    -fx-font-weight: bold;
+    -fx-graphic-text-gap: 4;
+}
+.markdown-preview .md-alert-icon { -fx-fill: -md-alert; }
+/* ==highlight==: a marker stroke behind the words (labels cut at the spaces, so the line still breaks). */
+.markdown-preview .md-mark-word {
+    -fx-background-color: -color-warning-muted;
+    -fx-text-fill: -color-fg-default;
+    -fx-font-family: "Inter", "sans-serif";
+    -fx-padding: 0;
+}
+/* Definition lists: the term in bold, its definitions indented under it. */
+.markdown-preview .md-deflist { -fx-spacing: 3; }
+.markdown-preview .md-def-term .md-text { -fx-font-weight: bold; }
+.markdown-preview .md-def-desc { -fx-padding: 0 0 0 24; -fx-line-spacing: 5; }
 /* An image that could not be shown: its alt text, muted, where the picture would be. */
 .markdown-preview .md-inline-code.md-image-missing { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 /* Footnote reference: a small, raised, accent-colored [label] marker. */
@@ -804,16 +850,31 @@
 .markdown-preview .md-table-dense .md-table-header { -fx-padding: 2 3 2 3; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
 
-/* YAML front matter: a muted metadata block at the top of the document. */
+/* YAML front matter: a muted key/value table at the top of the document. */
 .markdown-preview .md-frontmatter {
     -fx-background-color: -color-bg-subtle;
     -fx-border-color: -color-border-muted;
     -fx-border-width: 0 0 0 3;
     -fx-background-radius: 6;
     -fx-padding: 8 12 8 12;
-    -fx-spacing: 2;
+    -fx-hgap: 16;
+    -fx-vgap: 3;
 }
-.markdown-preview .md-frontmatter-row { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
+.markdown-preview .md-frontmatter-key {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.92em;
+    -fx-font-weight: bold;
+}
+.markdown-preview .md-frontmatter-value { -fx-text-fill: -color-fg-default; -fx-font-size: 0.92em; }
+
+/* A fenced block's language, in its top right corner. Opaque, so a long first line passes under it. */
+.markdown-preview .md-code-lang {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 0 6 0 6;
+    -fx-font-size: 0.72em;
+    -fx-padding: 2 8 2 8;
+}
 
 /* The "back to where it was referred to" arrow at the end of a footnote definition. */
 .markdown-preview .md-footnote-back { -fx-font-size: 0.9em; }
@@ -1087,6 +1148,9 @@
     -color-accent-fg: #0969da;
     -color-border-default: #d0d7de;
     -color-danger-fg: #d1242f;
+    -color-success-fg: #1a7f37;
+    -color-warning-fg: #9a6700;
+    -color-warning-muted: #d4a72c66;
     -color-danger-subtle: #ffebe9;
     -color-danger-muted: #ff818266;
     -fx-background: #ffffff;
@@ -1100,6 +1164,9 @@
     -color-accent-fg: #2f81f7;
     -color-border-default: #30363d;
     -color-danger-fg: #f85149;
+    -color-success-fg: #3fb950;
+    -color-warning-fg: #d29922;
+    -color-warning-muted: #bb800966;
     -color-danger-subtle: #f8514926;
     -color-danger-muted: #f8514966;
     -fx-background: #0d1117;
@@ -2565,6 +2632,17 @@
     -fx-text-fill: -color-accent-fg;
 }
 
+/* The heading path of a Markdown document, after the file crumb (MarkdownHeadingCrumbs). */
+.file-breadcrumb .markdown-heading-divider {
+    -fx-font-size: 12px;
+    -fx-padding: 0 2 0 4;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.file-breadcrumb .markdown-heading-crumb {
+    -fx-text-fill: -color-fg-muted;
+}
+
 /* Shrink the "/" dividers between crumbs to match. */
 .file-breadcrumb .breadcrumbs > .label {
     -fx-font-size: 12px;
@@ -3609,6 +3687,8 @@
 .markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }
 .markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -color-danger-fg; }
 .markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -color-warning-fg; }
+.markdown-lint-panel .markdown-lint-tag.lint-hint { -fx-background-color: -color-accent-fg; }
+.markdown-lint-panel .markdown-lint-file-row { -fx-font-weight: bold; }
 /* Hover tooltip on a TODO scrollbar-overview stripe mark (the matched line's text). */
 .todo-stripe-tooltip {
     -fx-font-family: "JetBrains Mono", "Consolas", monospace;

@@ -127,4 +127,29 @@ class MarkdownTocTest {
         assertEquals(6, e.from());
         assertEquals(doc.indexOf("\n# T"), e.to());
     }
+
+    @Test
+    void theTitleCanBeLeftOut() {
+        MarkdownToc.Style noTitle = new MarkdownToc.Style(1, 6, true, false);
+        assertEquals("- [A](#a)\n  - [B](#b)\n", MarkdownToc.build("# Doc\n## A\n### B\n", -1, noTitle));
+        assertEquals(
+                "- [One](#one)\n- [Two](#two)\n",
+                MarkdownToc.build("# One\n# Two\n", -1, noTitle),
+                "two level-1 headings: neither is the title");
+        assertEquals(
+                "- [A](#a)\n- [T](#t)\n", MarkdownToc.build("## A\n# T\n", -1, noTitle), "nor one that is not first");
+    }
+
+    @Test
+    void entriesCanBeNumbered() {
+        MarkdownToc.Style numbered = new MarkdownToc.Style(1, 6, false, true);
+        assertEquals(
+                "1. [A](#a)\n    1. [B](#b)\n    2. [C](#c)\n2. [D](#d)\n    1. [E](#e)\n",
+                MarkdownToc.build("# A\n## B\n## C\n# D\n## E\n", -1, numbered));
+        // A numbered block is recognised as the stale TOC under an opening marker without its end.
+        assertEquals(
+                "<!-- toc -->\n1. [T](#t)\n<!-- /toc -->\n\n# T\n",
+                MarkdownToc.update("<!-- toc -->\n1. [Old](#old)\n\n# T\n", numbered)
+                                .replacement() + "\n\n# T\n");
+    }
 }

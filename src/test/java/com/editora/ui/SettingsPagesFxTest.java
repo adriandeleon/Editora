@@ -567,8 +567,15 @@ class SettingsPagesFxTest {
             rig.show();
             VBox rules = rig.control("markdownLintRulesBox");
             assertEquals(MarkdownLint.RULES.size(), rules.getChildren().size());
-            CheckBox firstBox = (CheckBox) rules.getChildren().get(0);
-            CheckBox secondBox = (CheckBox) rules.getChildren().get(1);
+            // Each rule is a row: its checkbox, then its severity.
+            CheckBox firstBox =
+                    (CheckBox) ((javafx.scene.layout.HBox) rules.getChildren().get(0))
+                            .getChildren()
+                            .get(0);
+            CheckBox secondBox =
+                    (CheckBox) ((javafx.scene.layout.HBox) rules.getChildren().get(1))
+                            .getChildren()
+                            .get(0);
             assertTrue(firstBox.isSelected());
             assertFalse(secondBox.isSelected(), "a rule disabled in the file shows unticked");
             assertTrue(firstBox.getAccessibleText().startsWith(first + " "));

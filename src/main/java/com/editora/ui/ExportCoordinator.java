@@ -951,23 +951,69 @@ final class ExportCoordinator {
         if (f == null) {
             return;
         }
-        try {
-            String base = bufferBaseName(b);
-            int dot = base.lastIndexOf('.');
-            String title = dot > 0 ? base.substring(0, dot) : base;
-            String html = com.editora.editor.MarkdownHtmlExport.toHtml(
-                    b.getContent(), title, host.settings().isMathSupport());
-            com.editora.io.StagedExport.writeString(f.toPath(), html);
+        String base = bufferBaseName(b);
+        int dot = base.lastIndexOf('.');
+        String title = dot > 0 ? base.substring(0, dot) : base;
+        String markdown = b.getContent();
+        boolean math = host.settings().isMathSupport();
+        java.nio.file.Path source = b.getPath();
+        java.util.List<String> mmdc = mermaid == null ? null : mermaid.mmdcCommandOrNull();
+        var options = new com.editora.editor.MarkdownHtmlExport.Options(
+                host.settings().isHtmlExportHighlightCode(),
+                host.settings().isHtmlExportEmbedImages(),
+                source != null && com.editora.vfs.Vfs.isLocal(source) ? source.getParent() : null,
+                mmdc,
+                com.editora.pdf.CodeHtml::toHtml);
+        java.util.function.Supplier<Exception> write = () -> {
+            try {
+                String html = com.editora.editor.MarkdownHtmlExport.toHtml(markdown, title, math, options);
+                com.editora.io.StagedExport.writeString(f.toPath(), html);
+                return null;
+            } catch (Exception ex) {
+                return ex;
+            }
+        };
+        if (!com.editora.editor.MarkdownHtmlExport.readsFilesOrRunsTools(markdown, options)) {
+            htmlExported(f, write.get(), true); // text only: nothing to wait for
+            return;
+        }
+        // Off the FX thread: embedding reads image files, and a Mermaid block runs the CLI.
+        AutoCloseable task = host.startBackgroundTask(tr("dialog.htmlExport.title"));
+        htmlExport = java.util.concurrent.CompletableFuture.supplyAsync(
+                        write,
+                        runnable -> Thread.ofVirtual().name("html-export").start(runnable))
+                .thenAcceptAsync(
+                        failure -> {
+                            try {
+                                task.close();
+                            } catch (Exception ignored) {
+                                // the progress chip is cosmetic
+                            }
+                            htmlExported(f, failure, false);
+                        },
+                        javafx.application.Platform::runLater);
+    }
+
+    private void htmlExported(java.io.File f, Exception failure, boolean modal) {
+        if (failure == null) {
             lastExported = f.toPath();
             host.setStatus(tr("status.html.exported", f.toString()));
             openPath.accept(f.toPath()); // show the generated HTML in a tab
-        } catch (Exception ex) {
-            String msg = failureDetail(ex.getMessage());
-            host.setStatus(tr("status.html.exportFailed", msg));
-            failureAlert(tr("dialog.htmlExport.title"), tr("dialog.htmlExport.failed"), msg)
-                    .showAndWait();
+            return;
+        }
+        String msg = failureDetail(failure.getMessage());
+        host.setStatus(tr("status.html.exportFailed", msg));
+        Alert alert = failureAlert(tr("dialog.htmlExport.title"), tr("dialog.htmlExport.failed"), msg);
+        if (modal) {
+            alert.showAndWait();
+        } else {
+            alert.show();
         }
     }
+
+    /** The HTML export under way or last finished (tests wait on it). */
+    java.util.concurrent.CompletableFuture<Void> htmlExport =
+            java.util.concurrent.CompletableFuture.completedFuture(null);
 
     /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
     private java.io.File chooseHtmlDestination(String base, EditorBuffer source) {
