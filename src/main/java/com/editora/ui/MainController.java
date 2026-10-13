@@ -255,6 +255,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     private RemoteCoordinator remoteCoordinator;
+    /** The not-connected state of this window's remote project, kept for a Project panel not built yet. */
+    private java.util.function.Consumer<ProjectPanel> remoteDisconnected;
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
@@ -1189,6 +1191,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (project != null && projectsEnabled() && projectToolWindow != null) {
             toolWindows.open(projectToolWindow, false);
         }
+        if (project != null && project.remote()) {
+            // After whoever opened this window has had the chance to hand it credentials of its own.
+            Platform.runLater(() -> remoteCoordinator.promptReconnectIfNeeded());
+        }
         // This window now knows its project, which is half of what gates the run-config group; the other
         // half (marker detection) re-runs on the tab-selection and focus-regain paths.
         runConfigurations.refreshRunConfigToolbar();
@@ -1380,6 +1386,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer selected = activeBuffer();
         panel.setActiveFile(selected == null ? null : selected.getPath());
         projectPanel = panel;
+        if (remoteDisconnected != null) {
+            remoteDisconnected.accept(panel);
+        }
         return panel;
     }
 
@@ -2698,6 +2707,50 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void openPath(Path file) {
                 fileWorkflows.openPath(file);
+            }
+
+            @Override
+            public Project windowProject() {
+                return windowProject;
+            }
+
+            @Override
+            public boolean projectsEnabled() {
+                return MainController.this.projectsEnabled() && windowManager != null;
+            }
+
+            @Override
+            public com.editora.config.ProjectManager projects() {
+                return projects;
+            }
+
+            @Override
+            public void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
+                windowManager.openOrFocus(project);
+                MainController window = windowManager.controllerOf(project);
+                if (window != null) {
+                    window.remoteCoordinator.connectForWindowProject(conn, secret);
+                } else if (secret != null) {
+                    java.util.Arrays.fill(secret, '\0');
+                }
+                refreshProjectPanelList();
+            }
+
+            @Override
+            public void showDisconnected(String message, String buttonText, Runnable reconnect) {
+                // The panel is built on first use; until then the state waits here for it.
+                remoteDisconnected = panel -> panel.showDisconnected(message, buttonText, reconnect);
+                if (projectPanel != null) {
+                    remoteDisconnected.accept(projectPanel);
+                }
+            }
+
+            @Override
+            public void clearDisconnected() {
+                remoteDisconnected = null;
+                if (projectPanel != null) {
+                    projectPanel.clearDisconnected();
+                }
             }
 
             @Override

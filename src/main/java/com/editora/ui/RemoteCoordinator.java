@@ -27,6 +27,7 @@ import javafx.util.StringConverter;
 
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
+import com.editora.config.Project;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
 import com.editora.vfs.SftpUri;
@@ -76,6 +77,33 @@ final class RemoteCoordinator {
 
         /** Invalidates writes captured against a path that is about to be rebound. */
         void invalidatePendingWrite(Path path);
+
+        /** The project this window edits, or null (the No Project window). */
+        default Project windowProject() {
+            return null;
+        }
+
+        /** The shared project list, or null when {@link #projectsEnabled} is false. */
+        default com.editora.config.ProjectManager projects() {
+            return null;
+        }
+
+        /** Whether projects are in use at all; without them a remote folder is only ever shown in this window. */
+        default boolean projectsEnabled() {
+            return false;
+        }
+
+        /**
+         * Opens (or focuses) {@code project}'s own window and has <em>it</em> connect with {@code secret},
+         * which it wipes. A window holds its own connections, so the one that shows a remote project is
+         * the one that must be connected to its host.
+         */
+        default void openRemoteProject(Project project, RemoteConnection conn, char[] secret) {}
+
+        /** Puts the not-connected message, with its reconnect button, where the Project tree would be. */
+        default void showDisconnected(String message, String buttonText, Runnable reconnect) {}
+
+        default void clearDisconnected() {}
     }
 
     private final CoordinatorHost host;
@@ -85,6 +113,10 @@ final class RemoteCoordinator {
 
     private RemoteFileSystems remoteFs; // lazily created on first remote use
     private String activeRemoteAuthority; // the connection backing the mounted remote root
+    /** A connect started for this window's own remote project is under way: do not also ask the user. */
+    private boolean connecting;
+
+    private boolean listening;
 
     RemoteCoordinator(CoordinatorHost host, Ops ops) {
         this(host, ops, null);
@@ -322,11 +354,14 @@ final class RemoteCoordinator {
                     char[] secret = secretField.getText().isEmpty()
                             ? null
                             : secretField.getText().toCharArray();
+                    // connect() wipes what it is given; the project's own window may need to log in too.
+                    char[] again = secret == null ? null : secret.clone();
                     host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
                     remoteFs().connect(conn, secret, r -> {
                         if (r.ok()) {
-                            mount(conn, r.root());
+                            connected(conn, r.root(), again);
                         } else {
+                            wipe(again);
                             ops.reportError(tr("status.remote.failed", conn.displayLabel()), r.error());
                         }
                     });
@@ -335,8 +370,140 @@ final class RemoteCoordinator {
                 false);
     }
 
+    private static void wipe(char[] secret) {
+        if (secret != null) {
+            java.util.Arrays.fill(secret, '\0');
+        }
+    }
+
+    /**
+     * A connect from the form succeeded. The folder is a project, and a project has its own window: when
+     * that is this window (it was reopened disconnected, or its connection dropped) the folder is mounted
+     * here; otherwise the project's window is opened and logs in for itself, and this window's connection,
+     * which only served to find the folder, is closed unless its tabs still use it.
+     */
+    void connected(RemoteConnection conn, Path root, char[] secret) {
+        if (!ops.projectsEnabled()) {
+            wipe(secret);
+            mount(conn, root);
+            return;
+        }
+        Project project = ops.projects().createOrGet(projectName(conn, root), root);
+        ops.projects().save();
+        Project mine = ops.windowProject();
+        if (mine != null && mine.id().equals(project.id())) {
+            wipe(secret);
+            mount(conn, root);
+            return;
+        }
+        SftpUri location = SftpUri.parse(project.root());
+        RemoteConnection at = withPath(conn, location == null ? conn.lastPath() : location.path());
+        ops.putConnection(at);
+        refreshPanel();
+        if (!conn.id().equals(activeRemoteAuthority)
+                && buffersOn(Set.of(conn.id()), false).isEmpty()) {
+            remoteFs.disconnect(conn.id());
+        }
+        host.setStatus(tr("status.remote.openingProject", project.name()));
+        ops.openRemoteProject(project, at, secret);
+    }
+
+    private static String projectName(RemoteConnection conn, Path root) {
+        Path name = root.getFileName();
+        return name == null || name.toString().isBlank() ? conn.displayLabel() : name.toString();
+    }
+
+    private static RemoteConnection withPath(RemoteConnection conn, String path) {
+        return new RemoteConnection(
+                conn.host(), conn.port(), conn.user(), conn.auth(), conn.keyPath(), conn.label(), path);
+    }
+
+    /**
+     * Connects this window to its own remote project's host with credentials another window collected, and
+     * mounts the folder. {@code secret} is wiped.
+     */
+    void connectForWindowProject(RemoteConnection conn, char[] secret) {
+        connecting = true;
+        host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
+        remoteFs().connect(conn, secret, r -> {
+            connecting = false;
+            if (r.ok()) {
+                mount(conn, r.root());
+            } else {
+                showDisconnected();
+                ops.reportError(tr("status.remote.failed", conn.displayLabel()), r.error());
+            }
+        });
+    }
+
+    /**
+     * For a window whose project is on a host it is not connected to (reopened from the project list or at
+     * startup): says so where the tree would be, and brings up the connect form filled in for that host.
+     * Cancelling the form leaves the window open, with the reconnect button.
+     */
+    void promptReconnectIfNeeded() {
+        Project project = ops.windowProject();
+        if (project == null || !project.remote() || connecting || project.rootPath() != null) {
+            return;
+        }
+        showDisconnected();
+        connect(connectionFor(project));
+    }
+
+    /** The saved connection for {@code project}'s host, else one built from its address; rooted at the project. */
+    private RemoteConnection connectionFor(Project project) {
+        SftpUri location = SftpUri.parse(project.root());
+        if (location == null) {
+            return null;
+        }
+        RemoteConnection base = ops.connections().stream()
+                .filter(c -> c.id().equals(location.authority()))
+                .findFirst()
+                .orElseGet(() -> new RemoteConnection(
+                        location.host(),
+                        location.port(),
+                        location.user(),
+                        RemoteConnection.AuthMethod.DEFAULT_KEYS,
+                        "",
+                        null,
+                        null));
+        return withPath(base, location.path());
+    }
+
+    /** Shows the not-connected state when this window's project is a remote one; otherwise nothing. */
+    private void showDisconnected() {
+        Project project = ops.windowProject();
+        SftpUri location = project == null || !project.remote() ? null : SftpUri.parse(project.root());
+        if (location == null) {
+            return;
+        }
+        ops.showDisconnected(
+                tr("remote.project.disconnected", location.authority()),
+                tr("remote.project.reconnect"),
+                () -> connect(connectionFor(project)));
+    }
+
+    /** The connection under this window's mounted folder ended: by the network, the server, or Disconnect. */
+    private void connectionChanged(String authority, boolean up) {
+        if (up || !authority.equals(activeRemoteAuthority)) {
+            return;
+        }
+        Project project = ops.windowProject();
+        if (project != null && project.remote()) {
+            activeRemoteAuthority = null;
+            ops.setProjectRoot(null);
+            showDisconnected();
+            host.setStatus(tr("status.remote.lost", authority));
+        }
+    }
+
     /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
     private void mount(RemoteConnection conn, Path root) {
+        if (!listening) {
+            listening = true;
+            remoteFs().addConnectionListener(this::connectionChanged);
+        }
+        ops.clearDisconnected();
         String previous = activeRemoteAuthority;
         activeRemoteAuthority = conn.id();
         if (previous != null
@@ -449,9 +616,15 @@ final class RemoteCoordinator {
         }
         connected.forEach(remoteFs::disconnect);
         activeRemoteAuthority = null;
-        Path activeRoot = ops.activeProjectRoot();
-        if (activeRoot != null) {
-            ops.setProjectRoot(activeRoot);
+        Project project = ops.windowProject();
+        if (project != null && project.remote()) {
+            ops.setProjectRoot(null); // this window is the remote folder's: there is no local tree to go back to
+            showDisconnected();
+        } else {
+            Path activeRoot = ops.activeProjectRoot();
+            if (activeRoot != null) {
+                ops.setProjectRoot(activeRoot);
+            }
         }
         host.setStatus(tr("status.remote.disconnected"));
     }

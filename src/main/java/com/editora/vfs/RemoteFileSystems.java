@@ -241,14 +241,18 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                     @Override
                     public void sessionClosed(Session session) {
                         execTargets.remove(fs);
-                        notifyConnection(authority, false);
+                        // A reconnect closes the session it replaces: that is not the connection going down.
+                        SftpFileSystem current = byAuthority.get(authority);
+                        if (current == null || current == fs) {
+                            notifyConnection(authority, false);
+                        }
                     }
                 });
                 notifyConnection(authority, true);
                 SftpFileSystem prev = byAuthority.put(conn.id(), fs);
                 if (prev != null && prev != fs) {
                     execTargets.remove(prev);
-                    closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
+                    close(prev); // reconnecting the same site: don't leak the previous filesystem or its session
                 }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
                 // Resolved to an absolute path now, while the session is live: "." is the SFTP home directory,

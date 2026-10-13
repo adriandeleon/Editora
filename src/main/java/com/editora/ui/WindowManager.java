@@ -931,6 +931,12 @@ public class WindowManager {
         return stage;
     }
 
+    /** The controller of {@code project}'s open window, or null when it has none. */
+    MainController controllerOf(Project project) {
+        Holder holder = project == null ? null : findHolder(project.id());
+        return holder == null ? null : holder.controller();
+    }
+
     /**
      * Opens {@code file} at 0-based {@code line} in the window for {@code projectKey} ({@code ""} = the global
      * no-project window): focuses the window if it's already open and opens the file there now, else builds the
