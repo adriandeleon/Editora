@@ -49,23 +49,36 @@ snapshot), and a tag must be `vX.Y.Z` or `vX.Y.Z-rcN`. An `-rc` tag is cut from 
 line and is checked only for its shape.
 
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
-`bump` job reopens `master` at the next patch `-SNAPSHOT` for you — see below.
+`bump` job opens a pull request that reopens `master` at the next patch `-SNAPSHOT` — merge it; see
+below.
 
 ## Reopening master (the post-release bump)
 
-The `bump` job runs after JReleaser succeeds and commits a one-line pom change to `master`:
+The `bump` job runs after JReleaser succeeds. `master` requires the `Build & Test (JDK 25)` and
+`Format (JDK 25)` checks, so the job cannot push to it (a direct push was refused with GH013 on
+v0.21.0). It pushes a one-line pom change to a branch, `chore/reopen-X.Y.Z`, and opens a pull request:
 
 ```
 chore: reopen master at 0.9.8-SNAPSHOT after v0.9.7
 ```
 
+**Merge that pull request to finish the release.** Until then `master` still carries the release
+version.
+
 - It is **skipped for pre-releases** (`vX.Y.Z-rcN`) — an rc is cut from the `-SNAPSHOT` line and
-  must not advance it — and on `workflow_dispatch`, which is only ever a dry run.
+  must not advance it — and on `workflow_dispatch`, which is only ever a dry run. So a dry run never
+  exercises it.
 - It is **idempotent**: it bumps only when `master`'s pom still reads exactly the version just
-  released. If a human already moved it, the job logs and exits cleanly.
-- It pushes with the default `GITHUB_TOKEN`. **If `master` becomes branch-protected, that push
-  will fail** (the release itself is already published by then) — swap in a PAT with bypass
-  rights, or do step 1's inverse by hand.
+  released, and does nothing when the branch already exists. If a human already moved the pom, the
+  job logs and exits cleanly.
+- **The required checks are dispatched, not triggered.** A pull request opened with the default
+  `GITHUB_TOKEN` starts no `pull_request` workflow, so the job runs `gh workflow run ci.yml` on the
+  branch (`ci.yml` has a `workflow_dispatch` trigger for this). Those runs report the same check
+  names on the same commit, which is what the ruleset looks at.
+- **Opening the pull request needs a repository setting**: *Settings → Actions → General → Allow
+  GitHub Actions to create and approve pull requests*. With it off, the branch is still pushed and
+  the checks still run; the job warns and its summary links to the page that opens the pull request
+  in one click.
 
 ### `-SNAPSHOT` and the native installers
 
@@ -130,7 +143,9 @@ Stage step and `jreleaser.yml` together — `test_check_release.py` cross-checks
 ### Supply chain
 
 - The workflow token is **read-only** by default; only `release` (publishes) and `bump` (pushes the
-  version bump) ask for `contents: write`, and only `bump`'s checkout keeps its credentials.
+  version-bump branch) ask for `contents: write`, and only `bump`'s checkout keeps its credentials.
+  `bump` also holds `pull-requests: write` and `actions: write`, to open the pull request and
+  dispatch CI on its branch.
 - Every action is pinned to a **full commit SHA** with its version in a trailing comment;
   `.github/dependabot.yml` opens the update PRs (weekly, for Maven dependencies too).
   `jreleaser/release-action` has no `v2` *tag* — it was being consumed from a branch — and is pinned

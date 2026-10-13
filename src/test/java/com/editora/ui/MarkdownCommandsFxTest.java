@@ -305,10 +305,11 @@ class MarkdownCommandsFxTest {
                 on.getFocusedArea().insertText(on.getFocusedArea().getLength(), "## B\n");
                 registry.run("file.save");
             });
-            for (int i = 0; i < 20 && FxTestSupport.callOnFx(on::isDirty); i++) {
+            for (int i = 0; i < 200 && FxTestSupport.callOnFx(on::isDirty); i++) { // the write is asynchronous
                 Thread.sleep(50);
                 FxTestSupport.drainFx();
             }
+            assertFalse(FxTestSupport.callOnFx(on::isDirty), "the save was acknowledged");
             assertTrue(text(on).contains("- [Doc](#doc)\n  - [A](#a)\n  - [B](#b)\n"), text(on));
             assertTrue(Files.readString(on.getPath()).contains("[B](#b)"), "and that is what was written");
         } finally {

@@ -425,6 +425,17 @@ jobs:
   # -SNAPSHOT suffix, so anything built off master until the next release identifies itself as a
   # development build (AppInfo.isSnapshot() -> the toolbar badge, About, --version).
   #
+  # master requires the "Build & Test" and "Format" checks, so a direct push is refused (GH013, as on
+  # v0.21.0). The job pushes the one-line change to a `chore/reopen-X.Y.Z` branch and opens a pull
+  # request instead. Two things the default GITHUB_TOKEN does not do by itself:
+  #   - A pull request it opens triggers no `pull_request` workflow, so the required checks would never
+  #     report. The job dispatches CI on the branch (ci.yml has `workflow_dispatch`); those runs report
+  #     the same check names on the same commit.
+  #   - It may open a pull request only when Settings → Actions → General → "Allow GitHub Actions to
+  #     create and approve pull requests" is on. When it is off the branch is still pushed and the job
+  #     summary carries the link that opens the pull request in one click.
+  # The release is already published by the time this runs.
+  #
   # Deliberately skipped for pre-releases (vX.Y.Z-rcN): an rc is cut from the -SNAPSHOT line and must
   # not advance it. Also skipped on workflow_dispatch, which is only ever a dry run.
   bump:
@@ -434,18 +445,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write        # push the chore/reopen-X.Y.Z branch
+      pull-requests: write   # open the pull request
+      actions: write         # dispatch CI on the branch
     steps:
-      # The one checkout that keeps its credentials: this job pushes the version bump.
+      # The one checkout that keeps its credentials: this job pushes the version bump branch.
       - name: Check out master
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
-          # Default GITHUB_TOKEN; if master is branch-protected, swap in a PAT with bypass rights.
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bump pom to the next -SNAPSHOT
+      - name: Open the pull request that bumps the pom to the next -SNAPSHOT
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           released="${GITHUB_REF_NAME#v}"
@@ -460,7 +474,16 @@ jobs:
 
           # Next patch. A released version is always plain X.Y.Z here (the tag drives it).
           IFS='.' read -r major minor patch <<< "$released"
-          next="${major}.${minor}.$((patch + 1))-SNAPSHOT"
+          next_release="${major}.${minor}.$((patch + 1))"
+          next="${next_release}-SNAPSHOT"
+          branch="chore/reopen-${next_release}"
+          title="chore: reopen master at ${next} after ${GITHUB_REF_NAME}"
+
+          # A re-run of this job finds the branch it pushed the first time.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Branch $branch already exists — nothing to do."
+            exit 0
+          fi
 
           # Replace only the FIRST <version> — the project's own, before any dependency/plugin ones.
           sed -i -E "0,/<version>${released}<\/version>/s//<version>${next}<\/version>/" pom.xml
@@ -468,6 +491,20 @@ jobs:
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
           git add pom.xml
-          git commit -m "chore: reopen master at ${next} after ${GITHUB_REF_NAME}"
-          git push origin HEAD:master
+          git commit -m "$title"
+          git push origin "$branch"
+
+          # The required checks, on the commit just pushed.
+          gh workflow run ci.yml --ref "$branch"
+
+          body="${GITHUB_REF_NAME} is published. This reopens \`master\` for development: \`pom.xml\` ${released} → ${next}."
+          if url="$(gh pr create --base master --head "$branch" --title "$title" --body "$body")"; then
+            echo "Opened $url"
+            echo "Merge [the pull request]($url) to reopen master at \`${next}\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${branch}?expand=1"
+            echo "::warning::Could not open the pull request (is \"Allow GitHub Actions to create and approve pull requests\" off?). Branch ${branch} is pushed; open it at ${compare}"
+            echo "The branch \`${branch}\` is pushed but the pull request could not be opened. [Open it](${compare}) and merge it to reopen master at \`${next}\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
