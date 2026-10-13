@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 
 import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.heading.anchor.HeadingAnchorExtension;
@@ -39,19 +40,221 @@ public final class MarkdownHtmlExport {
      * rather than claimed to be English.
      */
     public static String toHtml(String markdown, String title, boolean mathEnabled) {
+        return toHtml(markdown, title, mathEnabled, Options.PLAIN);
+    }
+
+    /**
+     * What a page is exported with beyond its text.
+     *
+     * @param highlightCode colour fenced code by its language, as inline styles (the page allows no script)
+     * @param embedImages write each image the document shows into the page as a {@code data:} URI, so the
+     *     file can be sent on its own
+     * @param baseDir the document's folder, for its relative image paths; null for an unsaved document
+     * @param mmdc the Mermaid CLI command, or null: a {@code mermaid} fence is then left as its source
+     */
+    public record Options(boolean highlightCode, boolean embedImages, java.nio.file.Path baseDir, List<String> mmdc) {
+        public static final Options PLAIN = new Options(false, false, null, null);
+    }
+
+    /**
+     * Whether exporting {@code markdown} with {@code options} may read image files or run the Mermaid CLI —
+     * the two things that should not happen on the FX thread. A cheap look at the source, erring on "yes".
+     */
+    public static boolean readsFilesOrRunsTools(String markdown, Options options) {
+        if (markdown == null || options == null) {
+            return false;
+        }
+        boolean images = options.embedImages() && (markdown.contains("![") || markdown.contains("<img"));
+        boolean diagrams = options.mmdc() != null
+                && !options.mmdc().isEmpty()
+                && markdown.toLowerCase(java.util.Locale.ROOT).contains("mermaid");
+        return images || diagrams;
+    }
+
+    /** Images bigger than this are linked, not embedded: a page is not the place for a 50 MB scan. */
+    static final int MAX_EMBED_BYTES = 8 * 1024 * 1024;
+
+    /** A fenced block longer than this is written plain; colouring it would cost more than it shows. */
+    static final int MAX_HIGHLIGHT_CHARS = 200_000;
+
+    /**
+     * As {@link #toHtml(String, String, boolean)} with {@code options}. Reads image files and may run the
+     * Mermaid CLI: call it off the FX thread.
+     */
+    public static String toHtml(String markdown, String title, boolean mathEnabled, Options options) {
         org.commonmark.node.Node doc = MarkdownRenderer.parseForRender(markdown, mathEnabled);
+        Options o = options == null ? Options.PLAIN : options;
+        if (o.embedImages()) {
+            embedImages(doc, o.baseDir());
+        }
         // Raw HTML is kept — an author who writes <details> or <kbd> in a document expects it in the export —
         // but link and image destinations are sanitized: [x](javascript:…) / vbscript: / file: become an empty
         // href instead of a live script URL in a page the reader will open in a browser.
         HtmlRenderer renderer = HtmlRenderer.builder()
                 .extensions(MarkdownRenderer.renderExtensions(mathEnabled))
-                .extensions(java.util.List.of(HeadingAnchorExtension.create()))
+                .extensions(List.of(HeadingAnchorExtension.create()))
                 .sanitizeUrls(true)
+                .urlSanitizer(new EmbeddedImageUrls())
                 .attributeProviderFactory(ctx -> new SemanticAttributes())
                 .nodeRendererFactory(ctx -> new MathImagesRenderer(ctx.getWriter()))
+                .nodeRendererFactory(ctx -> new CodeBlocks(ctx.getWriter(), o))
                 .build();
         String body = renderer.render(doc);
         return page(MarkdownDocInfo.title(doc, title), MarkdownDocInfo.language(doc, null), body);
+    }
+
+    /** Rewrites every image the document can load into a {@code data:} URI; the others keep their address. */
+    private static void embedImages(org.commonmark.node.Node node, java.nio.file.Path baseDir) {
+        for (org.commonmark.node.Node c = node.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof org.commonmark.node.Image image) {
+                String dest = image.getDestination();
+                if (dest != null && !dest.startsWith("data:")) {
+                    byte[] bytes = PreviewImageLoader.fetchForExport(dest, baseDir);
+                    if (bytes != null && bytes.length > 0 && bytes.length <= MAX_EMBED_BYTES) {
+                        image.setDestination("data:" + mediaType(bytes, dest) + ";base64,"
+                                + Base64.getEncoder().encodeToString(bytes));
+                    }
+                }
+            } else {
+                embedImages(c, baseDir);
+            }
+        }
+    }
+
+    /** The image's media type, from its first bytes (and, for the text format SVG, from what it holds). */
+    static String mediaType(byte[] b, String name) {
+        if (b.length > 3 && (b[0] & 0xff) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
+            return "image/png";
+        }
+        if (b.length > 2 && (b[0] & 0xff) == 0xff && (b[1] & 0xff) == 0xd8) {
+            return "image/jpeg";
+        }
+        if (b.length > 3 && b[0] == 'G' && b[1] == 'I' && b[2] == 'F') {
+            return "image/gif";
+        }
+        if (b.length > 11 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[8] == 'W' && b[9] == 'E') {
+            return "image/webp";
+        }
+        if (b.length > 1 && b[0] == 'B' && b[1] == 'M') {
+            return "image/bmp";
+        }
+        String head = new String(b, 0, Math.min(b.length, 512), StandardCharsets.UTF_8);
+        String lower = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        return head.contains("<svg") || lower.endsWith(".svg") ? "image/svg+xml" : "image/png";
+    }
+
+    /**
+     * The sanitizer of the exported page: commonmark's own, except for {@code data:} URIs, which it lets
+     * through whole — here a link never keeps one, and an image only a {@code data:image/…} one (what this
+     * class writes when it embeds a picture; an {@code <img>} runs no script, whatever it is given).
+     */
+    static final class EmbeddedImageUrls implements org.commonmark.renderer.html.UrlSanitizer {
+        private final org.commonmark.renderer.html.UrlSanitizer standard =
+                new org.commonmark.renderer.html.DefaultUrlSanitizer();
+
+        @Override
+        public String sanitizeLinkUrl(String url) {
+            return isData(url) ? "" : standard.sanitizeLinkUrl(url); // a data: page is not a link to follow
+        }
+
+        private static boolean isData(String url) {
+            return url != null && url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
+        }
+
+        @Override
+        public String sanitizeImageUrl(String url) {
+            if (isData(url)) {
+                return url.stripLeading().regionMatches(true, 0, "data:image/", 0, 11) ? url : "";
+            }
+            return standard.sanitizeImageUrl(url);
+        }
+    }
+
+    /**
+     * Fenced code in the exported page: a {@code mermaid} block as its diagram when the CLI is there, any
+     * other block coloured by its language when asked to, and otherwise exactly what commonmark writes.
+     */
+    static final class CodeBlocks implements org.commonmark.renderer.NodeRenderer {
+        private final org.commonmark.renderer.html.HtmlWriter html;
+        private final Options options;
+
+        CodeBlocks(org.commonmark.renderer.html.HtmlWriter html, Options options) {
+            this.html = html;
+            this.options = options;
+        }
+
+        @Override
+        public java.util.Set<Class<? extends org.commonmark.node.Node>> getNodeTypes() {
+            return java.util.Set.of(org.commonmark.node.FencedCodeBlock.class);
+        }
+
+        @Override
+        public void render(org.commonmark.node.Node node) {
+            org.commonmark.node.FencedCodeBlock block = (org.commonmark.node.FencedCodeBlock) node;
+            String info = block.getInfo() == null ? "" : block.getInfo().strip();
+            String code = block.getLiteral() == null ? "" : block.getLiteral();
+            html.line();
+            String drawn = null;
+            if (MarkdownRenderer.isMermaidInfo(info)) {
+                drawn = mermaid(code);
+            } else if (options.highlightCode()) {
+                drawn = highlighted(code, info);
+            }
+            if (drawn != null) {
+                html.raw(drawn);
+            } else {
+                String language = info.isEmpty() ? "" : info.split("\\s+", 2)[0];
+                html.tag("pre");
+                html.tag(
+                        "code",
+                        language.isEmpty() ? java.util.Map.of() : java.util.Map.of("class", "language-" + language));
+                html.text(code);
+                html.tag("/code");
+                html.tag("/pre");
+            }
+            html.line();
+        }
+
+        private String mermaid(String source) {
+            if (options.mmdc() == null || options.mmdc().isEmpty()) {
+                return null;
+            }
+            try {
+                com.editora.mermaid.Mermaid.Render r =
+                        com.editora.mermaid.Mermaid.renderPng(options.mmdc(), source, false);
+                if (!r.ok()) {
+                    return null;
+                }
+                return "<p><img class=\"md-mermaid\" alt=\"" + escape(firstLine(source))
+                        + "\" src=\"data:image/png;base64,"
+                        + Base64.getEncoder().encodeToString(r.image()) + "\"></p>";
+            } catch (RuntimeException e) {
+                return null; // the diagram is a nicety: its source is still exported
+            }
+        }
+
+        private static String firstLine(String source) {
+            String s = source.strip();
+            int nl = s.indexOf('\n');
+            return nl < 0 ? s : s.substring(0, nl);
+        }
+
+        private static String highlighted(String code, String info) {
+            if (info.isEmpty() || code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS) {
+                return null;
+            }
+            try {
+                org.eclipse.tm4e.core.grammar.IGrammar grammar = MarkdownRenderer.grammarForInfo(info);
+                if (grammar == null) {
+                    return null;
+                }
+                String body = code.endsWith("\n") ? code.substring(0, code.length() - 1) : code;
+                return com.editora.pdf.CodeHtml.toHtml(body, TextMateHighlighter.compute(body, grammar), 4)
+                        .replaceFirst("^<pre ", "<pre class=\"md-highlight\" ");
+            } catch (RuntimeException | LinkageError e) {
+                return null; // colour is a nicety: the block is still exported, plain
+            }
+        }
     }
 
     /**
