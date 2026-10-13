@@ -511,7 +511,7 @@ public class EditorBuffer implements TabContent {
     private Runnable aiExplainHandler = () -> {};
     private Runnable aiRewriteHandler = () -> {};
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
-    private java.util.function.Consumer<String> openUrlHandler = u -> {};
+    java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
     private Runnable insertTypstTableHandler;
 

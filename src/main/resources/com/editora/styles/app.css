@@ -739,6 +739,18 @@
     -fx-background-color: -color-warning-emphasis;
     -fx-text-fill: -color-fg-emphasis;
 }
+/* A preview in a tab of its own: a slim header naming the file it shows, with the follow/lock switch. */
+.md-side-preview-header {
+    -fx-padding: 3 10 3 12;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 1 0;
+}
+.md-side-preview-name { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
+.md-side-preview-lock { -fx-font-size: 11px; -fx-padding: 2 8 2 8; -fx-text-fill: -color-fg-muted; }
+.md-side-preview-lock:selected { -fx-text-fill: -color-accent-fg; -fx-background-color: -state-sel; }
+/* An empty document: one muted line where the rendering will be. */
+.md-preview-empty { -fx-text-fill: -color-fg-muted; -fx-font-size: 13px; -fx-padding: 48 0 0 0; }
 /* Split view: a thin bar beside the block the editor's caret is in. */
 .md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
 /* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */

@@ -2805,15 +2805,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
-        com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
-        com.editora.editor.PreviewImageLoader.setRemoteImages(
-                config.getSettings().isMarkdownRemoteImages());
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.hasPreview()) {
-                b.refreshPreview();
-            }
-        }
+        previews.applyPreviewSettings();
     }
 
     // --- Feature coordinators (each peeled off MainController; share one CoordinatorHost adapter) -----
@@ -4563,6 +4555,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean appThemeDark() {
             return MainController.this.appThemeDark();
+        }
+
+        @Override
+        public Tab addContentTab(com.editora.editor.TabContent content) {
+            return MainController.this.addContentTab(content, true);
         }
 
         @Override

@@ -1459,6 +1459,13 @@ final class WindowCommandRegistrar {
                         "view.markdownZoomReset", () -> host.previews().markdownZoom(0)));
         host.registry()
                 .register(Command.of("view.toggleMarkdownPreviewTheme", host.previews()::toggleMarkdownPreviewTheme));
+        host.registry()
+                .register(Command.of(
+                        "view.markdownPreviewToSide", () -> host.previews().openPreviewTab(true)));
+        host.registry()
+                .register(Command.of(
+                        "view.markdownPreviewTab", () -> host.previews().openPreviewTab(false)));
+        host.registry().register(Command.of("view.toggleMarkdownPreviewLock", host.previews()::togglePreviewLock));
         // Markdown editing (markdown buffers only; no-op with a status elsewhere).
         host.registry()
                 .register(Command.of("markdown.bold", () -> host.previews().markdownInline("**")));

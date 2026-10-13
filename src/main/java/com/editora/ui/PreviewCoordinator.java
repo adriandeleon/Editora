@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -9,6 +11,7 @@ import javafx.scene.input.ClipboardContent;
 import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.MarkdownPreviewPane;
 import com.editora.markdown.MarkdownTable;
 
 import static com.editora.i18n.Messages.tr;
@@ -51,6 +54,9 @@ final class PreviewCoordinator {
         void requestSave();
 
         boolean appThemeDark();
+
+        /** Adds {@code content} as a new, selected tab of the focused editor group. */
+        Tab addContentTab(com.editora.editor.TabContent content);
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
 
@@ -113,6 +119,13 @@ final class PreviewCoordinator {
      * it says the file is not Markdown instead of closing, and fills again on the way back.
      */
     void activeBufferChanged(EditorBuffer buffer) {
+        if (!sidePreviews.isEmpty()) {
+            // Not now: a tab on its way to another group is in no group for a moment.
+            javafx.application.Platform.runLater(this::sidePreviews);
+        }
+        for (MarkdownPreviewPane pane : sidePreviews) {
+            pane.follow(buffer); // an unlocked preview tab shows whichever Markdown file is active
+        }
         if (host.markdownLintToolWindow() == null) {
             return;
         }
@@ -693,8 +706,136 @@ final class PreviewCoordinator {
     }
 
     /** Pushes the (global) Markdown preview theme to every open buffer's preview + its toggle glyph. */
+    // --- the preview's settings, and previews in a tab of their own ------------------------------------
+
+    /**
+     * Pushes what the Markdown previews read from Settings — math, remote images, scroll sync — and
+     * re-renders the open ones. Run at start-up and on every settings apply.
+     */
+    void applyPreviewSettings() {
+        Settings s = host.config().getSettings();
+        com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
+        com.editora.editor.PreviewImageLoader.setRemoteImages(s.isMarkdownRemoteImages());
+        com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
+        for (Tab tab : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(tab);
+            if (b != null && b.hasPreview()) {
+                b.refreshPreview();
+            }
+        }
+        sidePreviews().forEach(MarkdownPreviewPane::render);
+    }
+
+    /** The Markdown previews open in tabs of their own in this window. */
+    private final java.util.List<MarkdownPreviewPane> sidePreviews = new java.util.ArrayList<>();
+
+    /** The open preview tabs; one whose tab is gone (however it was closed) is let go of first. */
+    private java.util.List<MarkdownPreviewPane> sidePreviews() {
+        sidePreviews.removeIf(pane -> {
+            if (tabOf(pane) != null) {
+                return false;
+            }
+            pane.dispose();
+            return true;
+        });
+        return sidePreviews;
+    }
+
+    private Tab tabOf(Object content) {
+        for (Tab tab : host.editorArea().tabs()) {
+            if (tab.getUserData() == content) {
+                return tab;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code view.markdownPreviewToSide} / {@code view.markdownPreviewTab}: opens a preview of the active
+     * Markdown buffer in a tab of its own — moved to the next editor group ({@code toSide}; the area is split
+     * if it is not yet), with the source's tab kept in front on its side — or re-selects the one that already
+     * shows this buffer.
+     */
+    void openPreviewTab(boolean toSide) {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            host.setStatus(tr("status.notMarkdown"));
+            return;
+        }
+        for (MarkdownPreviewPane open : sidePreviews()) {
+            if (open.source() == b && tabOf(open) != null) {
+                host.editorArea().select(tabOf(open));
+                return;
+            }
+        }
+        MarkdownPreviewPane pane = new MarkdownPreviewPane(this::revealSource);
+        pane.applyTheme(host.config().getSettings().getMarkdownPreviewTheme());
+        pane.setSource(b);
+        Tab source = tabOf(b);
+        Tab tab = host.addContentTab(pane);
+        sidePreviews.add(pane); // once it has a tab: a preview without one is taken for closed
+        MenuItem lock = new MenuItem();
+        lock.setOnAction(e -> pane.setLocked(!pane.isLocked()));
+        MenuItem close = new MenuItem(tr("menu.close"));
+        close.setGraphic(Icons.closeTab());
+        close.setOnAction(e -> host.editorArea().remove(tab));
+        ContextMenu menu = new ContextMenu(lock, close);
+        menu.setOnShowing(e -> lock.setText(
+                tr(pane.isLocked() ? "markdown.sidePreview.unlockHint" : "markdown.sidePreview.lockHint")));
+        tab.setContextMenu(menu);
+        if (toSide) {
+            host.editorArea().moveActiveToNextGroup();
+            if (source != null) {
+                // Keep writing: the preview is beside, not in front. Again after the pulse, because showing a
+                // tab asks for the focus later, and the group holding the focus is the active one.
+                Runnable back = () -> {
+                    if (!b.isDisposed() && tabOf(b) == source) {
+                        host.editorArea().select(source);
+                        b.getArea().requestFocus();
+                    }
+                };
+                back.run();
+                javafx.application.Platform.runLater(back);
+            }
+        }
+    }
+
+    /** A block of a preview tab was double-clicked: its source's tab comes to the front, caret on the line. */
+    private void revealSource(EditorBuffer source, int line) {
+        Tab tab = tabOf(source);
+        if (tab == null) {
+            return;
+        }
+        host.editorArea().select(tab);
+        int target = Math.max(0, Math.min(line, source.getArea().getParagraphs().size() - 1));
+        source.getArea().moveTo(target, 0);
+        source.getArea().requestFollowCaret();
+        javafx.application.Platform.runLater(source.getArea()::requestFocus);
+    }
+
+    /**
+     * {@code view.toggleMarkdownPreviewLock}: locks the preview tab to the file it shows, or lets it follow
+     * the active tab again — the active tab's when that is a preview, else this window's first one.
+     */
+    void togglePreviewLock() {
+        MarkdownPreviewPane target = null;
+        Tab active = host.editorArea().selectedTab();
+        if (active != null && active.getUserData() instanceof MarkdownPreviewPane pane) {
+            target = pane;
+        } else if (!sidePreviews().isEmpty()) {
+            target = sidePreviews.get(0);
+        }
+        if (target == null) {
+            host.setStatus(tr("status.markdown.noSidePreview"));
+            return;
+        }
+        target.setLocked(!target.isLocked());
+        host.setStatus(tr(target.isLocked() ? "status.markdown.previewLocked" : "status.markdown.previewFollowing"));
+    }
+
     void applyMarkdownPreviewTheme() {
         String mode = host.config().getSettings().getMarkdownPreviewTheme();
+        sidePreviews().forEach(pane -> pane.applyTheme(mode));
         boolean appDark = host.appThemeDark();
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);

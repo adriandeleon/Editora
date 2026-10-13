@@ -141,7 +141,17 @@ final class MarkdownPreview {
         return -1;
     }
 
+    /** Shown instead of a blank pane when the document renders to nothing (an empty file, only comments). */
+    private final javafx.scene.control.Label emptyNote =
+            new javafx.scene.control.Label(com.editora.i18n.Messages.tr("markdown.preview.empty"));
+
     MarkdownPreview() {
+        emptyNote.getStyleClass().add("md-preview-empty");
+        emptyNote.setVisible(false);
+        emptyNote.setManaged(false);
+        emptyNote.setMouseTransparent(true);
+        StackPane.setAlignment(emptyNote, javafx.geometry.Pos.TOP_CENTER);
+        root.getChildren().add(emptyNote);
         caretMarker.getStyleClass().add("md-caret-marker");
         caretMarker.setManaged(false);
         caretMarker.setVisible(false);
@@ -267,6 +277,11 @@ final class MarkdownPreview {
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> anchorUntil = 0);
+    }
+
+    private void showEmptyNote(boolean empty) {
+        emptyNote.setVisible(empty);
+        emptyNote.setManaged(empty);
     }
 
     /** Stops holding the last render's line in place: something else now decides where the document is. */
@@ -607,6 +622,7 @@ final class MarkdownPreview {
             setScrollY(yOfLine(anchorLine));
         }
         find.reapply(); // rebuilt blocks lost their marks
+        showEmptyNote(complete && column.getChildren().isEmpty());
         markLine(markedLine); // the caret's block may be a new node, or on other lines
         if (complete) {
             shows.set(shows.get() + 1);
