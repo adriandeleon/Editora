@@ -186,7 +186,7 @@ final class TestNavigationCoordinator {
         if (project == null && host.projects() != null) {
             project = host.projects().active();
         }
-        return project == null ? null : Path.of(project.root());
+        return project == null ? null : project.rootPath();
     }
 
     /** Supersedes an in-flight navigation lookup: the latest double-click is the one the user means. */
@@ -234,8 +234,8 @@ final class TestNavigationCoordinator {
             // first (candidate 0), so local behaviour is unchanged.
             Project activeProject =
                     host.projects() == null ? null : host.projects().active();
-            if (activeProject != null) {
-                Path root = Path.of(activeProject.root());
+            Path root = activeProject == null ? null : activeProject.rootPath();
+            if (root != null) {
                 for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
                     Path c = root.resolve(candidate);
                     if (java.nio.file.Files.isRegularFile(c)) {

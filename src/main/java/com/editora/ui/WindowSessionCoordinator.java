@@ -762,7 +762,7 @@ final class WindowSessionCoordinator {
         host.projects().setActive(p.id());
         host.projects().save();
         host.config().setWorkspaceStateFile(host.projects().stateFile(p)); // openInitialBuffer() then restores it
-        host.setProjectRoot(Path.of(p.root()));
+        host.setProjectRoot(p.rootPath());
         host.refreshProjectPanelList();
         host.updateWindowTitle();
     }

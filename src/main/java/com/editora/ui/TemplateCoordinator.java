@@ -474,7 +474,7 @@ final class TemplateCoordinator {
         Path base = context;
         if (base == null) {
             Project p = activeProject();
-            base = p == null ? null : Path.of(p.root());
+            base = p == null ? null : p.rootPath();
         }
         if (base == null && !isAbsoluteInput(typed)) {
             return null;
@@ -616,7 +616,9 @@ final class TemplateCoordinator {
     Path defaultProjectParent() {
         Project p = activeProject();
         if (p != null) {
-            Path parent = Path.of(p.root()).toAbsolutePath().normalize().getParent();
+            Path root = p.remote() ? null : p.rootPath(); // a new project is created on this machine
+            Path parent =
+                    root == null ? null : root.toAbsolutePath().normalize().getParent();
             if (parent != null) {
                 return parent;
             }
@@ -945,8 +947,11 @@ final class TemplateCoordinator {
             if (p.root().isBlank()) {
                 continue;
             }
-            Path root = Path.of(p.root()).toAbsolutePath().normalize();
-            if (abs.startsWith(root) && (best == null || root.getNameCount() > best.getNameCount())) {
+            if (!p.contains(abs)) {
+                continue;
+            }
+            Path root = p.rootPath().toAbsolutePath().normalize();
+            if (best == null || root.getNameCount() > best.getNameCount()) {
                 best = root;
             }
         }
@@ -961,7 +966,7 @@ final class TemplateCoordinator {
         }
         Project p = activeProject();
         if (p != null) {
-            return Path.of(p.root());
+            return p.rootPath();
         }
         return Path.of(System.getProperty("user.home", "."));
     }

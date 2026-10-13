@@ -670,7 +670,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public Path projectRoot() {
                 Project active = projects == null ? null : projects.active();
-                return active == null ? null : Path.of(active.root());
+                return active == null ? null : active.rootPath();
             }
 
             @Override
@@ -1178,7 +1178,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
-        setProjectRoot(project == null ? null : Path.of(project.root()));
+        setProjectRoot(project == null ? null : project.rootPath());
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
                 .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
@@ -2713,7 +2713,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public Path activeProjectRoot() {
                 Project active = projects == null ? null : projects.active();
-                return active == null ? null : Path.of(active.root());
+                return active == null ? null : active.rootPath();
             }
 
             @Override
@@ -2784,7 +2784,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public java.nio.file.Path projectRoot() {
-                return windowProject != null && projectsEnabled() ? Path.of(windowProject.root()) : null;
+                return windowProject != null && projectsEnabled() ? windowProject.rootPath() : null;
             }
         };
     }
@@ -5761,7 +5761,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path projectRoot() {
             Project active = projects == null ? null : projects.active();
-            return active == null ? null : Path.of(active.root());
+            return active == null ? null : active.rootPath();
         }
 
         @Override
@@ -6100,7 +6100,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             new ExternalToolCoordinator(coordinatorHost, new ExternalToolCoordinator.Ops() {
                 @Override
                 public java.nio.file.Path projectRoot() {
-                    return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                    return windowProject != null ? windowProject.rootPath() : null;
                 }
 
                 @Override
@@ -6127,7 +6127,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     new BuildCoordinator.Ops() {
                         @Override
                         public java.nio.file.Path projectRoot() {
-                            return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                            return windowProject != null ? windowProject.rootPath() : null;
                         }
 
                         @Override
@@ -6398,7 +6398,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
-            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+            return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
         }
 
         @Override
@@ -6415,7 +6415,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
-            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+            return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
         }
 
         @Override
@@ -6535,7 +6535,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             coordinatorHost,
             SearchCoordinator.ops(
                     new SearchCoordinator.Navigation(
-                            () -> (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null,
+                            () -> (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null,
                             this::openSearchMatch,
                             () -> searchToolWindow != null && toolWindows.isOpen(searchToolWindow),
                             () -> toolWindows.open(searchToolWindow, true),
@@ -6994,7 +6994,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path projectRoot() {
             Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-            return active == null ? null : Path.of(active.root());
+            return active == null ? null : active.rootPath();
         }
 
         @Override
@@ -7290,7 +7290,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * ancestor, which the status message says so the user is never told "revoked" while it still runs.
      */
     private void revokeTrustForActiveRoot() {
-        java.nio.file.Path root = windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+        java.nio.file.Path root = windowProject != null ? windowProject.rootPath() : null;
         if (root == null) {
             setStatus(tr("status.trust.noProject"));
             return;
@@ -8471,8 +8471,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path abs = file.toAbsolutePath().normalize();
         Project best = null;
         for (Project p : projects.list()) {
-            Path root = Path.of(p.root()).toAbsolutePath().normalize();
-            if (abs.startsWith(root)
+            if (p.contains(abs)
                     && (best == null || p.root().length() > best.root().length())) {
                 best = p; // prefer the deepest (most specific) matching project root
             }
@@ -9419,13 +9418,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Every coordinator's {@code Ops.projectRoot()} reads {@code windowProject} for the same reason.
      */
     private Path windowProjectRoot() {
-        return (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null;
+        return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
     }
 
     /** This window's project root, or null when it has no project open. */
     private Path activeProjectRoot() {
         Project active = projects == null ? null : projects.active();
-        return active == null ? null : Path.of(active.root());
+        return active == null ? null : active.rootPath();
     }
 
     // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---
@@ -9664,7 +9663,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return marker;
         }
         Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-        java.nio.file.Path projectRoot = active == null ? null : Path.of(active.root());
+        java.nio.file.Path projectRoot = active == null ? null : active.rootPath();
         return com.editora.lsp.RootResolver.resolve(projectRoot, file, java.util.List.of());
     }
 

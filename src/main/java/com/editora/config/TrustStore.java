@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.editora.vfs.Vfs;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
@@ -22,6 +23,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * Gradle build root at {@code ~/src/app/server}, so a multi-module repo asks once rather than once per
  * module. Containment is decided on {@link Path} components, never on the key strings — {@code ~/src/app2}
  * merely <em>starts with</em> the string {@code ~/src/app} and must not inherit its trust.
+ *
+ * <p>A remote (SFTP) folder is keyed by its {@code sftp://} URI, host included, and is only ever matched
+ * against folders on that same connection.
  *
  * <p>Keys are canonical (symlink-resolved) absolute paths, so the same folder reached through a symlink is
  * one entry rather than two, and a symlink cannot be used to present an untrusted folder under a trusted
@@ -51,7 +55,9 @@ public class TrustStore {
                 continue;
             }
             Path trusted = parse(e.getKey());
-            if (trusted != null && key.startsWith(trusted)) {
+            // Same filesystem only: a trusted local /srv/app says nothing about /srv/app on a server, and
+            // paths of two providers cannot be compared at all.
+            if (trusted != null && trusted.getFileSystem() == key.getFileSystem() && key.startsWith(trusted)) {
                 return true;
             }
         }
@@ -61,14 +67,14 @@ public class TrustStore {
     /** Records {@code root} (canonicalized) as trusted. */
     public void trust(Path root) {
         if (root != null) {
-            roots.put(PathKeys.canonical(root).toString(), true);
+            roots.put(key(root), true);
         }
     }
 
     /** Drops an explicit entry for {@code root}. Note an ancestor's trust, if any, still covers it. */
     public void revoke(Path root) {
         if (root != null) {
-            roots.remove(PathKeys.canonical(root).toString());
+            roots.remove(key(root));
         }
     }
 
@@ -88,9 +94,18 @@ public class TrustStore {
         return out;
     }
 
+    /**
+     * The stored form of {@code root}: the canonical path for a local folder (as it always was), the
+     * {@code sftp://} URI for a remote one. A remote folder's bare path would be indistinguishable from the
+     * local folder of the same name, and trusting one would trust the other.
+     */
+    private static String key(Path root) {
+        return Vfs.toStorableString(PathKeys.canonical(root));
+    }
+
     private static Path parse(String key) {
         try {
-            return key == null || key.isBlank() ? null : Path.of(key);
+            return Vfs.parseStorable(key); // null for a remote folder whose host is not connected
         } catch (InvalidPathException e) {
             return null; // a key written by another OS — never matches, never throws
         }
