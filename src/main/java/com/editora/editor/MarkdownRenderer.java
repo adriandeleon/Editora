@@ -137,6 +137,7 @@ public final class MarkdownRenderer {
         }
         ext.add(com.editora.markdown.MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
         ext.add(com.editora.markdown.MarkdownEmoji.extension()); // :rocket:
+        ext.add(com.editora.markdown.MarkdownDefinitions.extension()); // Term / : definition
         return ext;
     }
 

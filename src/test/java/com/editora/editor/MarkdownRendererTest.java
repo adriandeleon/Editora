@@ -170,6 +170,11 @@ class MarkdownRendererTest {
                 java.util.List.of("Highlight", "Superscript", "Subscript", "Strikethrough", "Strikethrough"),
                 kinds,
                 "the marks, and both spellings of strikethrough as before");
+        assertTrue(
+                MarkdownRenderer.parseForRender("Term\n: Its definition.\n", false)
+                                .getFirstChild()
+                        instanceof com.editora.markdown.MarkdownDefinitions.DefinitionList,
+                "definition lists");
     }
 
     @Test
