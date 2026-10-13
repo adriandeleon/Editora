@@ -51,9 +51,23 @@ public final class MarkdownHtmlExport {
      *     file can be sent on its own
      * @param baseDir the document's folder, for its relative image paths; null for an unsaved document
      * @param mmdc the Mermaid CLI command, or null: a {@code mermaid} fence is then left as its source
+     * @param painter turns highlighted code into HTML; injected because the painter lives with the other
+     *     light-palette exports ({@code pdf/CodeHtml}), which this package must not reference. Null: no colour
      */
-    public record Options(boolean highlightCode, boolean embedImages, java.nio.file.Path baseDir, List<String> mmdc) {
-        public static final Options PLAIN = new Options(false, false, null, null);
+    public record Options(
+            boolean highlightCode,
+            boolean embedImages,
+            java.nio.file.Path baseDir,
+            List<String> mmdc,
+            CodePainter painter) {
+        public static final Options PLAIN = new Options(false, false, null, null, null);
+    }
+
+    /** Highlighted code as a self-contained {@code <pre>} fragment (text, its style spans, tab size). */
+    @FunctionalInterface
+    public interface CodePainter {
+        String toHtml(
+                String text, org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans, int tabSize);
     }
 
     /**
@@ -197,8 +211,8 @@ public final class MarkdownHtmlExport {
             String drawn = null;
             if (MarkdownRenderer.isMermaidInfo(info)) {
                 drawn = mermaid(code);
-            } else if (options.highlightCode()) {
-                drawn = highlighted(code, info);
+            } else if (options.highlightCode() && options.painter() != null) {
+                drawn = highlighted(code, info, options.painter());
             }
             if (drawn != null) {
                 html.raw(drawn);
@@ -239,7 +253,7 @@ public final class MarkdownHtmlExport {
             return nl < 0 ? s : s.substring(0, nl);
         }
 
-        private static String highlighted(String code, String info) {
+        private static String highlighted(String code, String info, CodePainter painter) {
             if (info.isEmpty() || code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS) {
                 return null;
             }
@@ -249,7 +263,7 @@ public final class MarkdownHtmlExport {
                     return null;
                 }
                 String body = code.endsWith("\n") ? code.substring(0, code.length() - 1) : code;
-                return com.editora.pdf.CodeHtml.toHtml(body, TextMateHighlighter.compute(body, grammar), 4)
+                return painter.toHtml(body, TextMateHighlighter.compute(body, grammar), 4)
                         .replaceFirst("^<pre ", "<pre class=\"md-highlight\" ");
             } catch (RuntimeException | LinkageError e) {
                 return null; // colour is a nicety: the block is still exported, plain

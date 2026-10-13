@@ -962,7 +962,8 @@ final class ExportCoordinator {
                 host.settings().isHtmlExportHighlightCode(),
                 host.settings().isHtmlExportEmbedImages(),
                 source != null && com.editora.vfs.Vfs.isLocal(source) ? source.getParent() : null,
-                mmdc);
+                mmdc,
+                com.editora.pdf.CodeHtml::toHtml);
         java.util.function.Supplier<Exception> write = () -> {
             try {
                 String html = com.editora.editor.MarkdownHtmlExport.toHtml(markdown, title, math, options);

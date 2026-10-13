@@ -22,7 +22,7 @@ class MarkdownHtmlExportOptionsTest {
     Path dir;
 
     private static MarkdownHtmlExport.Options options(boolean highlight, boolean embed, Path base) {
-        return new MarkdownHtmlExport.Options(highlight, embed, base, null);
+        return new MarkdownHtmlExport.Options(highlight, embed, base, null, com.editora.pdf.CodeHtml::toHtml);
     }
 
     @Test
@@ -95,7 +95,7 @@ class MarkdownHtmlExportOptionsTest {
         assertFalse(MarkdownHtmlExport.readsFilesOrRunsTools("# Text\n\n```java\nx\n```\n", embed));
         assertTrue(MarkdownHtmlExport.readsFilesOrRunsTools("![a](b.png)", embed));
         assertFalse(MarkdownHtmlExport.readsFilesOrRunsTools("![a](b.png)", options(true, false, dir)));
-        var withCli = new MarkdownHtmlExport.Options(false, false, null, List.of("mmdc"));
+        var withCli = new MarkdownHtmlExport.Options(false, false, null, List.of("mmdc"), null);
         assertTrue(MarkdownHtmlExport.readsFilesOrRunsTools("```mermaid\ngraph TD\n```\n", withCli));
         assertFalse(MarkdownHtmlExport.readsFilesOrRunsTools("```mermaid\ngraph TD\n```\n", embed));
         assertEquals("image/jpeg", MarkdownHtmlExport.mediaType(new byte[] {(byte) 0xff, (byte) 0xd8, 0}, "x"));

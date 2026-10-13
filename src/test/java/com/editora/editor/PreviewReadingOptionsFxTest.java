@@ -280,13 +280,15 @@ class PreviewReadingOptionsFxTest {
         EditorFx.drain();
         EditorFx.drain();
         EditorFx.onFx(() -> assertEquals(0, pane.preview().scrollY(), 0.5, "switched off: the preview stays"));
-        EditorFx.onFx(() -> {
-            PreviewScrollSync.setEnabled(true);
-            buffer.getArea().showParagraphAtTop(200);
+        EditorFx.onFx(() -> PreviewScrollSync.setEnabled(true));
+        // Scroll again until the preview follows: on a loaded machine the first scroll can land before the
+        // area has laid out, and then no scroll event reaches the sync at all.
+        int[] target = {200};
+        poll(() -> {
+            buffer.getArea().showParagraphAtTop(target[0]);
+            target[0] = target[0] == 200 ? 160 : 200;
+            return pane.preview().scrollY() > 0;
         });
-        EditorFx.drain();
-        EditorFx.drain();
-        poll(() -> pane.preview().scrollY() > 0);
         close();
     }
 }
