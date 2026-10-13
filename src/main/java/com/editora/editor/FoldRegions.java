@@ -430,7 +430,7 @@ public final class FoldRegions {
         return out;
     }
 
-    // --- Markdown (code fences, front matter, comment blocks + heading sections) ---
+    // --- Markdown (code fences, front matter, comment blocks, heading sections, quotes, list items) ---
 
     /**
      * Folds on the document's real blocks ({@link com.editora.markdown.MarkdownBlocks}) and headings
@@ -482,7 +482,58 @@ public final class FoldRegions {
                 out.add(new Region(start, end));
             }
         }
+        markdownQuotesAndItems(blocks, out);
         return out;
+    }
+
+    /**
+     * A block quote of two or more lines folds, and so does a list item that runs over more than its own line
+     * (wrapped text, a nested list, a code block inside it). An item ends at the next line indented no deeper
+     * than its marker; trailing blank lines stay outside the fold.
+     */
+    private static void markdownQuotesAndItems(com.editora.markdown.MarkdownBlocks blocks, List<Region> out) {
+        int count = blocks.lineCount();
+        java.util.ArrayDeque<int[]> open = new java.util.ArrayDeque<>(); // {indent, startLine}
+        int lastContent = -1;
+        int quoteStart = -1;
+        for (int i = 0; i <= count; i++) {
+            String line = i < count ? blocks.line(i) : "x"; // a sentinel at indent 0 closes everything
+            boolean text = i < count && blocks.isText(i);
+            boolean quoted = text && isQuoteLine(line);
+            if (quoted && quoteStart < 0) {
+                quoteStart = i;
+            } else if (!quoted && quoteStart >= 0) {
+                if (i - 1 > quoteStart) {
+                    out.add(new Region(quoteStart, i - 1));
+                }
+                quoteStart = -1;
+            }
+            if (line.isBlank()) {
+                continue;
+            }
+            int indent = 0;
+            while (indent < line.length() && (line.charAt(indent) == ' ' || line.charAt(indent) == '\t')) {
+                indent++;
+            }
+            while (!open.isEmpty() && open.peek()[0] >= indent) {
+                int[] item = open.pop();
+                if (lastContent > item[1]) {
+                    out.add(new Region(item[1], lastContent));
+                }
+            }
+            if (text && com.editora.markdown.MarkdownLine.parse(line).isListItem()) {
+                open.push(new int[] {indent, i});
+            }
+            lastContent = i;
+        }
+    }
+
+    private static boolean isQuoteLine(String line) {
+        int i = 0;
+        while (i < line.length() && i < 4 && line.charAt(i) == ' ') {
+            i++;
+        }
+        return i < 4 && i < line.length() && line.charAt(i) == '>';
     }
 
     // --- Typst (= heading sections, plus the brace/bracket pairs of its code mode) ---

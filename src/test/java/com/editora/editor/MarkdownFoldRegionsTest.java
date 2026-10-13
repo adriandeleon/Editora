@@ -6,6 +6,7 @@ import com.editora.editor.FoldRegions.Region;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -78,5 +79,26 @@ class MarkdownFoldRegionsTest {
         assertTrue(folds.contains(r(0, 2)), "up to three spaces of indent is still a heading: " + folds);
         assertTrue(folds.contains(r(4, 8)), "a bare # is an (empty) heading: " + folds);
         assertEquals(2, folds.size(), folds.toString());
+    }
+
+    @Test
+    void blockQuotesAndMultiLineListItemsFold() {
+        String text =
+                "> one\n> two\n> three\n\n> single\n\n- a\n  wrapped\n- b\n  - b1\n    more\n  - b2\n- c\n\n1. x\n\n   para\n\n2. y\n\ntext\n";
+        var regions = FoldRegions.detect(text, "markdown");
+        assertTrue(regions.contains(new FoldRegions.Region(0, 2)), regions.toString());
+        assertFalse(regions.stream().anyMatch(r -> r.startLine() == 4), "a one-line quote has nothing to fold");
+        assertTrue(regions.contains(new FoldRegions.Region(6, 7)), regions.toString());
+        assertTrue(regions.contains(new FoldRegions.Region(8, 11)), regions.toString());
+        assertTrue(regions.contains(new FoldRegions.Region(9, 10)), regions.toString());
+        assertFalse(regions.stream().anyMatch(r -> r.startLine() == 11 || r.startLine() == 12), regions.toString());
+        assertTrue(regions.contains(new FoldRegions.Region(14, 16)), "trailing blank lines stay out: " + regions);
+        assertFalse(regions.stream().anyMatch(r -> r.startLine() == 18), regions.toString());
+    }
+
+    @Test
+    void listLookalikesInCodeDoNotFold() {
+        String text = "```\n- a\n  b\n> q\n> r\n```\n";
+        assertEquals(java.util.List.of(new FoldRegions.Region(0, 5)), FoldRegions.detect(text, "markdown"));
     }
 }
