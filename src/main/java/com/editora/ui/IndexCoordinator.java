@@ -100,9 +100,13 @@ final class IndexCoordinator {
      */
     private List<String> projectRelPaths = List.of();
 
+    /** Markdown links follow a rename too; it rides this coordinator's rename hook and project seams. */
+    final MarkdownLinkUpdater linkUpdater;
+
     IndexCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
+        this.linkUpdater = new MarkdownLinkUpdater(host, ops::projectRoot, ops::respectGitignore);
         this.picker = new QuickOpen<>(
                 tr("index.gotoSymbol.title"),
                 tr("index.gotoSymbol.prompt"),
@@ -319,6 +323,7 @@ final class IndexCoordinator {
     void onFileRenamed(Path from, Path to) {
         onFileDeleted(from);
         markStale();
+        linkUpdater.onRenamed(from, to);
     }
 
     /** Set by {@link #markStale}; cleared when a walk that started after the last mark lands. */
@@ -602,5 +607,6 @@ final class IndexCoordinator {
 
     void dispose() {
         worker.shutdownNow();
+        linkUpdater.dispose();
     }
 }
