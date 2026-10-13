@@ -5,6 +5,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.BooleanSupplier;
 
 /**
  * Finds the {@link ExecTarget} for a path. A path on the default filesystem (or no path at all) runs here;
@@ -24,6 +25,9 @@ public final class ExecTargets {
 
     private static final Set<Resolver> RESOLVERS = new CopyOnWriteArraySet<>();
 
+    /** Whether commands may run anywhere but here: the user's {@code remoteExecution} setting. Off by default. */
+    private static volatile BooleanSupplier remoteEnabled = () -> false;
+
     private ExecTargets() {}
 
     public static void register(Resolver resolver) {
@@ -34,6 +38,15 @@ public final class ExecTargets {
 
     public static void unregister(Resolver resolver) {
         RESOLVERS.remove(resolver);
+    }
+
+    /**
+     * Supplies the user's choice to let commands run on remote hosts. Asked on every lookup, so a change of
+     * the setting takes effect at once. While it answers false, a remote path has no target that can start
+     * anything, exactly as before remote execution existed.
+     */
+    public static void setRemoteEnabled(BooleanSupplier enabled) {
+        remoteEnabled = enabled == null ? () -> false : enabled;
     }
 
     public static ExecTarget local() {
@@ -49,17 +62,20 @@ public final class ExecTargets {
         if (path == null || path.getFileSystem() == FileSystems.getDefault()) {
             return LOCAL;
         }
+        if (!remoteEnabled.getAsBoolean()) {
+            return new Unavailable(path, "running commands on remote hosts is turned off");
+        }
         for (Resolver resolver : RESOLVERS) {
             ExecTarget target = resolver.forPath(path);
             if (target != null) {
                 return target;
             }
         }
-        return new Unavailable(path);
+        return new Unavailable(path, "no connection to run commands on");
     }
 
     /** A path on a filesystem no engine runs commands for (never connected, or its window has closed). */
-    private record Unavailable(Path origin) implements ExecTarget {
+    private record Unavailable(Path origin, String reason) implements ExecTarget {
         @Override
         public String id() {
             return "unavailable";
@@ -77,7 +93,7 @@ public final class ExecTargets {
 
         @Override
         public Process start(ExecSpec spec) throws IOException {
-            throw new IOException("no connection to run " + spec.argv().get(0) + " on");
+            throw new IOException(reason);
         }
 
         @Override

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote: a setting to run commands on the host (groundwork).** Settings → Remote has a new switch, off by
+  default, and there is a `Remote: Toggle Running Commands on the Host` command. It allows the tools Editora
+  drives to run on the host of a remote (SFTP) folder over the same SSH connection. No tool uses it yet: Run,
+  Build, Git, language servers and debugging are still local-only, and will be enabled for remote folders in
+  later changes.
 - **Markdown: links inside a document can be followed.** `Markdown: Open Link`, Ctrl/Cmd-click and a click in the
   preview now follow `#heading`, `other.md#heading` and reference links (`[text][label]`); the jump is recorded, so
   Back returns to the link. The table of contents Editora generates is navigable. Link destinations with

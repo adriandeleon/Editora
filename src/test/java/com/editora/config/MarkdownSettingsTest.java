@@ -46,7 +46,7 @@ class MarkdownSettingsTest {
     @Test
     void aUserWhoHadTurnedWrappingOnStillWrapsEverywhere(@TempDir Path dir) throws Exception {
         Settings s = load(dir, "{\"schemaVersion\":117,\"wordWrap\":true}");
-        assertEquals(118, s.getSchemaVersion());
+        assertEquals(Settings.SCHEMA_VERSION, s.getSchemaVersion());
         assertTrue(s.isWordWrap(), "code still wraps");
         assertTrue(s.isWordWrapProse());
         assertTrue(s.wrapsLanguage("java") && s.wrapsLanguage("markdown"));
@@ -76,7 +76,7 @@ class MarkdownSettingsTest {
         config.save();
 
         JsonNode saved = JSON.readTree(dir.resolve("settings.json").toFile());
-        assertEquals(118, saved.get("schemaVersion").asInt());
+        assertEquals(Settings.SCHEMA_VERSION, saved.get("schemaVersion").asInt());
         assertFalse(saved.get("wordWrapProse").asBoolean());
         assertFalse(saved.get("markdownRemoteImages").asBoolean());
         assertEquals("docs/img", saved.get("markdownAssetsFolder").asText());

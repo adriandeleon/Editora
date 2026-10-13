@@ -2058,6 +2058,7 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "remote.settings", () -> host.settingsWindow().showRemote(host.stage())));
         host.registry().register(Command.of("remote.disconnect", host.remoteCoordinator()::disconnect));
+        host.registry().register(Command.of("remote.toggleExecution", host.remoteCoordinator()::toggleExecution));
         host.registry().register(Command.of("git.clone", () -> host.git().ifEnabled(host.git()::cloneRepo)));
         host.registry().register(Command.of("git.init", () -> host.git().ifEnabled(host.git()::initRepo)));
         host.registry().register(Command.of("git.commit", () -> host.git().ifEnabled(host.git()::gitCommitFocus)));

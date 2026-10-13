@@ -41,6 +41,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisabledOnOs(OS.WINDOWS)
 class SshExecTargetFxTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void allowRemoteExecution() {
+        ExecTargets.setRemoteEnabled(() -> true);
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void restoreTheDefault() {
+        ExecTargets.setRemoteEnabled(null);
+    }
+
     private static final Duration TIMEOUT = Duration.ofSeconds(20);
 
     /** The remote engine posts its connect result to the FX thread, so the toolkit has to be running. */
