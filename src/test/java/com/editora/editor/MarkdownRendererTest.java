@@ -155,6 +155,9 @@ class MarkdownRendererTest {
     void theRenderParseKnowsTheExtendedSyntax() {
         org.commonmark.node.Node alert = MarkdownRenderer.parseForRender("> [!NOTE]\n> Read this.\n", false);
         assertTrue(alert.getFirstChild() instanceof com.editora.markdown.MarkdownAlerts.Alert, "GitHub alerts");
+        org.commonmark.node.Node para =
+                MarkdownRenderer.parseForRender("Go :rocket:", false).getFirstChild();
+        assertTrue(para.getLastChild() instanceof com.editora.markdown.MarkdownEmoji.Emoji, "emoji shortcodes");
     }
 
     @Test
