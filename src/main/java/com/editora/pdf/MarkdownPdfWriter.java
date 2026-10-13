@@ -162,7 +162,8 @@ public final class MarkdownPdfWriter {
             throws IOException {
         // The preview's parse: math is recognised by the parser (when the feature is on), not searched for
         // in text the Markdown parser has already rewritten.
-        Node ast = MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled());
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(
+                MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled()));
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), MathImages.isEnabled());
     }
 
@@ -1438,6 +1439,12 @@ public final class MarkdownPdfWriter {
                 } else if (n instanceof MarkdownMath.Inline m) {
                     out.add(mathWord(m.getLatex(), m.isDisplay(), reg, size, color, underline));
                     pendingSpace = false;
+                } else if (n instanceof com.editora.markdown.MarkdownEmoji.Emoji emoji) {
+                    // The character where the font has it; else the shortcode as written, never a blank.
+                    String shown = PdfGlyphs.encodes(reg, emoji.getEmoji())
+                            ? emoji.getEmoji()
+                            : ":" + emoji.getShortcode() + ":";
+                    addWords(shown, out, reg, size, color, underline);
                 } else if (n instanceof org.commonmark.node.HtmlInline html) {
                     if (!MarkdownRenderer.isHtmlComment(html.getLiteral())) { // shown as source, like the preview
                         addWords(html.getLiteral(), out, mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline);

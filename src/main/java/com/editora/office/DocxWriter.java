@@ -90,7 +90,8 @@ public final class DocxWriter {
             Map<String, String> bookmarks) {}
 
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
-        Node ast = MarkdownRenderer.parseForRender(markdown); // the preview's parse: math is nodes
+        // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(MarkdownRenderer.parseForRender(markdown));
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();
@@ -417,6 +418,15 @@ public final class DocxWriter {
         }
         if (ir.strike()) {
             r.setStrikeThrough(true);
+        }
+        if (ir.highlight()) {
+            r.setTextHighlightColor("yellow");
+        }
+        if (ir.script() != 0) {
+            r.setSubscript(
+                    ir.script() > 0
+                            ? org.apache.poi.xwpf.usermodel.VerticalAlign.SUPERSCRIPT
+                            : org.apache.poi.xwpf.usermodel.VerticalAlign.SUBSCRIPT);
         }
         if (ir.underline() && !link) {
             r.setUnderline(UnderlinePatterns.SINGLE);
