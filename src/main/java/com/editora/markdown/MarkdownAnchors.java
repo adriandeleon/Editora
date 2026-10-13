@@ -18,6 +18,26 @@ public final class MarkdownAnchors {
 
     private MarkdownAnchors() {}
 
+    /** A heading's anchor (as the table of contents links to it), its plain title and its 0-based line. */
+    public record Anchor(String slug, String title, int level, int line) {}
+
+    /** The anchor of every heading that has text, in document order (the table of contents' sequence). */
+    public static java.util.List<Anchor> anchors(String markdown) {
+        java.util.List<Anchor> out = new java.util.ArrayList<>();
+        if (markdown == null) {
+            return out;
+        }
+        Map<String, Integer> seen = new HashMap<>();
+        for (MarkdownOutline.Heading h : MarkdownOutline.headings(markdown)) {
+            String title = MarkdownText.plain(h.title());
+            if (!title.isBlank()) {
+                out.add(new Anchor(
+                        MarkdownToc.uniqueAnchor(MarkdownToc.slug(title), seen), title, h.level(), h.line()));
+            }
+        }
+        return out;
+    }
+
     /** The 0-based line {@code fragment} (with or without its {@code #}) names in {@code markdown}, or -1. */
     public static int lineOf(String markdown, String fragment) {
         if (markdown == null || fragment == null) {
