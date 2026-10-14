@@ -237,6 +237,23 @@ public final class AtomicFileWrite {
      * previous remote file. Use a server-side replacement operation instead, where the server supports one,
      * and fail without touching the destination otherwise.
      */
+    /**
+     * Moves {@code source} over {@code target} in one step, on either kind of filesystem: an atomic rename
+     * locally (a plain replacing move where the filesystem has none), and the server-side replacement of
+     * {@link #replaceRemote} over SFTP, which never leaves {@code target} missing. For a lock file published
+     * over the file it guards (Git's {@code index.lock} → {@code index}).
+     */
+    public static void replaceAtomically(Path source, Path target) throws IOException {
+        if (replaceRemote(source, target)) {
+            return;
+        }
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     private static boolean replaceRemote(Path source, Path target) throws IOException {
         if (!(source.getFileSystem() instanceof SftpFileSystem fs)) {
             return false;

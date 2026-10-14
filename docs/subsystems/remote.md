@@ -84,12 +84,17 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
 
 ### What runs remotely so far
 
-- **Git, reading:** status, the gutter diff, tab colouring, log, blame and blob lookups. `GitService` keeps
-  git's availability and version per host (`gitAvailable(Path)`), uses the host's `git` (or its configured
-  tool), and never probes a host from the JavaFX thread.
-- **Not yet:** anything that changes a repository (refused with `GitService.REMOTE_READ_ONLY`, without
-  contacting the host), auto-fetch, the Project tree's per-path repository lookup, GitHub, Run, Build, tests,
-  language servers and debugging.
+- **Git:** status, the gutter diff, tab colouring, log, blame and blob lookups, and every command that changes
+  a repository (stage, commit, checkout, stash, merge, rebase, fetch / pull / push, hunk staging). `GitService`
+  keeps git's availability and version per host (`gitAvailable(Path)`), uses the host's `git` (or its
+  configured tool), and never probes a host from the JavaFX thread. User commands get a host-neutral
+  environment (`REMOTE_USER_ENV`: nothing from this machine's locale). Credentials for fetch and push are the
+  host's own; nothing prompts (`GIT_TERMINAL_PROMPT=0`).
+- **Hunk staging** writes a private index on the host and publishes it over `index.lock` with a server-side
+  replacement (`AtomicFileWrite.replaceAtomically`, `posix-rename@openssh.com`), never a delete-then-rename.
+- **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
+  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), GitHub (`gh`),
+  Run, Build, tests, language servers and debugging.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 

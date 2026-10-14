@@ -31,7 +31,6 @@ import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.process.ProcessRunner;
-import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -582,8 +581,8 @@ final class GitCoordinator {
         List<EditorBuffer> unsaved = new ArrayList<>();
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
-            if (file == null || !buffer.isDirty() || !Vfs.isLocal(file)) {
-                return;
+            if (file == null || !buffer.isDirty()) {
+                return; // a file on another filesystem than the repository's is not in it: repoRelative says so
             }
             String relative = GitService.repoRelative(root, file);
             if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
@@ -1814,8 +1813,8 @@ final class GitCoordinator {
         }
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
-            if (!Vfs.isLocal(file)) {
-                return; // a remote tab is never in a local repository; resolving it would be a network round trip
+            if (file == null || file.getFileSystem() != root.getFileSystem()) {
+                return; // never in this repository, and paths of two filesystems cannot be compared
             }
             String relative = GitService.repoRelative(root, file);
             if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
