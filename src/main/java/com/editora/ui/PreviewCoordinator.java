@@ -221,6 +221,9 @@ final class PreviewCoordinator {
                 off.addAll(hit.disabled());
             }
         }
+        if (!host.config().getSettings().isMarkdownWikiLinks()) {
+            off.add(com.editora.markdown.MarkdownLint.LINK_WIKI); // "[[x]]" is ordinary text then
+        }
         if (buffer != null && buffer.isNarrowed()) {
             off.addAll(java.util.List.of("MD041", "MD047"));
         }

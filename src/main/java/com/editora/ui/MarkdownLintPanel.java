@@ -353,7 +353,9 @@ public final class MarkdownLintPanel extends VBox implements ToolWindowContent {
 
     @Override
     public void focusFirstItem() {
-        actions.refresh();
+        if (!project) {
+            actions.refresh(); // a project's results are not the active file's: opening the window keeps them
+        }
         list.requestFocus();
         if (!list.getItems().isEmpty()) {
             list.getSelectionModel().select(0);
