@@ -559,6 +559,7 @@ final class EditingCoordinator {
                     n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
+            b.markdown().sessionImages().add(target); // ours: unused after a save, it may be trashed
             String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
             b.insertAtCaret(markupImageSnippet(b, rel, alt == null ? stripExtension(name) : alt));
             host.setStatus(tr("status.markdown.imagePasted", rel));
@@ -598,6 +599,7 @@ final class EditingCoordinator {
                             n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
                     target = assets.resolve(name);
                     java.nio.file.Files.copy(source, target);
+                    b.markdown().sessionImages().add(target);
                 }
                 String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
                 if (out.length() > 0) {
@@ -651,6 +653,8 @@ final class EditingCoordinator {
                                             found.ext());
                                     java.nio.file.Path target = assets.resolve(name);
                                     java.nio.file.Files.write(target, found.bytes());
+                                    javafx.application.Platform.runLater(
+                                            () -> b.markdown().sessionImages().add(target));
                                     snippet = markupImageSnippet(
                                             b,
                                             com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target),

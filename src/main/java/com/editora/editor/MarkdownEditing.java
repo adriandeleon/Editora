@@ -34,6 +34,9 @@ public final class MarkdownEditing {
     private final EditorBuffer buffer;
     private Runnable insertTableHandler;
     private Runnable editLinkHandler;
+    /** Image files a paste or drop into this buffer created in this session (see {@link #sessionImages()}). */
+    private final java.util.Set<java.nio.file.Path> sessionImages = new java.util.LinkedHashSet<>();
+
     private java.util.function.BiConsumer<String, String> tableFileExporter;
     private int tocMinLevel = 1;
     private int tocMaxLevel = 6;
@@ -65,6 +68,14 @@ public final class MarkdownEditing {
 
     private MarkdownToc.Style tocStyle() {
         return new MarkdownToc.Style(tocMinLevel, tocMaxLevel, tocSkipTitle, tocOrdered);
+    }
+
+    /**
+     * The image files this session's pastes and drops into this buffer created — the only files the
+     * "trash unused pasted images" clean-up may ever touch. Live: the window adds to it and takes from it.
+     */
+    public java.util.Set<java.nio.file.Path> sessionImages() {
+        return sessionImages;
     }
 
     /** The chord bound to {@code commandId} in the active keymap, as it is displayed; null when unbound. */

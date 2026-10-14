@@ -208,4 +208,21 @@ class MarkdownImagePasteTest {
         assertEquals("pasted-image", MarkdownImagePaste.baseName(null, null, at));
         assertEquals("pasted-image", MarkdownImagePaste.baseName("../..", "a.md", at));
     }
+
+    @Test
+    void aFileIsUnreferencedOnlyWhenNothingInTheTextCouldPointAtIt() {
+        Path base = Path.of("/docs");
+        Path a = base.resolve("assets/a b.png");
+        Path b = base.resolve("assets/b.png");
+        Path c = base.resolve("assets/c.png");
+        Path d = base.resolve("img/d.png");
+        java.util.List<Path> all = java.util.List.of(a, b, c, d);
+        String text = "![x](<assets/a b.png>) and <img src=\"assets/b.png\"> and [ref]: other/c.png\n";
+        assertEquals(java.util.List.of(d), MarkdownImagePaste.unreferenced(text, base, all));
+        assertEquals(
+                java.util.List.of(c, d),
+                MarkdownImagePaste.unreferenced("![x](assets/a%20b.png)", base, all),
+                "a percent-encoded blank is the same file — and a name inside another name counts as a mention");
+        assertEquals(all, MarkdownImagePaste.unreferenced("", base, all));
+    }
 }
