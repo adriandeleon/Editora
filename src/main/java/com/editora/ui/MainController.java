@@ -7524,8 +7524,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         buffer.setRunHandler(runCoordinator::runActiveFile); // "Run File" editor right-click item (runnable files)
-        boolean local = isLocalBuffer(buffer); // remote (SFTP) files can't run a local process
-        buffer.setRunEnabled(local); // local single-file runs do not require a language server
+        boolean local = isLocalBuffer(buffer);
+        // A remote (SFTP) file runs on its host; whether that host may run commands is asked at launch, and a
+        // refusal is reported then.
+        buffer.setRunEnabled(local || com.editora.vfs.Vfs.isRemote(buffer.getPath()));
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file

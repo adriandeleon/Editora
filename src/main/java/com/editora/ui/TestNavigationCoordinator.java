@@ -307,7 +307,7 @@ final class TestNavigationCoordinator {
     void applyTestGutter(EditorBuffer buffer) {
         boolean eligible = host.config().getSettings().isTestRunner()
                 && !host.chrome().simpleModeActive()
-                && host.isLocalBuffer(buffer)
+                && RemoteExec.runsFor(buffer.getPath()) // tests run through the build, on a remote file's host
                 && jvmBuildDetected();
         buffer.setTestGutterEnabled(eligible);
         if (eligible) {

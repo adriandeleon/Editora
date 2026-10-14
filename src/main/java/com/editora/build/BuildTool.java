@@ -383,6 +383,7 @@ public enum BuildTool {
         if (wrapper == null) {
             return List.of();
         }
+        isWindows = isWindows && isLocal(root);
         // "./mvnw" only names the wrapper when it sits in the working directory; one found in an ancestor is
         // launched by its absolute path (the build still runs in `root`, which is what selects the module).
         boolean inRoot = root.toAbsolutePath().normalize().equals(wrapper.getParent());
@@ -400,6 +401,9 @@ public enum BuildTool {
      */
     private static Path wrapperFile(
             Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
+        if (!isLocal(root)) {
+            isWindows = false; // a remote host is POSIX, whatever this machine is
+        }
         Path start = root.toAbsolutePath().normalize();
         Path top = projectRoot == null ? start : projectRoot.toAbsolutePath().normalize();
         if (!start.startsWith(top)) {
@@ -408,7 +412,7 @@ public enum BuildTool {
         for (Path dir = start; dir != null; dir = dir.getParent()) {
             Path wrapper = dir.resolve(isWindows ? windowsName : unixName);
             // Present but not +x is not launchable: keep looking, then fall back rather than fail the run.
-            if (Files.isRegularFile(wrapper) && (isWindows || Files.isExecutable(wrapper))) {
+            if (Files.isRegularFile(wrapper) && (isWindows || executable(wrapper))) {
                 return wrapper;
             }
             if (dir.equals(top)) {
@@ -416,6 +420,28 @@ public enum BuildTool {
             }
         }
         return null;
+    }
+
+    private static boolean isLocal(Path path) {
+        return path.getFileSystem() == java.nio.file.FileSystems.getDefault();
+    }
+
+    /**
+     * Whether {@code wrapper} may be executed. Locally the filesystem says. Over SFTP the question cannot be
+     * asked for this user, so the mode bits answer: anyone may execute it.
+     */
+    private static boolean executable(Path wrapper) {
+        if (isLocal(wrapper)) {
+            return Files.isExecutable(wrapper);
+        }
+        try {
+            var permissions = Files.getPosixFilePermissions(wrapper);
+            return permissions.contains(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE)
+                    || permissions.contains(java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE)
+                    || permissions.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
+        } catch (java.io.IOException | RuntimeException unknown) {
+            return false;
+        }
     }
 
     private static String npmPackageManager(Path root, NpmProject project) {

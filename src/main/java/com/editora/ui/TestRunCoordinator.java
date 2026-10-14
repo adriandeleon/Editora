@@ -84,6 +84,13 @@ final class TestRunCoordinator implements TestRunHook {
 
     /** JVM report poll interval — reports appear per class as each finishes; ~750 ms is responsive + cheap. */
     private static final long POLL_MS = 750;
+
+    /** Report directories on a remote host are listed over the network: less often. */
+    private static final long REMOTE_POLL_MS = 2000;
+
+    private static long poll(Path root) {
+        return com.editora.vfs.Vfs.isRemote(root) ? REMOTE_POLL_MS : POLL_MS;
+    }
     /** Bounded depth for the reactor/multi-project report-dir walk. */
     private static final int WALK_DEPTH = 5;
     /** Cap the npm sniff buffer so a non-TAP runner can't grow memory before we give up on structure. */
@@ -418,7 +425,7 @@ final class TestRunCoordinator implements TestRunHook {
 
     private void startPolling(int gen, BuildTool tool, Path root) {
         pollTask = poller.scheduleWithFixedDelay(
-                () -> sweepReports(gen, tool, root, false, null), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
+                () -> sweepReports(gen, tool, root, false, null), poll(root), poll(root), TimeUnit.MILLISECONDS);
     }
 
     /** Poller thread: snapshot the pre-run report mtimes (and reset the seen/baseline maps for the new run). */

@@ -310,7 +310,7 @@ final class RunCoordinator {
     /** Saves the active buffer if it is a dirty local file; false when that save was refused or failed. */
     private boolean saveActiveBuffer() {
         EditorBuffer b = host.activeBuffer();
-        return b == null || b.getPath() == null || !b.isDirty() || !host.isLocalBuffer(b) || ops.saveBuffer(b);
+        return b == null || b.getPath() == null || !b.isDirty() || ops.saveBuffer(b);
     }
 
     /**
@@ -768,11 +768,17 @@ final class RunCoordinator {
             return;
         }
         boolean javaSource = !buffer.isPython() && !buffer.isShell();
-        String jdkHome = javaSource ? host.settings().getMavenJdkHome() : "";
+        // On a remote host the program runs with the host's own java and environment: this machine's JDK
+        // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
+        boolean remote = com.editora.vfs.Vfs.isRemote(path);
+        String jdkHome = !javaSource
+                ? ""
+                : remote ? remoteJdkHome(path) : host.settings().getMavenJdkHome();
         String selectedJava = JdkToolchain.javaExecutable(jdkHome);
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;
-        java.util.Map<String, String> launchEnv =
-                javaSource ? JdkToolchain.environment(jdkHome, processPath()) : java.util.Map.of();
+        java.util.Map<String, String> launchEnv = !javaSource
+                ? java.util.Map.of()
+                : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
         List<String> command = buildRunCommand(buffer, path, javaExecutable);
         Runnable proceed = () -> {
             String stored = ops.programArgs(path);
@@ -793,7 +799,7 @@ final class RunCoordinator {
                 host.setStatus(tr("status.run.needSource25", sourceRelease));
                 return;
             }
-            service.detectJavaMajor(javaExecutable, major -> {
+            service.detectJavaMajor(javaExecutable, remote ? path.getParent() : null, major -> {
                 if (major < 0) {
                     host.setStatus(tr("status.run.javaVersionUnreadable", javaExecutable));
                     return;
@@ -833,6 +839,17 @@ final class RunCoordinator {
         command.add(path.toString());
         command.addAll(ProgramArgs.tokenize(ops.programArgs(path)));
         return command;
+    }
+
+    /** The JDK configured for {@code path}'s host ({@code jdk.home} in its tools), or "" for its own java. */
+    private static String remoteJdkHome(Path path) {
+        String home = com.editora.process.ExecTargets.remoteTool(path, "jdk.home");
+        return home == null ? "" : home;
+    }
+
+    /** {@code JAVA_HOME} for a host's configured JDK; nothing else, and nothing at all for its own java. */
+    static java.util.Map<String, String> remoteJdkEnvironment(String jdkHome) {
+        return jdkHome == null || jdkHome.isBlank() ? java.util.Map.of() : java.util.Map.of("JAVA_HOME", jdkHome);
     }
 
     private void launchRun(Path path, List<String> command, java.util.Map<String, String> env) {

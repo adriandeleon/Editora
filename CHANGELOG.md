@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run, builds and tests for remote folders (opt-in).** With remote commands switched on, Run on a remote file,
+  script / make / npm run configurations in a remote project, and Maven, Gradle, npm, Cargo and Go builds and
+  test runs start on the host, over the same SSH connection; output, input and Stop work as for local runs.
+  The host's own Java is used (or a JDK configured for that host). Running a Java project's main class on a
+  remote host is not available yet.
 - **Find in Files and Go to File for remote folders (opt-in).** With remote commands switched on, Find in Files
   in a remote (SFTP) folder is done by the host's own ripgrep when it has one, instead of reading every file
   over the connection, and Go to File lists a remote project's files on the host. Go to Symbol has no

@@ -103,6 +103,15 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
 - **Go to File:** a remote project is listed by its host (`RemoteFiles.list`: `rg --files`, else
   `git ls-files`), capped like a local walk. There are no symbols for a remote project: finding them means
   reading every source file over the network, so Go to Symbol has nothing to offer there.
+- **Run and Build:** a remote file's Run, a script / make / npm run configuration in a remote project, and
+  Maven / Gradle / npm / Cargo / Go builds and tests run on the host (`RunService.startRemote`: user locale,
+  long-lived, so Stop and a lost connection end the tree). Typed input goes as UTF-8 lines ending in `\n`.
+  This machine's JDK setting and PATH are never sent; a host's JDK is its own `java`, or `jdk.home` from its
+  tools (sent as `JAVA_HOME`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
+  the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
+  file whatever the host allows; a refusal is reported when it is launched.
+- **Not yet for Run:** a Java *project* main class (it needs jdtls or a Maven classpath file on the host), the
+  main-class gutter, and Makefile detection for the run-configuration toolbar.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
   tests, language servers and debugging.
