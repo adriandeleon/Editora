@@ -2742,6 +2742,21 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public boolean remoteExecAllowed(String id) {
+                return config.remoteExecAllowed(id);
+            }
+
+            @Override
+            public void allowRemoteExec(String id) {
+                config.allowRemoteExec(id);
+            }
+
+            @Override
+            public void remoteExecChanged() {
+                git.refresh();
+            }
+
+            @Override
             public void setProjectRoot(Path root) {
                 MainController.this.setProjectRoot(root);
             }

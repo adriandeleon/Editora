@@ -242,7 +242,8 @@ final class GitBlameCoordinator {
         }
         Revision revision = revisions.get(b);
         Path root = revision != null ? revision.root() : git.repoRoot();
-        boolean eligible = revision != null || (b.getPath() != null && !b.isLargeFile() && host.isLocalBuffer(b));
+        boolean eligible =
+                revision != null || (b.getPath() != null && !b.isLargeFile() && RemoteExec.runsFor(b.getPath()));
         if (!isEnabled() || !eligible || root == null) {
             b.setBlame(null);
             return;

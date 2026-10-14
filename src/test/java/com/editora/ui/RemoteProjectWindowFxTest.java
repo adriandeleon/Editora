@@ -213,8 +213,70 @@ class RemoteProjectWindowFxTest {
         assertEquals("disconnected", shown);
     }
 
+    private int asked;
+
+    /** Mounts the project's folder in its own window and lets the queued question (if any) be put. */
+    private void mountInOwnWindow(boolean answer) throws Exception {
+        ops.window = projects.createOrGet("app", appRoot());
+        remote.execConsent = conn -> {
+            asked++;
+            return answer;
+        };
+        FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), appRoot(), null));
+        FxTestSupport.runOnFx(() -> {}); // the question is queued behind the mount
+    }
+
+    @Test
+    void theQuestionAboutRunningCommandsIsPutOncePerHostAndYesIsRemembered() throws Exception {
+        host.settings.setRemoteExecution(true);
+
+        mountInOwnWindow(true);
+
+        assertEquals(1, asked);
+        assertEquals(List.of(sftp.connection().id()), ops.execAllowed, "remembered with the saved connections");
+        assertEquals(1, ops.execChanges, "the features that run tools there look again");
+
+        FxTestSupport.runOnFx(remote::offerExecution);
+        assertEquals(1, asked, "a host that was allowed is not asked about again");
+    }
+
+    @Test
+    void notNowIsRespectedForTheSessionAndNothingIsRemembered() throws Exception {
+        host.settings.setRemoteExecution(true);
+
+        mountInOwnWindow(false);
+        FxTestSupport.runOnFx(remote::offerExecution);
+
+        assertEquals(1, asked, "not on every connect");
+        assertTrue(ops.execAllowed.isEmpty());
+
+        FxTestSupport.runOnFx(remote::toggleExecution); // off
+        FxTestSupport.runOnFx(remote::toggleExecution); // and on again: that is asking for it
+        assertEquals(2, asked);
+    }
+
+    @Test
+    void withTheSettingOffTheQuestionIsNeverPut() throws Exception {
+        mountInOwnWindow(true);
+
+        assertEquals(0, asked);
+        assertTrue(ops.execAllowed.isEmpty());
+    }
+
     private static final class Host extends CoordinatorHostStub {
+        final com.editora.config.Settings settings = new com.editora.config.Settings();
         volatile String last;
+
+        @Override
+        public com.editora.config.Settings settings() {
+            return settings;
+        }
+
+        @Override
+        public void requestSave() {}
+
+        @Override
+        public void syncSettingsWindow() {}
 
         @Override
         public void setStatus(String message) {
@@ -284,6 +346,24 @@ class RemoteProjectWindowFxTest {
         @Override
         public Project windowProject() {
             return window;
+        }
+
+        final List<String> execAllowed = new CopyOnWriteArrayList<>();
+        volatile int execChanges;
+
+        @Override
+        public boolean remoteExecAllowed(String id) {
+            return execAllowed.contains(id);
+        }
+
+        @Override
+        public void allowRemoteExec(String id) {
+            execAllowed.add(id);
+        }
+
+        @Override
+        public void remoteExecChanged() {
+            execChanges++;
         }
 
         @Override

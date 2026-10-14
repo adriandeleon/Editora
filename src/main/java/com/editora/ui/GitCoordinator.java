@@ -404,8 +404,8 @@ final class GitCoordinator {
             applyState(GitService.RepoState.NONE);
             return;
         }
-        // Git shells out to a local process — a remote (SFTP) context has no local repo.
-        if (!Vfs.isLocal(context)) {
+        // Git runs where the files are: for a remote (SFTP) context that is its host, when it may run commands.
+        if (!RemoteExec.runsFor(context)) {
             service.invalidateRefreshes();
             applyState(GitService.RepoState.NONE);
             return;

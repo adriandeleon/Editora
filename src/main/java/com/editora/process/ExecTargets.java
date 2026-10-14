@@ -5,7 +5,9 @@ import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 
 /**
  * Finds the {@link ExecTarget} for a path. A path on the default filesystem (or no path at all) runs here;
@@ -28,6 +30,12 @@ public final class ExecTargets {
     /** Whether commands may run anywhere but here: the user's {@code remoteExecution} setting. Off by default. */
     private static volatile BooleanSupplier remoteEnabled = () -> false;
 
+    /** Whether the user has agreed to commands on one particular host, by {@link ExecTarget#id()}. */
+    private static volatile Predicate<String> hostAllowed = id -> true;
+
+    /** Per-host tool commands: (target id, tool id) → command, or null for the host's PATH. */
+    private static volatile BiFunction<String, String, String> remoteTools = (id, tool) -> null;
+
     private ExecTargets() {}
 
     public static void register(Resolver resolver) {
@@ -49,6 +57,32 @@ public final class ExecTargets {
         remoteEnabled = enabled == null ? () -> false : enabled;
     }
 
+    /**
+     * Supplies the user's per-host agreement. The setting says commands may run on remote hosts at all; this
+     * says they may on <em>this</em> one. A host it refuses has no target that can start anything.
+     */
+    public static void setRemoteHostAllowed(Predicate<String> allowed) {
+        hostAllowed = allowed == null ? id -> true : allowed;
+    }
+
+    /** Supplies the command the user configured for a tool on a host, when its PATH does not have the right one. */
+    public static void setRemoteTools(BiFunction<String, String, String> tools) {
+        remoteTools = tools == null ? (id, tool) -> null : tools;
+    }
+
+    /**
+     * The command configured for {@code toolId} on the host that owns {@code path}, or {@code null}: for a
+     * local path (local tools have their own settings), and when nothing is configured for that host.
+     */
+    public static String remoteTool(Path path, String toolId) {
+        ExecTarget target = forPath(path);
+        if (target.isLocal()) {
+            return null;
+        }
+        String command = remoteTools.apply(target.id(), toolId);
+        return command == null || command.isBlank() ? null : command;
+    }
+
     public static ExecTarget local() {
         return LOCAL;
     }
@@ -68,7 +102,9 @@ public final class ExecTargets {
         for (Resolver resolver : RESOLVERS) {
             ExecTarget target = resolver.forPath(path);
             if (target != null) {
-                return target;
+                return hostAllowed.test(target.id())
+                        ? target
+                        : new Unavailable(path, "running commands on " + target.id() + " has not been allowed");
             }
         }
         return new Unavailable(path, "no connection to run commands on");

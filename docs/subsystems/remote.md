@@ -46,7 +46,7 @@ in for the host), when a login handed to it fails, when the connection is lost
 `WindowSessionCoordinator.reopenUnreachable` scans the waiting entries off the FX thread and reopens the
 readable ones with their caret and pin. There are no placeholder tabs while disconnected.
 
-## Execution (off by default; no feature uses it yet)
+## Execution (off by default)
 
 `process/ExecTarget` is where a command runs. `ExecTargets.forPath(dir)` answers the local machine for a
 local or null directory, and otherwise the `vfs/SshExecTarget` of the connection that owns the path, but only
@@ -64,6 +64,32 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
 - `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale.
 - Channels are budgeted against the server's `MaxSessions` (three short commands at once, five long-lived).
 - `ExecTarget.forwardLocal` forwards a loopback port; sessions send keep-alives every 30 s.
+
+### Who may run what
+
+Three things have to hold before anything runs on a host, all checked by `ExecTargets.forPath`:
+
+1. `Settings.remoteExecution` is on (the user's global switch, off by default).
+2. The user has agreed for *that host*: `ConnectionStore.exec[<user@host:port>].allowed`. The question is put
+   once per host by `RemoteCoordinator.offerExecution` after a folder is mounted (and when the setting is
+   turned on with a folder mounted); "Not Now" is respected for the session.
+3. The connection is open.
+
+`ConnectionStore.exec[…].tools` holds a command per tool id (`git`, …) for a host whose `PATH` does not have
+the right one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they
+are paths on this machine. There is no UI for `tools` yet; it is edited in `connections.json`.
+
+A feature gates on `ui/RemoteExec.runsFor(path)`: any local file, or a remote one whose host passes the three
+checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
+
+### What runs remotely so far
+
+- **Git, reading:** status, the gutter diff, tab colouring, log, blame and blob lookups. `GitService` keeps
+  git's availability and version per host (`gitAvailable(Path)`), uses the host's `git` (or its configured
+  tool), and never probes a host from the JavaFX thread.
+- **Not yet:** anything that changes a repository (refused with `GitService.REMOTE_READ_ONLY`, without
+  contacting the host), auto-fetch, the Project tree's per-path repository lookup, GitHub, Run, Build, tests,
+  language servers and debugging.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 

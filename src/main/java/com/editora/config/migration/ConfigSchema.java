@@ -290,7 +290,9 @@ public enum ConfigSchema {
     RECENT(RecentFiles.SCHEMA_VERSION, 1, Map.of(0, ConfigMigrations::wrapRecentFilesArray)),
     // v1 → v2: TextAnchor gained a `length` component — additive (missing ⇒ 0, handled by the relocator).
     NOTES(NoteStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
-    CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: + exec, what the user allowed and configured for running commands on each host (additive;
+    // absent means nothing is allowed anywhere, which is what every connection meant before).
+    CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
     // v2 → v3 added charset/bom/lineEnding on pre-delete revisions (additive; absent ⇒ unknown, restore as before).

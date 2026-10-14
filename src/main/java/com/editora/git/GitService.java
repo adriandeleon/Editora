@@ -26,6 +26,8 @@ import java.util.regex.Pattern;
 import javafx.application.Platform;
 
 import com.editora.process.CommandLog;
+import com.editora.process.ExecTarget;
+import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -290,9 +292,10 @@ public final class GitService {
      * argv for a command the <em>user</em> asked for (commit, checkout, push, …): the configured git command
      * plus {@code args}, with the user's hooks and configuration fully in effect.
      */
-    private static List<String> gitArgv(String... args) {
-        List<String> cmd = new ArrayList<>(GIT_CMD.size() + args.length);
-        cmd.addAll(GIT_CMD);
+    private static List<String> gitArgv(Path dir, String... args) {
+        List<String> command = commandFor(dir);
+        List<String> cmd = new ArrayList<>(command.size() + args.length);
+        cmd.addAll(command);
         cmd.addAll(List.of(args));
         return cmd;
     }
@@ -306,6 +309,103 @@ public final class GitService {
     static List<String> backgroundArgv(String... args) {
         return GitSafety.backgroundArgv(GIT_CMD, args);
     }
+
+    /** {@link #backgroundArgv(String...)} with the git of the machine {@code dir} is on. */
+    static List<String> backgroundArgv(Path dir, String... args) {
+        return GitSafety.backgroundArgv(commandFor(dir), args);
+    }
+
+    /**
+     * On a remote host git is the {@code git} on its login-shell {@code PATH}: the configured command is a
+     * path on this machine and means nothing there.
+     */
+    private static final List<String> REMOTE_GIT = List.of("git");
+
+    private static boolean isLocal(Path dir) {
+        return dir == null || dir.getFileSystem() == java.nio.file.FileSystems.getDefault();
+    }
+
+    /** The git command for the machine {@code dir} is on. */
+    static List<String> commandFor(Path dir) {
+        if (isLocal(dir)) {
+            return GIT_CMD;
+        }
+        String configured = ExecTargets.remoteTool(dir, "git"); // the user's own path for it on that host
+        return configured == null ? REMOTE_GIT : commandTokens(configured);
+    }
+
+    /** What one remote host's git answered to {@code --version}, kept like the local answer is. */
+    private record RemoteGit(Availability availability, boolean endOfOptions, String version) {}
+
+    /** By {@link ExecTarget#id()}; shared by every window's service, as the local answer is. */
+    private static final Map<String, RemoteGit> REMOTE = new ConcurrentHashMap<>();
+
+    /**
+     * Whether git can be run for {@code context}: the local git for a local path, and for a path on a remote
+     * host that host's own, once it can run commands at all. Never probes a remote host from the JavaFX
+     * thread: until a lane has asked, the answer there is no.
+     */
+    public boolean gitAvailable(Path context) {
+        if (isLocal(context)) {
+            return gitAvailable();
+        }
+        ExecTarget target = ExecTargets.forPath(context);
+        if (!target.isAvailable()) {
+            return false;
+        }
+        RemoteGit known = REMOTE.get(target.id());
+        List<String> command = commandFor(context);
+        if (known != null && availabilityCurrent(known.availability(), command, nanoClock.getAsLong())) {
+            return known.availability().available();
+        }
+        if (onFxThread()) {
+            // Expired, or asked of another command: answered from the last probe, never by a new one here.
+            return known != null
+                    && known.availability().command().equals(command)
+                    && known.availability().available();
+        }
+        return probeRemote(target, context).availability().available();
+    }
+
+    private RemoteGit probeRemote(ExecTarget target, Path context) {
+        boolean ok = false;
+        String out = "";
+        try {
+            Path anywhere = context.toAbsolutePath().getRoot(); // a directory that is certainly there
+            List<String> argv = new ArrayList<>(commandFor(context));
+            argv.add("--version");
+            ProcessRunner.Result r = ProcessRunner.run(anywhere, QUICK, argv, READ_ENV);
+            ok = r.ok();
+            out = ok ? r.out() : "";
+        } catch (RuntimeException e) {
+            ok = false;
+        }
+        RemoteGit previous = REMOTE.get(target.id());
+        int failures = ok ? 0 : (previous == null ? 0 : previous.availability().failures()) + 1;
+        RemoteGit probed = new RemoteGit(
+                new Availability(commandFor(context), ok, nanoClock.getAsLong(), failures),
+                ok && GitSafety.supportsEndOfOptions(out),
+                out.strip());
+        REMOTE.put(target.id(), probed);
+        return probed;
+    }
+
+    /** Whether the git that serves {@code dir} understands {@code --end-of-options}. */
+    private static boolean endOfOptions(Path dir) {
+        if (isLocal(dir)) {
+            return endOfOptions;
+        }
+        RemoteGit known = REMOTE.get(ExecTargets.forPath(dir).id());
+        return known != null && known.endOfOptions();
+    }
+
+    /** The refusal a command that changes a repository gets for a remote folder, or null for a local one. */
+    private static ProcessRunner.Result refusedOnRemote(Path dir) {
+        return isLocal(dir) ? null : new ProcessRunner.Result(-1, "", REMOTE_READ_ONLY);
+    }
+
+    /** Git commands that change a repository are not run on a remote host yet; reads are. */
+    static final String REMOTE_READ_ONLY = "Git commands that change a remote folder are not available yet";
 
     /**
      * Environment of every background read: lock-free, never prompting, never paging, and never fetching a
@@ -506,7 +606,7 @@ public final class GitService {
      *     follows a timeout; false for a caller that needs an answer whatever it costs
      */
     private RepoState computeRefresh(Path contextPath, Path diffFile, boolean backOff) {
-        if (!gitAvailable() || contextPath == null) {
+        if (!gitAvailable(contextPath) || contextPath == null) {
             return RepoState.NONE;
         }
         RootLookup lookup = lookupRoot(contextPath);
@@ -602,7 +702,7 @@ public final class GitService {
     /** Diffs a single file against {@code HEAD} for the gutter; posts the change + hunk maps on the FX thread. */
     public void diff(Path root, Path file, Consumer<GitDiff> onResult) {
         submit(exec, () -> {
-            GitDiff diff = gitAvailable() && root != null && file != null ? diffHead(root, file) : GitDiff.EMPTY;
+            GitDiff diff = gitAvailable(root) && root != null && file != null ? diffHead(root, file) : GitDiff.EMPTY;
             Platform.runLater(() -> onResult.accept(diff));
         });
     }
@@ -615,7 +715,7 @@ public final class GitService {
     public void unstagedHunks(Path root, Path file, Consumer<List<DiffParser.Hunk>> onResult) {
         submit(exec, () -> {
             List<DiffParser.Hunk> hunks = null;
-            if (gitAvailable() && root != null && file != null) {
+            if (gitAvailable(root) && root != null && file != null) {
                 ProcessRunner.Result r = git(
                         root,
                         QUICK,
@@ -658,7 +758,7 @@ public final class GitService {
      */
     public void showBlob(Path root, String spec, Consumer<BlobResult> onResult) {
         submit(exec, () -> {
-            BlobResult result = gitAvailable() && root != null ? blobNow(root, spec) : new BlobResult(false, null);
+            BlobResult result = gitAvailable(root) && root != null ? blobNow(root, spec) : new BlobResult(false, null);
             BlobResult posted = result;
             Platform.runLater(() -> onResult.accept(posted));
         });
@@ -699,13 +799,13 @@ public final class GitService {
         submit(exec, () -> {
             WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
             String relative = repoRelative(root, folder);
-            if (gitAvailable() && root != null && relative != null && !GitSafety.isSafeRevision(ref)) {
+            if (gitAvailable(root) && root != null && relative != null && !GitSafety.isSafeRevision(ref)) {
                 // A ref name is repository data: one beginning with "-" would be read as an option.
                 result = new WorkingTreeDiff(List.of(), false, "Unsafe revision name: " + ref);
-            } else if (gitAvailable() && root != null && relative != null) {
+            } else if (gitAvailable(root) && root != null && relative != null) {
                 List<String> diffArgs = new ArrayList<>(
                         List.of(GitSafety.LITERAL_PATHSPECS, "diff", "--name-status", "-z", "--no-renames"));
-                diffArgs.addAll(GitSafety.revisionArgs(endOfOptions, ref));
+                diffArgs.addAll(GitSafety.revisionArgs(endOfOptions(root), ref));
                 diffArgs.add("--");
                 List<String> untrackedArgs = new ArrayList<>(
                         List.of(GitSafety.LITERAL_PATHSPECS, "ls-files", "--others", "--exclude-standard", "-z", "--"));
@@ -789,7 +889,7 @@ public final class GitService {
     public void log(Path root, Path file, int max, Consumer<List<Commit>> onResult) {
         submit(exec, () -> {
             List<Commit> commits = List.of();
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 List<String> args = new ArrayList<>(List.of(
                         GitSafety.LITERAL_PATHSPECS,
                         "log",
@@ -832,7 +932,7 @@ public final class GitService {
                 return;
             }
             GitLog.Page page = GitLog.Page.EMPTY;
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
                 historyRead = cancel;
                 ProcessRunner.Result r;
@@ -845,7 +945,7 @@ public final class GitService {
                     r = completeOrFailed(ProcessRunner.run(
                             root,
                             request.query().readsContent() ? HISTORY_SEARCH : QUICK,
-                            backgroundArgv(GitLog.logArgs(request).toArray(new String[0])),
+                            backgroundArgv(root, GitLog.logArgs(request).toArray(new String[0])),
                             READ_ENV,
                             cancel));
                 } finally {
@@ -902,10 +1002,10 @@ public final class GitService {
     public void commitDetails(Path root, String hash, Consumer<GitLog.Details> onResult) {
         submit(historyExec, () -> {
             GitLog.Details details = null;
-            if (gitAvailable() && root != null && GitSafety.isSafeRevision(hash)) {
+            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(hash)) {
                 List<String> args =
                         new ArrayList<>(List.of("show", "-s", "--no-color", "--decorate=full", GitLog.DETAILS_FORMAT));
-                args.addAll(GitSafety.revisionArgs(endOfOptions, hash));
+                args.addAll(GitSafety.revisionArgs(endOfOptions(root), hash));
                 ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
                 if (r.ok()) {
                     details = GitLog.parseDetails(r.out());
@@ -924,12 +1024,12 @@ public final class GitService {
     public void diffFiles(Path root, String from, String to, Consumer<WorkingTreeDiff> onResult) {
         submit(historyExec, () -> {
             WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 if (!GitSafety.isSafeRevision(from) || !GitSafety.isSafeRevision(to)) {
                     result = new WorkingTreeDiff(List.of(), false, "Unsafe revision name: " + from + " " + to);
                 } else {
                     List<String> args = new ArrayList<>(List.of("diff", "--name-status", "-z", "-M"));
-                    args.addAll(GitSafety.revisionArgs(endOfOptions, from, to));
+                    args.addAll(GitSafety.revisionArgs(endOfOptions(root), from, to));
                     args.add("--");
                     ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
                     if (r.ok()) {
@@ -1064,7 +1164,7 @@ public final class GitService {
     private volatile String blameIgnoreRevsProblem = "";
 
     private List<BlameParser.BlameLine> computeBlame(Path root, Path file) {
-        if (!gitAvailable() || root == null || file == null) {
+        if (!gitAvailable(root) || root == null || file == null) {
             return List.of();
         }
         BlameOptions options = blameOptions;
@@ -1093,7 +1193,7 @@ public final class GitService {
     }
 
     private List<BlameParser.BlameLine> computeRevisionBlame(Path root, String revision, String path) {
-        if (!gitAvailable() || root == null || path == null || !GitSafety.isSafeRevision(revision)) {
+        if (!gitAvailable(root) || root == null || path == null || !GitSafety.isSafeRevision(revision)) {
             return List.of();
         }
         BlameOptions options = blameOptions;
@@ -1171,7 +1271,7 @@ public final class GitService {
         args.addAll(target);
         blameRuns.incrementAndGet();
         Map<String, String> env = plan.withoutGlobalConfig() ? envWithoutGlobalIgnoreRevs(root) : READ_ENV;
-        return completeOrFailed(ProcessRunner.run(root, QUICK, backgroundArgv(args.toArray(String[]::new)), env));
+        return completeOrFailed(ProcessRunner.run(root, QUICK, backgroundArgv(root, args.toArray(String[]::new)), env));
     }
 
     /** How long a repository's {@code blame.ignoreRevsFile} configuration is believed before it is re-read. */
@@ -1269,7 +1369,7 @@ public final class GitService {
     public void commitFiles(Path root, String hash, Consumer<List<CommitFile>> onResult) {
         submit(exec, () -> {
             List<CommitFile> files = List.of();
-            if (gitAvailable() && root != null && GitSafety.isSafeRevision(hash)) {
+            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(hash)) {
                 files = commitFilesNow(root, hash);
             }
             List<CommitFile> posted = files;
@@ -1280,7 +1380,7 @@ public final class GitService {
     private static List<CommitFile> commitFilesNow(Path root, String hash) {
         List<String> single =
                 new ArrayList<>(List.of("diff-tree", "--no-commit-id", "--name-status", "-z", "-r", "-M", "--root"));
-        single.addAll(GitSafety.revisionArgs(endOfOptions, hash));
+        single.addAll(GitSafety.revisionArgs(endOfOptions(root), hash));
         ProcessRunner.Result r = git(root, QUICK, single.toArray(String[]::new));
         if (!r.ok()) {
             return List.of();
@@ -1289,7 +1389,7 @@ public final class GitService {
             return parseNameStatusZ(r.out());
         }
         List<String> firstParent = new ArrayList<>(List.of("diff-tree", "--name-status", "-z", "-r", "-M"));
-        firstParent.addAll(GitSafety.revisionArgs(endOfOptions, hash + "^1", hash));
+        firstParent.addAll(GitSafety.revisionArgs(endOfOptions(root), hash + "^1", hash));
         ProcessRunner.Result merge = git(root, QUICK, firstParent.toArray(String[]::new));
         return merge.ok() ? parseNameStatusZ(merge.out()) : List.of();
     }
@@ -1301,7 +1401,7 @@ public final class GitService {
     public void stashList(Path root, Consumer<List<StashParser.StashEntry>> onResult) {
         submit(exec, () -> {
             List<StashParser.StashEntry> list = List.of();
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result r = git(root, QUICK, "stash", "list", StashParser.DETAILED_FORMAT);
                 if (r.ok()) {
                     list = StashParser.parseDetailed(r.out());
@@ -1322,15 +1422,15 @@ public final class GitService {
     public void stashFiles(Path root, String stash, Consumer<List<CommitFile>> onResult) {
         submit(exec, () -> {
             List<CommitFile> files = new ArrayList<>();
-            if (gitAvailable() && root != null && GitSafety.isSafeRevision(stash)) {
+            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(stash)) {
                 List<String> diff = new ArrayList<>(List.of("diff-tree", "--name-status", "-z", "-r", "-M"));
-                diff.addAll(GitSafety.revisionArgs(endOfOptions, stash + "^1", stash));
+                diff.addAll(GitSafety.revisionArgs(endOfOptions(root), stash + "^1", stash));
                 ProcessRunner.Result tracked = git(root, QUICK, diff.toArray(String[]::new));
                 if (tracked.ok()) {
                     files.addAll(parseNameStatusZ(tracked.out()));
                 }
                 List<String> tree = new ArrayList<>(List.of("ls-tree", "-r", "-z", "--name-only"));
-                tree.addAll(GitSafety.revisionArgs(endOfOptions, stash + "^3"));
+                tree.addAll(GitSafety.revisionArgs(endOfOptions(root), stash + "^3"));
                 ProcessRunner.Result untracked = git(root, QUICK, tree.toArray(String[]::new));
                 if (untracked.ok()) { // fails when there is no third parent: a stash without untracked files
                     for (String path : nulTokens(untracked.out())) {
@@ -1419,6 +1519,11 @@ public final class GitService {
      * and if nothing resolves, falls back to a plain absolute-normalized path.
      */
     static Path realPath(Path p) {
+        if (!isLocal(p)) {
+            // Not asked of the server: this is called on the JavaFX thread, and a remote folder is reached
+            // by the one spelling its connection opened it under.
+            return p.toAbsolutePath().normalize();
+        }
         try {
             return p.toRealPath();
         } catch (IOException notThere) {
@@ -1680,7 +1785,7 @@ public final class GitService {
     public void branches(Path root, Consumer<Branches> onResult) {
         submit(exec, () -> {
             Branches result = Branches.EMPTY;
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 result = new Branches(
                         localBranches(root), remoteBranchNames(root), remoteUrl(root), remoteNamesNow(root));
             }
@@ -1698,7 +1803,7 @@ public final class GitService {
     public void untrackedFiles(Path root, List<String> pathspecs, Consumer<List<String>> onResult) {
         submit(exec, () -> {
             List<String> files = null;
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 List<String> args = new ArrayList<>(
                         List.of(GitSafety.LITERAL_PATHSPECS, "ls-files", "--others", "--exclude-standard", "-z", "--"));
                 args.addAll(pathspecs);
@@ -1739,7 +1844,7 @@ public final class GitService {
     public void commitsLeftBehind(Path root, String target, boolean movesBranch, Consumer<LeftBehind> onResult) {
         submit(exec, () -> {
             LeftBehind result = LeftBehind.UNKNOWN;
-            if (gitAvailable() && root != null && GitSafety.isSafeRevision(target)) {
+            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(target)) {
                 result = leftBehindNow(root, target, movesBranch);
             }
             LeftBehind posted = result;
@@ -1794,7 +1899,7 @@ public final class GitService {
     public void tags(Path root, Consumer<List<String>> onResult) {
         submit(exec, () -> {
             List<String> tags = List.of();
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result r = git(
                         root, QUICK, "for-each-ref", "--format=%(refname:short)", "--sort=-creatordate", "refs/tags");
                 if (r.ok()) {
@@ -1910,7 +2015,7 @@ public final class GitService {
     public void remotes(Path root, Consumer<List<GitRemotes.Remote>> onResult) {
         submit(exec, () -> {
             List<GitRemotes.Remote> remotes = List.of();
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result r = git(root, QUICK, "remote", "-v");
                 if (r.ok()) {
                     remotes = GitRemotes.parse(r.out());
@@ -1925,7 +2030,7 @@ public final class GitService {
     public void pushRemoteOf(Path root, String branch, Consumer<String> onResult) {
         submit(exec, () -> {
             String remote = "origin";
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result config = git(root, QUICK, "config", "--list", "-z");
                 remote = pushRemote(config.ok() ? config.out() : "", branch, remoteNamesNow(root));
             }
@@ -1938,7 +2043,7 @@ public final class GitService {
     public void worktrees(Path root, Consumer<List<GitWorktrees.Worktree>> onResult) {
         submit(exec, () -> {
             List<GitWorktrees.Worktree> trees = List.of();
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result r = git(root, QUICK, "worktree", "list", "--porcelain");
                 if (r.ok()) {
                     trees = GitWorktrees.parse(r.out());
@@ -1957,9 +2062,9 @@ public final class GitService {
         submit(exec, () -> {
             int count = -1;
             String range = "HEAD..refs/heads/" + branch;
-            if (gitAvailable() && root != null && GitSafety.isSafeRevision(range)) {
+            if (gitAvailable(root) && root != null && GitSafety.isSafeRevision(range)) {
                 List<String> args = new ArrayList<>(List.of("rev-list", "--count"));
-                args.addAll(GitSafety.revisionArgs(endOfOptions, range));
+                args.addAll(GitSafety.revisionArgs(endOfOptions(root), range));
                 ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
                 if (r.ok()) {
                     try {
@@ -1983,10 +2088,14 @@ public final class GitService {
         submit(exec, () -> {
             List<String[]> commits = new ArrayList<>();
             String range = base + "..HEAD";
-            if (gitAvailable() && root != null && base != null && !base.isBlank() && GitSafety.isSafeRevision(range)) {
+            if (gitAvailable(root)
+                    && root != null
+                    && base != null
+                    && !base.isBlank()
+                    && GitSafety.isSafeRevision(range)) {
                 List<String> args = new ArrayList<>(
                         List.of("log", "--no-color", "--max-count=" + Math.max(1, max), "--format=%s%x00%b%x1e"));
-                args.addAll(GitSafety.revisionArgs(endOfOptions, range));
+                args.addAll(GitSafety.revisionArgs(endOfOptions(root), range));
                 ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
                 if (r.ok()) {
                     for (String record : r.out().split("\036")) {
@@ -2009,7 +2118,7 @@ public final class GitService {
     public void refDiff(Path root, String left, String right, Consumer<WorkingTreeDiff> onResult) {
         submit(exec, () -> {
             WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 if (!GitSafety.isSafeRevision(left) || !GitSafety.isSafeRevision(right)) {
                     result = new WorkingTreeDiff(
                             List.of(),
@@ -2018,7 +2127,7 @@ public final class GitService {
                 } else {
                     List<String> args = new ArrayList<>(
                             List.of(GitSafety.LITERAL_PATHSPECS, "diff", "--name-status", "-z", "--no-renames"));
-                    args.addAll(GitSafety.revisionArgs(endOfOptions, left, right));
+                    args.addAll(GitSafety.revisionArgs(endOfOptions(root), left, right));
                     args.add("--");
                     ProcessRunner.Result changed = git(root, QUICK, args.toArray(String[]::new));
                     result = changed.ok()
@@ -2160,7 +2269,7 @@ public final class GitService {
     public void runNetwork(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
         userNetworkCommandIn(root);
         submitNetworkInRequestOrder(() -> {
-            ProcessRunner.Result r = gitAvailable() && root != null
+            ProcessRunner.Result r = gitAvailable(root) && root != null
                     ? userCommand(
                             networkCommands, () -> gitStreamed(root, NETWORK, withProgress(withPushRemote(root, args))))
                     : NOT_INSTALLED;
@@ -2245,7 +2354,7 @@ public final class GitService {
         boolean queued = submit(networkExec, () -> {
             ProcessRunner.Result result = null;
             try {
-                if (gitAvailable() && pendingNetwork.get() == 0 && !cancel.cancelled()) {
+                if (gitAvailable() && isLocal(root) && pendingNetwork.get() == 0 && !cancel.cancelled()) {
                     // The user's own ssh command — configured or exported — is left alone; only when there is
                     // none does Editora name one, to put ssh in batch mode.
                     boolean ownSsh = git(root, QUICK, "config", "--get", "core.sshCommand")
@@ -2290,7 +2399,7 @@ public final class GitService {
     /** The {@link HeadCommit}, or {@code null} on a branch with no commits yet. Posts on the FX thread. */
     public void headCommit(Path root, Consumer<HeadCommit> onResult) {
         submit(exec, () -> {
-            HeadCommit head = gitAvailable() && root != null ? headCommitNow(root) : null;
+            HeadCommit head = gitAvailable(root) && root != null ? headCommitNow(root) : null;
             Platform.runLater(() -> onResult.accept(head));
         });
     }
@@ -2334,7 +2443,8 @@ public final class GitService {
     /** Reads {@link CommitTemplate} for {@code root}. Posts on the FX thread. */
     public void commitTemplate(Path root, Consumer<CommitTemplate> onResult) {
         submit(exec, () -> {
-            CommitTemplate template = gitAvailable() && root != null ? commitTemplateNow(root) : CommitTemplate.NONE;
+            CommitTemplate template =
+                    gitAvailable(root) && root != null ? commitTemplateNow(root) : CommitTemplate.NONE;
             Platform.runLater(() -> onResult.accept(template));
         });
     }
@@ -2370,7 +2480,7 @@ public final class GitService {
     public void lineCounts(Path root, Consumer<GitNumstat.Changes> onResult) {
         submit(exec, () -> {
             GitNumstat.Changes changes = GitNumstat.Changes.NONE;
-            if (gitAvailable() && root != null) {
+            if (gitAvailable(root) && root != null) {
                 ProcessRunner.Result staged = git(root, QUICK, "diff", "--cached", "--numstat", "-z");
                 ProcessRunner.Result unstaged = git(root, QUICK, "diff", "--numstat", "-z");
                 changes = new GitNumstat.Changes(
@@ -2389,7 +2499,7 @@ public final class GitService {
      */
     public void stagedDiff(Path root, Consumer<String> onResult) {
         submit(exec, () -> {
-            ProcessRunner.Result r = gitAvailable() && root != null ? git(root, QUICK, "diff", "--cached") : null;
+            ProcessRunner.Result r = gitAvailable(root) && root != null ? git(root, QUICK, "diff", "--cached") : null;
             String posted = r != null && r.ok() ? r.out() : null;
             Platform.runLater(() -> onResult.accept(posted));
         });
@@ -2430,7 +2540,7 @@ public final class GitService {
             List<String> check = new ArrayList<>(base);
             check.add("--check");
             byte[] input = patch == null ? new byte[0] : patch;
-            ProcessRunner.Result posted = !gitAvailable() || root == null
+            ProcessRunner.Result posted = !gitAvailable(root) || root == null
                     ? NOT_INSTALLED
                     : userCommand(localCommands, () -> {
                         if (threeWay) {
@@ -2475,18 +2585,18 @@ public final class GitService {
             return;
         }
         List<String> args = new ArrayList<>(List.of("format-patch", "-1", "--stdout"));
-        args.addAll(GitSafety.revisionArgs(endOfOptions, hash));
+        args.addAll(GitSafety.revisionArgs(endOfOptions(root), hash));
         readPatch(root, args, onResult);
     }
 
     private void readPatch(Path root, List<String> args, Consumer<PatchText> onResult) {
         submit(exec, () -> {
             PatchText posted;
-            if (!gitAvailable() || root == null) {
+            if (!gitAvailable(root) || root == null) {
                 posted = new PatchText(new byte[0], NOT_INSTALLED.err());
             } else {
-                ProcessRunner.BytesResult r =
-                        ProcessRunner.runBytes(root, QUICK, backgroundArgv(args.toArray(String[]::new)), READ_ENV);
+                ProcessRunner.BytesResult r = ProcessRunner.runBytes(
+                        root, QUICK, backgroundArgv(root, args.toArray(String[]::new)), READ_ENV);
                 posted = !r.ok()
                         ? new PatchText(
                                 new byte[0], r.err() == null ? "" : r.err().strip())
@@ -2685,7 +2795,7 @@ public final class GitService {
                 Files.write(temporary, original, java.nio.file.StandardOpenOption.CREATE_NEW);
             } else {
                 ProcessRunner.Result emptyIndex =
-                        ProcessRunner.run(root, MUTATION, gitArgv("read-tree", "--empty"), env);
+                        ProcessRunner.run(root, MUTATION, gitArgv(root, "read-tree", "--empty"), env);
                 if (!emptyIndex.ok()) {
                     return emptyIndex;
                 }
@@ -2745,9 +2855,9 @@ public final class GitService {
             return new BlobResult(false, new byte[0]);
         }
         List<String> args = new ArrayList<>(List.of("show"));
-        args.addAll(GitSafety.revisionArgs(endOfOptions, spec));
+        args.addAll(GitSafety.revisionArgs(endOfOptions(root), spec));
         ProcessRunner.BytesResult result =
-                ProcessRunner.runBytes(root, QUICK, backgroundArgv(args.toArray(String[]::new)), READ_ENV);
+                ProcessRunner.runBytes(root, QUICK, backgroundArgv(root, args.toArray(String[]::new)), READ_ENV);
         return result.ok() && !result.outTruncated()
                 ? new BlobResult(true, result.out())
                 : new BlobResult(false, new byte[0], result.ok() && result.outTruncated());
@@ -2842,7 +2952,7 @@ public final class GitService {
             }
             if (!held) {
                 result = new ProcessRunner.Result(-1, "", "interrupted");
-            } else if (!gitAvailable() || root == null) {
+            } else if (!gitAvailable(root) || root == null) {
                 result = NOT_INSTALLED;
             } else {
                 result = userCommand(running, () -> {
@@ -2974,7 +3084,7 @@ public final class GitService {
             String[] lines = r.out().strip().split("\\R");
             String top = lines[0].strip();
             if (!top.isEmpty()) {
-                root = Path.of(top);
+                root = ExecTargets.forPath(dir).toPath(top);
                 rememberGitDir(root, dir, lines.length > 1 ? lines[1].strip() : "");
             }
         }
@@ -3074,8 +3184,12 @@ public final class GitService {
      * {@link CommandLog} report. Background reads go through {@link #git} instead.
      */
     private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
+        ProcessRunner.Result refused = refusedOnRemote(dir);
+        if (refused != null) {
+            return refused;
+        }
         long startNanos = System.nanoTime();
-        List<String> argv = gitArgv(args);
+        List<String> argv = gitArgv(dir, args);
         // The user's locale, not LC_ALL=C: the hooks this runs are the user's programs (see GitSafety.userEnv).
         // Run with a cancellation handle (and no live listener): a commit stuck in a hook, or a checkout of a
         // huge tree, otherwise holds this lane — and every status and gutter read queued on it — for up to
@@ -3116,8 +3230,12 @@ public final class GitService {
      * each line as git writes it, not only the finished transcript.
      */
     private ProcessRunner.Result gitStreamed(Path dir, Duration timeout, String... args) {
+        ProcessRunner.Result refused = refusedOnRemote(dir);
+        if (refused != null) {
+            return refused;
+        }
         long startNanos = System.nanoTime();
-        List<String> argv = gitArgv(args);
+        List<String> argv = gitArgv(dir, args);
         CommandLog log = commandLog;
         ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
         streamedCommand = cancel;
@@ -3156,7 +3274,7 @@ public final class GitService {
      */
     private static ProcessRunner.Result git(Path dir, Duration timeout, String... args) {
         // GIT_OPTIONAL_LOCKS=0 so status never blocks on the index lock (git-specific).
-        return completeOrFailed(ProcessRunner.run(dir, timeout, backgroundArgv(args), READ_ENV));
+        return completeOrFailed(ProcessRunner.run(dir, timeout, backgroundArgv(dir, args), READ_ENV));
     }
 
     /** The local user command (commit, checkout, reset, stash, …) now running, or null. */
@@ -3202,8 +3320,12 @@ public final class GitService {
     /** Runs a logged user command with raw {@code stdin} bytes (a blob body must reach Git unre-encoded). */
     private ProcessRunner.Result gitWithInput(
             Path dir, byte[] stdin, List<String> args, Map<String, String> environment) {
+        ProcessRunner.Result refused = refusedOnRemote(dir);
+        if (refused != null) {
+            return refused;
+        }
         long startNanos = System.nanoTime();
-        List<String> argv = new ArrayList<>(GIT_CMD);
+        List<String> argv = new ArrayList<>(commandFor(dir));
         argv.addAll(args);
         ProcessRunner.Result result = ProcessRunner.runWithInputInUserLocale(dir, MUTATION, argv, environment, stdin);
         commandLog.record(new CommandLog.Entry(

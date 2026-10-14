@@ -917,7 +917,24 @@ public class SharedConfig {
     /** Replaces the whole saved-connection list (preserving order) and persists — backs the Settings editor. */
     public void setConnections(List<com.editora.vfs.RemoteConnection> conns) {
         connectionStore.connections = new java.util.ArrayList<>(conns == null ? List.of() : conns);
+        connectionStore.pruneExec();
         saveConnections();
+    }
+
+    /** Whether the user has agreed that commands may be run on the host of connection {@code id}. */
+    public boolean remoteExecAllowed(String id) {
+        return connectionStore.execAllowed(id);
+    }
+
+    /** Records that agreement, and persists it. */
+    public void allowRemoteExec(String id) {
+        connectionStore.allowExec(id);
+        saveConnections();
+    }
+
+    /** The command configured for {@code tool} on the host of connection {@code id}, or null (its PATH). */
+    public String remoteTool(String id, String tool) {
+        return connectionStore.tool(id, tool);
     }
 
     public void saveConnections() {
