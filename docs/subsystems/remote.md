@@ -101,8 +101,12 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   missing `rg` is believed for five minutes). Without it, the built-in search walks the folder over SFTP, as
   before. Whether this machine has `rg` does not matter.
 - **Go to File:** a remote project is listed by its host (`RemoteFiles.list`: `rg --files`, else
-  `git ls-files`), capped like a local walk. There are no symbols for a remote project: finding them means
-  reading every source file over the network, so Go to Symbol has nothing to offer there.
+  `git ls-files` inside a repository, else POSIX `find`), capped like a local walk. What `find` prints is
+  filtered by the local walk's rules (`RemoteFiles.filtered`: no hidden files or folders, the `.gitignore` of
+  the folder and of each folder below it, reading only the ones `find` listed; `node_modules` is not entered
+  while ignoring). A host that runs no commands is walked over SFTP instead (`IndexCoordinator.sftpWalk`), a
+  listing per folder, names only. There are no symbols for a remote project: finding them means reading every
+  source file over the network, so Go to Symbol has nothing to offer there.
 - **Run and Build:** a remote file's Run, a script / make / npm run configuration in a remote project, and
   Maven / Gradle / npm / Cargo / Go builds and tests run on the host (`RunService.startRemote`: user locale,
   long-lived, so Stop and a lost connection end the tree). Typed input goes as UTF-8 lines ending in `\n`.

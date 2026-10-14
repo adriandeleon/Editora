@@ -167,6 +167,71 @@ class RemoteSearchFxTest {
         assertEquals(1, IndexCoordinator.remoteWalk(remoteApp, true, 1).files().size(), "and cut at the cap");
     }
 
+    /** A folder that is not a Git repository: what `git ls-files` refuses. */
+    private Path plainFolder() throws Exception {
+        Path server = Files.createDirectories(sftp.serverPath("plain"));
+        Files.createDirectories(server.resolve("src"));
+        Files.createDirectories(server.resolve("build"));
+        Files.createDirectories(server.resolve("lib"));
+        Files.createDirectories(server.resolve(".cache"));
+        Files.writeString(server.resolve("src/Main.java"), "class Main {}\n");
+        Files.writeString(server.resolve("build/Gen.java"), "class Gen {}\n");
+        Files.writeString(server.resolve("lib/kept.java"), "\n");
+        Files.writeString(server.resolve("lib/scratch.tmp"), "\n");
+        Files.writeString(server.resolve(".cache/hidden.java"), "\n");
+        Files.writeString(server.resolve(".env"), "SECRET=1\n");
+        Files.writeString(server.resolve(".gitignore"), "build/\n");
+        Files.writeString(server.resolve("lib/.gitignore"), "*.tmp\n");
+        return sftp.remotePath("plain");
+    }
+
+    private static List<String> relative(Path root, IndexCoordinator.Walked walked) {
+        return walked.files().stream()
+                .map(p -> root.relativize(p).toString().replace('\\', '/'))
+                .sorted()
+                .toList();
+    }
+
+    @Test
+    void aFolderOutsideARepositoryOnAHostWithoutRipgrepIsListedByFind() throws Exception {
+        ExecTargets.setRemoteTools((host, tool) -> "rg".equals(tool) ? "editora-test-no-such-rg" : null);
+        Path plain = plainFolder();
+
+        IndexCoordinator.Walked walked = IndexCoordinator.remoteWalk(plain, true, 100);
+
+        assertEquals(
+                List.of("lib/kept.java", "src/Main.java"),
+                relative(plain, walked),
+                "as a local project would be: no hidden files or folders, the root's and lib's .gitignore honoured");
+        assertFalse(walked.truncated());
+        assertTrue(
+                sftp.commands().stream().anyMatch(line -> line.contains("'find'")),
+                "listed by the host's find: " + sftp.commands());
+
+        IndexCoordinator.Walked all = IndexCoordinator.remoteWalk(plain, false, 100);
+        assertEquals(
+                List.of("build/Gen.java", "lib/kept.java", "lib/scratch.tmp", "src/Main.java"),
+                relative(plain, all),
+                "not honouring .gitignore: ignored files listed, hidden ones still not");
+
+        IndexCoordinator.Walked one = IndexCoordinator.remoteWalk(plain, true, 1);
+        assertEquals(1, one.files().size());
+        assertTrue(one.truncated(), "cut at the cap, and said so");
+    }
+
+    @Test
+    void aHostThatRunsNoCommandsIsWalkedOverSftp() throws Exception {
+        Path plain = plainFolder();
+        ExecTargets.setRemoteEnabled(() -> false);
+        int before = sftp.commands().size();
+
+        IndexCoordinator.Walked walked = IndexCoordinator.remoteWalk(plain, true, 100);
+
+        assertEquals(List.of("lib/kept.java", "src/Main.java"), relative(plain, walked), "the same files, over SFTP");
+        assertTrue(walked.scanned().isEmpty(), "names only: no file is read for symbols");
+        assertEquals(before, sftp.commands().size(), "and no command was run: " + sftp.commands());
+    }
+
     @Test
     void aHostThatCannotRunCommandsHasNoRipgrep() {
         ExecTargets.setRemoteEnabled(() -> false);
