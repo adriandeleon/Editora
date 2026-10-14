@@ -36,6 +36,22 @@ class MarkdownBacklinksFxTest {
                 .toList());
     }
 
+    /**
+     * The rows once they are {@code expected}, or the last rows seen after 20 s. A refresh is asked for on a later
+     * pulse than the command or tab switch that causes it, so {@code lastRefresh} read straight away can still be
+     * the previous, finished one — on a loaded machine the list was read empty.
+     */
+    private static List<String> shownOnce(MarkdownBacklinks backlinks, List<String> expected) throws Exception {
+        long deadline = System.nanoTime() + 20_000_000_000L;
+        List<String> rows = shown(backlinks);
+        while (!rows.equals(expected) && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+            rows = shown(backlinks);
+        }
+        return rows;
+    }
+
     private static EditorBuffer open(AsyncTestScope async, MainController window, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(window, "fileWorkflows");
         FxTestSupport.runOnFx(() -> workflows.openPath(file));
@@ -80,14 +96,13 @@ class MarkdownBacklinksFxTest {
             assertEquals(0, index.linkGraph.builds, "and a closed window walks nothing");
 
             FxTestSupport.runOnFx(() -> registry.run("markdown.showBacklinks"));
-            assertEquals(
-                    List.of(
-                            "a.md (2)",
-                            "3: See [the target](target.md#target).",
-                            "5: [[target]] again",
-                            "docs/b.md (1)",
-                            "1: <a href=\"../target.md\">t</a>"),
-                    shown(backlinks));
+            List<String> linksToTarget = List.of(
+                    "a.md (2)",
+                    "3: See [the target](target.md#target).",
+                    "5: [[target]] again",
+                    "docs/b.md (1)",
+                    "1: <a href=\"../target.md\">t</a>");
+            assertEquals(linksToTarget, shownOnce(backlinks, linksToTarget));
             assertTrue(FxTestSupport.callOnFx(() -> toolWindows.isOpen(backlinks.toolWindow(toolWindows))));
             assertEquals(
                     tr("backlinks.title", "target.md", 3),
@@ -109,7 +124,8 @@ class MarkdownBacklinksFxTest {
             assertEquals(4, (int) FxTestSupport.callOnFx(() -> opened.getArea().getCurrentParagraph()));
 
             // The list followed the tab: a.md is linked from unrelated.md only.
-            assertEquals(List.of("unrelated.md (1)", "1: [a](a.md)"), shown(backlinks));
+            List<String> linksToA = List.of("unrelated.md (1)", "1: [a](a.md)");
+            assertEquals(linksToA, shownOnce(backlinks, linksToA));
 
             // And it follows the index: a saved edit that drops the link empties it, with no second walk.
             Files.writeString(root.resolve("unrelated.md"), "nothing now\n");
