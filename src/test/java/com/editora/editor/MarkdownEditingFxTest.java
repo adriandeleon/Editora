@@ -555,6 +555,32 @@ class MarkdownEditingFxTest {
     }
 
     @Test
+    void deletingSelectedItemsLeavesAnOrderedListInSequence() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("1. a\n«2. b\n3. c\n»4. d\n");
+            CodeArea area = buffer.getArea();
+            area.getUndoManager().forgetHistory();
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("1. a\n‸2. d\n", shown(buffer));
+            area.undo();
+            assertEquals("1. a\n2. b\n3. c\n4. d\n", area.getText(), "one undo: the deletion and the renumbering");
+
+            place(area, "1. a\n2. b«\n3. c»\n4. d\n");
+            press(buffer, KeyCode.BACK_SPACE, false);
+            assertEquals("1. a\n2. b‸\n3. d\n", shown(buffer));
+
+            place(area, "1. a\n«5. b\n»9. c\n");
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("1. a\n‸9. c\n", shown(buffer), "numbered by hand: left alone");
+
+            place(area, "- a\n«- b\n»- c\n");
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("- a\n‸- c\n", shown(buffer), "bullets: the ordinary deletion");
+            buffer.dispose();
+        });
+    }
+
+    @Test
     void theBarKeepsOffTheSelectedText() {
         // caret line at y 100–120 in a pane 400 tall, bar 40 tall
         assertEquals(56, MarkdownFormatBar.placeY(100, 120, 40, 400, false), "above the caret line");

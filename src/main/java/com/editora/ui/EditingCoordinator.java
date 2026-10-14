@@ -295,6 +295,10 @@ final class EditingCoordinator {
     }
 
     void onCut() {
+        renumberingList(this::cutNow); // whole items cut from or pasted into an ordered list: numbered again
+    }
+
+    private void cutNow() {
         if (!activeEditable()) {
             return;
         }
@@ -437,6 +441,10 @@ final class EditingCoordinator {
     }
 
     void onPaste() {
+        renumberingList(this::pasteNow); // whole items cut from or pasted into an ordered list: numbered again
+    }
+
+    private void pasteNow() {
         if (!activeEditable()) {
             return;
         }

@@ -371,6 +371,62 @@ public final class MarkdownEditing {
         renumberList(true);
     }
 
+    /**
+     * Hooks a view of the buffer up: the format bar's mouse tracking ({@code onMouseRelease} asks for its
+     * update), and Delete / Backspace over selected lines of an ordered list, which leaves the list numbered
+     * in sequence.
+     */
+    void attach(CodeArea a, Runnable onMouseRelease) {
+        MarkdownFormatBar.trackMouse(a, onMouseRelease);
+        a.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (deleteSelectedItems(a, e)) {
+                e.consume();
+            }
+        });
+    }
+
+    /**
+     * Delete or Backspace with a selection that spans lines of an ordered Markdown list which was numbered in
+     * sequence: deletes the selection and numbers the list again, as one undo step. False — the key does what
+     * it always does — for anything else, including a list numbered out of sequence by hand.
+     */
+    private boolean deleteSelectedItems(CodeArea a, javafx.scene.input.KeyEvent e) {
+        boolean key = e.getCode() == javafx.scene.input.KeyCode.DELETE
+                || e.getCode() == javafx.scene.input.KeyCode.BACK_SPACE;
+        if (!key
+                || a.getSelection().getLength() == 0
+                || e.isConsumed()
+                || e.isControlDown()
+                || e.isAltDown()
+                || e.isMetaDown()
+                || !buffer.isMarkdown()
+                || !buffer.canFormatMarkdown()
+                || buffer.hasMultipleCarets()
+                || a.getSelectedText().indexOf('\n') < 0) {
+            return false;
+        }
+        String text = a.getText();
+        int start = a.getSelection().getStart();
+        int end = a.getSelection().getEnd();
+        if (!orderedItemAt(text, start) && !orderedItemAt(text, end)) {
+            return false;
+        }
+        if (MarkdownLines.renumber(text, start) != null || MarkdownLines.renumber(text, end) != null) {
+            return false; // numbered by hand: left as its author numbered it
+        }
+        a.replaceSelection("");
+        renumberList(true);
+        a.requestFollowCaret();
+        return true;
+    }
+
+    private static boolean orderedItemAt(String text, int offset) {
+        int ls = text.lastIndexOf('\n', offset - 1) + 1;
+        int le = text.indexOf('\n', offset);
+        return com.editora.markdown.MarkdownLine.parse(text.substring(ls, le < 0 ? text.length() : le))
+                .isOrdered();
+    }
+
     /** Whether the ordered list at the caret is numbered in sequence (true as well when there is no such list). */
     public boolean listInOrder() {
         CodeArea a = view();

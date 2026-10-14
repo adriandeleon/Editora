@@ -318,6 +318,37 @@ class MarkdownCommandsFxTest {
     }
 
     @Test
+    void cuttingAndPastingWholeItemsKeepsAnOrderedListInSequence() throws Exception {
+        EditorBuffer b = open("1. a\n2. b\n3. c\n", 0);
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().selectRange(5, 10); // the line "2. b\n"
+            registry.run("edit.cut");
+        });
+        assertEquals("1. a\n2. c\n", text(b));
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(0);
+            registry.run("edit.paste");
+        });
+        assertEquals("1. b\n2. a\n3. c\n", text(b), "pasted at the top: it is the first item now");
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().undo());
+        assertEquals("1. a\n2. c\n", text(b), "one undo takes back the paste and its renumbering");
+    }
+
+    @Test
+    void anInlineWordSnippetExpandsOnlyAloneOnItsLine() throws Exception {
+        EditorBuffer sentence = open("see the code\n", 12);
+        FxTestSupport.runOnFx(() ->
+                javafx.event.Event.fireEvent(sentence.getFocusedArea(), key(KeyEvent.KEY_PRESSED, "", KeyCode.TAB)));
+        assertFalse(text(sentence).contains("`"), text(sentence));
+        assertTrue(text(sentence).startsWith("see the code"), "Tab did what Tab does there");
+
+        EditorBuffer alone = open("code\n", 4);
+        FxTestSupport.runOnFx(
+                () -> javafx.event.Event.fireEvent(alone.getFocusedArea(), key(KeyEvent.KEY_PRESSED, "", KeyCode.TAB)));
+        assertTrue(text(alone).startsWith("`"), text(alone));
+    }
+
+    @Test
     void tabExpandsABlockSnippetOnlyAtTheStartOfALine() throws Exception {
         EditorBuffer sentence = open("take a note\n", 11);
         FxTestSupport.runOnFx(() ->
