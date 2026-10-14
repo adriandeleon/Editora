@@ -11,12 +11,21 @@
       JReleaser's file globs happily match nothing, so a release that lost its .deb to a
       failed wrap would otherwise publish without it and could never be completed.
 
-Both exit 0 when the release may proceed and 1 with a list of what is wrong otherwise.
+  check-release.py ci <owner/repo> <commit-sha> [--mode enforce|report] [--wait-minutes N]
+      Preflight: every check that the master branch's ruleset requires must have passed on the commit
+      being released. A tag can be pushed on any commit, and the build legs run no tests, so without
+      this a release could be cut from code CI never passed (or failed). When CI is still running on
+      the commit (a tag pushed straight after a merge), it waits up to N minutes. Asks GitHub with `gh`.
+
+All exit 0 when the release may proceed and 1 with a list of what is wrong otherwise.
 """
 import argparse
+import json
 from pathlib import Path
 import re
+import subprocess
 import sys
+import time
 
 
 # What each build leg stages (the "Stage artifacts" step of release.yml), by target. Linux arm64
@@ -94,6 +103,82 @@ def missing_assets(root, version, jar_version):
     return [name for name in expected_assets(version, jar_version) if name not in found]
 
 
+def required_checks(repo, gh=None):
+    """The check names the default branch's rulesets require, as GitHub reports them for `master`."""
+    out = (gh or _gh)(['api', f'repos/{repo}/rules/branches/master',
+                       '--jq', '.[] | select(.type == "required_status_checks")'
+                               ' | .parameters.required_status_checks[].context'])
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def check_runs(repo, sha, gh=None):
+    """Every check run on `sha`: dicts with name, status, conclusion and started_at."""
+    out = (gh or _gh)(['api', '--paginate', f'repos/{repo}/commits/{sha}/check-runs?per_page=100',
+                       '--jq', '.check_runs[] | {name, status, conclusion, started_at}'])
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def ci_verdict(runs, required):
+    """('pass' | 'pending' | 'fail', one line per required check).
+
+    A check can have run more than once on a commit (a re-run, or a push and a dispatched run): the
+    newest run of each name decides, so re-running a check that failed for an unrelated reason counts.
+    Only `success` passes. A `skipped` or `neutral` required check passes GitHub's merge rule, but it is
+    not evidence that the code was tested.
+    """
+    newest = {}
+    for run in runs:
+        name = run.get('name')
+        if name in required and (run.get('started_at') or '') >= (newest.get(name, {}).get('started_at') or ''):
+            newest[name] = run
+    failed = pending = False
+    lines = []
+    for name in required:
+        run = newest.get(name)
+        if run is None:
+            pending = True
+            lines.append(f'  waiting  {name}: has not started on this commit')
+        elif run.get('status') != 'completed':
+            pending = True
+            lines.append(f"  waiting  {name}: {run.get('status')}")
+        elif run.get('conclusion') == 'success':
+            lines.append(f'  ok       {name}')
+        else:
+            failed = True
+            lines.append(f"  FAILED   {name}: {run.get('conclusion')}")
+    return ('fail' if failed else 'pending' if pending else 'pass'), lines
+
+
+def check_ci(repo, sha, mode, wait_minutes, gh=None, sleep=time.sleep, clock=time.monotonic):
+    """Polls until the required checks on `sha` have a verdict or the wait is over. Returns the exit code."""
+    required = required_checks(repo, gh)
+    level = 'error' if mode == 'enforce' else 'warning'
+    if not required:
+        print(f'::{level} title=Release preflight::the master ruleset requires no checks, so there is '
+              'nothing to tell whether CI passed on this commit')
+        return 1 if mode == 'enforce' else 0
+    deadline = clock() + wait_minutes * 60
+    while True:
+        verdict, lines = ci_verdict(check_runs(repo, sha, gh), required)
+        print(f'CI on {sha[:12]}: {verdict}')
+        print('\n'.join(lines), flush=True)
+        if verdict == 'pass':
+            return 0
+        if verdict == 'fail' or clock() >= deadline:
+            break
+        sleep(30)
+    if verdict == 'fail':
+        problem = 'a check that master requires failed on this commit; fix it, or re-run it if it was unrelated'
+    else:
+        problem = f'CI has not finished on this commit after {wait_minutes} minute(s)'
+    print(f'::{level} title=Release preflight::{problem}')
+    return 1 if mode == 'enforce' else 0
+
+
+def _gh(args):
+    return subprocess.run(['gh', *args], check=True, capture_output=True, text=True).stdout
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -106,7 +191,15 @@ def main(argv=None):
     assets.add_argument('version')
     assets.add_argument('--pom', type=Path, required=True)
     assets.add_argument('--mode', choices=('enforce', 'report'), default='enforce')
+    ci = commands.add_parser('ci')
+    ci.add_argument('repo')
+    ci.add_argument('sha')
+    ci.add_argument('--mode', choices=('enforce', 'report'), default='enforce')
+    ci.add_argument('--wait-minutes', type=int, default=0)
     args = parser.parse_args(argv)
+
+    if args.command == 'ci':
+        return check_ci(args.repo, args.sha, args.mode, args.wait_minutes)
 
     if args.command == 'version':
         problems = check_version(args.ref_type, args.ref_name, args.pom)

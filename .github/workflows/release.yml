@@ -22,10 +22,19 @@ jobs:
   # and published installers named 1.2.3 whose app reports 1.2.3-SNAPSHOT (and the post-release bump then
   # quietly did nothing). -rc tags are cut from the -SNAPSHOT line and are only checked for their shape; a
   # manual dispatch from a branch is not checked at all. See scripts/release/check-release.py.
+  #
+  # It then refuses a commit that CI did not pass. The build legs run no tests (`-DskipTests`) and a tag
+  # can be pushed on any commit, so before this a release could be cut from code whose required checks had
+  # failed, or never ran. "Required" is whatever the master branch's ruleset requires, read from the API.
+  # CI may still be running when the tag goes up straight after a merge, so on a tag it waits for up to 30
+  # minutes; a failed check stops it at once. A manual dry run only reports.
   preflight:
-    name: Preflight (tag vs pom version)
+    name: Preflight (tag vs pom version, CI passed)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      checks: read   # the check runs on the commit being released
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,6 +43,19 @@ jobs:
 
       - name: Check the tag against the pom version
         run: python3 scripts/release/check-release.py version "$GITHUB_REF_TYPE" "$GITHUB_REF_NAME" pom.xml
+
+      # If a required check failed for a reason that has nothing to do with the code (a runner lost, a
+      # flaky test), re-run it on the commit and then re-run this workflow: the newest run of each check
+      # decides.
+      - name: Check that CI passed on this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            python3 scripts/release/check-release.py ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode enforce --wait-minutes 30
+          else
+            python3 scripts/release/check-release.py ci "$GITHUB_REPOSITORY" "$GITHUB_SHA" --mode report
+          fi
 
   build:
     name: Build ${{ matrix.target }}

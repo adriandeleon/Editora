@@ -48,6 +48,15 @@ says `X.Y.Z-SNAPSHOT` is refused instead of publishing installers whose app call
 snapshot), and a tag must be `vX.Y.Z` or `vX.Y.Z-rcN`. An `-rc` tag is cut from the `-SNAPSHOT`
 line and is checked only for its shape.
 
+The same job then **refuses a commit that CI did not pass**. The build legs run no tests, so it asks
+GitHub which checks the `master` ruleset requires (today `Build & Test (JDK 25)` and `Format (JDK 25)`)
+and requires each to have succeeded on the tagged commit, `-rc` tags included. When CI is still running
+on that commit — a tag pushed right after the merge — it waits for up to 30 minutes, so the build legs
+start once CI is green; a failed check stops it at once. **Tag a commit whose CI has passed**, normally
+the merge commit on `master`. If a required check failed for a reason unrelated to the code, re-run it
+on that commit, then re-run the Release workflow: the newest run of each check decides. A manual dry run
+prints the same verdict without stopping.
+
 **Step 1 is the only manual version edit.** After the release publishes, the workflow's final
 `bump` job opens a pull request that reopens `master` at the next patch `-SNAPSHOT` — merge it; see
 below.

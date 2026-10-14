@@ -14,7 +14,9 @@ experimental asset and does not block the ordinary release. See the measured lim
 [`native-image-staticfx.md`](../native-image-staticfx.md).
 
 `.github/workflows/release.yml` runs on a version-shaped `vX.Y.Z*` tag (or manual dispatch for a
-dry run), after a `preflight` job has checked the tag against the pom version: a 5-way
+dry run), after a `preflight` job has checked the tag against the pom version and that every check the
+`master` ruleset requires passed on the tagged commit (`check-release.py ci`, waiting up to 30 minutes
+for CI still running): a 5-way
 matrix (linux x64/arm64, macOS x64/arm64, windows x64 — **Windows arm64 is omitted: a hosted
 runner now exists (`windows-11-arm`, GA Jan 2026), but OpenJFX (through 27) publishes no `win-aarch64` native
 jar on Maven Central (see [JDK-8314064]), so a native ARM64 build can't link — Windows-on-ARM users
