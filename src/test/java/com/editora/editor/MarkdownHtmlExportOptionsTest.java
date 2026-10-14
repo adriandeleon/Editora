@@ -22,11 +22,18 @@ class MarkdownHtmlExportOptionsTest {
     Path dir;
 
     private static MarkdownHtmlExport.Options options(boolean highlight, boolean embed, Path base) {
-        return new MarkdownHtmlExport.Options(highlight, embed, base, null, com.editora.pdf.CodeHtml::toHtml);
+        return new MarkdownHtmlExport.Options(
+                highlight,
+                embed,
+                base,
+                null,
+                MarkdownHtmlExport.painter(
+                        com.editora.pdf.CodeHtml::toClassHtml,
+                        () -> com.editora.pdf.CodeHtml.classCss(".markdown-body")));
     }
 
     @Test
-    void fencedCodeIsColouredInlineWithoutScriptWhenAsked() {
+    void fencedCodeIsColouredByClassesForBothSchemesWithoutScriptWhenAsked() {
         String md = "```java\nclass A { int x = 1; } // note\n```\n\n```nolanguage\nplain <b>\n```\n";
         String plain = MarkdownHtmlExport.toHtml(md, "t", false);
         assertTrue(plain.contains("<pre><code class=\"language-java\">class A"), plain);
@@ -34,7 +41,13 @@ class MarkdownHtmlExportOptionsTest {
 
         String coloured = MarkdownHtmlExport.toHtml(md, "t", false, options(true, false, null));
         assertTrue(coloured.contains("<pre class=\"md-highlight\""), coloured);
-        assertTrue(coloured.contains("<span style=\"color:#"), "token colours are inline styles: " + coloured);
+        assertTrue(coloured.contains("<span class=\"hl-k hl-b\">class</span>"), "tokens carry classes: " + coloured);
+        assertFalse(coloured.contains("style=\"color:"), "no colour is written inline: " + coloured);
+        // One stylesheet, both schemes: the keyword is red on a light page and a lighter red on a dark one.
+        assertTrue(coloured.contains(".markdown-body .hl-k { color: #cf222e; }"), coloured);
+        int dark = coloured.lastIndexOf("@media (prefers-color-scheme: dark)");
+        assertTrue(dark > 0 && coloured.indexOf(".hl-k { color: #ff7b72; }", dark) > dark, "and its dark colour");
+        assertFalse(plain.contains(".hl-k"), "a page with no coloured block carries no token rules");
         assertTrue(coloured.replaceAll("<[^>]+>", "").contains("class A { int x = 1; } // note"), coloured);
         assertTrue(
                 coloured.contains("<pre><code class=\"language-nolanguage\">plain &lt;b&gt;"),

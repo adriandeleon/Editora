@@ -68,6 +68,29 @@ public final class MarkdownHtmlExport {
     public interface CodePainter {
         String toHtml(
                 String text, org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans, int tabSize);
+
+        /** Extra page CSS the fragments need (token classes for the light and the dark scheme); "" for none. */
+        default String css() {
+            return "";
+        }
+    }
+
+    /** A painter from its two halves: the fragment and the stylesheet that colours its classes. */
+    public static CodePainter painter(CodePainter fragment, java.util.function.Supplier<String> css) {
+        return new CodePainter() {
+            @Override
+            public String toHtml(
+                    String text,
+                    org.fxmisc.richtext.model.StyleSpans<java.util.Collection<String>> spans,
+                    int tabSize) {
+                return fragment.toHtml(text, spans, tabSize);
+            }
+
+            @Override
+            public String css() {
+                return css.get();
+            }
+        };
     }
 
     /**
@@ -114,7 +137,11 @@ public final class MarkdownHtmlExport {
                 .nodeRendererFactory(ctx -> new CodeBlocks(ctx.getWriter(), o))
                 .build();
         String body = renderer.render(doc);
-        return page(MarkdownDocInfo.title(doc, title), MarkdownDocInfo.language(doc, null), body);
+        // The token classes' rules go in only when a block was actually coloured.
+        String extraCss = o.painter() != null && body.contains("class=\"md-highlight\"")
+                ? o.painter().css()
+                : "";
+        return page(MarkdownDocInfo.title(doc, title), MarkdownDocInfo.language(doc, null), body, extraCss);
     }
 
     /** Rewrites every image the document can load into a {@code data:} URI; the others keep their address. */
@@ -263,8 +290,10 @@ public final class MarkdownHtmlExport {
                     return null;
                 }
                 String body = code.endsWith("\n") ? code.substring(0, code.length() - 1) : code;
-                return painter.toHtml(body, TextMateHighlighter.compute(body, grammar), 4)
-                        .replaceFirst("^<pre ", "<pre class=\"md-highlight\" ");
+                String html = painter.toHtml(body, TextMateHighlighter.compute(body, grammar), 4);
+                return html.startsWith("<pre class=")
+                        ? html
+                        : html.replaceFirst("^<pre ", "<pre class=\"md-highlight\" ");
             } catch (RuntimeException | LinkageError e) {
                 return null; // colour is a nicety: the block is still exported, plain
             }
@@ -304,7 +333,7 @@ public final class MarkdownHtmlExport {
         }
     }
 
-    private static String page(String title, String lang, String body) {
+    private static String page(String title, String lang, String body, String extraCss) {
         return "<!DOCTYPE html>\n<html" + (lang == null ? "" : " lang=\"" + escape(lang) + "\"")
                 + ">\n<head>\n<meta charset=\"utf-8\">\n"
                 + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
@@ -314,6 +343,7 @@ public final class MarkdownHtmlExport {
                 + escape(title)
                 + "</title>\n<style>\n"
                 + stylesheet()
+                + (extraCss.isEmpty() ? "" : "\n" + extraCss)
                 + "\n</style>\n</head>\n<body>\n<article class=\"markdown-body\">\n"
                 + body
                 + "</article>\n</body>\n</html>\n";
