@@ -3894,6 +3894,14 @@ public class SettingsWindow {
     private Spinner<Integer> syncIntervalSpinner;
     /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
     private String syncConnectMessage;
+    /**
+     * Why the last Connect or Create did not go through (an unusable URL, an unreachable repository, a gh
+     * error). Kept, rather than written to the label once, so that a refresh arriving afterwards — the
+     * GitHub sign-in check finishing, the service reporting its state — does not replace it with "Not
+     * connected." before it was read. It goes when the user edits the repository, tries again or
+     * disconnects.
+     */
+    private String syncNotice;
 
     /** Injects the application's settings sync (null in a window that has none, e.g. a test double). */
     void setSettingsSync(SettingsSync sync) {
@@ -3930,6 +3938,7 @@ public class SettingsWindow {
         commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
             config.getSettings().setSyncRepoUrl(text);
             config.save();
+            syncNotice = null;
             refreshSyncControls();
         });
         cardRow(
@@ -3942,6 +3951,7 @@ public class SettingsWindow {
         commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
             config.getSettings().setSyncBranch(text);
             config.save();
+            syncNotice = null;
             refreshSyncControls();
         });
         syncConnectButton = new Button(tr("settings.sync.connect"));
@@ -3953,6 +3963,7 @@ public class SettingsWindow {
             if (settingsSync != null) {
                 settingsSync.disconnected();
             }
+            syncNotice = null;
             refreshSyncControls();
         });
         syncCreateGithubButton = new Button(tr("settings.sync.createGithub"));
@@ -4117,7 +4128,15 @@ public class SettingsWindow {
         syncStateLabel.setText(
                 syncConnectMessage != null
                         ? syncConnectMessage
-                        : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
+                        : syncNotice != null
+                                ? syncNotice
+                                : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
+    }
+
+    /** Shows {@code text} in the status line until the user next acts on the repository (see {@link #syncNotice}). */
+    private void showSyncNotice(String text) {
+        syncNotice = text;
+        refreshSyncControls();
     }
 
     /**
@@ -4129,11 +4148,12 @@ public class SettingsWindow {
             return;
         }
         commitPendingFields();
+        syncNotice = null;
         Settings settings = config.getSettings();
         String url = settings.getSyncRepoUrl();
         String branch = settings.getSyncBranch();
         if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
-            syncStateLabel.setText(tr("status.sync.invalidRepository"));
+            showSyncNotice(tr("status.sync.invalidRepository"));
             return;
         }
         syncConnectMessage = tr("sync.state.checking");
@@ -4141,8 +4161,7 @@ public class SettingsWindow {
         settingsSync.preview(url, branch, report -> {
             syncConnectMessage = null;
             if (!report.ok()) {
-                refreshSyncControls();
-                syncStateLabel.setText(SettingsSync.problemText(report));
+                showSyncNotice(SettingsSync.problemText(report));
                 return;
             }
             if (!report.received().isEmpty()) {
@@ -4185,8 +4204,9 @@ public class SettingsWindow {
         if (name.isEmpty()) {
             return;
         }
+        syncNotice = null;
         if (!name.matches("[A-Za-z0-9._-]+")) {
-            syncStateLabel.setText(tr("status.sync.invalidRepositoryName"));
+            showSyncNotice(tr("status.sync.invalidRepositoryName"));
             return;
         }
         syncConnectMessage = tr("sync.state.creating");
@@ -4194,8 +4214,7 @@ public class SettingsWindow {
         githubService.createPrivateRepo(name, tr("settings.sync.githubDescription"), created -> {
             syncConnectMessage = null;
             if (!created.ok()) {
-                refreshSyncControls();
-                syncStateLabel.setText(tr("status.sync.failed", created.error()));
+                showSyncNotice(tr("status.sync.failed", created.error()));
                 return;
             }
             config.getSettings().setSyncRepoUrl(created.url());
@@ -4213,10 +4232,10 @@ public class SettingsWindow {
         try {
             java.nio.file.Files.createDirectories(dir);
         } catch (java.io.IOException e) {
-            syncStateLabel.setText(String.valueOf(e.getMessage()));
+            showSyncNotice(String.valueOf(e.getMessage()));
             return;
         }
-        com.editora.process.DesktopActions.reveal(dir, true, syncStateLabel::setText);
+        com.editora.process.DesktopActions.reveal(dir, true, this::showSyncNotice);
     }
 
     /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The

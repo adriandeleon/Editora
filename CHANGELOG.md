@@ -148,6 +148,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings ▸ Sync:** the reason Connect was refused (no repository or branch, an unreachable repository, a
+  GitHub error) could be replaced by "Not connected." a moment later, when the GitHub sign-in check finished. It now
+  stays until the repository is edited, Connect is tried again, or sync is disconnected.
 - **Markdown Lint: Lint Project** showed no results when the Lint tool window was closed: opening the window
   cancelled the scan it was opened for. A `.markdownlint` file saved twice in quick succession could be read from a
   stale cache. A lint squiggle could be left where the text used to start when the gutter was sized after the
