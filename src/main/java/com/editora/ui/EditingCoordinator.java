@@ -338,6 +338,10 @@ final class EditingCoordinator {
 
     void onCopy() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && b.previewEditCommand(false)) { // text selected in the rendered preview
+            host.setStatus(tr("status.copied"));
+            return;
+        }
         if (nothingSelectedAtAnyCaret(b)) {
             host.setStatus(tr("status.nothingToCopy"));
             return;
@@ -2373,6 +2377,10 @@ final class EditingCoordinator {
 
     /** Selects the whole document in the active area (no edit, so it works in read-only/view mode too). */
     void selectAll() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.previewEditCommand(true)) {
+            return; // the rendered preview is where the user is: its text is what is selected
+        }
         CodeArea area = host.activeArea();
         if (area != null) {
             collapseCarets(); // a leftover extra caret would type alongside the replaced selection
