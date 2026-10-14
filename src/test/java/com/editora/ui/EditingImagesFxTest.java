@@ -340,6 +340,66 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void savingTrashesAPastedPictureTheDocumentNoLongerUses() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path theirs = Files.write(Files.createDirectories(assets(b)).resolve("theirs.png"), png(1, 1));
+        Path trashDir = Files.createDirectory(dir.resolve("trash" + counter++));
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.lang.reflect.Field seam = workflows.getClass().getDeclaredField("pastedImageBin");
+        seam.setAccessible(true);
+        seam.set(workflows, com.editora.io.Trash.directory(trashDir));
+        try {
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
+            Path pasted = assets(b).resolve("pasted-image.png");
+            assertTrue(Files.exists(pasted));
+
+            // Saved while still used: it stays.
+            FxTestSupport.runOnFx(() -> registry.run("file.save"));
+            awaitSaved(b);
+            assertTrue(Files.exists(pasted));
+
+            // The link is deleted, then the document saved: the picture goes to the trash, and only it.
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("no picture any more\n");
+                registry.run("file.save");
+            });
+            awaitSaved(b);
+            assertFalse(Files.exists(pasted), "moved out of assets/");
+            assertEquals(
+                    List.of("pasted-image.png"),
+                    names(trashDir).stream().limit(1).toList());
+            assertTrue(Files.exists(theirs), "a file the session did not create is never touched");
+            assertTrue(status().contains(tr("status.markdown.imagesTrashed", 1)), status());
+
+            fx.shared.getSettings().setMarkdownTrashUnusedPastedImages(false);
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> {
+                registry.run("edit.paste");
+                b.getArea().replaceText("again without\n");
+                registry.run("file.save");
+            });
+            awaitSaved(b);
+            assertTrue(Files.exists(pasted), "switched off: nothing is trashed");
+        } finally {
+            fx.shared.getSettings().setMarkdownTrashUnusedPastedImages(true);
+            seam.set(workflows, null);
+            clearClipboard();
+        }
+    }
+
+    /** A save is written on a background executor: wait until the buffer says it reached the disk. */
+    private void awaitSaved(EditorBuffer b) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (FxTestSupport.callOnFx(b::isDirty)) {
+            assertTrue(System.nanoTime() < deadline, "the save was never acknowledged");
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+        FxTestSupport.drainFx();
+    }
+
+    @Test
     void aTypstDocumentGetsAnImageCallInsteadOfAMarkdownLink() throws Exception {
         EditorBuffer b = document("paper.typ", "= Paper\n");
         Path picture = Files.write(Files.createDirectory(dir.resolve("src-typ")).resolve("fig.png"), png(2, 2));

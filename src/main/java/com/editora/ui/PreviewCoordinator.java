@@ -557,6 +557,17 @@ final class PreviewCoordinator {
         }
     }
 
+    /** {@code markdown.convertWikiLink}: the link at the caret from wiki link to Markdown link, or back. */
+    void markdownConvertWikiLink() {
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            int result = b.markdown().convertWikiLink();
+            if (result != 0) {
+                host.setStatus(tr(result == 1 ? "status.markdown.noLink" : "status.markdown.linkNotLocal"));
+            }
+        }
+    }
+
     /** {@code markdown.pasteAsMarkdown}: the clipboard's HTML (or tab-separated cells) pasted as Markdown. */
     void markdownPasteAsMarkdown() {
         EditorBuffer b = editableMarkdown();
@@ -577,10 +588,10 @@ final class PreviewCoordinator {
         if (b == null) {
             return;
         }
-        com.editora.markdown.MarkdownLinks.Link link = b.markdown().linkAtCaret();
+        String[] link = b.markdown().linkForEditing(); // a Markdown link, a wiki link, or the selection
         LinkEditCard card = new LinkEditCard(
-                link == null ? b.markdown().linkTextCandidate() : link.text(),
-                link == null ? "" : link.destination(),
+                link[0],
+                link[1],
                 host.overlayHost()::hide,
                 (text, url) -> b.markdown().setLink(text, url));
         showAtCaret(card.card(), card::focus);

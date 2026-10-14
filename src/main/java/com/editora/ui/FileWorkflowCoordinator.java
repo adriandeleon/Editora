@@ -2522,7 +2522,7 @@ final class FileWorkflowCoordinator {
         ProjectPanel.noteLocalWrite(host.projectPanel(), request.target()); // ours: not an external change
         host.fileSaved(request.target());
         if (showFeedback && !request.buffer().isDisposed()) {
-            host.setStatus(savedStatus(request, disk, autoSave));
+            host.setStatus(savedStatus(request, disk, autoSave) + (autoSave ? "" : pastedImagesNote(request)));
             host.git().refresh();
             host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
             if (!autoSave) {
@@ -2555,6 +2555,39 @@ final class FileWorkflowCoordinator {
         if (notes.charsetChanged()) {
             buffer.setDetectedCharset(notes.charsetTo());
         }
+    }
+
+    /** The trash unused pasted images go to; a test puts its own in. Null: the system's. */
+    com.editora.io.Trash.Bin pastedImageBin;
+
+    /**
+     * After an explicit save: moves the images pasted into the document in this session that it no longer
+     * uses to the trash ({@link PastedImageCleanup}), and returns what to add to the status message.
+     */
+    private String pastedImagesNote(SaveRequest request) {
+        EditorBuffer buffer = request.buffer();
+        if (!host.config().getSettings().isMarkdownTrashUnusedPastedImages()
+                || buffer.markdown().sessionImages().isEmpty()) {
+            return "";
+        }
+        java.util.function.Predicate<String> usedElsewhere = name -> {
+            for (Tab tab : host.editorArea().tabs()) {
+                EditorBuffer other = host.bufferOf(tab);
+                if (other != null
+                        && other != buffer
+                        && (other.isMarkdown() || other.isTypst())
+                        && other.getContent().contains(name)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        return PastedImageCleanup.afterSave(
+                request.target(),
+                request.savedText(),
+                buffer.markdown().sessionImages(),
+                usedElsewhere,
+                pastedImageBin != null ? pastedImageBin : com.editora.io.Trash.system());
     }
 
     /** What a finished save says: the warnings a plain "Saved" used to overwrite a few milliseconds later. */

@@ -118,4 +118,34 @@ class HtmlToMarkdownTest {
         assertFalse(HtmlToMarkdown.looksLikeMarkdown("An ordinary sentence - with a dash."));
         assertFalse(HtmlToMarkdown.looksLikeMarkdown(null));
     }
+
+    @Test
+    void mergedCellsKeepEveryOtherCellUnderItsHeading() {
+        // Markdown has no merged cells: the text goes in the first cell covered, the rest stay empty.
+        String html = "<table><tr><th colspan=2>Name</th><th>Qty</th></tr>"
+                + "<tr><td rowspan=2>Ann</td><td>x</td><td>1</td></tr>"
+                + "<tr><td>y</td><td>2</td></tr>"
+                + "<tr><td>Bob</td><td colspan=\"2\">none</td></tr></table>";
+        assertEquals(
+                "| Name |      | Qty |\n| ---- | ---- | --- |\n| Ann  | x    | 1   |\n|      | y    | 2   |\n| Bob  | none |     |",
+                HtmlToMarkdown.convert(html));
+    }
+
+    @Test
+    void aNestedTableIsFlattenedIntoItsCell() {
+        String html = "<table><tr><td>outer</td><td><table><tr><td>in 1</td><td>in 2</td></tr>"
+                + "<tr><td>in 3</td></tr></table></td></tr><tr><td>next</td><td>row</td></tr></table>";
+        assertEquals(
+                "| outer | in 1 in 2 in 3 |\n| ----- | -------------- |\n| next  | row            |",
+                HtmlToMarkdown.convert(html));
+    }
+
+    @Test
+    void definitionListsUseTheColonSyntax() {
+        assertEquals(
+                "Apple\n: A fruit.\n: A computer company.\n\nOrange\n: The fruit of an *evergreen* tree.",
+                HtmlToMarkdown.convert("<dl><dt>Apple</dt><dd>A fruit.</dd><dd>A computer company.</dd>"
+                        + "<dt>Orange<dd>The fruit of an <em>evergreen</em> tree.</dl>"));
+        assertEquals("", HtmlToMarkdown.convert("<dl></dl>"));
+    }
 }
