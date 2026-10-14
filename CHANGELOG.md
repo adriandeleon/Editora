@@ -112,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Exports:** Word documents get real heading styles, numbered and bulleted lists, table alignment, inline images,
   internal links for `#heading` and a document title; OpenDocument gets table alignment. `.mdx`, `.Rmd`, `.qmd`,
   `.mdwn` and `.mkdn` open as Markdown.
+- **Abbreviations show what they expand to.** With abbrev-mode on, an abbreviation typed out in full shows its
+  expansion as muted text after the caret (`btw → by the way`), as a snippet trigger does. Tab expands it now,
+  Escape hides the hint, and typing on expands it as before.
 
 ### Changed
 
