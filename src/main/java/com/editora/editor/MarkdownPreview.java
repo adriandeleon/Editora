@@ -53,7 +53,7 @@ final class MarkdownPreview {
 
     /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
      *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
-    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes, String source) {}
+    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes, String source, boolean remoteImages) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
     private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
@@ -248,6 +248,74 @@ final class MarkdownPreview {
         }
     }
 
+    // --- remote images, asked for first ------------------------------------------------------------------
+
+    private boolean remoteGranted;
+    private Runnable rerender = () -> {};
+    private javafx.scene.layout.HBox remoteBar;
+
+    /** Who renders this document again when the reader allows its remote images. */
+    void onRerender(Runnable render) {
+        this.rerender = render == null ? () -> {} : render;
+    }
+
+    /** Whether the reader allowed this document's remote images (policy "ask"), for this session. */
+    boolean remoteGranted() {
+        return remoteGranted;
+    }
+
+    /** Allows this document's remote images, or (a new document is shown here) forgets that it was. */
+    void grantRemote(boolean granted) {
+        if (remoteGranted != granted) {
+            remoteGranted = granted;
+            if (granted) {
+                showRemoteBar(false);
+                rerender.run();
+            }
+        }
+    }
+
+    /** The bar that says the document has remote images and offers to load them; null until first needed. */
+    javafx.scene.layout.HBox remoteBar() {
+        return remoteBar != null && remoteBar.isVisible() ? remoteBar : null;
+    }
+
+    private void showRemoteBar(boolean show) {
+        if (remoteBar == null) {
+            if (!show) {
+                return;
+            }
+            javafx.scene.control.Label says =
+                    new javafx.scene.control.Label(com.editora.i18n.Messages.tr("markdown.remoteImages.blocked"));
+            says.setWrapText(true);
+            says.setMinWidth(0);
+            javafx.scene.layout.HBox.setHgrow(says, javafx.scene.layout.Priority.ALWAYS);
+            says.setMaxWidth(Double.MAX_VALUE);
+            javafx.scene.control.Button load =
+                    new javafx.scene.control.Button(com.editora.i18n.Messages.tr("markdown.remoteImages.load"));
+            load.getStyleClass().add("small");
+            load.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+            load.setOnAction(e -> grantRemote(true));
+            remoteBar = new javafx.scene.layout.HBox(10, says, load);
+            remoteBar.getStyleClass().add("md-remote-bar");
+            remoteBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            remoteBar.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
+            remoteBar.maxWidthProperty().bind(column.widthProperty());
+            StackPane.setAlignment(remoteBar, javafx.geometry.Pos.TOP_CENTER);
+            // The document starts below the bar instead of under it.
+            remoteBar.heightProperty().addListener((o, was, now) -> padForRemoteBar());
+            root.getChildren().add(remoteBar);
+        }
+        remoteBar.setVisible(show);
+        remoteBar.setManaged(show);
+        padForRemoteBar();
+    }
+
+    private void padForRemoteBar() {
+        boolean shown = remoteBar != null && remoteBar.isVisible();
+        StackPane.setMargin(column, shown ? new javafx.geometry.Insets(remoteBar.getHeight() + 6, 0, 0, 0) : null);
+    }
+
     private final PreviewSelection selection = new PreviewSelection(this, column, root);
     private String shownSource;
     private Path shownBaseDir;
@@ -411,6 +479,32 @@ final class MarkdownPreview {
     // --- planning (pure, off the FX thread) -----------------------------------------------------
 
     /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
+    /** An {@code <img … src="http…">} of the HTML subset. */
+    private static final java.util.regex.Pattern REMOTE_IMG = java.util.regex.Pattern.compile(
+            "<img\\b[^>]*\\bsrc\\s*=\\s*[\"']?\\s*https?://", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Whether the document names an {@code http(s)} image — Markdown's or the HTML subset's. Pure. */
+    static boolean namesRemoteImage(org.commonmark.node.Node ast) {
+        boolean[] found = new boolean[1];
+        ast.accept(new org.commonmark.node.AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.Image image) {
+                found[0] |= PreviewImageLoader.isRemote(image.getDestination());
+            }
+
+            @Override
+            public void visit(org.commonmark.node.HtmlInline html) {
+                found[0] |= REMOTE_IMG.matcher(html.getLiteral()).find();
+            }
+
+            @Override
+            public void visit(org.commonmark.node.HtmlBlock html) {
+                found[0] |= REMOTE_IMG.matcher(html.getLiteral()).find();
+            }
+        });
+        return found[0];
+    }
+
     static Plan plan(String markdown, Path baseDir) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
@@ -444,7 +538,7 @@ final class MarkdownPreview {
             units.add(new Unit(n, last, key, start, end, slug, firstReferences(n, last, referred)));
             n = last.getNext();
         }
-        return new Plan(units, baseDir, footnotes, md);
+        return new Plan(units, baseDir, footnotes, md, namesRemoteImage(ast));
     }
 
     private static SourceSpan firstSpan(org.commonmark.node.Node n) {
@@ -611,7 +705,8 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir() + "|"
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remotePolicy() + remoteGranted + "|"
+                + plan.baseDir() + "|"
                 + PreviewPrefs.signature() + "|" + MarkdownRenderer.wikiLinks() + "|" + WikiLinkTargets.epoch();
         column.setMaxWidth(PreviewPrefs.contentWidth());
         if (!signature.equals(contextSignature)) {
@@ -624,7 +719,11 @@ final class MarkdownPreview {
                 this::follow,
                 dark,
                 plan.footnotes(),
-                new MarkdownRenderer.Live(this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter()));
+                new MarkdownRenderer.Live(
+                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted));
+        showRemoteBar(plan.remoteImages()
+                && !remoteGranted
+                && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK);
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(

@@ -798,7 +798,11 @@ final class PreviewCoordinator {
     void applyPreviewSettings() {
         Settings s = host.config().getSettings();
         com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
-        com.editora.editor.PreviewImageLoader.setRemoteImages(s.isMarkdownRemoteImages());
+        // (the older on/off switch still decides while it says "off": never, whatever the policy names)
+        com.editora.editor.PreviewImageLoader.setRemotePolicy(
+                s.isMarkdownRemoteImages()
+                        ? com.editora.editor.PreviewImageLoader.RemotePolicy.of(s.getMarkdownRemoteImagePolicy())
+                        : com.editora.editor.PreviewImageLoader.RemotePolicy.NEVER);
         com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
         com.editora.editor.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
         com.editora.editor.PreviewPrefs.set(

@@ -7,6 +7,9 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
+import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.PreviewImageLoader;
+import com.editora.editor.PreviewImageLoader.RemotePolicy;
 import com.editora.editor.PreviewPrefs;
 import com.editora.editor.PreviewScrollSync;
 import org.junit.jupiter.api.AfterAll;
@@ -121,6 +124,10 @@ class MarkdownPreviewSettingsFxTest {
             assertFalse(PreviewPrefs.hideFrontMatter());
             assertTrue(PreviewScrollSync.enabled());
 
+            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertTrue(MarkdownRenderer.wikiLinks());
+            s.setMarkdownRemoteImagePolicy("ask");
+            s.setMarkdownWikiLinks(false);
             s.setMarkdownPreviewFontSize(18);
             s.setMarkdownPreviewWidth(700);
             s.setMarkdownHideFrontMatter(true);
@@ -131,15 +138,24 @@ class MarkdownPreviewSettingsFxTest {
                 assertEquals(700, PreviewPrefs.contentWidth());
                 assertTrue(PreviewPrefs.hideFrontMatter());
                 assertFalse(PreviewScrollSync.enabled());
+                assertEquals(RemotePolicy.ASK, PreviewImageLoader.remotePolicy());
+                assertFalse(MarkdownRenderer.wikiLinks());
+                s.setMarkdownRemoteImagePolicy("never");
+                previews.applyPreviewSettings();
+                assertEquals(RemotePolicy.NEVER, PreviewImageLoader.remotePolicy());
             } finally {
                 s.setMarkdownPreviewFontSize(0);
                 s.setMarkdownPreviewWidth(0);
                 s.setMarkdownHideFrontMatter(false);
                 s.setMarkdownScrollSync(true);
+                s.setMarkdownRemoteImagePolicy("always");
+                s.setMarkdownWikiLinks(true);
                 previews.applyPreviewSettings();
             }
             assertEquals(15, PreviewPrefs.baseFont());
             assertTrue(PreviewScrollSync.enabled());
+            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertTrue(MarkdownRenderer.wikiLinks());
         });
     }
 }

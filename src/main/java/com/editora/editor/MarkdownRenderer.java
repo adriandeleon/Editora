@@ -356,7 +356,16 @@ public final class MarkdownRenderer {
     record Live(
             java.util.function.Predicate<CheckBox> onTask,
             java.util.function.Consumer<Node> onEnlarge,
-            boolean hideFrontMatter) {}
+            boolean hideFrontMatter,
+            boolean remoteGranted) {
+
+        /** Whether the reader allowed this document's remote images where the policy is to ask first. */
+        boolean loadsRemote(String url) {
+            return remoteGranted
+                    && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK
+                    && PreviewImageLoader.isRemote(url);
+        }
+    }
 
     /** Node property of a task box: the source line of its list item when it was built ({@link Live}). */
     static final String TASK_LINE = "editora.md.taskLine";
@@ -1930,7 +1939,10 @@ public final class MarkdownRenderer {
         if (url == null) {
             return inlineCode(imagePlaceholder(alt, null));
         }
-        if (!ctx.images().allows(url)) {
+        boolean granted = ctx.images() == ImagePolicy.DOCUMENT
+                && ctx.live() != null
+                && ctx.live().loadsRemote(url);
+        if (!ctx.images().allows(url) && !granted) {
             return inlineCode(imagePlaceholder(alt, dest)); // shown, never fetched
         }
         ImageView view = new ImageView();

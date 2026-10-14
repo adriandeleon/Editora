@@ -5570,6 +5570,7 @@ public class EditorBuffer implements TabContent {
                     if (markdownPreview == null) {
                         markdownPreview = new MarkdownPreview();
                         markdownPreview.attach(previewPane());
+                        markdownPreview.onRerender(this::scheduleRenderPreview);
                         markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
                         markdownPreview.onJumpToSource(
                                 l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));

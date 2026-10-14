@@ -77,6 +77,7 @@ public final class MarkdownPreviewPane implements TabContent {
         scroll.setContent(preview.root());
         preview.onTaskToggle(
                 line -> live() && source.isEditable() && MarkdownPreview.toggleTask(source.getArea(), line));
+        preview.onRerender(this::render);
         preview.onJumpToSource(line -> {
             if (live()) {
                 reveal.accept(source, line);
@@ -153,6 +154,7 @@ public final class MarkdownPreviewPane implements TabContent {
         }
         showName();
         preview.clear();
+        preview.grantRemote(false); // another document: its remote images are asked about afresh
         render();
     }
 
