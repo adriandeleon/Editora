@@ -65,4 +65,43 @@ class CommandPaletteRankTest {
         assertEquals(
                 List.of("Git: Toggle Blame"), ranked("toggle git", "Git: Toggle Blame", "Git: Commit", "Toggle Fold"));
     }
+
+    private static com.editora.command.Command command(String id, String title) {
+        return com.editora.command.Command.of(id, title, () -> {});
+    }
+
+    private static List<String> titles(String query, com.editora.command.Command... commands) {
+        return CommandPalette.orderedMatches(List.of(commands), query).stream()
+                .map(com.editora.command.Command::title)
+                .toList();
+    }
+
+    @Test
+    void aCommandIsFoundByItsNamespaceWhenItsTitleDoesNotCarryIt() {
+        com.editora.command.Command addRow = command("markdown.tableAddRow", "Table: Add Row");
+        com.editora.command.Command bold = command("markdown.bold", "Markdown: Bold");
+        com.editora.command.Command csv = command("csv.align", "CSV: Align Columns");
+        assertEquals("markdown", addRow.keywords());
+        assertEquals("", bold.keywords(), "the title says it already");
+        assertEquals(List.of("Table: Add Row"), titles("markdown table", addRow, csv));
+        assertEquals(List.of("Table: Add Row"), titles("mark add", addRow, csv), "the start of the keyword is enough");
+        assertEquals(List.of("Table: Add Row"), titles("table add", addRow, csv), "and the title still works");
+        assertEquals(
+                List.of(), titles("table markdown", addRow), "the keyword leads the query, as the group leads a title");
+        assertEquals(List.of(), titles("markdownx", addRow));
+    }
+
+    @Test
+    void aKeywordMatchRanksBelowEveryTitleMatch() {
+        com.editora.command.Command table = command("markdown.tableAddRow", "Table: Add Row");
+        com.editora.command.Command scattered =
+                command("view.x", "Main Area: Keep Down Window Notes"); // m-a-r-k-d-o-w-n
+        com.editora.command.Command titled = command("markdown.toc", "Markdown: Insert Table of Contents");
+        List<String> ranked = titles("markdown", table, scattered, titled);
+        assertEquals("Table: Add Row", ranked.get(ranked.size() - 1), ranked.toString());
+        assertEquals("Markdown: Insert Table of Contents", ranked.get(0));
+        assertTrue(CommandPalette.keywordScore(table, "markdown") < FuzzyMatch.scoreOf(scattered.title(), "markdown"));
+        assertEquals(
+                FuzzyMatch.NO_SCORE, CommandPalette.keywordScore(titled, "markdown"), "no keyword, no second look");
+    }
 }

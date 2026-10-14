@@ -173,4 +173,70 @@ class MarkdownLintConfigTest {
         assertEquals(null, MarkdownLintConfig.withRuleOff("{ nope", "MD034"), "a broken file is not written to");
         assertEquals(null, MarkdownLintConfig.withRuleOff("[1]", "MD034"));
     }
+
+    // --- second gap pass: switching a rule off in YAML and cli2 configs ------------------------------------------
+
+    private static Set<String> offAfter(String fileName, String edited) {
+        Set<String> off = new java.util.HashSet<>();
+        MarkdownLintConfig.apply(MarkdownLintConfig.parseFile(fileName, edited), off);
+        return off;
+    }
+
+    @Test
+    void withRuleOffEditsYamlKeepingComments() {
+        String yaml = "# house style\ndefault: true\nMD013:\n  line_length: 120\nMD009: true  # keep breaks\n";
+        assertEquals(yaml + "MD034: false\n", MarkdownLintConfig.withRuleOff(".markdownlint.yaml", yaml, "MD034"));
+        assertEquals(
+                "# house style\ndefault: true\nMD013:\n  line_length: 120\nMD009: false  # keep breaks\n",
+                MarkdownLintConfig.withRuleOff(".markdownlint.yml", yaml, "MD009"));
+        assertEquals("MD034: false\n", MarkdownLintConfig.withRuleOff(".markdownlint.yaml", "", "MD034"));
+        assertEquals("a: 1\nMD034: false\n", MarkdownLintConfig.withRuleOff(".markdownlint.yaml", "a: 1", "MD034"));
+        assertEquals(
+                "MD034: false\r\nMD009: false\r\n",
+                MarkdownLintConfig.withRuleOff(".markdownlint.yaml", "MD034: true\r\n", "MD009")
+                        .replace("MD034: true", "MD034: false"));
+        // A rule with options below it cannot be flattened to "false" by a text edit.
+        assertEquals(null, MarkdownLintConfig.withRuleOff(".markdownlint.yaml", yaml, "MD013"));
+        assertEquals(null, MarkdownLintConfig.withRuleOff(".markdownlint.yaml", "MD034: {severity: error}\n", "MD034"));
+        assertEquals(null, MarkdownLintConfig.withRuleOff(".markdownlint.yaml", "a: [unclosed\n", "MD034"));
+        assertEquals("MD013: false", MarkdownLintConfig.manualLine(".markdownlint.yaml", "MD013"));
+        assertEquals("\"MD013\": false", MarkdownLintConfig.manualLine(".markdownlint-cli2.jsonc", "MD013"));
+    }
+
+    @Test
+    void withRuleOffEditsTheConfigObjectOfCli2Files() {
+        String jsonc =
+                "{\n  // globs first\n  \"globs\": [\"**/*.md\"],\n  \"config\": {\n    // ours\n    \"MD009\": true\n  }\n}\n";
+        String edited = MarkdownLintConfig.withRuleOff(".markdownlint-cli2.jsonc", jsonc, "MD034");
+        assertEquals(
+                "{\n  // globs first\n  \"globs\": [\"**/*.md\"],\n  \"config\": {\n  \"MD034\": false,\n    // ours\n    \"MD009\": true\n  }\n}\n",
+                edited);
+        assertEquals(Set.of("MD034"), offAfter(".markdownlint-cli2.jsonc", edited));
+        assertEquals(
+                Set.of("MD009"),
+                offAfter(
+                        ".markdownlint-cli2.jsonc",
+                        MarkdownLintConfig.withRuleOff(".markdownlint-cli2.jsonc", jsonc, "MD009")));
+        String noConfig = MarkdownLintConfig.withRuleOff(".markdownlint-cli2.jsonc", "{ \"globs\": [\"a\"] }", "MD034");
+        assertEquals(Set.of("MD034"), offAfter(".markdownlint-cli2.jsonc", noConfig));
+        assertTrue(noConfig.contains("\"globs\""), noConfig);
+        assertEquals(
+                Set.of("MD034"),
+                offAfter(
+                        ".markdownlint-cli2.jsonc",
+                        MarkdownLintConfig.withRuleOff(".markdownlint-cli2.jsonc", "", "MD034")));
+
+        String yaml = "globs:\n  - \"**/*.md\"\nconfig:\n  # ours\n  MD009: true\nfix: false\n";
+        assertEquals(
+                "globs:\n  - \"**/*.md\"\nconfig:\n  MD034: false\n  # ours\n  MD009: true\nfix: false\n",
+                MarkdownLintConfig.withRuleOff(".markdownlint-cli2.yaml", yaml, "MD034"));
+        assertEquals(
+                "globs:\n  - \"**/*.md\"\nconfig:\n  # ours\n  MD009: false\nfix: false\n",
+                MarkdownLintConfig.withRuleOff(".markdownlint-cli2.yaml", yaml, "MD009"));
+        assertEquals(
+                "globs:\n  - a\nconfig:\n  MD034: false\n",
+                MarkdownLintConfig.withRuleOff(".markdownlint-cli2.yaml", "globs:\n  - a\n", "MD034"));
+        assertEquals(
+                null, MarkdownLintConfig.withRuleOff(".markdownlint-cli2.yaml", "config: {MD009: true}\n", "MD034"));
+    }
 }

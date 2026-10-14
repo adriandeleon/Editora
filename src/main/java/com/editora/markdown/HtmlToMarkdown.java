@@ -222,15 +222,25 @@ public final class HtmlToMarkdown {
                 continue;
             }
             // A new <li>, <tr> or cell ends the open one of its kind: clipboard fragments leave them unclosed.
-            if (name.equals("li") || name.equals("tr") || name.equals("td") || name.equals("th") || name.equals("p")) {
-                Set<String> same = name.equals("td") || name.equals("th") ? Set.of("td", "th") : Set.of(name);
+            boolean entry = name.equals("dt") || name.equals("dd");
+            if (entry
+                    || name.equals("li")
+                    || name.equals("tr")
+                    || name.equals("td")
+                    || name.equals("th")
+                    || name.equals("p")) {
+                Set<String> same = name.equals("td") || name.equals("th")
+                        ? Set.of("td", "th")
+                        : entry ? Set.of("dt", "dd") : Set.of(name);
                 Set<String> stop = name.equals("li")
                         ? Set.of("ul", "ol")
-                        : name.equals("p")
-                                ? BLOCKS
-                                : (name.equals("tr")
-                                        ? Set.of("table", "thead", "tbody", "tfoot")
-                                        : Set.of("table", "thead", "tbody", "tfoot", "tr"));
+                        : entry
+                                ? Set.of("dl")
+                                : name.equals("p")
+                                        ? BLOCKS
+                                        : (name.equals("tr")
+                                                ? Set.of("table", "thead", "tbody", "tfoot")
+                                                : Set.of("table", "thead", "tbody", "tfoot", "tr"));
                 for (int k = stack.size() - 1; k > 0; k--) {
                     String open = stack.get(k).name;
                     if (same.contains(open)) {
@@ -344,6 +354,7 @@ public final class HtmlToMarkdown {
             }
             case "hr" -> paragraph(out, prefix, "---");
             case "table" -> table(n, out, prefix);
+            case "dl" -> definitions(n, out, prefix);
             default -> blocks(n.children, out, prefix);
         }
     }
@@ -416,23 +427,90 @@ public final class HtmlToMarkdown {
     }
 
     private static void rows(Node n, List<List<String>> rows) {
+        rows(n, rows, new java.util.HashMap<>());
+    }
+
+    /**
+     * Collects the rows under {@code n}. A merged cell has no Markdown form: its text goes in the first of
+     * the cells it covers and the others are left empty, so every later cell stays under its own heading.
+     * {@code open} carries the columns a {@code rowspan} from above still covers (column → rows left).
+     */
+    private static void rows(Node n, List<List<String>> rows, Map<Integer, Integer> open) {
         for (Node c : n.children) {
             if (c.is("tr")) {
                 List<String> cells = new ArrayList<>();
                 for (Node cell : c.children) {
-                    if (cell.is("td", "th")) {
-                        cells.add(inline(cell.children, true)
-                                .strip()
-                                .replaceAll("\\s*\n\\s*", " ")
-                                .replace("|", "\\|"));
+                    if (!cell.is("td", "th")) {
+                        continue;
+                    }
+                    skipCovered(cells, open);
+                    cells.add(inline(cell.children, true)
+                            .strip()
+                            .replaceAll("\\s*\n\\s*", " ")
+                            .replace("|", "\\|"));
+                    int colspan = span(cell.attr("colspan"));
+                    int rowspan = span(cell.attr("rowspan"));
+                    for (int k = 0; k < colspan; k++) {
+                        if (rowspan > 1) {
+                            open.put(cells.size() - 1, rowspan - 1);
+                        }
+                        if (k + 1 < colspan) {
+                            cells.add("");
+                        }
                     }
                 }
+                skipCovered(cells, open);
                 if (!cells.isEmpty()) {
                     rows.add(cells);
                 }
             } else if (c.name != null && !c.is("table")) {
-                rows(c, rows);
+                rows(c, rows, open);
             }
+        }
+    }
+
+    /** Leaves empty the columns, from where {@code cells} ends, that a cell of an earlier row still spans. */
+    private static void skipCovered(List<String> cells, Map<Integer, Integer> open) {
+        Integer left;
+        while ((left = open.get(cells.size())) != null) {
+            if (left <= 1) {
+                open.remove(cells.size());
+            } else {
+                open.put(cells.size(), left - 1);
+            }
+            cells.add("");
+        }
+    }
+
+    private static int span(String attribute) {
+        try {
+            return attribute.isBlank() ? 1 : Math.max(1, Math.min(100, Integer.parseInt(attribute.strip())));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    /** A {@code <dl>} as a definition list: each term on a line of its own, each description under it after ": ". */
+    private static void definitions(Node dl, StringBuilder out, String prefix) {
+        boolean any = false;
+        boolean lastWasDescription = false;
+        for (Node c : dl.children) {
+            if (!c.is("dt", "dd")) {
+                continue;
+            }
+            String text = inline(c.children, true).strip().replaceAll("\\s*\n\\s*", " ");
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (c.is("dt") && lastWasDescription) {
+                out.append(prefix.stripTrailing()).append('\n'); // a blank line between one entry and the next
+            }
+            out.append(prefix).append(c.is("dt") ? "" : ": ").append(text).append('\n');
+            lastWasDescription = c.is("dd");
+            any = true;
+        }
+        if (any) {
+            out.append(prefix.stripTrailing()).append('\n');
         }
     }
 

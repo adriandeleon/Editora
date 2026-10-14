@@ -451,4 +451,67 @@ class MarkdownLintMoreTest {
         }
         return best;
     }
+
+    // --- LINK003: wiki links -----------------------------------------------------------------------------------------
+
+    private static MarkdownLint.LinkTargets notes(Map<String, Set<String>> notes) {
+        return new MarkdownLint.LinkTargets() {
+            @Override
+            public boolean exists(String path) {
+                return true;
+            }
+
+            @Override
+            public Set<String> anchors(String path) {
+                return notes.get(path.replace(".md", ""));
+            }
+
+            @Override
+            public String wikiFile(String target) {
+                return target.equals("somewhere") ? "" : notes.containsKey(target) ? target + ".md" : null;
+            }
+        };
+    }
+
+    private static List<String> wiki(String md, MarkdownLint.LinkTargets targets) {
+        return MarkdownLint.lint(md, Set.of(), DEFAULTS, targets).stream()
+                .filter(d -> d.code().equals("LINK003"))
+                .map(d -> d.line() + ":" + d.column() + "+" + d.length()
+                        + (d.key().endsWith(".heading") ? " heading" : ""))
+                .toList();
+    }
+
+    @Test
+    void aWikiLinkMustLeadToANote() {
+        MarkdownLint.LinkTargets targets =
+                notes(Map.of("guide", Set.of("install", "first-steps"), "logo.png", Set.of()));
+        String md =
+                "# Notes\n\n[[guide]] [[guide|the guide]] [[guide#Install]] [[guide#First steps|start]] ![[logo.png]]\n\n"
+                        + "[[missing]] and [[guide#Nowhere]] and ![[gone.png]] and [[#Notes]] and [[#Elsewhere|x]]\n";
+        assertEquals(List.of("5:1+11", "5:17+17 heading", "5:40+12", "5:72+16 heading"), wiki(md, targets));
+    }
+
+    @Test
+    void whatIsNotAWikiLinkIsNotJudged() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(
+                List.of(), wiki("`[[code]]` and \\[[escaped]] and [[]] and [[ ]] and [not [[nested] ]]\n", targets));
+        assertEquals(
+                List.of(),
+                wiki("```\n[[in a fence]]\n```\n\n    [[indented code]]\n\n<!-- [[comment]] -->\n", targets));
+        assertEquals(List.of(), wiki("[[somewhere]] cannot be told, so it is left alone\n", targets));
+        assertEquals(List.of(), wiki("[[missing]]\n", null), "no resolver: silent");
+        assertEquals(List.of("1:5+11"), wiki("a [[[[missing]] b\n", targets), "the innermost pair is the link");
+        long start = System.nanoTime();
+        MarkdownLint.lint("[[".repeat(100_000) + "\n", Set.of(), DEFAULTS, targets);
+        MarkdownLint.lint("[[a]] ".repeat(4_000) + "\n", Set.of(), DEFAULTS, targets);
+        long small = System.nanoTime() - start;
+        start = System.nanoTime();
+        MarkdownLint.lint("[[".repeat(1_000_000) + "\n", Set.of(), DEFAULTS, targets);
+        MarkdownLint.lint("[[a]] ".repeat(40_000) + "\n", Set.of(), DEFAULTS, targets);
+        long large = System.nanoTime() - start;
+        assertTrue(
+                large < Math.max(small, 5_000_000L) * 40,
+                "10x the input took " + large / Math.max(1, small) + "x the time");
+    }
 }

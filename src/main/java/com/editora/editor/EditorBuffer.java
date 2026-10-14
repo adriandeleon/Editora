@@ -203,7 +203,7 @@ public class EditorBuffer implements TabContent {
                 return null;
             }
             return SnippetTyping.triggerAtCaret(
-                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider);
+                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider, !tabOnly);
         }
 
         @Override
@@ -1212,7 +1212,7 @@ public class EditorBuffer implements TabContent {
      *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
-        MarkdownFormatBar.trackMouse(a, this::scheduleFormatBar);
+        markdownEditing.attach(a, this::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
