@@ -567,7 +567,7 @@ public final class MarkdownEditing {
         CodeArea a = view();
         MarkdownWiki.Link wiki = MarkdownWiki.at(a.getText(), a.getCaretPosition());
         if (wiki != null) { // a wiki link stays one: its address between the brackets, its label after the bar
-            String made = MarkdownWiki.write(destination, text, wiki.embed());
+            String made = MarkdownWiki.write(destination, text, wiki.embed(), wiki.inTable());
             int end = wiki.start() + made.length();
             apply(new MarkdownEdit(wiki.start(), wiki.end(), made, end, end));
             return;
@@ -649,7 +649,8 @@ public final class MarkdownEditing {
         if (link == null) {
             return 1;
         }
-        MarkdownEdit e = MarkdownWiki.toWiki(link);
+        MarkdownEdit e = MarkdownWiki.toWiki(
+                link, MarkdownTable.blockBounds(text, a.getCaretPosition()) != null); // in a table the bar is \|
         apply(e);
         return e == null ? 2 : 0;
     }
