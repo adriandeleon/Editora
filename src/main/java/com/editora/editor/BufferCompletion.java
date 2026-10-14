@@ -90,6 +90,14 @@ final class BufferCompletion {
             return null;
         }
 
+        /**
+         * The abbreviation ending at the caret that abbrev-mode would expand on the next word terminator, in
+         * document offsets, or null (abbrev-mode off, nothing matches, or the buffer may not expand here).
+         */
+        default com.editora.editops.Abbrev.Edit abbrevAtCaret(CodeArea a) {
+            return null;
+        }
+
         int lspOffset(CodeArea a, int line, int col);
 
         int[] lspPosition(CodeArea a, int offset);
@@ -208,6 +216,9 @@ final class BufferCompletion {
 
     /** The snippet the ghost offers in place of text to insert (Tab expands it), or null for a text ghost. */
     Snippet ghostSnippet;
+
+    /** The abbreviation the ghost previews (Tab expands it), or null for any other ghost. */
+    com.editora.editops.Abbrev.Edit ghostAbbrev;
 
     /** The two document offsets currently carrying the {@code brace-match} style, or null. */
     int[] braceMatch;
@@ -867,7 +878,7 @@ final class BufferCompletion {
             start--;
         }
         String prefix = text.substring(start);
-        if (showMarkdownOffer(a, caret, prefix, manual)) {
+        if (showMarkdownOffer(a, caret, prefix, manual) || (!manual && showAbbrevGhost(a))) {
             return;
         }
         int min = manual && host.lspActive()
@@ -992,6 +1003,41 @@ final class BufferCompletion {
         localManual = manual;
         localCaret = caret;
         localVersion = host.docVersion();
+    }
+
+    /**
+     * Previews the abbreviation before the caret as ghost text — what abbrev-mode puts there on the next
+     * word terminator, and what Tab puts there now — and says whether it did. Ahead of the word minimum,
+     * since an abbreviation such as {@code adl-e} ends in a one-letter word, and of the list: the word typed
+     * is about to be replaced. Only at end-of-line content, as every ghost; and a trigger Tab expands by
+     * itself keeps its Tab, as it does over a dictionary ghost.
+     */
+    private boolean showAbbrevGhost(CodeArea a) {
+        com.editora.editops.Abbrev.Edit abbrev = host.abbrevAtCaret(a);
+        if (abbrev == null
+                || !a.getParagraph(a.getCurrentParagraph())
+                        .getText()
+                        .substring(a.getCaretColumn())
+                        .isBlank()
+                || host.snippetTrigger(a, true) != null) {
+            return false;
+        }
+        hideCompletion();
+        showGhost(a, abbrevGhostText(abbrev.replacement()));
+        if (ghostVisible()) ghostAbbrev = abbrev;
+        return true;
+    }
+
+    /** Longest expansion the abbreviation ghost shows before it is cut short. */
+    static final int ABBREV_GHOST_MAX = 72;
+
+    /** What the ghost shows for an abbreviation: an arrow and its expansion, on one short line. Pure. */
+    static String abbrevGhostText(String expansion) {
+        String line = expansion == null ? "" : expansion.strip().replaceAll("\\s+", " ");
+        if (line.length() > ABBREV_GHOST_MAX) {
+            line = line.substring(0, ABBREV_GHOST_MAX - 1) + "\u2026";
+        }
+        return " \u2192 " + line;
     }
 
     /** The local list on screen is a Markdown offer whose rows replace a range of their own (not a word). */
@@ -1148,7 +1194,8 @@ final class BufferCompletion {
                     || !a.isFocused()
                     || a.getCaretPosition() != caret
                     || completionPopupShowing()
-                    || host.snippetTrigger(a, true) != null) { // Tab belongs to the typed trigger
+                    || host.snippetTrigger(a, true) != null // Tab belongs to the typed trigger
+                    || host.abbrevAtCaret(a) != null) { // ... or to the abbreviation's preview
                 return;
             }
             String oneLine = result.lines().findFirst().orElse("").stripTrailing();
@@ -1199,6 +1246,7 @@ final class BufferCompletion {
     /** Draws the ghost suffix as a muted overlay label starting exactly at the caret. */
     void showGhost(CodeArea a, String suffix) {
         ghostSnippet = null;
+        ghostAbbrev = null;
         int caret = a.getCaretPosition();
         // At end-of-line there's no glyph *at* the caret, so measure the char *before* it and use its
         // right edge as the start x (getCharacterBoundsOnScreen(caret, caret) would be empty there).
@@ -1245,7 +1293,23 @@ final class BufferCompletion {
         CodeArea a = ghostArea;
         String s = ghostSuffix;
         Snippet offered = ghostSnippet;
+        com.editora.editops.Abbrev.Edit abbrev = ghostAbbrev;
         hideGhost();
+        if (abbrev != null) {
+            // Looked up again, so only what the ghost previewed is expanded, over what stands there now.
+            com.editora.editops.Abbrev.Edit now = host.abbrevAtCaret(a);
+            if (abbrev.equals(now)) {
+                Runnable endUndo = host.beginCompletionUndo();
+                try {
+                    a.replaceText(now.from(), now.to(), now.replacement());
+                } finally {
+                    endUndo.run();
+                }
+                suppressCompletionAtVersion = host.docVersion();
+                a.requestFocus();
+            }
+            return;
+        }
         if (offered != null) {
             // The ghost described the snippet; nothing of it is inserted. The trigger is looked up again so
             // the expansion replaces exactly what stands before the caret now.
@@ -1277,6 +1341,7 @@ final class BufferCompletion {
         ghostSuffix = null;
         ghostArea = null;
         ghostSnippet = null;
+        ghostAbbrev = null;
     }
 
     void hidePopup() {

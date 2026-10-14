@@ -207,6 +207,17 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
+        public com.editora.editops.Abbrev.Edit abbrevAtCaret(CodeArea a) {
+            if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
+                return null;
+            }
+            if (hasActiveSnippet() || multiCaretActiveOn(a) || a.getSelection().getLength() > 0) {
+                return null;
+            }
+            return abbrevBefore(a, a.getCaretPosition());
+        }
+
+        @Override
         public int lspOffset(CodeArea a, int line, int col) {
             return LspEditPlacement.offset(a, line, col);
         }
@@ -4497,18 +4508,13 @@ public class EditorBuffer implements TabContent {
         if (multiCaretActiveOn(a)) {
             return;
         }
-        // The terminator sits at c.getPosition(); the word ending there fits in a bounded window before it, so
-        // slice just that window instead of materializing the whole document — this runs per word-terminator
-        // keystroke. expand()'s offsets are window-relative; shift them back into document coordinates.
-        int point = Math.min(c.getPosition(), a.getLength());
-        int windowStart = Math.max(0, point - MAX_ABBREV_LOOKBACK);
-        String window = a.getText(windowStart, point);
-        com.editora.editops.Abbrev.Edit edit = com.editora.editops.Abbrev.expand(window, window.length(), abbrevTable);
+        // The terminator sits at c.getPosition(), so the word ends there.
+        com.editora.editops.Abbrev.Edit edit = abbrevBefore(a, Math.min(c.getPosition(), a.getLength()));
         if (edit == null) {
             return;
         }
-        int from = windowStart + edit.from();
-        int to = windowStart + edit.to();
+        int from = edit.from();
+        int to = edit.to();
         int caret = caretPast(a, c);
         int delta = edit.replacement().length() - (to - from);
         applyingAbbrev = true;
@@ -4525,6 +4531,21 @@ public class EditorBuffer implements TabContent {
         boolean oneChar = c.getInserted().length() == 1;
         caretFixes.defer(
                 () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
+    }
+
+    /**
+     * The abbreviation ending at {@code point} of {@code a}, in document offsets, or null. The word fits in a
+     * bounded window before it, so just that window is sliced instead of the whole document — this runs per
+     * word-terminator keystroke and per typing pause.
+     */
+    private com.editora.editops.Abbrev.Edit abbrevBefore(CodeArea a, int point) {
+        int windowStart = Math.max(0, point - MAX_ABBREV_LOOKBACK);
+        String window = a.getText(windowStart, point);
+        com.editora.editops.Abbrev.Edit edit = com.editora.editops.Abbrev.expand(window, window.length(), abbrevTable);
+        return edit == null
+                ? null
+                : new com.editora.editops.Abbrev.Edit(
+                        windowStart + edit.from(), windowStart + edit.to(), edit.replacement());
     }
 
     /**
