@@ -255,18 +255,34 @@ CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `mac
 advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block a merge until it has a
 track record there.
 
-The macOS FX job runs the suite in two test JVMs (`-DforkCount=2`); the Linux job, which is the check
-`master` requires, still runs it in one and takes about 17 minutes. Two JVMs there measured 13:25, but
-with the cores shared several tests failed or needed a rerun: `LspCoordinatorDiagnosticsFxTest`
+On Linux the suite runs as four shards, each on its own runner (the `tests` job in `ci.yml`), because in
+one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/shard_tests.py` deals
+the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself, and
+shard *n* of 4 takes every fourth one, the `*FxTest` classes dealt separately so each shard gets its
+share of the slow ones. A shard runs `test` with that list as Surefire's `includesFile`; the `build` job
+(the check `master` requires, "Build & Test (JDK 25)") then fails if any shard failed, checks that every
+test class has a report (`shard_tests.py check`), checks the skips, joins the four JaCoCo data files and
+applies the coverage floors with `mvn -DskipTests verify`. To run one shard locally:
+
+```
+python3 scripts/shard_tests.py list 2 4 > target/shard-includes.txt
+mvn -Dsurefire.includesFile=target/shard-includes.txt test
+```
+
+A plain `mvn verify` still runs everything in one JVM. Two consequences for a test: it must not depend on
+another class having run before it in the same JVM (which classes share a JVM changes whenever a test
+class is added), and a new test class needs a name Surefire's defaults match (`*Test`, `Test*`, `*Tests`,
+`*TestCase`) or it runs nowhere.
+
+Running two test JVMs on one runner (`-DforkCount=2`) is what the macOS FX job does. On the Linux runner
+it gained little (16:34 to 13:25) and, with the cores shared, tests that read the result of background
+work without waiting for it failed or needed a rerun: `LspCoordinatorDiagnosticsFxTest`
 (`compactSourceDiagnosticsArePreserved`), `SettingsSyncPageFxTest`
 (`connectNeedsARepositoryAndABranchNameBeforeItLooksAtAnything`), and, with four JVMs locally,
-`MarkdownPreviewFxTest`, `HistoryServiceCallbackFxTest` and `LocalHistoryRecordRestoreFxTest`. Each reads
-the result of background work without waiting for it, or reads a label a later refresh rewrites. A test
-must not depend on another class having run before it in the same JVM, and "it is always done by then"
-stops being true once the cores are shared; `mvn -DforkCount=2 verify` reproduces that locally.
+`MarkdownPreviewFxTest`, `HistoryServiceCallbackFxTest` and `LocalHistoryRecordRestoreFxTest`.
 
 A new push to a pull request cancels the run in progress for the previous push, and every test job
-uploads `target/surefire-reports` as an artifact when it fails.
+uploads `target/surefire-reports` as an artifact (the Linux shards always, the other lanes when they fail).
 
 ## What to test for a typical change
 
