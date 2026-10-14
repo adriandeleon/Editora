@@ -147,11 +147,9 @@ public class Settings {
     private String markdownPreviewTheme = "";
     /** Show the floating format bar on a text selection in Markdown buffers. */
     private boolean markdownFormatBar = true;
-    /** Load remote ({@code http}/{@code https}) images in the Markdown preview. On by default; off shows
-     *  each remote image's alt text instead and nothing is fetched. */
-    private boolean markdownRemoteImages = true;
-    /** When the Markdown preview loads remote images: "always", "ask" (a bar in the preview offers to load
-     *  them for this document) or "never". Supersedes {@link #markdownRemoteImages}, which is kept in step. */
+    /** When the Markdown preview loads remote ({@code http}/{@code https}) images: "always", "ask" (a bar in
+     *  the preview offers to load them for this document) or "never" (alt text, nothing fetched). It replaced
+     *  the boolean {@code markdownRemoteImages} at schema 121; {@link #isMarkdownRemoteImages()} is a view of it. */
     private String markdownRemoteImagePolicy = "always";
     /** Recognise wiki links ({@code [[note]]}, {@code [[note|label]]}, {@code [[note#heading]]}) in Markdown. */
     private boolean markdownWikiLinks = true;
@@ -1705,20 +1703,36 @@ public class Settings {
         this.markdownFormatBar = markdownFormatBar;
     }
 
+    /** The values of {@link #getMarkdownRemoteImagePolicy()}; the first is the default. */
+    public static final java.util.List<String> REMOTE_IMAGE_POLICIES = java.util.List.of("always", "ask", "never");
+
+    /**
+     * Whether remote images may be fetched at all — everything but "never". A view of the policy, not a
+     * stored key (it was one until schema 121).
+     */
+    @JsonIgnore
     public boolean isMarkdownRemoteImages() {
-        return markdownRemoteImages;
+        return !"never".equals(getMarkdownRemoteImagePolicy());
     }
 
-    public void setMarkdownRemoteImages(boolean markdownRemoteImages) {
-        this.markdownRemoteImages = markdownRemoteImages;
+    /** The old on/off switch: off is "never", on is "always" (leaving "ask" alone when it is already on). */
+    @JsonIgnore
+    public void setMarkdownRemoteImages(boolean on) {
+        if (on != isMarkdownRemoteImages()) {
+            this.markdownRemoteImagePolicy = on ? "always" : "never";
+        }
     }
 
+    /** One of {@link #REMOTE_IMAGE_POLICIES}; a hand-edited value that is none of them reads as the default. */
     public String getMarkdownRemoteImagePolicy() {
-        return markdownRemoteImagePolicy;
+        String p = markdownRemoteImagePolicy == null
+                ? ""
+                : markdownRemoteImagePolicy.strip().toLowerCase(java.util.Locale.ROOT);
+        return REMOTE_IMAGE_POLICIES.contains(p) ? p : REMOTE_IMAGE_POLICIES.get(0);
     }
 
     public void setMarkdownRemoteImagePolicy(String markdownRemoteImagePolicy) {
-        this.markdownRemoteImagePolicy = markdownRemoteImagePolicy == null ? "always" : markdownRemoteImagePolicy;
+        this.markdownRemoteImagePolicy = markdownRemoteImagePolicy;
     }
 
     public boolean isMarkdownWikiLinks() {

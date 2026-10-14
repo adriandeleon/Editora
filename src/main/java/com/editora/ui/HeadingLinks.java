@@ -53,6 +53,10 @@ final class HeadingLinks {
             Function<Path, EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
+        if (WikiLinks.isWikiForm(link)) {
+            openWiki(WikiLinks.parse(link), buffer, workflows, openBuffer, jump, status);
+            return;
+        }
         if (WikiLinkTargets.isWikiAddress(link)) {
             followWiki(link, buffer, workflows::openPath, workflows::openThen, openBuffer, jump, status);
             return;
@@ -64,6 +68,40 @@ final class HeadingLinks {
                 hostServices,
                 workflows::openPath,
                 (file, fragment) -> follow(buffer, file, fragment, workflows::openThen, openBuffer, jump, status),
+                status);
+    }
+
+    /** Follows a wiki link written in {@code buffer}: to its note, and to the heading when it names one. */
+    private static void openWiki(
+            WikiLinks.Parsed wiki,
+            EditorBuffer buffer,
+            FileWorkflowCoordinator workflows,
+            Function<Path, EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
+        Path here = buffer.getPath() == null
+                ? null
+                : buffer.getPath().toAbsolutePath().normalize();
+        Path file = wiki.target().isEmpty() ? here : WikiLinks.resolve(here, wiki.target());
+        if (file == null && !wiki.target().isEmpty()) {
+            status.accept(tr("status.markdown.wikiUnresolved", wiki.target()));
+            return;
+        }
+        boolean same = file == null || file.equals(here);
+        if (wiki.heading().isEmpty()) {
+            if (!same) {
+                workflows.openPath(file);
+            }
+            return;
+        }
+        // A wiki link names a heading by its title; the anchor machinery goes by its slug.
+        follow(
+                buffer,
+                same ? null : file,
+                com.editora.markdown.MarkdownToc.slug(wiki.heading()),
+                workflows::openThen,
+                openBuffer,
+                jump,
                 status);
     }
 

@@ -869,6 +869,7 @@ final class EditorSettingsCoordinator {
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
         buffer.setFont(s.getFontFamily(), effectiveFont);
         com.editora.editor.TypewriterMode.apply(buffer, s.isTypewriterMode());
+        buffer.markdown().setWikiResolver(target -> WikiLinks.relativePath(buffer.getPath(), target));
         // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
         // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
@@ -1093,6 +1094,7 @@ final class EditorSettingsCoordinator {
     }
 
     void applyViewSettingsToAllBuffers(Settings settings) {
+        WikiLinks.enabled = settings.isMarkdownWikiLinks();
         host.applyEditorTheme(settings.getEditorTheme());
         host.chrome().applyChromeVisibility();
         host.applyProjectSupport();

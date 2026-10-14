@@ -91,7 +91,8 @@ public final class DocxWriter {
 
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
         // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
-        Node ast = com.editora.markdown.MarkdownExportTree.lower(MarkdownRenderer.parseForRender(markdown));
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(
+                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();
@@ -167,8 +168,32 @@ public final class DocxWriter {
         } else if (n instanceof OrderedList ol) {
             list(ctx, ol, indent, quotes, 0);
         } else if (n instanceof BlockQuote bq) {
-            for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
-                block(ctx, c, indent + QUOTE_INDENT, quotes + 1);
+            // An alert is a quote whose rule and title carry its kind's colour.
+            String tint = bq instanceof com.editora.markdown.MarkdownExportTree.AlertQuote alert
+                    ? com.editora.markdown.MarkdownExportTree.color(alert.getKind())
+                    : null;
+            String outer = ALERT_RULE.get();
+            int first = doc.getParagraphs().size();
+            if (tint != null) {
+                ALERT_RULE.set(tint);
+            }
+            try {
+                for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
+                    block(ctx, c, indent + QUOTE_INDENT, quotes + 1);
+                }
+            } finally {
+                if (outer == null) {
+                    ALERT_RULE.remove();
+                } else {
+                    ALERT_RULE.set(outer);
+                }
+            }
+            if (tint != null && doc.getParagraphs().size() > first) {
+                doc.getParagraphs().get(first).getRuns().forEach(r -> r.setColor(tint)); // the title line
+            }
+        } else if (n instanceof com.editora.markdown.MarkdownExportTree.Indented descriptions) {
+            for (Node c = descriptions.getFirstChild(); c != null; c = c.getNext()) {
+                block(ctx, c, indent + QUOTE_INDENT, quotes);
             }
         } else if (n instanceof FencedCodeBlock f) {
             if (InlineRun.isMermaidInfo(f.getInfo())
@@ -200,6 +225,9 @@ public final class DocxWriter {
         }
     }
 
+    /** The rule colour of the alert being written (null in a plain quote); a document is written by one thread. */
+    private static final ThreadLocal<String> ALERT_RULE = new ThreadLocal<>();
+
     /** A new body paragraph {@code indent} twips in; inside a block quote it carries the quote's rule. */
     private static XWPFParagraph paragraph(Ctx ctx, int indent, int quotes) {
         XWPFParagraph p = ctx.doc().createParagraph();
@@ -212,7 +240,11 @@ public final class DocxWriter {
             left.setVal(STBorder.SINGLE);
             left.setSz(BigInteger.valueOf(12));
             left.setSpace(BigInteger.valueOf(8));
-            left.setColor(QUOTE_RULE);
+            String alert = ALERT_RULE.get();
+            left.setColor(alert == null ? QUOTE_RULE : alert);
+            if (alert != null) {
+                left.setSz(BigInteger.valueOf(24)); // a heavier rule than a plain quote's
+            }
         }
         return p;
     }

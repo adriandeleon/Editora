@@ -1283,7 +1283,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
-        this.openUrlHandler = handler == null ? u -> {} : handler;
+        completionActions.setLinkOpener(this.openUrlHandler = handler == null ? u -> {} : handler);
     }
 
     /** Opens the link under the caret externally; returns false when the caret is not on a link. */
