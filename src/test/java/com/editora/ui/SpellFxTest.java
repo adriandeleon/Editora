@@ -697,7 +697,7 @@ class SpellFxTest {
         String minified = sb.append("\"z\":1}\n").toString();
         EditorBuffer min = open("data.min.txt", minified);
         assertTrue(FxTestSupport.callOnFx(() -> min.spell().isActive()));
-        long whole = medianKeystrokeMillis(min);
+        long whole = spellCostMillis(min);
         assertTrue(squiggled(min).isEmpty(), "a line this long is data, not a paragraph");
 
         // A long line that IS short enough to check, in the same shape: bounded squiggles, each token judged once.
@@ -705,24 +705,53 @@ class SpellFxTest {
         List<String> flagged = squiggled(shorter);
         assertTrue(flagged.contains("recieve"), "its words are checked");
         assertTrue(flagged.size() <= 250, "at most 250 squiggles on one line, got " + flagged.size());
-        long part = medianKeystrokeMillis(shorter);
-        System.out.println("[spell-perf] keystroke-to-idle, spell on: 60 KB no-whitespace line " + whole
+        long part = spellCostMillis(shorter);
+        System.out.println("[spell-perf] spell checking's share of a keystroke: 60 KB no-whitespace line " + whole
                 + " ms; 12 KB line with " + flagged.size() + " squiggles " + part + " ms");
-        assertTrue(whole < 200, "median keystroke in the 60 KB line took " + whole + " ms");
-        assertTrue(part < 400, "median keystroke in the 12 KB line took " + part + " ms");
+        // The bug this guards against cost seconds: each misspelled word rescanned the whole line.
+        assertTrue(whole < 100, "spell checking added " + whole + " ms to a keystroke in the 60 KB line");
+        assertTrue(part < 300, "spell checking added " + part + " ms to a keystroke in the 12 KB line");
     }
 
-    private static long medianKeystrokeMillis(EditorBuffer b) throws Exception {
-        long[] ms = new long[5];
-        for (int i = 0; i < ms.length; i++) {
+    /**
+     * What spell checking adds to a keystroke in {@code b}: the fastest of a few keystrokes with it on, less the
+     * fastest with it off, measured in turns after a warm-up. A keystroke's own time is mostly laying out the long
+     * line, which spell checking does not change, and on a shared CI runner it swung from 31 to 528 ms for the same
+     * 60 KB keystroke on macOS, mostly on the first, cold measurement. Other work on the machine only ever adds
+     * time, so the fastest of each kind is the closest to what the work itself costs.
+     */
+    private static long spellCostMillis(EditorBuffer b) throws Exception {
+        fastestKeystrokeMillis(b); // warm-up: the first keystrokes in a fresh line compile the paths they take
+        long on = Long.MAX_VALUE;
+        long off = Long.MAX_VALUE;
+        try {
+            for (int round = 0; round < 3; round++) {
+                setSpell(b, true);
+                on = Math.min(on, fastestKeystrokeMillis(b));
+                setSpell(b, false);
+                off = Math.min(off, fastestKeystrokeMillis(b));
+            }
+        } finally {
+            setSpell(b, true);
+        }
+        return Math.max(0, on - off);
+    }
+
+    private static void setSpell(EditorBuffer b, boolean on) throws Exception {
+        FxTestSupport.runOnFx(() -> b.spell().setEnabled(on));
+        settle(); // switching it on checks the document; that is not part of a keystroke
+    }
+
+    private static long fastestKeystrokeMillis(EditorBuffer b) throws Exception {
+        long fastest = Long.MAX_VALUE;
+        for (int i = 0; i < 5; i++) {
             long t0 = System.nanoTime();
             FxTestSupport.runOnFx(() -> b.getArea().insertText(10, "x"));
             FxTestSupport.drainFx();
             FxTestSupport.drainFx();
-            ms[i] = (System.nanoTime() - t0) / 1_000_000;
+            fastest = Math.min(fastest, (System.nanoTime() - t0) / 1_000_000);
         }
-        java.util.Arrays.sort(ms);
-        return ms[2];
+        return fastest;
     }
 
     private static int wordsMeasured(Object overlay) throws Exception {
