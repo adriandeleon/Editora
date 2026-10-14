@@ -44,7 +44,9 @@ class SamplesCorpusTest {
 
     private static final Path SAMPLES = Path.of("samples");
     private static final Path README = SAMPLES.resolve("README.md");
-    private static final Pattern REF = Pattern.compile("samples/[\\w./-]+");
+    /** A {@code samples/...} path: in backticks it may contain spaces (a sample about such names), else it ends at
+     *  the first character a path does not have. */
+    private static final Pattern REF = Pattern.compile("`(samples/[^`]+)`|samples/[\\w./-]+");
 
     /** Core languages that must always have a syntax sample (the LSP-served, common ones). */
     private static final List<String> MUST_HAVE = List.of(
@@ -173,7 +175,7 @@ class SamplesCorpusTest {
         Set<String> out = new TreeSet<>();
         Matcher m = REF.matcher(Files.readString(README));
         while (m.find()) {
-            String ref = m.group();
+            String ref = m.group(1) != null ? m.group(1) : m.group();
             while (ref.endsWith(".") || ref.endsWith("-")) {
                 ref = ref.substring(0, ref.length() - 1);
             }

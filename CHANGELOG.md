@@ -122,8 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preview selection entry above for the new ways to go to the source).
 - **The remote-images setting** is now a choice (Always / Ask / Never); a stored "off" becomes Never.
   `View: Toggle Markdown Remote Images` switches between Always and Never.
-- **Markdown strikethrough needs two tildes in the preview** (`~~struck~~`); a single tilde attached to a word is now
-  a subscript (`H~2~O`). An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
+- **A single tilde pair attached to the word before it is a subscript** in the Markdown preview (`H~2~O`); standing
+  apart, `~struck~` is still strikethrough, as is `~~struck~~`. An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
   Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
 - **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
   keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word

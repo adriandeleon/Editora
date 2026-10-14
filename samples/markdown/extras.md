@@ -1,5 +1,5 @@
 ---
-title: Markdown extras
+description: Markdown extras
 author: Editora
 tags: [sample, markdown]
 ---
@@ -55,7 +55,7 @@ A reference-style image: ![The same image, as a JPEG][photo]
 | Left | Center | Right |
 | :--- | :----: | ----: |
 | `a`  | **b**  |     1 |
-| c    | _d_    |   200 |
+| c    | *d*    |   200 |
 
 ## Code
 
@@ -63,6 +63,7 @@ A reference-style image: ![The same image, as a JPEG][photo]
 { "fenced": true, "language": "json" }
 ```
 
+<!-- markdownlint-disable-next-line MD046 -->
     An indented code block.
 
 ---
