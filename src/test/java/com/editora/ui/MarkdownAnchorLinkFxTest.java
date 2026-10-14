@@ -29,7 +29,8 @@ class MarkdownAnchorLinkFxTest {
 
     private static final String README = "# Readme\n\n- [Set up](#set-up)\n- [Again](#set-up-1)\n- [Gone](#gone)\n"
             + "- [Guide install](guide.md#install)\n- [Guide nowhere](guide.md#nowhere)\n\n"
-            + "## Set up\n\ntext\n\n## Set up\n\nmore\n";
+            + "## Set up\n\ntext\n\n## Set up\n\nmore\n\n"
+            + "Wiki: [[guide]] and [[Guide#Install|how to install]] and [[nowhere]] and [[#Set up]]\n";
     private static final String GUIDE = "# Guide\n\n" + "filler\n".repeat(60) + "\n## Install\n\nsteps\n";
 
     @TempDir
@@ -103,6 +104,44 @@ class MarkdownAnchorLinkFxTest {
         assertEquals(guide, FxTestSupport.callOnFx(() -> active().getPath()));
         assertEquals(tr("status.link.noAnchor", "#nowhere"), status());
         closeTab(guide);
+    }
+
+    @Test
+    void aWikiLinkOpensItsNoteAndGoesToTheHeadingItNames() throws Exception {
+        open(readme);
+        openLinkAt(readme, "[[guide");
+        awaitLoaded(guide);
+        assertEquals(guide, FxTestSupport.callOnFx(() -> active().getPath()), "the note of that name beside it");
+        closeTab(guide);
+
+        open(readme);
+        openLinkAt(readme, "[[Guide#Inst");
+        awaitLoaded(guide);
+        assertEquals(guide, FxTestSupport.callOnFx(() -> active().getPath()));
+        assertEquals(63, caretLine(guide), "## Install, named by its title");
+        closeTab(guide);
+
+        open(readme);
+        openLinkAt(readme, "[[#Set");
+        assertEquals(8, caretLine(readme), "a heading of the same document");
+    }
+
+    @Test
+    void aWikiLinkThatNamesNothingIsReportedAndSwitchedOffItIsNotALink() throws Exception {
+        open(readme);
+        int before = openLinkAt(readme, "[[nowh");
+        assertEquals(before, caretLine(readme));
+        assertEquals(tr("status.wikilink.unresolved", "nowhere"), status());
+        assertEquals(readme, FxTestSupport.callOnFx(() -> active().getPath()));
+
+        FxTestSupport.runOnFx(() -> WikiLinks.enabled = false);
+        try {
+            openLinkAt(readme, "[[guide");
+            assertEquals(readme, FxTestSupport.callOnFx(() -> active().getPath()), "nothing was opened");
+            assertEquals(tr("status.wikilink.unresolved", "guide"), status());
+        } finally {
+            FxTestSupport.runOnFx(() -> WikiLinks.enabled = true);
+        }
     }
 
     @Test

@@ -528,6 +528,7 @@ final class EditorSettingsCoordinator {
         String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
         chooseSetting("buffer.setLanguage", () -> names, name -> name, () -> current, name -> {
             buffer.setLanguageOverride(name);
+            host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
             host.statusBar().refresh();
             host.setStatus(tr("status.language", name));
         });
@@ -868,6 +869,7 @@ final class EditorSettingsCoordinator {
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
         buffer.setFont(s.getFontFamily(), effectiveFont);
         com.editora.editor.TypewriterMode.apply(buffer, s.isTypewriterMode());
+        buffer.markdown().setWikiResolver(target -> WikiLinks.relativePath(buffer.getPath(), target));
         // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
         // Expert keeps the full editor view — line numbers, ruler, current-line highlight, minimap — so those
@@ -903,6 +905,7 @@ final class EditorSettingsCoordinator {
         buffer.markdown()
                 .configureWriting(s.isMarkdownSmartTypography(), s.isMarkdownTocSkipTitle(), s.isMarkdownTocOrdered());
         buffer.markdown().setEditLinkHandler(host.previews()::markdownEditLink);
+        host.previews().applyDefaultViewMode(buffer); // an untitled Markdown buffer, the first time it is one
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)
@@ -1091,6 +1094,7 @@ final class EditorSettingsCoordinator {
     }
 
     void applyViewSettingsToAllBuffers(Settings settings) {
+        WikiLinks.enabled = settings.isMarkdownWikiLinks();
         host.applyEditorTheme(settings.getEditorTheme());
         host.chrome().applyChromeVisibility();
         host.applyProjectSupport();

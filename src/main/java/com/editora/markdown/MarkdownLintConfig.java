@@ -235,6 +235,179 @@ public final class MarkdownLintConfig {
                         : "," + (rest.startsWith("\n") || rest.startsWith("\r") ? "" : eol) + rest);
     }
 
+    /**
+     * The content of config file {@code fileName} with rule {@code code} switched off, edited as text so that
+     * comments and layout survive — whichever of {@link #FILE_NAMES} it is: JSON/JSONC and YAML, and the
+     * {@code config} object of a {@code .markdownlint-cli2.*} file. {@code null} when no safe edit exists (a
+     * file that does not parse, a rule written as a nested YAML mapping, a flow-style {@code config: {…}}): the
+     * caller then tells the user the line to add ({@link #manualLine}).
+     */
+    public static String withRuleOff(String fileName, String text, String code) {
+        String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        boolean yaml = name.endsWith(".yaml") || name.endsWith(".yml");
+        boolean cli2 = name.startsWith(".markdownlint-cli2.");
+        String source = text == null ? "" : text;
+        String edited;
+        if (yaml) {
+            edited = cli2 ? yamlUnderConfig(source, code) : yamlTopLevel(source, code, "");
+        } else if (cli2) {
+            edited = jsonUnderConfig(source, code);
+        } else {
+            edited = withRuleOff(source, code);
+        }
+        if (edited == null) {
+            return null;
+        }
+        // Whatever was done to the text, the result must still be a config that switches the rule off.
+        Set<String> off = new HashSet<>();
+        Parsed parsed = parseFile(fileName, edited);
+        apply(parsed, off);
+        return parsed.valid() && off.contains(code) ? edited : null;
+    }
+
+    /** The line a user adds to config file {@code fileName} by hand to switch {@code code} off. */
+    public static String manualLine(String fileName, String code) {
+        String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        return name.endsWith(".yaml") || name.endsWith(".yml") ? code + ": false" : "\"" + code + "\": false";
+    }
+
+    /** YAML: sets or appends {@code CODE: false} among the keys indented by {@code indent}. */
+    private static String yamlTopLevel(String text, String code, String indent) {
+        String eol = text.contains("\r\n") ? "\r\n" : "\n";
+        String[] lines = text.split("\\r?\\n", -1);
+        java.util.regex.Pattern key = java.util.regex.Pattern.compile(
+                "^" + java.util.regex.Pattern.quote(indent) + "([\"']?)" + java.util.regex.Pattern.quote(code)
+                        + "\\1\\s*:(.*)$",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+        for (int i = 0; i < lines.length; i++) {
+            java.util.regex.Matcher m = key.matcher(lines[i]);
+            if (!m.matches()) {
+                continue;
+            }
+            String rest = m.group(2);
+            int comment = rest.indexOf(" #");
+            String value = (comment < 0 ? rest : rest.substring(0, comment)).strip();
+            if (value.isEmpty() || value.startsWith("{") || value.startsWith("[") || value.startsWith("&")) {
+                return null; // options on the following lines (or a flow mapping): not ours to flatten
+            }
+            // Only the value changes: the spacing around it and a trailing comment stay as they were.
+            int valueStart = rest.length() - rest.stripLeading().length();
+            int valueEnd = valueStart + value.length();
+            lines[i] = lines[i].substring(0, m.start(2))
+                    + (valueStart == 0 ? " " : rest.substring(0, valueStart))
+                    + "false"
+                    + rest.substring(valueEnd);
+            return String.join(eol, lines);
+        }
+        String line = indent + code + ": false";
+        if (text.isBlank()) {
+            return line + eol;
+        }
+        return text + (text.endsWith("\n") ? "" : eol) + line + eol;
+    }
+
+    /** A cli2 YAML file: the rule goes under its block-style {@code config:} mapping. */
+    private static String yamlUnderConfig(String text, String code) {
+        String eol = text.contains("\r\n") ? "\r\n" : "\n";
+        String[] lines = text.split("\\r?\\n", -1);
+        int config = -1;
+        for (int i = 0; i < lines.length && config < 0; i++) {
+            if (lines[i].matches("^config\\s*:.*$")) {
+                config = i;
+            }
+        }
+        if (config < 0) {
+            return text + (text.isEmpty() || text.endsWith("\n") ? "" : eol) + "config:" + eol + "  " + code + ": false"
+                    + eol;
+        }
+        String after = lines[config].substring(lines[config].indexOf(':') + 1);
+        int comment = after.indexOf(" #");
+        if (!(comment < 0 ? after : after.substring(0, comment)).isBlank()) {
+            return null; // "config: {…}" on one line
+        }
+        // The mapping's own lines: everything indented under "config:".
+        int end = config + 1;
+        String indent = null;
+        while (end < lines.length
+                && (lines[end].isBlank() || lines[end].startsWith(" ") || lines[end].startsWith("#"))) {
+            if (indent == null
+                    && lines[end].startsWith(" ")
+                    && !lines[end].isBlank()
+                    && !lines[end].strip().startsWith("#")) {
+                indent = lines[end].substring(
+                        0, lines[end].length() - lines[end].stripLeading().length());
+            }
+            end++;
+        }
+        indent = indent == null ? "  " : indent;
+        String body = String.join(eol, java.util.Arrays.copyOfRange(lines, config + 1, end));
+        java.util.regex.Pattern existing = java.util.regex.Pattern.compile(
+                "(?m)^" + java.util.regex.Pattern.quote(indent) + "[\"']?" + java.util.regex.Pattern.quote(code)
+                        + "[\"']?\\s*:",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.List<String> out = new ArrayList<>(List.of(lines));
+        if (existing.matcher(body).find()) {
+            String edited = yamlTopLevel(body, code, indent);
+            if (edited == null) {
+                return null;
+            }
+            String[] replaced = edited.split("\\r?\\n", -1);
+            for (int i = config + 1; i < end && i - config - 1 < replaced.length; i++) {
+                out.set(i, replaced[i - config - 1]);
+            }
+        } else {
+            out.add(config + 1, indent + code + ": false");
+        }
+        return String.join(eol, out);
+    }
+
+    /** A cli2 JSONC file: the rule goes into its {@code "config"} object (added when there is none). */
+    private static String jsonUnderConfig(String text, String code) {
+        if (text.isBlank()) {
+            return "{\n  \"config\": {\n    \"" + code + "\": false\n  }\n}\n";
+        }
+        if (!parse(text).valid()) {
+            return null;
+        }
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("\"config\"\\s*:\\s*\\{").matcher(text);
+        if (!m.find()) {
+            int open = text.indexOf('{');
+            String rest = text.substring(open + 1);
+            boolean empty = rest.strip().startsWith("}");
+            return text.substring(0, open + 1) + "\n  \"config\": { \"" + code + "\": false }"
+                    + (empty ? "\n" + rest.stripLeading() : "," + rest);
+        }
+        int start = m.end() - 1;
+        int depth = 0;
+        boolean inString = false;
+        int end = -1;
+        for (int p = start; p < text.length() && end < 0; p++) {
+            char c = text.charAt(p);
+            if (inString) {
+                if (c == '\\') {
+                    p++;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else if (c == '"') {
+                inString = true;
+            } else if (c == '/' && p + 1 < text.length() && text.charAt(p + 1) == '/') {
+                int nl = text.indexOf('\n', p);
+                p = nl < 0 ? text.length() : nl;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}' && --depth == 0) {
+                end = p + 1;
+            }
+        }
+        if (end < 0) {
+            return null;
+        }
+        String object = withRuleOff(text.substring(start, end), code);
+        return object == null ? null : text.substring(0, start) + object + text.substring(end);
+    }
+
     /** The rule codes disabled by JSON/JSONC {@code json}; empty on malformed input. */
     public static Set<String> disabledRules(String json) {
         Set<String> disabled = new HashSet<>();

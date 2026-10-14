@@ -51,7 +51,7 @@
         <jlatexmath.version>1.0.7</jlatexmath.version>
         <pdfbox.version>3.0.8</pdfbox.version>
         <poi.version>5.5.1</poi.version>
-        <lucene.version>10.5.1</lucene.version>
+        <lucene.version>10.5.2</lucene.version>
         <javadiffutils.version>4.17</javadiffutils.version>
         <!-- Do not bump without reading docs/dependencies.md (sshd-osgi): 2.17+ changed
              SftpFileSystem.getDefaultDir() in a way RemoteFileSystems depends on, and 2.20.0 is wanted
@@ -489,6 +489,8 @@
                         <java.awt.headless>true</java.awt.headless>
                         <!-- Project-tree deletes in tests must not land in the developer's real trash. -->
                         <editora.trash>off</editora.trash>
+                        <!-- No window opened by a test asks GitHub for the latest release. -->
+                        <editora.updateCheck>off</editora.updateCheck>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

@@ -203,7 +203,7 @@ public class EditorBuffer implements TabContent {
                 return null;
             }
             return SnippetTyping.triggerAtCaret(
-                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider);
+                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider, !tabOnly);
         }
 
         @Override
@@ -335,7 +335,7 @@ public class EditorBuffer implements TabContent {
     /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
     private PreviewScrollSync scrollSync;
     /** The rendered Markdown document shown in {@link #previewPane} (lazy; see {@link MarkdownPreview}). */
-    private MarkdownPreview markdownPreview;
+    MarkdownPreview markdownPreview;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
@@ -531,10 +531,12 @@ public class EditorBuffer implements TabContent {
     Runnable previewExportJsonHandler = () -> {};
 
     private javafx.scene.control.ContextMenu previewContextMenu;
-    /** The link destination / code block under the pointer when the preview menu was last asked for. */
+    /** The link / code block / node under the pointer (and its scene y) when the preview menu was asked for. */
     String previewMenuLink;
 
     String previewMenuCode;
+    Node previewMenuHit;
+    double previewMenuY;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
@@ -1212,7 +1214,7 @@ public class EditorBuffer implements TabContent {
      *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
-        MarkdownFormatBar.trackMouse(a, this::scheduleFormatBar);
+        markdownEditing.attach(a, this::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
@@ -1281,7 +1283,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the external-URL opener (controller's HostServices) used by Ctrl/Cmd-click + open-link. */
     public void setOpenUrlHandler(java.util.function.Consumer<String> handler) {
-        this.openUrlHandler = handler == null ? u -> {} : handler;
+        completionActions.setLinkOpener(this.openUrlHandler = handler == null ? u -> {} : handler);
     }
 
     /** Opens the link under the caret externally; returns false when the caret is not on a link. */
@@ -4806,6 +4808,8 @@ public class EditorBuffer implements TabContent {
                 Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
                 previewMenuLink = MarkdownRenderer.property(hit, MarkdownRenderer.LINK_KEY);
                 previewMenuCode = MarkdownRenderer.property(hit, MarkdownRenderer.CODE_KEY);
+                previewMenuHit = hit;
+                previewMenuY = e.getSceneY();
                 showPreviewContextMenu(e.getScreenX(), e.getScreenY());
                 e.consume();
             });
@@ -4864,37 +4868,20 @@ public class EditorBuffer implements TabContent {
         this.previewExportJsonHandler = handler == null ? () -> {} : handler;
     }
 
-    /**
-     * Copies the preview to the clipboard — rendered plain text for Markdown, the source for a diagram.
-     *
-     * <p>Markdown additionally carries a {@code text/html} flavor ({@link MarkdownClipboardHtml}), so the
-     * same copy pastes as <em>formatted</em> text into Word / Teams / Outlook / Gmail while a plain-text
-     * target still gets the markup-stripped text. Both flavors always go on together: the consumer picks,
-     * so there is nothing for the user to configure. The preview's own nodes aren't selectable, so this is
-     * whole-document (as it already was for plain text).
-     */
+    /** Copies the preview's selection when it has one, else all of it ({@link PreviewMenu#copy}). */
     public void copyPreviewToClipboard() {
-        String text = isMarkdown() ? MarkdownRenderer.plainText(getContent()) : getContent();
-        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(text == null ? "" : text);
-        if (isMarkdown()) {
-            cc.putHtml(MarkdownClipboardHtml.toHtml(getContent(), MathImages.isEnabled(), path));
-        }
-        Clipboard.getSystemClipboard().setContent(cc);
+        PreviewMenu.copy(this);
     }
 
-    /**
-     * Copies the preview's HTML <em>markup</em> as plain text (for pasting into an HTML file), as opposed to
-     * {@link #copyPreviewToClipboard}, which puts rendered rich text on the clipboard. Markdown only.
-     */
+    /** Copies the preview's HTML <em>markup</em> as plain text ({@link PreviewMenu#copyHtmlSource}). */
     public boolean copyPreviewHtmlSource() {
-        if (!isMarkdown()) {
-            return false;
-        }
-        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
-        cc.putString(MarkdownClipboardHtml.toMarkup(getContent(), MathImages.isEnabled()));
-        Clipboard.getSystemClipboard().setContent(cc);
-        return true;
+        return PreviewMenu.copyHtmlSource(this);
+    }
+
+    /** Copy / Select All aimed at the rendered preview when that is where the user is
+     *  ({@link PreviewMenu#editCommand}); false: the editor's own command applies. */
+    public boolean previewEditCommand(boolean selectAll) {
+        return PreviewMenu.editCommand(this, previewPane, selectAll);
     }
 
     private void showPreviewContextMenu(double screenX, double screenY) {
@@ -5583,6 +5570,7 @@ public class EditorBuffer implements TabContent {
                     if (markdownPreview == null) {
                         markdownPreview = new MarkdownPreview();
                         markdownPreview.attach(previewPane());
+                        markdownPreview.onRerender(this::scheduleRenderPreview);
                         markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
                         markdownPreview.onJumpToSource(
                                 l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));
@@ -5697,6 +5685,7 @@ public class EditorBuffer implements TabContent {
             csvPreviewHost = new StackPane();
         }
         csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
+        belowModeToggle(csvPreviewNode);
         return csvPreviewHost;
     }
 
@@ -5707,7 +5696,23 @@ public class EditorBuffer implements TabContent {
             httpPreviewHost = new StackPane();
         }
         httpPreviewHost.getChildren().setAll(httpPreviewNode); // the toggle is added by rebuildViewHost()
+        belowModeToggle(httpPreviewNode);
         return httpPreviewHost;
+    }
+
+    /**
+     * Height of the band the floating Editor/Split/Preview toggle takes at the top of a preview — the same
+     * 34px the Markdown preview leaves above its document ({@code .markdown-preview-pane} in app.css).
+     */
+    private static final double MODE_TOGGLE_BAND = 34;
+
+    /**
+     * Starts a self-scrolling preview (CSV grid, HTTP responses, structured tree) below the mode toggle.
+     * Each opens with a toolbar or a first row reaching the right edge, and the toggle — on top — hid its
+     * rightmost buttons and swallowed their clicks.
+     */
+    private static void belowModeToggle(Node content) {
+        StackPane.setMargin(content, new Insets(MODE_TOGGLE_BAND, 0, 0, 0));
     }
 
     /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
@@ -5843,6 +5848,7 @@ public class EditorBuffer implements TabContent {
         structuredPreviewHost
                 .getChildren()
                 .setAll(structuredContentHolder()); // the toggle is added by rebuildViewHost()
+        belowModeToggle(structuredContentHolder());
         return structuredPreviewHost;
     }
 

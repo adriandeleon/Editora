@@ -128,7 +128,7 @@ final class PdfGlyphs implements Closeable {
                     String ascii = ASCII.get(cp);
                     if (ascii != null && encodes(primary, ascii)) {
                         piece = ascii;
-                    } else if (Character.isISOControl(cp)) {
+                    } else if (Character.isISOControl(cp) || isEmojiJoiner(cp)) {
                         piece = ""; // a stray control character draws nothing
                     } else {
                         piece = "?";
@@ -220,6 +220,14 @@ final class PdfGlyphs implements Closeable {
         return col;
     }
 
+    /**
+     * The invisible parts of an emoji sequence — variation selectors, the zero-width joiner, skin-tone
+     * modifiers' selector: with no glyph of their own they draw nothing rather than a {@code ?}.
+     */
+    private static boolean isEmojiJoiner(int cp) {
+        return cp == 0x200D || cp == 0xFE0E || cp == 0xFE0F || cp == 0x20E3;
+    }
+
     /** The first fallback font with a glyph for {@code cp}, loading further candidates only as needed. */
     private PDFont fallback(int cp, String s) {
         if (fallbackFor.containsKey(cp)) {
@@ -230,6 +238,18 @@ final class PdfGlyphs implements Closeable {
             if (encodes(f, s)) {
                 hit = f;
                 break;
+            }
+        }
+        if (hit == null && cp >= FIRST_SYMBOL && !emojiTried) {
+            // Emoji and pictographs: the bundled monochrome Noto Emoji, before whatever the system has — so
+            // the same document exports the same on every machine.
+            emojiTried = true;
+            PDFont emoji = loadBundledEmoji();
+            if (emoji != null) {
+                loaded.add(0, emoji);
+                if (encodes(emoji, s)) {
+                    hit = emoji;
+                }
             }
         }
         while (hit == null && nextCandidate < candidates.size()) {
@@ -243,6 +263,26 @@ final class PdfGlyphs implements Closeable {
         }
         fallbackFor.put(cp, hit);
         return hit;
+    }
+
+    /** Below this no code point is an emoji or pictograph, so the emoji font is not worth loading for it. */
+    private static final int FIRST_SYMBOL = 0x203C;
+
+    static final String EMOJI_FONT = "/com/editora/fonts/noto-emoji/NotoEmoji.ttf";
+
+    private boolean emojiTried;
+
+    /**
+     * The bundled Noto Emoji (SIL OFL 1.1), embedded as a subset like every other font here. It is a
+     * variable font; PDFBox reads its {@code glyf} outlines and ignores the variation tables, which gives
+     * the default instance (Regular). Null when it is missing from the build or cannot be parsed.
+     */
+    private PDFont loadBundledEmoji() {
+        try (java.io.InputStream in = PdfGlyphs.class.getResourceAsStream(EMOJI_FONT)) {
+            return in == null ? null : PDType0Font.load(doc, in);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /**

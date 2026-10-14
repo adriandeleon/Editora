@@ -83,4 +83,20 @@ class TabExpansionTest {
         assertTrue(TabExpansion.blockLevel(m.byPrefix("markdown", "table").body()));
         assertFalse(TabExpansion.blockLevel(m.byPrefix("markdown", "link").body()));
     }
+
+    @Test
+    void anInlineWordTriggerExpandsInProseOnlyAloneOnItsLine() {
+        assertTrue(TabExpansion.inlineFitsInProse("code", 0, ""));
+        assertTrue(TabExpansion.inlineFitsInProse("  link", 2, "  "), "indentation does not count");
+        assertFalse(TabExpansion.inlineFitsInProse("see the code", 8, ""), "a sentence, then a Tab");
+        assertFalse(TabExpansion.inlineFitsInProse("code", 0, " follows"), "text after the caret");
+        assertFalse(TabExpansion.inlineFitsInProse("- link", 2, ""), "a list item is not an empty line");
+        assertTrue(TabExpansion.inlineFitsInProse("bold and italic", 0, ""));
+        assertTrue(
+                TabExpansion.inlineFitsInProse("#inc", 1, ""), "glued to what precedes it: not a word of a sentence");
+        assertTrue(TabExpansion.inlineFitsInProse("see ;sig", 4, " x"), "a trigger nobody types by accident");
+        assertTrue(TabExpansion.wordTrigger("bold and italic"));
+        assertFalse(TabExpansion.wordTrigger("h2"));
+        assertFalse(TabExpansion.wordTrigger(""));
+    }
 }

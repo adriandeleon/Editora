@@ -80,14 +80,19 @@ class MarkdownSettingsPageFxTest {
     }
 
     @Test
-    void remoteImagesHaveASwitchAndACommand() throws Exception {
-        CheckBox remote = control("markdownRemoteImagesCheck");
-        assertTrue(FxTestSupport.callOnFx(remote::isSelected), "on by default");
-        FxTestSupport.runOnFx(() -> remote.setSelected(false));
-        assertFalse(settings.isMarkdownRemoteImages());
+    void remoteImagesHaveAPolicyChoiceAndTheOldToggleStillWorks() throws Exception {
+        ComboBox<String> policy = row("markdownRemoteImagePolicy");
+        assertEquals("always", FxTestSupport.callOnFx(policy::getValue), "fetched by default");
+        assertEquals(
+                Settings.REMOTE_IMAGE_POLICIES, FxTestSupport.callOnFx(() -> java.util.List.copyOf(policy.getItems())));
+        FxTestSupport.runOnFx(() -> policy.setValue("ask"));
+        assertEquals("ask", settings.getMarkdownRemoteImagePolicy());
+        assertTrue(settings.isMarkdownRemoteImages(), "asking is not refusing");
         FxTestSupport.runOnFx(() -> registry.run("view.toggleMarkdownRemoteImages"));
-        assertTrue(settings.isMarkdownRemoteImages());
-        assertTrue(FxTestSupport.callOnFx(remote::isSelected), "the window follows the palette");
+        assertEquals("never", settings.getMarkdownRemoteImagePolicy());
+        assertEquals("never", FxTestSupport.callOnFx(policy::getValue), "the window follows the palette");
+        FxTestSupport.runOnFx(() -> registry.run("view.toggleMarkdownRemoteImages"));
+        assertEquals("always", settings.getMarkdownRemoteImagePolicy());
     }
 
     @Test
@@ -172,6 +177,11 @@ class MarkdownSettingsPageFxTest {
                         "markdownHideFrontMatter",
                         Settings::isMarkdownHideFrontMatter,
                         "view.toggleMarkdownFrontMatter"),
+                new Switch("markdownWikiLinks", Settings::isMarkdownWikiLinks, "view.toggleMarkdownWikiLinks"),
+                new Switch(
+                        "markdownTrashUnusedPastedImages",
+                        Settings::isMarkdownTrashUnusedPastedImages,
+                        "view.toggleMarkdownTrashUnusedImages"),
                 new Switch(
                         "markdownSmartTypography",
                         Settings::isMarkdownSmartTypography,

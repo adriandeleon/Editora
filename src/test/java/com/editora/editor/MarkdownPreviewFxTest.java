@@ -412,7 +412,10 @@ class MarkdownPreviewFxTest {
 
     // --- double click to the source; the caret's block is marked ----------------------------------------
 
+    /** A double click with the shortcut key held: on text, the plain one selects the word (see
+     *  PreviewSelectionFxTest) and this one goes to the source. */
     private static MouseEvent doubleClick(Node target) {
+        boolean mac = com.editora.command.KeymapManager.isMac();
         javafx.geometry.Bounds b = target.localToScene(target.getBoundsInLocal());
         double x = b.getMinX() + 2;
         double y = b.getMinY() + 2;
@@ -425,9 +428,9 @@ class MarkdownPreviewFxTest {
                 MouseButton.PRIMARY,
                 2,
                 false,
+                !mac,
                 false,
-                false,
-                false,
+                mac,
                 false,
                 false,
                 false,
@@ -548,7 +551,7 @@ class MarkdownPreviewFxTest {
                             ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 220, 220, false, new PickResult(out, 5, 5)));
             ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
             List<String> titles = EditorFx.titles(menu.getItems());
-            assertFalse(titles.contains(tr("editmenu.selectAll")), "nothing can be selected: no Select All");
+            assertTrue(titles.contains(tr("previewmenu.selectAll")), "text can be selected: Select All is back");
             MenuItem copyLink = EditorFx.menuItem(menu.getItems(), tr("previewmenu.copyLink"));
             assertTrue(copyLink.isVisible());
             assertFalse(EditorFx.menuItem(menu.getItems(), tr("previewmenu.copyCode"))

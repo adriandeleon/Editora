@@ -53,7 +53,7 @@ final class MarkdownPreview {
 
     /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
      *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
-    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes) {}
+    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes, String source, boolean remoteImages) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
     private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
@@ -157,11 +157,20 @@ final class MarkdownPreview {
         caretMarker.setVisible(false);
         caretMarker.setMouseTransparent(true);
         root.getChildren().add(caretMarker);
-        column.afterLayout(this::placeMarker);
-        // A double click on a block puts the editor's caret on the line it came from (not on a link, a task
-        // box or a <details> summary: those have their own click).
+        column.afterLayout(() -> {
+            placeMarker();
+            if (selection.isActive()) {
+                selection.invalidate(); // the highlight follows the text it is on
+            }
+        });
+        // A double click puts the editor's caret on the line the block came from — where it is not on text
+        // (there it selects the word), or with the shortcut key held anywhere. Not on a link, a task box or a
+        // <details> summary: those have their own click.
         column.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getClickCount() != 2 || e.getButton() != javafx.scene.input.MouseButton.PRIMARY) {
+                return;
+            }
+            if (!e.isShortcutDown() && selection.onText(e)) {
                 return;
             }
             Node target = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
@@ -218,13 +227,23 @@ final class MarkdownPreview {
     private PreviewLightbox lightbox;
 
     /** A picture or a diagram was clicked: shows it enlarged over the window, until Esc or a click. */
-    private void enlarge(Node picture) {
+    void enlarge(Node picture) {
         javafx.scene.image.Image image = PreviewLightbox.imageOf(picture);
         if (image == null || pane == null || pane.getScene() == null) {
             return; // not loaded (a placeholder, an error): nothing to enlarge
         }
         closeLightbox();
         lightbox = PreviewLightbox.show(pane, image);
+    }
+
+    /** The picture or diagram {@code node} is (in), when a click on it would open it enlarged; else null. */
+    static Node enlargeableAt(Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n.hasProperties() && n.getProperties().containsKey(MarkdownRenderer.ENLARGE_KEY)) {
+                return n;
+            }
+        }
+        return null;
     }
 
     /** The enlarged picture now showing, or null. */
@@ -237,6 +256,148 @@ final class MarkdownPreview {
             lightbox.close();
             lightbox = null;
         }
+    }
+
+    // --- remote images, asked for first ------------------------------------------------------------------
+
+    private boolean remoteGranted;
+    private Runnable rerender = () -> {};
+    private javafx.scene.layout.HBox remoteBar;
+
+    /** Who renders this document again when the reader allows its remote images. */
+    void onRerender(Runnable render) {
+        this.rerender = render == null ? () -> {} : render;
+    }
+
+    /** Whether the reader allowed this document's remote images (policy "ask"), for this session. */
+    boolean remoteGranted() {
+        return remoteGranted;
+    }
+
+    /** Allows this document's remote images, or (a new document is shown here) forgets that it was. */
+    void grantRemote(boolean granted) {
+        if (remoteGranted != granted) {
+            remoteGranted = granted;
+            if (granted) {
+                showRemoteBar(false);
+                rerender.run();
+            }
+        }
+    }
+
+    /** The bar that says the document has remote images and offers to load them; null until first needed. */
+    javafx.scene.layout.HBox remoteBar() {
+        return remoteBar != null && remoteBar.isVisible() ? remoteBar : null;
+    }
+
+    private void showRemoteBar(boolean show) {
+        if (remoteBar == null) {
+            if (!show) {
+                return;
+            }
+            javafx.scene.control.Label says =
+                    new javafx.scene.control.Label(com.editora.i18n.Messages.tr("markdown.remoteImages.blocked"));
+            says.setWrapText(true);
+            says.setMinWidth(0);
+            javafx.scene.layout.HBox.setHgrow(says, javafx.scene.layout.Priority.ALWAYS);
+            says.setMaxWidth(Double.MAX_VALUE);
+            javafx.scene.control.Button load =
+                    new javafx.scene.control.Button(com.editora.i18n.Messages.tr("markdown.remoteImages.load"));
+            load.getStyleClass().add("small");
+            load.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+            load.setOnAction(e -> grantRemote(true));
+            remoteBar = new javafx.scene.layout.HBox(10, says, load);
+            remoteBar.getStyleClass().add("md-remote-bar");
+            remoteBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            remoteBar.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
+            remoteBar.maxWidthProperty().bind(column.widthProperty());
+            StackPane.setAlignment(remoteBar, javafx.geometry.Pos.TOP_CENTER);
+            // The document starts below the bar instead of under it.
+            remoteBar.heightProperty().addListener((o, was, now) -> padForRemoteBar());
+            root.getChildren().add(remoteBar);
+        }
+        remoteBar.setVisible(show);
+        remoteBar.setManaged(show);
+        padForRemoteBar();
+    }
+
+    private void padForRemoteBar() {
+        boolean shown = remoteBar != null && remoteBar.isVisible();
+        StackPane.setMargin(column, shown ? new javafx.geometry.Insets(remoteBar.getHeight() + 6, 0, 0, 0) : null);
+    }
+
+    private final PreviewSelection selection = new PreviewSelection(this, column, root);
+    private String shownSource;
+    private Path shownBaseDir;
+
+    /** The text selection of this document. */
+    PreviewSelection selection() {
+        return selection;
+    }
+
+    /** The source line {@code sceneY} of the block {@code target} is in came from; -1 off the document. */
+    int sourceLineAt(Node target, double sceneY) {
+        return target == null ? -1 : lineAt(target, sceneY);
+    }
+
+    /** Goes to the source line of the block at a point (the context menu's "Go to Source Line"). */
+    boolean jumpToSourceAt(Node target, double sceneY) {
+        int line = sourceLineAt(target, sceneY);
+        if (line >= 0) {
+            jumpToSource.accept(line);
+        }
+        return line >= 0;
+    }
+
+    /** The Markdown of the blocks {@code first}…{@code last} of the column, or null when one of them did not
+     *  come from source lines. */
+    private String sourceOf(int first, int last) {
+        if (shownSource == null) {
+            return null;
+        }
+        int from = -1;
+        int to = -1;
+        for (Entry e : entries) {
+            if (e.node() == column.getChildren().get(first)) {
+                from = e.startLine();
+            }
+            if (e.node() == column.getChildren().get(last)) {
+                to = e.endLine();
+            }
+        }
+        if (from < 0 || to < from) {
+            return null;
+        }
+        String[] lines = shownSource.split("\\R", -1);
+        return String.join("\n", java.util.Arrays.copyOfRange(lines, from, Math.min(lines.length, to + 1)));
+    }
+
+    /**
+     * Puts the selection on the clipboard, as plain text and as HTML: of the Markdown itself when the selection
+     * is whole blocks (or everything), else read off the selected nodes. False when nothing is selected.
+     */
+    boolean copySelection() {
+        if (!selection.isActive()) {
+            return false;
+        }
+        String text;
+        String markdown = null;
+        if (selection.isAll() && shownSource != null) {
+            markdown = shownSource;
+            text = MarkdownRenderer.plainText(shownSource);
+        } else {
+            text = selection.text();
+            int[] whole = selection.wholeBlocks();
+            markdown = whole == null ? null : sourceOf(whole[0], whole[1]);
+        }
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(text);
+        cc.putHtml(
+                markdown != null
+                        ? MarkdownClipboardHtml.toHtmlIn(markdown, MathImages.isEnabled(), shownBaseDir)
+                        : PreviewSelectionHtml.of(selection.parts()));
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        return true;
     }
 
     /** The column of rendered blocks. */
@@ -298,6 +459,7 @@ final class MarkdownPreview {
     /** Binds the scroll pane this document scrolls in; a gesture of the user's ends any anchoring. */
     void attach(ScrollPane scrollPane) {
         this.pane = scrollPane;
+        selection.attach(scrollPane);
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> anchorUntil = 0);
@@ -315,6 +477,7 @@ final class MarkdownPreview {
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
     void clear() {
+        selection.clear();
         find.clear();
         buildSeq++;
         entries = List.of();
@@ -326,6 +489,32 @@ final class MarkdownPreview {
     // --- planning (pure, off the FX thread) -----------------------------------------------------
 
     /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
+    /** An {@code <img … src="http…">} of the HTML subset. */
+    private static final java.util.regex.Pattern REMOTE_IMG = java.util.regex.Pattern.compile(
+            "<img\\b[^>]*\\bsrc\\s*=\\s*[\"']?\\s*https?://", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Whether the document names an {@code http(s)} image — Markdown's or the HTML subset's. Pure. */
+    static boolean namesRemoteImage(org.commonmark.node.Node ast) {
+        boolean[] found = new boolean[1];
+        ast.accept(new org.commonmark.node.AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.Image image) {
+                found[0] |= PreviewImageLoader.isRemote(image.getDestination());
+            }
+
+            @Override
+            public void visit(org.commonmark.node.HtmlInline html) {
+                found[0] |= REMOTE_IMG.matcher(html.getLiteral()).find();
+            }
+
+            @Override
+            public void visit(org.commonmark.node.HtmlBlock html) {
+                found[0] |= REMOTE_IMG.matcher(html.getLiteral()).find();
+            }
+        });
+        return found[0];
+    }
+
     static Plan plan(String markdown, Path baseDir) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
@@ -359,7 +548,7 @@ final class MarkdownPreview {
             units.add(new Unit(n, last, key, start, end, slug, firstReferences(n, last, referred)));
             n = last.getNext();
         }
-        return new Plan(units, baseDir, footnotes);
+        return new Plan(units, baseDir, footnotes, md, namesRemoteImage(ast));
     }
 
     private static SourceSpan firstSpan(org.commonmark.node.Node n) {
@@ -508,6 +697,8 @@ final class MarkdownPreview {
      */
     void show(Plan plan, Consumer<String> onLinkClick, Boolean dark, double line) {
         this.linkOpener = onLinkClick == null ? u -> {} : onLinkClick;
+        this.shownSource = plan.source();
+        this.shownBaseDir = plan.baseDir();
         long seq = ++buildSeq; // whatever an earlier render still had to build is this render's business now
         // What is at the top now, as a node: text typed above it renumbers its lines but does not replace it.
         Node topNode = null;
@@ -524,8 +715,9 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir() + "|"
-                + PreviewPrefs.signature();
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remotePolicy() + remoteGranted + "|"
+                + plan.baseDir() + "|"
+                + PreviewPrefs.signature() + "|" + MarkdownRenderer.wikiLinks() + "|" + WikiLinkTargets.epoch();
         column.setMaxWidth(PreviewPrefs.contentWidth());
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
@@ -537,7 +729,11 @@ final class MarkdownPreview {
                 this::follow,
                 dark,
                 plan.footnotes(),
-                new MarkdownRenderer.Live(this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter()));
+                new MarkdownRenderer.Live(
+                        this::taskClicked, this::enlarge, PreviewPrefs.hideFrontMatter(), remoteGranted));
+        showRemoteBar(plan.remoteImages()
+                && !remoteGranted
+                && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK);
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
@@ -649,6 +845,7 @@ final class MarkdownPreview {
         }
         find.reapply(); // rebuilt blocks lost their marks
         showEmptyNote(complete && column.getChildren().isEmpty());
+        selection.revalidate();
         markLine(markedLine); // the caret's block may be a new node, or on other lines
         if (complete) {
             shows.set(shows.get() + 1);

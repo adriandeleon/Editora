@@ -51,6 +51,10 @@ public final class MarkdownLinkAt {
             }
             to = next;
         }
+        MarkdownLinkRewrite.Link wiki = MarkdownLinkRewrite.wikiAt(text, caret);
+        if (wiki != null) {
+            return "[[" + wiki.destination() + "]]"; // the wiki form: resolved by whoever follows it
+        }
         boolean[] code = codeSpans(text, from, to);
         String definition = definitionOn(text, lineStart, lineEnd(text, caret));
         if (definition != null) {

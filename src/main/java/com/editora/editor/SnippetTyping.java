@@ -25,6 +25,16 @@ final class SnippetTyping {
      */
     static TabExpansion.Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider) {
+        return triggerAtCaret(a, language, prose, provider, false);
+    }
+
+    /**
+     * {@code offered}: the trigger is being looked up for the completion popup or its ghost, which show what
+     * they would expand — there an inline word trigger is offered in the middle of a sentence too; a bare Tab
+     * expands it only when the word is alone on its line.
+     */
+    static TabExpansion.Match triggerAtCaret(
+            CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider, boolean offered) {
         int caret = a.getCaretPosition();
         int base =
                 Math.max(a.getAbsolutePosition(a.getCurrentParagraph(), 0), caret - BufferCompletion.PREFIX_LOOKBACK);
@@ -38,6 +48,13 @@ final class SnippetTyping {
         boolean block = TabExpansion.blockLevel(m.snippet().body());
         if (prose && block && !(lineStart && TabExpansion.fitsInProse(before, m.start(), m.snippet()))) {
             return null;
+        }
+        if (prose && !block && !offered) {
+            String line = a.getText(a.getCurrentParagraph());
+            String after = line.substring(Math.min(a.getCaretColumn(), line.length()));
+            if (!(lineStart && TabExpansion.inlineFitsInProse(before, m.start(), after))) {
+                return null;
+            }
         }
         // The highlighter's classes say where the trigger sits. A trigger typed a moment ago may not be
         // restyled yet, so the character before it is asked too: both are comment or string inside one.

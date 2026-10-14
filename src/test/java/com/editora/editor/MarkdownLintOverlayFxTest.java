@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -93,6 +94,95 @@ class MarkdownLintOverlayFxTest {
                 }
             }
             return out;
+        });
+    }
+
+    /** Where the first squiggle starts and where the text of line 1 starts, in the overlay's coordinates. */
+    private static double[] squiggleAndText(EditorBuffer buffer) throws Exception {
+        List<int[]> bands = paintedBands(buffer);
+        double text = EditorFx.callFx(() -> {
+            Node overlay = EditorFx.field(buffer, "mdLintOverlay");
+            var first = buffer.getArea().getCharacterBoundsOnScreen(0, 1); // empty until laid out
+            return first.isEmpty()
+                    ? Double.NaN
+                    : overlay.screenToLocal(first.get()).getMinX();
+        });
+        return new double[] {bands.isEmpty() ? Double.NaN : bands.get(0)[2], text};
+    }
+
+    /**
+     * Re-reads until the squiggle sits where the text starts, for up to three seconds. An overlay that painted for
+     * the old gutter and was never asked to paint again stays wrong however long one waits — which is the failure.
+     */
+    private static double[] settled(EditorBuffer buffer) throws Exception {
+        double[] now = squiggleAndText(buffer);
+        for (int attempt = 0; attempt < 60 && !(Math.abs(now[0] - now[1]) <= 2); attempt++) {
+            Thread.sleep(50);
+            now = squiggleAndText(buffer);
+        }
+        return now;
+    }
+
+    @Test
+    void theSquiggleFollowsTheTextWhenTheGutterChangesWidth() throws Exception {
+        EditorBuffer[] buffer = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            buffer[0] = markdown(
+                    "word here\n" + "line\n".repeat(97),
+                    List.of(new MarkdownLint.Diagnostic(1, 1, 4, "warning", "MD034", "first word")));
+            stage[0] = EditorFx.show(buffer[0], 600, 300);
+            buffer[0].getArea().showParagraphAtTop(0);
+            buffer[0].setMarkdownLintEnabled(true);
+        });
+        double[] start = settled(buffer[0]);
+        assertFalse(Double.isNaN(start[1]), "line 1 is on screen");
+        assertEquals(start[1], start[0], 2, "under the first word to begin with");
+
+        // No edit at all: the gutter goes away, the text moves left.
+        EditorFx.onFx(() -> buffer[0].setLineNumbersVisible(false));
+        double[] narrower = settled(buffer[0]);
+        assertTrue(narrower[1] < start[1] - 2, "the fixture narrows the gutter: " + start[1] + " then " + narrower[1]);
+        assertEquals(narrower[1], narrower[0], 2, "the squiggle moved with the text");
+
+        // And back, with an edit in the same pulse (the repaint an edit asks for must not win the race).
+        EditorFx.onFx(() -> {
+            buffer[0].setLineNumbersVisible(true);
+            buffer[0].getArea().appendText("more\n");
+        });
+        double[] wider = settled(buffer[0]);
+        assertTrue(wider[1] > narrower[1] + 2, "the gutter is back");
+        assertEquals(wider[1], wider[0], 2, "the squiggle moved with the text again");
+
+        // A gutter that changes width behind the overlay's back: nothing scrolls, nothing is edited, the overlay
+        // is not laid out again — only the lines are. This is what the first paint of a freshly opened file can
+        // race with (the gutter is sized a pulse after the squiggles arrive).
+        EditorFx.onFx(() -> buffer[0].getArea().setParagraphGraphicFactory(line -> {
+            javafx.scene.layout.Region wide = new javafx.scene.layout.Region();
+            wide.setMinWidth(120);
+            wide.setPrefWidth(120);
+            return wide;
+        }));
+        double[] moved = settled(buffer[0]);
+        assertTrue(Math.abs(moved[1] - wider[1]) > 2, "the fixture moves the text: " + wider[1] + " then " + moved[1]);
+        assertEquals(moved[1], moved[0], 2, "the squiggle is where the text now is");
+
+        // The race itself, forced: the overlay holds a paint made for another layout (wiped here, and its
+        // record of where the text was set wrong) and no event will ever ask it to paint again. Looking again
+        // on the pulses after a paint is what puts it right.
+        EditorFx.onFx(() -> {
+            MarkdownLintOverlay overlay = EditorFx.field(buffer[0], "mdLintOverlay");
+            javafx.scene.canvas.Canvas canvas = EditorFx.field(overlay, "canvas");
+            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            EditorFx.setField(overlay, "paintedX", -1000.0);
+            EditorFx.setField(overlay, "checksLeft", 1);
+            EditorFx.call(overlay, "arm");
+        });
+        double[] repainted = settled(buffer[0]);
+        assertEquals(moved[1], repainted[0], 2, "repainted without being asked to");
+        EditorFx.onFx(() -> {
+            stage[0].close();
+            buffer[0].dispose();
         });
     }
 

@@ -699,6 +699,8 @@
 .markdown-preview .md-link { -fx-fill: -color-accent-fg; }
 /* A link reached with Tab (its first run takes the focus) is underlined; Enter or Space follows it. */
 .markdown-preview .md-link:focused { -fx-underline: true; }
+/* A wiki link nothing answers to: muted and underlined, so it reads as "not there yet", not as broken text. */
+.markdown-preview .md-link.md-wikilink-missing { -fx-fill: -color-fg-muted; -fx-underline: true; }
 /* The safe HTML subset: <sub>/<sup>, <kbd> key caps, blocks of HTML, <details>. */
 .markdown-preview .md-sub { -fx-font-size: 0.78em; -fx-translate-y: 0.3em; }
 .markdown-preview .md-sup { -fx-font-size: 0.78em; -fx-translate-y: -0.35em; }
@@ -752,6 +754,24 @@
 /* An empty document: one muted line where the rendering will be. */
 .md-preview-empty { -fx-text-fill: -color-fg-muted; -fx-font-size: 13px; -fx-padding: 48 0 0 0; }
 /* Split view: a thin bar beside the block the editor's caret is in. */
+/* A picture or diagram that opens enlarged, when the keyboard is on it: a ring that moves nothing. */
+.markdown-preview .md-enlargeable:focused {
+    -fx-effect: dropshadow(three-pass-box, -color-accent-emphasis, 5, 0.75, 0, 0);
+}
+/* "This document has remote images" (policy: ask first), at the top of the document, below the floating
+   zoom and view-mode buttons. */
+.md-remote-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10 6 12;
+}
+.md-remote-bar .label { -fx-text-fill: -color-fg-default; }
+/* Text selected in the preview: a translucent layer above the text (the column is opaque, nothing can go
+   under it). The swatch only carries the colour to shapes made after the CSS pass. */
+.md-selection-layer { -fx-opacity: 0.32; }
+.md-selection-fill { -fx-fill: -color-accent-emphasis; }
 .md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
 /* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
 .markdown-preview .md-alert {
