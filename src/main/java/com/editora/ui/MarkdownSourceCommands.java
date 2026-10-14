@@ -33,6 +33,22 @@ final class MarkdownSourceCommands {
             WindowCommandRegistrar.Host h = window.get();
             return h == null ? MarkdownLintOptions.DEFAULT : h.previews().lint().options(buffer);
         });
+        host.registry()
+                .register(Command.of(
+                        "tool.backlinks",
+                        () -> host.indexCoordinator().backlinks.toggle()));
+        host.registry()
+                .register(Command.of(
+                        "markdown.showBacklinks",
+                        () -> host.indexCoordinator().backlinks.show()));
+        // One resolver for every surface: the preview and the exports ask the editor package's seam, which is
+        // answered here by the same WikiLinks the source editor, completion, the link tools and lint use.
+        com.editora.editor.WikiLinkTargets.setResolver(
+                (folder, target) -> folder == null ? null : WikiLinks.resolve(folder.resolve("-"), target));
+        host.indexCoordinator().linkGraph.addListener(com.editora.editor.WikiLinkTargets::changed);
+        // Completion after "[[" lists the notes of the project that holds the document being edited.
+        com.editora.editor.MarkdownCompletions.setWikiSource(
+                document -> WikiLinks.enabled ? WikiLinks.targets(document) : com.editora.markdown.WikiTargets.EMPTY);
         edit(host, "markdown.formatDocument", MarkdownFormatting::formatDocument, "status.markdown.formatted");
         edit(host, "markdown.formatSelection", MarkdownFormatting::formatSelection, "status.markdown.formatted");
         edit(host, "markdown.numberHeadings", MarkdownFormatting::numberHeadings, "status.markdown.headingsNumbered");

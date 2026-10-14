@@ -1151,6 +1151,7 @@ final class FileWorkflowCoordinator {
         if (checkingExternalChanges || host.editorArea() == null) {
             return;
         }
+        host.previews().lint().checkConfigs(); // a markdownlint config edited elsewhere re-lints the open buffers
         Tab tab = host.editorArea().selectedTab();
         EditorBuffer buffer = host.bufferOf(tab);
         if (buffer == null || buffer.getPath() == null) {
@@ -2523,6 +2524,9 @@ final class FileWorkflowCoordinator {
         host.fileSaved(request.target());
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));
+            if (!autoSave) {
+                cleanUpPastedImages(request);
+            }
             host.git().refresh();
             host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
             if (!autoSave) {
@@ -2555,6 +2559,110 @@ final class FileWorkflowCoordinator {
         if (notes.charsetChanged()) {
             buffer.setDetectedCharset(notes.charsetTo());
         }
+    }
+
+    /** The trash unused pasted images go to; a test puts its own in. Null: the system's. */
+    com.editora.io.Trash.Bin pastedImageBin;
+
+    /** Test seam: runs on the background thread after the sibling scan, before the FX re-check. Null normally. */
+    Runnable beforePastedImageRecheck;
+
+    /** Completes when the clean-up started by the latest save has settled (tests wait on it). */
+    volatile CompletableFuture<Void> pastedImageCleanup = CompletableFuture.completedFuture(null);
+
+    /** Whether some open Markdown / Typst document other than {@code buffer} mentions {@code file}. */
+    private boolean usedByAnotherBuffer(EditorBuffer buffer, Path file) {
+        for (Tab tab : host.editorArea().tabs()) {
+            EditorBuffer other = host.bufferOf(tab);
+            if (other != null
+                    && other != buffer
+                    && (other.isMarkdown() || other.isTypst())
+                    && PastedImageCleanup.mentions(other.getPath(), other.getContent(), file)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * After an explicit save: moves the images pasted into the document in this session that nothing
+     * mentions any more to the trash ({@link PastedImageCleanup}). The save does not wait for it.
+     *
+     * <p>Only string work happens here on the FX thread (the saved text, the other open buffers). Reading
+     * the sibling documents and moving files are file I/O and run on {@link #fileLoadExecutor}; between the
+     * two the candidates are checked again on the FX thread against the buffer as it is <em>then</em> — the
+     * user may have undone the deletion — and the status note is posted from the FX thread at the end.
+     * Closing the window stops it ({@link #shutdown}).
+     */
+    private void cleanUpPastedImages(SaveRequest request) {
+        EditorBuffer buffer = request.buffer();
+        java.util.Set<Path> created = buffer.markdown().sessionImages();
+        if (shutdown || !host.config().getSettings().isMarkdownTrashUnusedPastedImages() || created.isEmpty()) {
+            return;
+        }
+        Path document = request.target();
+        List<Path> candidates = PastedImageCleanup.candidates(
+                document, request.savedText(), created, file -> usedByAnotherBuffer(buffer, file));
+        if (candidates.isEmpty()) {
+            return;
+        }
+        com.editora.io.Trash.Bin bin = pastedImageBin != null ? pastedImageBin : com.editora.io.Trash.system();
+        java.util.function.BooleanSupplier cancelled = () -> shutdown || buffer.isDisposed();
+        CompletableFuture<Void> done = new CompletableFuture<>();
+        pastedImageCleanup = done;
+        try {
+            fileLoadExecutor.submit(() -> {
+                try {
+                    List<Path> unused = PastedImageCleanup.unusedOnDisk(document, candidates, cancelled);
+                    if (beforePastedImageRecheck != null) {
+                        beforePastedImageRecheck.run();
+                    }
+                    // Back on the FX thread: is each one still ours, and still unmentioned right now?
+                    List<Path> confirmed = unused.isEmpty() || cancelled.getAsBoolean()
+                            ? List.of()
+                            : onFx(() -> PastedImageCleanup.candidates(
+                                            document,
+                                            buffer.getContent(),
+                                            created.stream()
+                                                    .filter(unused::contains)
+                                                    .toList(),
+                                            file -> usedByAnotherBuffer(buffer, file)))
+                                    .get();
+                    PastedImageCleanup.Outcome outcome = PastedImageCleanup.trash(confirmed, bin, cancelled);
+                    onFx(() -> {
+                                created.removeAll(outcome.trashed());
+                                created.removeAll(outcome.gone());
+                                String note = PastedImageCleanup.note(outcome);
+                                if (!note.isEmpty() && !cancelled.getAsBoolean()) {
+                                    host.setStatus(note);
+                                }
+                                return null;
+                            })
+                            .get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt(); // the window is closing
+                } catch (java.util.concurrent.ExecutionException | RuntimeException e) {
+                    // nothing was trashed that should not have been; the files stay for the next save
+                } finally {
+                    done.complete(null);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            done.complete(null);
+        }
+    }
+
+    /** Runs {@code task} on the FX thread and hands its result back to a background caller. */
+    private static <T> CompletableFuture<T> onFx(java.util.function.Supplier<T> task) {
+        CompletableFuture<T> result = new CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                result.complete(task.get());
+            } catch (RuntimeException e) {
+                result.completeExceptionally(e);
+            }
+        });
+        return result;
     }
 
     /** What a finished save says: the warnings a plain "Saved" used to overwrite a few milliseconds later. */

@@ -110,10 +110,13 @@ class StatusWordCountFxTest {
         String big = "word ".repeat(StatusWordCount.INLINE_CHARS / 5 + 10);
         EditorBuffer md = buffer("big.md", big);
         Runnable[] held = {null};
-        StatusBar bar = FxTestSupport.callOnFx(() -> new StatusBar(() -> md, new CommandRegistry(), () -> settings));
-        FxTestSupport.runOnFx(() -> {
-            bar.wordCount.counter = task -> held[0] = task;
-            bar.attach(md);
+        // One FX turn for all three steps. The constructor starts a count of its own on a background thread;
+        // had its result been delivered between two turns, the label would already be showing here.
+        StatusBar bar = FxTestSupport.callOnFx(() -> {
+            StatusBar created = new StatusBar(() -> md, new CommandRegistry(), () -> settings);
+            created.wordCount.counter = task -> held[0] = task;
+            created.attach(md);
+            return created;
         });
         assertFalse(FxTestSupport.callOnFx(() -> bar.wordCount.label().isManaged()), "not counted inline");
         held[0].run();

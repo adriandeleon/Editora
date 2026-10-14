@@ -221,6 +221,9 @@ final class PreviewCoordinator {
                 off.addAll(hit.disabled());
             }
         }
+        if (!host.config().getSettings().isMarkdownWikiLinks()) {
+            off.add(com.editora.markdown.MarkdownLint.LINK_WIKI); // "[[x]]" is ordinary text then
+        }
         if (buffer != null && buffer.isNarrowed()) {
             off.addAll(java.util.List.of("MD041", "MD047"));
         }
@@ -378,6 +381,9 @@ final class PreviewCoordinator {
         host.csvCoordinator().ensureCsvPreview(buffer);
         host.httpClient().ensureHttpPreview(buffer);
         Path file = buffer.getPath();
+        if (file == null) {
+            applyDefaultViewMode(buffer);
+        }
         if (file == null || !buffer.hasPreview()) {
             return;
         }
@@ -405,6 +411,28 @@ final class PreviewCoordinator {
             buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.valueOf(saved));
         } catch (IllegalArgumentException ignored) {
             // unknown persisted value — leave in EDITOR mode
+        }
+    }
+
+    /** The untitled buffers already given the default view mode: it is given once, not every time a setting
+     *  is applied, so the mode the user then chooses stays. */
+    private final java.util.Set<EditorBuffer> defaulted =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Opens an <em>untitled</em> Markdown buffer in the {@code markdownDefaultViewMode} — once, the first time
+     * it is seen as Markdown (created from a template, restored with the session, or given the language by
+     * hand). A buffer with a file is {@link #restoreMarkdownMode}'s: its own remembered mode comes first.
+     */
+    void applyDefaultViewMode(EditorBuffer buffer) {
+        if (buffer == null || buffer.getPath() != null || !buffer.isMarkdown() || !defaulted.add(buffer)) {
+            return;
+        }
+        EditorBuffer.MarkdownViewMode preferred =
+                defaultViewMode(host.config().getSettings().getMarkdownDefaultViewMode());
+        if (preferred != EditorBuffer.MarkdownViewMode.EDITOR
+                && buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.EDITOR) {
+            buffer.setMarkdownViewMode(preferred);
         }
     }
 
@@ -557,6 +585,17 @@ final class PreviewCoordinator {
         }
     }
 
+    /** {@code markdown.convertWikiLink}: the link at the caret from wiki link to Markdown link, or back. */
+    void markdownConvertWikiLink() {
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            int result = b.markdown().convertWikiLink();
+            if (result != 0) {
+                host.setStatus(tr(result == 1 ? "status.markdown.noLink" : "status.markdown.linkNotLocal"));
+            }
+        }
+    }
+
     /** {@code markdown.pasteAsMarkdown}: the clipboard's HTML (or tab-separated cells) pasted as Markdown. */
     void markdownPasteAsMarkdown() {
         EditorBuffer b = editableMarkdown();
@@ -577,10 +616,10 @@ final class PreviewCoordinator {
         if (b == null) {
             return;
         }
-        com.editora.markdown.MarkdownLinks.Link link = b.markdown().linkAtCaret();
+        String[] link = b.markdown().linkForEditing(); // a Markdown link, a wiki link, or the selection
         LinkEditCard card = new LinkEditCard(
-                link == null ? b.markdown().linkTextCandidate() : link.text(),
-                link == null ? "" : link.destination(),
+                link[0],
+                link[1],
                 host.overlayHost()::hide,
                 (text, url) -> b.markdown().setLink(text, url));
         showAtCaret(card.card(), card::focus);
@@ -798,8 +837,10 @@ final class PreviewCoordinator {
     void applyPreviewSettings() {
         Settings s = host.config().getSettings();
         com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
-        com.editora.editor.PreviewImageLoader.setRemoteImages(s.isMarkdownRemoteImages());
+        com.editora.editor.PreviewImageLoader.setRemotePolicy(
+                com.editora.editor.PreviewImageLoader.RemotePolicy.of(s.getMarkdownRemoteImagePolicy()));
         com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
+        com.editora.editor.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
         com.editora.editor.PreviewPrefs.set(
                 s.getMarkdownPreviewFontSize(), s.getMarkdownPreviewWidth(), s.isMarkdownHideFrontMatter());
         for (Tab tab : host.editorArea().tabs()) {

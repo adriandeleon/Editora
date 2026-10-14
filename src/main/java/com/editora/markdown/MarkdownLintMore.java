@@ -57,14 +57,28 @@ final class MarkdownLintMore {
     private MarkdownLintMore() {}
 
     /** The parse the rules read. No autolink extension: a bare URL must stay text (MD034 is about those). */
-    private static final Parser PARSER = Parser.builder()
-            .extensions(List.of(
-                    TablesExtension.create(),
-                    StrikethroughExtension.create(),
-                    FootnotesExtension.create(),
-                    MarkdownMath.extension()))
-            .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
-            .build();
+    private static final Parser PARSER = parser(false);
+
+    /**
+     * The same parse with the preview's wiki-link extension, used while LINK003 is on (it is off when wiki links
+     * are): what the linter calls a wiki link is then exactly what {@link MarkdownWikiLinks} parses as one.
+     */
+    private static final Parser WIKI_PARSER = parser(true);
+
+    private static Parser parser(boolean wikiLinks) {
+        List<org.commonmark.Extension> extensions = new ArrayList<>(List.of(
+                TablesExtension.create(),
+                StrikethroughExtension.create(),
+                FootnotesExtension.create(),
+                MarkdownMath.extension()));
+        if (wikiLinks) {
+            extensions.add(MarkdownWikiLinks.extension());
+        }
+        return Parser.builder()
+                .extensions(extensions)
+                .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
+                .build();
+    }
 
     private static final Pattern HTML_TAG = Pattern.compile("<([A-Za-z][A-Za-z0-9-]*)(?=[\\s/>])");
     private static final Pattern IMG_TAG = Pattern.compile("<img\\b[^>]*>", Pattern.CASE_INSENSITIVE);
@@ -140,10 +154,36 @@ final class MarkdownLintMore {
                 source.append(blocks.line(i));
             }
         }
-        Node document = PARSER.parse(source.toString());
+        boolean wiki = emit.on(MarkdownLint.LINK_WIKI) && emit.targets() != null && wikiLinksAreFew(blocks);
+        Node document = (wiki ? WIKI_PARSER : PARSER).parse(source.toString());
         collectDefinitions(run, document);
         walk(run, document);
         unusedDefinitions(run);
+    }
+
+    /** More wiki links than this in one paragraph and the document is linted without LINK003. */
+    private static final int MAX_WIKI_LINKS_PER_PARAGRAPH = 2_000;
+
+    /**
+     * Whether no paragraph holds more than {@link #MAX_WIKI_LINKS_PER_PARAGRAPH} {@code [[}. The wiki-link parse
+     * costs time quadratic in the links of one paragraph (each leaves its outer bracket open, and closing a link
+     * walks all open brackets), which is nothing for a document and seconds for a generated wall of links.
+     */
+    private static boolean wikiLinksAreFew(MarkdownBlocks blocks) {
+        int inParagraph = 0;
+        for (int i = 0; i < blocks.lineCount(); i++) {
+            String line = blocks.line(i);
+            if (line.isBlank()) {
+                inParagraph = 0;
+                continue;
+            }
+            for (int at = line.indexOf("[["); at >= 0; at = line.indexOf("[[", at + 2)) {
+                if (++inParagraph > MAX_WIKI_LINKS_PER_PARAGRAPH) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     // --- the walk ---------------------------------------------------------------------------------------
@@ -193,6 +233,8 @@ final class MarkdownLintMore {
             codeSpan(run, node);
         } else if (node instanceof HtmlInline || node instanceof HtmlBlock) {
             html(run, node);
+        } else if (node instanceof MarkdownWikiLinks.WikiLink w) {
+            wikiLink(run, w);
         }
         if (node.getFirstChild() instanceof Text || hasTextChild(node)) {
             textRuns(run, node);
@@ -863,6 +905,53 @@ final class MarkdownLintMore {
                         MarkdownLint.LINK_ANCHOR,
                         "LINK002");
             }
+        }
+    }
+
+    /** LINK003: a wiki link (as the preview parses one) whose note, or heading in it, is not there. */
+    private static void wikiLink(Run run, MarkdownWikiLinks.WikiLink link) {
+        Emitter emit = run.emit;
+        SourceSpan s = first(link);
+        if (emit.targets() == null || !emit.on(MarkdownLint.LINK_WIKI)) {
+            return;
+        }
+        String note = link.getTarget();
+        String heading = link.getHeading() == null ? "" : link.getHeading().strip();
+        String message = null;
+        if (note.isEmpty()) { // [[#heading]]: a heading of this document
+            if (!heading.isEmpty() && !anchors(run).contains(MarkdownToc.slug(heading))) {
+                message = "LINK003.heading";
+            }
+        } else {
+            String file = emit.targets().wikiFile(note);
+            if (file == null) {
+                message = "LINK003";
+            } else if (!file.isEmpty() && !heading.isEmpty()) {
+                Set<String> there = emit.targets().anchors(file);
+                if (there != null && !there.contains(MarkdownToc.slug(heading))) {
+                    message = "LINK003.heading";
+                }
+            }
+        }
+        if (message != null) {
+            // Underlined from "[[", whether or not a "!" stands before it.
+            String line = run.line(s.getLineIndex());
+            int column = s.getColumnIndex();
+            int length = s.getLength();
+            if (column < line.length() && line.charAt(column) == '!') {
+                column++;
+                length--;
+            }
+            if (column > 0 && column < line.length() && line.charAt(column - 1) == '[') {
+                column--; // the node's span starts at the inner bracket
+                length++;
+            }
+            // In a table cell the span is counted without the backslash of "\\|": end at the link's own "]]".
+            int close = line.indexOf("]]", column);
+            if (close >= 0 && !line.startsWith("]]", Math.max(0, column + length - 2))) {
+                length = close + 2 - column;
+            }
+            emit.add(s.getLineIndex() + 1, column + 1, length, MarkdownLint.LINK_WIKI, message);
         }
     }
 

@@ -15,9 +15,10 @@ import org.commonmark.node.Text;
  * nodes.
  *
  * <ul>
- *   <li>An alert ({@code > [!NOTE]}) becomes a block quote that opens with its title in bold.
- *   <li>A definition list becomes, per entry, the term as a bold paragraph followed by its descriptions'
- *       own blocks.
+ *   <li>An alert ({@code > [!NOTE]}) becomes an {@link AlertQuote}: a block quote that opens with its
+ *       title in bold and knows its kind, so a writer can colour its rule and title.
+ *   <li>A definition list becomes, per entry, the term as a bold paragraph followed by an
+ *       {@link Indented} block holding its descriptions.
  * </ul>
  *
  * Inline nodes (emoji, highlight, superscript, subscript) are left for the writers, which style them.
@@ -25,6 +26,80 @@ import org.commonmark.node.Text;
 public final class MarkdownExportTree {
 
     private MarkdownExportTree() {}
+
+    /** An alert as the block quote it is drawn as; a writer that knows it colours the rule and the title. */
+    public static final class AlertQuote extends BlockQuote {
+        private final MarkdownAlerts.Kind kind;
+
+        AlertQuote(MarkdownAlerts.Kind kind) {
+            this.kind = kind;
+        }
+
+        public MarkdownAlerts.Kind getKind() {
+            return kind;
+        }
+    }
+
+    /** The descriptions of a definition-list entry: blocks to set in from their term. */
+    public static final class Indented extends org.commonmark.node.CustomBlock {}
+
+    /** The colour of an alert kind's rule and title, as six hex digits (GitHub's light palette). */
+    public static String color(MarkdownAlerts.Kind kind) {
+        return switch (kind) {
+            case NOTE -> "0969DA";
+            case TIP -> "1A7F37";
+            case IMPORTANT -> "8250DF";
+            case WARNING -> "9A6700";
+            case CAUTION -> "CF222E";
+        };
+    }
+
+    /**
+     * As {@link #lower(Node)}, also rewriting wiki links into ordinary ones, which every exporter draws:
+     * {@code [[note#Heading|label]]} becomes a link to the note's path (and the heading's anchor) with the
+     * label as its text, {@code ![[picture.png]]} an image. {@code wikiPath} gives the path a document link
+     * to a wiki target should carry, relative to the document, or null when the target does not resolve — an
+     * unresolved link is written as its text, an unresolved embed as its name.
+     */
+    public static Node lower(Node root, java.util.function.UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+        return lower(root);
+    }
+
+    /** Only the wiki-link half of {@link #lower(Node, java.util.function.UnaryOperator)} (HTML keeps the rest). */
+    public static void wikiLinksToLinks(Node root, java.util.function.UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+    }
+
+    private static void lowerWikiLinks(Node node, java.util.function.UnaryOperator<String> wikiPath) {
+        for (Node c = node.getFirstChild(); c != null; ) {
+            Node next = c.getNext();
+            if (c instanceof MarkdownWikiLinks.WikiLink wiki) {
+                String path = wiki.getTarget().isEmpty() ? "" : wikiPath.apply(wiki.getTarget());
+                Node replacement;
+                if (path == null) {
+                    replacement = new Text(wiki.getText());
+                } else if (wiki.isEmbed()) {
+                    org.commonmark.node.Image image = new org.commonmark.node.Image(path, null);
+                    image.appendChild(new Text(wiki.getText()));
+                    replacement = image;
+                } else {
+                    String anchor =
+                            wiki.getHeading() == null || wiki.getHeading().isBlank()
+                                    ? ""
+                                    : "#" + MarkdownToc.slug(wiki.getHeading());
+                    org.commonmark.node.Link link = new org.commonmark.node.Link(path + anchor, null);
+                    link.appendChild(new Text(wiki.getText()));
+                    replacement = link;
+                }
+                c.insertAfter(replacement);
+                c.unlink();
+            } else {
+                lowerWikiLinks(c, wikiPath);
+            }
+            c = next;
+        }
+    }
 
     /** Rewrites {@code root} in place and returns it. */
     public static Node lower(Node root) {
@@ -38,7 +113,7 @@ public final class MarkdownExportTree {
         for (Node child : children) {
             lower(child); // innermost first: an alert in a list item, a definition list in an alert
             if (child instanceof MarkdownAlerts.Alert alert) {
-                BlockQuote quote = new BlockQuote();
+                BlockQuote quote = new AlertQuote(alert.getKind());
                 Paragraph title = new Paragraph();
                 StrongEmphasis strong = new StrongEmphasis();
                 strong.appendChild(new Text(alert.getKind().title()));
@@ -49,6 +124,7 @@ public final class MarkdownExportTree {
                 alert.unlink();
             } else if (child instanceof MarkdownDefinitions.DefinitionList list) {
                 Node anchor = list;
+                Indented descriptions = null;
                 for (Node part = list.getFirstChild(); part != null; ) {
                     Node next = part.getNext();
                     if (part instanceof MarkdownDefinitions.Term term) {
@@ -58,18 +134,20 @@ public final class MarkdownExportTree {
                         p.appendChild(strong);
                         anchor.insertAfter(p);
                         anchor = p;
-                    } else if (part.getFirstChild() != null
-                            && !(part.getFirstChild() instanceof org.commonmark.node.Block)) {
-                        Paragraph p = new Paragraph(); // a one-line description holds its text directly
-                        moveChildren(part, p);
-                        anchor.insertAfter(p);
-                        anchor = p;
+                        descriptions = null;
                     } else {
-                        for (Node block = part.getFirstChild(); block != null; ) {
-                            Node following = block.getNext();
-                            anchor.insertAfter(block);
-                            anchor = block;
-                            block = following;
+                        if (descriptions == null) {
+                            descriptions = new Indented();
+                            anchor.insertAfter(descriptions);
+                            anchor = descriptions;
+                        }
+                        if (part.getFirstChild() != null
+                                && !(part.getFirstChild() instanceof org.commonmark.node.Block)) {
+                            Paragraph p = new Paragraph(); // a one-line description holds its text directly
+                            moveChildren(part, p);
+                            descriptions.appendChild(p);
+                        } else {
+                            moveChildren(part, descriptions);
                         }
                     }
                     part = next;

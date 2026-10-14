@@ -55,8 +55,22 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
      */
     record ConfigHit(Path file, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options) {}
 
+    /**
+     * A config as last read. {@code settled} says the file had been left alone for a while when it was read:
+     * only then is an unchanged modification time proof of unchanged content. A file written twice within the
+     * clock's (or the file system's) resolution keeps its time stamp, and so does one deleted and written again.
+     */
     private record CacheEntry(
-            long mtime, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options, boolean valid) {}
+            long mtime,
+            long size,
+            boolean settled,
+            Set<String> disabled,
+            Set<String> enabled,
+            MarkdownLintOptions options,
+            boolean valid) {}
+
+    /** How long a file must have been untouched for its modification time to be trusted. */
+    private static final long SETTLED_MILLIS = 2_000;
 
     private final Map<Path, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
     /** Unreadable configs already reported ({@code path@mtime}), so each is announced once. */
@@ -84,7 +98,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
             for (String name : MarkdownLintConfig.FILE_NAMES) {
                 Path cfg = dir.resolve(name);
-                if (Files.isRegularFile(cfg)) {
+                if (!Files.isRegularFile(cfg)) {
+                    cache.remove(cfg); // gone: whatever is written there next is read afresh
+                } else {
                     CacheEntry loaded = load(cfg, 0);
                     return new ConfigHit(cfg, loaded.disabled(), loaded.enabled(), loaded.options());
                 }
@@ -114,13 +130,16 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         return dir.getParent() == null || (home != null && dir.equals(Path.of(home)));
     }
 
-    private static final CacheEntry NOTHING = new CacheEntry(0, Set.of(), Set.of(), MarkdownLintOptions.DEFAULT, true);
+    private static final CacheEntry NOTHING =
+            new CacheEntry(0, 0, true, Set.of(), Set.of(), MarkdownLintOptions.DEFAULT, true);
 
     private CacheEntry load(Path cfg, int depth) {
         try {
             long mtime = Files.getLastModifiedTime(cfg).toMillis();
+            long size = Files.size(cfg);
             CacheEntry cached = cache.get(cfg);
-            if (cached == null || cached.mtime() != mtime) {
+            if (cached == null || !cached.settled() || cached.mtime() != mtime || cached.size() != size) {
+                boolean settled = System.currentTimeMillis() - mtime >= SETTLED_MILLIS;
                 MarkdownLintConfig.Parsed parsed =
                         MarkdownLintConfig.parseFile(cfg.getFileName().toString(), Files.readString(cfg));
                 Set<String> disabled = new HashSet<>();
@@ -137,7 +156,8 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                 }
                 MarkdownLintConfig.apply(parsed, disabled, enabled);
                 options = MarkdownLintConfig.options(parsed, options);
-                cached = new CacheEntry(mtime, Set.copyOf(disabled), Set.copyOf(enabled), options, parsed.valid());
+                cached = new CacheEntry(
+                        mtime, size, settled, Set.copyOf(disabled), Set.copyOf(enabled), options, parsed.valid());
                 cache.put(cfg, cached);
             }
             if (!cached.valid() && reported.add(cfg + "@" + mtime)) {
@@ -178,12 +198,37 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (path == null || !com.editora.vfs.Vfs.isLocal(path) || path.getParent() == null) {
             return null;
         }
-        return linkTargets(path.getParent());
+        Path root = host.activeProjectRoot();
+        boolean inProject = root != null && com.editora.vfs.Vfs.isLocal(root) && path.startsWith(root);
+        boolean gitignore = host.config().getSettings().isSearchRespectGitignore();
+        return linkTargets(path.getParent(), inProject ? () -> wikiNames(root, gitignore) : null);
+    }
+
+    /** The project's file names for wiki links; rebuilt when stale, and after its files change. */
+    private volatile WikiNoteNames wikiNames;
+
+    private WikiNoteNames wikiNames(Path root, boolean respectGitignore) {
+        WikiNoteNames names = wikiNames;
+        if (names == null || names.stale(root)) {
+            names = WikiNoteNames.of(root, respectGitignore);
+            wikiNames = names;
+        }
+        return names;
     }
 
     /** As {@link #linkTargets(EditorBuffer)}, for links written in a file of {@code folder}. */
     static MarkdownLint.LinkTargets linkTargets(Path folder) {
+        return linkTargets(folder, null);
+    }
+
+    /**
+     * As {@link #linkTargets(Path)}, resolving wiki links through {@code names} (asked on the lint thread, at
+     * most once per run); without it only a note in the document's own folder can be vouched for, and a wiki
+     * link that is not there is left unjudged.
+     */
+    static MarkdownLint.LinkTargets linkTargets(Path folder, java.util.function.Supplier<WikiNoteNames> names) {
         Map<String, Boolean> exists = new HashMap<>();
+        WikiNoteNames[] project = new WikiNoteNames[1];
         Map<String, Set<String>> anchors = new HashMap<>();
         return new MarkdownLint.LinkTargets() {
             @Override
@@ -212,6 +257,27 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                     anchors.put(relative, found);
                 }
                 return anchors.get(relative);
+            }
+
+            @Override
+            public String wikiFile(String target) {
+                try {
+                    if (names == null) {
+                        for (String candidate : new String[] {target, target + ".md", target + ".markdown"}) {
+                            if (Files.isRegularFile(folder.resolve(candidate))) {
+                                return candidate;
+                            }
+                        }
+                        return ""; // no project to search: elsewhere is unknown, not missing
+                    }
+                    if (project[0] == null) {
+                        project[0] = names.get();
+                    }
+                    Path file = project[0].resolve(folder, target);
+                    return file == null ? null : folder.relativize(file).toString();
+                } catch (RuntimeException e) {
+                    return ""; // not a path this file system can express
+                }
             }
         };
     }
@@ -520,11 +586,6 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         ConfigHit hit = configFor(path);
         if (hit != null) {
-            String name = hit.file().getFileName().toString();
-            if (!(name.equals(".markdownlint.json") || name.equals(".markdownlint.jsonc"))) {
-                host.setStatus(tr("status.markdownLint.projectConfigManual", d.code(), name));
-                return;
-            }
             writeRuleOff(hit.file(), d.code());
             return;
         }
@@ -544,9 +605,12 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     private void writeRuleOff(Path config, String code) {
         try {
             String before = Files.isRegularFile(config) ? Files.readString(config) : "";
-            String after = MarkdownLintConfig.withRuleOff(before, code);
+            String name = String.valueOf(config.getFileName());
+            String after = MarkdownLintConfig.withRuleOff(name, before, code);
             if (after == null) {
-                host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
+                // No safe edit (options written as a nested mapping, a file that does not parse): say what to add.
+                host.setStatus(
+                        tr("status.markdownLint.projectConfigManual", MarkdownLintConfig.manualLine(name, code), name));
                 return;
             }
             if (config.getParent() != null) {
@@ -601,12 +665,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             host.setStatus(tr("status.markdownLint.noProject"));
             return;
         }
+        // The panel is put in project mode before its window opens: opening it refreshes the active file's
+        // list otherwise, and that refresh cancels the project run it was opened for.
+        MarkdownLintPanel panel = host.markdownLintPanel();
+        panel.showProjectScanning(String.valueOf(root.getFileName()));
         if (!host.toolWindows().isOpen(host.markdownLintToolWindow())) {
             host.toolWindows().setAvailable(host.markdownLintToolWindow(), true);
             host.toolWindows().open(host.markdownLintToolWindow());
         }
-        MarkdownLintPanel panel = host.markdownLintPanel();
-        panel.showProjectScanning(String.valueOf(root.getFileName()));
         Map<Path, String> open = new HashMap<>();
         for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);
@@ -616,6 +682,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         Set<String> userOff = previews.settingsDisabledRules();
         com.editora.config.Settings settings = host.config().getSettings();
+        if (!settings.isMarkdownWikiLinks()) {
+            userOff.add(MarkdownLint.LINK_WIKI);
+        }
         boolean gitignore = settings.isSearchRespectGitignore();
         long mine = projectRun.incrementAndGet();
         projectExec.submit(() -> {
@@ -657,6 +726,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                     return com.editora.search.ProjectWalk.Verdict.ACCEPT;
                 });
         candidates.sort((a, b) -> a.toString().compareToIgnoreCase(b.toString()));
+        WikiNoteNames[] names = {WikiNoteNames.of(root, respectGitignore)};
         List<MarkdownLintPanel.FileIssues> files = new java.util.ArrayList<>();
         boolean truncated = walked.truncated();
         int total = 0;
@@ -679,7 +749,10 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             MarkdownLintOptions options = MarkdownLintRules.withSeverities(
                     settings, hit == null ? MarkdownLintOptions.DEFAULT : hit.options());
             List<Diagnostic> found = MarkdownLint.lint(
-                    text, off, options, file.getParent() == null ? null : linkTargets(file.getParent()));
+                    text,
+                    off,
+                    options,
+                    file.getParent() == null ? null : linkTargets(file.getParent(), () -> names[0]));
             if (found.isEmpty()) {
                 continue;
             }
@@ -722,9 +795,65 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         bar.setMarkdownLint(errors, warnings, hints);
     }
 
+    /** How often, at most, {@link #checkConfigs} looks at the disk. */
+    long configCheckIntervalNanos = 2_000_000_000L;
+
+    private long lastConfigCheck;
+    /** The configs the open buffers resolved to, with their modification times, at the last look. */
+    private String configSignature;
+
+    private static final int MAX_BUFFERS_CHECKED = 50;
+
+    /**
+     * Re-lints the open buffers when a markdownlint config one of them resolved to has changed, appeared or
+     * gone — wherever it lives, inside an open project or not. Called when the app looks for files changed on
+     * disk (the window regaining focus, a tab switch): outside a project nothing watches the disk, and that is
+     * the moment an edit made in another program is noticed. Bounded: at most every two seconds, the first
+     * fifty Markdown buffers, one look per folder.
+     */
+    void checkConfigs() {
+        long now = System.nanoTime();
+        if (!previews.markdownLintEnabled()
+                || (lastConfigCheck != 0 && now - lastConfigCheck < configCheckIntervalNanos)) {
+            return;
+        }
+        lastConfigCheck = now;
+        Path root = host.activeProjectRoot();
+        Map<Path, String> byFolder = new HashMap<>();
+        StringBuilder signature = new StringBuilder();
+        int looked = 0;
+        for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(tab);
+            Path path = b == null || !b.isMarkdown() ? null : b.getPath();
+            if (path == null || path.getParent() == null || !com.editora.vfs.Vfs.isLocal(path)) {
+                continue;
+            }
+            if (looked++ >= MAX_BUFFERS_CHECKED) {
+                break;
+            }
+            signature.append(byFolder.computeIfAbsent(path.getParent(), folder -> {
+                ConfigHit hit = configFor(path, root);
+                CacheEntry entry = hit == null ? null : cache.get(hit.file());
+                return hit == null
+                        ? "-;"
+                        : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + "/" + hit.disabled() + hit.enabled()
+                                + ";";
+            }));
+        }
+        String seen = signature.toString();
+        boolean changed = configSignature != null && !configSignature.equals(seen);
+        configSignature = seen;
+        if (changed) {
+            previews.applyMarkdownLint();
+        }
+    }
+
     /** The project's file watcher saw changes: a touched markdownlint config re-lints the open buffers. */
     void onExternalChanges(List<ProjectPanel.FsChange> changes) {
         for (ProjectPanel.FsChange change : changes) {
+            if (change.kind() != ProjectPanel.FsKind.CHANGED) {
+                wikiNames = null; // a file came or went: the names wiki links resolve against are out of date
+            }
             Path name = change.path() == null ? null : change.path().getFileName();
             if (name != null && name.toString().startsWith(".markdownlint")) {
                 cache.remove(change.path());

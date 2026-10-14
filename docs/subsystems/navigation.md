@@ -254,25 +254,50 @@ the vertical equivalent. Scope that before building on it.
 
 ## Markdown: headings and links across the project
 
-Three features read the project's Markdown files, and all three do it the same way: on demand, off the FX
-thread, through `ui/MarkdownProjectFiles` — the shared `ProjectWalk` (so the ignore rules and directory
-pruning are Find in Files'), capped at 5,000 Markdown files of at most 2 MB each, cancellable. There is no
-standing index: nothing is read until one of them is asked for, and an open buffer contributes its current
-text instead of the file's.
-
 - **Heading path in the breadcrumb** (`ui/MarkdownHeadingCrumbs`, hosted by `FileBreadcrumb`): the headings
   that enclose the caret, each a link to its line. A caret-line change or an edit only restarts a 180 ms
   pause; headings are re-read when it ends and only if the text changed (`MarkdownOutline.pathAt` is pure).
-- **`project.gotoMarkdownHeading`** (`ui/MarkdownHeadingPicker`, owned by `IndexCoordinator` for its project
-  root, ignore setting and overlay): every heading of every Markdown file in a `QuickOpen`. A second run or a
-  project switch abandons a scan under way. It is in the `project.` family on purpose: `markdown.` commands
-  are gated on a Markdown buffer and `index.` ones on the symbol index, and this needs neither.
-- **Links follow a rename** (`ui/MarkdownLinkUpdater`, called from `IndexCoordinator.onFileRenamed`, which
-  every in-app rename, move and their undo already reach). `markdown/MarkdownLinkRewrite` (pure) finds the
-  relative inline and reference-definition destinations — never in code, front matter or HTML — and rewrites
-  the ones whose target moved; a document that itself moved has all its relative links recomputed.
-  `Settings.markdownUpdateLinksOnRename` is `ask` (a prompt listing files and counts), `always` or `never`.
-  Open buffers are edited as one undo step; closed files go through `AtomicFileWrite.replaceIfUnchanged`, so
-  a file that changed since it was read is reported, not overwritten. Only files under the project root are
-  read or written, and a symlinked Markdown file is skipped. One rename is handled once even when several
-  windows have the project open (a static in-flight key).
+- **`project.gotoMarkdownHeading`** (`ui/MarkdownHeadingPicker`): every heading of every Markdown file in a
+  `QuickOpen`, read on demand through `ui/MarkdownProjectFiles` (the shared `ProjectWalk`, capped). It is in
+  the `project.` family on purpose: `markdown.` commands are gated on a Markdown buffer and `index.` ones on
+  the symbol index, and this needs neither.
+
+### The link index (`ui/MarkdownLinkGraph` over `markdown/MarkdownLinkIndex`)
+
+One index per window answers "which document links to which file": every Markdown file's outgoing links —
+inline, reference definitions, raw HTML `src`/`href`, wiki links — and, derived from them, every file's
+incoming links. `MarkdownLinkRewrite.links` is the one scanner (never in code, front matter or comments);
+`markdown/WikiTargets` is the one wiki-name resolver (the note beside the document, else the only file of
+that name in the project; a Markdown extension optional, case ignored, ambiguity = unresolved; a target with
+a folder is a path from the document, then from the project root). The linter's `LINK003`
+(`ui/WikiNoteNames`) resolves through the same class, so a squiggle and Open Link cannot disagree.
+
+- **Built on first use, then kept.** Nothing is walked until something asks (a rename, a wiki link to
+  resolve, `[[` completion, the Backlinks window). The build is the shared `ProjectWalk` with Find in
+  Files' ignore rules, capped at 5,000 Markdown files of 2 MB and 20,000 other file names. After that the
+  index follows the project one file at a time: a save puts the buffer's text (no disk read), the project
+  watcher's named changes re-read only those files, a delete or rename moves entries. An incomplete or very
+  long watcher account, or a created directory, marks it stale and the next use walks again.
+- **Its own thread.** The index is built, changed and asked on the `markdown-links` worker
+  (`MarkdownLinkGraph.submit`); the FX thread gets answers back with `runLater`. The one thing read
+  directly is `targets()`, an immutable `WikiTargets` snapshot republished after each change — so resolving
+  a wiki link while rendering or typing never waits for the disk. A project switch bumps an epoch that
+  abandons a build under way.
+- **Links follow a rename** (`ui/MarkdownLinkUpdater`, from `IndexCoordinator.onFileRenamed`, which every
+  in-app rename, move and their undo reach). The index names the documents whose links pointed at the old
+  place (and the documents that moved themselves); only those are read and rewritten — paths, HTML
+  attributes, and wiki links (a bare name follows its note's new name and ignores a mere move; one written
+  with a folder is recomputed). `Settings.markdownUpdateLinksOnRename` is `ask`, `always` or `never`. A
+  document open in **any** window is edited in its buffer as one undo step (the graphs register
+  themselves, so one window can reach another's buffers); a closed file has its text recorded in Local
+  History first (`IndexCoordinator.Ops.recordHistory`) and is then replaced with
+  `AtomicFileWrite.replaceIfUnchanged` — no safety copy, no rewrite. Only files under the project root are
+  written; a symlinked file is skipped; one rename is handled once however many windows hold the project.
+- **Wiki links** are followed from the source through the ordinary link opener: `MarkdownLinkAt` hands
+  `[[target#heading]]` to `HeadingLinks.open`, which resolves it with `ui/WikiLinks` (the index, or the
+  document's own folder until the index is built or outside a project) and goes to the heading by its
+  slug. `IndexCoordinator.resolveWikiLink` is the hook for the preview and the link tools;
+  `MarkdownCompletions` lists notes after `[[` and a note's headings after `[[note#`.
+- **Backlinks** (`ui/MarkdownBacklinks`, tool window `backlinks`, off the stripe by default): what links to
+  the active file, grouped by file with each link's line — a lookup in the index, refreshed when the active
+  tab or the index changes, and only while the window is open. It lists links in saved files.

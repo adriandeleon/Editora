@@ -575,6 +575,19 @@ class CommandSweepFxTest {
                 baseline = Set.copyOf(Window.getWindows());
             });
             FxTestSupport.drainFx();
+            if (state == State.GIT_PROJECT) {
+                // The window finds its repository in the background. Swept before that, every Git command only
+                // says "not a repository" — and git.applyPatch never reached its chooser on the macOS runner.
+                MainController window = controller;
+                long deadline = System.nanoTime() + 30_000_000_000L;
+                while (FxTestSupport.callOnFx(() -> window.git.repoRoot() == null)) {
+                    if (System.nanoTime() > deadline) {
+                        throw new AssertionError("the Git project window never found its repository");
+                    }
+                    Thread.sleep(20);
+                    FxTestSupport.drainFx();
+                }
+            }
         }
 
         private void select(String word) {

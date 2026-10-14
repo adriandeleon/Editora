@@ -380,7 +380,7 @@ public final class PreviewImageLoader {
         }
         String s = src.strip();
         try {
-            if (isRemote(s) && !remoteImages) {
+            if (isRemote(s) && !remoteImages()) {
                 return null; // remote images are switched off: an export does not fetch what the preview will not
             }
             if (s.matches("(?i)^(https?|file|data):.*")) {
@@ -616,19 +616,49 @@ public final class PreviewImageLoader {
         }
     }
 
-    private static volatile boolean remoteImages = true;
-
     /**
-     * Whether a document's {@code http(s)} images are fetched ({@code Settings.markdownRemoteImages}; on by
-     * default). Off, a remote image is shown as its alt text and address and nothing leaves the machine when
-     * a document is previewed, printed or exported.
+     * When a document's {@code http(s)} images are fetched ({@code Settings.markdownRemoteImagePolicy}).
+     * {@link #ALWAYS} (the default): as they are met. {@link #ASK}: not until the reader says so for the
+     * document being previewed — nothing leaves the machine by opening a file; print and the exports, which
+     * have nobody to ask, do not fetch. {@link #NEVER}: a remote image is its alt text and address, and
+     * nothing leaves the machine when a document is previewed, printed or exported.
      */
-    public static void setRemoteImages(boolean fetch) {
-        remoteImages = fetch;
+    public enum RemotePolicy {
+        ALWAYS,
+        ASK,
+        NEVER;
+
+        /** The policy a setting names ({@code "always"} / {@code "ask"} / {@code "never"}, any case);
+         *  anything else is {@link #ALWAYS}, the default. Pure. */
+        public static RemotePolicy of(String setting) {
+            String name = setting == null ? "" : setting.strip().toUpperCase(java.util.Locale.ROOT);
+            for (RemotePolicy p : values()) {
+                if (p.name().equals(name)) {
+                    return p;
+                }
+            }
+            return ALWAYS;
+        }
     }
 
+    private static volatile RemotePolicy remotePolicy = RemotePolicy.ALWAYS;
+
+    public static void setRemotePolicy(RemotePolicy policy) {
+        remotePolicy = policy == null ? RemotePolicy.ALWAYS : policy;
+    }
+
+    public static RemotePolicy remotePolicy() {
+        return remotePolicy;
+    }
+
+    /** The on/off form of {@link #setRemotePolicy}: {@link RemotePolicy#ALWAYS} or {@link RemotePolicy#NEVER}. */
+    public static void setRemoteImages(boolean fetch) {
+        remotePolicy = fetch ? RemotePolicy.ALWAYS : RemotePolicy.NEVER;
+    }
+
+    /** Whether remote images are fetched without asking. */
     public static boolean remoteImages() {
-        return remoteImages;
+        return remotePolicy == RemotePolicy.ALWAYS;
     }
 
     /** Whether {@code url} is an {@code http(s)} URL — the kind the setting above is about. Pure. */

@@ -690,6 +690,33 @@ class PreviewCommandsFxTest {
         assertEquals(Set.of("MD009"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
     }
 
+    /**
+     * A config rewritten within the clock's resolution keeps its modification time (so does one deleted and
+     * written again in the same tick): the time alone must not vouch for the cached parse.
+     */
+    @Test
+    void aConfigRewrittenInTheSameTickIsReadAgain() throws Exception {
+        EditorBuffer b = document("lint.md", "# Title\n");
+        Path file = b.getPath();
+        Path config = Files.writeString(file.getParent().resolve(".markdownlint.json"), "{\"MD009\": false}");
+        java.nio.file.attribute.FileTime stamp = Files.getLastModifiedTime(config);
+        assertEquals(Set.of("MD009"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+
+        Files.writeString(config, "{\"MD010\": false}"); // same length, and the very same time stamp
+        Files.setLastModifiedTime(config, stamp);
+        assertEquals(Set.of("MD010"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+
+        Files.delete(config);
+        assertEquals(Set.of(), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+        Files.writeString(config, "{\"MD012\": false}");
+        Files.setLastModifiedTime(config, stamp);
+        assertEquals(
+                Set.of("MD012"),
+                FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)),
+                "deleted and written again: not the parse of the file that was there before");
+        Files.delete(config);
+    }
+
     @Test
     void theConfigLookupStopsAtTheRepositoryRoot() throws Exception {
         EditorBuffer b = document("lint.md", "# Title\n");
@@ -943,13 +970,26 @@ class PreviewCommandsFxTest {
         assertEquals("{\n  \"MD034\": false,\n  // ours\n  \"MD009\": false\n}\n", Files.readString(config));
         Files.delete(config);
 
-        // A YAML config is the user's to edit.
+        // A YAML config is edited as well, comments and all.
         Path yaml = Files.writeString(folder.resolve(".markdownlint.yaml"), "MD009: false\n");
         assertEquals(1, diagnosticsAfterRelintOnEdit(b, 1).size());
         caretAt(b, 2, 6);
         run("markdownLint.disableProject");
-        assertEquals(tr("status.markdownLint.projectConfigManual", "MD034", ".markdownlint.yaml"), status());
-        assertEquals("MD009: false\n", Files.readString(yaml));
+        assertEquals("MD009: false\nMD034: false\n", Files.readString(yaml), "a YAML config is edited too");
+        assertEquals(tr("status.markdownLint.projectDisabled", "MD034", ".markdownlint.yaml"), status());
+
+        // No safe edit (the rule carries options on the lines below it): the file is left alone and the
+        // status names the line to add.
+        Files.writeString(yaml, "MD034:\n  severity: error\n");
+        Files.setLastModifiedTime(
+                yaml,
+                java.nio.file.attribute.FileTime.fromMillis(
+                        Files.getLastModifiedTime(yaml).toMillis() + 5_000));
+        assertEquals(1, diagnosticsAfterRelintOnEdit(b, 1).size());
+        caretAt(b, 2, 6);
+        run("markdownLint.disableProject");
+        assertEquals(tr("status.markdownLint.projectConfigManual", "MD034: false", ".markdownlint.yaml"), status());
+        assertEquals("MD034:\n  severity: error\n", Files.readString(yaml));
         Files.delete(yaml);
     }
 

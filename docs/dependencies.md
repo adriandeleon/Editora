@@ -112,7 +112,8 @@ If you add a dependency that turns out to be an automatic module, expect to add 
 ## Bundled fonts & grammars
 
 Plain resources, no `module-info`/moditect change, picked up by the dist build automatically:
-five monospace families + **Inter** (Markdown preview / PDF prose) under
+five monospace families + **Inter** (Markdown preview / PDF prose) + **Noto Emoji** (monochrome; the
+PDF export's emoji glyphs, embedded as a subset only when a document has one) under
 `resources/com/editora/fonts/`, and the TextMate grammars under `resources/com/editora/grammars/`
 (the grammar package needs the `opens … to org.eclipse.tm4e.core` — see
 [extending.md](extending.md#add-a-language--textmate-grammar)). All are attributed in `NOTICE`.

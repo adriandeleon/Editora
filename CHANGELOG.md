@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markdown preview: text can be selected and copied.** Drag, double-click a word, triple-click a block,
+  Shift-click, Shift+arrows and Select All work across paragraphs, headings, lists, tables, code blocks and alerts;
+  Copy puts plain text and formatted HTML on the clipboard, and `Preview: Copy` copies the selection when there is
+  one. Going to the source line is now a double-click beside the text, Ctrl/Cmd+double-click, or
+  "Go to Source Line" in the preview's menu.
+- **Markdown wiki links.** `[[note]]`, `[[note|label]]`, `[[note#heading]]` and `![[image.png]]` are links in the
+  preview and in every export, resolve to the note beside the document or the one file of that name in the project,
+  can be followed from the source and the preview, complete after `[[`, are rewritten when a note is renamed, and
+  are checked by lint (`LINK003`). A **Backlinks** tool window (`Markdown: Show Backlinks`) lists what links to the
+  current file. `Markdown: Convert Wiki Link` turns one into a Markdown link and back. A setting switches wiki
+  links off.
+- **Remote images can be asked for per document.** The remote-images setting is now Always / Ask / Never; with Ask,
+  nothing is fetched when a document opens and a bar in the preview offers to load its remote images.
+- **Markdown link updates on rename** now use a link index kept while the project is open, also rewrite HTML
+  `src` / `href` paths and wiki links, record a Local History entry before changing a file that is not open, and
+  change a file open in another window through that window (one undo step) instead of on disk.
+- **PDF export** draws highlight, superscript and subscript, and emoji with a bundled monochrome emoji font (Noto
+  Emoji). Alerts are coloured and titled and definition lists indented in PDF, Word and OpenDocument exports.
+  Highlighted code in exported HTML follows the page's light or dark scheme.
+- **Markdown source:** the text line of a setext heading is styled as a heading, ticked and open task boxes are
+  told apart, and bare URLs are styled as links.
+- **Unused pasted images are cleaned up.** When a document is saved, an image pasted or dropped in this session
+  that the document no longer mentions is moved to the trash (a setting, on by default); the check and the move
+  run in the background.
+- **Command palette:** a command is also found by the first part of its id, so "markdown table" finds the
+  `Table: …` commands.
+- Smaller Markdown additions: an image or diagram in the preview can be enlarged from the keyboard and the menu;
+  hidden front matter is also left out of print; the default view applies to untitled Markdown buffers; ordered
+  lists are renumbered after deleting or cutting and pasting whole items; Paste as Markdown handles merged cells,
+  nested tables and definition lists; links in the completion documentation popup can be followed;
+  "Disable for This Project" can edit YAML and `.markdownlint-cli2` configs; a changed `.markdownlint` file outside
+  a project is noticed when the window regains focus.
 - **Markdown: more syntax, in the preview and in every export.** GitHub alerts (`> [!NOTE]`, `[!TIP]`,
   `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), emoji shortcodes (`:rocket:`), `==highlight==`, `^superscript^` and
   `~subscript~`, definition lists, ```` ```math ```` fences and `\(…\)` / `\[…\]` math. In the preview: task
@@ -83,6 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
+  as `code`, `link` or `bold` expands the snippet only when the word is alone on its line or is chosen from the
+  completion popup.
+- **A double-click in the Markdown preview selects the word** instead of jumping to the source line (see the
+  preview selection entry above for the new ways to go to the source).
+- **The remote-images setting** is now a choice (Always / Ask / Never); a stored "off" becomes Never.
+  `View: Toggle Markdown Remote Images` switches between Always and Never.
 - **Markdown strikethrough needs two tildes in the preview** (`~~struck~~`); a single tilde attached to a word is now
   a subscript (`H~2~O`). An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
   Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
@@ -109,6 +148,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings ▸ Sync:** the reason Connect was refused (no repository or branch, an unreachable repository, a
+  GitHub error) could be replaced by "Not connected." a moment later, when the GitHub sign-in check finished. It now
+  stays until the repository is edited, Connect is tried again, or sync is disconnected.
+- **Markdown Lint: Lint Project** showed no results when the Lint tool window was closed: opening the window
+  cancelled the scan it was opened for. A `.markdownlint` file saved twice in quick succession could be read from a
+  stale cache. A lint squiggle could be left where the text used to start when the gutter was sized after the
+  first paint.
+- **Word and OpenDocument and PDF exports** dropped the text of a wiki link; it is now written as a link.
 - **Markdown Lint: Fix Issues no longer rewrites code.** Indented code blocks, fences nested in lists and block
   quotes, HTML blocks and comments, and YAML or TOML front matter are left exactly as written, by lint and by Fix.
   A closing fence with an info string no longer flips code and prose for the rest of the file. MD026 no longer cuts

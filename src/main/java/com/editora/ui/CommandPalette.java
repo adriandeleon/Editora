@@ -295,9 +295,12 @@ public class CommandPalette {
         record Scored(Command command, int score) {}
         List<Scored> scored = new ArrayList<>();
         for (Command command : commands) {
-            FuzzyMatch.Match m = FuzzyMatch.of(command.title(), q);
-            if (m != null) {
-                scored.add(new Scored(command, m.score()));
+            int score = FuzzyMatch.scoreOf(command.title(), q);
+            if (score == FuzzyMatch.NO_SCORE) {
+                score = keywordScore(command, q);
+            }
+            if (score != FuzzyMatch.NO_SCORE) {
+                scored.add(new Scored(command, score));
             }
         }
         scored.sort(Comparator.comparingInt(Scored::score)
@@ -309,6 +312,30 @@ public class CommandPalette {
             matches.add(s.command());
         }
         return matches;
+    }
+
+    /** What a match through a keyword loses against any match on the title: more than a title can score. */
+    static final int KEYWORD_PENALTY = 1_000_000;
+
+    /**
+     * The score of {@code command} for a query that did not match its title, through its
+     * {@link Command#keywords()}: the query has to begin with (the start of) a keyword, and is then matched
+     * against "keyword title" — "markdown table" finds "Table: Add Row" of {@code markdown.tableAddRow}.
+     * Always below a title match. The haystack is only built for a command whose keyword the query starts
+     * with, so a keystroke in the palette does not allocate a string per command.
+     */
+    static int keywordScore(Command command, String query) {
+        String keywords = command.keywords();
+        if (keywords.isEmpty()) {
+            return FuzzyMatch.NO_SCORE;
+        }
+        int token = query.indexOf(' ');
+        int head = Math.min(token < 0 ? query.length() : token, keywords.length());
+        if (head == 0 || !keywords.regionMatches(true, 0, query, 0, head)) {
+            return FuzzyMatch.NO_SCORE;
+        }
+        int score = FuzzyMatch.scoreOf(keywords + " " + command.title(), query);
+        return score == FuzzyMatch.NO_SCORE ? score : score - KEYWORD_PENALTY;
     }
 
     /** Selects the first <em>enabled</em> result (the cursor never rests on a grayed-out command). */

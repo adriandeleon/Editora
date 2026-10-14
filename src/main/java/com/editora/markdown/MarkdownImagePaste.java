@@ -34,6 +34,30 @@ public final class MarkdownImagePaste {
         return baseDir.resolve(usable ? f : ASSETS_DIR).normalize();
     }
 
+    /**
+     * The files among {@code files} that {@code text} — a document in {@code baseDir} — does not mention: not
+     * by their path relative to the document (as written, with {@code %20} for blanks, or with backslashes),
+     * and not by their bare file name either. Mentioning is enough, wherever it is: a link, an image, an
+     * {@code <img>}, a reference definition, a comment. So a file is reported only when nothing in the text
+     * could be pointing at it.
+     */
+    public static java.util.List<Path> unreferenced(String text, Path baseDir, java.util.Collection<Path> files) {
+        java.util.List<Path> out = new java.util.ArrayList<>();
+        for (Path file : files) {
+            String name = file.getFileName().toString();
+            String rel = relativePath(baseDir, file);
+            boolean mentioned = text.contains(name)
+                    || text.contains(rel)
+                    || text.contains(rel.replace(" ", "%20"))
+                    || text.contains(name.replace(" ", "%20"))
+                    || text.contains(rel.replace('/', '\\'));
+            if (!mentioned) {
+                out.add(file);
+            }
+        }
+        return out;
+    }
+
     /** The base name pasted images get when the pattern setting is blank or yields nothing usable. */
     public static final String DEFAULT_NAME = "pasted-image";
 

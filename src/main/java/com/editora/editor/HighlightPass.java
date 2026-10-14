@@ -101,6 +101,13 @@ final class HighlightPass {
         boolean resume = old != null && r.dirtyStart() >= 0 && (!brackets || old.depths() != null);
         int dirtyStart = resume ? Math.min(r.dirtyStart(), text.length()) : 0;
         int dirtyEnd = resume ? Math.min(Math.max(r.dirtyEnd(), dirtyStart), text.length()) : text.length();
+        boolean markdown = MARKDOWN_SCOPE.equals(r.grammar().getScopeName()) && text.length() <= MAX_DECORATED_CHARS;
+        if (markdown && resume) {
+            // A setext heading's text line is a heading because of the line after it: an edit restyles its
+            // paragraph, not only the lines the tokenizer owes (see MarkdownSourceStyles).
+            dirtyStart = paragraphStart(text, dirtyStart);
+            dirtyEnd = paragraphEnd(text, dirtyEnd);
+        }
         // One scan for the three line numbers the pass needs: the line holding the start of the owed
         // range (and where it begins), the line holding its end, and the line count.
         int first = 0;
@@ -213,6 +220,14 @@ final class HighlightPass {
                 spans = spans.overlay(bc, (lex, b) -> b.isEmpty() ? lex : b);
             }
         }
+        if (spans != null && markdown) {
+            StyleSpans<Collection<String>> extra =
+                    markdownSpans(text, firstLine, lastLine, a.fromOffset(), spans.length());
+            if (extra != null) {
+                // Added to the token's own classes: a heading keeps the emphasis inside it.
+                spans = spans.overlay(extra, HighlightPass::union);
+            }
+        }
         return new Result(
                 a.fromOffset(),
                 spans,
@@ -221,6 +236,82 @@ final class HighlightPass {
                 symbolsChanged,
                 firstLine,
                 lastLine);
+    }
+
+    static final String MARKDOWN_SCOPE = "text.html.markdown";
+
+    /** Past this the Markdown decoration (a whole-document block scan per pass) is not worth its cost. */
+    static final int MAX_DECORATED_CHARS = 2_000_000;
+
+    private static Collection<String> union(Collection<String> lex, Collection<String> extra) {
+        if (extra.isEmpty()) {
+            return lex;
+        }
+        if (lex.isEmpty() || lex.containsAll(extra)) {
+            return lex.isEmpty() ? extra : lex;
+        }
+        List<String> both = new ArrayList<>(lex);
+        for (String c : extra) {
+            if (!both.contains(c)) {
+                both.add(c);
+            }
+        }
+        return both;
+    }
+
+    /** The start of the line that opens the paragraph holding {@code offset} (a bounded look back). */
+    static int paragraphStart(String text, int offset) {
+        int start = text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+        for (int k = 0; k < com.editora.markdown.MarkdownSourceStyles.MAX_PARAGRAPH_LINES && start > 0; k++) {
+            int prev = text.lastIndexOf('\n', start - 2) + 1;
+            if (text.substring(prev, start - 1).isBlank()) {
+                break;
+            }
+            start = prev;
+        }
+        return start;
+    }
+
+    /** The end of the last line of the paragraph holding {@code offset} (a bounded look ahead). */
+    static int paragraphEnd(String text, int offset) {
+        int end = text.indexOf('\n', offset);
+        for (int k = 0; k < com.editora.markdown.MarkdownSourceStyles.MAX_PARAGRAPH_LINES && end >= 0; k++) {
+            int next = text.indexOf('\n', end + 1);
+            String line = text.substring(end + 1, next < 0 ? text.length() : next);
+            if (line.isBlank()) {
+                break;
+            }
+            end = next;
+        }
+        return end < 0 ? text.length() : end;
+    }
+
+    /** {@link com.editora.markdown.MarkdownSourceStyles} for the restyled lines, as sparse spans; null for none. */
+    private static StyleSpans<Collection<String>> markdownSpans(
+            String text, int firstLine, int lastLine, int fromOffset, int length) {
+        List<com.editora.markdown.MarkdownSourceStyles.Range> ranges =
+                com.editora.markdown.MarkdownSourceStyles.ranges(text, firstLine, lastLine);
+        StyleSpansBuilder<Collection<String>> b = new StyleSpansBuilder<>();
+        int cursor = 0;
+        for (com.editora.markdown.MarkdownSourceStyles.Range range : ranges) {
+            int off = range.start() - fromOffset;
+            int len = Math.min(range.end() - range.start(), length - off);
+            if (off < cursor || len <= 0) {
+                continue;
+            }
+            if (off > cursor) {
+                b.add(Collections.emptyList(), off - cursor);
+            }
+            b.add(List.of(range.style()), len);
+            cursor = off + len;
+        }
+        if (cursor == 0) {
+            return null;
+        }
+        if (cursor < length) {
+            b.add(Collections.emptyList(), length - cursor);
+        }
+        return b.create();
     }
 
     /**

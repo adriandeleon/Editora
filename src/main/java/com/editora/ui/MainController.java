@@ -2598,6 +2598,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.registerWithoutStripe(searchToolWindow);
         toolWindows.register(todoToolWindow);
         toolWindows.register(markdownLintToolWindow);
+        toolWindows.register(indexCoordinator.backlinks.toolWindow(toolWindows), false); // on demand
         toolWindows.register(problemsToolWindow);
         toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
         toolWindows.register(hierarchyToolWindow, false); // default-hidden; shown on demand by lsp.callHierarchy (#682)
@@ -5589,22 +5590,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     };
 
-    final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
-        @Override
-        public java.nio.file.Path projectRoot() {
-            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
-        }
-
-        @Override
-        public void openAndGoto(java.nio.file.Path file, int line, int column) {
-            MainController.this.openAndGoto(file, line, column);
-        }
-
-        @Override
-        public boolean respectGitignore() {
-            return config.getSettings().isSearchRespectGitignore();
-        }
-    });
+    final IndexCoordinator indexCoordinator = new IndexCoordinator(
+            coordinatorHost,
+            IndexCoordinator.ops(
+                    this::windowProjectRoot,
+                    this::openAndGoto,
+                    () -> config.getSettings().isSearchRespectGitignore(),
+                    (file, text, done) -> historyCoordinator.recordBeforeReplace(file, text, done)));
 
     final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
@@ -8411,6 +8403,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(todoToolWindow, buffer);
         }
         previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
+        indexCoordinator.backlinks.activeBufferChanged(b);
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }
