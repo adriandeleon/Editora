@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 120;
+    public static final int SCHEMA_VERSION = 121;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -150,6 +150,13 @@ public class Settings {
     /** Load remote ({@code http}/{@code https}) images in the Markdown preview. On by default; off shows
      *  each remote image's alt text instead and nothing is fetched. */
     private boolean markdownRemoteImages = true;
+    /** When the Markdown preview loads remote images: "always", "ask" (a bar in the preview offers to load
+     *  them for this document) or "never". Supersedes {@link #markdownRemoteImages}, which is kept in step. */
+    private String markdownRemoteImagePolicy = "always";
+    /** Recognise wiki links ({@code [[note]]}, {@code [[note|label]]}, {@code [[note#heading]]}) in Markdown. */
+    private boolean markdownWikiLinks = true;
+    /** On save, move to the trash an image pasted in this session that the document no longer references. */
+    private boolean markdownTrashUnusedPastedImages = true;
     /** Folder, relative to the document, that pasted and dropped images are written to. */
     private String markdownAssetsFolder = "assets";
     /** Shallowest and deepest heading level listed by "Markdown: Insert/Update Table of Contents" (1–6). */
@@ -1704,6 +1711,30 @@ public class Settings {
 
     public void setMarkdownRemoteImages(boolean markdownRemoteImages) {
         this.markdownRemoteImages = markdownRemoteImages;
+    }
+
+    public String getMarkdownRemoteImagePolicy() {
+        return markdownRemoteImagePolicy;
+    }
+
+    public void setMarkdownRemoteImagePolicy(String markdownRemoteImagePolicy) {
+        this.markdownRemoteImagePolicy = markdownRemoteImagePolicy == null ? "always" : markdownRemoteImagePolicy;
+    }
+
+    public boolean isMarkdownWikiLinks() {
+        return markdownWikiLinks;
+    }
+
+    public void setMarkdownWikiLinks(boolean markdownWikiLinks) {
+        this.markdownWikiLinks = markdownWikiLinks;
+    }
+
+    public boolean isMarkdownTrashUnusedPastedImages() {
+        return markdownTrashUnusedPastedImages;
+    }
+
+    public void setMarkdownTrashUnusedPastedImages(boolean markdownTrashUnusedPastedImages) {
+        this.markdownTrashUnusedPastedImages = markdownTrashUnusedPastedImages;
     }
 
     /**
