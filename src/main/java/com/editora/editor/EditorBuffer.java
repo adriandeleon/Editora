@@ -5685,6 +5685,7 @@ public class EditorBuffer implements TabContent {
             csvPreviewHost = new StackPane();
         }
         csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
+        belowModeToggle(csvPreviewNode);
         return csvPreviewHost;
     }
 
@@ -5695,7 +5696,23 @@ public class EditorBuffer implements TabContent {
             httpPreviewHost = new StackPane();
         }
         httpPreviewHost.getChildren().setAll(httpPreviewNode); // the toggle is added by rebuildViewHost()
+        belowModeToggle(httpPreviewNode);
         return httpPreviewHost;
+    }
+
+    /**
+     * Height of the band the floating Editor/Split/Preview toggle takes at the top of a preview — the same
+     * 34px the Markdown preview leaves above its document ({@code .markdown-preview-pane} in app.css).
+     */
+    private static final double MODE_TOGGLE_BAND = 34;
+
+    /**
+     * Starts a self-scrolling preview (CSV grid, HTTP responses, structured tree) below the mode toggle.
+     * Each opens with a toolbar or a first row reaching the right edge, and the toggle — on top — hid its
+     * rightmost buttons and swallowed their clicks.
+     */
+    private static void belowModeToggle(Node content) {
+        StackPane.setMargin(content, new Insets(MODE_TOGGLE_BAND, 0, 0, 0));
     }
 
     /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
@@ -5831,6 +5848,7 @@ public class EditorBuffer implements TabContent {
         structuredPreviewHost
                 .getChildren()
                 .setAll(structuredContentHolder()); // the toggle is added by rebuildViewHost()
+        belowModeToggle(structuredContentHolder());
         return structuredPreviewHost;
     }
 
