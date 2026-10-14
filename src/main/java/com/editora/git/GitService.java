@@ -327,7 +327,11 @@ public final class GitService {
 
     /** The git command for the machine {@code dir} is on. */
     static List<String> commandFor(Path dir) {
-        return isLocal(dir) ? GIT_CMD : REMOTE_GIT;
+        if (isLocal(dir)) {
+            return GIT_CMD;
+        }
+        String configured = ExecTargets.remoteTool(dir, "git"); // the user's own path for it on that host
+        return configured == null ? REMOTE_GIT : commandTokens(configured);
     }
 
     /** What one remote host's git answered to {@code --version}, kept like the local answer is. */
@@ -350,11 +354,15 @@ public final class GitService {
             return false;
         }
         RemoteGit known = REMOTE.get(target.id());
-        if (known != null && availabilityCurrent(known.availability(), REMOTE_GIT, nanoClock.getAsLong())) {
+        List<String> command = commandFor(context);
+        if (known != null && availabilityCurrent(known.availability(), command, nanoClock.getAsLong())) {
             return known.availability().available();
         }
         if (onFxThread()) {
-            return known != null && known.availability().available();
+            // Expired, or asked of another command: answered from the last probe, never by a new one here.
+            return known != null
+                    && known.availability().command().equals(command)
+                    && known.availability().available();
         }
         return probeRemote(target, context).availability().available();
     }
@@ -364,7 +372,9 @@ public final class GitService {
         String out = "";
         try {
             Path anywhere = context.toAbsolutePath().getRoot(); // a directory that is certainly there
-            ProcessRunner.Result r = ProcessRunner.run(anywhere, QUICK, List.of("git", "--version"), READ_ENV);
+            List<String> argv = new ArrayList<>(commandFor(context));
+            argv.add("--version");
+            ProcessRunner.Result r = ProcessRunner.run(anywhere, QUICK, argv, READ_ENV);
             ok = r.ok();
             out = ok ? r.out() : "";
         } catch (RuntimeException e) {
@@ -373,7 +383,7 @@ public final class GitService {
         RemoteGit previous = REMOTE.get(target.id());
         int failures = ok ? 0 : (previous == null ? 0 : previous.availability().failures()) + 1;
         RemoteGit probed = new RemoteGit(
-                new Availability(REMOTE_GIT, ok, nanoClock.getAsLong(), failures),
+                new Availability(commandFor(context), ok, nanoClock.getAsLong(), failures),
                 ok && GitSafety.supportsEndOfOptions(out),
                 out.strip());
         REMOTE.put(target.id(), probed);

@@ -107,6 +107,17 @@ final class RemoteCoordinator {
 
         /** Reopens the session's tabs that were waiting for this window's host to be connected. */
         default void restoreSessionTabs() {}
+
+        /** Whether the user has agreed that commands may run on the host of connection {@code id}. */
+        default boolean remoteExecAllowed(String id) {
+            return false;
+        }
+
+        /** Records that agreement. */
+        default void allowRemoteExec(String id) {}
+
+        /** What can run on this window's host has changed: features that run tools there look again. */
+        default void remoteExecChanged() {}
     }
 
     private final CoordinatorHost host;
@@ -120,6 +131,12 @@ final class RemoteCoordinator {
     private boolean connecting;
 
     private boolean listening;
+    /** The connection behind the mounted folder (for the question about running commands on its host). */
+    private RemoteConnection activeConnection;
+    /** Hosts the user said "not now" about, so the question is put once per session and not on every connect. */
+    private final Set<String> execDeclined = new java.util.HashSet<>();
+    /** Asks whether commands may be run on a host; a dialog in the app, replaced in tests. */
+    java.util.function.Predicate<RemoteConnection> execConsent = this::askToRunCommands;
     /** The not-connected state of this window's remote project, kept for a Project panel not built yet. */
     private java.util.function.Consumer<ProjectPanel> disconnectedState;
 
@@ -546,6 +563,8 @@ final class RemoteCoordinator {
         ops.openProjectToolWindow();
         ops.restoreSessionTabs();
         host.setStatus(tr("status.remote.connected", conn.displayLabel()));
+        activeConnection = conn;
+        Platform.runLater(this::offerExecution); // after the folder is on screen, not in front of it
     }
 
     /** Reconnects open tabs for this authority to the new live SFTP filesystem, retaining their dirty text. */
@@ -667,12 +686,53 @@ final class RemoteCoordinator {
         }
     }
 
+    /**
+     * Puts the one-time question for the mounted folder's host: may Editora run the tools it drives there.
+     * Only when the user's setting allows remote commands at all, the host has not been allowed yet, and the
+     * user has not already said "not now" this session. Yes is remembered with the saved connections.
+     */
+    void offerExecution() {
+        RemoteConnection conn = activeConnection;
+        com.editora.config.Settings settings = host.settings();
+        if (conn == null
+                || !conn.id().equals(activeRemoteAuthority)
+                || settings == null
+                || !settings.isRemoteExecution()
+                || ops.remoteExecAllowed(conn.id())
+                || execDeclined.contains(conn.id())) {
+            return;
+        }
+        if (execConsent.test(conn)) {
+            ops.allowRemoteExec(conn.id());
+            ops.remoteExecChanged();
+        } else {
+            execDeclined.add(conn.id());
+        }
+    }
+
+    private boolean askToRunCommands(RemoteConnection conn) {
+        ButtonType allow = new ButtonType(tr("dialog.remoteExec.allow"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType notNow = new ButtonType(tr("dialog.remoteExec.notNow"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        String user = conn.user() == null || conn.user().isBlank() ? "?" : conn.user();
+        Alert alert = new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.remoteExec.content", conn.host(), user), allow, notNow);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.remoteExec.title"));
+        alert.setHeaderText(tr("dialog.remoteExec.header", conn.host()));
+        return Dialogs.styled(alert).showAndWait().orElse(notNow) == allow;
+    }
+
     /** Flips {@code Settings.remoteExecution}: whether commands for a remote folder may run on its host. */
     void toggleExecution() {
         com.editora.config.Settings s = host.settings();
         s.setRemoteExecution(!s.isRemoteExecution());
         host.requestSave();
         host.syncSettingsWindow();
+        if (s.isRemoteExecution()) {
+            execDeclined.clear(); // turning it on is asking for it: put the question again
+            offerExecution();
+        }
+        ops.remoteExecChanged();
         host.setStatus(tr("status.toggle.remoteExecution", tr(s.isRemoteExecution() ? "common.on" : "common.off")));
     }
 }

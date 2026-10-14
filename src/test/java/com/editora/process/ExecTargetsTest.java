@@ -114,6 +114,35 @@ class ExecTargetsTest {
     }
 
     @Test
+    void aHostTheUserHasNotAllowedCannotRunAnythingAndHasNoTools(@TempDir Path dir) throws IOException {
+        try (FileSystem zip = NonDefaultPaths.open(dir)) {
+            Path remote = zip.getPath("/srv/app");
+            ExecTargets.Resolver owner = path -> new StubTarget();
+            ExecTargets.register(owner);
+            ExecTargets.setRemoteHostAllowed(id -> !id.equals("user@stub:22"));
+            ExecTargets.setRemoteTools(
+                    (id, tool) -> id.equals("user@stub:22") && tool.equals("git") ? "/opt/git/bin/git" : null);
+            try {
+                ExecTarget refused = ExecTargets.forPath(remote);
+                assertFalse(refused.isAvailable());
+                ExecSpec spec = ExecSpec.of(List.of("git"), remote, Map.of(), ExecSpec.Locale.USER);
+                IOException e = assertThrows(IOException.class, () -> refused.start(spec));
+                assertEquals("running commands on user@stub:22 has not been allowed", e.getMessage());
+
+                ExecTargets.setRemoteHostAllowed(id -> true);
+                assertTrue(ExecTargets.forPath(remote).isAvailable());
+                assertEquals("/opt/git/bin/git", ExecTargets.remoteTool(remote, "git"));
+                assertEquals(null, ExecTargets.remoteTool(remote, "rg"), "nothing configured: the host's PATH");
+                assertEquals(null, ExecTargets.remoteTool(dir, "git"), "local tools have their own settings");
+            } finally {
+                ExecTargets.unregister(owner);
+                ExecTargets.setRemoteHostAllowed(null);
+                ExecTargets.setRemoteTools(null);
+            }
+        }
+    }
+
+    @Test
     void theDefaultIsOff(@TempDir Path dir) throws IOException {
         ExecTargets.setRemoteEnabled(null);
         try (FileSystem zip = NonDefaultPaths.open(dir)) {

@@ -141,6 +141,42 @@ class GitRemoteReadFxTest {
     }
 
     @Test
+    void aHostTheUserHasNotAllowedIsNotAskedEither() throws Exception {
+        ExecTargets.setRemoteHostAllowed(id -> false);
+        try {
+            Path file = remoteRepo.resolve("a.txt");
+            int before = sftp.commands().size();
+
+            GitService.RepoState state = await(cb -> service.refresh(file, file, cb));
+
+            assertEquals(GitService.RepoState.NONE, state);
+            assertEquals(before, sftp.commands().size());
+        } finally {
+            ExecTargets.setRemoteHostAllowed(null);
+        }
+    }
+
+    @Test
+    void theGitConfiguredForTheHostIsTheOneThatRuns() throws Exception {
+        Path wrapper = base.resolve("my-git");
+        Files.writeString(wrapper, "#!/bin/sh\nexec git \"$@\"\n");
+        assertTrue(wrapper.toFile().setExecutable(true));
+        ExecTargets.setRemoteTools((id, tool) -> tool.equals("git") ? wrapper.toString() : null);
+        try {
+            Path file = remoteRepo.resolve("a.txt");
+
+            GitService.RepoState state = await(cb -> service.refresh(file, file, cb));
+
+            assertEquals(remoteRepo, state.root(), state.refusal());
+            assertTrue(
+                    sftp.commands().stream().anyMatch(line -> line.contains("'" + wrapper + "' ")),
+                    "the configured command was not the one run: " + sftp.commands());
+        } finally {
+            ExecTargets.setRemoteTools(null);
+        }
+    }
+
+    @Test
     void withTheSettingOffNothingIsAskedOfTheHost() throws Exception {
         ExecTargets.setRemoteEnabled(() -> false);
         Path file = remoteRepo.resolve("a.txt");

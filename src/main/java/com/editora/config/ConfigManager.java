@@ -209,6 +209,14 @@ public class ConfigManager {
         shared.removeConnection(id);
     }
 
+    public boolean remoteExecAllowed(String id) {
+        return shared.remoteExecAllowed(id);
+    }
+
+    public void allowRemoteExec(String id) {
+        shared.allowRemoteExec(id);
+    }
+
     public void setConnections(List<com.editora.vfs.RemoteConnection> conns) {
         shared.setConnections(conns);
     }
