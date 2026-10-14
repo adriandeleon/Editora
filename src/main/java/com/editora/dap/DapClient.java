@@ -184,6 +184,14 @@ public final class DapClient implements IDebugProtocolClient {
     private DapClient(DapClient root) {
         this.root = root;
         this.host = root.childHost(this);
+        this.paths = root.paths; // a child debugs on the same machine as its parent
+    }
+
+    /** How the adapter names files (call before {@link #connect}); {@link DapPaths#LOCAL} unless set. */
+    private volatile DapPaths paths = DapPaths.LOCAL;
+
+    public void setPaths(DapPaths paths) {
+        this.paths = paths == null ? DapPaths.LOCAL : paths;
     }
 
     public void setBreakpoints(List<DapModels.FileBreakpoints> breakpoints) {
@@ -516,7 +524,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         BreakpointKey key = b.getId() == null ? null : breakpointIds.get(b.getId());
         if (key == null) {
-            Path file = sourcePath(b.getSource());
+            Path file = sourcePath(b.getSource(), paths);
             if (file == null || b.getLine() == null || b.getLine() < 1) {
                 return; // nothing says which of the breakpoints this is
             }
@@ -783,12 +791,13 @@ public final class DapClient implements IDebugProtocolClient {
                 child.sendSetBreakpoints(fb); // each session holds its own breakpoints
             }
         }
-        if (server == null || fb == null) {
+        if (server == null || fb == null || fb.file() == null || !paths.owns(fb.file())) {
+            // A file on another machine: its name means nothing to this adapter (or names a different file).
             return CompletableFuture.completedFuture(null);
         }
         Source source = new Source();
         source.setName(fb.file().getFileName().toString());
-        source.setPath(fb.file().toString());
+        source.setPath(paths.toAdapter(fb.file()));
         List<SourceBreakpoint> sbs = new ArrayList<>();
         for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
             SourceBreakpoint sb = new SourceBreakpoint();
@@ -837,7 +846,7 @@ public final class DapClient implements IDebugProtocolClient {
                 statuses.add(new DapModels.BreakpointStatus(lb.line(), false, true, message, -1));
             }
         } else {
-            breakpointIds.values().removeIf(key -> key.file().equals(file));
+            breakpointIds.values().removeIf(key -> com.editora.config.PathKeys.samePath(key.file(), file));
             Breakpoint[] answered = response == null ? null : response.getBreakpoints();
             for (int i = 0; answered != null && i < answered.length && i < sent.size(); i++) {
                 Breakpoint b = answered[i];
@@ -925,7 +934,7 @@ public final class DapClient implements IDebugProtocolClient {
     private void rememberBreakpoints(DapModels.FileBreakpoints fb) {
         List<DapModels.FileBreakpoints> updated = new ArrayList<>();
         for (DapModels.FileBreakpoints existing : initialBreakpoints) {
-            if (!existing.file().equals(fb.file())) {
+            if (!com.editora.config.PathKeys.samePath(existing.file(), fb.file())) {
                 updated.add(existing);
             }
         }
@@ -967,7 +976,7 @@ public final class DapClient implements IDebugProtocolClient {
                     out.add(new DapModels.StackFrameInfo(
                             f.getId(),
                             f.getName(),
-                            sourcePath(f.getSource()),
+                            sourcePath(f.getSource(), paths),
                             f.getLine() - 1, // back to 0-based line
                             f.getColumn()));
                 }
@@ -995,14 +1004,12 @@ public final class DapClient implements IDebugProtocolClient {
      * whole {@code stackTrace} response, leaving every stop with an empty call stack.
      */
     static Path sourcePath(Source source) {
-        if (source == null || source.getPath() == null) {
-            return null;
-        }
-        try {
-            return Path.of(source.getPath());
-        } catch (java.nio.file.InvalidPathException e) {
-            return null;
-        }
+        return sourcePath(source, DapPaths.LOCAL);
+    }
+
+    /** As {@link #sourcePath(Source)}, for an adapter that names files by {@code paths}. */
+    static Path sourcePath(Source source, DapPaths paths) {
+        return source == null || source.getPath() == null ? null : paths.fromAdapter(source.getPath());
     }
 
     public CompletableFuture<List<DapModels.ScopeInfo>> scopes(int frameId) {
@@ -1155,7 +1162,7 @@ public final class DapClient implements IDebugProtocolClient {
         }
         Source source = new Source();
         source.setName(file.getFileName().toString());
-        source.setPath(file.toString());
+        source.setPath(paths.toAdapter(file));
         org.eclipse.lsp4j.debug.GotoTargetsArguments a = new org.eclipse.lsp4j.debug.GotoTargetsArguments();
         a.setSource(source);
         a.setLine(line + 1); // DAP is 1-based
@@ -1264,7 +1271,29 @@ public final class DapClient implements IDebugProtocolClient {
         // LanguageServerSession: ProcessRegistry.killTree destroys the descendant tree first (a wrapper
         // script would otherwise orphan the real adapter), escalates to a force-kill, and untracks it.
         ProcessRegistry.killTree(adapterProcess);
+        for (AutoCloseable resource : closeOnDispose) {
+            try {
+                resource.close();
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
         executor.shutdownNow();
+    }
+
+    /** What else this session holds open until it ends: the tunnel to a remote adapter's port. */
+    private final List<AutoCloseable> closeOnDispose = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Closes {@code resource} when the session is disposed (at once if it already is). */
+    public void closeOnDispose(AutoCloseable resource) {
+        closeOnDispose.add(resource);
+        if (disposed) {
+            try {
+                resource.close();
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
     }
 
     private static void ignore(CompletableFuture<?> f) {

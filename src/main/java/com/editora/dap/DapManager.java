@@ -1149,10 +1149,19 @@ public final class DapManager implements DapClient.Host {
         List<String> filters = exceptionFilters;
         startupTask = io.submit(() -> {
             try {
+                boolean remote = com.editora.vfs.Vfs.isRemote(file);
                 if (spec.kind() == DapServerRegistry.Kind.STDIO) {
-                    startStdio(file, spec, bps, filters, epoch);
+                    if (remote) {
+                        startRemoteStdio(file, spec, bps, filters, epoch);
+                    } else {
+                        startStdio(file, spec, bps, filters, epoch);
+                    }
                 } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
-                    startSocket(file, spec, bps, filters, epoch);
+                    if (remote) {
+                        startRemoteSocket(file, spec, bps, filters, epoch);
+                    } else {
+                        startSocket(file, spec, bps, filters, epoch);
+                    }
                 } else {
                     fail(epoch, "Unsupported debug transport for " + language + ".");
                 }
@@ -1174,7 +1183,13 @@ public final class DapManager implements DapClient.Host {
             listener.onError("Open a file to debug first.");
             return false;
         }
-        if (!isLanguageAvailable(language)) {
+        if (com.editora.vfs.Vfs.isRemote(file)) {
+            String problem = remoteProblem(file, language);
+            if (problem != null) {
+                listener.onError(problem);
+                return false;
+            }
+        } else if (!isLanguageAvailable(language)) {
             listener.onError(
                     "python".equals(language)
                             ? "Python debugging is not available (enable it and install debugpy)."
@@ -1205,11 +1220,40 @@ public final class DapManager implements DapClient.Host {
         }
         pb.redirectError(ProcessBuilder.Redirect.DISCARD); // DAP is on stdin/stdout; an undrained PIPE deadlocks
         Process proc = pb.start();
+        String interpExe = cmd.isEmpty() ? null : cmd.get(0);
+        attachStdio(
+                proc,
+                spec,
+                bps,
+                filters,
+                epoch,
+                DapPaths.LOCAL,
+                file.toString(),
+                cwdOf(file),
+                interpExe == null ? null : new HostPython(interpExe, List.of(), Map.of()));
+    }
+
+    /**
+     * Wires a started stdio adapter ({@code proc}) to a new session and launches {@code program} in
+     * {@code cwd} with {@code interpreter} (null: the adapter's default) — named as the adapter's machine
+     * names them.
+     */
+    private void attachStdio(
+            Process proc,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch,
+            DapPaths paths,
+            String program,
+            String cwd,
+            HostPython interpreter) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
         }
         DapClient c = new DapClient(sessionHost(epoch));
+        c.setPaths(paths);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
         if (!publishClient(epoch, c)) {
@@ -1217,7 +1261,6 @@ public final class DapManager implements DapClient.Host {
             c.dispose();
             return;
         }
-        String interpExe = cmd.isEmpty() ? null : cmd.get(0);
         c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
                 fail(epoch, "Could not connect to debugpy: " + msg(e));
@@ -1227,13 +1270,24 @@ public final class DapManager implements DapClient.Host {
                 c.dispose();
                 return;
             }
-            c.launch(LaunchConfig.program(
-                            spec.launchType(), file.toString(), cwdOf(file), interpExe, programArgs, false))
-                    .whenComplete((v, le) -> {
-                        if (le != null) {
-                            fail(epoch, "launch failed: " + msg(le));
-                        }
-                    });
+            Map<String, Object> launch = new java.util.LinkedHashMap<>(LaunchConfig.program(
+                    spec.launchType(),
+                    program,
+                    cwd,
+                    interpreter == null ? null : interpreter.executable(),
+                    programArgs,
+                    false));
+            if (interpreter != null && !interpreter.args().isEmpty()) {
+                launch.put("pythonArgs", interpreter.args());
+            }
+            if (interpreter != null && !interpreter.env().isEmpty()) {
+                launch.put("env", interpreter.env()); // what the command set for itself, the program gets too
+            }
+            c.launch(launch).whenComplete((v, le) -> {
+                if (le != null) {
+                    fail(epoch, "launch failed: " + msg(le));
+                }
+            });
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
@@ -1263,14 +1317,41 @@ public final class DapManager implements DapClient.Host {
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process proc = pb.start();
         String nodeExe = cmd.isEmpty() ? null : cmd.get(0);
+        attachSocket(
+                proc, null, port, spec, bps, filters, epoch, DapPaths.LOCAL, file.toString(), cwdOf(file), nodeExe);
+    }
+
+    /**
+     * Wires a started socket adapter ({@code proc}, listening on this machine's {@code port} — through
+     * {@code forward} for one on a remote host) to a new session and launches {@code program}.
+     */
+    private void attachSocket(
+            Process proc,
+            com.editora.process.PortForward forward,
+            int port,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch,
+            DapPaths paths,
+            String program,
+            String cwd,
+            String nodeExe) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
+            if (forward != null) {
+                forward.close();
+            }
             return;
         }
         DapClient c = new DapClient(sessionHost(epoch));
+        c.setPaths(paths);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
         c.setAdapterProcess(proc); // killed on dispose (it serves the socket)
+        if (forward != null) {
+            c.closeOnDispose(forward);
+        }
         if (!publishClient(epoch, c)) {
             c.dispose();
             return;
@@ -1284,7 +1365,7 @@ public final class DapManager implements DapClient.Host {
                 c.dispose();
                 return;
             }
-            c.launch(LaunchConfig.program(spec.launchType(), file.toString(), cwdOf(file), nodeExe, programArgs, false))
+            c.launch(LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false))
                     .whenComplete((v, le) -> {
                         if (le != null) {
                             fail(epoch, "launch failed: " + msg(le));
@@ -1296,6 +1377,242 @@ public final class DapManager implements DapClient.Host {
                 }
             });
         });
+    }
+
+    // --- On a remote host ------------------------------------------------------------------------
+
+    /** Languages a remote file is debugged in on its own host so far (Java needs jdtls's java-debug there). */
+    public static boolean debuggableOnHost(String language) {
+        return "python".equals(language) || "javascript".equals(language);
+    }
+
+    /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
+    private String remoteProblem(Path file, String language) {
+        if (!debuggableOnHost(language)) {
+            return "Debugging this language on a remote host is not available yet.";
+        }
+        if ("python".equals(language) ? !pythonEnabled : !jsEnabled) {
+            return "python".equals(language)
+                    ? "Python debugging is turned off (Settings → Debugging)."
+                    : "JavaScript debugging is turned off (Settings → Debugging).";
+        }
+        if (!com.editora.process.ExecTargets.forPath(file).isAvailable()) {
+            return "Commands cannot run on this file's host (connect, and allow running commands there).";
+        }
+        return null;
+    }
+
+    /**
+     * The Python that runs debugpy on {@code file}'s host: the host's {@code dap.python} tool, else the
+     * Debugging setting when it is a bare command name (a path names a file on this machine), else
+     * {@code python3}.
+     */
+    private List<String> remotePython(Path file) {
+        String tool = com.editora.process.ExecTargets.remoteTool(file, "dap.python");
+        if (tool != null && !tool.isBlank()) {
+            return DapServerRegistry.tokenize(tool);
+        }
+        List<String> configured = DapServerRegistry.interpreterArgv("python", pythonCommand);
+        if (!configured.isEmpty()
+                && configured.get(0).indexOf('/') < 0
+                && configured.get(0).indexOf('\\') < 0) {
+            return configured;
+        }
+        return List.of(DapServerRegistry.DEFAULT_PYTHON_INTERPRETER);
+    }
+
+    /**
+     * A configured interpreter command taken apart: a leading {@code env NAME=value …} becomes variables, the
+     * next word the interpreter, the rest its own arguments. debugpy takes these three separately ({@code env},
+     * {@code python}, {@code pythonArgs}); handed the whole command, it ran the program with {@code env}.
+     */
+    record HostPython(String executable, List<String> args, Map<String, String> env) {
+        static HostPython parse(List<String> command) {
+            int i = 0;
+            Map<String, String> env = new java.util.LinkedHashMap<>();
+            if (!command.isEmpty() && "env".equals(command.get(0))) {
+                i = 1;
+                while (i < command.size() && command.get(i).matches("[A-Za-z_][A-Za-z0-9_]*=.*")) {
+                    String assignment = command.get(i++);
+                    int eq = assignment.indexOf('=');
+                    env.put(assignment.substring(0, eq), assignment.substring(eq + 1));
+                }
+            }
+            String executable = i < command.size() ? command.get(i) : DapServerRegistry.DEFAULT_PYTHON_INTERPRETER;
+            List<String> args =
+                    i + 1 < command.size() ? List.copyOf(command.subList(i + 1, command.size())) : List.of();
+            return new HostPython(executable, args, Map.copyOf(env));
+        }
+
+        /** The interpreter and its arguments, then {@code more}. */
+        List<String> argv(List<String> more) {
+            List<String> out = new ArrayList<>();
+            out.add(executable);
+            out.addAll(args);
+            out.addAll(more);
+            return out;
+        }
+    }
+
+    /** debugpy on the host of {@code file}: asked for first, then run over an SSH channel as its stdio adapter. */
+    private void startRemoteStdio(
+            Path file,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch)
+            throws Exception {
+        var target = com.editora.process.ExecTargets.forPath(file);
+        Path dir = file.getParent();
+        HostPython python = HostPython.parse(remotePython(file));
+        List<String> probe = python.argv(List.of("-c", "import debugpy"));
+        if (!ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), probe, python.env())
+                .ok()) {
+            fail(
+                    epoch,
+                    "debugpy is not installed for " + python.executable() + " on " + target.id()
+                            + " (install it there with pip, or set the host's Python for debugging).");
+            return;
+        }
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        List<String> argv = python.argv(spec.adapterArgs()); // -m debugpy.adapter
+        Process proc = target.start(
+                com.editora.process.ExecSpec.of(argv, dir, python.env(), com.editora.process.ExecSpec.Locale.USER)
+                        .withLongLived(true)
+                        .withDiscardedOutput(false, true));
+        attachStdio(
+                proc,
+                spec,
+                bps,
+                filters,
+                epoch,
+                DapPaths.on(target, file.getFileSystem()),
+                target.toTargetPath(file),
+                target.toTargetPath(dir),
+                python);
+    }
+
+    /**
+     * Finds {@code dapDebugServer.js} on the host: the {@code dap.js} tool ($1: the file, or a folder to
+     * search), else where Editora's installer, mason and VS Code's server put it. Prints the path; exits 1
+     * when there is none, 2 when {@code node} is missing.
+     */
+    static final String FIND_JS_DEBUG = """
+            command -v "$2" >/dev/null 2>&1 || exit 2
+            if [ -n "$1" ]; then
+              case "$1" in */dapDebugServer.js) [ -f "$1" ] && { printf '%s\n' "$1"; exit 0; } ;; esac
+              d=$1; [ -f "$d" ] && d=${d%/*}
+              set -- "$d"
+            else
+              set -- "$HOME/.editora/plugins/dap/javascript" "$HOME/.local/share/nvim/mason/packages/js-debug-adapter" \
+                "$HOME"/.vscode-server/extensions/ms-vscode.js-debug* "$HOME"/.vscode/extensions/ms-vscode.js-debug*
+            fi
+            for r in "$@"; do
+              [ -d "$r" ] || continue
+              f=$(find "$r" -maxdepth 6 -name dapDebugServer.js -type f 2>/dev/null | head -n 1)
+              [ -n "$f" ] && { printf '%s\n' "$f"; exit 0; }
+            done
+            exit 1
+            """;
+
+    /** vscode-js-debug on the host: started on a free port there, reached through a tunnel from this machine. */
+    private void startRemoteSocket(
+            Path file,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch)
+            throws Exception {
+        var target = com.editora.process.ExecTargets.forPath(file);
+        Path dir = file.getParent();
+        String configured = com.editora.process.ExecTargets.remoteTool(file, "dap.js");
+        String nodeTool = com.editora.process.ExecTargets.remoteTool(file, "node");
+        String node = nodeTool == null || nodeTool.isBlank() ? spec.defaultInterpreter() : nodeTool.strip();
+        ProcessRunner.Result found = ProcessRunner.run(
+                dir,
+                java.time.Duration.ofSeconds(20),
+                List.of("sh", "-c", FIND_JS_DEBUG, "sh", configured == null ? "" : configured.strip(), node));
+        String server = found.ok() ? found.out().strip() : "";
+        if (server.isEmpty()) {
+            fail(
+                    epoch,
+                    found.exit() == 2
+                            ? "node is not installed on " + target.id() + "."
+                            : "vscode-js-debug (dapDebugServer.js) was not found on " + target.id()
+                                    + " (install it there, or set its path for the host).");
+            return;
+        }
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        // Port 0: the host picks a free one and the server prints it; 127.0.0.1, so the tunnel's end is known.
+        Process proc = target.start(com.editora.process.ExecSpec.of(
+                        List.of(node, server, "0", "127.0.0.1"),
+                        dir,
+                        java.util.Map.of(),
+                        com.editora.process.ExecSpec.Locale.USER)
+                .withLongLived(true)
+                .withDiscardedOutput(false, true));
+        int remotePort = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
+        if (remotePort < 0) {
+            com.editora.process.ProcessRegistry.killTree(proc);
+            fail(epoch, "vscode-js-debug did not start on " + target.id() + ".");
+            return;
+        }
+        com.editora.process.PortForward forward;
+        try {
+            forward = target.forwardLocal("127.0.0.1", remotePort);
+        } catch (java.io.IOException e) {
+            com.editora.process.ProcessRegistry.killTree(proc);
+            throw e;
+        }
+        attachSocket(
+                proc,
+                forward,
+                forward.localPort(),
+                spec,
+                bps,
+                filters,
+                epoch,
+                DapPaths.on(target, file.getFileSystem()),
+                target.toTargetPath(file),
+                target.toTargetPath(dir),
+                node);
+    }
+
+    /** Matches the line vscode-js-debug's server prints once it listens: {@code … listening at host:port}. */
+    private static final java.util.regex.Pattern LISTENING =
+            java.util.regex.Pattern.compile("listening at .*:(\\d+)\\s*$");
+
+    /**
+     * The port an adapter announces on {@code out} ({@link #LISTENING}), or -1 when it ends or says nothing
+     * in {@code timeout}. Whatever it prints afterwards is read and dropped, so its channel never fills.
+     */
+    static int listeningPort(java.io.InputStream out, java.time.Duration timeout) {
+        CompletableFuture<Integer> port = new CompletableFuture<>();
+        Thread.ofVirtual().name("dap-adapter-stdout").start(() -> {
+            try (var reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(out, java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    var m = LISTENING.matcher(line);
+                    if (!port.isDone() && m.find()) {
+                        port.complete(Integer.parseInt(m.group(1)));
+                    }
+                }
+            } catch (java.io.IOException | RuntimeException ended) {
+                // the adapter is gone
+            } finally {
+                port.complete(-1);
+            }
+        });
+        try {
+            return port.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private static int freePort() throws Exception {
@@ -1452,7 +1769,7 @@ public final class DapManager implements DapClient.Host {
     static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
-            if (fb.file().equals(file)) {
+            if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
                 lines.addAll(fb.breakpoints());
             }
         }
@@ -1479,7 +1796,7 @@ public final class DapManager implements DapClient.Host {
         }
         List<DapModels.LineBreakpoint> real = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : breakpointsSupplier.get()) {
-            if (fb.file().equals(f)) {
+            if (com.editora.config.PathKeys.samePath(fb.file(), f)) {
                 real.addAll(fb.breakpoints());
             }
         }
