@@ -55,8 +55,22 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
      */
     record ConfigHit(Path file, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options) {}
 
+    /**
+     * A config as last read. {@code settled} says the file had been left alone for a while when it was read:
+     * only then is an unchanged modification time proof of unchanged content. A file written twice within the
+     * clock's (or the file system's) resolution keeps its time stamp, and so does one deleted and written again.
+     */
     private record CacheEntry(
-            long mtime, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options, boolean valid) {}
+            long mtime,
+            long size,
+            boolean settled,
+            Set<String> disabled,
+            Set<String> enabled,
+            MarkdownLintOptions options,
+            boolean valid) {}
+
+    /** How long a file must have been untouched for its modification time to be trusted. */
+    private static final long SETTLED_MILLIS = 2_000;
 
     private final Map<Path, CacheEntry> cache = new java.util.concurrent.ConcurrentHashMap<>();
     /** Unreadable configs already reported ({@code path@mtime}), so each is announced once. */
@@ -84,7 +98,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
             for (String name : MarkdownLintConfig.FILE_NAMES) {
                 Path cfg = dir.resolve(name);
-                if (Files.isRegularFile(cfg)) {
+                if (!Files.isRegularFile(cfg)) {
+                    cache.remove(cfg); // gone: whatever is written there next is read afresh
+                } else {
                     CacheEntry loaded = load(cfg, 0);
                     return new ConfigHit(cfg, loaded.disabled(), loaded.enabled(), loaded.options());
                 }
@@ -114,13 +130,16 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         return dir.getParent() == null || (home != null && dir.equals(Path.of(home)));
     }
 
-    private static final CacheEntry NOTHING = new CacheEntry(0, Set.of(), Set.of(), MarkdownLintOptions.DEFAULT, true);
+    private static final CacheEntry NOTHING =
+            new CacheEntry(0, 0, true, Set.of(), Set.of(), MarkdownLintOptions.DEFAULT, true);
 
     private CacheEntry load(Path cfg, int depth) {
         try {
             long mtime = Files.getLastModifiedTime(cfg).toMillis();
+            long size = Files.size(cfg);
             CacheEntry cached = cache.get(cfg);
-            if (cached == null || cached.mtime() != mtime) {
+            if (cached == null || !cached.settled() || cached.mtime() != mtime || cached.size() != size) {
+                boolean settled = System.currentTimeMillis() - mtime >= SETTLED_MILLIS;
                 MarkdownLintConfig.Parsed parsed =
                         MarkdownLintConfig.parseFile(cfg.getFileName().toString(), Files.readString(cfg));
                 Set<String> disabled = new HashSet<>();
@@ -137,7 +156,8 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                 }
                 MarkdownLintConfig.apply(parsed, disabled, enabled);
                 options = MarkdownLintConfig.options(parsed, options);
-                cached = new CacheEntry(mtime, Set.copyOf(disabled), Set.copyOf(enabled), options, parsed.valid());
+                cached = new CacheEntry(
+                        mtime, size, settled, Set.copyOf(disabled), Set.copyOf(enabled), options, parsed.valid());
                 cache.put(cfg, cached);
             }
             if (!cached.valid() && reported.add(cfg + "@" + mtime)) {
@@ -814,7 +834,10 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             signature.append(byFolder.computeIfAbsent(path.getParent(), folder -> {
                 ConfigHit hit = configFor(path, root);
                 CacheEntry entry = hit == null ? null : cache.get(hit.file());
-                return hit == null ? "-;" : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + ";";
+                return hit == null
+                        ? "-;"
+                        : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + "/" + hit.disabled() + hit.enabled()
+                                + ";";
             }));
         }
         String seen = signature.toString();

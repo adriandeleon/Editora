@@ -350,14 +350,7 @@ public final class MarkdownLint {
         MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
         MarkdownLintDirectives directives = MarkdownLintDirectives.compute(blocks);
         MarkdownLintOptions opts = directives.options(options == null ? MarkdownLintOptions.DEFAULT : options);
-        Emitter emit = new Emitter(
-                out,
-                disabled == null ? Set.of() : disabled,
-                directives,
-                opts,
-                edits,
-                targets,
-                new java.util.HashMap<>());
+        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, directives, opts, edits, targets);
         Set<String> defined = definitions(blocks);
         int n = blocks.lineCount();
 
@@ -386,7 +379,6 @@ public final class MarkdownLint {
             int inTag = tagOpen ? (attributesOnly ? line.length() : tagEnd) : 0;
             bareUrls(emit, blocks, i, inTag);
             bareEmails(emit, blocks, i, inTag);
-            wikiLinks(emit, blocks, i);
             tagOpen = attributesOnly || endsInsideTag(line, Math.max(0, tagEnd));
 
             // MD052: [text][label] / [text][] with no matching definition.
@@ -427,8 +419,7 @@ public final class MarkdownLint {
             MarkdownLintDirectives directives,
             MarkdownLintOptions options,
             Map<Diagnostic, List<Edit>> edits,
-            LinkTargets targets,
-            Map<String, Set<String>> ownAnchors) {
+            LinkTargets targets) {
 
         /** Whether rule {@code code} is switched on at all (a rule that is off need not do its work). */
         boolean on(String code) {
@@ -708,74 +699,6 @@ public final class MarkdownLint {
             }
         }
         return to > from;
-    }
-
-    /**
-     * LINK003 on prose line {@code i}: {@code [[note]]}, {@code [[note#heading]]}, {@code [[note|label]]} and
-     * {@code ![[image.png]]} whose note (or heading in it) is not there. One left-to-right pass: the innermost
-     * {@code [[} before a {@code ]]} is the link.
-     */
-    private static void wikiLinks(Emitter emit, MarkdownBlocks blocks, int i) {
-        String line = blocks.line(i);
-        if (emit.targets() == null || !emit.on(LINK_WIKI) || line.indexOf("[[") < 0) {
-            return;
-        }
-        int open = -1;
-        for (int p = 0; p + 1 < line.length(); p++) {
-            char c = line.charAt(p);
-            if (c == '[' && line.charAt(p + 1) == '[') {
-                open = p;
-                p++;
-            } else if (c == ']' && line.charAt(p + 1) == ']' && open >= 0) {
-                int start = open;
-                open = -1;
-                String inner = line.substring(start + 2, p);
-                p++;
-                if (inner.isBlank()
-                        || inner.indexOf('[') >= 0
-                        || inner.indexOf(']') >= 0
-                        || blocks.inCodeSpan(i, start)
-                        || blocks.inHtmlComment(i, start)
-                        || (start > 0 && line.charAt(start - 1) == '\\')) {
-                    continue;
-                }
-                int bar = inner.indexOf('|');
-                String target = (bar < 0 ? inner : inner.substring(0, bar)).strip();
-                int hash = target.indexOf('#');
-                String heading = hash < 0 ? "" : target.substring(hash + 1).strip();
-                String note = hash < 0 ? target : target.substring(0, hash).strip();
-                String message = null;
-                if (note.isEmpty()) { // [[#heading]]: a heading of this document
-                    if (!heading.isEmpty() && !documentAnchors(emit, blocks).contains(MarkdownToc.slug(heading))) {
-                        message = "LINK003.heading";
-                    }
-                } else {
-                    String file = emit.targets().wikiFile(note);
-                    if (file == null) {
-                        message = "LINK003";
-                    } else if (!file.isEmpty() && !heading.isEmpty()) {
-                        Set<String> there = emit.targets().anchors(file);
-                        if (there != null && !there.contains(MarkdownToc.slug(heading))) {
-                            message = "LINK003.heading";
-                        }
-                    }
-                }
-                if (message != null) {
-                    emit.add(i + 1, start + 1, p + 1 - start, LINK_WIKI, message);
-                }
-            }
-        }
-    }
-
-    /** The anchors of the document being linted (built once per run, on the first link that needs them). */
-    private static Set<String> documentAnchors(Emitter emit, MarkdownBlocks blocks) {
-        return emit.ownAnchors().computeIfAbsent("", k -> {
-            StringBuilder text = new StringBuilder();
-            for (int j = 0; j < blocks.lineCount(); j++) {
-                text.append(blocks.line(j)).append('\n');
-            }
-            return MarkdownLintMore.anchorsOf(text.toString());
-        });
     }
 
     /** The end of the URL at {@code [start, end)} without sentence punctuation or an unbalanced {@code )}. */
