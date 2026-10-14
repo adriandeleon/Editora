@@ -29,8 +29,8 @@ final class TabGitStatus {
         if (file == null || byPath == null || byPath.isEmpty()) {
             return null;
         }
-        if (file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
-            return null; // a remote file is never in a local repository
+        if (file.getFileSystem() != byPath.keySet().iterator().next().getFileSystem()) {
+            return null; // a file on another filesystem than the repository's is never in it (and cannot be asked)
         }
         GitFileStatus status = byPath.get(file.toAbsolutePath().normalize());
         return status == null ? null : status.cssClass();

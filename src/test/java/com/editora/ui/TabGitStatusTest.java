@@ -37,4 +37,19 @@ class TabGitStatusTest {
         assertNull(TabGitStatus.classFor(ROOT.resolve("src/Changed.java"), Map.of()), "Git off / Simple UI mode");
         assertNull(TabGitStatus.classFor(ROOT.resolve("src/Changed.java"), null));
     }
+
+    @Test
+    void aFileIsOnlyEverInARepositoryOnItsOwnFilesystem(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        java.net.URI zip = java.net.URI.create("jar:" + dir.resolve("host.zip").toUri());
+        try (java.nio.file.FileSystem host = java.nio.file.FileSystems.newFileSystem(zip, Map.of("create", "true"))) {
+            Path remoteFile = host.getPath("/repo/src/Changed.java");
+            Map<Path, GitFileStatus> remoteStatus = Map.of(remoteFile, GitFileStatus.MODIFIED);
+
+            assertEquals("git-status-modified", TabGitStatus.classFor(remoteFile, remoteStatus), "a remote repository");
+            assertNull(TabGitStatus.classFor(remoteFile, STATUS), "a remote tab beside a local repository");
+            assertNull(
+                    TabGitStatus.classFor(ROOT.resolve("src/Changed.java"), remoteStatus),
+                    "a local tab beside a remote repository");
+        }
+    }
 }

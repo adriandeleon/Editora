@@ -1509,6 +1509,11 @@ public final class GitService {
      * and if nothing resolves, falls back to a plain absolute-normalized path.
      */
     static Path realPath(Path p) {
+        if (!isLocal(p)) {
+            // Not asked of the server: this is called on the JavaFX thread, and a remote folder is reached
+            // by the one spelling its connection opened it under.
+            return p.toAbsolutePath().normalize();
+        }
         try {
             return p.toRealPath();
         } catch (IOException notThere) {
