@@ -199,7 +199,7 @@ final class BuildCoordinator {
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
-        if (file != null && host.isLocalBuffer(b)) {
+        if (file != null && RemoteExec.runsFor(file)) {
             return file;
         }
         return ops.projectRoot();
@@ -219,7 +219,7 @@ final class BuildCoordinator {
             return;
         }
         Path context = contextPath();
-        if (context == null || !Vfs.isLocal(context)) {
+        if (context == null || !RemoteExec.runsFor(context)) {
             appliedStamp = null;
             applyDetected(null, null, null);
             return;
@@ -480,10 +480,14 @@ final class BuildCoordinator {
             tree.setRunning(true);
         }
         host.setStatus(tr("status.build.started", tool.displayName(), label));
-        java.util.Map<String, String> environment = tool == BuildTool.MAVEN
-                ? com.editora.run.JdkToolchain.environment(
-                        host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath())
-                : java.util.Map.of();
+        java.util.Map<String, String> environment = tool != BuildTool.MAVEN
+                ? java.util.Map.of()
+                : Vfs.isRemote(root)
+                        // The host's own JDK, or the one configured for it; never this machine's JDK or PATH.
+                        ? RunCoordinator.remoteJdkEnvironment(
+                                com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
+                        : com.editora.run.JdkToolchain.environment(
+                                host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
         service.run(root, runArgv, environment, new BuildService.Listener() {
             @Override
             public void onStart(String commandLine) {

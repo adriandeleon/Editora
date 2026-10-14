@@ -79,11 +79,14 @@ public final class BuildService {
             return;
         }
         int gen = pump.begin();
-        List<String> command = ProcessRunner.resolveExecutable(argv);
-        ProcessBuilder pb = processBuilder(workingDir, command, environment);
+        boolean remote = com.editora.vfs.Vfs.isRemote(workingDir);
+        List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
         Process process;
         try {
-            process = pb.start();
+            // A remote build runs on its host, long-lived so Stop and a lost connection end the whole tree.
+            process = remote
+                    ? com.editora.run.RunService.startRemote(workingDir, command, environment)
+                    : processBuilder(workingDir, command, environment).start();
             com.editora.process.ProcessRegistry.track(process); // so the shutdown hook / reaper can kill it
 
         } catch (IOException e) {

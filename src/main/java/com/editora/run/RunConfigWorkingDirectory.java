@@ -16,7 +16,10 @@ public final class RunConfigWorkingDirectory {
      */
     public static Path resolve(RunConfiguration cfg, Path projectRoot) {
         if (!cfg.workingDir().isBlank()) {
-            return Path.of(cfg.workingDir());
+            // In a remote project a directory names a folder on the project's host, not on this machine.
+            return projectRoot != null && !isLocal(projectRoot)
+                    ? projectRoot.resolve(cfg.workingDir())
+                    : Path.of(cfg.workingDir());
         }
         if (projectRoot != null) {
             return projectRoot;
@@ -26,5 +29,9 @@ public final class RunConfigWorkingDirectory {
             return Path.of(cfg.target()).toAbsolutePath().getParent();
         }
         return null;
+    }
+
+    private static boolean isLocal(Path path) {
+        return path.getFileSystem() == java.nio.file.FileSystems.getDefault();
     }
 }

@@ -71,6 +71,9 @@ public final class RunService {
     /** The running process's id, or {@code -1} when nothing is running. */
     public long pid() {
         Process p = current;
+        if (p instanceof com.editora.process.RemoteProcess remote) {
+            return remote.remotePid(); // its id on the host it runs on
+        }
         return p == null ? -1 : p.pid();
     }
 
@@ -105,8 +108,12 @@ public final class RunService {
         }
         stdinWriter.execute(() -> {
             try {
-                // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8.
-                p.getOutputStream().write(ChildText.encodeInput(line + System.lineSeparator()));
+                // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8. A program on a
+                // remote (POSIX) host reads UTF-8 lines ending in \n, whatever this machine uses.
+                byte[] bytes = p instanceof com.editora.process.RemoteProcess
+                        ? (line + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                        : ChildText.encodeInput(line + System.lineSeparator());
+                p.getOutputStream().write(bytes);
                 p.getOutputStream().flush();
             } catch (IOException ignored) {
                 // Process exited between the check and the write — nothing to report.
@@ -140,19 +147,31 @@ public final class RunService {
      * is missing or the output is unparseable. Used to preflight compact-source runs (need JDK 25+).
      */
     public void detectJavaMajor(String javaExecutable, java.util.function.IntConsumer cb) {
+        detectJavaMajor(javaExecutable, null, cb);
+    }
+
+    /**
+     * As above, for the {@code java} of the machine {@code where} is on: a folder on a remote host asks the
+     * host's. {@code null} is this machine.
+     */
+    public void detectJavaMajor(String javaExecutable, Path where, java.util.function.IntConsumer cb) {
         String executable = javaExecutable == null || javaExecutable.isBlank() ? "java" : javaExecutable;
-        Integer cached = javaMajors.get(executable);
+        boolean remote = where != null && com.editora.vfs.Vfs.isRemote(where);
+        String key = remote ? com.editora.process.ExecTargets.forPath(where).id() + " " + executable : executable;
+        Integer cached = javaMajors.get(key);
         if (cached != null) {
             cb.accept(cached);
             return;
         }
         Thread t = new Thread(
                 () -> {
-                    ProcessRunner.Result r =
-                            ProcessRunner.run(null, java.time.Duration.ofSeconds(10), List.of(executable, "-version"));
+                    ProcessRunner.Result r = ProcessRunner.run(
+                            remote ? where : null, java.time.Duration.ofSeconds(10), List.of(executable, "-version"));
                     // `java -version` prints to stderr; some distributions use stdout.
                     int major = javaMajorOf(r == null ? "" : r.err() + "\n" + r.out());
-                    javaMajors.put(executable, major);
+                    if (major >= 0 || !remote) {
+                        javaMajors.put(key, major); // a host that could not be reached is asked again next time
+                    }
                     Platform.runLater(() -> cb.accept(major));
                 },
                 "run-java-probe");
@@ -233,6 +252,19 @@ public final class RunService {
     }
 
     /**
+     * The program on the host {@code workingDir} is on: in the user's locale (the host's), with {@code env} on
+     * top (a null value unsets), long-lived — so Stop, and losing the connection, end it and what it started.
+     */
+    public static Process startRemote(Path workingDir, List<String> command, java.util.Map<String, String> env)
+            throws IOException {
+        java.util.Map<String, String> overrides = env == null ? java.util.Map.of() : env;
+        return com.editora.process.ExecTargets.forPath(workingDir)
+                .start(com.editora.process.ExecSpec.of(
+                                command, workingDir, overrides, com.editora.process.ExecSpec.Locale.USER)
+                        .withLongLived(true));
+    }
+
+    /**
      * As {@link #runInDir(Path, List, Listener)}, plus {@code env} — extra environment variables for the
      * child (a saved run configuration's {@code KEY=VALUE} pairs), applied over the inherited environment.
      */
@@ -241,11 +273,14 @@ public final class RunService {
             return;
         }
         int gen = pump.begin();
-        List<String> command = ProcessRunner.resolveExecutable(argv);
-        ProcessBuilder pb = processBuilder(workingDir, command, env);
+        boolean remote = workingDir != null && com.editora.vfs.Vfs.isRemote(workingDir);
+        // On a host the program is found on the host's PATH, and nothing of this machine's environment goes.
+        List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
         Process process;
         try {
-            process = pb.start();
+            process = remote
+                    ? startRemote(workingDir, command, env)
+                    : processBuilder(workingDir, command, env).start();
             // Track it: the JVM shutdown hook + the orphan reaper only know about tracked processes, so an
             // untracked long-lived program (a dev server) outlived the app and wasn't reaped on the next launch.
             com.editora.process.ProcessRegistry.track(process);
