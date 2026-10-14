@@ -255,6 +255,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     RemoteCoordinator remoteCoordinator;
+
+    RemoteCoordinator remoteCoordinator() {
+        return remoteCoordinator;
+    }
     // MCP server: a single app-wide loopback HTTP endpoint exposing live editor state + the command
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
@@ -670,7 +674,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public Path projectRoot() {
                 Project active = projects == null ? null : projects.active();
-                return active == null ? null : Path.of(active.root());
+                return active == null ? null : active.rootPath();
             }
 
             @Override
@@ -1178,7 +1182,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
-        setProjectRoot(project == null ? null : Path.of(project.root()));
+        setProjectRoot(project == null ? null : project.rootPath());
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
                 .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
@@ -1188,6 +1192,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         // right there (called only on a new window build, never when focusing an already-open project).
         if (project != null && projectsEnabled() && projectToolWindow != null) {
             toolWindows.open(projectToolWindow, false);
+        }
+        if (project != null && project.remote()) {
+            // After whoever opened this window has had the chance to hand it credentials of its own.
+            Platform.runLater(() -> remoteCoordinator.promptReconnectIfNeeded());
         }
         // This window now knows its project, which is half of what gates the run-config group; the other
         // half (marker detection) re-runs on the tab-selection and focus-regain paths.
@@ -1380,6 +1388,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer selected = activeBuffer();
         panel.setActiveFile(selected == null ? null : selected.getPath());
         projectPanel = panel;
+        remoteCoordinator.panelBuilt(panel);
         return panel;
     }
 
@@ -2702,6 +2711,37 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public Project windowProject() {
+                return windowProject;
+            }
+
+            @Override
+            public boolean projectsEnabled() {
+                return MainController.this.projectsEnabled() && windowManager != null;
+            }
+
+            @Override
+            public com.editora.config.ProjectManager projects() {
+                return projects;
+            }
+
+            @Override
+            public void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
+                windowManager.openRemoteProject(project, conn, secret);
+                refreshProjectPanelList();
+            }
+
+            @Override
+            public ProjectPanel projectPanel() {
+                return projectPanel;
+            }
+
+            @Override
+            public void restoreSessionTabs() {
+                sessions.reopenUnreachable();
+            }
+
+            @Override
             public void setProjectRoot(Path root) {
                 MainController.this.setProjectRoot(root);
             }
@@ -2714,7 +2754,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public Path activeProjectRoot() {
                 Project active = projects == null ? null : projects.active();
-                return active == null ? null : Path.of(active.root());
+                return active == null ? null : active.rootPath();
             }
 
             @Override
@@ -2785,7 +2825,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public java.nio.file.Path projectRoot() {
-                return windowProject != null && projectsEnabled() ? Path.of(windowProject.root()) : null;
+                return windowProject != null && projectsEnabled() ? windowProject.rootPath() : null;
             }
         };
     }
@@ -4396,6 +4436,21 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final WindowSessionCoordinator sessions = new WindowSessionCoordinator(new WindowSessionCoordinator.Host() {
 
         @Override
+        public Project windowProject() {
+            return windowProject;
+        }
+
+        @Override
+        public boolean isOpen(Path file) {
+            return MainController.this.tabForPath(file) != null;
+        }
+
+        @Override
+        public boolean hasFileTabs() {
+            return editorArea.tabs().stream().anyMatch(tab -> MainController.this.tabPath(tab) != null);
+        }
+
+        @Override
         public TabPane tabPane() {
             return tabPane;
         }
@@ -4956,7 +5011,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path projectRoot() {
             Project active = projects == null ? null : projects.active();
-            return active == null ? null : Path.of(active.root());
+            return active == null ? null : active.rootPath();
         }
 
         @Override
@@ -5295,7 +5350,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             new ExternalToolCoordinator(coordinatorHost, new ExternalToolCoordinator.Ops() {
                 @Override
                 public java.nio.file.Path projectRoot() {
-                    return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                    return windowProject != null ? windowProject.rootPath() : null;
                 }
 
                 @Override
@@ -5322,7 +5377,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     new BuildCoordinator.Ops() {
                         @Override
                         public java.nio.file.Path projectRoot() {
-                            return windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+                            return windowProject != null ? windowProject.rootPath() : null;
                         }
 
                         @Override
@@ -5601,7 +5656,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
-            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
+            return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
         }
 
         @Override
@@ -5721,7 +5776,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             coordinatorHost,
             SearchCoordinator.ops(
                     new SearchCoordinator.Navigation(
-                            () -> (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null,
+                            () -> (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null,
                             this::openSearchMatch,
                             () -> searchToolWindow != null && toolWindows.isOpen(searchToolWindow),
                             () -> toolWindows.open(searchToolWindow, true),
@@ -6176,7 +6231,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path projectRoot() {
             Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-            return active == null ? null : Path.of(active.root());
+            return active == null ? null : active.rootPath();
         }
 
         @Override
@@ -6472,7 +6527,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * ancestor, which the status message says so the user is never told "revoked" while it still runs.
      */
     void revokeTrustForActiveRoot() {
-        java.nio.file.Path root = windowProject != null ? java.nio.file.Path.of(windowProject.root()) : null;
+        java.nio.file.Path root = windowProject != null ? windowProject.rootPath() : null;
         if (root == null) {
             setStatus(tr("status.trust.noProject"));
             return;
@@ -7653,8 +7708,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path abs = file.toAbsolutePath().normalize();
         Project best = null;
         for (Project p : projects.list()) {
-            Path root = Path.of(p.root()).toAbsolutePath().normalize();
-            if (abs.startsWith(root)
+            if (p.contains(abs)
                     && (best == null || p.root().length() > best.root().length())) {
                 best = p; // prefer the deepest (most specific) matching project root
             }
@@ -8602,13 +8656,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Every coordinator's {@code Ops.projectRoot()} reads {@code windowProject} for the same reason.
      */
     private Path windowProjectRoot() {
-        return (windowProject != null && projectsEnabled()) ? Path.of(windowProject.root()) : null;
+        return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
     }
 
     /** This window's project root, or null when it has no project open. */
     private Path activeProjectRoot() {
         Project active = projects == null ? null : projects.active();
-        return active == null ? null : Path.of(active.root());
+        return active == null ? null : active.rootPath();
     }
 
     // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---
@@ -8847,7 +8901,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return marker;
         }
         Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-        java.nio.file.Path projectRoot = active == null ? null : Path.of(active.root());
+        java.nio.file.Path projectRoot = active == null ? null : active.rootPath();
         return com.editora.lsp.RootResolver.resolve(projectRoot, file, java.util.List.of());
     }
 

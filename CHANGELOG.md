@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
+  a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
+  opens the window and asks to connect; while it is not connected the Project panel says so and offers
+  Reconnect, and the tabs you had open come back when the connection does. A lost connection is shown the same
+  way. The window you connected from is left as it was.
 - **Markdown preview: text can be selected and copied.** Drag, double-click a word, triple-click a block,
   Shift-click, Shift+arrows and Select All work across paragraphs, headings, lists, tables, code blocks and alerts;
   Copy puts plain text and formatted HTML on the clipboard, and `Preview: Copy` copies the selection when there is
@@ -148,6 +153,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
+  other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
 - **Previews:** the floating Editor / Split / Preview toggle covered the right end of the HTTP response panel's
   toolbar (hiding Clear and Save response), the CSV grid's toolbar and the first row of the JSON / YAML / XML tree.
   Those previews now start below the toggle, as the Markdown preview already did.

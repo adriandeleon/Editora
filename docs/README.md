@@ -58,6 +58,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
 - [subsystems/diff-and-merge.md](subsystems/diff-and-merge.md) — loss-aware diff text, background
   computation, refresh guards, patch-set, repository, and directory review, Git hunk actions, ancestor-aware
   merge, and accessibility.
+- [subsystems/remote.md](subsystems/remote.md) — remote (SFTP) folders as projects, the one-window-per-
+  project connection model, the not-connected state, and running commands on the host (off by default).
 - [subsystems/lsp-and-dap.md](subsystems/lsp-and-dap.md) — Language Server + Debug Adapter
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 - [subsystems/log-viewer.md](subsystems/log-viewer.md) — level detection, the record-aware filter,

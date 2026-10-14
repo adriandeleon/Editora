@@ -931,6 +931,27 @@ public class WindowManager {
         return stage;
     }
 
+    /** The controller of {@code project}'s open window, or null when it has none. */
+    MainController controllerOf(Project project) {
+        Holder holder = project == null ? null : findHolder(project.id());
+        return holder == null ? null : holder.controller();
+    }
+
+    /**
+     * Opens (or focuses) a remote {@code project}'s window and has it connect to its host with
+     * {@code secret}, which is wiped either way. The window that shows a remote folder must hold the
+     * connection itself.
+     */
+    void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
+        openOrFocus(project);
+        MainController window = controllerOf(project);
+        if (window != null) {
+            window.remoteCoordinator().connectForWindowProject(conn, secret);
+        } else if (secret != null) {
+            java.util.Arrays.fill(secret, '\0');
+        }
+    }
+
     /**
      * Opens {@code file} at 0-based {@code line} in the window for {@code projectKey} ({@code ""} = the global
      * no-project window): focuses the window if it's already open and opens the file there now, else builds the

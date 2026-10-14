@@ -27,8 +27,11 @@ final class RecentProject {
                 continue;
             }
             try {
-                Path root = Path.of(project.root()).toAbsolutePath().normalize();
-                if (absoluteFile.startsWith(root) && root.getNameCount() > bestDepth) {
+                if (!project.contains(absoluteFile)) {
+                    continue;
+                }
+                Path root = project.rootPath().toAbsolutePath().normalize();
+                if (root.getNameCount() > bestDepth) {
                     best = project;
                     bestDepth = root.getNameCount();
                 }

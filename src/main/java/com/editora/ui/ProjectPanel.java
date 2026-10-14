@@ -324,6 +324,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private Consumer<Boolean> onMapModeChanged = map -> {};
 
     private final StackPane placeholderPane;
+    /** Shown instead of the placeholder while the window's project is on a host that is not connected. */
+    private final StackPane disconnectedPane;
+
+    private final Label disconnectedLabel = new Label();
+    private final Button reconnectButton = new Button();
+    private boolean disconnected;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
 
     // Filter searches walk the filesystem off the FX thread; a generation guard drops stale results.
@@ -498,6 +504,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         placeholderPane = new StackPane(placeholder);
         placeholderPane.setAlignment(Pos.CENTER);
         VBox.setVgrow(placeholderPane, Priority.ALWAYS);
+        disconnectedLabel.getStyleClass().add("tool-window-placeholder");
+        disconnectedLabel.setWrapText(true);
+        disconnectedLabel.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        VBox disconnectedBox = new VBox(10, disconnectedLabel, reconnectButton);
+        disconnectedBox.setAlignment(Pos.CENTER);
+        disconnectedBox.setPadding(new javafx.geometry.Insets(16));
+        disconnectedPane = new StackPane(disconnectedBox);
+        VBox.setVgrow(disconnectedPane, Priority.ALWAYS);
 
         addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         setRoot(null);
@@ -952,6 +966,34 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
     }
 
+    /**
+     * Says, in place of the tree, that this window's project is on a host that is not connected, with a
+     * button that reconnects. Takes effect while there is no root; {@link #clearDisconnected} takes it away.
+     */
+    public void showDisconnected(String message, String buttonText, Runnable reconnect) {
+        disconnected = true;
+        disconnectedLabel.setText(message);
+        reconnectButton.setText(buttonText);
+        reconnectButton.setOnAction(e -> reconnect.run());
+        if (root == null) {
+            rebuildBody();
+        }
+    }
+
+    public void clearDisconnected() {
+        if (disconnected) {
+            disconnected = false;
+            if (root == null) {
+                rebuildBody();
+            }
+        }
+    }
+
+    /** Whether the not-connected message is what the panel shows (tests). */
+    boolean showsDisconnected() {
+        return disconnected && root == null;
+    }
+
     /** The folder the tree is currently rooted at, or {@code null} when showing the placeholder. */
     public Path getRoot() {
         return root;
@@ -988,7 +1030,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
         mapView.setActive(mapMode && root != null); // entering the Map (re)loads it; the Tree leaves it idle
         if (root == null) {
-            getChildren().setAll(placeholderPane);
+            getChildren().setAll(disconnected ? disconnectedPane : placeholderPane);
             return;
         }
         String q = filterField.getText().trim();

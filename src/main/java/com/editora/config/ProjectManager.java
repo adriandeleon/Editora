@@ -11,6 +11,7 @@ import java.util.function.BiConsumer;
 import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
+import com.editora.vfs.Vfs;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -353,13 +354,21 @@ public class ProjectManager {
 
     /** The project whose root is {@code root} (matched by absolute, normalized path), or {@code null}. */
     public Project find(Path root) {
-        String absRoot = root.toAbsolutePath().normalize().toString();
+        String absRoot = storedRoot(root);
         for (Project p : index.getProjects()) {
             if (p.root().equals(absRoot)) {
                 return p;
             }
         }
         return null;
+    }
+
+    /**
+     * How a root is written in the index: a local folder as its absolute path (as always), a remote one as
+     * its {@code sftp://} URI, which says which host it is on. Two hosts' {@code /srv/app} are two projects.
+     */
+    private static String storedRoot(Path root) {
+        return Vfs.toStorableString(root.toAbsolutePath().normalize());
     }
 
     /**
@@ -371,7 +380,7 @@ public class ProjectManager {
         if (existing != null) {
             return existing;
         }
-        String absRoot = root.toAbsolutePath().normalize().toString();
+        String absRoot = storedRoot(root);
         Project project = new Project(uniqueId(idFor(name, absRoot)), name, absRoot);
         index.getProjects().add(project);
         holdingFailedIndex = false; // the user is rebuilding the list; what could not be read is in its .bak

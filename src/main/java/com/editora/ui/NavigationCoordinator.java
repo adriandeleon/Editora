@@ -243,7 +243,7 @@ final class NavigationCoordinator {
         }
         Project active = host.projects() == null ? null : host.projects().active();
         if (active != null) {
-            return Path.of(active.root());
+            return active.rootPath();
         }
         return Path.of(System.getProperty("user.home", "."));
     }

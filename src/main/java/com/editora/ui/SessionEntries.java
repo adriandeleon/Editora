@@ -31,6 +31,26 @@ final class SessionEntries {
     }
 
     /**
+     * Whether an entry the startup scan could not open is kept for later. A local one always is (its volume
+     * may be back next time). A remote one that did not even resolve, because its host is not connected, is
+     * kept only by the window of a project on that same host: that window is going to connect, and its tabs
+     * are waiting for it. In any other window the entry would wait for a connection nobody is going to
+     * make, invisibly and forever, so it is dropped, as it always was.
+     *
+     * @param stored the entry's stored path
+     * @param resolves whether {@code stored} resolves to a path right now
+     * @param projectRoot the window's project root as stored, or null
+     */
+    static boolean retainUnreachable(String stored, boolean resolves, String projectRoot) {
+        if (resolves || !com.editora.vfs.Vfs.isRemoteUri(stored)) {
+            return true;
+        }
+        com.editora.vfs.SftpUri entry = com.editora.vfs.SftpUri.parse(stored);
+        com.editora.vfs.SftpUri root = projectRoot == null ? null : com.editora.vfs.SftpUri.parse(projectRoot);
+        return entry != null && root != null && entry.authority().equals(root.authority());
+    }
+
+    /**
      * The list to persist: the live tabs in tab order, then every retained entry that has no tab. An entry
      * the user has since opened by hand is represented by its tab, not twice.
      */

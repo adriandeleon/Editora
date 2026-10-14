@@ -106,4 +106,41 @@ class TrustStoreTest {
         store.trust(dir);
         assertTrue(store.isTrusted(dir), "a bad key must not stop a good one from matching");
     }
+
+    @org.junit.jupiter.api.Test
+    void trustingAFolderOnAHostSaysNothingAboutTheSameFolderHere(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws java.io.IOException {
+        TrustStore store = new TrustStore();
+        Path local = java.nio.file.Files.createDirectories(dir.resolve("srv/app"));
+        try (FakeRemoteHost host = new FakeRemoteHost(dir, "ana@build:22")) {
+            Path remote = host.path(local.toString()); // the very same path text, on the host
+
+            store.trust(remote);
+
+            org.junit.jupiter.api.Assertions.assertTrue(store.isTrusted(remote));
+            org.junit.jupiter.api.Assertions.assertTrue(store.isTrusted(remote.resolve("server")), "inherited");
+            org.junit.jupiter.api.Assertions.assertFalse(store.isTrusted(local), "the local folder was never trusted");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    java.util.List.of("sftp://ana@build:22" + local), store.trustedRoots(), "stored with its host");
+
+            store.revoke(remote);
+            store.trust(local);
+            org.junit.jupiter.api.Assertions.assertTrue(store.isTrusted(local));
+            org.junit.jupiter.api.Assertions.assertFalse(store.isTrusted(remote), "nor the other way round");
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void aTrustedRemoteFolderIsNotTrustedOnAnotherHostAndIsHarmlessWhileDisconnected(
+            @org.junit.jupiter.api.io.TempDir Path dir) throws java.io.IOException {
+        TrustStore store = new TrustStore();
+        try (FakeRemoteHost one = new FakeRemoteHost(dir, "ana@one:22");
+                FakeRemoteHost two = new FakeRemoteHost(dir, "ana@two:22")) {
+            store.trust(one.path("/srv/app"));
+
+            org.junit.jupiter.api.Assertions.assertFalse(store.isTrusted(two.path("/srv/app")));
+        }
+        // Both hosts are gone: the entry resolves to nothing and matches nothing, without throwing.
+        org.junit.jupiter.api.Assertions.assertFalse(store.isTrusted(Path.of("/srv/app")));
+    }
 }

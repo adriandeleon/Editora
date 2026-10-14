@@ -39,7 +39,10 @@ class SessionScanTest {
 
         assertEquals(List.of(readable), scan.openable());
         assertEquals(
-                List.of(unmounted), scan.missing(), "an unmounted volume's entry is kept, a deleted file's is not");
+                List.of(unmounted, remote),
+                scan.missing(),
+                "an unmounted volume's entry and a file on a host that is not connected are kept: nothing is"
+                        + " known about either; a deleted file's is not");
         assertTrue(scan.covers(files));
         assertFalse(
                 scan.covers(new java.util.ArrayList<>(files)),
