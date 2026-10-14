@@ -61,6 +61,46 @@ final class IndexCoordinator {
 
         /** Honour the user's .gitignore when walking, as Find in Files and the project tree do. */
         boolean respectGitignore();
+
+        /** Keeps {@code content}, a closed file's text, in Local History before a bulk edit rewrites it. */
+        default void recordHistory(Path file, String content, java.util.function.Consumer<Boolean> done) {
+            done.accept(true);
+        }
+    }
+
+    /** What {@link #ops} is given for {@link Ops#openAndGoto}. */
+    @FunctionalInterface
+    interface Opener {
+        void openAndGoto(Path file, int line, int column);
+    }
+
+    /** Builds the production adapter without another long anonymous class in {@link MainController}. */
+    static Ops ops(
+            java.util.function.Supplier<Path> projectRoot,
+            Opener opener,
+            java.util.function.BooleanSupplier respectGitignore,
+            MarkdownLinkUpdater.HistoryRecorder history) {
+        return new Ops() {
+            @Override
+            public Path projectRoot() {
+                return projectRoot.get();
+            }
+
+            @Override
+            public void openAndGoto(Path file, int line, int column) {
+                opener.openAndGoto(file, line, column);
+            }
+
+            @Override
+            public boolean respectGitignore() {
+                return respectGitignore.getAsBoolean();
+            }
+
+            @Override
+            public void recordHistory(Path file, String content, java.util.function.Consumer<Boolean> done) {
+                history.record(file, content, done);
+            }
+        };
     }
 
     private final CoordinatorHost host;
@@ -103,13 +143,17 @@ final class IndexCoordinator {
     /** Markdown links follow a rename too; it rides this coordinator's rename hook and project seams. */
     final MarkdownLinkUpdater linkUpdater;
 
+    /** The project's Markdown link index: its own thread, its own lifetime rules (see the class). */
+    final MarkdownLinkGraph linkGraph;
+
     /** Go to Heading in Project: the same project, walk and overlay as Go to Symbol. */
     final MarkdownHeadingPicker headingPicker;
 
     IndexCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        this.linkUpdater = new MarkdownLinkUpdater(host, ops::projectRoot, ops::respectGitignore);
+        this.linkGraph = new MarkdownLinkGraph(host, ops::projectRoot, ops::respectGitignore);
+        this.linkUpdater = new MarkdownLinkUpdater(host, linkGraph, ops::recordHistory);
         this.headingPicker = new MarkdownHeadingPicker(host, ops);
         this.picker = new QuickOpen<>(
                 tr("index.gotoSymbol.title"),
@@ -156,6 +200,7 @@ final class IndexCoordinator {
 
     /** Called when the window's project changes — the previous project's symbols are now meaningless. */
     void onProjectChanged() {
+        linkGraph.onProjectChanged();
         headingPicker.dispose(); // a scan of the project that was is of no use now
         generation.incrementAndGet();
         index.clear();
@@ -170,6 +215,7 @@ final class IndexCoordinator {
      * like a complete one.
      */
     void onBufferSaved(EditorBuffer buffer) {
+        linkGraph.onSaved(buffer); // its own gate: the link index does not depend on the symbol index
         if (!isEnabled() || indexedRoot == null || buffer == null) {
             return;
         }
@@ -212,6 +258,7 @@ final class IndexCoordinator {
      * long, names a directory (whose contents were not reported), or arrives while a walk is in flight.
      */
     void onExternalChanges(List<ProjectPanel.FsChange> changes, boolean complete) {
+        linkGraph.onExternalChanges(changes, complete);
         Path root = indexedRoot;
         if (!complete || root == null || stale || building || changes.size() > MAX_INCREMENTAL) {
             markStale();
@@ -225,7 +272,7 @@ final class IndexCoordinator {
             }
             if (change.kind() == ProjectPanel.FsKind.DELETED) {
                 touched.remove(path);
-                onFileDeleted(path);
+                forget(path);
             } else if (!touched.contains(path)) {
                 touched.add(path);
             }
@@ -308,6 +355,12 @@ final class IndexCoordinator {
 
     /** {@code path} (a file, or a folder and everything under it) was deleted: stop offering it now. */
     void onFileDeleted(Path path) {
+        linkGraph.onDeleted(path);
+        forget(path);
+    }
+
+    /** The symbol index's half of a delete (and of a rename, which the link index follows on its own). */
+    private void forget(Path path) {
         if (indexedRoot == null || path == null || !Vfs.isLocal(path)) {
             return;
         }
@@ -327,7 +380,7 @@ final class IndexCoordinator {
 
     /** A rename is a delete of the old path now, and a re-walk before the new one is next asked about. */
     void onFileRenamed(Path from, Path to) {
-        onFileDeleted(from);
+        forget(from);
         markStale();
         linkUpdater.onRenamed(from, to);
     }
@@ -614,6 +667,7 @@ final class IndexCoordinator {
     void dispose() {
         worker.shutdownNow();
         linkUpdater.dispose();
+        linkGraph.dispose();
         headingPicker.dispose();
     }
 }

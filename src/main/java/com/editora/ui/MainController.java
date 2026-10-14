@@ -6395,22 +6395,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     };
 
-    private final IndexCoordinator indexCoordinator = new IndexCoordinator(coordinatorHost, new IndexCoordinator.Ops() {
-        @Override
-        public java.nio.file.Path projectRoot() {
-            return (windowProject != null && projectsEnabled()) ? java.nio.file.Path.of(windowProject.root()) : null;
-        }
-
-        @Override
-        public void openAndGoto(java.nio.file.Path file, int line, int column) {
-            MainController.this.openAndGoto(file, line, column);
-        }
-
-        @Override
-        public boolean respectGitignore() {
-            return config.getSettings().isSearchRespectGitignore();
-        }
-    });
+    private final IndexCoordinator indexCoordinator = new IndexCoordinator(
+            coordinatorHost,
+            IndexCoordinator.ops(
+                    this::windowProjectRoot,
+                    this::openAndGoto,
+                    () -> config.getSettings().isSearchRespectGitignore(),
+                    (file, text, done) -> historyCoordinator.recordBeforeReplace(file, text, done)));
 
     private final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
