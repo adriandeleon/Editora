@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -51,11 +50,7 @@ final class MarkdownLinkGraph {
     private static final Set<MarkdownLinkGraph> LIVE =
             Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
 
-    /** Files a wiki embed or an image link may name, beside the Markdown files themselves. */
-    private static final Set<String> ASSET_EXTENSIONS =
-            Set.of("png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif", "pdf", "mp4", "webm", "mp3", "wav");
-
-    private static final int MAX_ASSETS = 20_000;
+    private static final int MAX_OTHER_FILES = 20_000;
 
     private final CoordinatorHost host;
     private final Supplier<Path> projectRoot;
@@ -229,8 +224,8 @@ final class MarkdownLinkGraph {
                         markdown.add(p);
                         return ProjectWalk.Verdict.ACCEPT;
                     }
-                    if (isAsset(p) && assets.size() < MAX_ASSETS) {
-                        assets.add(p);
+                    if (assets.size() < MAX_OTHER_FILES) {
+                        assets.add(p); // any file may be named by a wiki link, as the linter's listing has it
                     }
                     return ProjectWalk.Verdict.SKIP; // only Markdown files count against the cap
                 });
@@ -258,12 +253,6 @@ final class MarkdownLinkGraph {
         return built;
     }
 
-    static boolean isAsset(Path file) {
-        String name = String.valueOf(file.getFileName()).toLowerCase(Locale.ROOT);
-        int dot = name.lastIndexOf('.');
-        return dot > 0 && ASSET_EXTENSIONS.contains(name.substring(dot + 1));
-    }
-
     /** Worker: publishes the wiki names when they changed and tells the listeners. */
     private void publish() {
         WikiTargets now = index == null ? WikiTargets.EMPTY : index.wikiTargets();
@@ -280,8 +269,13 @@ final class MarkdownLinkGraph {
      * starts (listeners hear when it lands). Any thread; never blocks.
      */
     WikiTargets targets() {
-        if (!wanted && !disposed && Platform.isFxApplicationThread()) {
-            submit(ix -> {});
+        if (!wanted && !disposed) {
+            wanted = true;
+            if (Platform.isFxApplicationThread()) {
+                submit(ix -> {});
+            } else {
+                Platform.runLater(() -> submit(ix -> {})); // the project root is the FX thread's to read
+            }
         }
         return targets;
     }
@@ -348,7 +342,7 @@ final class MarkdownLinkGraph {
                     if (text != null) {
                         ix.put(p, text);
                     }
-                } else if (isAsset(p)) {
+                } else if (Files.isRegularFile(p)) {
                     ix.addFile(p);
                 }
             }

@@ -1,12 +1,8 @@
 package com.editora.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
@@ -26,8 +22,8 @@ final class WikiNoteNames {
 
     private final Path root;
     private final long built = System.currentTimeMillis();
-    /** Lower-case file name, with and without a Markdown extension → the files called that. */
-    private final Map<String, List<Path>> byName = new HashMap<>();
+    /** The one resolver every wiki link goes through — the editor's follow and completion use it too. */
+    private com.editora.markdown.WikiTargets targets = com.editora.markdown.WikiTargets.EMPTY;
 
     private WikiNoteNames(Path root) {
         this.root = root;
@@ -35,19 +31,16 @@ final class WikiNoteNames {
 
     static WikiNoteNames of(Path root, boolean respectGitignore) {
         WikiNoteNames names = new WikiNoteNames(root);
+        List<Path> files = new ArrayList<>();
         GitignoreFilter filter = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
         ProjectWalk.walk(root, new ProjectWalk.Options(25, MAX_FILES, filter, () -> false), (file, rel, attrs) -> {
             if (!attrs.isRegularFile()) {
                 return ProjectWalk.Verdict.SKIP;
             }
-            String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
-            names.byName.computeIfAbsent(name, k -> new ArrayList<>(1)).add(file);
-            String bare = withoutMarkdownExtension(name);
-            if (!bare.equals(name)) {
-                names.byName.computeIfAbsent(bare, k -> new ArrayList<>(1)).add(file);
-            }
+            files.add(file);
             return ProjectWalk.Verdict.ACCEPT;
         });
+        names.targets = new com.editora.markdown.WikiTargets(root, files);
         return names;
     }
 
@@ -61,43 +54,11 @@ final class WikiNoteNames {
      * project root.
      */
     Path resolve(Path folder, String target) {
-        String wanted = target.strip().replace('\\', '/');
-        if (wanted.isEmpty()) {
+        if (target.isBlank()) {
             return null;
         }
-        if (wanted.indexOf('/') >= 0) {
-            for (Path base : new Path[] {folder, root}) {
-                for (String candidate : new String[] {wanted, wanted + ".md", wanted + ".markdown"}) {
-                    try {
-                        Path file = base.resolve(candidate).normalize();
-                        if (Files.isRegularFile(file)) {
-                            return file;
-                        }
-                    } catch (RuntimeException notAPath) {
-                        return null;
-                    }
-                }
-            }
-            return null;
-        }
-        List<Path> candidates = byName.getOrDefault(wanted.toLowerCase(Locale.ROOT), List.of());
-        Path only = null;
-        int inFolder = 0;
-        for (Path file : candidates) {
-            if (folder.equals(file.getParent())) {
-                only = inFolder++ == 0 ? file : only;
-            }
-        }
-        if (inFolder == 1) {
-            return only; // the note next to the document wins over its namesakes elsewhere
-        }
-        return inFolder == 0 && candidates.size() == 1 ? candidates.get(0) : null;
-    }
-
-    private static String withoutMarkdownExtension(String name) {
-        if (name.endsWith(".md")) {
-            return name.substring(0, name.length() - 3);
-        }
-        return name.endsWith(".markdown") ? name.substring(0, name.length() - 9) : name;
+        // The resolver asks which document the link is in; only its folder matters.
+        com.editora.markdown.WikiTargets.Resolved r = targets.resolve(folder.resolve("-"), target);
+        return r == null ? null : r.file();
     }
 }

@@ -66,6 +66,27 @@ final class WikiLinks {
         return inFolder(doc, target.strip());
     }
 
+    /**
+     * The path a Markdown link written in {@code document} should carry for wiki {@code target}: relative to
+     * the document's folder, with forward slashes; null when the target does not resolve.
+     */
+    static String relativePath(Path document, String target) {
+        Path file = resolve(document, target);
+        if (file == null || document == null || document.toAbsolutePath().getParent() == null) {
+            return null;
+        }
+        try {
+            return document.toAbsolutePath()
+                    .normalize()
+                    .getParent()
+                    .relativize(file)
+                    .toString()
+                    .replace('\\', '/');
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /** Without an index: the file of that name beside the document, a Markdown extension being optional. */
     private static Path inFolder(Path doc, String target) {
         Path folder = doc.getParent();
