@@ -178,12 +178,37 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (path == null || !com.editora.vfs.Vfs.isLocal(path) || path.getParent() == null) {
             return null;
         }
-        return linkTargets(path.getParent());
+        Path root = host.activeProjectRoot();
+        boolean inProject = root != null && com.editora.vfs.Vfs.isLocal(root) && path.startsWith(root);
+        boolean gitignore = host.config().getSettings().isSearchRespectGitignore();
+        return linkTargets(path.getParent(), inProject ? () -> wikiNames(root, gitignore) : null);
+    }
+
+    /** The project's file names for wiki links; rebuilt when stale, and after its files change. */
+    private volatile WikiNoteNames wikiNames;
+
+    private WikiNoteNames wikiNames(Path root, boolean respectGitignore) {
+        WikiNoteNames names = wikiNames;
+        if (names == null || names.stale(root)) {
+            names = WikiNoteNames.of(root, respectGitignore);
+            wikiNames = names;
+        }
+        return names;
     }
 
     /** As {@link #linkTargets(EditorBuffer)}, for links written in a file of {@code folder}. */
     static MarkdownLint.LinkTargets linkTargets(Path folder) {
+        return linkTargets(folder, null);
+    }
+
+    /**
+     * As {@link #linkTargets(Path)}, resolving wiki links through {@code names} (asked on the lint thread, at
+     * most once per run); without it only a note in the document's own folder can be vouched for, and a wiki
+     * link that is not there is left unjudged.
+     */
+    static MarkdownLint.LinkTargets linkTargets(Path folder, java.util.function.Supplier<WikiNoteNames> names) {
         Map<String, Boolean> exists = new HashMap<>();
+        WikiNoteNames[] project = new WikiNoteNames[1];
         Map<String, Set<String>> anchors = new HashMap<>();
         return new MarkdownLint.LinkTargets() {
             @Override
@@ -212,6 +237,27 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                     anchors.put(relative, found);
                 }
                 return anchors.get(relative);
+            }
+
+            @Override
+            public String wikiFile(String target) {
+                try {
+                    if (names == null) {
+                        for (String candidate : new String[] {target, target + ".md", target + ".markdown"}) {
+                            if (Files.isRegularFile(folder.resolve(candidate))) {
+                                return candidate;
+                            }
+                        }
+                        return ""; // no project to search: elsewhere is unknown, not missing
+                    }
+                    if (project[0] == null) {
+                        project[0] = names.get();
+                    }
+                    Path file = project[0].resolve(folder, target);
+                    return file == null ? null : folder.relativize(file).toString();
+                } catch (RuntimeException e) {
+                    return ""; // not a path this file system can express
+                }
             }
         };
     }
@@ -616,6 +662,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         Set<String> userOff = previews.settingsDisabledRules();
         com.editora.config.Settings settings = host.config().getSettings();
+        if (!settings.isMarkdownWikiLinks()) {
+            userOff.add(MarkdownLint.LINK_WIKI);
+        }
         boolean gitignore = settings.isSearchRespectGitignore();
         long mine = projectRun.incrementAndGet();
         projectExec.submit(() -> {
@@ -657,6 +706,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                     return com.editora.search.ProjectWalk.Verdict.ACCEPT;
                 });
         candidates.sort((a, b) -> a.toString().compareToIgnoreCase(b.toString()));
+        WikiNoteNames[] names = {WikiNoteNames.of(root, respectGitignore)};
         List<MarkdownLintPanel.FileIssues> files = new java.util.ArrayList<>();
         boolean truncated = walked.truncated();
         int total = 0;
@@ -679,7 +729,10 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             MarkdownLintOptions options = MarkdownLintRules.withSeverities(
                     settings, hit == null ? MarkdownLintOptions.DEFAULT : hit.options());
             List<Diagnostic> found = MarkdownLint.lint(
-                    text, off, options, file.getParent() == null ? null : linkTargets(file.getParent()));
+                    text,
+                    off,
+                    options,
+                    file.getParent() == null ? null : linkTargets(file.getParent(), () -> names[0]));
             if (found.isEmpty()) {
                 continue;
             }
@@ -725,6 +778,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     /** The project's file watcher saw changes: a touched markdownlint config re-lints the open buffers. */
     void onExternalChanges(List<ProjectPanel.FsChange> changes) {
         for (ProjectPanel.FsChange change : changes) {
+            if (change.kind() != ProjectPanel.FsKind.CHANGED) {
+                wikiNames = null; // a file came or went: the names wiki links resolve against are out of date
+            }
             Path name = change.path() == null ? null : change.path().getFileName();
             if (name != null && name.toString().startsWith(".markdownlint")) {
                 cache.remove(change.path());

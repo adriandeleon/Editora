@@ -77,6 +77,9 @@ public final class MarkdownLint {
     /** A link to a heading that does not exist in another Markdown file (Editora's own). */
     public static final String LINK_ANCHOR = "LINK002";
 
+    /** A wiki link ({@code [[note]]}) whose note, or heading in it, cannot be found (Editora's own). */
+    public static final String LINK_WIKI = "LINK003";
+
     /** Every rule this linter can emit, in code order — the source of truth for the per-rule UI. */
     public static final List<Rule> RULES = List.of(
             new Rule("MD001", false, List.of("heading-increment"), List.of("headings")),
@@ -123,7 +126,8 @@ public final class MarkdownLint {
             new Rule("MD056", false, List.of("table-column-count"), List.of("table")),
             new Rule("MD058", true, List.of("blanks-around-tables"), List.of("table")),
             new Rule(LINK_FILE, false, List.of("link-file-exists"), List.of("links", "images")),
-            new Rule(LINK_ANCHOR, false, List.of("link-file-anchor"), List.of("links")));
+            new Rule(LINK_ANCHOR, false, List.of("link-file-anchor"), List.of("links")),
+            new Rule(LINK_WIKI, false, List.of("wiki-link-exists"), List.of("links")));
 
     /** The rules that are off until the user (or a project config, by name) switches them on. */
     public static final Set<String> DEFAULT_OFF;
@@ -239,7 +243,9 @@ public final class MarkdownLint {
             Map.entry("MD058.before", "Table should be preceded by a blank line"),
             Map.entry("MD058.after", "Table should be followed by a blank line"),
             Map.entry("LINK001", "Linked file does not exist"),
-            Map.entry("LINK002", "Linked file has no such heading"));
+            Map.entry("LINK002", "Linked file has no such heading"),
+            Map.entry("LINK003", "Wiki link target not found"),
+            Map.entry("LINK003.heading", "Linked note has no such heading"));
 
     /** The catalog keys of every message this linter emits (for the catalog-parity test). */
     public static Set<String> messageKeys() {
@@ -273,6 +279,15 @@ public final class MarkdownLint {
 
         /** The heading anchors of Markdown file {@code path}, or {@code null} when they cannot be known. */
         Set<String> anchors(String path);
+
+        /**
+         * The file a wiki link's {@code target} ({@code note}, {@code folder/note}, {@code image.png}) names, as
+         * a path relative to the document: {@code null} when no file, or more than one, answers to it;
+         * {@code ""} when that cannot be told (the default: wiki links are then not judged).
+         */
+        default String wikiFile(String target) {
+            return "";
+        }
     }
 
     /**
@@ -335,7 +350,14 @@ public final class MarkdownLint {
         MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
         MarkdownLintDirectives directives = MarkdownLintDirectives.compute(blocks);
         MarkdownLintOptions opts = directives.options(options == null ? MarkdownLintOptions.DEFAULT : options);
-        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, directives, opts, edits, targets);
+        Emitter emit = new Emitter(
+                out,
+                disabled == null ? Set.of() : disabled,
+                directives,
+                opts,
+                edits,
+                targets,
+                new java.util.HashMap<>());
         Set<String> defined = definitions(blocks);
         int n = blocks.lineCount();
 
@@ -364,6 +386,7 @@ public final class MarkdownLint {
             int inTag = tagOpen ? (attributesOnly ? line.length() : tagEnd) : 0;
             bareUrls(emit, blocks, i, inTag);
             bareEmails(emit, blocks, i, inTag);
+            wikiLinks(emit, blocks, i);
             tagOpen = attributesOnly || endsInsideTag(line, Math.max(0, tagEnd));
 
             // MD052: [text][label] / [text][] with no matching definition.
@@ -404,7 +427,8 @@ public final class MarkdownLint {
             MarkdownLintDirectives directives,
             MarkdownLintOptions options,
             Map<Diagnostic, List<Edit>> edits,
-            LinkTargets targets) {
+            LinkTargets targets,
+            Map<String, Set<String>> ownAnchors) {
 
         /** Whether rule {@code code} is switched on at all (a rule that is off need not do its work). */
         boolean on(String code) {
@@ -684,6 +708,74 @@ public final class MarkdownLint {
             }
         }
         return to > from;
+    }
+
+    /**
+     * LINK003 on prose line {@code i}: {@code [[note]]}, {@code [[note#heading]]}, {@code [[note|label]]} and
+     * {@code ![[image.png]]} whose note (or heading in it) is not there. One left-to-right pass: the innermost
+     * {@code [[} before a {@code ]]} is the link.
+     */
+    private static void wikiLinks(Emitter emit, MarkdownBlocks blocks, int i) {
+        String line = blocks.line(i);
+        if (emit.targets() == null || !emit.on(LINK_WIKI) || line.indexOf("[[") < 0) {
+            return;
+        }
+        int open = -1;
+        for (int p = 0; p + 1 < line.length(); p++) {
+            char c = line.charAt(p);
+            if (c == '[' && line.charAt(p + 1) == '[') {
+                open = p;
+                p++;
+            } else if (c == ']' && line.charAt(p + 1) == ']' && open >= 0) {
+                int start = open;
+                open = -1;
+                String inner = line.substring(start + 2, p);
+                p++;
+                if (inner.isBlank()
+                        || inner.indexOf('[') >= 0
+                        || inner.indexOf(']') >= 0
+                        || blocks.inCodeSpan(i, start)
+                        || blocks.inHtmlComment(i, start)
+                        || (start > 0 && line.charAt(start - 1) == '\\')) {
+                    continue;
+                }
+                int bar = inner.indexOf('|');
+                String target = (bar < 0 ? inner : inner.substring(0, bar)).strip();
+                int hash = target.indexOf('#');
+                String heading = hash < 0 ? "" : target.substring(hash + 1).strip();
+                String note = hash < 0 ? target : target.substring(0, hash).strip();
+                String message = null;
+                if (note.isEmpty()) { // [[#heading]]: a heading of this document
+                    if (!heading.isEmpty() && !documentAnchors(emit, blocks).contains(MarkdownToc.slug(heading))) {
+                        message = "LINK003.heading";
+                    }
+                } else {
+                    String file = emit.targets().wikiFile(note);
+                    if (file == null) {
+                        message = "LINK003";
+                    } else if (!file.isEmpty() && !heading.isEmpty()) {
+                        Set<String> there = emit.targets().anchors(file);
+                        if (there != null && !there.contains(MarkdownToc.slug(heading))) {
+                            message = "LINK003.heading";
+                        }
+                    }
+                }
+                if (message != null) {
+                    emit.add(i + 1, start + 1, p + 1 - start, LINK_WIKI, message);
+                }
+            }
+        }
+    }
+
+    /** The anchors of the document being linted (built once per run, on the first link that needs them). */
+    private static Set<String> documentAnchors(Emitter emit, MarkdownBlocks blocks) {
+        return emit.ownAnchors().computeIfAbsent("", k -> {
+            StringBuilder text = new StringBuilder();
+            for (int j = 0; j < blocks.lineCount(); j++) {
+                text.append(blocks.line(j)).append('\n');
+            }
+            return MarkdownLintMore.anchorsOf(text.toString());
+        });
     }
 
     /** The end of the URL at {@code [start, end)} without sentence punctuation or an unbalanced {@code )}. */
