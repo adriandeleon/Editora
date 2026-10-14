@@ -340,6 +340,130 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void savingTrashesAPastedPictureTheDocumentNoLongerUses() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path theirs = Files.write(Files.createDirectories(assets(b)).resolve("theirs.png"), png(1, 1));
+        Path trashDir = Files.createDirectory(dir.resolve("trash" + counter++));
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.lang.reflect.Field seam = workflows.getClass().getDeclaredField("pastedImageBin");
+        seam.setAccessible(true);
+        seam.set(workflows, com.editora.io.Trash.directory(trashDir));
+        try {
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
+            Path pasted = assets(b).resolve("pasted-image.png");
+            assertTrue(Files.exists(pasted));
+
+            // Saved while still used: it stays.
+            FxTestSupport.runOnFx(() -> registry.run("file.save"));
+            awaitSaved(b);
+            assertTrue(Files.exists(pasted));
+
+            // The link is deleted, then the document saved: the picture goes to the trash, and only it.
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("no picture any more\n");
+                registry.run("file.save");
+            });
+            awaitSaved(b);
+            awaitGone(pasted); // moved out of assets/ once the background clean-up has run
+            awaitCleanup();
+            assertEquals(
+                    List.of("pasted-image.png"),
+                    names(trashDir).stream().limit(1).toList());
+            assertTrue(Files.exists(theirs), "a file the session did not create is never touched");
+            assertTrue(status().contains(tr("status.markdown.imagesTrashed", 1)), status());
+
+            fx.shared.getSettings().setMarkdownTrashUnusedPastedImages(false);
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> {
+                registry.run("edit.paste");
+                b.getArea().replaceText("again without\n");
+                registry.run("file.save");
+            });
+            awaitSaved(b);
+            assertTrue(Files.exists(pasted), "switched off: nothing is trashed");
+        } finally {
+            fx.shared.getSettings().setMarkdownTrashUnusedPastedImages(true);
+            seam.set(workflows, null);
+            clearClipboard();
+        }
+    }
+
+    /** A save is written on a background executor: wait until the buffer says it reached the disk. */
+    private void awaitSaved(EditorBuffer b) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (FxTestSupport.callOnFx(b::isDirty)) {
+            assertTrue(System.nanoTime() < deadline, "the save was never acknowledged");
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+        FxTestSupport.drainFx();
+        awaitCleanup();
+    }
+
+    /** Waits for the clean-up to have moved {@code file} away; fails when it never does. */
+    private void awaitGone(Path file) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (Files.exists(file)) {
+            assertTrue(System.nanoTime() < deadline, file + " was never moved to the trash");
+            awaitCleanup();
+            Thread.sleep(20);
+        }
+    }
+
+    /** The pasted-image clean-up runs after the save, off the FX thread: wait until it has settled. */
+    private void awaitCleanup() throws Exception {
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.util.concurrent.CompletableFuture<?> cleanup = FxTestSupport.field(workflows, "pastedImageCleanup");
+        cleanup.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
+    @Test
+    void aLinkPutBackWhileTheCleanUpIsRunningKeepsItsPicture() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path trashDir = Files.createDirectory(dir.resolve("trash" + counter++));
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.lang.reflect.Field bin = workflows.getClass().getDeclaredField("pastedImageBin");
+        java.lang.reflect.Field hook = workflows.getClass().getDeclaredField("beforePastedImageRecheck");
+        bin.setAccessible(true);
+        hook.setAccessible(true);
+        bin.set(workflows, com.editora.io.Trash.directory(trashDir));
+        java.util.concurrent.CountDownLatch scanned = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch restored = new java.util.concurrent.CountDownLatch(1);
+        hook.set(workflows, (Runnable) () -> {
+            scanned.countDown();
+            try {
+                restored.await(20, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
+            Path pasted = assets(b).resolve("pasted-image.png");
+            String withLink = text(b);
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("link deleted\n");
+                registry.run("file.save");
+            });
+            // The background scan has found the picture unused; before it is trashed, the user undoes.
+            assertTrue(scanned.await(20, java.util.concurrent.TimeUnit.SECONDS), "the clean-up never started");
+            FxTestSupport.runOnFx(() -> b.getArea().replaceText(withLink));
+            restored.countDown();
+            awaitCleanup();
+            assertTrue(Files.exists(pasted), "mentioned again by the time it would be trashed: it stays");
+            assertEquals(List.of(), names(trashDir));
+        } finally {
+            restored.countDown();
+            hook.set(workflows, null);
+            bin.set(workflows, null);
+            clearClipboard();
+        }
+    }
+
+    @Test
     void aTypstDocumentGetsAnImageCallInsteadOfAMarkdownLink() throws Exception {
         EditorBuffer b = document("paper.typ", "= Paper\n");
         Path picture = Files.write(Files.createDirectory(dir.resolve("src-typ")).resolve("fig.png"), png(2, 2));

@@ -694,6 +694,49 @@ class ConfigMigrationsTest {
         }
     }
 
+    // --- v120→121: markdownRemoteImages (boolean) → markdownRemoteImagePolicy ----------------------------
+
+    @Test
+    void remoteImagesOffBecomesThePolicyNeverAndTheOldKeyGoes() throws Exception {
+        JsonNode off = ConfigMigrations.remoteImagesToPolicy(mapper.readTree("{\"markdownRemoteImages\":false}"));
+        assertEquals("never", off.get("markdownRemoteImagePolicy").asText());
+        assertFalse(off.has("markdownRemoteImages"));
+
+        JsonNode on = ConfigMigrations.remoteImagesToPolicy(mapper.readTree("{\"markdownRemoteImages\":true}"));
+        assertFalse(on.has("markdownRemoteImagePolicy"), "on is the default: nothing is written");
+        assertFalse(on.has("markdownRemoteImages"));
+
+        JsonNode absent = ConfigMigrations.remoteImagesToPolicy(mapper.readTree("{\"tabSize\":4}"));
+        assertEquals(mapper.readTree("{\"tabSize\":4}"), absent);
+
+        JsonNode both = ConfigMigrations.remoteImagesToPolicy(
+                mapper.readTree("{\"markdownRemoteImages\":false,\"markdownRemoteImagePolicy\":\"ask\"}"));
+        assertEquals("ask", both.get("markdownRemoteImagePolicy").asText(), "a policy already stored wins");
+
+        // Safe to repeat.
+        assertEquals(off.deepCopy(), ConfigMigrations.remoteImagesToPolicy(off));
+    }
+
+    @Test
+    void upgradingASettingsFileFromV120CarriesRemoteImagesOffIntoTheLoadedSettings() throws Exception {
+        ObjectNode up = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS,
+                mapper.readTree("{\"schemaVersion\":120,\"markdownRemoteImages\":false}"),
+                mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                up.get("schemaVersion").asInt());
+        assertEquals("never", up.get("markdownRemoteImagePolicy").asText());
+        com.editora.config.Settings loaded = mapper.treeToValue(up, com.editora.config.Settings.class);
+        assertFalse(loaded.isMarkdownRemoteImages());
+        // And from the version that introduced the boolean, through every step in between.
+        ObjectNode older = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS,
+                mapper.readTree("{\"schemaVersion\":118,\"markdownRemoteImages\":false}"),
+                mapper);
+        assertEquals("never", older.get("markdownRemoteImagePolicy").asText());
+    }
+
     // --- v116→117: + pdfOrientation / pdfMargins / pdfCodeFontSize (additive) ---------------------------
 
     @Test

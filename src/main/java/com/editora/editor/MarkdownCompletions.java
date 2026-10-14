@@ -22,6 +22,7 @@ import com.editora.markdown.MarkdownCompletionContext;
 import com.editora.markdown.MarkdownCompletionContext.Context;
 import com.editora.markdown.MarkdownCompletionContext.Kind;
 import com.editora.markdown.MarkdownLinkAt;
+import com.editora.markdown.WikiTargets;
 
 /**
  * What a Markdown buffer offers where a dictionary word is the wrong suggestion: files and folders for a
@@ -133,6 +134,8 @@ public final class MarkdownCompletions implements CompletionProvider {
                     case ANCHOR -> anchors(ctx, document);
                     case REFERENCE -> references(ctx, document, manual);
                     case EMOJI -> emoji(ctx);
+                    case WIKI -> wikiNotes(ctx);
+                    case WIKI_HEADING -> wikiHeadings(ctx, document);
                 };
         return items.isEmpty() ? null : new Offer(ctx.start(), ctx.partial(), items);
     }
@@ -308,5 +311,106 @@ public final class MarkdownCompletions implements CompletionProvider {
             starts.add(c);
         }
         return starts;
+    }
+
+    // --- wiki links ----------------------------------------------------------------------------------------
+
+    /**
+     * The project's files as a wiki link may name them, for the document being edited: installed by the
+     * window (it owns the link index), and {@link WikiTargets#EMPTY} until then or outside a project.
+     */
+    private static volatile java.util.function.Function<Path, WikiTargets> wikiSource = doc -> WikiTargets.EMPTY;
+
+    public static void setWikiSource(java.util.function.Function<Path, WikiTargets> source) {
+        wikiSource = source == null ? doc -> WikiTargets.EMPTY : source;
+    }
+
+    private WikiTargets wikiTargets() {
+        try {
+            WikiTargets t = wikiSource.apply(documentPath.get());
+            return t == null ? WikiTargets.EMPTY : t;
+        } catch (RuntimeException e) {
+            return WikiTargets.EMPTY;
+        }
+    }
+
+    /**
+     * Notes first, then pictures; a name that starts with what was typed before one that only contains it. A
+     * Markdown file is offered without its extension, and by its project path when its name is not unique.
+     */
+    private List<Completion> wikiNotes(Context ctx) {
+        WikiTargets targets = wikiTargets();
+        Path doc = documentPath.get();
+        Path self = doc == null ? null : doc.toAbsolutePath().normalize();
+        String p = ctx.partial().strip().toLowerCase(Locale.ROOT);
+        List<String[]> rows = new ArrayList<>(); // {sort key, name to insert, detail}
+        for (Path file : targets.files()) {
+            if (file.equals(self)) {
+                continue;
+            }
+            boolean markdown = "markdown".equals(LanguageRegistry.forFileName(file.toString()));
+            String name = WikiTargets.name(file, false);
+            String lower = name.toLowerCase(Locale.ROOT);
+            int at = lower.indexOf(p);
+            if (at < 0) {
+                continue;
+            }
+            String rel = targets.root() == null
+                    ? name
+                    : targets.root().relativize(file).toString().replace('\\', '/');
+            String insert = name;
+            if (self != null) {
+                WikiTargets.Resolved r = targets.resolve(self, name);
+                if (r == null || !r.file().equals(file)) {
+                    insert = markdown ? WikiTargets.stripMarkdownExtension(rel) : rel; // ambiguous by name
+                }
+            }
+            rows.add(new String[] {(markdown ? "0" : "1") + (at == 0 ? "0" : "1") + lower, insert, rel});
+        }
+        rows.sort(java.util.Comparator.comparing(r -> r[0]));
+        List<Completion> out = new ArrayList<>();
+        for (String[] r : rows) {
+            if (out.size() >= MAX_ITEMS) {
+                break;
+            }
+            out.add(row(r[1], r[1], r[2], CompletionIconKind.FILE)
+                    .withProtocol(new Completion.Protocol(r[1], null, null)));
+        }
+        return out;
+    }
+
+    /** The headings of the note named before the {@code #}, written as their titles (a wiki link's form). */
+    private List<Completion> wikiHeadings(Context ctx, String document) {
+        String text = document;
+        if (!ctx.file().isEmpty()) {
+            text = null;
+            Path doc = documentPath.get();
+            WikiTargets.Resolved r = doc == null ? null : wikiTargets().resolve(doc, ctx.file());
+            try {
+                if (r != null
+                        && "markdown"
+                                .equals(LanguageRegistry.forFileName(r.file().toString()))
+                        && Files.isRegularFile(r.file())
+                        && Files.size(r.file()) <= MAX_ANCHOR_FILE_BYTES) {
+                    text = Files.readString(r.file());
+                }
+            } catch (IOException | RuntimeException e) {
+                text = null;
+            }
+        }
+        if (text == null) {
+            return List.of();
+        }
+        String p = ctx.partial().strip().toLowerCase(Locale.ROOT);
+        List<Completion> out = new ArrayList<>();
+        Set<String> seen = new TreeSet<>();
+        for (MarkdownAnchors.Anchor a : MarkdownAnchors.anchors(text)) {
+            String title = a.title().strip();
+            if (title.toLowerCase(Locale.ROOT).contains(p) && seen.add(title) && out.size() < MAX_ITEMS) {
+                out.add(row("#".repeat(a.level()) + " " + title, title, null, CompletionIconKind.OTHER)
+                        .withProtocol(new Completion.Protocol(title, null, null)));
+            }
+        }
+        return out;
     }
 }

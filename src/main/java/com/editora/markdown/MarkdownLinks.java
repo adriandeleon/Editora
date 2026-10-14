@@ -127,6 +127,11 @@ public final class MarkdownLinks {
         return label.strip().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
     }
 
+    /** Whether the document has a link reference definition {@code [label]: …}. */
+    public static boolean isDefined(String text, String label) {
+        return text.indexOf("]:") >= 0 && definitionMatch(text, label) != null;
+    }
+
     /** The destination {@code label} is defined to point at, or "" when it has no definition. */
     public static String definition(String text, String label) {
         Matcher m = definitionMatch(text, label);

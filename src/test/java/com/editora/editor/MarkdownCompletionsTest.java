@@ -159,4 +159,42 @@ class MarkdownCompletionsTest {
         assertNull(at("at 10:30"), "a time is not a shortcode");
         assertNull(at("Nice :zzzzqq"), "nothing matches");
     }
+
+    @Test
+    void doubleBracketsOfferTheProjectsNotesAndThenTheirHeadings() throws Exception {
+        Path root = doc.getParent();
+        Files.createDirectories(root.resolve("other"));
+        Files.writeString(root.resolve("other/guide.md"), "# Other guide\n");
+        com.editora.markdown.WikiTargets targets = new com.editora.markdown.WikiTargets(
+                root,
+                List.of(
+                        doc,
+                        root.resolve("docs/guide.md"),
+                        root.resolve("other/guide.md"),
+                        root.resolve("docs/my notes.md"),
+                        root.resolve("CHANGELOG.md"),
+                        root.resolve("diagram.png")));
+        MarkdownCompletions.setWikiSource(d -> targets);
+        try {
+            MarkdownCompletions.Offer all = at("See [[");
+            assertEquals(6, all.start());
+            assertEquals(
+                    List.of("CHANGELOG", "docs/guide", "other/guide", "my notes", "diagram.png"),
+                    inserts(all),
+                    "notes by name, then pictures; a name two notes share is written with its folder; not the document itself");
+
+            assertEquals(List.of("my notes"), inserts(at("See [[not")));
+            assertEquals(List.of("docs/guide", "other/guide"), inserts(at("![[gui")));
+            assertNull(at("See [[zzz"));
+
+            MarkdownCompletions.Offer headings = at("[[docs/guide#");
+            assertEquals(List.of("Guide", "Set up", "Using it"), inserts(headings), "plain titles, each once");
+            assertEquals(List.of("Set up"), inserts(at("[[docs/guide#set")));
+            assertNull(at("[[guide#"), "an ambiguous note has no headings to offer");
+            assertEquals(13, headings.start());
+        } finally {
+            MarkdownCompletions.setWikiSource(null);
+        }
+        assertNull(at("See [["), "no project, no notes");
+    }
 }

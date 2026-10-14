@@ -843,6 +843,28 @@ class MarkdownPrintLayoutFxTest {
         return FxTestSupport.callOnFx(() -> MarkdownPrintLayout.paginate(ast, null, assets, PAGE_W, PAGE_H, footer));
     }
 
+    /** Front matter the reader hides in the preview is left out of its print too, and printed otherwise. */
+    @Test
+    void hiddenFrontMatterIsNotPrinted() throws Exception {
+        String md = "---\ntitle: Secret Title\nauthor: Someone\n---\n\n# Notes\n\nBody text.\n";
+        try {
+            com.editora.editor.PreviewPrefs.set(0, 0, false);
+            String shown = pageText(paginate(md, null).get(0));
+            assertTrue(shown.contains("Secret Title") && shown.contains("author"), shown);
+            assertTrue(shown.contains("Body text."), shown);
+
+            com.editora.editor.PreviewPrefs.set(0, 0, true);
+            List<Node> pages = paginate(md, null);
+            assertEquals(1, pages.size());
+            String hidden = pageText(pages.get(0));
+            assertFalse(hidden.contains("Secret Title"), hidden);
+            assertFalse(hidden.contains("author"), hidden);
+            assertTrue(hidden.contains("Notes") && hidden.contains("Body text."), hidden);
+        } finally {
+            com.editora.editor.PreviewPrefs.set(0, 0, false);
+        }
+    }
+
     /** With a footer every page names the document and its place, and the content stops above it. */
     @Test
     void aFooterNamesTheDocumentAndThePageOnEveryPage() throws Exception {

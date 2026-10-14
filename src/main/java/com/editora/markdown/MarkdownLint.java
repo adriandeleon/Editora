@@ -77,6 +77,9 @@ public final class MarkdownLint {
     /** A link to a heading that does not exist in another Markdown file (Editora's own). */
     public static final String LINK_ANCHOR = "LINK002";
 
+    /** A wiki link ({@code [[note]]}) whose note, or heading in it, cannot be found (Editora's own). */
+    public static final String LINK_WIKI = "LINK003";
+
     /** Every rule this linter can emit, in code order — the source of truth for the per-rule UI. */
     public static final List<Rule> RULES = List.of(
             new Rule("MD001", false, List.of("heading-increment"), List.of("headings")),
@@ -123,7 +126,8 @@ public final class MarkdownLint {
             new Rule("MD056", false, List.of("table-column-count"), List.of("table")),
             new Rule("MD058", true, List.of("blanks-around-tables"), List.of("table")),
             new Rule(LINK_FILE, false, List.of("link-file-exists"), List.of("links", "images")),
-            new Rule(LINK_ANCHOR, false, List.of("link-file-anchor"), List.of("links")));
+            new Rule(LINK_ANCHOR, false, List.of("link-file-anchor"), List.of("links")),
+            new Rule(LINK_WIKI, false, List.of("wiki-link-exists"), List.of("links")));
 
     /** The rules that are off until the user (or a project config, by name) switches them on. */
     public static final Set<String> DEFAULT_OFF;
@@ -239,7 +243,9 @@ public final class MarkdownLint {
             Map.entry("MD058.before", "Table should be preceded by a blank line"),
             Map.entry("MD058.after", "Table should be followed by a blank line"),
             Map.entry("LINK001", "Linked file does not exist"),
-            Map.entry("LINK002", "Linked file has no such heading"));
+            Map.entry("LINK002", "Linked file has no such heading"),
+            Map.entry("LINK003", "Wiki link target not found"),
+            Map.entry("LINK003.heading", "Linked note has no such heading"));
 
     /** The catalog keys of every message this linter emits (for the catalog-parity test). */
     public static Set<String> messageKeys() {
@@ -273,6 +279,15 @@ public final class MarkdownLint {
 
         /** The heading anchors of Markdown file {@code path}, or {@code null} when they cannot be known. */
         Set<String> anchors(String path);
+
+        /**
+         * The file a wiki link's {@code target} ({@code note}, {@code folder/note}, {@code image.png}) names, as
+         * a path relative to the document: {@code null} when no file, or more than one, answers to it;
+         * {@code ""} when that cannot be told (the default: wiki links are then not judged).
+         */
+        default String wikiFile(String target) {
+            return "";
+        }
     }
 
     /**

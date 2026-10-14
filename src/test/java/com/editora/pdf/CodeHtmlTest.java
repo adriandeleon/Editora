@@ -106,4 +106,44 @@ class CodeHtmlTest {
         assertTrue(html.contains(">a&lt;b</pre>"), html);
         assertFalse(html.contains("<span"));
     }
+
+    @Test
+    void everyTokenColourOfTheLightPaletteHasAClassAndADarkColourThatReadsOnADarkPage() {
+        String css = CodeHtml.classCss(".x");
+        java.awt.Color darkPage = PdfTheme.hex("#0d1117");
+        java.util.regex.Matcher dark = java.util.regex.Pattern.compile(
+                        "  \\.x \\.(hl-[a-z]) \\{ color: (#[0-9a-f]{6}); }")
+                .matcher(css.substring(css.indexOf("prefers-color-scheme: dark"), css.indexOf("@media print")));
+        int rules = 0;
+        while (dark.find()) {
+            rules++;
+            assertTrue(
+                    PdfTheme.contrast(PdfTheme.hex(dark.group(2)), darkPage) >= 4.5,
+                    dark.group(1) + " " + dark.group(2) + " on the dark page");
+        }
+        assertEquals(9, rules);
+        // Every colour the theme gives a token is one the table knows (else it would fall back to inline).
+        for (String token : java.util.List.of(
+                "keyword",
+                "operator",
+                "string",
+                "regexp",
+                "escape",
+                "comment",
+                "number",
+                "constant",
+                "property",
+                "attribute",
+                "annotation",
+                "type",
+                "function",
+                "tag",
+                "code",
+                "heading",
+                "link",
+                "quote")) {
+            java.awt.Color c = PdfTheme.colorFor(java.util.List.of(token));
+            assertTrue(css.contains("color: " + CodeHtml.hex(c) + ";"), token + " " + CodeHtml.hex(c));
+        }
+    }
 }

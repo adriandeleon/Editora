@@ -295,6 +295,10 @@ final class EditingCoordinator {
     }
 
     void onCut() {
+        renumberingList(this::cutNow); // whole items cut from or pasted into an ordered list: numbered again
+    }
+
+    private void cutNow() {
         if (!activeEditable()) {
             return;
         }
@@ -334,6 +338,10 @@ final class EditingCoordinator {
 
     void onCopy() {
         EditorBuffer b = host.activeBuffer();
+        if (b != null && b.previewEditCommand(false)) { // text selected in the rendered preview
+            host.setStatus(tr("status.copied"));
+            return;
+        }
         if (nothingSelectedAtAnyCaret(b)) {
             host.setStatus(tr("status.nothingToCopy"));
             return;
@@ -437,6 +445,10 @@ final class EditingCoordinator {
     }
 
     void onPaste() {
+        renumberingList(this::pasteNow); // whole items cut from or pasted into an ordered list: numbered again
+    }
+
+    private void pasteNow() {
         if (!activeEditable()) {
             return;
         }
@@ -559,6 +571,7 @@ final class EditingCoordinator {
                     n -> java.nio.file.Files.exists(assets.resolve(n)), base, "png");
             java.nio.file.Path target = assets.resolve(name);
             writeFxImageToPng(img, target);
+            b.markdown().sessionImages().add(target); // ours: unused after a save, it may be trashed
             String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
             b.insertAtCaret(markupImageSnippet(b, rel, alt == null ? stripExtension(name) : alt));
             host.setStatus(tr("status.markdown.imagePasted", rel));
@@ -598,6 +611,7 @@ final class EditingCoordinator {
                             n -> java.nio.file.Files.exists(assets.resolve(n)), base, ext);
                     target = assets.resolve(name);
                     java.nio.file.Files.copy(source, target);
+                    b.markdown().sessionImages().add(target);
                 }
                 String rel = com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target);
                 if (out.length() > 0) {
@@ -651,6 +665,8 @@ final class EditingCoordinator {
                                             found.ext());
                                     java.nio.file.Path target = assets.resolve(name);
                                     java.nio.file.Files.write(target, found.bytes());
+                                    javafx.application.Platform.runLater(
+                                            () -> b.markdown().sessionImages().add(target));
                                     snippet = markupImageSnippet(
                                             b,
                                             com.editora.markdown.MarkdownImagePaste.relativePath(baseDir, target),
@@ -2361,6 +2377,10 @@ final class EditingCoordinator {
 
     /** Selects the whole document in the active area (no edit, so it works in read-only/view mode too). */
     void selectAll() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.previewEditCommand(true)) {
+            return; // the rendered preview is where the user is: its text is what is selected
+        }
         CodeArea area = host.activeArea();
         if (area != null) {
             collapseCarets(); // a leftover extra caret would type alongside the replaced selection

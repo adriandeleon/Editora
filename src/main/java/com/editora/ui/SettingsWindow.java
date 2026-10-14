@@ -233,7 +233,6 @@ public class SettingsWindow {
     private CheckBox minimapCheck;
     private CheckBox wordWrapCheck;
     private CheckBox wordWrapProseCheck;
-    private CheckBox markdownRemoteImagesCheck;
     private TextField markdownAssetsField;
     private Spinner<Integer> markdownTocMinSpinner;
     private Spinner<Integer> markdownTocMaxSpinner;
@@ -2834,6 +2833,22 @@ public class SettingsWindow {
                 Settings::isMarkdownSmartTypography,
                 Settings::setMarkdownSmartTypography,
                 "markdown smart typography curly quotes dashes ellipsis typographic");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownWikiLinks",
+                true,
+                Settings::isMarkdownWikiLinks,
+                Settings::setMarkdownWikiLinks,
+                "markdown wiki links double brackets note backlinks obsidian zettelkasten");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownTrashUnusedPastedImages",
+                true,
+                Settings::isMarkdownTrashUnusedPastedImages,
+                Settings::setMarkdownTrashUnusedPastedImages,
+                "markdown pasted dropped image unused orphan trash delete clean up save");
         choiceRow(
                 editing,
                 Category.MARKDOWN,
@@ -2894,12 +2909,15 @@ public class SettingsWindow {
                 null,
                 markdownPreviewThemeCombo,
                 "markdown preview theme light dark follow app color colour");
-        checkRow(
+        choiceRow(
                 preview,
                 Category.MARKDOWN,
-                markdownRemoteImagesCheck,
-                tr("settings.markdownRemoteImages.desc"),
-                "markdown preview remote images web http network privacy tracking badge");
+                "markdownRemoteImagePolicy",
+                true,
+                Settings.REMOTE_IMAGE_POLICIES,
+                Settings::getMarkdownRemoteImagePolicy,
+                Settings::setMarkdownRemoteImagePolicy,
+                "markdown preview remote images web http network privacy tracking badge load ask always never");
         checkRow(
                 preview,
                 Category.MARKDOWN,
@@ -2954,7 +2972,6 @@ public class SettingsWindow {
 
     /** The Markdown page's controls beyond its on/off switches; each writes its own setting and applies. */
     private void buildMarkdownControls() {
-        markdownRemoteImagesCheck = viewCheck(tr("settings.markdownRemoteImages"), Settings::setMarkdownRemoteImages);
         markdownAssetsField = new TextField();
         markdownAssetsField.setPromptText(Settings.DEFAULT_MARKDOWN_ASSETS_FOLDER);
         markdownAssetsField.setPrefWidth(220);
@@ -3026,7 +3043,6 @@ public class SettingsWindow {
         loading = true;
         try {
             wordWrapProseCheck.setSelected(s.isWordWrapProse());
-            markdownRemoteImagesCheck.setSelected(s.isMarkdownRemoteImages());
             markdownAssetsField.setText(s.getMarkdownAssetsFolder());
             markdownTocMinSpinner.getValueFactory().setValue(s.getMarkdownTocMinLevel());
             markdownTocMaxSpinner.getValueFactory().setValue(s.getMarkdownTocMaxLevel());

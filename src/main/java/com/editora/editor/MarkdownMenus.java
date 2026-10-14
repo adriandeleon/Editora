@@ -60,6 +60,9 @@ final class MarkdownMenus {
                 enabledWhen(item("command.markdown.linkToReference", null, () -> md.convertLink(false)), () -> onLink),
                 enabledWhen(item("command.markdown.linkToInline", null, () -> md.convertLink(true)), () -> onLink),
                 enabledWhen(
+                        item("command.markdown.convertWikiLink", null, md::convertWikiLink),
+                        () -> md.linkForEditing()[2] != null),
+                enabledWhen(
                         item("command.markdown.openLink", null, b::openLinkUnderCaret),
                         () -> b.linkUnderCaret() != null),
                 new SeparatorMenuItem(),
