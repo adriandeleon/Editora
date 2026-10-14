@@ -227,13 +227,23 @@ final class MarkdownPreview {
     private PreviewLightbox lightbox;
 
     /** A picture or a diagram was clicked: shows it enlarged over the window, until Esc or a click. */
-    private void enlarge(Node picture) {
+    void enlarge(Node picture) {
         javafx.scene.image.Image image = PreviewLightbox.imageOf(picture);
         if (image == null || pane == null || pane.getScene() == null) {
             return; // not loaded (a placeholder, an error): nothing to enlarge
         }
         closeLightbox();
         lightbox = PreviewLightbox.show(pane, image);
+    }
+
+    /** The picture or diagram {@code node} is (in), when a click on it would open it enlarged; else null. */
+    static Node enlargeableAt(Node node) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n.hasProperties() && n.getProperties().containsKey(MarkdownRenderer.ENLARGE_KEY)) {
+                return n;
+            }
+        }
+        return null;
     }
 
     /** The enlarged picture now showing, or null. */

@@ -86,12 +86,16 @@ final class PreviewMenu {
             selectAll.setOnAction(ev -> b.markdownPreview.selection().selectAll());
             MenuItem toSource = new MenuItem(tr("previewmenu.goToSource"));
             toSource.setOnAction(ev -> b.markdownPreview.jumpToSourceAt(b.previewMenuHit, b.previewMenuY));
+            MenuItem enlarge = new MenuItem(tr("previewmenu.enlarge"));
+            enlarge.setOnAction(ev -> b.markdownPreview.enlarge(MarkdownPreview.enlargeableAt(b.previewMenuHit)));
             menu.getItems().add(0, copy);
-            menu.getItems().addAll(selectAll, toSource);
+            menu.getItems().addAll(selectAll, toSource, enlarge);
             menu.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {
                 MarkdownPreview preview = b.markdownPreview;
                 copy.setVisible(preview != null && preview.selection().isActive());
                 selectAll.setDisable(preview == null);
+                javafx.scene.Node picture = MarkdownPreview.enlargeableAt(b.previewMenuHit);
+                enlarge.setVisible(preview != null && picture != null && PreviewLightbox.imageOf(picture) != null);
                 toSource.setVisible(preview != null && preview.sourceLineAt(b.previewMenuHit, b.previewMenuY) >= 0);
             });
             // What the pointer was on when the menu opened: shown only when it was on one.

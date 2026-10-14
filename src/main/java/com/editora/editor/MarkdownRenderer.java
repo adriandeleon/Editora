@@ -1462,6 +1462,19 @@ public final class MarkdownRenderer {
                 e.consume();
             }
         });
+        // The keyboard's way in: a Tab stop, opened with Enter or Space (Esc closes what opens).
+        picture.setFocusTraversable(true);
+        picture.getStyleClass().add("md-enlargeable");
+        picture.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        picture.setAccessibleHelp(Messages.tr("previewmenu.enlarge"));
+        picture.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            boolean opens =
+                    e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE;
+            if (opens && !picture.getProperties().containsKey(LINK_KEY)) { // a linked picture: the link's key
+                open.accept(picture);
+                e.consume();
+            }
+        });
         return picture;
     }
 

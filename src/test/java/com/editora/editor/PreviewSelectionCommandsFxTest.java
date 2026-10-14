@@ -158,6 +158,55 @@ class PreviewSelectionCommandsFxTest {
     }
 
     @Test
+    void theContextMenuOpensAPictureEnlarged(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        javax.imageio.ImageIO.write(
+                new java.awt.image.BufferedImage(40, 20, java.awt.image.BufferedImage.TYPE_INT_RGB),
+                "png",
+                dir.resolve("pic.png").toFile());
+        EditorFx.onFx(() -> {
+            buffer = new EditorBuffer();
+            buffer.setLanguageOverride("markdown");
+            buffer.getArea().replaceText("Text.\n\n![a picture](pic.png)\n");
+            buffer.setPath(dir.resolve("doc.md"));
+            stage = EditorFx.show(buffer, 1000, 500);
+            buffer.setMarkdownViewMode(MarkdownViewMode.SPLIT);
+        });
+        await(
+                () -> {
+                    MarkdownPreview p = EditorFx.field(buffer, "markdownPreview");
+                    ScrollPane pane = EditorFx.field(buffer, "previewPane");
+                    return p != null
+                            && pane != null
+                            && pane.getScene() != null
+                            && pane.getScene().getWindow() != null
+                            && p.column().lookupAll(".md-image").stream()
+                                    .anyMatch(n -> ((javafx.scene.image.ImageView) n).getImage() != null);
+                },
+                "the picture never loaded");
+        EditorFx.onFx(() -> {
+            MarkdownPreview preview = EditorFx.field(buffer, "markdownPreview");
+            ScrollPane pane = EditorFx.field(buffer, "previewPane");
+            javafx.scene.Node picture = preview.column().lookup(".md-image");
+            javafx.scene.Node text = preview.column().lookup(".md-text");
+            java.util.function.Consumer<javafx.scene.Node> ask = on -> pane.fireEvent(new ContextMenuEvent(
+                    ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 200, 200, false, new PickResult(on, 5, 5)));
+            ask.accept(text);
+            ContextMenu menu = EditorFx.field(buffer, "previewContextMenu");
+            MenuItem enlarge = EditorFx.menuItem(menu.getItems(), tr("previewmenu.enlarge"));
+            assertFalse(enlarge.isVisible(), "offered on a picture only");
+            menu.hide();
+            ask.accept(picture);
+            assertTrue(enlarge.isVisible());
+            enlarge.fire();
+            assertTrue(preview.lightbox() != null && preview.lightbox().isShowing());
+            preview.lightbox().close();
+            menu.hide();
+        });
+        close();
+    }
+
+    @Test
     void theContextMenuOffersCopyOfTheSelectionSelectAllAndTheWayToTheSource() throws Exception {
         MarkdownPreview preview = open(MarkdownViewMode.SPLIT);
         EditorFx.onFx(() -> {
