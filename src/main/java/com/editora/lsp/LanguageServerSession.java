@@ -297,9 +297,20 @@ final class LanguageServerSession implements LanguageClient {
         this.initializationOptionsSupplier = () -> initializationOptions;
     }
 
+    private volatile java.util.Map<String, String> remoteEnvironment = java.util.Map.of();
+
     /** Configures work that is deliberately resolved by the manager's start executor, immediately before
      *  {@link #start()}. This keeps filesystem/JDK discovery out of the FX-thread session-routing path. */
     void configureStart(List<String> command, java.util.function.Supplier<Object> initializationOptionsSupplier) {
+        configureStart(command, java.util.Map.of(), initializationOptionsSupplier);
+    }
+
+    /** As above, with variables a remote server is started with (a local one gets them from its command). */
+    void configureStart(
+            List<String> command,
+            java.util.Map<String, String> remoteEnvironment,
+            java.util.function.Supplier<Object> initializationOptionsSupplier) {
+        this.remoteEnvironment = java.util.Map.copyOf(remoteEnvironment);
         this.command = List.copyOf(command);
         this.initializationOptionsSupplier =
                 initializationOptionsSupplier == null ? () -> null : initializationOptionsSupplier;
@@ -321,7 +332,7 @@ final class LanguageServerSession implements LanguageClient {
                 uris = WireUris.remote(com.editora.vfs.Vfs.authorityOf(root));
                 process = com.editora.process.ExecTargets.forPath(root)
                         .start(com.editora.process.ExecSpec.of(
-                                        command, root, java.util.Map.of(), com.editora.process.ExecSpec.Locale.USER)
+                                        command, root, remoteEnvironment, com.editora.process.ExecSpec.Locale.USER)
                                 .withLongLived(true));
             } else {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
