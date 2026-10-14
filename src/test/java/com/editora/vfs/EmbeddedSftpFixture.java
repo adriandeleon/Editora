@@ -52,6 +52,12 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
 
     private volatile Path remoteRoot;
 
+    /**
+     * Every process the shell mode started. A real SSH server leaves them running when it stops, and so does
+     * this one while it is up; {@link #close} ends them, so no test leaves programs behind for the next.
+     */
+    private static final List<Process> STARTED = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /** Every command line the server was asked to run (real-shell mode), in order. */
     private final List<String> commands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -192,6 +198,11 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         }
         fileSystems.shutdown();
         server.stop(true);
+        for (Process p : STARTED) {
+            p.descendants().forEach(ProcessHandle::destroyForcibly);
+            p.destroyForcibly();
+        }
+        STARTED.clear();
     }
 
     /**
@@ -240,6 +251,7 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
                     linux ? List.of("setsid", "/bin/sh", "-c", commandLine) : List.of("/bin/sh", "-c", commandLine);
             Process started = new ProcessBuilder(argv).start();
             process = started;
+            STARTED.add(started);
             Thread stdout = pump(started.getInputStream(), out, false);
             Thread stderr = pump(started.getErrorStream(), err, false);
             pump(in, started.getOutputStream(), true);

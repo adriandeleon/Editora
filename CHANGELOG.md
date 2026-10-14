@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote folders notice outside changes (opt-in).** With remote commands switched on, a remote project's
+  folder is watched on its host, so a `git pull` or a build there updates the Project tree, Git, language
+  servers and an open file that changed, as for a local folder. Hosts with `inotifywait` report at once;
+  others are checked every few seconds.
 - **Run, builds and tests for remote folders (opt-in).** With remote commands switched on, Run on a remote file,
   script / make / npm run configurations in a remote project, and Maven, Gradle, npm, Cargo and Go builds and
   test runs start on the host, over the same SSH connection; output, input and Stop work as for local runs.
