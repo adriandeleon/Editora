@@ -39,6 +39,13 @@ final class SnippetTyping {
         if (prose && block && !(lineStart && TabExpansion.fitsInProse(before, m.start(), m.snippet()))) {
             return null;
         }
+        if (prose && !block) {
+            String line = a.getText(a.getCurrentParagraph());
+            String after = line.substring(Math.min(a.getCaretColumn(), line.length()));
+            if (!(lineStart && TabExpansion.inlineFitsInProse(before, m.start(), after))) {
+                return null;
+            }
+        }
         // The highlighter's classes say where the trigger sits. A trigger typed a moment ago may not be
         // restyled yet, so the character before it is asked too: both are comment or string inside one.
         int start = base + m.start();

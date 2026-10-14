@@ -105,6 +105,36 @@ public final class TabExpansion {
         return true;
     }
 
+    /**
+     * Whether a trigger is an ordinary word (or a few): letters and single blanks only — {@code code},
+     * {@code link}, {@code bold and italic} — as opposed to one nobody types by accident ({@code h2},
+     * {@code ;sig}, {@code 3x2table}).
+     */
+    public static boolean wordTrigger(String trigger) {
+        if (trigger.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < trigger.length(); i++) {
+            char c = trigger.charAt(i);
+            if (!Character.isLetter(c) && c != ' ') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether Tab may expand an <em>inline</em> snippet in prose, its trigger starting at {@code start} of
+     * the line text {@code before} with {@code after} following the caret: a word trigger only when the word
+     * is the only thing on its line. In running prose "see the code" followed by Tab is a sentence and a Tab,
+     * not a request for a pair of backticks; the completion popup remains the way to expand it there. A
+     * trigger that is not an ordinary word expands anywhere.
+     */
+    public static boolean inlineFitsInProse(String before, int start, String after) {
+        return !wordTrigger(before.substring(start))
+                || (before.substring(0, start).isBlank() && after.isBlank());
+    }
+
     private static boolean isIdentifierPart(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
     }
