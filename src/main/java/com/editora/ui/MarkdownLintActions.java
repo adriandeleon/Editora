@@ -566,11 +566,6 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         ConfigHit hit = configFor(path);
         if (hit != null) {
-            String name = hit.file().getFileName().toString();
-            if (!(name.equals(".markdownlint.json") || name.equals(".markdownlint.jsonc"))) {
-                host.setStatus(tr("status.markdownLint.projectConfigManual", d.code(), name));
-                return;
-            }
             writeRuleOff(hit.file(), d.code());
             return;
         }
@@ -590,9 +585,12 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     private void writeRuleOff(Path config, String code) {
         try {
             String before = Files.isRegularFile(config) ? Files.readString(config) : "";
-            String after = MarkdownLintConfig.withRuleOff(before, code);
+            String name = String.valueOf(config.getFileName());
+            String after = MarkdownLintConfig.withRuleOff(name, before, code);
             if (after == null) {
-                host.setStatus(tr("status.markdownLint.configError", config.getFileName()));
+                // No safe edit (options written as a nested mapping, a file that does not parse): say what to add.
+                host.setStatus(
+                        tr("status.markdownLint.projectConfigManual", MarkdownLintConfig.manualLine(name, code), name));
                 return;
             }
             if (config.getParent() != null) {
@@ -647,12 +645,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             host.setStatus(tr("status.markdownLint.noProject"));
             return;
         }
+        // The panel is put in project mode before its window opens: opening it refreshes the active file's
+        // list otherwise, and that refresh cancels the project run it was opened for.
+        MarkdownLintPanel panel = host.markdownLintPanel();
+        panel.showProjectScanning(String.valueOf(root.getFileName()));
         if (!host.toolWindows().isOpen(host.markdownLintToolWindow())) {
             host.toolWindows().setAvailable(host.markdownLintToolWindow(), true);
             host.toolWindows().open(host.markdownLintToolWindow());
         }
-        MarkdownLintPanel panel = host.markdownLintPanel();
-        panel.showProjectScanning(String.valueOf(root.getFileName()));
         Map<Path, String> open = new HashMap<>();
         for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
             EditorBuffer b = host.bufferOf(tab);
@@ -773,6 +773,56 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             }
         }
         bar.setMarkdownLint(errors, warnings, hints);
+    }
+
+    /** How often, at most, {@link #checkConfigs} looks at the disk. */
+    long configCheckIntervalNanos = 2_000_000_000L;
+
+    private long lastConfigCheck;
+    /** The configs the open buffers resolved to, with their modification times, at the last look. */
+    private String configSignature;
+
+    private static final int MAX_BUFFERS_CHECKED = 50;
+
+    /**
+     * Re-lints the open buffers when a markdownlint config one of them resolved to has changed, appeared or
+     * gone — wherever it lives, inside an open project or not. Called when the app looks for files changed on
+     * disk (the window regaining focus, a tab switch): outside a project nothing watches the disk, and that is
+     * the moment an edit made in another program is noticed. Bounded: at most every two seconds, the first
+     * fifty Markdown buffers, one look per folder.
+     */
+    void checkConfigs() {
+        long now = System.nanoTime();
+        if (!previews.markdownLintEnabled()
+                || (lastConfigCheck != 0 && now - lastConfigCheck < configCheckIntervalNanos)) {
+            return;
+        }
+        lastConfigCheck = now;
+        Path root = host.activeProjectRoot();
+        Map<Path, String> byFolder = new HashMap<>();
+        StringBuilder signature = new StringBuilder();
+        int looked = 0;
+        for (javafx.scene.control.Tab tab : host.editorArea().tabs()) {
+            EditorBuffer b = host.bufferOf(tab);
+            Path path = b == null || !b.isMarkdown() ? null : b.getPath();
+            if (path == null || path.getParent() == null || !com.editora.vfs.Vfs.isLocal(path)) {
+                continue;
+            }
+            if (looked++ >= MAX_BUFFERS_CHECKED) {
+                break;
+            }
+            signature.append(byFolder.computeIfAbsent(path.getParent(), folder -> {
+                ConfigHit hit = configFor(path, root);
+                CacheEntry entry = hit == null ? null : cache.get(hit.file());
+                return hit == null ? "-;" : hit.file() + "@" + (entry == null ? 0 : entry.mtime()) + ";";
+            }));
+        }
+        String seen = signature.toString();
+        boolean changed = configSignature != null && !configSignature.equals(seen);
+        configSignature = seen;
+        if (changed) {
+            previews.applyMarkdownLint();
+        }
     }
 
     /** The project's file watcher saw changes: a touched markdownlint config re-lints the open buffers. */

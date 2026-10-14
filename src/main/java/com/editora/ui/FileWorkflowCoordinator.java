@@ -1151,6 +1151,7 @@ final class FileWorkflowCoordinator {
         if (checkingExternalChanges || host.editorArea() == null) {
             return;
         }
+        host.previews().lint().checkConfigs(); // a markdownlint config edited elsewhere re-lints the open buffers
         Tab tab = host.editorArea().selectedTab();
         EditorBuffer buffer = host.bufferOf(tab);
         if (buffer == null || buffer.getPath() == null) {
