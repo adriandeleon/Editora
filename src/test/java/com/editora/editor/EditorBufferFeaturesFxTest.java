@@ -11,6 +11,7 @@ import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Region;
 import javafx.stage.Stage;
 
 import com.editora.config.NoteScope;
@@ -164,6 +165,35 @@ class EditorBufferFeaturesFxTest {
             buffer.setHttpPreviewNode(null);
             assertEquals(MarkdownViewMode.EDITOR, buffer.getMarkdownViewMode());
             assertFalse(buffer.hasPreview());
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void aSelfScrollingPreviewStartsBelowTheModeToggle() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = buffer("http", "GET https://example.org\n");
+            // The response panel's toolbar runs to the right edge, where the toggle floats: it hid the
+            // rightmost buttons (Clear, Save response) and took their clicks.
+            Label panel = new Label("No request run yet");
+            panel.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+            buffer.setHttpPreviewNode(panel);
+            Label toggle = new Label("Editor Split Preview");
+            toggle.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
+            buffer.setViewModeControl(toggle);
+            Stage stage = EditorFx.show(buffer, 700, 360);
+            for (MarkdownViewMode mode : List.of(MarkdownViewMode.SPLIT, MarkdownViewMode.PREVIEW)) {
+                buffer.setMarkdownViewMode(mode);
+                buffer.getNode().applyCss();
+                buffer.getNode().layout();
+                Bounds control = toggle.localToScene(toggle.getLayoutBounds());
+                Bounds content = panel.localToScene(panel.getLayoutBounds());
+                assertTrue(control.getHeight() > 0, mode + ": the toggle is shown");
+                assertTrue(
+                        content.getMinY() >= control.getMaxY(),
+                        mode + ": the panel starts below the toggle: " + content + " vs " + control);
+            }
+            stage.close();
             buffer.dispose();
         });
     }

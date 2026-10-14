@@ -155,6 +155,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
   other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
+- **Previews:** the floating Editor / Split / Preview toggle covered the right end of the HTTP response panel's
+  toolbar (hiding Clear and Save response), the CSV grid's toolbar and the first row of the JSON / YAML / XML tree.
+  Those previews now start below the toggle, as the Markdown preview already did.
 - **Settings ▸ Sync:** the reason Connect was refused (no repository or branch, an unreachable repository, a
   GitHub error) could be replaced by "Not connected." a moment later, when the GitHub sign-in check finished. It now
   stays until the repository is edited, Connect is tried again, or sync is disconnected.
