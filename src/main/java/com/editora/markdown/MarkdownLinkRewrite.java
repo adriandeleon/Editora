@@ -117,7 +117,51 @@ public final class MarkdownLinkRewrite {
             }
             offset = newline + 1;
         }
+        if (wiki) {
+            dropDefinedReferences(text, out);
+        }
         return out;
+    }
+
+    /**
+     * {@code [[note]]} is a reference link in brackets, not a wiki link, when the document defines
+     * {@code [note]: …} — the parser's rule; such an entry is taken out again.
+     */
+    private static void dropDefinedReferences(String text, List<Link> out) {
+        java.util.Set<String> labels = null;
+        for (Link link : out) {
+            if (link.kind() == Kind.DEFINITION) {
+                int lineStart = text.lastIndexOf('\n', link.start() - 1) + 1;
+                int open = text.indexOf('[', lineStart);
+                int close = text.indexOf("]:", open);
+                if (open >= 0 && close > open && close < link.start()) {
+                    if (labels == null) {
+                        labels = new java.util.HashSet<>();
+                    }
+                    labels.add(text.substring(open + 1, close)
+                            .strip()
+                            .replaceAll("\\s+", " ")
+                            .toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        if (labels == null) {
+            return;
+        }
+        java.util.Set<String> defined = labels;
+        out.removeIf(link -> {
+            if (!link.isWiki()) {
+                return false;
+            }
+            int close = text.indexOf("]]", link.start());
+            int open = text.lastIndexOf("[[", link.start());
+            return open >= 0
+                    && close > open
+                    && defined.contains(text.substring(open + 2, close)
+                            .strip()
+                            .replaceAll("\\s+", " ")
+                            .toLowerCase(java.util.Locale.ROOT));
+        });
     }
 
     /**
@@ -161,15 +205,23 @@ public final class MarkdownLinkRewrite {
             }
             from = open + 2;
             String inner = line.substring(open + 2, close);
+            // The parser's rules (MarkdownWikiLinks): not glued to a word, not the text of an inline link
+            // ("[[note]](url)" stays what it was), never in code.
+            int lead0 = open > 0 && line.charAt(open - 1) == '!' ? open - 1 : open;
             if (MarkdownBlocks.inRanges(code, open)
                     || isEscaped(line, open)
                     || inner.isBlank()
                     || inner.indexOf('[') >= 0
-                    || inner.indexOf(']') >= 0) {
+                    || inner.indexOf(']') >= 0
+                    || (lead0 > 0 && Character.isLetterOrDigit(line.charAt(lead0 - 1)))
+                    || (close + 2 < line.length() && line.charAt(close + 2) == '(')) {
                 continue;
             }
             int bar = inner.indexOf('|');
             String target = bar < 0 ? inner : inner.substring(0, bar);
+            if (target.endsWith("\\")) {
+                target = target.substring(0, target.length() - 1); // "\|": the pipe as a table cell writes it
+            }
             int hash = target.indexOf('#');
             String name = hash < 0 ? target : target.substring(0, hash);
             int lead = name.length() - name.stripLeading().length();

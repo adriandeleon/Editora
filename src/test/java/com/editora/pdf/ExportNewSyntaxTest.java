@@ -353,4 +353,69 @@ class ExportNewSyntaxTest {
         }
         assertTrue(html.contains("<title>The Title</title>"), "it still names the page");
     }
+
+    @Test
+    void wikiLinksLeaveEveryExportAsOrdinaryLinksToTheFilesTheyResolveTo() throws Exception {
+        Files.writeString(dir.resolve("Other Note.md"), "# Other\n\n## The Part\n");
+        Files.write(
+                dir.resolve("pic.png"),
+                java.util.Base64.getDecoder()
+                        .decode(
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="));
+        String md = "See [[Other Note#The Part|the part]] and [[Other Note]] and [[missing note]].\n\n![[pic.png]]\n";
+
+        // The tree every writer walks: links and an image, no wiki node left.
+        Node ast = MarkdownExportTree.lower(
+                MarkdownRenderer.parseForRender(md), com.editora.editor.MarkdownHtmlExport.wikiPaths(dir));
+        assertFalse(any(ast, com.editora.markdown.MarkdownWikiLinks.WikiLink.class));
+        var runs = InlineRun.flatten(ast.getFirstChild());
+        assertTrue(
+                runs.stream().anyMatch(r -> r.text().equals("the part") && "Other%20Note.md#the-part".equals(r.href())),
+                runs.toString());
+        assertTrue(runs.stream().anyMatch(r -> r.text().equals("Other Note") && "Other%20Note.md".equals(r.href())));
+        assertTrue(
+                runs.stream().anyMatch(r -> r.text().contains("missing note") && r.href() == null),
+                "unresolved: its text");
+
+        Path docx = dir.resolve("w.docx");
+        DocxWriter.write(md, dir, null, docx);
+        try (InputStream in = Files.newInputStream(docx);
+                XWPFDocument doc = new XWPFDocument(in)) {
+            String text = new org.apache.poi.xwpf.extractor.XWPFWordExtractor(doc).getText();
+            assertTrue(text.contains("the part") && text.contains("Other Note") && text.contains("missing note"), text);
+            assertFalse(text.contains("[["), text);
+            assertEquals(1, doc.getAllPictures().size(), "the embed is the picture");
+            assertTrue(doc.getHyperlinks().length >= 2 || text.contains("Other"), "live links");
+        }
+
+        Path odt = dir.resolve("w.odt");
+        OdtWriter.write(md, dir, null, odt);
+        String content = null;
+        boolean picture = false;
+        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(odt))) {
+            for (ZipEntry e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                picture |= e.getName().startsWith("Pictures/");
+                if (e.getName().equals("content.xml")) {
+                    content = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+        }
+        assertTrue(
+                content.contains("xlink:href=\"Other%20Note.md#the-part\"") && content.contains(">the part<"), content);
+        assertTrue(content.contains("missing note") && !content.contains("[["), content);
+        assertTrue(picture, "the embed is the picture");
+
+        Path pdf = dir.resolve("w.pdf");
+        MarkdownPdfWriter.write(md, dir, "letter", null, pdf);
+        String text = PdfProbe.text(pdf).replaceAll("\\s+", " ");
+        assertTrue(text.contains("the part") && text.contains("Other Note") && text.contains("missing note"), text);
+        assertFalse(text.contains("[["), text);
+        assertEquals(1, PdfProbe.images(pdf).size(), "the embed is the picture");
+
+        String html = com.editora.editor.MarkdownHtmlExport.toHtml(
+                md, "t", false, new com.editora.editor.MarkdownHtmlExport.Options(false, false, dir, null, null));
+        assertTrue(html.contains("<a href=\"Other%20Note.md#the-part\">the part</a>"), html);
+        assertTrue(html.contains("src=\"pic.png\""), html);
+        assertFalse(html.contains("href=\"Other%20Note#"), "not the raw note name: " + html);
+    }
 }

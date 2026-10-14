@@ -69,8 +69,14 @@ public final class MarkdownClipboardHtml {
      * path that means nothing wherever the fragment is pasted.
      */
     public static String toHtml(String markdown, boolean mathEnabled, java.nio.file.Path documentFile) {
-        java.nio.file.Path baseDir =
-                documentFile == null ? null : documentFile.toAbsolutePath().getParent();
+        return toHtmlIn(
+                markdown,
+                mathEnabled,
+                documentFile == null ? null : documentFile.toAbsolutePath().getParent());
+    }
+
+    /** {@link #toHtml(String, boolean, java.nio.file.Path)} for Markdown of a document in {@code baseDir}. */
+    static String toHtmlIn(String markdown, boolean mathEnabled, java.nio.file.Path baseDir) {
         return "<div style=\"" + ROOT_STYLE + "\">\n" + render(markdown, mathEnabled, baseDir, true) + "</div>";
     }
 

@@ -93,6 +93,13 @@ class MarkdownBacklinksFxTest {
                     tr("backlinks.title", "target.md", 3),
                     FxTestSupport.callOnFx(() -> backlinks.panel().titleText()));
 
+            // The preview's and the exports' seam is answered by the same index: a note anywhere in the
+            // project, its name compared without case — not only a file beside the document.
+            assertEquals(
+                    root.resolve("docs/b.md"),
+                    com.editora.editor.WikiLinkTargets.resolve(root, "B"),
+                    "the window installed its resolver");
+
             // Activating a link row goes to its line in its file.
             FxTestSupport.runOnFx(() -> {
                 backlinks.panel().list().getSelectionModel().select(2);

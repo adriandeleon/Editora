@@ -91,7 +91,8 @@ public final class DocxWriter {
 
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
         // The preview's parse (math is nodes), with alerts and definition lists as blocks this writer knows.
-        Node ast = com.editora.markdown.MarkdownExportTree.lower(MarkdownRenderer.parseForRender(markdown));
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(
+                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();

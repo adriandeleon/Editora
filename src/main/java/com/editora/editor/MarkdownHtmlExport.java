@@ -108,6 +108,35 @@ public final class MarkdownHtmlExport {
         return images || diagrams;
     }
 
+    /**
+     * For {@link com.editora.markdown.MarkdownExportTree#lower(org.commonmark.node.Node,
+     * java.util.function.UnaryOperator)}: the path a link written in a document of {@code folder} carries
+     * for a wiki target — relative, forward slashes, spaces escaped — or null when it does not resolve
+     * ({@link WikiLinkTargets}, the resolver every surface asks).
+     */
+    public static java.util.function.UnaryOperator<String> wikiPaths(java.nio.file.Path folder) {
+        return target -> {
+            java.nio.file.Path file = WikiLinkTargets.resolve(folder, target);
+            if (file == null || folder == null) {
+                return null;
+            }
+            try {
+                return folder.toAbsolutePath()
+                        .normalize()
+                        .relativize(file.toAbsolutePath().normalize())
+                        .toString()
+                        .replace('\\', '/')
+                        .replace(" ", "%20");
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        };
+    }
+
+    private static void lowerWikiLinksOnly(org.commonmark.node.Node doc, java.nio.file.Path folder) {
+        com.editora.markdown.MarkdownExportTree.wikiLinksToLinks(doc, wikiPaths(folder));
+    }
+
     /** Images bigger than this are linked, not embedded: a page is not the place for a 50 MB scan. */
     static final int MAX_EMBED_BYTES = 8 * 1024 * 1024;
 
@@ -121,6 +150,8 @@ public final class MarkdownHtmlExport {
     public static String toHtml(String markdown, String title, boolean mathEnabled, Options options) {
         org.commonmark.node.Node doc = MarkdownRenderer.parseForRender(markdown, mathEnabled);
         Options o = options == null ? Options.PLAIN : options;
+        // Wiki links leave the page as ordinary links to the files they resolve to (not the raw note name).
+        lowerWikiLinksOnly(doc, o.baseDir());
         if (o.embedImages()) {
             embedImages(doc, o.baseDir());
         }

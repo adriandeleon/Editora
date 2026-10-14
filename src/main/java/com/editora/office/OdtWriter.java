@@ -91,7 +91,8 @@ public final class OdtWriter {
     // ---- content.xml (pure, unit-tested) ----
 
     static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
-        Node ast = com.editora.markdown.MarkdownExportTree.lower(MarkdownRenderer.parseForRender(markdown));
+        Node ast = com.editora.markdown.MarkdownExportTree.lower(
+                MarkdownRenderer.parseForRender(markdown), com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
         Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();

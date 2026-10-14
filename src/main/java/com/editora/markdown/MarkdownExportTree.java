@@ -54,6 +54,53 @@ public final class MarkdownExportTree {
         };
     }
 
+    /**
+     * As {@link #lower(Node)}, also rewriting wiki links into ordinary ones, which every exporter draws:
+     * {@code [[note#Heading|label]]} becomes a link to the note's path (and the heading's anchor) with the
+     * label as its text, {@code ![[picture.png]]} an image. {@code wikiPath} gives the path a document link
+     * to a wiki target should carry, relative to the document, or null when the target does not resolve — an
+     * unresolved link is written as its text, an unresolved embed as its name.
+     */
+    public static Node lower(Node root, java.util.function.UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+        return lower(root);
+    }
+
+    /** Only the wiki-link half of {@link #lower(Node, java.util.function.UnaryOperator)} (HTML keeps the rest). */
+    public static void wikiLinksToLinks(Node root, java.util.function.UnaryOperator<String> wikiPath) {
+        lowerWikiLinks(root, wikiPath == null ? t -> null : wikiPath);
+    }
+
+    private static void lowerWikiLinks(Node node, java.util.function.UnaryOperator<String> wikiPath) {
+        for (Node c = node.getFirstChild(); c != null; ) {
+            Node next = c.getNext();
+            if (c instanceof MarkdownWikiLinks.WikiLink wiki) {
+                String path = wiki.getTarget().isEmpty() ? "" : wikiPath.apply(wiki.getTarget());
+                Node replacement;
+                if (path == null) {
+                    replacement = new Text(wiki.getText());
+                } else if (wiki.isEmbed()) {
+                    org.commonmark.node.Image image = new org.commonmark.node.Image(path, null);
+                    image.appendChild(new Text(wiki.getText()));
+                    replacement = image;
+                } else {
+                    String anchor =
+                            wiki.getHeading() == null || wiki.getHeading().isBlank()
+                                    ? ""
+                                    : "#" + MarkdownToc.slug(wiki.getHeading());
+                    org.commonmark.node.Link link = new org.commonmark.node.Link(path + anchor, null);
+                    link.appendChild(new Text(wiki.getText()));
+                    replacement = link;
+                }
+                c.insertAfter(replacement);
+                c.unlink();
+            } else {
+                lowerWikiLinks(c, wikiPath);
+            }
+            c = next;
+        }
+    }
+
     /** Rewrites {@code root} in place and returns it. */
     public static Node lower(Node root) {
         if (root == null) {

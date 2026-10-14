@@ -528,6 +528,7 @@ final class EditorSettingsCoordinator {
         String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
         chooseSetting("buffer.setLanguage", () -> names, name -> name, () -> current, name -> {
             buffer.setLanguageOverride(name);
+            host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
             host.statusBar().refresh();
             host.setStatus(tr("status.language", name));
         });
@@ -904,6 +905,7 @@ final class EditorSettingsCoordinator {
         buffer.markdown()
                 .configureWriting(s.isMarkdownSmartTypography(), s.isMarkdownTocSkipTitle(), s.isMarkdownTocOrdered());
         buffer.markdown().setEditLinkHandler(host.previews()::markdownEditLink);
+        host.previews().applyDefaultViewMode(buffer); // an untitled Markdown buffer, the first time it is one
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)

@@ -133,4 +133,33 @@ class MarkdownLinkIndexTest {
         index.put(p("README.md"), "now only [[guide]]\n");
         assertEquals(List.of(), index.outgoing(p("README.md")));
     }
+
+    @Test
+    void theScanAndTheParserAgreeOnWhatIsAWikiLink() {
+        String doc = "[[plain]] word[[glued]] [[inline]](https://e.org) ![[pic.png]] `[[code]]`\n\n"
+                + "| a | b |\n| - | - |\n| [[cell\\|label]] | x |\n\n[[defined]] and [[note#Part|shown]]\n\n[defined]: https://e.org\n";
+        List<String> scanned = MarkdownLinkRewrite.links(doc, true).stream()
+                .filter(Link::isWiki)
+                .map(Link::destination)
+                .toList();
+        List<String> parsed = new java.util.ArrayList<>();
+        org.commonmark.node.Node ast = org.commonmark.parser.Parser.builder()
+                .extensions(
+                        List.of(org.commonmark.ext.gfm.tables.TablesExtension.create(), MarkdownWikiLinks.extension()))
+                .build()
+                .parse(doc);
+        collect(ast, parsed);
+        assertEquals(List.of("plain", "pic.png", "cell", "note#Part"), scanned);
+        assertEquals(parsed, scanned, "what the preview draws as a wiki link is what the index holds");
+    }
+
+    private static void collect(org.commonmark.node.Node node, List<String> out) {
+        for (org.commonmark.node.Node c = node.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof MarkdownWikiLinks.WikiLink wiki) {
+                out.add(wiki.getReference());
+            } else {
+                collect(c, out);
+            }
+        }
+    }
 }

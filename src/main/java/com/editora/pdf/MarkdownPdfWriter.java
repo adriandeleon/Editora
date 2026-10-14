@@ -163,7 +163,8 @@ public final class MarkdownPdfWriter {
         // The preview's parse: math is recognised by the parser (when the feature is on), not searched for
         // in text the Markdown parser has already rewritten.
         Node ast = com.editora.markdown.MarkdownExportTree.lower(
-                MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled()));
+                MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled()),
+                com.editora.editor.MarkdownHtmlExport.wikiPaths(baseDir));
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), MathImages.isEnabled());
     }
 

@@ -8,6 +8,7 @@ import java.util.function.Function;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LanguageRegistry;
+import com.editora.editor.WikiLinkTargets;
 import com.editora.markdown.MarkdownAnchors;
 
 import static com.editora.i18n.Messages.tr;
@@ -56,6 +57,10 @@ final class HeadingLinks {
             openWiki(WikiLinks.parse(link), buffer, workflows, openBuffer, jump, status);
             return;
         }
+        if (WikiLinkTargets.isWikiAddress(link)) {
+            followWiki(link, buffer, workflows::openPath, workflows::openThen, openBuffer, jump, status);
+            return;
+        }
         ExternalLinks.open(
                 link,
                 buffer.getPath(),
@@ -98,6 +103,34 @@ final class HeadingLinks {
                 openBuffer,
                 jump,
                 status);
+    }
+
+    /**
+     * Follows a wiki link ({@code wikilink:note#Heading}, {@link WikiLinkTargets#address}): the file the
+     * resolver finds for it is opened — at the heading, when one is named — and a link nothing answers to is
+     * said in the status bar, never guessed at.
+     */
+    static void followWiki(
+            String address,
+            EditorBuffer clicked,
+            Consumer<Path> openFile,
+            java.util.function.BiConsumer<Path, Runnable> openThen,
+            Function<Path, EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
+        String target = WikiLinkTargets.targetOf(address);
+        Path folder = clicked.getPath() == null ? null : clicked.getPath().getParent();
+        Path file = WikiLinkTargets.resolve(folder, target);
+        if (file == null) {
+            status.accept(tr("status.wikilink.unresolved", target));
+            return;
+        }
+        String fragment = WikiLinkTargets.fragmentOf(address);
+        if (fragment == null) {
+            openFile.accept(file);
+        } else {
+            follow(clicked, file, fragment, openThen, openBuffer, jump, status);
+        }
     }
 
     /** Goes to {@code fragment} in {@code file}, or in {@code clicked} itself when {@code file} is null. */

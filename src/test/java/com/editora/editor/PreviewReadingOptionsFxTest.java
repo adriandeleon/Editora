@@ -257,6 +257,24 @@ class PreviewReadingOptionsFxTest {
             assertFalse(box.isShowing(), "Esc closes it");
             assertNull(pane.preview().lightbox());
 
+            // The keyboard's way: the picture is a Tab stop, Enter or Space opens it, Esc closes it.
+            assertTrue(plain.isFocusTraversable());
+            assertTrue(plain.getStyleClass().contains("md-enlargeable"));
+            for (KeyCode opens : new KeyCode[] {KeyCode.ENTER, KeyCode.SPACE}) {
+                KeyEvent press = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", opens, false, false, false, false);
+                javafx.event.Event.fireEvent(plain, press);
+                PreviewLightbox byKey = pane.preview().lightbox();
+                assertNotNull(byKey, opens + " opens the picture enlarged");
+                javafx.event.Event.fireEvent(
+                        byKey.popup().getContent().get(0),
+                        new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ESCAPE, false, false, false, false));
+                assertNull(pane.preview().lightbox());
+            }
+            javafx.event.Event.fireEvent(
+                    slots.get(1),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
+            assertNull(pane.preview().lightbox(), "Enter on a linked picture is the link's");
+
             // A picture that is a link keeps the link's click.
             Node linked = slots.get(1);
             assertTrue(linked.getProperties().containsKey(MarkdownRenderer.LINK_KEY));
