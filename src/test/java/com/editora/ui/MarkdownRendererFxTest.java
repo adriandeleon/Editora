@@ -163,10 +163,18 @@ class MarkdownRendererFxTest {
 
     @Test
     void theDocumentPreviewKeepsLoadingItsImages() throws Exception {
-        // The default overloads are the document policy: a file: image still becomes an ImageView (it simply
-        // stays blank here, the file does not exist — nothing is fetched from a network in this test).
-        Node root = render("![pic](file:///nonexistent-editora-test/pic.png)\n");
-        assertEquals(1, collect(root, javafx.scene.image.ImageView.class).size());
+        // The default overloads are the document policy: a file: image becomes an ImageView. The file is a
+        // real one: a missing image is replaced by a placeholder as soon as its background load has failed,
+        // which could happen before the tree was read here (and at once on a second attempt).
+        java.nio.file.Path png = java.nio.file.Files.createTempFile("editora-md-image", ".png");
+        try {
+            java.nio.file.Files.write(
+                    png, java.util.Base64.getDecoder().decode(PIXEL.substring(PIXEL.indexOf(',') + 1)));
+            Node root = render("![pic](" + png.toUri() + ")\n");
+            assertEquals(1, collect(root, javafx.scene.image.ImageView.class).size());
+        } finally {
+            java.nio.file.Files.deleteIfExists(png);
+        }
     }
 
     @Test
