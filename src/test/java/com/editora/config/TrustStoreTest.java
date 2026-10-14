@@ -111,9 +111,11 @@ class TrustStoreTest {
     void trustingAFolderOnAHostSaysNothingAboutTheSameFolderHere(@org.junit.jupiter.api.io.TempDir Path dir)
             throws java.io.IOException {
         TrustStore store = new TrustStore();
-        Path local = java.nio.file.Files.createDirectories(dir.resolve("srv/app"));
+        // The same path, here and on the host. ("/srv/app" here is a drive-relative path on Windows; it does not
+        // have to exist, and which folder it names makes no difference to what is trusted.)
+        Path local = Path.of("/srv/app");
         try (FakeRemoteHost host = new FakeRemoteHost(dir, "ana@build:22")) {
-            Path remote = host.path(local.toString()); // the very same path text, on the host
+            Path remote = host.path("/srv/app");
 
             store.trust(remote);
 
@@ -121,7 +123,7 @@ class TrustStoreTest {
             org.junit.jupiter.api.Assertions.assertTrue(store.isTrusted(remote.resolve("server")), "inherited");
             org.junit.jupiter.api.Assertions.assertFalse(store.isTrusted(local), "the local folder was never trusted");
             org.junit.jupiter.api.Assertions.assertEquals(
-                    java.util.List.of("sftp://ana@build:22" + local), store.trustedRoots(), "stored with its host");
+                    java.util.List.of("sftp://ana@build:22/srv/app"), store.trustedRoots(), "stored with its host");
 
             store.revoke(remote);
             store.trust(local);

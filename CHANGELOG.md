@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a repository on a remote (SFTP) host works as a local one does: branch, changed files, change bars, log and
   blame, and staging (whole files or single hunks), committing, branches, stashes and fetch / pull / push. It
   is the host's own `git`, over the same SSH connection, with the host's credentials. Editora asks once per host
-  before running anything there. Cloning onto a remote host, auto-fetch and GitHub are not available for remote
-  folders yet.
+  before running anything there. The GitHub tool window and commands use the host's own `gh` for such a
+  repository, signed in there. Cloning onto a remote host and auto-fetch are not available for remote folders
+  yet.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers
