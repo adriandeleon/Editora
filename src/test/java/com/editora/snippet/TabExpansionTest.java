@@ -92,6 +92,8 @@ class TabExpansionTest {
         assertFalse(TabExpansion.inlineFitsInProse("code", 0, " follows"), "text after the caret");
         assertFalse(TabExpansion.inlineFitsInProse("- link", 2, ""), "a list item is not an empty line");
         assertTrue(TabExpansion.inlineFitsInProse("bold and italic", 0, ""));
+        assertTrue(
+                TabExpansion.inlineFitsInProse("#inc", 1, ""), "glued to what precedes it: not a word of a sentence");
         assertTrue(TabExpansion.inlineFitsInProse("see ;sig", 4, " x"), "a trigger nobody types by accident");
         assertTrue(TabExpansion.wordTrigger("bold and italic"));
         assertFalse(TabExpansion.wordTrigger("h2"));

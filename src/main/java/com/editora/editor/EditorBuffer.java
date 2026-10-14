@@ -203,7 +203,7 @@ public class EditorBuffer implements TabContent {
                 return null;
             }
             return SnippetTyping.triggerAtCaret(
-                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider);
+                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider, !tabOnly);
         }
 
         @Override

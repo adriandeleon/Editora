@@ -128,11 +128,17 @@ public final class TabExpansion {
      * the line text {@code before} with {@code after} following the caret: a word trigger only when the word
      * is the only thing on its line. In running prose "see the code" followed by Tab is a sentence and a Tab,
      * not a request for a pair of backticks; the completion popup remains the way to expand it there. A
-     * trigger that is not an ordinary word expands anywhere.
+     * trigger that is not an ordinary word expands anywhere, and so does one glued to the character before it
+     * ({@code #inc}): that is not a word of a sentence.
      */
     public static boolean inlineFitsInProse(String before, int start, String after) {
-        return !wordTrigger(before.substring(start))
-                || (before.substring(0, start).isBlank() && after.isBlank());
+        if (!wordTrigger(before.substring(start))) {
+            return true;
+        }
+        String lead = before.substring(0, start);
+        // Glued to what precedes it ("#inc", "(code") the trigger is not a word of the sentence.
+        boolean ownWord = lead.isBlank() || Character.isWhitespace(lead.charAt(lead.length() - 1));
+        return !ownWord || (lead.isBlank() && after.isBlank());
     }
 
     private static boolean isIdentifierPart(char c) {
