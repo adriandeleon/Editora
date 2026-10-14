@@ -22,6 +22,14 @@ final class UpdateCheckScheduler {
     /** How long after the first painted frame the check starts. */
     static final Duration DELAY = Duration.seconds(5);
 
+    /**
+     * System property: {@code off} skips the automatic check (the test suite sets it). Only the window that
+     * runs the command sweep switched the setting off, so any other test whose window was still open five
+     * seconds after its first frame really asked GitHub — and the sweep, when it happened to be running by
+     * then, was the one to report it.
+     */
+    static final String PROPERTY = "editora.updateCheck";
+
     private static volatile boolean startedThisSession;
 
     private UpdateCheckScheduler() {}
@@ -36,6 +44,9 @@ final class UpdateCheckScheduler {
      */
     static void maybeSchedule(
             Supplier<Settings> settings, BooleanSupplier closed, Runnable requestSave, Runnable check) {
+        if ("off".equals(System.getProperty(PROPERTY))) {
+            return;
+        }
         maybeSchedule(settings, closed, requestSave, check, UpdateCheckScheduler::afterDelay);
     }
 

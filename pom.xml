@@ -489,6 +489,8 @@
                         <java.awt.headless>true</java.awt.headless>
                         <!-- Project-tree deletes in tests must not land in the developer's real trash. -->
                         <editora.trash>off</editora.trash>
+                        <!-- No window opened by a test asks GitHub for the latest release. -->
+                        <editora.updateCheck>off</editora.updateCheck>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
