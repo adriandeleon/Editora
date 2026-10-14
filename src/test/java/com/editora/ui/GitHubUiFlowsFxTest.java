@@ -411,12 +411,20 @@ class GitHubUiFlowsFxTest {
         });
         assertEquals(tr("status.github.row.stillActive"), FxTestSupport.callOnFx(echo::getText));
 
+        long listsBeforeCancel = logged("run list");
         FxTestSupport.runOnFx(() -> registry.run("github.cancelRun"));
         assertTrue(
                 FxTestSupport.callOnFx(echo::getText).contains(String.valueOf(RUN_ID)),
                 "the run id is written as GitHub writes it, not digit-grouped: "
                         + FxTestSupport.callOnFx(echo::getText));
         await("gh run cancel", () -> logged("run cancel " + RUN_ID) == 1);
+        // gh's answer to the cancel reloads the run list: the rows are cleared and fetched again. That is still
+        // to come when gh has only logged the call, and it used to land in the next test, between its wait for
+        // the list and its use of the selected row. Wait for the reload's own gh call and for its rows.
+        await("the run list to be fetched again after the cancel", () -> logged("run list") > listsBeforeCancel);
+        await(
+                "the reloaded run list after the cancel",
+                () -> panel.placeholderText() != null && panel.rows().size() == 1);
     }
 
     /** G11: the Menu key / Shift+F10 arrive at the list, whose cells hold the menus. */

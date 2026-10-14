@@ -74,6 +74,36 @@ class WikiLinksFxTest {
     }
 
     @Test
+    void aDocumentInANestedProjectIsAnsweredByTheInnermostProject(@TempDir Path dir) throws Exception {
+        // Two windows: one on a folder, one on a project inside it. Each has its index; the outer one also
+        // covers the inner project's files, but a document in the inner project belongs to the inner one. The
+        // first live index that contained the document used to answer, whichever window was opened first.
+        Path outerRoot = dir.toRealPath();
+        Path root = Files.createDirectories(outerRoot.resolve("project"));
+        Path doc = Files.writeString(root.resolve("README.md"), "[[setup]]\n");
+        Path inner =
+                Files.writeString(Files.createDirectories(root.resolve("docs")).resolve("Setup.md"), "");
+        Files.writeString(
+                Files.createDirectories(outerRoot.resolve("elsewhere")).resolve("Setup.md"), "");
+        CoordinatorHostStub host = new CoordinatorHostStub() {
+            @Override
+            public Settings settings() {
+                return new Settings();
+            }
+        };
+        MarkdownLinkGraph outer = new MarkdownLinkGraph(host, () -> outerRoot, () -> true);
+        try {
+            FxTestSupport.callOnFx(() -> outer.submit(ix -> {})).get(20, TimeUnit.SECONDS);
+            graph = new MarkdownLinkGraph(host, () -> root, () -> true);
+            FxTestSupport.callOnFx(() -> graph.submit(ix -> {})).get(20, TimeUnit.SECONDS);
+
+            assertEquals(inner, WikiLinks.resolve(doc, "setup"), "the outer folder has two Setup.md; the project one");
+        } finally {
+            outer.dispose();
+        }
+    }
+
+    @Test
     void theWikiFormIsParsedIntoTargetAndHeading() {
         assertEquals(new WikiLinks.Parsed("note", ""), WikiLinks.parse("[[note]]"));
         assertEquals(new WikiLinks.Parsed("my note", "A heading"), WikiLinks.parse("[[ my note # A heading ]]"));

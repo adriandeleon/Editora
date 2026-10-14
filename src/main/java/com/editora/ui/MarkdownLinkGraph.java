@@ -86,7 +86,12 @@ final class MarkdownLinkGraph {
         LIVE.add(this);
     }
 
-    /** The graph of the project that holds {@code document}, or null when no open project does. */
+    /**
+     * The graph of the project that holds {@code document}, or null when no open project does. With windows
+     * open on nested folders (a folder, and a project inside it), the innermost project's: the outer index
+     * covers the same files but answers for a different set of names. It used to be whichever window had
+     * been opened first.
+     */
     static MarkdownLinkGraph forDocument(Path document) {
         if (document == null || !Vfs.isLocal(document)) {
             return null;
@@ -96,13 +101,16 @@ final class MarkdownLinkGraph {
         synchronized (LIVE) {
             live = new ArrayList<>(LIVE);
         }
+        MarkdownLinkGraph best = null;
+        int bestDepth = -1;
         for (MarkdownLinkGraph graph : live) {
             Path root = graph.disposed ? null : graph.rootOrNull();
-            if (root != null && doc.startsWith(root)) {
-                return graph;
+            if (root != null && doc.startsWith(root) && root.getNameCount() > bestDepth) {
+                best = graph;
+                bestDepth = root.getNameCount();
             }
         }
-        return null;
+        return best;
     }
 
     /** The open buffers of every window, by path — a file open elsewhere is edited there, not on disk. */
