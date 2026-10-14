@@ -255,12 +255,18 @@ CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `mac
 advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block a merge until it has a
 track record there.
 
-The Linux job and the macOS FX job run the suite in two test JVMs (`-DforkCount=2`), which is what keeps
-the required check near ten minutes. A test must therefore not depend on another class having run before
-it in the same JVM, and a test that reads the result of background work must wait for it: with the cores
-shared, "it is always done by then" stops being true. To reproduce CI's arrangement locally, run
-`mvn -DforkCount=2 verify`. A new push to a pull request cancels the run in progress for the previous
-push, and every test job uploads `target/surefire-reports` as an artifact when it fails.
+The macOS FX job runs the suite in two test JVMs (`-DforkCount=2`); the Linux job, which is the check
+`master` requires, still runs it in one and takes about 17 minutes. Two JVMs there measured 13:25, but
+with the cores shared several tests failed or needed a rerun: `LspCoordinatorDiagnosticsFxTest`
+(`compactSourceDiagnosticsArePreserved`), `SettingsSyncPageFxTest`
+(`connectNeedsARepositoryAndABranchNameBeforeItLooksAtAnything`), and, with four JVMs locally,
+`MarkdownPreviewFxTest`, `HistoryServiceCallbackFxTest` and `LocalHistoryRecordRestoreFxTest`. Each reads
+the result of background work without waiting for it, or reads a label a later refresh rewrites. A test
+must not depend on another class having run before it in the same JVM, and "it is always done by then"
+stops being true once the cores are shared; `mvn -DforkCount=2 verify` reproduces that locally.
+
+A new push to a pull request cancels the run in progress for the previous push, and every test job
+uploads `target/surefire-reports` as an artifact when it fails.
 
 ## What to test for a typical change
 

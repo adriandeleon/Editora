@@ -86,13 +86,12 @@ jobs:
       # A test that fails is run again, twice at most. One that then passes is a flake: the build stays
       # green and the step after this one names it, so it is fixed rather than forgotten.
       #
-      # Two test JVMs, not one: the suite is the whole job (15 of 17 minutes when it ran in one). Each fork
-      # has its own JavaFX toolkit, and JaCoCo appends every fork's coverage to the same file, so the
-      # floors see the full suite. Two measured 1.65x faster with no new flaky test; four was barely
-      # faster (the FX tests already use more than one core each) and several timing-sensitive tests
-      # then needed a rerun. Raise it only together with fixing those.
+      # One test JVM, and the suite is the whole job (15 of 17 minutes). `-DforkCount=2` was tried here:
+      # 16:34 became 13:25, the coverage floors still passed (JaCoCo appends every fork's coverage to the
+      # same file), but with the cores shared one timing-sensitive test failed three times out of three
+      # and three more needed a rerun. Steady those first (docs/testing.md), then add the forks.
       - name: Build and test
-        run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 verify
+        run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 verify
 
       - name: Report flaky tests
         if: always()
@@ -189,8 +188,8 @@ jobs:
   # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
   # The pure lane above reaches under half the code; this one covers the rest on a second operating
   # system. It is advisory (13 failures in 36 runs on 12-13 October 2026): make it blocking once it has
-  # stayed green. Two test JVMs and no coverage agent, for the reasons given on the Linux job; it was the
-  # longest job of the run at 24 minutes.
+  # stayed green. Two test JVMs (each with its own JavaFX toolkit) and no coverage agent: it was the
+  # longest job of the run at 24 minutes, and took 16 with two.
   fx-tests:
     name: FX tests (macos-15)
     runs-on: macos-15
