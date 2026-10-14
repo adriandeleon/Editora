@@ -84,7 +84,7 @@ final class HeadingLinks {
                 : buffer.getPath().toAbsolutePath().normalize();
         Path file = wiki.target().isEmpty() ? here : WikiLinks.resolve(here, wiki.target());
         if (file == null && !wiki.target().isEmpty()) {
-            status.accept(tr("status.markdown.wikiUnresolved", wiki.target()));
+            status.accept(tr("status.wikilink.unresolved", wiki.target()));
             return;
         }
         boolean same = file == null || file.equals(here);

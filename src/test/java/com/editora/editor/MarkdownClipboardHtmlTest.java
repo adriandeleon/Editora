@@ -203,4 +203,16 @@ class MarkdownClipboardHtmlTest {
         assertTrue(out.contains("&lt;kbd&gt;"), out);
         assertEquals("", MarkdownClipboardHtml.toMarkup(null, false));
     }
+
+    @Test
+    void aWikiLinkIsCopiedAsALinkToTheFileItResolvesTo(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("Other Note.md"), "# Other\n\n## The Part\n");
+        String html = MarkdownClipboardHtml.toHtml(
+                "See [[Other Note#The Part|the part]] and [[missing]].\n", false, dir.resolve("doc.md"));
+        assertTrue(html.contains("href=\"Other%20Note.md#the-part\""), html);
+        assertTrue(html.contains(">the part</a>"), html);
+        assertTrue(html.contains("missing") && !html.contains("[["), "unresolved: its text, no link: " + html);
+        assertFalse(html.contains("href=\"Other%20Note#"), "not the raw note name: " + html);
+    }
 }
