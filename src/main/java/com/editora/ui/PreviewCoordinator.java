@@ -378,6 +378,9 @@ final class PreviewCoordinator {
         host.csvCoordinator().ensureCsvPreview(buffer);
         host.httpClient().ensureHttpPreview(buffer);
         Path file = buffer.getPath();
+        if (file == null) {
+            applyDefaultViewMode(buffer);
+        }
         if (file == null || !buffer.hasPreview()) {
             return;
         }
@@ -405,6 +408,28 @@ final class PreviewCoordinator {
             buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.valueOf(saved));
         } catch (IllegalArgumentException ignored) {
             // unknown persisted value — leave in EDITOR mode
+        }
+    }
+
+    /** The untitled buffers already given the default view mode: it is given once, not every time a setting
+     *  is applied, so the mode the user then chooses stays. */
+    private final java.util.Set<EditorBuffer> defaulted =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Opens an <em>untitled</em> Markdown buffer in the {@code markdownDefaultViewMode} — once, the first time
+     * it is seen as Markdown (created from a template, restored with the session, or given the language by
+     * hand). A buffer with a file is {@link #restoreMarkdownMode}'s: its own remembered mode comes first.
+     */
+    void applyDefaultViewMode(EditorBuffer buffer) {
+        if (buffer == null || buffer.getPath() != null || !buffer.isMarkdown() || !defaulted.add(buffer)) {
+            return;
+        }
+        EditorBuffer.MarkdownViewMode preferred =
+                defaultViewMode(host.config().getSettings().getMarkdownDefaultViewMode());
+        if (preferred != EditorBuffer.MarkdownViewMode.EDITOR
+                && buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.EDITOR) {
+            buffer.setMarkdownViewMode(preferred);
         }
     }
 

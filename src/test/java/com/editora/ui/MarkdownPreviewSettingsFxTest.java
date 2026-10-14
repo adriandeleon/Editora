@@ -115,6 +115,57 @@ class MarkdownPreviewSettingsFxTest {
     }
 
     @Test
+    void anUntitledMarkdownBufferOpensInTheDefaultModeOnceAndKeepsWhatTheUserThenChooses() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Settings s = config.getSettings();
+            String before = s.getMarkdownDefaultViewMode();
+            try {
+                s.setMarkdownDefaultViewMode("split");
+                // Not Markdown (yet): nothing happens, and it is not counted as done.
+                EditorBuffer untitled = new EditorBuffer();
+                untitled.setContent("# Title\n");
+                previews.applyDefaultViewMode(untitled);
+                assertEquals(MarkdownViewMode.EDITOR, untitled.getMarkdownViewMode());
+
+                // Given the language by hand: now it is a Markdown buffer, and opens in the default mode.
+                untitled.setLanguageOverride("markdown");
+                previews.applyDefaultViewMode(untitled);
+                assertEquals(MarkdownViewMode.SPLIT, untitled.getMarkdownViewMode());
+
+                // The user goes back to the editor; a later settings pass does not undo that.
+                untitled.setMarkdownViewMode(MarkdownViewMode.EDITOR);
+                previews.applyDefaultViewMode(untitled);
+                previews.restoreMarkdownMode(untitled);
+                assertEquals(MarkdownViewMode.EDITOR, untitled.getMarkdownViewMode());
+
+                // Through the path every new or restored buffer takes (an untitled one from a template).
+                EditorBuffer fromTemplate = new EditorBuffer();
+                fromTemplate.setDisplayName("notes.md");
+                fromTemplate.setContent("# Notes\n");
+                assertTrue(fromTemplate.isMarkdown());
+                FxTestSupport.call(
+                        fx.controller,
+                        "addBuffer",
+                        new Class[] {EditorBuffer.class, boolean.class},
+                        fromTemplate,
+                        true);
+                assertEquals(MarkdownViewMode.SPLIT, fromTemplate.getMarkdownViewMode());
+
+                // The setting says "editor": nothing changes.
+                s.setMarkdownDefaultViewMode("editor");
+                EditorBuffer plainDefault = new EditorBuffer();
+                plainDefault.setLanguageOverride("markdown");
+                previews.applyDefaultViewMode(plainDefault);
+                assertEquals(MarkdownViewMode.EDITOR, plainDefault.getMarkdownViewMode());
+                untitled.dispose();
+                plainDefault.dispose();
+            } finally {
+                s.setMarkdownDefaultViewMode(before);
+            }
+        });
+    }
+
+    @Test
     void fontWidthFrontMatterAndScrollSyncAreTakenFromTheSettings() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Settings s = config.getSettings();
