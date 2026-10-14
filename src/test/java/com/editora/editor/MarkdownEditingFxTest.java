@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -576,6 +577,49 @@ class MarkdownEditingFxTest {
             place(area, "- a\n«- b\n»- c\n");
             press(buffer, KeyCode.DELETE, false);
             assertEquals("- a\n‸- c\n", shown(buffer), "bullets: the ordinary deletion");
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void theLinkToolsUnderstandAWikiLink() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("see [[Other No‸te#Heading|label]] now\n");
+            assertArrayEquals(
+                    new String[] {"label", "Other Note#Heading", "wiki"},
+                    buffer.markdown().linkForEditing());
+            buffer.markdown().setLink("new label", "Third Note");
+            assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "edited, and still a wiki link");
+
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [new label](<Third Note.md>)‸ now\n", shown(buffer));
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "and back");
+
+            buffer.markdown()
+                    .setWikiResolver(target -> "notes/" + target.toLowerCase().replace(' ', '-') + ".md");
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [new label](notes/third-note.md)‸ now\n", shown(buffer), "through the window's resolver");
+
+            place(buffer.getArea(), "an [ext‸ernal](https://example.com) link and plain\n");
+            assertEquals(2, buffer.markdown().convertWikiLink(), "a wiki link cannot name a URL");
+            buffer.getArea().moveTo(buffer.getArea().getLength() - 2);
+            assertEquals(1, buffer.markdown().convertWikiLink(), "no link here");
+
+            place(buffer.getArea(), "drop [[No‸te|the note]] here\n");
+            assertTrue(buffer.markdown().removeLink());
+            assertEquals("drop «the note» here\n", shown(buffer));
+
+            // "Link" on a link edits that link instead of nesting a new one in it.
+            int[] opened = {0};
+            buffer.markdown().setEditLinkHandler(() -> opened[0]++);
+            place(buffer.getArea(), "on [[a w‸iki]] link\n");
+            buffer.markdown().formatLinkFromClipboard();
+            assertEquals(1, opened[0]);
+            assertEquals("on [[a wiki]] link\n", buffer.getArea().getText());
             buffer.dispose();
         });
     }

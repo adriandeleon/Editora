@@ -349,6 +349,36 @@ class MarkdownCommandsFxTest {
     }
 
     @Test
+    void aWikiLinkIsEditedAndConvertedFromTheRegistry() throws Exception {
+        EditorBuffer b = open("see [[Note|old]] now\n", 7);
+        CodeArea area = FxTestSupport.callOnFx(b::getFocusedArea);
+        FxTestSupport.runOnFx(() -> registry.run("markdown.editLink"));
+        FxTestSupport.drainFx();
+        javafx.scene.control.TextField textField = FxTestSupport.callOnFx(
+                () -> (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-text"));
+        javafx.scene.control.TextField urlField = FxTestSupport.callOnFx(
+                () -> (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-url"));
+        assertEquals("old", FxTestSupport.callOnFx(textField::getText));
+        assertEquals("Note", FxTestSupport.callOnFx(urlField::getText), "the card shows what is between the brackets");
+        FxTestSupport.runOnFx(() -> {
+            textField.setText("new");
+            urlField.setText("Note#Part");
+            javafx.event.Event.fireEvent(urlField, key(KeyEvent.KEY_PRESSED, "", KeyCode.ENTER));
+        });
+        FxTestSupport.drainFx();
+        assertEquals("see [[Note#Part|new]] now\n", text(b));
+
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(7));
+        assertEquals("-", statusAfter("markdown.convertWikiLink"));
+        assertEquals("see [new](Note.md#part) now\n", text(b));
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(1));
+        assertEquals(tr("status.markdown.noLink"), statusAfter("markdown.convertWikiLink"));
+        EditorBuffer external = open("[x](https://example.com)\n", 2);
+        assertEquals(tr("status.markdown.linkNotLocal"), statusAfter("markdown.convertWikiLink"));
+        assertEquals("[x](https://example.com)\n", text(external));
+    }
+
+    @Test
     void tabExpandsABlockSnippetOnlyAtTheStartOfALine() throws Exception {
         EditorBuffer sentence = open("take a note\n", 11);
         FxTestSupport.runOnFx(() ->

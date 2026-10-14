@@ -16,6 +16,7 @@ import com.editora.markdown.MarkdownLinks;
 import com.editora.markdown.MarkdownTable;
 import com.editora.markdown.MarkdownToc;
 import com.editora.markdown.MarkdownTyping;
+import com.editora.markdown.MarkdownWiki;
 import com.editora.typst.TypstMarkup;
 import org.fxmisc.richtext.CodeArea;
 
@@ -34,6 +35,7 @@ public final class MarkdownEditing {
     private final EditorBuffer buffer;
     private Runnable insertTableHandler;
     private Runnable editLinkHandler;
+    private java.util.function.UnaryOperator<String> wikiResolver;
     /** Image files a paste or drop into this buffer created in this session (see {@link #sessionImages()}). */
     private final java.util.Set<java.nio.file.Path> sessionImages = new java.util.LinkedHashSet<>();
 
@@ -165,6 +167,11 @@ public final class MarkdownEditing {
 
     /** Link button / make-link command: use a clipboard URL when present, else an empty link. */
     public void formatLinkFromClipboard() {
+        // On a link already — a Markdown or a wiki link — "Link" means that link: edit it, do not nest one in it.
+        if (view().getSelection().getLength() == 0 && editLinkHandler != null && linkForEditing()[2] != null) {
+            editLinkInteractive();
+            return;
+        }
         String clip = Clipboard.getSystemClipboard().getString();
         formatLink(MarkdownInline.isUrl(clip) ? clip.strip() : "");
     }
@@ -558,6 +565,13 @@ public final class MarkdownEditing {
             return;
         }
         CodeArea a = view();
+        MarkdownWiki.Link wiki = MarkdownWiki.at(a.getText(), a.getCaretPosition());
+        if (wiki != null) { // a wiki link stays one: its address between the brackets, its label after the bar
+            String made = MarkdownWiki.write(destination, text, wiki.embed());
+            int end = wiki.start() + made.length();
+            apply(new MarkdownEdit(wiki.start(), wiki.end(), made, end, end));
+            return;
+        }
         MarkdownLinks.Link link = linkAtCaret();
         var sel = a.getSelection();
         boolean oneLine = a.getSelectedText().indexOf('\n') < 0;
@@ -568,6 +582,13 @@ public final class MarkdownEditing {
 
     /** Replaces the link under the caret by its text; false when the caret is not on a link. */
     public boolean removeLink() {
+        MarkdownWiki.Link wiki =
+                buffer.canFormatMarkdown() ? MarkdownWiki.at(view().getText(), view().getCaretPosition()) : null;
+        if (wiki != null) {
+            String shown = wiki.shown();
+            apply(new MarkdownEdit(wiki.start(), wiki.end(), shown, wiki.start(), wiki.start() + shown.length()));
+            return true;
+        }
         MarkdownLinks.Link link = buffer.canFormatMarkdown() ? linkAtCaret() : null;
         if (link != null) {
             apply(MarkdownLinks.remove(link));
@@ -585,6 +606,52 @@ public final class MarkdownEditing {
         MarkdownEdit e = toInline ? MarkdownLinks.toInline(text, link) : MarkdownLinks.toReference(text, link);
         apply(e);
         return e != null;
+    }
+
+    /**
+     * What Edit Link starts from: {@code {text, address, kind}} of the link under the caret — a Markdown
+     * link ({@code "link"}) or a wiki link ({@code "wiki"}: its label and what is between its brackets) —
+     * else the selection as the text of a new link (kind null).
+     */
+    public String[] linkForEditing() {
+        CodeArea a = view();
+        MarkdownWiki.Link wiki = MarkdownWiki.at(a.getText(), a.getCaretPosition());
+        if (wiki != null) {
+            return new String[] {wiki.label() == null ? "" : wiki.label(), wiki.address(), "wiki"};
+        }
+        MarkdownLinks.Link link = linkAtCaret();
+        return link == null
+                ? new String[] {linkTextCandidate(), "", null}
+                : new String[] {link.text(), link.destination(), "link"};
+    }
+
+    /** Maps a wiki link's target to the path a Markdown link to it should carry; null when it cannot tell. */
+    public void setWikiResolver(java.util.function.UnaryOperator<String> resolver) {
+        this.wikiResolver = resolver;
+    }
+
+    /**
+     * Wiki link ⇄ Markdown link for the link under the caret. Returns 0 when it was converted, 1 when the
+     * caret is on no link, 2 when the Markdown link leaves the project (a wiki link cannot name a URL).
+     */
+    public int convertWikiLink() {
+        if (!buffer.canFormatMarkdown()) {
+            return 1;
+        }
+        CodeArea a = view();
+        String text = a.getText();
+        MarkdownWiki.Link wiki = MarkdownWiki.at(text, a.getCaretPosition());
+        if (wiki != null) {
+            apply(MarkdownWiki.toMarkdown(wiki, wikiResolver));
+            return 0;
+        }
+        MarkdownLinks.Link link = linkAtCaret();
+        if (link == null) {
+            return 1;
+        }
+        MarkdownEdit e = MarkdownWiki.toWiki(link);
+        apply(e);
+        return e == null ? 2 : 0;
     }
 
     // ---- paste ----
