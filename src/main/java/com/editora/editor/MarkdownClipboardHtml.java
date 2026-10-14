@@ -103,7 +103,11 @@ public final class MarkdownClipboardHtml {
                 .sanitizeUrls(true)
                 .nodeRendererFactory(ctx -> new MarkdownHtmlExport.MathImagesRenderer(ctx.getWriter()))
                 .build();
-        return renderer.render(MarkdownRenderer.parseForRender(markdown, mathEnabled));
+        org.commonmark.node.Node doc = MarkdownRenderer.parseForRender(markdown, mathEnabled);
+        // A wiki link travels as a link to the file it resolves to, as in the HTML export; a raw note name
+        // means nothing where the fragment is pasted.
+        com.editora.markdown.MarkdownExportTree.wikiLinksToLinks(doc, MarkdownHtmlExport.wikiPaths(baseDir));
+        return renderer.render(doc);
     }
 
     /**

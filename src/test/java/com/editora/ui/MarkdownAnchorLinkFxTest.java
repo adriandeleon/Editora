@@ -131,14 +131,14 @@ class MarkdownAnchorLinkFxTest {
         open(readme);
         int before = openLinkAt(readme, "[[nowh");
         assertEquals(before, caretLine(readme));
-        assertEquals(tr("status.markdown.wikiUnresolved", "nowhere"), status());
+        assertEquals(tr("status.wikilink.unresolved", "nowhere"), status());
         assertEquals(readme, FxTestSupport.callOnFx(() -> active().getPath()));
 
         FxTestSupport.runOnFx(() -> WikiLinks.enabled = false);
         try {
             openLinkAt(readme, "[[guide");
             assertEquals(readme, FxTestSupport.callOnFx(() -> active().getPath()), "nothing was opened");
-            assertEquals(tr("status.markdown.wikiUnresolved", "guide"), status());
+            assertEquals(tr("status.wikilink.unresolved", "guide"), status());
         } finally {
             FxTestSupport.runOnFx(() -> WikiLinks.enabled = true);
         }
