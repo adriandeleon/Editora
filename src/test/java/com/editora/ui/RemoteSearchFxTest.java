@@ -60,7 +60,14 @@ class RemoteSearchFxTest {
         Files.writeString(serverApp.resolve("src/Other.java"), "class Other {}\n");
         Files.writeString(serverApp.resolve("build/Gen.java"), "class Gen { String needle; }\n");
         Files.writeString(serverApp.resolve(".gitignore"), "build/\n");
-        Files.createDirectories(serverApp.resolve(".git")); // rg honours .gitignore only inside a repository
+        // A real repository, not just a .git folder: rg honours .gitignore only inside one, and a host without
+        // rg lists the folder with `git ls-files`, which refuses an empty .git. The macOS runner has no rg, so
+        // there Go to File found nothing at all.
+        Process init = new ProcessBuilder("git", "init", "-q")
+                .directory(serverApp.toFile())
+                .redirectErrorStream(true)
+                .start();
+        Assumptions.assumeTrue(init.waitFor() == 0, "git is not installed on this machine, which plays the host");
         remoteApp = sftp.remotePath("app");
     }
 
@@ -68,6 +75,7 @@ class RemoteSearchFxTest {
     void tearDown() throws Exception {
         sftp.close();
         ExecTargets.setRemoteEnabled(null);
+        ExecTargets.setRemoteTools(null);
     }
 
     private static boolean hostHasRipgrep() {
@@ -142,6 +150,21 @@ class RemoteSearchFxTest {
 
         assertEquals(1, walked.files().size());
         assertTrue(walked.truncated());
+    }
+
+    @Test
+    void aHostWithoutRipgrepListsTheProjectWithGit() throws Exception {
+        ExecTargets.setRemoteTools((host, tool) -> "rg".equals(tool) ? "editora-test-no-such-rg" : null);
+
+        IndexCoordinator.Walked walked = IndexCoordinator.remoteWalk(remoteApp, true, 100);
+
+        List<Path> files = walked.files().stream().sorted().toList();
+        assertTrue(files.contains(remoteApp.resolve("src/Main.java")), files.toString());
+        assertFalse(files.contains(remoteApp.resolve("build/Gen.java")), "ignored by .gitignore");
+        assertTrue(
+                sftp.commands().stream().anyMatch(line -> line.contains("'git'") && line.contains("'ls-files'")),
+                "listed by the host's git: " + sftp.commands());
+        assertEquals(1, IndexCoordinator.remoteWalk(remoteApp, true, 1).files().size(), "and cut at the cap");
     }
 
     @Test
