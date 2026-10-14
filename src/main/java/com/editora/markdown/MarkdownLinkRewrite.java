@@ -120,6 +120,32 @@ public final class MarkdownLinkRewrite {
         return out;
     }
 
+    /**
+     * The wiki link whose {@code [[…]]} contains {@code caret}, or null. Never one in code, front matter or
+     * raw HTML.
+     */
+    public static Link wikiAt(String text, int caret) {
+        if (text == null || caret < 0 || caret > text.length() || text.indexOf("[[") < 0) {
+            return null;
+        }
+        int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+        int lineEnd = text.indexOf('\n', caret);
+        String line = text.substring(lineStart, lineEnd < 0 ? text.length() : lineEnd);
+        if (line.indexOf("[[") < 0) {
+            return null;
+        }
+        for (Link link : links(text, true)) {
+            if (link.isWiki() && link.start() >= lineStart && link.start() <= lineStart + line.length()) {
+                int open = line.lastIndexOf("[[", link.start() - lineStart);
+                int close = line.indexOf("]]", link.start() - lineStart);
+                if (open >= 0 && close >= 0 && caret >= lineStart + open && caret <= lineStart + close + 2) {
+                    return link;
+                }
+            }
+        }
+        return null;
+    }
+
     /** {@code [[target]]}, {@code [[target#heading|label]]} and {@code ![[embed]]} outside code spans. */
     private static void scanWiki(String line, int offset, List<Link> out) {
         int[] code = MarkdownBlocks.codeSpans(line);

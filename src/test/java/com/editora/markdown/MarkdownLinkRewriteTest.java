@@ -181,4 +181,19 @@ class MarkdownLinkRewriteTest {
                 "[[sub/b]] [[c]]", p("docs/a.md"), p("deep/er/a.md"), p("docs/a.md"), p("deep/er/a.md"), before);
         assertEquals("[[../../docs/sub/b]] [[c]]", r.text());
     }
+
+    @Test
+    void theWikiLinkUnderTheCaretIsFoundAnywhereInsideItsBrackets() {
+        String text = "intro\nsee [[note#part|label]] and [[other]]\n\n```\n[[code]]\n```\n";
+        int open = text.indexOf("[[note");
+        for (int caret : new int[] {open, open + 3, text.indexOf("label"), text.indexOf("]] and") + 2}) {
+            assertEquals("note#part", MarkdownLinkRewrite.wikiAt(text, caret).destination(), "caret " + caret);
+        }
+        assertEquals(
+                "other", MarkdownLinkRewrite.wikiAt(text, text.indexOf("other")).destination());
+        assertEquals(null, MarkdownLinkRewrite.wikiAt(text, text.indexOf(" and ") + 3));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt(text, text.indexOf("code")));
+        assertEquals(null, MarkdownLinkRewrite.wikiAt(text, 2));
+        assertEquals("[[note#part]]", MarkdownLinkAt.destination(text, open + 3));
+    }
 }

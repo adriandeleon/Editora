@@ -33,6 +33,9 @@ final class MarkdownSourceCommands {
             WindowCommandRegistrar.Host h = window.get();
             return h == null ? MarkdownLintOptions.DEFAULT : h.previews().lint().options(buffer);
         });
+        // Completion after "[[" lists the notes of the project that holds the document being edited.
+        com.editora.editor.MarkdownCompletions.setWikiSource(
+                document -> WikiLinks.enabled ? WikiLinks.targets(document) : com.editora.markdown.WikiTargets.EMPTY);
         edit(host, "markdown.formatDocument", MarkdownFormatting::formatDocument, "status.markdown.formatted");
         edit(host, "markdown.formatSelection", MarkdownFormatting::formatSelection, "status.markdown.formatted");
         edit(host, "markdown.numberHeadings", MarkdownFormatting::numberHeadings, "status.markdown.headingsNumbered");

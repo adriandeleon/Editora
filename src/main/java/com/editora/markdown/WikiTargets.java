@@ -39,10 +39,12 @@ public final class WikiTargets {
     private final Map<String, List<Path>> byName = new HashMap<>();
     private final Map<String, Path> byPath = new HashMap<>();
     private final int size;
+    private final List<Path> all;
 
     public WikiTargets(Path root, Collection<Path> files) {
         this.root = root == null ? null : root.toAbsolutePath().normalize();
         int n = 0;
+        List<Path> listed = new ArrayList<>();
         for (Path f : files) {
             Path file = f.toAbsolutePath().normalize();
             Path name = file.getFileName();
@@ -50,6 +52,7 @@ public final class WikiTargets {
                 continue;
             }
             n++;
+            listed.add(file);
             String lower = name.toString().toLowerCase(Locale.ROOT);
             byName.computeIfAbsent(lower, k -> new ArrayList<>(1)).add(file);
             String bare = stripMarkdownExtension(lower);
@@ -61,6 +64,17 @@ public final class WikiTargets {
             byPath.putIfAbsent(barePath, file);
         }
         this.size = n;
+        this.all = List.copyOf(listed);
+    }
+
+    /** Every file, in no particular order (for completion). */
+    public java.util.Collection<Path> files() {
+        return all;
+    }
+
+    /** The project root the files were listed under, or null. */
+    public Path root() {
+        return root;
     }
 
     public int size() {

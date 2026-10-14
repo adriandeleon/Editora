@@ -165,6 +165,14 @@ final class IndexCoordinator {
                         hit.file(), hit.symbol().line(), hit.symbol().column()));
     }
 
+    /**
+     * The file a wiki link's {@code target} names when written in {@code document}, or null (unknown,
+     * ambiguous, or wiki links off). The hook the preview and the link tools resolve through; never blocks.
+     */
+    Path resolveWikiLink(Path document, String target) {
+        return WikiLinks.resolve(document, target);
+    }
+
     QuickOpen<SymbolIndex.Hit> pickerForTest() {
         return picker;
     }

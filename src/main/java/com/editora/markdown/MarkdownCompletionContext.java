@@ -25,7 +25,11 @@ public final class MarkdownCompletionContext {
         /** The info string of an opening fence: {@code ```jav}. */
         FENCE_LANGUAGE,
         /** An emoji shortcode: {@code :smi}. */
-        EMOJI
+        EMOJI,
+        /** A wiki link's note: {@code [[not}. */
+        WIKI,
+        /** A heading of a wiki link's note: {@code [[note#hea} ({@code file} is the note, "" = this document). */
+        WIKI_HEADING
     }
 
     /**
@@ -59,6 +63,12 @@ public final class MarkdownCompletionContext {
         if (column > 0 && MarkdownBlocks.inRanges(MarkdownBlocks.codeSpans(line), column - 1)) {
             return null; // in a code span: shown as written
         }
+        Context wiki = wikiLink(before);
+        if (wiki != null) {
+            // "[[" written inside a code span that closed before the caret is not the start of a link.
+            int open = before.lastIndexOf("[[");
+            return MarkdownBlocks.inRanges(MarkdownBlocks.codeSpans(line), open) ? null : wiki;
+        }
         Context target = linkTarget(before);
         if (target != null) {
             return target;
@@ -72,6 +82,28 @@ public final class MarkdownCompletionContext {
             return new Context(Kind.EMOJI, emoji.start(1), emoji.group(2), "", false);
         }
         return null;
+    }
+
+    /** {@code …[[note} or {@code …[[note#heading} with the caret before any {@code |} or {@code ]]}. */
+    private static Context wikiLink(String before) {
+        int open = before.lastIndexOf("[[");
+        if (open < 0 || (open > 0 && before.charAt(open - 1) == '\\')) {
+            return null;
+        }
+        String typed = before.substring(open + 2);
+        if (typed.indexOf(']') >= 0 || typed.indexOf('[') >= 0 || typed.indexOf('|') >= 0) {
+            return null;
+        }
+        int hash = typed.indexOf('#');
+        if (hash < 0) {
+            return new Context(Kind.WIKI, open + 2, typed, "", false);
+        }
+        return new Context(
+                Kind.WIKI_HEADING,
+                open + 2 + hash + 1,
+                typed.substring(hash + 1),
+                typed.substring(0, hash).strip(),
+                false);
     }
 
     /** {@code …](target} with the caret still inside the target. */
