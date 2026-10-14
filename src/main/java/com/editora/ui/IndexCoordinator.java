@@ -559,13 +559,33 @@ final class IndexCoordinator {
     static Walked remoteWalk(Path root, boolean respectGitignore, int maxFiles) {
         RemoteFiles.Listing listing = RemoteFiles.list(root, respectGitignore, maxFiles);
         if (listing == null) {
-            return new Walked(List.of(), List.of(), false);
+            return sftpWalk(root, respectGitignore, maxFiles);
         }
         List<Path> files = new ArrayList<>(listing.paths().size());
         for (String relative : listing.paths()) {
             files.add(root.resolve(relative));
         }
         return new Walked(List.copyOf(files), List.of(), listing.truncated());
+    }
+
+    /**
+     * The last resort for a remote project, when its host lists nothing because it runs no commands (remote
+     * commands are switched off, or the account has no shell): the folder walked over SFTP with the same rules
+     * as a local project, a directory listing per folder, names only. Slow on a large tree, but Go to File
+     * offered nothing at all before.
+     */
+    static Walked sftpWalk(Path root, boolean respectGitignore, int maxFiles) {
+        List<Path> files = new ArrayList<>();
+        GitignoreFilter ignore = respectGitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+        ProjectWalk.Outcome outcome = ProjectWalk.walk(
+                root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, () -> false), (p, rel, attrs) -> {
+                    if (!attrs.isRegularFile()) {
+                        return ProjectWalk.Verdict.SKIP;
+                    }
+                    files.add(p);
+                    return ProjectWalk.Verdict.ACCEPT;
+                });
+        return new Walked(List.copyOf(files), List.of(), outcome.truncated());
     }
 
     private void promptForSymbol() {
