@@ -137,7 +137,7 @@ public final class MarkdownWikiLinks {
     }
 
     /** {@code reference} with its spaces percent-encoded, so that it is one URL in an attribute. */
-    static String encode(String reference) {
+    public static String encode(String reference) {
         return reference.replace(" ", "%20");
     }
 

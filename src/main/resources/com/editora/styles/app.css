@@ -699,6 +699,8 @@
 .markdown-preview .md-link { -fx-fill: -color-accent-fg; }
 /* A link reached with Tab (its first run takes the focus) is underlined; Enter or Space follows it. */
 .markdown-preview .md-link:focused { -fx-underline: true; }
+/* A wiki link nothing answers to: muted and underlined, so it reads as "not there yet", not as broken text. */
+.markdown-preview .md-link.md-wikilink-missing { -fx-fill: -color-fg-muted; -fx-underline: true; }
 /* The safe HTML subset: <sub>/<sup>, <kbd> key caps, blocks of HTML, <details>. */
 .markdown-preview .md-sub { -fx-font-size: 0.78em; -fx-translate-y: 0.3em; }
 .markdown-preview .md-sup { -fx-font-size: 0.78em; -fx-translate-y: -0.35em; }

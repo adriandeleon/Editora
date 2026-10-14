@@ -800,6 +800,7 @@ final class PreviewCoordinator {
         com.editora.editor.MathImages.configure(s.isMathSupport(), host.appThemeDark());
         com.editora.editor.PreviewImageLoader.setRemoteImages(s.isMarkdownRemoteImages());
         com.editora.editor.PreviewScrollSync.setEnabled(s.isMarkdownScrollSync());
+        com.editora.editor.MarkdownRenderer.setWikiLinks(s.isMarkdownWikiLinks());
         com.editora.editor.PreviewPrefs.set(
                 s.getMarkdownPreviewFontSize(), s.getMarkdownPreviewWidth(), s.isMarkdownHideFrontMatter());
         for (Tab tab : host.editorArea().tabs()) {

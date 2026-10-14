@@ -525,7 +525,7 @@ final class MarkdownPreview {
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
                 + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir() + "|"
-                + PreviewPrefs.signature();
+                + PreviewPrefs.signature() + "|" + MarkdownRenderer.wikiLinks() + "|" + WikiLinkTargets.epoch();
         column.setMaxWidth(PreviewPrefs.contentWidth());
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
