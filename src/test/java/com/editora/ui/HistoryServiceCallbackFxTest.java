@@ -120,11 +120,28 @@ class HistoryServiceCallbackFxTest {
             AtomicReference<HistoryRevision> revision = new AtomicReference<>();
             RetentionPolicy policy = new RetentionPolicy(20, Long.MAX_VALUE, Long.MAX_VALUE);
 
+            // Hold the FX thread, where the revision is handed over and its publication ends, until the GC
+            // request is in. Otherwise a busy machine could finish the whole publication first, and a GC
+            // asked for afterwards with a live set that lacks the revision is right to delete its blob (in the
+            // application the live set comes from the index the hand-over has just updated).
+            CountDownLatch fxHeld = new CountDownLatch(1);
+            CountDownLatch releaseFx = new CountDownLatch(1);
+            Platform.runLater(() -> {
+                fxHeld.countDown();
+                try {
+                    releaseFx.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            async.await(fxHeld, "the FX thread to be held");
+
             svc.snapshot(Path.of("/x/Second.java"), content, "delete", null, true, List.of(), policy, 2000L, value -> {
                 revision.set(value);
                 recorded.countDown();
             });
             svc.gc(Set.of(existingSha));
+            releaseFx.countDown();
 
             async.await(recorded, "in-flight history revision");
             async.awaitFx();

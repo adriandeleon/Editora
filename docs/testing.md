@@ -276,11 +276,19 @@ class is added), and a new test class needs a name Surefire's defaults match (`*
 
 The macOS FX job is split the same way, into three shards (`list n 3`, with `-Dgroups=fx` picking the FX
 tests out of each list), and each of those runs two test JVMs on its runner (`-DforkCount=2`). On the Linux runner
-it gained little (16:34 to 13:25) and, with the cores shared, tests that read the result of background
-work without waiting for it failed or needed a rerun: `LspCoordinatorDiagnosticsFxTest`
-(`compactSourceDiagnosticsArePreserved`), `SettingsSyncPageFxTest`
-(`connectNeedsARepositoryAndABranchNameBeforeItLooksAtAnything`), and, with four JVMs locally,
-`MarkdownPreviewFxTest`, `HistoryServiceCallbackFxTest` and `LocalHistoryRecordRestoreFxTest`.
+two JVMs gained little (16:34 to 13:25), which is why it is sharded across runners instead.
+
+Sharing the cores is also what shows a test that reads the result of background work without waiting
+for it, or that assumes which of two threads gets there first. The ones found that way, all fixed, are
+worth reading before writing a similar test: `LspCoordinatorDiagnosticsFxTest` (read a Run scan before it
+landed; `settleRunScan()`), `SettingsSyncPageFxTest` (a real bug: a later refresh rewrote a message),
+`MarkdownPreviewFxTest` (counted the first slice of the preview after later slices had been built: count
+it in the FX turn that shows it), `HistoryServiceCallbackFxTest` (a publication finished before the
+garbage collection it was meant to race: hold the FX thread), `LocalHistoryRecordRestoreFxTest` (a
+collection resets the store's permissions and so repaired the store the test had broken: let the first
+one run before breaking it) and `FileWorkflowSaveLifecycleFxTest` (the tab-open "changed on disk?" check
+answered with Keep Mine). To look for more, run `mvn -DforkCount=4 verify`, or pin a run to one core with
+`taskset -c 0` and add a short sleep on the test thread where a test waits.
 
 A new push to a pull request cancels the run in progress for the previous push, and every test job
 uploads `target/surefire-reports` as an artifact (the Linux shards always, the other lanes when they fail).

@@ -243,16 +243,28 @@ class MarkdownPreviewFxTest {
         });
         EditorBuffer buffer = ref[0];
         int[] first = new int[1];
+        boolean[] firstHasTheTop = new boolean[1];
         // The first slice is on screen as soon as the render lands; the FX thread is free between slices.
-        EditorFx.awaitChange(
-                () -> pane(buffer).contentProperty(), () -> buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
+        // Counted in the FX turn that puts it there: the other slices are queued right behind it, and a test
+        // thread that looked afterwards on a busy machine found all 2000 blocks already built.
+        java.util.concurrent.CountDownLatch shown = new java.util.concurrent.CountDownLatch(1);
         EditorFx.onFx(() -> {
-            first[0] = column(buffer).getChildren().size();
-            assertTrue(
-                    first[0] >= MarkdownPreview.SLICE && first[0] < 2000,
-                    "not built in one go, and not empty either: " + first[0]);
-            assertTrue(EditorFx.textOf(column(buffer)).contains("Paragraph number 0."));
+            pane(buffer).contentProperty().addListener(new javafx.beans.InvalidationListener() {
+                @Override
+                public void invalidated(javafx.beans.Observable o) {
+                    o.removeListener(this);
+                    first[0] = column(buffer).getChildren().size();
+                    firstHasTheTop[0] = EditorFx.textOf(column(buffer)).contains("Paragraph number 0.");
+                    shown.countDown();
+                }
+            });
+            buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
         });
+        assertTrue(shown.await(30, java.util.concurrent.TimeUnit.SECONDS), "the preview never showed");
+        assertTrue(
+                first[0] >= MarkdownPreview.SLICE && first[0] < 2000,
+                "not built in one go, and not empty either: " + first[0]);
+        assertTrue(firstHasTheTop[0]);
         EditorFx.awaitUntil(
                 () -> preview(buffer).showsProperty(),
                 () -> preview(buffer).showsProperty().get() > 0);
