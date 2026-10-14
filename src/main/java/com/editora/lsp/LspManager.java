@@ -952,7 +952,19 @@ public final class LspManager {
                     releaseJdtlsWorkspaceName(workspaceName);
                 }
             }
-            List<String> startCommand = resolvedSpec.command();
+            List<JavaRuntimes.Jdk> hostJdks = null;
+            java.util.Map<String, String> remoteEnvironment = new java.util.HashMap<>();
+            if (remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+                resolvedSpec = withRemoteJdtlsWorkspace(resolvedSpec, root);
+                hostJdks = RemoteJavaRuntimes.discover(root);
+            }
+            List<String> startCommand = remote
+                    ? JavaServerEnvironment.configure(
+                            serverId,
+                            resolvedSpec.command(),
+                            remoteEnvironment,
+                            exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
+                    : resolvedSpec.command();
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
                     ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
                     : null;
@@ -965,12 +977,38 @@ public final class LspManager {
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
             }
-            session.configureStart(startCommand, () -> initOptionsFor(serverId, bundles, astroTsdk, onTypeFormatting));
+            List<JavaRuntimes.Jdk> jdks = hostJdks;
+            // A remote jdtls is told about the host's JDKs, and is not handed this machine's debug bundles.
+            List<String> startBundles = remote ? List.of() : bundles;
+            session.configureStart(
+                    startCommand,
+                    remoteEnvironment,
+                    () -> initOptionsFor(serverId, startBundles, astroTsdk, onTypeFormatting, jdks));
             if (!session.start()) {
                 dropSession(key, session);
             }
         });
         return session;
+    }
+
+    /**
+     * A remote jdtls's {@code -data}: {@code jdtls-workspaces/<root hash>} in the host's cache folder, so its
+     * index outlives the session as a local one's does. Not claimed across windows like a local workspace (a
+     * remote project has one window); a folder that cannot be made leaves jdtls its own default.
+     */
+    private static LspServerRegistry.ServerSpec withRemoteJdtlsWorkspace(LspServerRegistry.ServerSpec spec, Path root) {
+        try {
+            var target = com.editora.process.ExecTargets.forPath(root);
+            Path cache = target.cacheDir();
+            if (cache == null) {
+                return spec;
+            }
+            Path workspace = cache.resolve("jdtls-workspaces").resolve(LspServerRegistry.workspaceDirName(root));
+            Files.createDirectories(workspace);
+            return LspServerRegistry.withDataDir(spec, target.toTargetPath(workspace));
+        } catch (java.io.IOException | RuntimeException e) {
+            return spec;
+        }
     }
 
     /**
@@ -3254,13 +3292,19 @@ public final class LspManager {
     }
 
     static Map<String, Object> javaInitOptions(List<String> debugBundles, boolean onTypeFormatting) {
+        return javaInitOptions(debugBundles, onTypeFormatting, null);
+    }
+
+    static Map<String, Object> javaInitOptions(
+            List<String> debugBundles, boolean onTypeFormatting, List<JavaRuntimes.Jdk> jdks) {
         Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", Map.of("java", javaSettings(onTypeFormatting)));
+        options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks)));
         return finishJavaInitOptions(options, debugBundles);
     }
 
     /**
-     * jdtls's {@code settings.java}: autobuild off, plus the JDKs this machine actually has.
+     * jdtls's {@code settings.java}: autobuild off, plus the JDKs its machine actually has ({@code jdks}, or
+     * this machine's when null).
      *
      * <p>{@code configuration.runtimes} is not optional polish. m2e writes a project's execution environment
      * into its Eclipse {@code .classpath} from the pom, so {@code maven.compiler.release=17} demands
@@ -3271,7 +3315,7 @@ public final class LspManager {
      * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
      * sane default to fall back to when a project's exact release isn't installed at all.
      */
-    private static Map<String, Object> javaSettings(boolean onTypeFormatting) {
+    private static Map<String, Object> javaSettings(boolean onTypeFormatting, List<JavaRuntimes.Jdk> jdks) {
         Map<String, Object> java = new java.util.HashMap<>();
         java.put("autobuild", Map.of("enabled", false));
         // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
@@ -3279,7 +3323,7 @@ public final class LspManager {
         // Asked for only while Settings.codeLens is on; see LspServerSettings.
         java.put("referencesCodeLens", Map.of("enabled", true));
         java.put("implementationCodeLens", "all");
-        List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
+        List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks);
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));
         }
@@ -3369,8 +3413,18 @@ public final class LspManager {
     /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
     static Object initOptionsFor(
             String serverId, List<String> debugBundles, Path astroTsdk, boolean javaOnTypeFormatting) {
+        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, null);
+    }
+
+    /** As above; {@code jdks} are the JDKs jdtls is told about (null: this machine's, discovered now). */
+    static Object initOptionsFor(
+            String serverId,
+            List<String> debugBundles,
+            Path astroTsdk,
+            boolean javaOnTypeFormatting,
+            List<JavaRuntimes.Jdk> jdks) {
         return switch (serverId == null ? "" : serverId) {
-            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting);
+            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
             case ASTRO_SERVER_ID ->

@@ -176,6 +176,16 @@ final class SshExecTarget implements ExecTarget {
         }
     }
 
+    /** {@code ~/.cache/editora} in the account's home, as the login shell reports it. */
+    @Override
+    public Path cacheDir() throws IOException {
+        String home = env().home();
+        if (home == null || !home.startsWith("/")) {
+            throw new IOException("could not learn the home folder on " + id);
+        }
+        return fs.getPath(home, ".cache", "editora");
+    }
+
     /**
      * The host's clock is read once per connection with {@code date +%s} (whole seconds, as anywhere). The
      * host's second {@code s} began no later than the moment the answer arrived, so {@code s - arrival} is

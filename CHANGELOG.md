@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the rest work as for local files. Renames and other cross-file edits create, move and delete files on the
   host. A file outside the project on the same host (a library source reached by Go to Definition) is served by
   the project's server. Losing the connection stops the servers without reporting a crash, and reconnecting
-  starts them again. Java (jdtls) is not available for remote folders yet.
+  starts them again. Java works too: jdtls runs on the host with the host's JDKs and keeps its index in
+  `~/.cache/editora` there (the host-consent question now says so). Debugging Java and running a Java project's
+  main class on a host are not available yet.
 - **Remote folders notice outside changes (opt-in).** With remote commands switched on, a remote project's
   folder is watched on its host, so a `git pull` or a build there updates the Project tree, Git, language
   servers and an open file that changed, as for a local folder. Hosts with `inotifywait` report at once;
