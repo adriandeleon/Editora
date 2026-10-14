@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find in Files and Go to File for remote folders (opt-in).** With remote commands switched on, Find in Files
+  in a remote (SFTP) folder is done by the host's own ripgrep when it has one, instead of reading every file
+  over the connection, and Go to File lists a remote project's files on the host. Go to Symbol has no
+  symbols for a remote project.
 - **Git for remote folders (opt-in).** With "Run commands on the remote host" switched on in Settings → Remote,
   a repository on a remote (SFTP) host works as a local one does: branch, changed files, change bars, log and
   blame, and staging (whole files or single hunks), committing, branches, stashes and fetch / pull / push. It

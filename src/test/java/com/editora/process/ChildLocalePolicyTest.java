@@ -55,6 +55,7 @@ class ChildLocalePolicyTest {
             "install/InstallService.java", // `npm root -g`: a path
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
+            "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
             "typst/TypstRenderer.java", // detect()

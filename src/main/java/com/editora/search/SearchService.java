@@ -81,6 +81,12 @@ public final class SearchService {
 
     private volatile List<String> rgCommand = List.of(Ripgrep.DEFAULT_COMMAND);
 
+    /**
+     * The user's "use ripgrep" preference itself, whatever this machine has: a remote folder is searched by
+     * its host's own {@code rg} when the host has one ({@link RemoteFiles#hasRipgrep}).
+     */
+    private volatile boolean ripgrepWanted = false;
+
     /** Exclude {@code .gitignore}d paths from search (ripgrep's default; the walker honors it via
      *  {@link GitignoreFilter}). Off ⇒ rg gets {@code --no-ignore} and the walker skips the filter. */
     private volatile boolean respectGitignore = true;
@@ -91,6 +97,12 @@ public final class SearchService {
      * backends. The open-buffer overlay + caps are applied identically either way.
      */
     public void setBackend(boolean useRipgrep, List<String> rgCommand, boolean respectGitignore) {
+        setBackend(useRipgrep, rgCommand, respectGitignore, useRipgrep);
+    }
+
+    /** As above, with the preference for ripgrep as the user set it ({@link #ripgrepWanted}). */
+    public void setBackend(boolean useRipgrep, List<String> rgCommand, boolean respectGitignore, boolean wanted) {
+        this.ripgrepWanted = wanted;
         this.useRipgrep = useRipgrep;
         this.respectGitignore = respectGitignore;
         this.rgCommand =
@@ -247,13 +259,17 @@ public final class SearchService {
             return new Outcome(List.of(), 0, 0, false);
         }
         boolean haveRoot = scopeRoot != null && Files.isDirectory(scopeRoot);
-        Set<Path> openKeys = localKeys(open);
+        Set<Path> openKeys = keysOn(open, scopeRoot);
         // On-disk results: ripgrep when enabled + local root, else the Java walker. rg falls back to the
         // walker on a pattern/IO error (exit 2) or if it failed to launch (null), so nothing regresses.
         List<FileResult> disk = null;
         boolean[] sourceTruncated = {false};
-        if (haveRoot && useRipgrep && Vfs.isLocal(scopeRoot)) {
-            disk = ripgrepDisk(query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
+        if (haveRoot && Vfs.isLocal(scopeRoot) && useRipgrep) {
+            disk = ripgrepDisk(rgCommand, query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
+        } else if (haveRoot && Vfs.isRemote(scopeRoot) && ripgrepWanted && RemoteFiles.hasRipgrep(scopeRoot)) {
+            // On the host: one rg there instead of reading every file of the tree over SFTP.
+            List<String> remoteRg = RemoteFiles.ripgrepCommand(scopeRoot);
+            disk = ripgrepDisk(remoteRg, query, scopeRoot, include, exclude, openKeys, cancelled, sourceTruncated);
         }
         if (disk == null) {
             DiskSearch walked = haveRoot
@@ -267,6 +283,7 @@ public final class SearchService {
 
     /** On-disk search via ripgrep, paths resolved to absolute. Returns null to signal "fall back to the walker". */
     private List<FileResult> ripgrepDisk(
+            List<String> rgCommand,
             SearchQuery query,
             Path root,
             List<String> include,
@@ -281,7 +298,10 @@ public final class SearchService {
         // the rest of the tree for output nobody reads.
         RipgrepOutput.Collector collector = new RipgrepOutput.Collector(
                 MAX_MATCHES + 1,
-                path -> !openKeys.contains(root.resolve(path).toAbsolutePath().normalize()));
+                // By its text: the parser's path is a local one, and a remote root cannot resolve another
+                // filesystem's Path (it throws, and every match would be lost).
+                path -> !openKeys.contains(
+                        root.resolve(path.toString()).toAbsolutePath().normalize()));
         ProcessRunner.Result r;
         try {
             r = ProcessRunner.runLines(root, RG_TIMEOUT, cmd, collector::accept);
@@ -428,10 +448,12 @@ public final class SearchService {
      * never equal a local result, and hashing them beside local ones is what invites a cross-provider
      * {@code equals}.
      */
-    private static Set<Path> localKeys(List<Map.Entry<Path, String>> open) {
+    /** The open buffers' paths that are on {@code root}'s filesystem (all local ones when there is no root). */
+    private static Set<Path> keysOn(List<Map.Entry<Path, String>> open, Path root) {
         Set<Path> keys = new HashSet<>();
         for (Map.Entry<Path, String> e : open) {
-            if (Vfs.isLocal(e.getKey())) {
+            Path key = e.getKey();
+            if (key != null && (root == null ? Vfs.isLocal(key) : key.getFileSystem() == root.getFileSystem())) {
                 keys.add(e.getKey().toAbsolutePath().normalize());
             }
         }
@@ -451,7 +473,7 @@ public final class SearchService {
             List<String> exclude,
             BooleanSupplier cancelled,
             boolean sourceTruncated) {
-        Set<Path> openKeys = localKeys(open);
+        Set<Path> openKeys = keysOn(open, root);
         boolean filtering = !include.isEmpty() || !exclude.isEmpty();
         List<FileResult> all = new ArrayList<>();
         int collected = 0;

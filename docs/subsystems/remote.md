@@ -96,6 +96,13 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   not. `GitHubService.setLocation` points the service at the window's repository; availability and sign-in are
   kept per host (`byHost`), so moving between a local and a remote repository never borrows the other
   machine's answer. URLs are printed by `gh` (`--no-browser`) and opened by this machine's browser.
+- **Find in Files:** for a remote folder, with the "use ripgrep" preference on, the host's own `rg` (or its
+  configured `rg` tool) searches it in one command (`search/RemoteFiles.hasRipgrep`, probed per host; a
+  missing `rg` is believed for five minutes). Without it, the built-in search walks the folder over SFTP, as
+  before. Whether this machine has `rg` does not matter.
+- **Go to File:** a remote project is listed by its host (`RemoteFiles.list`: `rg --files`, else
+  `git ls-files`), capped like a local walk. There are no symbols for a remote project: finding them means
+  reading every source file over the network, so Go to Symbol has nothing to offer there.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
   tests, language servers and debugging.

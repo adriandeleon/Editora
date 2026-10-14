@@ -19,6 +19,7 @@ import com.editora.index.Symbol;
 import com.editora.index.SymbolIndex;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import com.editora.search.RemoteFiles;
 import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
@@ -437,7 +438,7 @@ final class IndexCoordinator {
      */
     private void build(Runnable then) {
         Path root = ops.projectRoot();
-        if (root == null || !Vfs.isLocal(root)) {
+        if (root == null || !RemoteExec.runsFor(root)) {
             host.setStatus(tr("status.index.noProject"));
             return;
         }
@@ -490,6 +491,9 @@ final class IndexCoordinator {
     private Walked walk(Path root, java.util.function.BooleanSupplier superseded) {
         if (superseded.getAsBoolean()) {
             return new Walked(List.of(), List.of(), false);
+        }
+        if (Vfs.isRemote(root)) {
+            return remoteWalk(root, ops.respectGitignore(), maxFiles);
         }
         GitignoreFilter ignore = ops.respectGitignore() ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
         return walk(root, ignore, maxFiles, superseded);
@@ -547,6 +551,23 @@ final class IndexCoordinator {
         return new Walked(List.copyOf(files), out, outcome.truncated());
     }
 
+    /**
+     * The index of a project on a remote host: its files as the host lists them ({@link RemoteFiles}), in one
+     * command instead of a directory listing per folder over SFTP. No symbols: finding them means reading
+     * every source file across the network. Go to File works; Go to Symbol has nothing to offer.
+     */
+    static Walked remoteWalk(Path root, boolean respectGitignore, int maxFiles) {
+        RemoteFiles.Listing listing = RemoteFiles.list(root, respectGitignore, maxFiles);
+        if (listing == null) {
+            return new Walked(List.of(), List.of(), false);
+        }
+        List<Path> files = new ArrayList<>(listing.paths().size());
+        for (String relative : listing.paths()) {
+            files.add(root.resolve(relative));
+        }
+        return new Walked(List.copyOf(files), List.of(), listing.truncated());
+    }
+
     private void promptForSymbol() {
         if (index.symbolCount() == 0) {
             host.setStatus(tr("status.index.empty"));
@@ -600,7 +621,7 @@ final class IndexCoordinator {
             return;
         }
         Path root = ops.projectRoot();
-        if (root == null || !Vfs.isLocal(root)) {
+        if (root == null || !RemoteExec.runsFor(root)) {
             host.setStatus(tr("status.index.noProject"));
             then.run();
             return;
