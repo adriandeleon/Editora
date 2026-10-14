@@ -502,6 +502,69 @@ class MarkdownLintMoreTest {
         assertEquals(List.of(), wiki("[[somewhere]] cannot be told, so it is left alone\n", targets));
         assertEquals(List.of(), wiki("[[missing]]\n", null), "no resolver: silent");
         assertEquals(List.of("1:5+11"), wiki("a [[[[missing]] b\n", targets), "the innermost pair is the link");
+    }
+
+    /** The forms the preview's parser ({@link MarkdownWikiLinks}) draws the line at: lint draws it there too. */
+    @Test
+    void lintCallsAWikiLinkExactlyWhatThePreviewDoes() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(
+                List.of(),
+                wiki("see x[[1]] and matrix[[i]] for the index\n", targets),
+                "after a letter or digit: text");
+        assertEquals(List.of("1:5+8"), wiki("see [[gone]] here\n", targets));
+        assertEquals(
+                List.of(),
+                wiki("see [[note]] here\n\n[note]: https://x.io\n", targets),
+                "with a definition of [note] it is a reference link in brackets");
+        assertEquals(
+                List.of(),
+                wiki("see [[note]](https://x.io) and [[note]][ref]\n\n[ref]: /r\n", targets),
+                "ordinary links");
+        assertEquals(
+                List.of("1:6+8"),
+                wiki("see [[[gone]]] here\n", targets),
+                "a wiki link inside one more pair of brackets");
+        assertEquals(
+                List.of("3:3+15"),
+                wiki("| a |\n|---|\n| [[gone\\|label]] |\n", targets),
+                "in a table cell the pipe is written \\|");
+        assertEquals(List.of(), wiki("`[[gone]]` and ``[[gone]]``\n\n    [[gone]]\n\n```\n[[gone]]\n```\n", targets));
+        assertEquals(List.of("1:2+12"), wiki("![[gone.png]]\n", targets), "an embed is underlined from its brackets");
+        // Each form, parsed by the preview's own extension: a WikiLink there exactly when lint reports one.
+        for (String md : List.of(
+                "see x[[1]] y",
+                "see [[gone]] here",
+                "see [[[gone]]] here",
+                "see [[note]](https://x.io)",
+                "\\[[gone]]",
+                "![[gone.png]]")) {
+            org.commonmark.node.Node doc = org.commonmark.parser.Parser.builder()
+                    .extensions(List.of(MarkdownWikiLinks.extension()))
+                    .build()
+                    .parse(md);
+            boolean[] found = {false};
+            doc.accept(new org.commonmark.node.AbstractVisitor() {
+                @Override
+                public void visit(org.commonmark.node.CustomNode node) {
+                    found[0] |= node instanceof MarkdownWikiLinks.WikiLink;
+                    visitChildren(node);
+                }
+            });
+            assertEquals(found[0], !wiki(md + "\n", targets).isEmpty(), md);
+        }
+    }
+
+    @Test
+    void aWallOfWikiLinksIsLintedWithoutThemRatherThanSlowly() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(2_000, wiki("[[a]] ".repeat(2_000) + "\n", targets).size());
+        assertEquals(List.of(), wiki("[[a]] ".repeat(2_001) + "\n", targets), "past the bound LINK003 stands down");
+        assertEquals(
+                4_000,
+                wiki("[[a]] ".repeat(2_000) + "\n\n" + "[[b]] ".repeat(2_000) + "\n", targets)
+                        .size(),
+                "per paragraph");
         long start = System.nanoTime();
         MarkdownLint.lint("[[".repeat(100_000) + "\n", Set.of(), DEFAULTS, targets);
         MarkdownLint.lint("[[a]] ".repeat(4_000) + "\n", Set.of(), DEFAULTS, targets);

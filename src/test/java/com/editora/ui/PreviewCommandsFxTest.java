@@ -690,6 +690,33 @@ class PreviewCommandsFxTest {
         assertEquals(Set.of("MD009"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
     }
 
+    /**
+     * A config rewritten within the clock's resolution keeps its modification time (so does one deleted and
+     * written again in the same tick): the time alone must not vouch for the cached parse.
+     */
+    @Test
+    void aConfigRewrittenInTheSameTickIsReadAgain() throws Exception {
+        EditorBuffer b = document("lint.md", "# Title\n");
+        Path file = b.getPath();
+        Path config = Files.writeString(file.getParent().resolve(".markdownlint.json"), "{\"MD009\": false}");
+        java.nio.file.attribute.FileTime stamp = Files.getLastModifiedTime(config);
+        assertEquals(Set.of("MD009"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+
+        Files.writeString(config, "{\"MD010\": false}"); // same length, and the very same time stamp
+        Files.setLastModifiedTime(config, stamp);
+        assertEquals(Set.of("MD010"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+
+        Files.delete(config);
+        assertEquals(Set.of(), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+        Files.writeString(config, "{\"MD012\": false}");
+        Files.setLastModifiedTime(config, stamp);
+        assertEquals(
+                Set.of("MD012"),
+                FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)),
+                "deleted and written again: not the parse of the file that was there before");
+        Files.delete(config);
+    }
+
     @Test
     void theConfigLookupStopsAtTheRepositoryRoot() throws Exception {
         EditorBuffer b = document("lint.md", "# Title\n");
