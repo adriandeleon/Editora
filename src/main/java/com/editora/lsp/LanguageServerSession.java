@@ -315,11 +315,21 @@ final class LanguageServerSession implements LanguageClient {
      */
     boolean start() {
         try {
-            ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
-            pb.directory(root.toFile());
-            ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
-            pb.command(JavaServerEnvironment.configure(serverId, pb.command(), pb.environment()));
-            process = pb.start();
+            if (com.editora.vfs.Vfs.isRemote(root)) {
+                // On the folder's host: its own server, its own PATH and locale, ended with the connection.
+                // It is told about documents by their paths on that host.
+                uris = WireUris.remote(com.editora.vfs.Vfs.authorityOf(root));
+                process = com.editora.process.ExecTargets.forPath(root)
+                        .start(com.editora.process.ExecSpec.of(
+                                        command, root, java.util.Map.of(), com.editora.process.ExecSpec.Locale.USER)
+                                .withLongLived(true));
+            } else {
+                ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
+                pb.directory(root.toFile());
+                ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
+                pb.command(JavaServerEnvironment.configure(serverId, pb.command(), pb.environment()));
+                process = pb.start();
+            }
             if (disposed) {
                 // The session was disposed while we were forking (e.g. the window closed) — kill the just-forked
                 // process and bail rather than leave it running orphaned.
@@ -425,8 +435,12 @@ final class LanguageServerSession implements LanguageClient {
 
     private void sendInitialize() {
         InitializeParams ip = new InitializeParams();
-        ip.setProcessId((int) ProcessHandle.current().pid());
-        String uri = uris.toWire(root.toUri().toString());
+        // Our pid means nothing on another machine; a server that watches its parent would exit at once.
+        ip.setProcessId(
+                com.editora.vfs.Vfs.isRemote(root)
+                        ? null
+                        : (int) ProcessHandle.current().pid());
+        String uri = uris.toWire(DocumentUris.ofDirectory(root));
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));
         ip.setCapabilities(clientCapabilities());

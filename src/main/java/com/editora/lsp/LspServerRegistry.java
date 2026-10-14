@@ -317,6 +317,26 @@ public final class LspServerRegistry {
         return new ServerSpec(d.id, tokenize(cmd), d.rootMarkers);
     }
 
+    /**
+     * The argv for {@code serverId} on a remote host: {@code hostTool} (configured for that host) when set;
+     * else {@code configured} (the global setting) when it is a bare command name, since a path names a file
+     * on this machine; else the server's default. Empty for an unknown server.
+     */
+    public static List<String> remoteCommandFor(String serverId, String configured, String hostTool) {
+        if (hostTool != null && !hostTool.isBlank()) {
+            return tokenize(hostTool);
+        }
+        if (configured != null && !configured.isBlank()) {
+            List<String> tokens = tokenize(configured);
+            String exe = tokens.isEmpty() ? "" : tokens.get(0);
+            if (!exe.isEmpty() && exe.indexOf('/') < 0 && exe.indexOf('\\') < 0) {
+                return tokens;
+            }
+        }
+        String def = defaultCommandFor(serverId);
+        return def.isEmpty() ? List.of() : tokenize(def);
+    }
+
     /** The tokenized argv for {@code serverId} from {@code commands} (blank ⇒ default), or empty if unknown. */
     public static List<String> commandFor(String serverId, Map<String, String> commands) {
         String configured = commands == null ? null : commands.get(serverId);

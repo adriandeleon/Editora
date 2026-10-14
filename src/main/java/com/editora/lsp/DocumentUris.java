@@ -32,6 +32,10 @@ final class DocumentUris {
 
     /** {@code file.toUri().toString()}, computed once per path. */
     static String of(Path file) {
+        if (com.editora.vfs.Vfs.isRemote(file)) {
+            // A remote file's key says which host it is on: its sftp:// URI (Path.toUri() throws for it).
+            return com.editora.vfs.Vfs.toStorableString(file);
+        }
         String spelling = file.toString();
         Entry cached = CACHE.get(file);
         // Path equality ignores case on Windows while the URI keeps it: only an identical spelling may
@@ -57,11 +61,23 @@ final class DocumentUris {
         if (key == null) {
             return null;
         }
+        if (com.editora.vfs.Vfs.isRemoteUri(key)) {
+            return com.editora.vfs.Vfs.parseStorable(key); // null while that host is not connected
+        }
         try {
             return Path.of(URI.create(key));
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** The key of a folder (a session's root): with a trailing slash, as {@link Path#toUri()} gives one. */
+    static String ofDirectory(Path dir) {
+        if (com.editora.vfs.Vfs.isRemote(dir)) {
+            String key = com.editora.vfs.Vfs.toStorableString(dir);
+            return key.endsWith("/") ? key : key + "/";
+        }
+        return dir.toUri().toString();
     }
 
     /** Drops {@code file}'s remembered URI (its document was closed). */

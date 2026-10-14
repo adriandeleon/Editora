@@ -120,7 +120,7 @@ public final class LspManager {
 
     /** Whether {@code file} is open on the session a {@link RefreshHandler} was given as {@code origin}. */
     public boolean servedBy(Path file, Object origin) {
-        return origin != null && file != null && com.editora.vfs.Vfs.isLocal(file) && sessionFor(file) == origin;
+        return origin != null && file != null && servable(file) && sessionFor(file) == origin;
     }
 
     /** Pure: whether a server status announces that the server is ready (jdtls: {@code ServiceReady}). */
@@ -136,7 +136,7 @@ public final class LspManager {
      * may predate that.
      */
     public void invalidateRequests(Path file) {
-        if (file != null && com.editora.vfs.Vfs.isLocal(file)) {
+        if (file != null && servable(file)) {
             String uri = uri(file);
             // Only what a server can ask to have refreshed. A signature-help or highlight request answers
             // the caret, not the server's changed state, and its caller is still waiting for it.
@@ -295,6 +295,70 @@ public final class LspManager {
             Platform.runLater(() -> {
                 if (!closed) {
                     onResult.accept(ok);
+                }
+            });
+        });
+    }
+
+    /**
+     * Whether {@code file} can be served: a local file, or one on a remote host that may run commands (its
+     * server runs there).
+     */
+    private static boolean servable(Path file) {
+        return com.editora.vfs.Vfs.isLocal(file)
+                || com.editora.process.ExecTargets.forPath(file).isAvailable();
+    }
+
+    /**
+     * The command {@code serverId} is started with on the host of {@code root}: what is configured for that
+     * host ({@code lsp.<id>} in its tools), else the global setting when it is a bare command name (a path
+     * names a file on this machine), else the server's default.
+     */
+    List<String> remoteCommand(String serverId, Path root) {
+        return LspServerRegistry.remoteCommandFor(
+                serverId, commands.get(serverId), com.editora.process.ExecTargets.remoteTool(root, "lsp." + serverId));
+    }
+
+    /** Per host and server: whether the server's command is on that host. */
+    private final Map<String, Boolean> remoteAvailable = new ConcurrentHashMap<>();
+
+    /** What {@link #detectRemote} last found for {@code serverId} on {@code anchor}'s host, or null. */
+    public Boolean remoteAvailability(Path anchor, String serverId) {
+        return remoteAvailable.get(
+                com.editora.process.ExecTargets.forPath(anchor).id() + SESSION_KEY_SEP + serverId);
+    }
+
+    /**
+     * Asks the host of remote {@code anchor} whether {@code serverId}'s command is there ({@code command -v}),
+     * off the FX thread, and posts the answer on it. Cached per host and server; a host that could not be
+     * asked is not remembered.
+     */
+    public void detectRemote(Path anchor, String serverId, Consumer<Boolean> onResult) {
+        var target = com.editora.process.ExecTargets.forPath(anchor);
+        String key = target.id() + SESSION_KEY_SEP + serverId;
+        Boolean hit = remoteAvailable.get(key);
+        if (closed || hit != null || !target.isAvailable()) {
+            boolean answer = hit != null && hit;
+            Platform.runLater(() -> onResult.accept(answer));
+            return;
+        }
+        List<String> command = remoteCommand(serverId, anchor);
+        detectExec.submit(() -> {
+            boolean ok = false;
+            if (!command.isEmpty()) {
+                ProcessRunner.Result r = ProcessRunner.run(
+                        anchor.toAbsolutePath().getRoot(),
+                        java.time.Duration.ofSeconds(10),
+                        List.of("sh", "-c", "command -v \"$1\" >/dev/null", "sh", command.get(0)));
+                ok = r.ok();
+                if (r.exit() >= 0) {
+                    remoteAvailable.put(key, ok);
+                }
+            }
+            boolean answer = ok;
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onResult.accept(answer);
                 }
             });
         });
@@ -563,7 +627,7 @@ public final class LspManager {
 
     public boolean isManaged(Path file) {
         // A remote (SFTP) file is never LSP-managed; bail before uri(), whose toUri() throws for such paths.
-        return file != null && com.editora.vfs.Vfs.isLocal(file) && sessionByDocUri.containsKey(uri(file));
+        return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
     }
 
     /** Current protocol version for an open document, or null when it is not managed. */
@@ -738,7 +802,7 @@ public final class LspManager {
     /** The server id currently managing {@code file}, or null if it is not open on any server. Lets the
      *  coordinator detect a server change (e.g. a pom.xml moving to lemminx-maven) and close+reopen. */
     public String managedServerId(Path file) {
-        if (file == null || !com.editora.vfs.Vfs.isLocal(file)) {
+        if (file == null || !servable(file)) {
             return null;
         }
         LanguageServerSession s = sessionByDocUri.get(uri(file));
@@ -760,7 +824,7 @@ public final class LspManager {
     /** The {@code sessionsByRoot} key: one session per (server, root). The command is deliberately not part
      *  of it — {@link #putCommand} disposes the session when the command changes. */
     static String sessionKey(String serverId, Path root) {
-        return serverId + SESSION_KEY_SEP + root.toUri();
+        return serverId + SESSION_KEY_SEP + DocumentUris.ofDirectory(root);
     }
 
     /** The prefix every {@link #sessionKey} for {@code serverId} starts with — how {@link #shutdownServer}
@@ -845,9 +909,14 @@ public final class LspManager {
         // otherwise freeze the UI for the first open of a language. The session is already cached, so the caller's
         // didOpen queues (LanguageServerSession.whenReady) until the async initialize completes; a failed start
         // uncaches it so a later open retries.
-        LspServerRegistry.ServerSpec unresolvedSpec = spec;
+        boolean remote = com.editora.vfs.Vfs.isRemote(root);
+        // On a remote host: the host's server (its own command for it, else the default), and none of the
+        // local workspace and SDK discovery below, which reads this machine's disk.
+        LspServerRegistry.ServerSpec unresolvedSpec = remote
+                ? new LspServerRegistry.ServerSpec(serverId, remoteCommand(serverId, root), spec.rootMarkers())
+                : spec;
         Path workspaceBase = jdtlsWorkspaceBase;
-        String workspaceBaseName = needsJdtlsWorkspace ? LspServerRegistry.workspaceDirName(root) : null;
+        String workspaceBaseName = needsJdtlsWorkspace && !remote ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
@@ -883,8 +952,9 @@ public final class LspManager {
                 }
             }
             List<String> startCommand = resolvedSpec.command();
-            Path astroTsdk =
-                    ASTRO_SERVER_ID.equals(serverId) ? astroTypeScriptSdk(root, sdkCeiling, startCommand) : null;
+            Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
+                    ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
+                    : null;
             if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
                 // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
@@ -1469,7 +1539,7 @@ public final class LspManager {
                         case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
                         case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
                     };
-            out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(p.toUri().toString()), type));
+            out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(DocumentUris.of(p)), type));
         }
         return out;
     }
