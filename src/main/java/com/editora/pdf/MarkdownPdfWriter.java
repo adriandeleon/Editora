@@ -501,9 +501,13 @@ public final class MarkdownPdfWriter {
         final float x;
         float top;
 
-        Bar(float x, float top) {
+        /** The rule's colour: the quote grey, or an alert kind's own. */
+        final Color color;
+
+        Bar(float x, float top, Color color) {
             this.x = x;
             this.top = top;
+            this.color = color;
         }
     }
 
@@ -533,6 +537,9 @@ public final class MarkdownPdfWriter {
         PDPage page;
         PDPageContentStream cs;
         float y;
+        /** The colour of the paragraph being laid out when it is an alert's title line; null otherwise. */
+        Color tint;
+
         /** Inline-collection state: whitespace was seen since the last word (see {@link Word#space()}). */
         boolean pendingSpace;
         /** The block quotes being laid out, outermost first — each owes a bar segment to every page it touches. */
@@ -785,6 +792,10 @@ public final class MarkdownPdfWriter {
                 list(ol, left, true, ol.getMarkerStartNumber() == null ? 1 : ol.getMarkerStartNumber());
             } else if (n instanceof BlockQuote bq) {
                 quote(bq, left);
+            } else if (n instanceof com.editora.markdown.MarkdownExportTree.Indented descriptions) {
+                for (Node child = descriptions.getFirstChild(); child != null; child = child.getNext()) {
+                    block(child, left + 18f); // a definition, set in from its term
+                }
             } else if (n instanceof FencedCodeBlock f) {
                 if (isMermaid(f.getInfo()) && mmdc != null) {
                     mermaid(f.getLiteral(), left);
@@ -859,7 +870,7 @@ public final class MarkdownPdfWriter {
         void paragraph(Paragraph p, float left, float size) throws IOException {
             List<Word> words = new ArrayList<>();
             pendingSpace = false;
-            inline(p, words, body, bodyBold, bodyItalic, size, PdfTheme.DEFAULT_FG, false);
+            inline(p, words, body, bodyBold, bodyItalic, size, tint == null ? PdfTheme.DEFAULT_FG : tint, false);
             flow(words, left, contentRight(), LEADING);
         }
 
@@ -981,11 +992,21 @@ public final class MarkdownPdfWriter {
         void quote(BlockQuote bq, float left) throws IOException {
             // The left bar runs from the top of the quote's first line to the bottom of its last, one
             // segment per page: newPage() strokes the segment for the page being left and restarts the bar.
-            Bar bar = new Bar(left + 2f, boxTop());
+            // An alert is a quote whose rule and title line carry its kind's colour.
+            Color alert = bq instanceof com.editora.markdown.MarkdownExportTree.AlertQuote a
+                    ? PdfTheme.hex("#" + com.editora.markdown.MarkdownExportTree.color(a.getKind()))
+                    : null;
+            Bar bar = new Bar(left + 2f, boxTop(), alert == null ? PdfTheme.RULE : alert);
             bars.add(bar);
             float inset = left + 12f;
             for (Node child = bq.getFirstChild(); child != null; child = child.getNext()) {
-                block(child, inset);
+                Color outer = tint;
+                tint = child == bq.getFirstChild() ? alert : null;
+                try {
+                    block(child, inset);
+                } finally {
+                    tint = outer;
+                }
             }
             bars.remove(bar);
             strokeBar(bar, boxTop() + PARA_GAP); // the last child left its paragraph gap below it
@@ -996,7 +1017,7 @@ public final class MarkdownPdfWriter {
             if (bar.top - bottom < LEADING / 2f) {
                 return; // nothing of the quote on this page (it starts on the next one)
             }
-            cs.setStrokingColor(PdfTheme.RULE);
+            cs.setStrokingColor(bar.color);
             cs.setLineWidth(2.5f);
             cs.moveTo(bar.x, bar.top);
             cs.lineTo(bar.x, bottom);

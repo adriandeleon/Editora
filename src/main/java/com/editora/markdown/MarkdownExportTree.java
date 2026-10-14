@@ -15,9 +15,10 @@ import org.commonmark.node.Text;
  * nodes.
  *
  * <ul>
- *   <li>An alert ({@code > [!NOTE]}) becomes a block quote that opens with its title in bold.
- *   <li>A definition list becomes, per entry, the term as a bold paragraph followed by its descriptions'
- *       own blocks.
+ *   <li>An alert ({@code > [!NOTE]}) becomes an {@link AlertQuote}: a block quote that opens with its
+ *       title in bold and knows its kind, so a writer can colour its rule and title.
+ *   <li>A definition list becomes, per entry, the term as a bold paragraph followed by an
+ *       {@link Indented} block holding its descriptions.
  * </ul>
  *
  * Inline nodes (emoji, highlight, superscript, subscript) are left for the writers, which style them.
@@ -25,6 +26,33 @@ import org.commonmark.node.Text;
 public final class MarkdownExportTree {
 
     private MarkdownExportTree() {}
+
+    /** An alert as the block quote it is drawn as; a writer that knows it colours the rule and the title. */
+    public static final class AlertQuote extends BlockQuote {
+        private final MarkdownAlerts.Kind kind;
+
+        AlertQuote(MarkdownAlerts.Kind kind) {
+            this.kind = kind;
+        }
+
+        public MarkdownAlerts.Kind getKind() {
+            return kind;
+        }
+    }
+
+    /** The descriptions of a definition-list entry: blocks to set in from their term. */
+    public static final class Indented extends org.commonmark.node.CustomBlock {}
+
+    /** The colour of an alert kind's rule and title, as six hex digits (GitHub's light palette). */
+    public static String color(MarkdownAlerts.Kind kind) {
+        return switch (kind) {
+            case NOTE -> "0969DA";
+            case TIP -> "1A7F37";
+            case IMPORTANT -> "8250DF";
+            case WARNING -> "9A6700";
+            case CAUTION -> "CF222E";
+        };
+    }
 
     /** Rewrites {@code root} in place and returns it. */
     public static Node lower(Node root) {
@@ -38,7 +66,7 @@ public final class MarkdownExportTree {
         for (Node child : children) {
             lower(child); // innermost first: an alert in a list item, a definition list in an alert
             if (child instanceof MarkdownAlerts.Alert alert) {
-                BlockQuote quote = new BlockQuote();
+                BlockQuote quote = new AlertQuote(alert.getKind());
                 Paragraph title = new Paragraph();
                 StrongEmphasis strong = new StrongEmphasis();
                 strong.appendChild(new Text(alert.getKind().title()));
@@ -49,6 +77,7 @@ public final class MarkdownExportTree {
                 alert.unlink();
             } else if (child instanceof MarkdownDefinitions.DefinitionList list) {
                 Node anchor = list;
+                Indented descriptions = null;
                 for (Node part = list.getFirstChild(); part != null; ) {
                     Node next = part.getNext();
                     if (part instanceof MarkdownDefinitions.Term term) {
@@ -58,18 +87,20 @@ public final class MarkdownExportTree {
                         p.appendChild(strong);
                         anchor.insertAfter(p);
                         anchor = p;
-                    } else if (part.getFirstChild() != null
-                            && !(part.getFirstChild() instanceof org.commonmark.node.Block)) {
-                        Paragraph p = new Paragraph(); // a one-line description holds its text directly
-                        moveChildren(part, p);
-                        anchor.insertAfter(p);
-                        anchor = p;
+                        descriptions = null;
                     } else {
-                        for (Node block = part.getFirstChild(); block != null; ) {
-                            Node following = block.getNext();
-                            anchor.insertAfter(block);
-                            anchor = block;
-                            block = following;
+                        if (descriptions == null) {
+                            descriptions = new Indented();
+                            anchor.insertAfter(descriptions);
+                            anchor = descriptions;
+                        }
+                        if (part.getFirstChild() != null
+                                && !(part.getFirstChild() instanceof org.commonmark.node.Block)) {
+                            Paragraph p = new Paragraph(); // a one-line description holds its text directly
+                            moveChildren(part, p);
+                            descriptions.appendChild(p);
+                        } else {
+                            moveChildren(part, descriptions);
                         }
                     }
                     part = next;

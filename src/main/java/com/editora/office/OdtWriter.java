@@ -147,9 +147,32 @@ public final class OdtWriter {
         } else if (n instanceof OrderedList ol) {
             listXml(b, ol, true, baseDir, mmdc, images);
         } else if (n instanceof BlockQuote bq) {
+            // An alert: its own paragraph style (a coloured rule, upright text) and a coloured title line.
+            String slug = bq instanceof com.editora.markdown.MarkdownExportTree.AlertQuote alert
+                    ? alert.getKind().slug()
+                    : null;
+            boolean title = slug != null;
             for (Node c = bq.getFirstChild(); c != null; c = c.getNext()) {
-                if (c instanceof Paragraph p) {
+                if (c instanceof Paragraph p && slug != null) {
+                    b.append("<text:p text:style-name=\"Alert_").append(slug).append("\">");
+                    if (title) {
+                        b.append("<text:span text:style-name=\"TAlert_")
+                                .append(slug)
+                                .append("\">");
+                    }
+                    inline(b, InlineRun.flatten(p), images);
+                    b.append(title ? "</text:span></text:p>" : "</text:p>");
+                } else if (c instanceof Paragraph p) {
                     paragraph(b, "Quotations", InlineRun.flatten(p), images);
+                } else {
+                    block(b, c, baseDir, mmdc, images);
+                }
+                title = false;
+            }
+        } else if (n instanceof com.editora.markdown.MarkdownExportTree.Indented descriptions) {
+            for (Node c = descriptions.getFirstChild(); c != null; c = c.getNext()) {
+                if (c instanceof Paragraph p) {
+                    paragraph(b, "Definition", InlineRun.flatten(p), images);
                 } else {
                     block(b, c, baseDir, mmdc, images);
                 }
@@ -213,6 +236,30 @@ public final class OdtWriter {
         b.append("<text:p text:style-name=\"").append(style).append("\">");
         inline(b, runs, images);
         b.append("</text:p>");
+    }
+
+    /** A paragraph style (coloured rule) and a text style (coloured title) for each kind of alert. */
+    private static String alertStyles() {
+        StringBuilder sb = new StringBuilder();
+        for (com.editora.markdown.MarkdownAlerts.Kind kind : com.editora.markdown.MarkdownAlerts.Kind.values()) {
+            String color =
+                    "#" + com.editora.markdown.MarkdownExportTree.color(kind).toLowerCase(java.util.Locale.ROOT);
+            sb.append("<style:style style:name=\"Alert_")
+                    .append(kind.slug())
+                    .append("\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">")
+                    .append("<style:paragraph-properties fo:margin-left=\"0.3cm\" fo:margin-right=\"0.5cm\"")
+                    .append(" fo:padding-left=\"0.35cm\" fo:padding-right=\"0cm\" fo:padding-top=\"0cm\"")
+                    .append(" fo:padding-bottom=\"0cm\" fo:border-left=\"2.5pt solid ")
+                    .append(color)
+                    .append("\" fo:border-right=\"none\" fo:border-top=\"none\" fo:border-bottom=\"none\"/>")
+                    .append("</style:style>")
+                    .append("<style:style style:name=\"TAlert_")
+                    .append(kind.slug())
+                    .append("\" style:family=\"text\"><style:text-properties fo:color=\"")
+                    .append(color)
+                    .append("\"/></style:style>");
+        }
+        return sb.toString();
     }
 
     private static void codeBlock(StringBuilder b, String text) {
@@ -679,6 +726,9 @@ public final class OdtWriter {
             + "<style:style style:name=\"Quotations\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
             + "<style:paragraph-properties fo:margin-left=\"1cm\" fo:margin-right=\"0.5cm\"/>"
             + "<style:text-properties fo:font-style=\"italic\"/></style:style>"
+            + "<style:style style:name=\"Definition\" style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
+            + "<style:paragraph-properties fo:margin-left=\"1cm\"/></style:style>"
+            + alertStyles()
             + "<style:style style:name=\"Horizontal_20_Line\" style:display-name=\"Horizontal Line\""
             + " style:family=\"paragraph\" style:parent-style-name=\"Standard\">"
             + "<style:paragraph-properties fo:border-bottom=\"0.5pt solid #808080\" fo:padding-bottom=\"0.05cm\""
