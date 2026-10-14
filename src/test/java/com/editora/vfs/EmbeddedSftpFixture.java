@@ -171,6 +171,16 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         fileSystems.disconnect(connection.id());
     }
 
+    /**
+     * Loses the connection the way a network does: the server drops every session at once, without the
+     * client asking. Unlike {@link #disconnect} the engine still holds the filesystem, now closed.
+     */
+    public void dropConnection() {
+        for (var session : server.getActiveSessions()) {
+            session.close(true);
+        }
+    }
+
     public Path reconnect() throws Exception {
         connect();
         return remoteRoot;

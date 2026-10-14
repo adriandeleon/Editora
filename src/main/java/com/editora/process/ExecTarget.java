@@ -41,6 +41,16 @@ public interface ExecTarget {
     PortForward forwardLocal(String host, int port) throws IOException;
 
     /**
+     * The latest instant on this machine's clock that {@code targetMillis}, a time read from the target's
+     * clock (a file's modification time), can stand for; {@code -1} when the target's clock is not known. A
+     * caller asking "was this file written before that moment?" can trust a yes. The local target shares
+     * this machine's clock.
+     */
+    default long latestLocalTime(long targetMillis) {
+        return targetMillis;
+    }
+
+    /**
      * A path a tool printed: taken as is when absolute, else resolved against {@code base} (the directory the
      * tool ran in).
      */

@@ -123,12 +123,7 @@ public final class WorkspaceEditJournal {
         }
         line.append(kind);
         for (Path path : paths) {
-            line.append('\t')
-                    .append(
-                            path == null
-                                    ? "-"
-                                    : URLEncoder.encode(
-                                            path.toAbsolutePath().normalize().toString(), StandardCharsets.UTF_8));
+            line.append('\t').append(path == null ? "-" : URLEncoder.encode(storable(path), StandardCharsets.UTF_8));
         }
         line.append('\n');
         try {
@@ -142,6 +137,14 @@ public final class WorkspaceEditJournal {
         } catch (IOException | RuntimeException e) {
             broken = true;
         }
+    }
+
+    /** A local file by its path, as journals always held it; a remote one by its {@code sftp://} URI. */
+    private static String storable(Path path) {
+        Path absolute = path.toAbsolutePath().normalize();
+        return com.editora.vfs.Vfs.isRemote(absolute)
+                ? com.editora.vfs.Vfs.toStorableString(absolute)
+                : absolute.toString();
     }
 
     // --- recovery -------------------------------------------------------------------------------------
@@ -207,7 +210,11 @@ public final class WorkspaceEditJournal {
             Path base = root.toAbsolutePath().normalize();
             for (Entry entry : entries) {
                 for (Path path : new Path[] {entry.first(), entry.second(), entry.third()}) {
-                    if (path != null && path.startsWith(base)) {
+                    // A path on another filesystem (a remote host's, or this machine's for a remote root) is
+                    // never under it — and comparing the two would throw.
+                    if (path != null
+                            && com.editora.config.PathKeys.sameFileSystem(path, base)
+                            && path.startsWith(base)) {
                         return true;
                     }
                 }
@@ -354,7 +361,7 @@ public final class WorkspaceEditJournal {
             Interrupted interrupted = read(journal);
             if (interrupted == null) {
                 CLAIMED.remove(journal);
-                continue; // unreadable: keep the file, it may be readable by a later version
+                continue; // unreadable or on another host: keep the file for a later version or connection
             }
             if (interrupted.leftovers().isEmpty()) {
                 interrupted.dismiss();
@@ -397,6 +404,8 @@ public final class WorkspaceEditJournal {
                         // A torn last line, or a kind a later version writes: ignore it.
                     }
                 }
+            } catch (Unreachable e) {
+                return null; // its files are on a host this window is not connected to
             } catch (RuntimeException e) {
                 // A torn line (the process died while writing it): the move it announced never started.
             }
@@ -404,7 +413,25 @@ public final class WorkspaceEditJournal {
         return new Interrupted(journal, committed, entries);
     }
 
+    /** Thrown for a path on a host this window is not connected to: the journal waits for that host. */
+    private static final class Unreachable extends RuntimeException {
+        Unreachable() {
+            super(null, null, false, false);
+        }
+    }
+
     private static Path path(String field) {
-        return field.equals("-") ? null : Path.of(URLDecoder.decode(field, StandardCharsets.UTF_8));
+        if (field.equals("-")) {
+            return null;
+        }
+        String stored = URLDecoder.decode(field, StandardCharsets.UTF_8);
+        if (!com.editora.vfs.Vfs.isRemoteUri(stored)) {
+            return Path.of(stored);
+        }
+        Path remote = com.editora.vfs.Vfs.parseStorable(stored);
+        if (remote == null) {
+            throw new Unreachable();
+        }
+        return remote;
     }
 }

@@ -143,6 +143,11 @@ public final class ExecTargets {
         }
 
         @Override
+        public long latestLocalTime(long targetMillis) {
+            return -1;
+        }
+
+        @Override
         public Path toPath(String targetPath) {
             return origin.getFileSystem().getPath(targetPath);
         }

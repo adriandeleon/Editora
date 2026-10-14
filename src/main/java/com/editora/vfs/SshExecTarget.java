@@ -50,6 +50,9 @@ final class SshExecTarget implements ExecTarget {
     private final SftpFileSystem fs;
     private volatile RemoteEnv env;
 
+    /** The least the host's clock can be ahead of this machine's, in millis, once measured. */
+    private volatile Long clockLead;
+
     SshExecTarget(String id, SftpFileSystem fs) {
         this.id = id;
         this.fs = fs;
@@ -170,6 +173,51 @@ final class SshExecTarget implements ExecTarget {
                 env = probed;
             }
             return env;
+        }
+    }
+
+    /**
+     * The host's clock is read once per connection with {@code date +%s} (whole seconds, as anywhere). The
+     * host's second {@code s} began no later than the moment the answer arrived, so {@code s - arrival} is
+     * the least the host can be ahead; converting with it gives the latest local instant a host time can
+     * mean, whatever the round trip took.
+     */
+    @Override
+    public long latestLocalTime(long hostMillis) {
+        Long lead = clockLead();
+        return lead == null ? -1 : hostMillis - lead;
+    }
+
+    private Long clockLead() {
+        Long known = clockLead;
+        if (known != null) {
+            return known;
+        }
+        synchronized (this) {
+            if (clockLead == null) {
+                try {
+                    Semaphore slot = acquire(false);
+                    try {
+                        String out = capture(session(), "date +%s").strip();
+                        long arrived = System.currentTimeMillis();
+                        clockLead = leastLead(out, arrived);
+                    } finally {
+                        slot.release();
+                    }
+                } catch (IOException e) {
+                    return null; // asked again next time
+                }
+            }
+            return clockLead;
+        }
+    }
+
+    /** {@code date +%s} output and the local instant it arrived → the least lead, or null when unreadable. */
+    static Long leastLead(String dateOutput, long arrivedMillis) {
+        try {
+            return Long.parseLong(dateOutput.strip()) * 1000 - arrivedMillis;
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
