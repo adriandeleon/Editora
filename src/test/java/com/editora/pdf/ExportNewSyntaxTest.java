@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -32,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ExportNewSyntaxTest {
 
     private static final String MD =
-            "> [!WARNING]\n> Mind the *gap*.\n\nWater is H~2~O, area in m^2^, ==marked== text, done :rocket:\n\n"
+            "> [!WARNING]\n> Mind the *gap*.\n\nWater is H~2~O, area in m^2^, ==marked== text, done :rocket: in 2024\n\n"
                     + "Term one\n: First description.\n: Second description.\n\nafter\n";
 
     @TempDir
@@ -138,15 +139,51 @@ class ExportNewSyntaxTest {
     }
 
     @Test
-    void pdfWritesTheContentAndNeverABlankForAnEmoji() throws Exception {
+    void pdfDrawsTheEmojiWithTheBundledFontAndMarksRaisesAndLowersText() throws Exception {
         Path out = dir.resolve("o.pdf");
         MarkdownPdfWriter.write(MD, dir, "letter", null, out);
         String text = PdfProbe.text(out).replaceAll("\\s+", " ");
         assertTrue(text.contains("Warning") && text.contains("Mind the gap."), text);
         assertFalse(text.contains("[!WARNING]"), text);
         assertTrue(text.contains("Term one") && text.contains("Second description."), text);
-        assertTrue(text.contains("marked text"), text);
-        assertTrue(text.contains("🚀") || text.contains(":rocket:"), "the emoji or its shortcode: " + text);
         assertTrue(text.contains("after"), text);
+
+        // The emoji is its own character, drawn from the embedded Noto Emoji subset — on any machine.
+        assertTrue(text.contains("\uD83D\uDE80"), "the rocket itself: " + text);
+        assertFalse(text.contains(":rocket:") || text.contains("?"), text);
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(out.toFile())) {
+            java.util.Set<String> fonts = new java.util.TreeSet<>();
+            for (org.apache.pdfbox.pdmodel.PDPage page : doc.getPages()) {
+                for (org.apache.pdfbox.cos.COSName name : page.getResources().getFontNames()) {
+                    fonts.add(page.getResources().getFont(name).getName());
+                }
+            }
+            assertTrue(fonts.stream().anyMatch(f -> f.contains("NotoEmoji")), "embedded: " + fonts);
+        }
+
+        // Superscript and subscript: smaller glyphs, above and below the baseline of the words beside them.
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        float water = PdfProbe.glyphsOf(glyphs, "Water").get(0).baseline();
+        PdfProbe.Glyph sub = PdfProbe.glyphsOf(glyphs, "H2O").get(1);
+        PdfProbe.Glyph sup = PdfProbe.glyphsOf(glyphs, "m2").get(1);
+        PdfProbe.Glyph h = PdfProbe.glyphsOf(glyphs, "H2O").get(0);
+        assertEquals(water, h.baseline(), 0.01f);
+        assertTrue(sub.baseline() < water - 0.5f, "the 2 of H2O sits lower: " + sub.baseline() + " vs " + water);
+        assertTrue(sup.baseline() > water + 2f, "the 2 of m2 sits higher: " + sup.baseline() + " vs " + water);
+        PdfProbe.Glyph two = PdfProbe.glyphsOf(glyphs, "2024").get(0);
+        assertTrue(
+                sub.right() - sub.x() < (two.right() - two.x()) * 0.85f, "and is smaller than a 2 of the running text");
+
+        // Highlight: one filled marker box behind "marked", as wide as the word and no wider.
+        List<PdfProbe.Glyph> marked = PdfProbe.glyphsOf(glyphs, "marked");
+        float left = marked.get(0).x();
+        float right = marked.get(marked.size() - 1).right();
+        List<PdfProbe.Box> behind = PdfProbe.boxes(out).stream()
+                .filter(b -> Math.abs(b.x() - left) < 0.6f
+                        && Math.abs(b.x() + b.width() - right) < 0.6f
+                        && b.y() < marked.get(0).baseline()
+                        && b.y() + b.height() > marked.get(0).baseline())
+                .toList();
+        assertEquals(1, behind.size(), "a box behind the highlighted word: " + PdfProbe.boxes(out));
     }
 }

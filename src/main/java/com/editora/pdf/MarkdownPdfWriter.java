@@ -398,24 +398,61 @@ public final class MarkdownPdfWriter {
             PDImageXObject img,
             float imgW,
             float imgH,
-            float imgDrop) {
+            float imgDrop,
+            boolean mark,
+            float rise) {
         static Word of(
                 String text, PDFont font, float size, Color color, boolean underline, boolean brk, boolean space) {
-            return new Word(text, font, size, color, underline, false, brk, space, null, null, 0, 0, 0);
+            return new Word(text, font, size, color, underline, false, brk, space, null, null, 0, 0, 0, false, 0f);
         }
 
         static Word picture(PDImageXObject img, float w, float h, float drop, PDFont font, float size, boolean space) {
-            return new Word("", font, size, null, false, false, false, space, null, img, w, h, drop);
+            return new Word("", font, size, null, false, false, false, space, null, img, w, h, drop, false, 0f);
         }
 
         /** This word struck through ({@code ~~text~~}). */
         Word struck() {
-            return new Word(text, font, size, color, underline, true, brk, space, link, img, imgW, imgH, imgDrop);
+            return new Word(
+                    text, font, size, color, underline, true, brk, space, link, img, imgW, imgH, imgDrop, mark, rise);
         }
 
         /** This word as part of the link {@code ref}. */
         Word linked(LinkRef ref) {
-            return new Word(text, font, size, color, underline, strike, brk, space, ref, img, imgW, imgH, imgDrop);
+            return new Word(
+                    text, font, size, color, underline, strike, brk, space, ref, img, imgW, imgH, imgDrop, mark, rise);
+        }
+
+        /** This word highlighted ({@code ==text==}): a marker-yellow background behind it. */
+        Word marked() {
+            return new Word(
+                    text, font, size, color, underline, strike, brk, space, link, img, imgW, imgH, imgDrop, true, rise);
+        }
+
+        /**
+         * This word as a superscript ({@code up}) or a subscript: smaller, and lifted or lowered from the
+         * baseline by a share of the size it had. A picture (a formula, an image) is left as it is.
+         */
+        Word script(boolean up) {
+            if (img != null) {
+                return this;
+            }
+            float shift = up ? size * 0.36f : -size * 0.16f;
+            return new Word(
+                    text,
+                    font,
+                    size * SCRIPT_SCALE,
+                    color,
+                    underline,
+                    strike,
+                    brk,
+                    space,
+                    link,
+                    null,
+                    0,
+                    0,
+                    0,
+                    mark,
+                    rise + shift);
         }
     }
 
@@ -425,6 +462,12 @@ public final class MarkdownPdfWriter {
      * space glyph; its decorations say whether the underline, strike or link of the words around it runs
      * through. A picture piece is drawn at {@code scale} times its word's size.
      */
+    /** A superscript or subscript is this share of the text size around it. */
+    private static final float SCRIPT_SCALE = 0.72f;
+
+    /** The marker colour behind {@code ==highlighted==} text (dark text stays readable on it). */
+    private static final Color MARK_BG = PdfTheme.hex("#fff3a3");
+
     private record Piece(
             Word word,
             String text,
@@ -1440,11 +1483,8 @@ public final class MarkdownPdfWriter {
                     out.add(mathWord(m.getLatex(), m.isDisplay(), reg, size, color, underline));
                     pendingSpace = false;
                 } else if (n instanceof com.editora.markdown.MarkdownEmoji.Emoji emoji) {
-                    // The character where the font has it; else the shortcode as written, never a blank.
-                    String shown = PdfGlyphs.encodes(reg, emoji.getEmoji())
-                            ? emoji.getEmoji()
-                            : ":" + emoji.getShortcode() + ":";
-                    addWords(shown, out, reg, size, color, underline);
+                    // The character itself: the glyph lookup finds it in the bundled Noto Emoji font.
+                    addInlineText(emoji.getEmoji(), out, reg, size, color, underline);
                 } else if (n instanceof org.commonmark.node.HtmlInline html) {
                     if (!MarkdownRenderer.isHtmlComment(html.getLiteral())) { // shown as source, like the preview
                         addWords(html.getLiteral(), out, mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline);
@@ -1454,6 +1494,20 @@ public final class MarkdownPdfWriter {
                     inline(n, out, reg, bold, italic, size, color, underline);
                     for (int k = first; k < out.size(); k++) {
                         out.set(k, out.get(k).struck());
+                    }
+                } else if (n instanceof com.editora.markdown.MarkdownMarks.Highlight) {
+                    int first = out.size();
+                    inline(n, out, reg, bold, italic, size, color, underline);
+                    for (int k = first; k < out.size(); k++) {
+                        out.set(k, out.get(k).marked());
+                    }
+                } else if (n instanceof com.editora.markdown.MarkdownMarks.Superscript
+                        || n instanceof com.editora.markdown.MarkdownMarks.Subscript) {
+                    boolean up = n instanceof com.editora.markdown.MarkdownMarks.Superscript;
+                    int first = out.size();
+                    inline(n, out, reg, bold, italic, size, color, underline);
+                    for (int k = first; k < out.size(); k++) {
+                        out.set(k, out.get(k).script(up));
                     }
                 } else {
                     // Inserted text (++ins++) and anything unknown: render the text plainly.
@@ -1530,7 +1584,9 @@ public final class MarkdownPdfWriter {
                         cached.img(),
                         cached.imgW(),
                         cached.imgH(),
-                        cached.imgDrop());
+                        cached.imgDrop(),
+                        false,
+                        0f);
             }
             String d = display ? "$$" : "$";
             return Word.of(d + latex + d, reg, size, color, underline, false, pendingSpace);
@@ -1706,11 +1762,21 @@ public final class MarkdownPdfWriter {
             float linkRight = 0f;
             float linkBottom = 0f;
             float linkTop = 0f;
+            Word before = null;
             for (Piece p : line.pieces) {
                 Word w = p.word();
                 float x = x0 + p.x();
                 float low;
                 float high;
+                // The marker runs under the words and the spaces between two of them, not past the phrase.
+                if (w.mark() && (!p.space() || (before != null && before.mark()))) {
+                    cs.setNonStrokingColor(MARK_BG);
+                    cs.addRect(x, base - w.size() * 0.25f + w.rise(), p.width(), w.size() * 1.1f);
+                    cs.fill();
+                }
+                if (!p.space()) {
+                    before = w;
+                }
                 if (w.img() != null && !p.space()) { // (the space before a picture is still a space glyph)
                     float h = w.imgH() * p.scale();
                     low = base - w.imgDrop() * p.scale();
@@ -1722,7 +1788,7 @@ public final class MarkdownPdfWriter {
                     if (w.color() != null) {
                         cs.setNonStrokingColor(w.color());
                     }
-                    glyphs.show(cs, w.font(), w.size(), p.text(), x, base);
+                    glyphs.show(cs, w.font(), w.size(), p.text(), x, base + w.rise());
                 }
                 if (p.underline()) {
                     underline(w.color() == null ? PdfTheme.DEFAULT_FG : w.color(), x, x + p.width(), base);
