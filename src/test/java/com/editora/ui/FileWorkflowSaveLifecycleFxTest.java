@@ -506,6 +506,13 @@ class FileWorkflowSaveLifecycleFxTest {
             buffer.setPath(file);
             buffer.setContent("A");
             buffer.setDiskSnapshot(Files.getLastModifiedTime(file).toMillis(), Files.size(file));
+            // Showing the tab starts the "changed on disk?" check, which reads the file on a worker. These tests
+            // change the file behind the editor's back to exercise the SAVE path's own conflict handling; when
+            // that read came after the test's write, the check asked "modified outside Editora. Reload?" before
+            // the save, a dialog answerer chose "Keep Mine", and the save then rightly wrote over the external
+            // version. Hold the check off for the tests of this class (its own guard against re-entry).
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            workflows.checkingExternalChanges = true;
             FxTestSupport.call(
                     fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
             return buffer;
