@@ -129,7 +129,16 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   its host, inside the project folder or not (a definition in the host's site-packages joins the project's
   server instead of starting one per library folder, each holding a channel); a file on another host gets its
   folder. No marker probing over the network. Project `.editora/settings.json` overrides are not read for a
-  remote project. **jdtls and astro are not offered remotely yet.**
+  remote project. **astro is not offered remotely yet.**
+- **jdtls on the host:** `-data` is `<cache>/jdtls-workspaces/<root hash>`, where the cache is
+  `ExecTarget.cacheDir()` (`~/.cache/editora` from the login shell's `HOME`; the consent question names it).
+  It is not claimed across windows as local workspaces are (a remote project has one window), and a failed
+  handshake does not delete it. `java.configuration.runtimes` lists the host's JDKs, found by one `sh` command
+  (`RemoteJavaRuntimes`: the host's `jdk.home` tool, `JAVA_HOME`, the `javac` on `PATH`, and the folders
+  `JavaRuntimes` looks in). The java-debug bundles are not sent (they are paths on this machine; debugging on a
+  host is not done yet). `-Djava.lsp.joinOnCompletion=true` goes on the command line when the host says the executable is
+  jdtls's launcher (`jdtls.py` beside it, `JavaServerEnvironment.isRemoteJdtlsLauncher`), else in the
+  server's environment.
 - **Language servers and the connection:** a remote server that ends is given a second
   (`LspCoordinator.afterRemoteCrashSettles`) for the connection's own listener to catch up. If its host can
   no longer run commands, the connection went with it: its tabs go quiet, nothing is restarted and nothing
@@ -145,8 +154,8 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   host clock cannot pass a later write off as an earlier one. The apply-time re-checks still `stat` on the FX
   thread, one round trip per closed target.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
-  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), jdtls and
-  debugging.
+  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
+  debugging, a Java project's main-class run and its gutter ▶.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 
