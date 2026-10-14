@@ -127,4 +127,58 @@ class MarkdownLinkRewriteTest {
         assertEquals("a%29.md", MarkdownLinkRewrite.encode("a).md"));
         assertEquals("é b", MarkdownLinkRewrite.decode("%C3%A9%20b"));
     }
+
+    @Test
+    void htmlSrcAndHrefAreRewrittenLikeLinks() {
+        String text =
+                "<img src=\"img/old pic.png\" width=\"10\"> <a href='old.md#x'>x</a> <a href=\"https://e.org/old.md\">w</a>\n\n"
+                        + "<div>\n<img src=\"old.md\">\n</div>\n";
+        MarkdownLinkRewrite.Result r = renamed(text, "a.md", "old.md", "sub/new.md");
+        assertEquals(
+                "<img src=\"img/old pic.png\" width=\"10\"> <a href='sub/new.md#x'>x</a> <a href=\"https://e.org/old.md\">w</a>\n\n"
+                        + "<div>\n<img src=\"sub/new.md\">\n</div>\n",
+                r.text());
+        assertEquals(2, r.count());
+        assertEquals(
+                "<img src=\"media/old%20pic.png\">",
+                renamed("<img src=\"img/old%20pic.png\">", "a.md", "img", "media")
+                        .text());
+    }
+
+    @Test
+    void wikiLinksFollowARenamedNoteAndIgnoreAMereMove() {
+        WikiTargets before =
+                new WikiTargets(ROOT, List.of(p("a.md"), p("notes/old.md"), p("notes/other.md"), p("img/pic.png")));
+        String text = "[[old]] [[old#part|label]] [[OLD.md]] ![[pic.png]] [[other]] [[notes/old]] [[missing]]";
+
+        MarkdownLinkRewrite.Result renamed =
+                MarkdownLinkRewrite.rewrite(text, p("a.md"), p("a.md"), p("notes/old.md"), p("notes/new.md"), before);
+        assertEquals(
+                "[[new]] [[new#part|label]] [[new.md]] ![[pic.png]] [[other]] [[notes/new]] [[missing]]",
+                renamed.text());
+        assertEquals(4, renamed.count());
+
+        MarkdownLinkRewrite.Result moved =
+                MarkdownLinkRewrite.rewrite(text, p("a.md"), p("a.md"), p("notes/old.md"), p("archive/old.md"), before);
+        assertEquals(
+                "[[old]] [[old#part|label]] [[OLD.md]] ![[pic.png]] [[other]] [[archive/old]] [[missing]]",
+                moved.text(),
+                "a bare name still names the note; only the link written with a folder changes");
+        assertEquals(1, moved.count());
+
+        MarkdownLinkRewrite.Result picture =
+                MarkdownLinkRewrite.rewrite(text, p("a.md"), p("a.md"), p("img/pic.png"), p("img/photo.png"), before);
+        assertTrue(picture.text().contains("![[photo.png]]"), picture.text());
+
+        // Without the notes, wiki links are left exactly as they are.
+        assertSame(text, renamed(text, "a.md", "notes/old.md", "notes/new.md").text());
+    }
+
+    @Test
+    void aMovedDocumentKeepsItsFolderRelativeWikiLinks() {
+        WikiTargets before = new WikiTargets(ROOT, List.of(p("docs/a.md"), p("docs/sub/b.md"), p("c.md")));
+        MarkdownLinkRewrite.Result r = MarkdownLinkRewrite.rewrite(
+                "[[sub/b]] [[c]]", p("docs/a.md"), p("deep/er/a.md"), p("docs/a.md"), p("deep/er/a.md"), before);
+        assertEquals("[[../../docs/sub/b]] [[c]]", r.text());
+    }
 }
