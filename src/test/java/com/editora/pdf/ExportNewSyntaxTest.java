@@ -314,4 +314,43 @@ class ExportNewSyntaxTest {
             assertTrue(kindColour, "#9a6700 as a fill colour");
         }
     }
+
+    /**
+     * Front matter is metadata: no export writes it into the document (the HTML page takes its title and
+     * language from it), whatever "hide front matter" says — that switch has nothing left to hide here.
+     */
+    @Test
+    void noExportWritesFrontMatterIntoTheDocument() throws Exception {
+        String md = "---\ntitle: The Title\nauthor: Ada Example\ntags: [a, b]\n---\n\n# Heading\n\nBody text.\n";
+        Path docx = dir.resolve("fm.docx");
+        DocxWriter.write(md, dir, null, docx);
+        String word;
+        try (InputStream in = Files.newInputStream(docx);
+                XWPFDocument doc = new XWPFDocument(in);
+                var text = new org.apache.poi.xwpf.extractor.XWPFWordExtractor(doc)) {
+            word = text.getText();
+        }
+        Path odt = dir.resolve("fm.odt");
+        OdtWriter.write(md, dir, null, odt);
+        String writer = null;
+        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(odt))) {
+            for (ZipEntry e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                if (e.getName().equals("content.xml")) {
+                    String xml = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
+                    writer = xml.substring(xml.indexOf("<office:body")).replaceAll("<[^>]*>", " ");
+                }
+            }
+        }
+        Path pdf = dir.resolve("fm.pdf");
+        MarkdownPdfWriter.write(md, dir, "letter", null, pdf);
+        String html = com.editora.editor.MarkdownHtmlExport.toHtml(md, "file", false);
+        String body = html.substring(html.indexOf("<body>"));
+        String clipboard = com.editora.editor.MarkdownClipboardHtml.toHtml(md, false);
+        for (String out : new String[] {word, writer, PdfProbe.text(pdf), body, clipboard}) {
+            assertTrue(out.contains("Body text."), out);
+            assertFalse(out.contains("Ada Example"), "front matter is not content: " + out);
+            assertFalse(out.contains("tags"), out);
+        }
+        assertTrue(html.contains("<title>The Title</title>"), "it still names the page");
+    }
 }
