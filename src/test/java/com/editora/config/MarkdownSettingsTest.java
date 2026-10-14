@@ -78,7 +78,8 @@ class MarkdownSettingsTest {
         JsonNode saved = JSON.readTree(dir.resolve("settings.json").toFile());
         assertEquals(Settings.SCHEMA_VERSION, saved.get("schemaVersion").asInt());
         assertFalse(saved.get("wordWrapProse").asBoolean());
-        assertFalse(saved.get("markdownRemoteImages").asBoolean());
+        assertFalse(saved.has("markdownRemoteImages"), "a view of the policy, not a stored key");
+        assertEquals("never", saved.get("markdownRemoteImagePolicy").asText());
         assertEquals("docs/img", saved.get("markdownAssetsFolder").asText());
 
         Settings again = new ConfigManager(dir).load();
@@ -234,5 +235,25 @@ class MarkdownSettingsTest {
         assertEquals(com.editora.markdown.MarkdownLint.DEFAULT_OFF, Settings.MARKDOWN_LINT_DEFAULT_OFF);
         assertEquals(
                 com.editora.markdown.MarkdownLintOptions.SEVERITIES, java.util.Set.copyOf(Settings.LINT_SEVERITIES));
+    }
+
+    @Test
+    void theRemoteImagePolicyIsNormalisedAndTheOldSwitchIsAViewOfIt() {
+        Settings s = new Settings();
+        assertEquals("always", s.getMarkdownRemoteImagePolicy());
+        assertTrue(s.isMarkdownRemoteImages());
+        for (String bad : new String[] {null, "", "sometimes", "  "}) {
+            s.setMarkdownRemoteImagePolicy(bad);
+            assertEquals("always", s.getMarkdownRemoteImagePolicy(), "a hand-edited value reads as the default");
+        }
+        s.setMarkdownRemoteImagePolicy(" ASK ");
+        assertEquals("ask", s.getMarkdownRemoteImagePolicy());
+        s.setMarkdownRemoteImages(true);
+        assertEquals("ask", s.getMarkdownRemoteImagePolicy(), "switching on what is already on keeps 'ask'");
+        s.setMarkdownRemoteImages(false);
+        assertEquals("never", s.getMarkdownRemoteImagePolicy());
+        assertFalse(s.isMarkdownRemoteImages());
+        s.setMarkdownRemoteImages(true);
+        assertEquals("always", s.getMarkdownRemoteImagePolicy());
     }
 }

@@ -230,10 +230,11 @@ public enum ConfigSchema {
                     // v119→120: + remoteExecution (additive; absent means off — nobody's editor starts
                     // running commands on a server it only ever edited files on).
                     Map.entry(119, (Migration) ConfigMigrations::identity),
-                    // v120→121: + markdownRemoteImagePolicy ("always" / "ask" / "never"), markdownWikiLinks,
-                    // markdownTrashUnusedPastedImages (additive). The owner of the Settings page replaces this
-                    // identity step with one that carries a stored markdownRemoteImages=false over to "never".
-                    Map.entry(120, (Migration) ConfigMigrations::identity)),
+                    // v120→121: + markdownWikiLinks, markdownTrashUnusedPastedImages (additive), and the
+                    // boolean markdownRemoteImages becomes markdownRemoteImagePolicy ("always" / "ask" /
+                    // "never"): a stored false is carried over as "never", so nobody who switched remote
+                    // images off starts fetching them; a stored true (or no key) is the default, "always".
+                    Map.entry(120, (Migration) ConfigMigrations::remoteImagesToPolicy)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

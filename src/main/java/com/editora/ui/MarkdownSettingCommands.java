@@ -35,6 +35,11 @@ final class MarkdownSettingCommands {
                     "view.toggleMarkdownFrontMatter",
                     s -> !s.isMarkdownHideFrontMatter(),
                     (s, shown) -> s.setMarkdownHideFrontMatter(!shown)),
+            new Toggle("view.toggleMarkdownWikiLinks", Settings::isMarkdownWikiLinks, Settings::setMarkdownWikiLinks),
+            new Toggle(
+                    "view.toggleMarkdownTrashUnusedImages",
+                    Settings::isMarkdownTrashUnusedPastedImages,
+                    Settings::setMarkdownTrashUnusedPastedImages),
             new Toggle(
                     "view.toggleMarkdownSmartTypography",
                     Settings::isMarkdownSmartTypography,
@@ -92,6 +97,17 @@ final class MarkdownSettingCommands {
                         Settings.MARKDOWN_VIEW_MODES,
                         Settings::getMarkdownDefaultViewMode,
                         Settings::setMarkdownDefaultViewMode,
+                        apply)));
+        registry.register(Command.of(
+                "markdown.setRemoteImagePolicy",
+                () -> choose(
+                        editor,
+                        settings,
+                        "markdown.setRemoteImagePolicy",
+                        "settings.markdownRemoteImagePolicy.",
+                        Settings.REMOTE_IMAGE_POLICIES,
+                        Settings::getMarkdownRemoteImagePolicy,
+                        Settings::setMarkdownRemoteImagePolicy,
                         apply)));
         registry.register(Command.of(
                 "markdown.setUpdateLinksOnRename",
