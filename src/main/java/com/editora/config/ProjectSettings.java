@@ -60,7 +60,9 @@ public class ProjectSettings {
 
     /** Reads a project's overrides; empty (never null, never throwing) when absent or unreadable. */
     public static ProjectSettings load(Path projectRoot) {
-        if (projectRoot == null) {
+        if (projectRoot == null || com.editora.vfs.Vfs.isRemote(projectRoot)) {
+            // A remote project's overrides would be read over the network on the FX thread, and trust for
+            // a remote folder is not yet keyed for this: none for now.
             return new ProjectSettings();
         }
         Path file = fileFor(projectRoot);

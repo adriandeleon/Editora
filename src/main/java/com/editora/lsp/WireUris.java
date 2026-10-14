@@ -29,6 +29,41 @@ interface WireUris {
         }
     };
 
+    /**
+     * A server on the host of connection {@code authority} ({@code user@host:port}): a key
+     * {@code sftp://<authority>/a b/c.py} is {@code file:///a%20b/c.py} to it, and any {@code file:} URI it
+     * sends names a file on that host. Other schemes pass through.
+     */
+    static WireUris remote(String authority) {
+        String prefix = "sftp://" + authority;
+        return new WireUris() {
+            @Override
+            public String toWire(String key) {
+                if (key == null || !key.startsWith(prefix + "/")) {
+                    return key;
+                }
+                try {
+                    return new java.net.URI("file", "", key.substring(prefix.length()), null, null).toASCIIString();
+                } catch (java.net.URISyntaxException notAPath) {
+                    return key;
+                }
+            }
+
+            @Override
+            public String toKey(String wireUri) {
+                if (wireUri == null || !wireUri.startsWith("file:")) {
+                    return wireUri;
+                }
+                try {
+                    String path = java.net.URI.create(wireUri).getPath();
+                    return path == null || !path.startsWith("/") ? wireUri : prefix + path;
+                } catch (IllegalArgumentException notAUri) {
+                    return wireUri;
+                }
+            }
+        };
+    }
+
     String toWire(String key);
 
     String toKey(String wireUri);

@@ -120,6 +120,14 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tab, if it is a reported remote file, gets the "changed on disk" check it does not get on every focus. The
   watch starts and stops with the root and with what the host may run (`ProjectPanel.refreshRemoteWatch`).
   Only the polling fallback is covered by tests here (no `inotifywait` on the build machine).
+- **Language servers:** a remote file is served by a language server on its host
+  (`LanguageServerSession.start`: long-lived, the host's PATH and locale, no `processId`, since this machine's
+  pid means nothing there). Documents are keyed by their `sftp://` URI inside `LspManager` and sent as the
+  host's own `file:` URIs (`WireUris.remote`). The command is the host's `lsp.<id>` tool, else the global
+  setting when it is a bare name, else the server's default; whether it is on the host is asked once per host
+  (`LspManager.detectRemote`, `command -v`). The session root is the window's remote project, else the file's
+  folder (no marker probing over the network). Project `.editora/settings.json` overrides are not read for a
+  remote project. **jdtls and astro are not offered remotely yet.**
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
   tests, language servers and debugging.

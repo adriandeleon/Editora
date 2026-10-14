@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Language servers for remote folders (opt-in).** With remote commands switched on, a file in a remote folder
+  is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
+  the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition
+  and the rest work as for local files. Java (jdtls) is not available for remote folders yet.
 - **Remote folders notice outside changes (opt-in).** With remote commands switched on, a remote project's
   folder is watched on its host, so a `git pull` or a build there updates the Project tree, Git, language
   servers and an open file that changed, as for a local folder. Hosts with `inotifywait` report at once;

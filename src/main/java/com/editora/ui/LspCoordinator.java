@@ -1815,9 +1815,11 @@ final class LspCoordinator {
         }
         Path path = buffer.getPath();
         String serverId = serverIdForBuffer(buffer); // pom.xml → maven-pom (when available), else the language's server
+        boolean remote = path != null && com.editora.vfs.Vfs.isRemote(path);
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
-                && com.editora.vfs.Vfs.isLocal(path)
+                // A remote file is served on its host when that may run commands; jdtls is not yet.
+                && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
                 // While narrowed the area holds only the region, so every position the server sends or
@@ -1826,7 +1828,9 @@ final class LspCoordinator {
                 && !buffer.isNarrowed()
                 && serverId != null
                 && serverEnabled(serverId)
-                && Boolean.TRUE.equals(serverAvailable.get(serverId));
+                && (remote
+                        ? remoteServerAvailable(buffer, path, serverId)
+                        : Boolean.TRUE.equals(serverAvailable.get(serverId)));
         if (eligible) {
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
@@ -1893,10 +1897,43 @@ final class LspCoordinator {
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
     private Path lspRootFor(EditorBuffer buffer, String serverId) {
+        Path file = buffer.getPath();
+        if (com.editora.vfs.Vfs.isRemote(file)) {
+            // No marker probing over the network on the FX thread: the window's remote project, else the folder.
+            Path project = ops.lspProjectRoot();
+            boolean inProject = project != null
+                    && project.getFileSystem() == file.getFileSystem()
+                    && file.toAbsolutePath()
+                            .normalize()
+                            .startsWith(project.toAbsolutePath().normalize());
+            return inProject ? project : file.getParent();
+        }
         return com.editora.lsp.RootResolver.resolve(
                 ops.lspProjectRoot(),
                 buffer.getPath(),
                 com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId));
+    }
+
+    /** Servers that cannot run on a remote host yet (jdtls needs its workspace, runtimes and bundles there). */
+    private static boolean remoteUnsupported(String serverId) {
+        return com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || "astro".equals(serverId);
+    }
+
+    /**
+     * Whether {@code serverId} is on the host of remote {@code path}, as last asked. Unknown: false for now,
+     * and the host is asked; a yes opens the buffer then.
+     */
+    private boolean remoteServerAvailable(EditorBuffer buffer, Path path, String serverId) {
+        Boolean known = lspManager.remoteAvailability(path, serverId);
+        if (known == null) {
+            lspManager.detectRemote(path, serverId, ok -> {
+                if (ok && !buffer.isDisposed() && path.equals(buffer.getPath())) {
+                    syncBuffer(buffer);
+                }
+            });
+            return false;
+        }
+        return known;
     }
 
     /**
