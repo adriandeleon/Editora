@@ -365,7 +365,8 @@ class EditingImagesFxTest {
                 registry.run("file.save");
             });
             awaitSaved(b);
-            assertFalse(Files.exists(pasted), "moved out of assets/");
+            awaitGone(pasted); // moved out of assets/ once the background clean-up has run
+            awaitCleanup();
             assertEquals(
                     List.of("pasted-image.png"),
                     names(trashDir).stream().limit(1).toList());
@@ -397,6 +398,69 @@ class EditingImagesFxTest {
             FxTestSupport.drainFx();
         }
         FxTestSupport.drainFx();
+        awaitCleanup();
+    }
+
+    /** Waits for the clean-up to have moved {@code file} away; fails when it never does. */
+    private void awaitGone(Path file) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (Files.exists(file)) {
+            assertTrue(System.nanoTime() < deadline, file + " was never moved to the trash");
+            awaitCleanup();
+            Thread.sleep(20);
+        }
+    }
+
+    /** The pasted-image clean-up runs after the save, off the FX thread: wait until it has settled. */
+    private void awaitCleanup() throws Exception {
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.util.concurrent.CompletableFuture<?> cleanup = FxTestSupport.field(workflows, "pastedImageCleanup");
+        cleanup.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
+    @Test
+    void aLinkPutBackWhileTheCleanUpIsRunningKeepsItsPicture() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path trashDir = Files.createDirectory(dir.resolve("trash" + counter++));
+        Object workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        java.lang.reflect.Field bin = workflows.getClass().getDeclaredField("pastedImageBin");
+        java.lang.reflect.Field hook = workflows.getClass().getDeclaredField("beforePastedImageRecheck");
+        bin.setAccessible(true);
+        hook.setAccessible(true);
+        bin.set(workflows, com.editora.io.Trash.directory(trashDir));
+        java.util.concurrent.CountDownLatch scanned = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch restored = new java.util.concurrent.CountDownLatch(1);
+        hook.set(workflows, (Runnable) () -> {
+            scanned.countDown();
+            try {
+                restored.await(20, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        try {
+            clipboardImage();
+            FxTestSupport.runOnFx(() -> registry.run("edit.paste"));
+            Path pasted = assets(b).resolve("pasted-image.png");
+            String withLink = text(b);
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("link deleted\n");
+                registry.run("file.save");
+            });
+            // The background scan has found the picture unused; before it is trashed, the user undoes.
+            assertTrue(scanned.await(20, java.util.concurrent.TimeUnit.SECONDS), "the clean-up never started");
+            FxTestSupport.runOnFx(() -> b.getArea().replaceText(withLink));
+            restored.countDown();
+            awaitCleanup();
+            assertTrue(Files.exists(pasted), "mentioned again by the time it would be trashed: it stays");
+            assertEquals(List.of(), names(trashDir));
+        } finally {
+            restored.countDown();
+            hook.set(workflows, null);
+            bin.set(workflows, null);
+            clearClipboard();
+        }
     }
 
     @Test
