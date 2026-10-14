@@ -33,6 +33,14 @@ final class MarkdownSourceCommands {
             WindowCommandRegistrar.Host h = window.get();
             return h == null ? MarkdownLintOptions.DEFAULT : h.previews().lint().options(buffer);
         });
+        host.registry()
+                .register(Command.of(
+                        "tool.backlinks",
+                        () -> host.indexCoordinator().backlinks.toggle()));
+        host.registry()
+                .register(Command.of(
+                        "markdown.showBacklinks",
+                        () -> host.indexCoordinator().backlinks.show()));
         // Completion after "[[" lists the notes of the project that holds the document being edited.
         com.editora.editor.MarkdownCompletions.setWikiSource(
                 document -> WikiLinks.enabled ? WikiLinks.targets(document) : com.editora.markdown.WikiTargets.EMPTY);

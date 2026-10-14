@@ -2598,6 +2598,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.registerWithoutStripe(searchToolWindow);
         toolWindows.register(todoToolWindow);
         toolWindows.register(markdownLintToolWindow);
+        toolWindows.register(indexCoordinator.backlinks.toolWindow(toolWindows), false); // on demand
         toolWindows.register(problemsToolWindow);
         toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
         toolWindows.register(hierarchyToolWindow, false); // default-hidden; shown on demand by lsp.callHierarchy (#682)
@@ -9212,6 +9213,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(todoToolWindow, buffer);
         }
         previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
+        indexCoordinator.backlinks.activeBufferChanged(b);
         if (externalToolToolWindow != null) {
             toolWindows.setAvailable(externalToolToolWindow, buffer && externalToolsEnabled());
         }

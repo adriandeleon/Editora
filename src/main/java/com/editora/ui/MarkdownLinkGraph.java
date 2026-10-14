@@ -141,6 +141,19 @@ final class MarkdownLinkGraph {
         return s == null || s.isMarkdownWikiLinks();
     }
 
+    /** Run on the FX thread after the index was built or changed (the Backlinks window refreshes). */
+    private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
+
+    void addChangeListener(Runnable onIndexChanged) {
+        changeListeners.add(onIndexChanged);
+    }
+
+    private void changed() {
+        if (!changeListeners.isEmpty()) {
+            Platform.runLater(() -> changeListeners.forEach(Runnable::run));
+        }
+    }
+
     void addListener(Runnable onTargetsChanged) {
         listeners.add(onTargetsChanged);
     }
@@ -173,6 +186,7 @@ final class MarkdownLinkGraph {
             if (index != null && at == epoch) {
                 change.accept(index);
                 publish();
+                changed();
             }
         });
     }
@@ -250,6 +264,7 @@ final class MarkdownLinkGraph {
         stale = false;
         truncated = outcome.truncated();
         builds++;
+        changed();
         return built;
     }
 

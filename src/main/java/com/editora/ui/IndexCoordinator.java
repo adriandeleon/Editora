@@ -146,6 +146,9 @@ final class IndexCoordinator {
     /** The project's Markdown link index: its own thread, its own lifetime rules (see the class). */
     final MarkdownLinkGraph linkGraph;
 
+    /** The Backlinks tool window: what links to the active file, asked of {@link #linkGraph}. */
+    final MarkdownBacklinks backlinks;
+
     /** Go to Heading in Project: the same project, walk and overlay as Go to Symbol. */
     final MarkdownHeadingPicker headingPicker;
 
@@ -154,6 +157,7 @@ final class IndexCoordinator {
         this.ops = ops;
         this.linkGraph = new MarkdownLinkGraph(host, ops::projectRoot, ops::respectGitignore);
         this.linkUpdater = new MarkdownLinkUpdater(host, linkGraph, ops::recordHistory);
+        this.backlinks = new MarkdownBacklinks(host, linkGraph, ops);
         this.headingPicker = new MarkdownHeadingPicker(host, ops);
         this.picker = new QuickOpen<>(
                 tr("index.gotoSymbol.title"),
