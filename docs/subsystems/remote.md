@@ -112,6 +112,14 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   file whatever the host allows; a refusal is reported when it is launched.
 - **Not yet for Run:** a Java *project* main class (it needs jdtls or a Maven classpath file on the host), the
   main-class gutter, and Makefile detection for the run-configuration toolbar.
+- **Outside changes:** a remote project's folder is watched on its host (`ui/RemoteWatcher`): one long-lived
+  command, `inotifywait -m -r` when the host has it, else `find -newer` every 4 s (a folder whose entries
+  changed is reported as itself, which is how a deletion shows). `.git` and `node_modules` are left out. Its
+  batches join the Project panel's local watch pipeline (`ProjectPanel.onRemoteChanges`): the tree re-lists
+  what changed, language servers get `didChangeWatchedFiles`, Git and build markers refresh, and the active
+  tab, if it is a reported remote file, gets the "changed on disk" check it does not get on every focus. The
+  watch starts and stops with the root and with what the host may run (`ProjectPanel.refreshRemoteWatch`).
+  Only the polling fallback is covered by tests here (no `inotifywait` on the build machine).
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
   tests, language servers and debugging.

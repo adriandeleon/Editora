@@ -1148,6 +1148,34 @@ final class FileWorkflowCoordinator {
      * alone (the in-editor copy is kept).
      */
     void checkExternalChanges() {
+        checkExternalChanges(false);
+    }
+
+    /**
+     * The check for the active tab after the watcher on a remote folder's host reported {@code changed}: a
+     * remote file is not asked about on every focus (a network round trip each time), but when its host says
+     * it changed, it is asked once.
+     */
+    void checkRemoteExternalChanges(List<ProjectPanel.FsChange> changed) {
+        EditorBuffer buffer = host.bufferOf(
+                host.editorArea() == null ? null : host.editorArea().selectedTab());
+        Path file = buffer == null ? null : buffer.getPath();
+        if (file == null || !com.editora.vfs.Vfs.isRemote(file)) {
+            return;
+        }
+        for (ProjectPanel.FsChange change : changed) {
+            if (change.path().getFileSystem() == file.getFileSystem()
+                    && change.path()
+                            .toAbsolutePath()
+                            .normalize()
+                            .equals(file.toAbsolutePath().normalize())) {
+                checkExternalChanges(true);
+                return;
+            }
+        }
+    }
+
+    private void checkExternalChanges(boolean remoteToo) {
         if (checkingExternalChanges || host.editorArea() == null) {
             return;
         }
@@ -1158,8 +1186,9 @@ final class FileWorkflowCoordinator {
             return;
         }
         Path file = buffer.getPath();
-        if (com.editora.vfs.Vfs.isRemote(file)) {
-            return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
+        boolean remote = com.editora.vfs.Vfs.isRemote(file);
+        if (remote && !remoteToo) {
+            return; // remote (SFTP) mtime polling would be a network call per focus — asked when its host reports it
         }
         if (buffer.isLogFollowing()) {
             return; // the follow is what is reading the file's changes; "reload?" would ask about each of them
@@ -1171,7 +1200,8 @@ final class FileWorkflowCoordinator {
         // own existence, time and size. On a cold network or FUSE mount each of those can take as long as it
         // likes, and this runs on every tab switch and focus gain — so it is asked off the FX thread, and
         // the answer applied only if the buffer is still the one it was asked about.
-        boolean resolveConfig = host.editorSettings().editorConfigEnabled();
+        // Not for a remote file: a stat per ancestor folder over the network, for a reload check.
+        boolean resolveConfig = host.editorSettings().editorConfigEnabled() && !remote;
         Runnable settle = () -> verifyingExternalChange.remove(buffer);
         try {
             fileLoadExecutor.execute(() -> {

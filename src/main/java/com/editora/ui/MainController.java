@@ -1370,6 +1370,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
+            fileWorkflows.checkRemoteExternalChanges(changes); // reported by a remote folder's host
         });
         // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
         // checkout / CLI build / external editor doesn't leave their project models stale (#677).
@@ -2754,6 +2755,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void remoteExecChanged() {
                 git.refresh();
+                if (projectPanel != null) {
+                    projectPanel.refreshRemoteWatch(); // the folder's host may be watched now, or no longer
+                }
             }
 
             @Override

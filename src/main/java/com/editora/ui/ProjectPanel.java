@@ -1105,13 +1105,89 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     // --- filesystem watcher (auto-refresh on disk changes) ---------------------------------------
 
-    /** Starts the watcher for a local root, or cancels all watches for a remote/absent root. */
+    /**
+     * Starts the watcher for a local root, or cancels all watches for a remote/absent root. A remote root
+     * whose host may run commands is watched there ({@link RemoteWatcher}); its reports join the same
+     * pipeline as a local watcher's.
+     */
     private void ensureWatchOrStop() {
         if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
+            stopRemoteWatch();
             ensureWatchService();
         } else {
             cancelAllWatches();
+            ensureRemoteWatch();
         }
+    }
+
+    /** The watcher on the host of a remote root, and the root it watches. */
+    private RemoteWatcher remoteWatcher;
+
+    private Path remoteWatched;
+
+    private void ensureRemoteWatch() {
+        if (root == null || disposed || com.editora.vfs.Vfs.isLocal(root)) {
+            stopRemoteWatch();
+            return;
+        }
+        if (remoteWatcher != null && root.equals(remoteWatched) && remoteWatcher.isRunning()) {
+            return;
+        }
+        stopRemoteWatch();
+        Path watched = root;
+        remoteWatcher = RemoteWatcher.start(
+                watched,
+                batch -> Platform.runLater(() -> {
+                    if (!disposed && watched.equals(root)) {
+                        onRemoteChanges(batch);
+                    }
+                }));
+        remoteWatched = remoteWatcher == null ? null : watched;
+    }
+
+    private void stopRemoteWatch() {
+        RemoteWatcher w = remoteWatcher;
+        remoteWatcher = null;
+        remoteWatched = null;
+        if (w != null) {
+            w.stop();
+        }
+    }
+
+    /**
+     * A batch from the host: what the local watch loop does with a batch of events, for paths that were
+     * reported one by one rather than per watched directory. A reported directory is re-listed itself (on a
+     * host without inotifywait that is how a deletion shows: the folder changed).
+     */
+    private void onRemoteChanges(List<FsChange> batch) {
+        var sink = fsChangeSink;
+        if (sink != null) {
+            sink.accept(batch);
+        }
+        java.util.Map<Path, List<FsChange>> byDir = new java.util.LinkedHashMap<>();
+        for (FsChange change : batch) {
+            Path dir = change.path().getParent();
+            if (dir != null) {
+                byDir.computeIfAbsent(dir, d -> new java.util.ArrayList<>()).add(change);
+            }
+        }
+        byDir.forEach((dir, changes) -> watchChanges.add(dir, changes, false));
+        watchDebounce.playFromStart();
+    }
+
+    /**
+     * Starts (or stops) watching a remote root on its host after what may run there changed — the user
+     * agreed to commands on that host, or switched remote commands on or off. No-op for a local root.
+     */
+    public void refreshRemoteWatch() {
+        if (root != null && com.editora.vfs.Vfs.isRemote(root)) {
+            ensureRemoteWatch();
+        }
+    }
+
+    /** Whether the host of this remote root is being watched (tests). */
+    boolean watchesRemotely() {
+        return remoteWatcher != null && remoteWatcher.isRunning();
     }
 
     /** Lazily creates the {@link java.nio.file.WatchService} + its daemon drain thread (once per panel). */
@@ -1271,6 +1347,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
     public void dispose() {
         disposed = true;
+        stopRemoteWatch();
         watchDebounce.stop();
         externalThrottle.stop();
         watchKeys.clear();
