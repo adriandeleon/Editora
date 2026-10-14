@@ -69,8 +69,14 @@ public final class MarkdownClipboardHtml {
      * path that means nothing wherever the fragment is pasted.
      */
     public static String toHtml(String markdown, boolean mathEnabled, java.nio.file.Path documentFile) {
-        java.nio.file.Path baseDir =
-                documentFile == null ? null : documentFile.toAbsolutePath().getParent();
+        return toHtmlIn(
+                markdown,
+                mathEnabled,
+                documentFile == null ? null : documentFile.toAbsolutePath().getParent());
+    }
+
+    /** {@link #toHtml(String, boolean, java.nio.file.Path)} for Markdown of a document in {@code baseDir}. */
+    static String toHtmlIn(String markdown, boolean mathEnabled, java.nio.file.Path baseDir) {
         return "<div style=\"" + ROOT_STYLE + "\">\n" + render(markdown, mathEnabled, baseDir, true) + "</div>";
     }
 
@@ -97,7 +103,11 @@ public final class MarkdownClipboardHtml {
                 .sanitizeUrls(true)
                 .nodeRendererFactory(ctx -> new MarkdownHtmlExport.MathImagesRenderer(ctx.getWriter()))
                 .build();
-        return renderer.render(MarkdownRenderer.parseForRender(markdown, mathEnabled));
+        org.commonmark.node.Node doc = MarkdownRenderer.parseForRender(markdown, mathEnabled);
+        // A wiki link travels as a link to the file it resolves to, as in the HTML export; a raw note name
+        // means nothing where the fragment is pasted.
+        com.editora.markdown.MarkdownExportTree.wikiLinksToLinks(doc, MarkdownHtmlExport.wikiPaths(baseDir));
+        return renderer.render(doc);
     }
 
     /**

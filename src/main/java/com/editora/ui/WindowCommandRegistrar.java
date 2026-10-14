@@ -1615,6 +1615,7 @@ final class WindowCommandRegistrar {
                                         b -> b.markdown().renumberList(false), "status.markdown.noListToRenumber")));
         host.registry().register(Command.of("markdown.pasteAsMarkdown", host.previews()::markdownPasteAsMarkdown));
         host.registry().register(Command.of("markdown.editLink", host.previews()::markdownEditLink));
+        host.registry().register(Command.of("markdown.convertWikiLink", host.previews()::markdownConvertWikiLink));
         host.registry()
                 .register(Command.of(
                         "markdown.removeLink",

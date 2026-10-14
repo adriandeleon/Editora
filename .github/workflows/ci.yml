@@ -15,6 +15,13 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the run still going for the previous one: nobody reads that verdict,
+# and the account runs only a handful of macOS jobs at once, so stale runs made live ones queue. A run on
+# master is never cancelled — each merge keeps its own result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   format:
     name: Format (JDK 25)
@@ -40,20 +47,23 @@ jobs:
       - name: Check formatting
         run: ./mvnw -B --no-transfer-progress spotless:check
 
-  build:
-    name: Build & Test (JDK ${{ matrix.java }})
+  # The Linux suite, on four runners at once. In one JVM on one runner it was 15 of the job's 17 minutes and
+  # growing with every pull request; two JVMs on one runner share its cores, which gained little and made
+  # timing-sensitive tests fail. A shard is still one JVM with a runner to itself, as before, with a
+  # quarter of the classes (scripts/shard_tests.py deals them out). Nothing here is a required check: the
+  # `build` job below collects the four results under the name master's ruleset asks for.
+  #
+  # A JDK 27 compatibility lane was a second leg of this job's matrix and is disabled for now. To bring
+  # it back add a `java` dimension here (Temurin 27 binaries were not yet published on GA day; Oracle
+  # provides the GA build) and pass `-Dmaven.compiler.release`.
+  tests:
+    name: Tests (Linux, shard ${{ matrix.shard }} of 4)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - java: '25'
-            distribution: temurin
-          # The JDK 27 compatibility lane is disabled for now. To bring it back:
-          # (Temurin 27 binaries were not yet published on GA day; Oracle provides the GA build.)
-          # - java: '27'
-          #   distribution: oracle
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Check out repository
@@ -61,11 +71,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK ${{ matrix.java }}
+      - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          distribution: ${{ matrix.distribution }}
-          java-version: ${{ matrix.java }}
+          distribution: temurin
+          java-version: '25'
           cache: maven
 
       # Tests guarded by a tool on the PATH skip, they do not fail, when the tool is missing. ripgrep
@@ -76,21 +86,100 @@ jobs:
           sudo apt-get install -y --no-install-recommends ripgrep
           rg --version
 
+      - name: List this shard's test classes
+        run: |
+          mkdir -p target
+          python3 scripts/shard_tests.py list ${{ matrix.shard }} 4 > target/shard-includes.txt
+          echo "$(wc -l < target/shard-includes.txt) test classes in this shard"
+
       # A test that fails is run again, twice at most. One that then passes is a flake: the build stays
-      # green and the step after this one names it, so it is fixed rather than forgotten.
-      - name: Build and test
-        run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 verify
+      # green and the `build` job names it, so it is fixed rather than forgotten.
+      # `test`, not `verify`: the coverage floors are for the whole suite, and one shard is a quarter of it.
+      - name: Test
+        run: ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
+
+      # Also when the tests failed: the `build` job reports on all four shards, and the reports hold the
+      # output and stack trace of a failed test. The coverage file gets the shard's number so that the
+      # four can be downloaded into one directory.
+      - name: Name this shard's coverage file
+        if: always()
+        run: |
+          if [ -f target/jacoco.exec ]; then
+            mv target/jacoco.exec target/jacoco-shard-${{ matrix.shard }}.exec
+          fi
+
+      - name: Upload test reports and coverage data
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-shard-${{ matrix.shard }}
+          path: |
+            target/jacoco-shard-*.exec
+            target/surefire-reports
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The check master requires, under the name its ruleset knows. It runs no test: it waits for the four
+  # shards, fails if any of them did, makes sure no test class fell between them, and applies the coverage
+  # floors to their coverage put together.
+  #
+  # `!cancelled()`, not the default: by default a job is SKIPPED when one it needs has failed, and GitHub
+  # counts a skipped required check as passed — a red shard would then let the pull request merge.
+  build:
+    name: Build & Test (JDK 25)
+    needs: tests
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # Into target/: surefire-reports/ from all four shards (one file per test class, so they do not
+      # collide) and jacoco-shard-N.exec from each.
+      - name: Download the shards' reports and coverage data
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: test-shard-*
+          path: target
+          merge-multiple: true
 
       - name: Report flaky tests
-        if: always()
         run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when a shard failed
+        if: needs.tests.result != 'success'
+        run: |
+          echo "::error::The test shards ended with '${{ needs.tests.result }}'. The failing shard's log names the test."
+          exit 1
+
+      # A list of includes replaces Surefire's own, so a class left off every list would stop running
+      # without a word. This compares the reports with the test sources.
+      - name: Check that every test class ran
+        run: python3 scripts/shard_tests.py check target/surefire-reports
 
       # A skip that is not on the allow-list means the runner lost something a test needs.
       - name: Check for unexpected skipped tests
         run: python3 scripts/check_skips.py target/surefire-reports scripts/expected-skips-linux.txt
 
+      # A JaCoCo data file is a sequence of records and may hold several sessions, so the four are simply
+      # joined. `-DskipTests` leaves compiling, the coverage report and the floors (`jacoco:check`).
+      - name: Put the coverage together and apply the floors
+        run: |
+          cat target/jacoco-shard-*.exec > target/jacoco.exec
+          ./mvnw -B --no-transfer-progress -DskipTests -Dspotless.check.skip=true verify
+
       - name: Summarise coverage
-        if: matrix.java == '25'
         run: |
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import csv
@@ -104,7 +193,6 @@ jobs:
           PY
 
       - name: Upload coverage report
-        if: matrix.java == '25'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jacoco-report
@@ -115,14 +203,16 @@ jobs:
   # either: both were only compiled and packaged at tag time. This runs the PURE suite there (everything
   # not tagged `fx` — no toolkit, no display), which is where path separators, line endings, case-insensitive
   # file systems, process spawning and charset defaults bite. The headless-FX suite stays on Linux.
-  # `test`, not `verify`: the JaCoCo floors are calibrated against the full suite.
+  # `test`, not `verify`: the JaCoCo floors are calibrated against the full suite. Coverage is collected
+  # only by the Linux job, so the agent is off here (`-Djacoco.skip=true`).
   pure-tests:
     name: Pure tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # The Windows lane is informational for now: its first run found 47 failures in 24 test classes, mostly
-    # tests that assume POSIX paths (the suite had never run on Windows). It stays visible but does not block
-    # a merge until those are worked through; make it required again by deleting this line. macOS blocks.
+    # The Windows lane is informational for now. Its first run found 47 failures in 24 test classes, mostly
+    # tests that assumed POSIX paths; those are fixed and it can pass, but it still failed in 8 of 36 runs
+    # (12-13 October 2026). It stays visible without failing the run until it holds green; delete this line
+    # then. A macOS failure fails the run.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
@@ -144,24 +234,42 @@ jobs:
 
       - name: Test (pure suite)
         shell: bash
-        run: ./mvnw -B --no-transfer-progress -DexcludedGroups=fx -Dsurefire.rerunFailingTestsCount=2 test
+        run: ./mvnw -B --no-transfer-progress -DexcludedGroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 test
 
       - name: Report flaky tests
         if: always()
         shell: bash
         run: ${{ runner.os == 'Windows' && 'python' || 'python3' }} scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
-  # The release and packaging scripts have their own unit tests (the release-asset manifest, the tarball
-  # installer, the .deb maintainer scripts run against a scratch root, the pinned-download check). They are
-  # Python `unittest` files beside the scripts; nothing else runs them.
+      # The log names a failed test; the XML and text reports hold its output and stack trace.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: surefire-reports-pure-${{ matrix.os }}
+          path: target/surefire-reports
+          retention-days: 7
+          if-no-files-found: ignore
+
   # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
   # The pure lane above reaches under half the code; this one covers the rest on a second operating
-  # system. It has never run before, so it starts advisory: make it blocking once it has stayed green.
+  # system. It is advisory (13 failures in 36 runs on 12-13 October 2026): make it blocking once it has
+  # stayed green. No coverage agent, and two test JVMs (each with its own JavaFX toolkit): in one JVM it
+  # was the longest job of the run at 24 minutes, and still 16 to 19 with two.
+  #
+  # Three shards, dealt out like the Linux ones (scripts/shard_tests.py). A shard's list holds every kind
+  # of test class; `-Dgroups=fx` then keeps the FX tests among them, so the three lists together cover the
+  # FX suite whatever a class is called. Three, not four: the account runs five macOS jobs at a time, and
+  # with the pure lane this makes four per run.
   fx-tests:
-    name: FX tests (macos-15)
+    name: FX tests (macos-15, shard ${{ matrix.shard }} of 3)
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 30
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
       - name: Check out repository
@@ -176,13 +284,32 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - name: List this shard's test classes
+        run: |
+          mkdir -p target
+          python3 scripts/shard_tests.py list ${{ matrix.shard }} 3 > target/shard-includes.txt
+          echo "$(wc -l < target/shard-includes.txt) test classes in this shard, FX and other"
+
       - name: Test (FX suite)
-        run: ./mvnw -B --no-transfer-progress -Dgroups=fx -Dsurefire.rerunFailingTestsCount=2 test
+        run: ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
       - name: Report flaky tests
         if: always()
         run: python3 scripts/report_flakes.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
 
+      # The log names a failed test; the XML and text reports hold its output and stack trace.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: surefire-reports-fx-macos-shard-${{ matrix.shard }}
+          path: target/surefire-reports
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The release and packaging scripts have their own unit tests (the release-asset manifest, the tarball
+  # installer, the .deb maintainer scripts run against a scratch root, the pinned-download check). They are
+  # Python `unittest` files beside the scripts; nothing else runs them.
   scripts:
     name: Release & packaging scripts
     runs-on: ubuntu-latest

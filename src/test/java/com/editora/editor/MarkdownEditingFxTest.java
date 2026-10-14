@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -549,6 +550,118 @@ class MarkdownEditingFxTest {
             readOnly.setReadOnly(true);
             assertFalse(readOnly.markdown().updateTocForSave());
             for (EditorBuffer b : new EditorBuffer[] {buffer, none, readOnly}) {
+                b.dispose();
+            }
+        });
+    }
+
+    @Test
+    void deletingSelectedItemsLeavesAnOrderedListInSequence() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("1. a\n«2. b\n3. c\n»4. d\n");
+            CodeArea area = buffer.getArea();
+            area.getUndoManager().forgetHistory();
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("1. a\n‸2. d\n", shown(buffer));
+            area.undo();
+            assertEquals("1. a\n2. b\n3. c\n4. d\n", area.getText(), "one undo: the deletion and the renumbering");
+
+            place(area, "1. a\n2. b«\n3. c»\n4. d\n");
+            press(buffer, KeyCode.BACK_SPACE, false);
+            assertEquals("1. a\n2. b‸\n3. d\n", shown(buffer));
+
+            place(area, "1. a\n«5. b\n»9. c\n");
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("1. a\n‸9. c\n", shown(buffer), "numbered by hand: left alone");
+
+            place(area, "- a\n«- b\n»- c\n");
+            press(buffer, KeyCode.DELETE, false);
+            assertEquals("- a\n‸- c\n", shown(buffer), "bullets: the ordinary deletion");
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void theLinkToolsUnderstandAWikiLink() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("see [[Other No‸te#Heading|label]] now\n");
+            assertArrayEquals(
+                    new String[] {"label", "Other Note#Heading", "wiki"},
+                    buffer.markdown().linkForEditing());
+            buffer.markdown().setLink("new label", "Third Note");
+            assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "edited, and still a wiki link");
+
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [new label](<Third Note.md>)‸ now\n", shown(buffer));
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [[Third Note|new label]]‸ now\n", shown(buffer), "and back");
+
+            buffer.markdown()
+                    .setWikiResolver(target -> "notes/" + target.toLowerCase().replace(' ', '-') + ".md");
+            buffer.getArea().moveTo(8);
+            assertEquals(0, buffer.markdown().convertWikiLink());
+            assertEquals("see [new label](notes/third-note.md)‸ now\n", shown(buffer), "through the window's resolver");
+
+            place(buffer.getArea(), "an [ext‸ernal](https://example.com) link and plain\n");
+            assertEquals(2, buffer.markdown().convertWikiLink(), "a wiki link cannot name a URL");
+            buffer.getArea().moveTo(buffer.getArea().getLength() - 2);
+            assertEquals(1, buffer.markdown().convertWikiLink(), "no link here");
+
+            place(buffer.getArea(), "drop [[No‸te|the note]] here\n");
+            assertTrue(buffer.markdown().removeLink());
+            assertEquals("drop «the note» here\n", shown(buffer));
+
+            // "Link" on a link edits that link instead of nesting a new one in it.
+            int[] opened = {0};
+            buffer.markdown().setEditLinkHandler(() -> opened[0]++);
+            place(buffer.getArea(), "on [[a w‸iki]] link\n");
+            buffer.markdown().formatLinkFromClipboard();
+            assertEquals(1, opened[0]);
+            assertEquals("on [[a wiki]] link\n", buffer.getArea().getText());
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void theLinkToolsTakeForAWikiLinkOnlyWhatThePreviewDoes() throws Exception {
+        EditorFx.onFx(() -> {
+            // In a table the bar is \| — read on the way in, written on the way out.
+            EditorBuffer table = markdown("| a |\n|---|\n| [[no‸te\\|old]] |\n");
+            assertArrayEquals(
+                    new String[] {"old", "note", "wiki"}, table.markdown().linkForEditing());
+            table.markdown().setLink("new", "note#part");
+            assertEquals("| a |\n|---|\n| [[note#part\\|new]]‸ |\n", shown(table));
+            table.getArea().moveTo(table.getArea().getText().indexOf("note"));
+            assertEquals(0, table.markdown().convertWikiLink());
+            assertTrue(
+                    table.getArea().getText().contains("| [new](note.md#part) |"),
+                    table.getArea().getText());
+            table.getArea().moveTo(table.getArea().getText().indexOf("new"));
+            assertEquals(0, table.markdown().convertWikiLink());
+            assertTrue(
+                    table.getArea().getText().contains("| [[note#part\\|new]] |"),
+                    table.getArea().getText());
+
+            // Not wiki links: indexing, a defined reference, brackets around an ordinary link's text.
+            EditorBuffer index = markdown("x[[‸1]] and more\n");
+            assertEquals(1, index.markdown().convertWikiLink(), "no link under the caret");
+            assertFalse(index.markdown().removeLink());
+            EditorBuffer reference = markdown("see [[no‸te]] here\n\n[note]: http://x\n");
+            assertArrayEquals(
+                    new String[] {"note", "http://x", "link"},
+                    reference.markdown().linkForEditing(),
+                    "the reference link the document defines, not a wiki link");
+            EditorBuffer ordinary = markdown("see [[no‸te]](http://y) here\n");
+            assertEquals("link", ordinary.markdown().linkForEditing()[2]);
+            assertEquals("http://y", ordinary.markdown().linkForEditing()[1]);
+
+            // Three brackets: the link is the inner pair, the outer brackets stay text.
+            EditorBuffer triple = markdown("see [[[‸a]]] here\n");
+            assertTrue(triple.markdown().removeLink());
+            assertEquals("see [«a»] here\n", shown(triple));
+            for (EditorBuffer b : new EditorBuffer[] {table, index, reference, ordinary, triple}) {
                 b.dispose();
             }
         });

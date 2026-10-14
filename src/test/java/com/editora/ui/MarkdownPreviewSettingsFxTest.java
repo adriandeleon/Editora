@@ -7,6 +7,9 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.EditorBuffer.MarkdownViewMode;
+import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.PreviewImageLoader;
+import com.editora.editor.PreviewImageLoader.RemotePolicy;
 import com.editora.editor.PreviewPrefs;
 import com.editora.editor.PreviewScrollSync;
 import org.junit.jupiter.api.AfterAll;
@@ -112,6 +115,57 @@ class MarkdownPreviewSettingsFxTest {
     }
 
     @Test
+    void anUntitledMarkdownBufferOpensInTheDefaultModeOnceAndKeepsWhatTheUserThenChooses() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Settings s = config.getSettings();
+            String before = s.getMarkdownDefaultViewMode();
+            try {
+                s.setMarkdownDefaultViewMode("split");
+                // Not Markdown (yet): nothing happens, and it is not counted as done.
+                EditorBuffer untitled = new EditorBuffer();
+                untitled.setContent("# Title\n");
+                previews.applyDefaultViewMode(untitled);
+                assertEquals(MarkdownViewMode.EDITOR, untitled.getMarkdownViewMode());
+
+                // Given the language by hand: now it is a Markdown buffer, and opens in the default mode.
+                untitled.setLanguageOverride("markdown");
+                previews.applyDefaultViewMode(untitled);
+                assertEquals(MarkdownViewMode.SPLIT, untitled.getMarkdownViewMode());
+
+                // The user goes back to the editor; a later settings pass does not undo that.
+                untitled.setMarkdownViewMode(MarkdownViewMode.EDITOR);
+                previews.applyDefaultViewMode(untitled);
+                previews.restoreMarkdownMode(untitled);
+                assertEquals(MarkdownViewMode.EDITOR, untitled.getMarkdownViewMode());
+
+                // Through the path every new or restored buffer takes (an untitled one from a template).
+                EditorBuffer fromTemplate = new EditorBuffer();
+                fromTemplate.setDisplayName("notes.md");
+                fromTemplate.setContent("# Notes\n");
+                assertTrue(fromTemplate.isMarkdown());
+                FxTestSupport.call(
+                        fx.controller,
+                        "addBuffer",
+                        new Class[] {EditorBuffer.class, boolean.class},
+                        fromTemplate,
+                        true);
+                assertEquals(MarkdownViewMode.SPLIT, fromTemplate.getMarkdownViewMode());
+
+                // The setting says "editor": nothing changes.
+                s.setMarkdownDefaultViewMode("editor");
+                EditorBuffer plainDefault = new EditorBuffer();
+                plainDefault.setLanguageOverride("markdown");
+                previews.applyDefaultViewMode(plainDefault);
+                assertEquals(MarkdownViewMode.EDITOR, plainDefault.getMarkdownViewMode());
+                untitled.dispose();
+                plainDefault.dispose();
+            } finally {
+                s.setMarkdownDefaultViewMode(before);
+            }
+        });
+    }
+
+    @Test
     void fontWidthFrontMatterAndScrollSyncAreTakenFromTheSettings() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Settings s = config.getSettings();
@@ -121,6 +175,10 @@ class MarkdownPreviewSettingsFxTest {
             assertFalse(PreviewPrefs.hideFrontMatter());
             assertTrue(PreviewScrollSync.enabled());
 
+            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertTrue(MarkdownRenderer.wikiLinks());
+            s.setMarkdownRemoteImagePolicy("ask");
+            s.setMarkdownWikiLinks(false);
             s.setMarkdownPreviewFontSize(18);
             s.setMarkdownPreviewWidth(700);
             s.setMarkdownHideFrontMatter(true);
@@ -131,15 +189,24 @@ class MarkdownPreviewSettingsFxTest {
                 assertEquals(700, PreviewPrefs.contentWidth());
                 assertTrue(PreviewPrefs.hideFrontMatter());
                 assertFalse(PreviewScrollSync.enabled());
+                assertEquals(RemotePolicy.ASK, PreviewImageLoader.remotePolicy());
+                assertFalse(MarkdownRenderer.wikiLinks());
+                s.setMarkdownRemoteImagePolicy("never");
+                previews.applyPreviewSettings();
+                assertEquals(RemotePolicy.NEVER, PreviewImageLoader.remotePolicy());
             } finally {
                 s.setMarkdownPreviewFontSize(0);
                 s.setMarkdownPreviewWidth(0);
                 s.setMarkdownHideFrontMatter(false);
                 s.setMarkdownScrollSync(true);
+                s.setMarkdownRemoteImagePolicy("always");
+                s.setMarkdownWikiLinks(true);
                 previews.applyPreviewSettings();
             }
             assertEquals(15, PreviewPrefs.baseFont());
             assertTrue(PreviewScrollSync.enabled());
+            assertEquals(RemotePolicy.ALWAYS, PreviewImageLoader.remotePolicy());
+            assertTrue(MarkdownRenderer.wikiLinks());
         });
     }
 }

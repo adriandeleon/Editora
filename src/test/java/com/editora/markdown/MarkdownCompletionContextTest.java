@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MarkdownCompletionContextTest {
 
@@ -84,5 +85,32 @@ class MarkdownCompletionContextTest {
         assertNull(MarkdownCompletionContext.at("abc", 9));
         assertNull(MarkdownCompletionContext.at("abc", -1));
         assertNull(end("ordinary prose"));
+    }
+
+    @Test
+    void wikiLinksOfferNotesThenHeadings() {
+        MarkdownCompletionContext.Context note = MarkdownCompletionContext.at("see [[gui", 9);
+        assertEquals(MarkdownCompletionContext.Kind.WIKI, note.kind());
+        assertEquals(6, note.start());
+        assertEquals("gui", note.partial());
+        assertEquals(
+                MarkdownCompletionContext.Kind.WIKI,
+                MarkdownCompletionContext.at("![[", 3).kind());
+
+        MarkdownCompletionContext.Context heading = MarkdownCompletionContext.at("[[my note#Inst", 14);
+        assertEquals(MarkdownCompletionContext.Kind.WIKI_HEADING, heading.kind());
+        assertEquals("my note", heading.file());
+        assertEquals("Inst", heading.partial());
+        assertEquals(10, heading.start());
+        assertEquals("", MarkdownCompletionContext.at("[[#", 3).file(), "this document's headings");
+
+        for (String done : new String[] {"[[note]] and", "[[note|lab", "`[[no` x", "\\[[no"}) {
+            MarkdownCompletionContext.Context c = MarkdownCompletionContext.at(done, done.length());
+            assertTrue(
+                    c == null
+                            || (c.kind() != MarkdownCompletionContext.Kind.WIKI
+                                    && c.kind() != MarkdownCompletionContext.Kind.WIKI_HEADING),
+                    done);
+        }
     }
 }

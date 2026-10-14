@@ -318,6 +318,67 @@ class MarkdownCommandsFxTest {
     }
 
     @Test
+    void cuttingAndPastingWholeItemsKeepsAnOrderedListInSequence() throws Exception {
+        EditorBuffer b = open("1. a\n2. b\n3. c\n", 0);
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().selectRange(5, 10); // the line "2. b\n"
+            registry.run("edit.cut");
+        });
+        assertEquals("1. a\n2. c\n", text(b));
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(0);
+            registry.run("edit.paste");
+        });
+        assertEquals("1. b\n2. a\n3. c\n", text(b), "pasted at the top: it is the first item now");
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().undo());
+        assertEquals("1. a\n2. c\n", text(b), "one undo takes back the paste and its renumbering");
+    }
+
+    @Test
+    void anInlineWordSnippetExpandsOnlyAloneOnItsLine() throws Exception {
+        EditorBuffer sentence = open("see the code\n", 12);
+        FxTestSupport.runOnFx(() ->
+                javafx.event.Event.fireEvent(sentence.getFocusedArea(), key(KeyEvent.KEY_PRESSED, "", KeyCode.TAB)));
+        assertFalse(text(sentence).contains("`"), text(sentence));
+        assertTrue(text(sentence).startsWith("see the code"), "Tab did what Tab does there");
+
+        EditorBuffer alone = open("code\n", 4);
+        FxTestSupport.runOnFx(
+                () -> javafx.event.Event.fireEvent(alone.getFocusedArea(), key(KeyEvent.KEY_PRESSED, "", KeyCode.TAB)));
+        assertTrue(text(alone).startsWith("`"), text(alone));
+    }
+
+    @Test
+    void aWikiLinkIsEditedAndConvertedFromTheRegistry() throws Exception {
+        EditorBuffer b = open("see [[Note|old]] now\n", 7);
+        CodeArea area = FxTestSupport.callOnFx(b::getFocusedArea);
+        FxTestSupport.runOnFx(() -> registry.run("markdown.editLink"));
+        FxTestSupport.drainFx();
+        javafx.scene.control.TextField textField = FxTestSupport.callOnFx(
+                () -> (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-text"));
+        javafx.scene.control.TextField urlField = FxTestSupport.callOnFx(
+                () -> (javafx.scene.control.TextField) area.getScene().lookup("#link-edit-url"));
+        assertEquals("old", FxTestSupport.callOnFx(textField::getText));
+        assertEquals("Note", FxTestSupport.callOnFx(urlField::getText), "the card shows what is between the brackets");
+        FxTestSupport.runOnFx(() -> {
+            textField.setText("new");
+            urlField.setText("Note#Part");
+            javafx.event.Event.fireEvent(urlField, key(KeyEvent.KEY_PRESSED, "", KeyCode.ENTER));
+        });
+        FxTestSupport.drainFx();
+        assertEquals("see [[Note#Part|new]] now\n", text(b));
+
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(7));
+        assertEquals("-", statusAfter("markdown.convertWikiLink"));
+        assertEquals("see [new](Note.md#part) now\n", text(b));
+        FxTestSupport.runOnFx(() -> b.getFocusedArea().moveTo(1));
+        assertEquals(tr("status.markdown.noLink"), statusAfter("markdown.convertWikiLink"));
+        EditorBuffer external = open("[x](https://example.com)\n", 2);
+        assertEquals(tr("status.markdown.linkNotLocal"), statusAfter("markdown.convertWikiLink"));
+        assertEquals("[x](https://example.com)\n", text(external));
+    }
+
+    @Test
     void tabExpandsABlockSnippetOnlyAtTheStartOfALine() throws Exception {
         EditorBuffer sentence = open("take a note\n", 11);
         FxTestSupport.runOnFx(() ->

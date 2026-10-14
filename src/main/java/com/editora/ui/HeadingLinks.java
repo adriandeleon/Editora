@@ -8,6 +8,7 @@ import java.util.function.Function;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LanguageRegistry;
+import com.editora.editor.WikiLinkTargets;
 import com.editora.markdown.MarkdownAnchors;
 
 import static com.editora.i18n.Messages.tr;
@@ -52,6 +53,14 @@ final class HeadingLinks {
             Function<Path, EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
+        if (WikiLinks.isWikiForm(link)) {
+            openWiki(WikiLinks.parse(link), buffer, workflows, openBuffer, jump, status);
+            return;
+        }
+        if (WikiLinkTargets.isWikiAddress(link)) {
+            followWiki(link, buffer, workflows::openPath, workflows::openThen, openBuffer, jump, status);
+            return;
+        }
         ExternalLinks.open(
                 link,
                 buffer.getPath(),
@@ -60,6 +69,68 @@ final class HeadingLinks {
                 workflows::openPath,
                 (file, fragment) -> follow(buffer, file, fragment, workflows::openThen, openBuffer, jump, status),
                 status);
+    }
+
+    /** Follows a wiki link written in {@code buffer}: to its note, and to the heading when it names one. */
+    private static void openWiki(
+            WikiLinks.Parsed wiki,
+            EditorBuffer buffer,
+            FileWorkflowCoordinator workflows,
+            Function<Path, EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
+        Path here = buffer.getPath() == null
+                ? null
+                : buffer.getPath().toAbsolutePath().normalize();
+        Path file = wiki.target().isEmpty() ? here : WikiLinks.resolve(here, wiki.target());
+        if (file == null && !wiki.target().isEmpty()) {
+            status.accept(tr("status.wikilink.unresolved", wiki.target()));
+            return;
+        }
+        boolean same = file == null || file.equals(here);
+        if (wiki.heading().isEmpty()) {
+            if (!same) {
+                workflows.openPath(file);
+            }
+            return;
+        }
+        // A wiki link names a heading by its title; the anchor machinery goes by its slug.
+        follow(
+                buffer,
+                same ? null : file,
+                com.editora.markdown.MarkdownToc.slug(wiki.heading()),
+                workflows::openThen,
+                openBuffer,
+                jump,
+                status);
+    }
+
+    /**
+     * Follows a wiki link ({@code wikilink:note#Heading}, {@link WikiLinkTargets#address}): the file the
+     * resolver finds for it is opened — at the heading, when one is named — and a link nothing answers to is
+     * said in the status bar, never guessed at.
+     */
+    static void followWiki(
+            String address,
+            EditorBuffer clicked,
+            Consumer<Path> openFile,
+            java.util.function.BiConsumer<Path, Runnable> openThen,
+            Function<Path, EditorBuffer> openBuffer,
+            Jump jump,
+            Consumer<String> status) {
+        String target = WikiLinkTargets.targetOf(address);
+        Path folder = clicked.getPath() == null ? null : clicked.getPath().getParent();
+        Path file = WikiLinkTargets.resolve(folder, target);
+        if (file == null) {
+            status.accept(tr("status.wikilink.unresolved", target));
+            return;
+        }
+        String fragment = WikiLinkTargets.fragmentOf(address);
+        if (fragment == null) {
+            openFile.accept(file);
+        } else {
+            follow(clicked, file, fragment, openThen, openBuffer, jump, status);
+        }
     }
 
     /** Goes to {@code fragment} in {@code file}, or in {@code clicked} itself when {@code file} is null. */

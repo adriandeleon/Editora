@@ -33,6 +33,7 @@ import com.editora.markdown.MarkdownDefinitions;
 import com.editora.markdown.MarkdownEmoji;
 import com.editora.markdown.MarkdownMarks;
 import com.editora.markdown.MarkdownMath;
+import com.editora.markdown.MarkdownWikiLinks;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;
@@ -117,9 +118,22 @@ public final class MarkdownRenderer {
      * with the editor. The exporters (HTML, clipboard, DOCX, ODT, PDF) read the same parse, so a formula is
      * the same formula in all of them.
      */
-    private static Parser renderParser(boolean math) {
+    private static Parser renderParser(boolean math, boolean wiki) {
+        int at = (math ? 1 : 0) + (wiki ? 2 : 0);
+        synchronized (RENDER_PARSERS) {
+            if (RENDER_PARSERS[at] == null) {
+                RENDER_PARSERS[at] = newRenderParser(math, wiki);
+            }
+            return RENDER_PARSERS[at];
+        }
+    }
+
+    /** The render parsers, by {@code (math ? 1 : 0) + (wikiLinks ? 2 : 0)}; each built on first use. */
+    private static final Parser[] RENDER_PARSERS = new Parser[4];
+
+    private static Parser newRenderParser(boolean math, boolean wiki) {
         return Parser.builder()
-                .extensions(renderExtensions(math))
+                .extensions(renderExtensions(math, wiki))
                 .includeSourceSpans(IncludeSourceSpans.BLOCKS)
                 .build();
     }
@@ -129,6 +143,11 @@ public final class MarkdownRenderer {
      * built with to know its nodes.
      */
     public static List<org.commonmark.Extension> renderExtensions(boolean math) {
+        return renderExtensions(math, wikiLinks);
+    }
+
+    /** {@link #renderExtensions(boolean)} with wiki links recognised or not, whatever the switch says. */
+    public static List<org.commonmark.Extension> renderExtensions(boolean math, boolean wiki) {
         List<org.commonmark.Extension> ext = new ArrayList<>();
         for (org.commonmark.Extension e : EXTENSIONS) {
             if (!(e instanceof FootnotesExtension) && !(e instanceof StrikethroughExtension)) {
@@ -146,11 +165,23 @@ public final class MarkdownRenderer {
         ext.add(MarkdownAlerts.extension()); // > [!NOTE] … GitHub alerts
         ext.add(MarkdownEmoji.extension()); // :rocket:
         ext.add(MarkdownDefinitions.extension()); // Term / : definition
+        if (wiki) {
+            ext.add(MarkdownWikiLinks.extension()); // [[note]], ![[image.png]]
+        }
         return ext;
     }
 
-    private static final Parser RENDER_PARSER = renderParser(false);
-    private static final Parser MATH_PARSER = renderParser(true);
+    /** Whether {@code [[note]]} is a wiki link ({@code Settings.markdownWikiLinks}; on by default). */
+    private static volatile boolean wikiLinks = true;
+
+    /** Switches wiki links on or off for every later {@link #parseForRender} and {@link #renderExtensions}. */
+    public static void setWikiLinks(boolean on) {
+        wikiLinks = on;
+    }
+
+    public static boolean wikiLinks() {
+        return wikiLinks;
+    }
 
     /** Renders the same AST to plain text (markup stripped) — "what you see" in the preview, for copy. */
     private static final org.commonmark.renderer.text.TextContentRenderer TEXT_RENDERER =
@@ -173,7 +204,7 @@ public final class MarkdownRenderer {
 
     /** {@link #parseForRender(String)} with math recognised or not, whatever the feature switch says. */
     public static org.commonmark.node.Node parseForRender(String markdown, boolean math) {
-        return (math ? MATH_PARSER : RENDER_PARSER).parse(markdown == null ? "" : markdown);
+        return renderParser(math, wikiLinks).parse(markdown == null ? "" : markdown);
     }
 
     /** The Markdown rendered to plain text (the visible text with markup removed) — for "Copy" from the
@@ -325,7 +356,16 @@ public final class MarkdownRenderer {
     record Live(
             java.util.function.Predicate<CheckBox> onTask,
             java.util.function.Consumer<Node> onEnlarge,
-            boolean hideFrontMatter) {}
+            boolean hideFrontMatter,
+            boolean remoteGranted) {
+
+        /** Whether the reader allowed this document's remote images where the policy is to ask first. */
+        boolean loadsRemote(String url) {
+            return remoteGranted
+                    && PreviewImageLoader.remotePolicy() == PreviewImageLoader.RemotePolicy.ASK
+                    && PreviewImageLoader.isRemote(url);
+        }
+    }
 
     /** Node property of a task box: the source line of its list item when it was built ({@link Live}). */
     static final String TASK_LINE = "editora.md.taskLine";
@@ -572,7 +612,10 @@ public final class MarkdownRenderer {
             return renderTable(tb, ctx);
         }
         if (node instanceof YamlFrontMatterBlock fm) {
-            return ctx.live() != null && ctx.live().hideFrontMatter() ? null : frontMatterBlock(fm);
+            // The reader's choice to leave it out holds for the preview and for its print; a popup shows it.
+            boolean hidden =
+                    ctx.live() != null ? ctx.live().hideFrontMatter() : ctx.print() && PreviewPrefs.hideFrontMatter();
+            return hidden ? null : frontMatterBlock(fm);
         }
         if (node instanceof FootnoteDefinition def) {
             return footnoteDefinition(def, ctx);
@@ -1422,6 +1465,19 @@ public final class MarkdownRenderer {
                 e.consume();
             }
         });
+        // The keyboard's way in: a Tab stop, opened with Enter or Space (Esc closes what opens).
+        picture.setFocusTraversable(true);
+        picture.getStyleClass().add("md-enlargeable");
+        picture.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        picture.setAccessibleHelp(Messages.tr("previewmenu.enlarge"));
+        picture.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            boolean opens =
+                    e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE;
+            if (opens && !picture.getProperties().containsKey(LINK_KEY)) { // a linked picture: the link's key
+                open.accept(picture);
+                e.consume();
+            }
+        });
         return picture;
     }
 
@@ -1601,6 +1657,8 @@ public final class MarkdownRenderer {
                 // Paper cannot be clicked: say where the link goes. One run, so it wraps wherever it must.
                 flow.getChildren().add(styledText(" (" + target + ")", List.of("md-link-url")));
             }
+        } else if (n instanceof MarkdownWikiLinks.WikiLink wiki) {
+            appendWikiLink(wiki, flow, styles, ctx);
         } else if (n instanceof org.commonmark.node.Image img) {
             flow.getChildren().add(imageNode(img, ctx));
         } else if (n instanceof SoftLineBreak) {
@@ -1611,6 +1669,39 @@ public final class MarkdownRenderer {
             // rendered as a CheckBox by renderList — skip here
         } else {
             appendInline(n, flow, styles, ctx); // unknown inline: descend
+        }
+    }
+
+    /**
+     * A wiki link: a link like any other, to the address {@link WikiLinkTargets#address} gives it, marked
+     * {@code md-wikilink-missing} when nothing answers to its target; an embed of a picture
+     * ({@code ![[image.png]]}) is the picture, found by the same resolver.
+     */
+    private static void appendWikiLink(
+            MarkdownWikiLinks.WikiLink wiki, TextFlow flow, List<String> styles, RenderContext ctx) {
+        Path file = wiki.getTarget().isEmpty() ? null : WikiLinkTargets.resolve(ctx.baseDir(), wiki.getTarget());
+        if (wiki.isEmbed() && WikiLinkTargets.isImage(wiki.getTarget())) {
+            String dest = file != null ? file.toUri().toString() : MarkdownWikiLinks.encode(wiki.getTarget());
+            flow.getChildren().add(imageNode(dest, wiki.getText(), null, 0, ctx));
+            return;
+        }
+        boolean missing = file == null && !wiki.getTarget().isEmpty();
+        int from = flow.getChildren().size();
+        emitText(
+                wiki.getText(),
+                flow,
+                with(with(styles, "md-link"), missing ? "md-wikilink-missing" : "md-wikilink"),
+                ctx);
+        String says = missing
+                ? Messages.tr("status.wikilink.unresolved", wiki.getTarget())
+                : file == null
+                        ? "#" + wiki.getHeading()
+                        : file.getFileName() + (wiki.getHeading() == null ? "" : "#" + wiki.getHeading());
+        wireLinkSaying(flow, from, WikiLinkTargets.address(wiki), says, ctx);
+        if (ctx.print()
+                && !wiki.getText().equals(wiki.getReference())
+                && !wiki.getTarget().isEmpty()) {
+            flow.getChildren().add(styledText(" (" + wiki.getReference() + ")", List.of("md-link-url")));
         }
     }
 
@@ -1767,10 +1858,16 @@ public final class MarkdownRenderer {
      * destination is also left on each node ({@link #LINK_KEY}) for "Copy Link Address".
      */
     private static void wireLink(TextFlow flow, int from, String dest, String title, RenderContext ctx) {
+        wireLinkSaying(flow, from, dest, dest == null ? null : linkTooltip(title, dest), ctx);
+    }
+
+    /** {@link #wireLink} with the tooltip (and accessible) text given, for a link whose address is not what a
+     *  reader should be shown (a wiki link's). */
+    private static void wireLinkSaying(TextFlow flow, int from, String dest, String says, RenderContext ctx) {
         if (dest == null || dest.isBlank()) {
             return;
         }
-        Tooltip tip = new Tooltip(linkTooltip(title, dest));
+        Tooltip tip = new Tooltip(says);
         java.util.function.Consumer<String> onLinkClick = ctx.onLinkClick();
         boolean first = true;
         for (int i = from; i < flow.getChildren().size(); i++) {
@@ -1790,7 +1887,7 @@ public final class MarkdownRenderer {
                 // One Tab stop per link, on its first run.
                 child.setFocusTraversable(true);
                 child.setAccessibleRole(javafx.scene.AccessibleRole.HYPERLINK);
-                child.setAccessibleText(linkTooltip(title, dest));
+                child.setAccessibleText(says);
                 child.setOnKeyPressed(e -> {
                     if (e.getCode() == javafx.scene.input.KeyCode.ENTER
                             || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
@@ -1858,7 +1955,10 @@ public final class MarkdownRenderer {
         if (url == null) {
             return inlineCode(imagePlaceholder(alt, null));
         }
-        if (!ctx.images().allows(url)) {
+        boolean granted = ctx.images() == ImagePolicy.DOCUMENT
+                && ctx.live() != null
+                && ctx.live().loadsRemote(url);
+        if (!ctx.images().allows(url) && !granted) {
             return inlineCode(imagePlaceholder(alt, dest)); // shown, never fetched
         }
         ImageView view = new ImageView();

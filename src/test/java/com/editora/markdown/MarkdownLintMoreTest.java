@@ -451,4 +451,130 @@ class MarkdownLintMoreTest {
         }
         return best;
     }
+
+    // --- LINK003: wiki links -----------------------------------------------------------------------------------------
+
+    private static MarkdownLint.LinkTargets notes(Map<String, Set<String>> notes) {
+        return new MarkdownLint.LinkTargets() {
+            @Override
+            public boolean exists(String path) {
+                return true;
+            }
+
+            @Override
+            public Set<String> anchors(String path) {
+                return notes.get(path.replace(".md", ""));
+            }
+
+            @Override
+            public String wikiFile(String target) {
+                return target.equals("somewhere") ? "" : notes.containsKey(target) ? target + ".md" : null;
+            }
+        };
+    }
+
+    private static List<String> wiki(String md, MarkdownLint.LinkTargets targets) {
+        return MarkdownLint.lint(md, Set.of(), DEFAULTS, targets).stream()
+                .filter(d -> d.code().equals("LINK003"))
+                .map(d -> d.line() + ":" + d.column() + "+" + d.length()
+                        + (d.key().endsWith(".heading") ? " heading" : ""))
+                .toList();
+    }
+
+    @Test
+    void aWikiLinkMustLeadToANote() {
+        MarkdownLint.LinkTargets targets =
+                notes(Map.of("guide", Set.of("install", "first-steps"), "logo.png", Set.of()));
+        String md =
+                "# Notes\n\n[[guide]] [[guide|the guide]] [[guide#Install]] [[guide#First steps|start]] ![[logo.png]]\n\n"
+                        + "[[missing]] and [[guide#Nowhere]] and ![[gone.png]] and [[#Notes]] and [[#Elsewhere|x]]\n";
+        assertEquals(List.of("5:1+11", "5:17+17 heading", "5:40+12", "5:72+16 heading"), wiki(md, targets));
+    }
+
+    @Test
+    void whatIsNotAWikiLinkIsNotJudged() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(
+                List.of(), wiki("`[[code]]` and \\[[escaped]] and [[]] and [[ ]] and [not [[nested] ]]\n", targets));
+        assertEquals(
+                List.of(),
+                wiki("```\n[[in a fence]]\n```\n\n    [[indented code]]\n\n<!-- [[comment]] -->\n", targets));
+        assertEquals(List.of(), wiki("[[somewhere]] cannot be told, so it is left alone\n", targets));
+        assertEquals(List.of(), wiki("[[missing]]\n", null), "no resolver: silent");
+        assertEquals(List.of("1:5+11"), wiki("a [[[[missing]] b\n", targets), "the innermost pair is the link");
+    }
+
+    /** The forms the preview's parser ({@link MarkdownWikiLinks}) draws the line at: lint draws it there too. */
+    @Test
+    void lintCallsAWikiLinkExactlyWhatThePreviewDoes() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(
+                List.of(),
+                wiki("see x[[1]] and matrix[[i]] for the index\n", targets),
+                "after a letter or digit: text");
+        assertEquals(List.of("1:5+8"), wiki("see [[gone]] here\n", targets));
+        assertEquals(
+                List.of(),
+                wiki("see [[note]] here\n\n[note]: https://x.io\n", targets),
+                "with a definition of [note] it is a reference link in brackets");
+        assertEquals(
+                List.of(),
+                wiki("see [[note]](https://x.io) and [[note]][ref]\n\n[ref]: /r\n", targets),
+                "ordinary links");
+        assertEquals(
+                List.of("1:6+8"),
+                wiki("see [[[gone]]] here\n", targets),
+                "a wiki link inside one more pair of brackets");
+        assertEquals(
+                List.of("3:3+15"),
+                wiki("| a |\n|---|\n| [[gone\\|label]] |\n", targets),
+                "in a table cell the pipe is written \\|");
+        assertEquals(List.of(), wiki("`[[gone]]` and ``[[gone]]``\n\n    [[gone]]\n\n```\n[[gone]]\n```\n", targets));
+        assertEquals(List.of("1:2+12"), wiki("![[gone.png]]\n", targets), "an embed is underlined from its brackets");
+        // Each form, parsed by the preview's own extension: a WikiLink there exactly when lint reports one.
+        for (String md : List.of(
+                "see x[[1]] y",
+                "see [[gone]] here",
+                "see [[[gone]]] here",
+                "see [[note]](https://x.io)",
+                "\\[[gone]]",
+                "![[gone.png]]")) {
+            org.commonmark.node.Node doc = org.commonmark.parser.Parser.builder()
+                    .extensions(List.of(MarkdownWikiLinks.extension()))
+                    .build()
+                    .parse(md);
+            boolean[] found = {false};
+            doc.accept(new org.commonmark.node.AbstractVisitor() {
+                @Override
+                public void visit(org.commonmark.node.CustomNode node) {
+                    found[0] |= node instanceof MarkdownWikiLinks.WikiLink;
+                    visitChildren(node);
+                }
+            });
+            assertEquals(found[0], !wiki(md + "\n", targets).isEmpty(), md);
+        }
+    }
+
+    @Test
+    void aWallOfWikiLinksIsLintedWithoutThemRatherThanSlowly() {
+        MarkdownLint.LinkTargets targets = notes(Map.of());
+        assertEquals(2_000, wiki("[[a]] ".repeat(2_000) + "\n", targets).size());
+        assertEquals(List.of(), wiki("[[a]] ".repeat(2_001) + "\n", targets), "past the bound LINK003 stands down");
+        assertEquals(
+                4_000,
+                wiki("[[a]] ".repeat(2_000) + "\n\n" + "[[b]] ".repeat(2_000) + "\n", targets)
+                        .size(),
+                "per paragraph");
+        long start = System.nanoTime();
+        MarkdownLint.lint("[[".repeat(100_000) + "\n", Set.of(), DEFAULTS, targets);
+        MarkdownLint.lint("[[a]] ".repeat(4_000) + "\n", Set.of(), DEFAULTS, targets);
+        long small = System.nanoTime() - start;
+        start = System.nanoTime();
+        MarkdownLint.lint("[[".repeat(1_000_000) + "\n", Set.of(), DEFAULTS, targets);
+        MarkdownLint.lint("[[a]] ".repeat(40_000) + "\n", Set.of(), DEFAULTS, targets);
+        long large = System.nanoTime() - start;
+        assertTrue(
+                large < Math.max(small, 5_000_000L) * 40,
+                "10x the input took " + large / Math.max(1, small) + "x the time");
+    }
 }

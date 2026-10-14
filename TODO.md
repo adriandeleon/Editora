@@ -998,6 +998,18 @@ A backlog of planned features and improvements. Unordered within each section.
       (`play` returns a boolean now); `runSaved` did not finalize an in-progress recording. Deferred → #449
       (nested-command record order, latent). Verified-clean: the `playing` guard's `finally`, replay never
       re-recorded, no assist double-application, persistence, multi-window broadcast, recorder lifecycle.
+- [x] Markdown feature-gap pass 2 (2026-10) — text selection and partial copy in the preview
+      (`editor/PreviewSelection*`); wiki links (`markdown/MarkdownWikiLinks` parser, one resolver `markdown/WikiTargets`
+      for preview, exports, follow, completion, editing tools and lint `LINK003`), an in-memory Markdown link index
+      per open project and a Backlinks tool window; link updates with Local History, other-window buffers and HTML
+      paths; remote images Always / Ask / Never; PDF highlight, sup/sub and emoji (bundled Noto Emoji); styled alerts
+      and definition lists in office and PDF exports; setext / task-box / bare-URL source styling
+      (`markdown/MarkdownSourceStyles` over the highlight pass); unused pasted images trashed on save; palette
+      keywords; snippet word triggers only alone on a line. Settings schema 121.
+      **Left open:** grammar check and slide export (owner's choice); key bindings; the side preview has no zoom or
+      Find and is not restored with the session; the wiki-link parser is quadratic in the links of one paragraph;
+      partial-selection copy flattens nested lists and omits pictures; no Shift+Home/End in the preview selection;
+      Backlinks lists saved files only.
 - [x] Markdown feature-gap pass (2026-10) — the small and medium gaps from the same review: parse extensions for
       alerts, emoji, highlight, sup/sub, definition lists and math fences (`markdown/MarkdownAlerts`, `MarkdownEmoji`,
       `MarkdownMarks`, `MarkdownDefinitions`), rendered by the preview and every export; preview to the side / in a

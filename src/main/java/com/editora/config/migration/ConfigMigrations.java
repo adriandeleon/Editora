@@ -857,6 +857,22 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /**
+     * v120→121: the on/off {@code markdownRemoteImages} became {@code markdownRemoteImagePolicy}. A stored
+     * {@code false} is written as {@code "never"} unless a policy is already there (a file a newer build
+     * wrote); the old key is dropped either way. A stored {@code true} needs nothing — "always" is the
+     * default. Safe to repeat.
+     */
+    static JsonNode remoteImagesToPolicy(JsonNode input) {
+        if (input instanceof ObjectNode o) {
+            JsonNode old = o.remove("markdownRemoteImages");
+            if (old != null && old.isBoolean() && !old.asBoolean() && !o.hasNonNull("markdownRemoteImagePolicy")) {
+                o.put("markdownRemoteImagePolicy", "never");
+            }
+        }
+        return input;
+    }
+
     private static void blankIfEqual(ObjectNode o, String key, String frozen) {
         JsonNode value = o.get(key);
         if (value != null && value.isTextual() && frozen.equals(value.asText().strip())) {

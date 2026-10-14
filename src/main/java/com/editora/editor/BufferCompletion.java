@@ -369,18 +369,7 @@ final class BufferCompletion {
         // The declaration (signature/type) header is shown for every item; the rendered documentation is
         // added only when the server provides any. Nothing to show ⇒ hide (e.g. a plain word/snippet).
         String signature = c.detail() == null ? "" : c.detail().strip();
-        javafx.scene.Node rendered = null;
-        if (doc != null && !doc.isBlank()) {
-            try {
-                rendered = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(doc.strip()),
-                        null,
-                        null,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
-            } catch (RuntimeException ex) {
-                rendered = null;
-            }
-        }
+        javafx.scene.Node rendered = renderDoc(doc);
         if (signature.isBlank() && rendered == null) {
             hideDocPopup();
             return;
@@ -390,6 +379,35 @@ final class BufferCompletion {
             return;
         }
         docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered);
+    }
+
+    /** Opens a link clicked in a completion's documentation: the window's own link opener. */
+    private java.util.function.Consumer<String> linkOpener;
+
+    void setLinkOpener(java.util.function.Consumer<String> opener) {
+        this.linkOpener = opener;
+    }
+
+    /**
+     * A completion's documentation as nodes, or null when there is none (or it cannot be rendered). Its links
+     * are live — a click, or Enter on one, hands the destination to the window's link opener, which treats it
+     * as it would a link in the document — and its images are still limited to {@code data:} ones: the text
+     * comes from a language server, not from the user.
+     */
+    javafx.scene.Node renderDoc(String doc) {
+        if (doc == null || doc.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.function.Consumer<String> open = linkOpener;
+            return MarkdownRenderer.renderDocument(
+                    MarkdownRenderer.parseForRender(doc.strip()),
+                    null,
+                    open == null ? null : open::accept,
+                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     void hideDocPopup() {
