@@ -268,6 +268,13 @@ final class GitHubCoordinator {
      * project window (both the remote-host and the open-activity checks are cached per repo root).
      */
     private void applyGating() {
+        Path context = contextDir();
+        service.setLocation(context); // gh is asked on the machine the window's repository is on
+        if (isEnabled() && service.availability() == null && context != null && Vfs.isRemote(context)) {
+            // A host whose gh has not been asked yet: ask, then gate again. This machine's gh is asked by
+            // applySupport, after the first painted frame, and never from here.
+            service.detect(a -> applyGating());
+        }
         boolean available = isEnabled() && ready() && repoIsGitHub() && hasOpenActivity();
         ops.setGitHubWindowAvailable(available);
         if (!available) {
@@ -386,6 +393,7 @@ final class GitHubCoordinator {
     private String readyIn(Path captured, Consumer<Path> then) {
         String reason = disabledReason();
         Path dir = null;
+        service.setLocation(captured != null ? captured : contextDir());
         GitHubService.Availability a = service.availability();
         if (reason != null) {
             // disabled, or Git support is off
@@ -446,10 +454,13 @@ final class GitHubCoordinator {
         }
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
-        if (file != null && Vfs.isLocal(file)) {
-            return Files.isDirectory(file) ? file : file.getParent();
+        if (file == null || !RemoteExec.runsFor(file)) {
+            return null;
         }
-        return null;
+        if (Vfs.isRemote(file)) {
+            return file.getParent(); // a buffer's path is a file; asking the server would be a round trip on FX
+        }
+        return Files.isDirectory(file) ? file : file.getParent();
     }
 
     // --- refresh / toggle ------------------------------------------------------------------------
@@ -1297,7 +1308,7 @@ final class GitHubCoordinator {
         ready(dir -> {
             EditorBuffer b = host.activeBuffer();
             Path file = b == null ? null : b.getPath();
-            if (file == null || !Vfs.isLocal(file)) {
+            if (file == null || !RemoteExec.runsFor(file)) {
                 host.setStatus(tr("status.github.noFile"));
                 return;
             }

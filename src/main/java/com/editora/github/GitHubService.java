@@ -20,6 +20,7 @@ import javafx.beans.property.ReadOnlyIntegerWrapper;
 import com.editora.diff.PatchParser;
 import com.editora.process.CommandLog;
 import com.editora.process.ConfiguredCommand;
+import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -101,8 +102,24 @@ public final class GitHubService {
     /** The configured {@code gh} command tokens (default {@code ["gh"]}); a blank override resets to gh. */
     private volatile List<String> command = List.of("gh");
 
-    /** null = not yet probed (for the current {@link #command}); cached by every conclusive {@link #detect}. */
+    /**
+     * null = not yet probed (for the current {@link #command}, on the host of {@link #location}); cached by
+     * every conclusive {@link #detect}.
+     */
     private volatile Availability availability;
+
+    /**
+     * Where {@code gh} is asked: the window's repository (or folder). A repository on a remote host is served
+     * by that host's own {@code gh}, signed in there or not, so availability is per host: {@link #byHost}
+     * keeps each host's last answer, and {@link #availability} is the one for {@link #location}'s.
+     */
+    private volatile Path location;
+
+    private volatile String locationHost = LOCAL;
+
+    private static final String LOCAL = "local";
+
+    private final java.util.Map<String, Availability> byHost = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Guards {@link #probeWaiters}, and pairs {@link #command} with the {@link #availability} it was probed for. */
     private final Object probeLock = new Object();
@@ -248,7 +265,10 @@ public final class GitHubService {
                 return false;
             }
             command = next;
-            availability = null; // re-probe with the new command
+            byHost.remove(LOCAL);
+            if (LOCAL.equals(locationHost)) {
+                availability = null; // re-probe with the new command
+            }
             return true;
         }
     }
@@ -265,6 +285,40 @@ public final class GitHubService {
     /** The last probed availability (may be {@code null} before the first {@link #detect}). */
     public Availability availability() {
         return availability;
+    }
+
+    /**
+     * Points the service at {@code dir} (the window's repository or folder; null for none). When that is on
+     * another machine than before, {@link #availability()} becomes that machine's last answer, or null until
+     * it is probed. Cheap and without I/O: called on every gating pass.
+     */
+    public void setLocation(Path dir) {
+        String host = hostOf(dir);
+        synchronized (probeLock) {
+            location = dir;
+            if (!host.equals(locationHost)) {
+                if (availability != null) {
+                    byHost.put(locationHost, availability);
+                }
+                locationHost = host;
+                availability = byHost.get(host);
+            }
+        }
+    }
+
+    private static String hostOf(Path dir) {
+        return dir == null || com.editora.vfs.Vfs.isLocal(dir)
+                ? LOCAL
+                : ExecTargets.forPath(dir).id();
+    }
+
+    /** The gh for {@code dir}'s machine: the configured one here, the host's own (or its configured tool) there. */
+    private List<String> commandFor(Path dir) {
+        if (dir == null || com.editora.vfs.Vfs.isLocal(dir)) {
+            return command;
+        }
+        String configured = ExecTargets.remoteTool(dir, "gh");
+        return configured == null ? List.of("gh") : commandTokens(configured);
     }
 
     /**
@@ -314,11 +368,25 @@ public final class GitHubService {
         List<Consumer<Availability>> waiters = List.of();
         try {
             while (true) {
-                List<String> probed = command;
-                Availability fresh = probe(probed, QUICK);
+                List<String> configured = command;
+                Path at = location;
+                String host = hostOf(at);
+                List<String> probed = commandFor(at);
+                // A remote host is asked from a directory it certainly has; this machine from anywhere.
+                Path anchor = LOCAL.equals(host) ? null : at.toAbsolutePath().getRoot();
+                Availability fresh = probe(probed, anchor, QUICK);
                 synchronized (probeLock) {
-                    if (probed != command) {
+                    if (configured != command) {
                         continue; // the command changed while gh ran: that answer is about another program
+                    }
+                    if (fresh != null) {
+                        byHost.put(host, fresh);
+                    }
+                    if (!host.equals(locationHost)) {
+                        // The window moved to another machine meanwhile: this answer is that host's, kept for
+                        // when the window comes back, and the waiters get the current host's.
+                        posted = availability != null ? availability : Availability.UNKNOWN;
+                        break;
                     }
                     if (fresh != null) {
                         availability = fresh;
@@ -351,9 +419,14 @@ public final class GitHubService {
      * Doctor screen reports the same answer.
      */
     public static Availability probe(List<String> command, Duration timeout) {
+        return probe(command, null, timeout);
+    }
+
+    /** {@link #probe(List, Duration)} run in {@code dir}: on the machine {@code dir} is on. */
+    static Availability probe(List<String> command, Path dir, Duration timeout) {
         ProcessRunner.Result v;
         try {
-            v = run(command, null, timeout, null, "--version");
+            v = run(command, dir, timeout, null, "--version");
         } catch (RuntimeException notLaunchable) {
             return Availability.UNKNOWN;
         }
@@ -365,7 +438,7 @@ public final class GitHubService {
         }
         String version = firstLine(v.out());
         try {
-            ProcessRunner.Result json = run(command, null, timeout, null, "auth", "status", "--json", "hosts");
+            ProcessRunner.Result json = run(command, dir, timeout, null, "auth", "status", "--json", "hosts");
             if (json.timedOut()) {
                 return Availability.found(version, AuthState.UNVERIFIED, List.of(), "");
             }
@@ -374,7 +447,7 @@ public final class GitHubService {
                 return Availability.found(
                         version, authState(parsed.state()), parsed.hosts(), parsed.detail(), parsed.accounts());
             }
-            ProcessRunner.Result plain = run(command, null, timeout, null, "auth", "status");
+            ProcessRunner.Result plain = run(command, dir, timeout, null, "auth", "status");
             if (plain.ok()) {
                 return Availability.found(version, AuthState.SIGNED_IN, List.of(), "");
             }
@@ -1014,7 +1087,7 @@ public final class GitHubService {
             r = ProcessRunner.runLiveInUserLocale(
                     dir,
                     timeout,
-                    argv(command, args),
+                    argv(commandFor(dir), args),
                     GH_ENV,
                     (line, transientLine) -> {
                         if (!transientLine) {
@@ -1042,7 +1115,7 @@ public final class GitHubService {
         if (cancel != null && cancel.cancelled()) {
             return new ProcessRunner.Result(-1, "", ProcessRunner.CANCELLED);
         }
-        return run(command, dir, timeout, cancel, args);
+        return run(commandFor(dir), dir, timeout, cancel, args);
     }
 
     private static ProcessRunner.Result run(

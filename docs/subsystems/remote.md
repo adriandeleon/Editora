@@ -92,9 +92,13 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   host's own; nothing prompts (`GIT_TERMINAL_PROMPT=0`).
 - **Hunk staging** writes a private index on the host and publishes it over `index.lock` with a server-side
   replacement (`AtomicFileWrite.replaceAtomically`, `posix-rename@openssh.com`), never a delete-then-rename.
+- **GitHub:** `gh` for a remote repository is the host's own (or its configured `gh` tool), signed in there or
+  not. `GitHubService.setLocation` points the service at the window's repository; availability and sign-in are
+  kept per host (`byHost`), so moving between a local and a remote repository never borrows the other
+  machine's answer. URLs are printed by `gh` (`--no-browser`) and opened by this machine's browser.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
-  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), GitHub (`gh`),
-  Run, Build, tests, language servers and debugging.
+  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
+  tests, language servers and debugging.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 
