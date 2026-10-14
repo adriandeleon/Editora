@@ -127,6 +127,9 @@ class LspCoordinatorDiagnosticsFxTest {
             EditorBuffer x = new EditorBuffer();
             x.setPath(f);
             x.setContent(text);
+            // The load's Run scan (which decides isRunnable) runs off the FX thread and lands a moment
+            // later; on a busy runner that was after the test had read it. Land it now, as a Run command does.
+            x.settleRunScan();
             host.buffers.add(x);
             host.active = x;
             return x;

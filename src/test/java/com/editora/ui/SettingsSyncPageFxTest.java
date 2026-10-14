@@ -167,6 +167,21 @@ class SettingsSyncPageFxTest {
     }
 
     @Test
+    void whyConnectWasRefusedStaysUntilTheRepositoryIsEdited() throws Exception {
+        open(null);
+        connect("", "main");
+        assertEquals(tr("status.sync.invalidRepository"), status());
+
+        // A refresh from elsewhere — the GitHub sign-in check finishing, the service reporting its state —
+        // used to put "Not connected." back before the message could be read.
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(window, "refreshSyncControls"));
+        assertEquals(tr("status.sync.invalidRepository"), status());
+
+        FxTestSupport.runOnFx(() -> SettingsRig.typeAndEnter(control("syncUrlField"), remote.toString()));
+        assertEquals(tr("sync.state.off"), status(), "editing the repository clears it");
+    }
+
+    @Test
     void aRepositoryThatCannotBeReachedIsReportedAndSyncStaysOff() throws Exception {
         open(null);
         connect(tmp.resolve("gone.git").toString(), "main");
