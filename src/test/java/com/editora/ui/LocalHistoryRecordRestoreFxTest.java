@@ -127,7 +127,19 @@ class LocalHistoryRecordRestoreFxTest {
     }
 
     /** Makes every write to the revision store fail, until the returned action is run. */
-    private static Runnable breakStore(Window win) throws Exception {
+    private static Runnable breakStore(AsyncTestScope async, Window win) throws Exception {
+        // A collection of unreferenced bodies resets the store's permissions as it goes
+        // (HistoryBlobStore.deleteUnreferenced), so one that ran after the break below quietly repaired the
+        // store, and a write the test expected to fail succeeded. The session's first collection follows its
+        // first index write, which a test does not otherwise wait for; let it run now. The next one is
+        // throttled for ten minutes (HistoryService.GC_MIN_INTERVAL_NANOS).
+        com.editora.history.HistoryService service = win.w().fx.shared.historyService();
+        win.w().fx.shared.flushWrites();
+        OverlayTestKit.await(
+                async,
+                "the session's first history collection",
+                () -> FxTestSupport.<Boolean>field(service, "gcHasRun"));
+        async.awaitWorker(FxTestSupport.field(service, "exec"));
         Path blobs = win.w().fx.shared.getHistoryBlobsDir();
         Files.createDirectories(blobs);
         List<Path> dirs;
@@ -293,7 +305,7 @@ class LocalHistoryRecordRestoreFxTest {
             record(async, win, closed, "as recorded\n", HistoryRevision.REASON_SAVE, 1);
             HistoryRevision recorded =
                     FxTestSupport.callOnFx(() -> revisions(win, closed).get(0));
-            Runnable repair = breakStore(win);
+            Runnable repair = breakStore(async, win);
             try {
                 FxTestSupport.runOnFx(() -> win.history().record(file, "never stored\n", HistoryRevision.REASON_SAVE));
                 settle(async, win);
