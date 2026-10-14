@@ -867,7 +867,7 @@ final class SearchCoordinator {
         boolean enabled = s.isRipgrepSearch();
         if (!enabled || cmd.equals(ripgrepProbedCommand)) {
             boolean effective = enabled && ripgrepAvailable;
-            service.setBackend(effective, cmd, s.isSearchRespectGitignore());
+            service.setBackend(effective, cmd, s.isSearchRespectGitignore(), enabled);
             applyBackendBadge(effective);
             return;
         }
@@ -886,7 +886,7 @@ final class SearchCoordinator {
                             ripgrepProbedCommand = cmd;
                             ripgrepAvailable = ok;
                             boolean effective = s.isRipgrepSearch() && ok;
-                            service.setBackend(effective, cmd, s.isSearchRespectGitignore());
+                            service.setBackend(effective, cmd, s.isSearchRespectGitignore(), s.isRipgrepSearch());
                             applyBackendBadge(effective); // records it for the popup too, not just the panel
                             ops.syncRipgrepStatus(ok);
                         });
