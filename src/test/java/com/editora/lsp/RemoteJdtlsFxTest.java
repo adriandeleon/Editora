@@ -195,7 +195,10 @@ class RemoteJdtlsFxTest {
 
         assertTrue(jdks.contains(new JavaRuntimes.Jdk(21, configured.toString())), jdks.toString());
         assertTrue(jdks.contains(new JavaRuntimes.Jdk(17, hostJdk.toString())), jdks.toString());
-        assertFalse(jdks.stream().anyMatch(j -> j.major() == 11), "a runtime without javac is no JDK");
+        // By its path: the machine playing the host may well have a real JDK 11 of its own (CI runners do).
+        assertFalse(
+                jdks.stream().anyMatch(j -> j.path().startsWith(notAJdk.toString())),
+                "a runtime without javac is no JDK: " + jdks);
     }
 
     @Test
