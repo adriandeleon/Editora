@@ -274,7 +274,8 @@ another class having run before it in the same JVM (which classes share a JVM ch
 class is added), and a new test class needs a name Surefire's defaults match (`*Test`, `Test*`, `*Tests`,
 `*TestCase`) or it runs nowhere.
 
-Running two test JVMs on one runner (`-DforkCount=2`) is what the macOS FX job does. On the Linux runner
+The macOS FX job is split the same way, into three shards (`list n 3`, with `-Dgroups=fx` picking the FX
+tests out of each list), and each of those runs two test JVMs on its runner (`-DforkCount=2`). On the Linux runner
 it gained little (16:34 to 13:25) and, with the cores shared, tests that read the result of background
 work without waiting for it failed or needed a rerun: `LspCoordinatorDiagnosticsFxTest`
 (`compactSourceDiagnosticsArePreserved`), `SettingsSyncPageFxTest`

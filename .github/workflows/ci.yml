@@ -254,13 +254,22 @@ jobs:
   # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
   # The pure lane above reaches under half the code; this one covers the rest on a second operating
   # system. It is advisory (13 failures in 36 runs on 12-13 October 2026): make it blocking once it has
-  # stayed green. Two test JVMs (each with its own JavaFX toolkit) and no coverage agent: it was the
-  # longest job of the run at 24 minutes, and took 16 with two.
+  # stayed green. No coverage agent, and two test JVMs (each with its own JavaFX toolkit): in one JVM it
+  # was the longest job of the run at 24 minutes, and still 16 to 19 with two.
+  #
+  # Three shards, dealt out like the Linux ones (scripts/shard_tests.py). A shard's list holds every kind
+  # of test class; `-Dgroups=fx` then keeps the FX tests among them, so the three lists together cover the
+  # FX suite whatever a class is called. Three, not four: the account runs five macOS jobs at a time, and
+  # with the pure lane this makes four per run.
   fx-tests:
-    name: FX tests (macos-15)
+    name: FX tests (macos-15, shard ${{ matrix.shard }} of 3)
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 30
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     steps:
       - name: Check out repository
@@ -275,8 +284,14 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - name: List this shard's test classes
+        run: |
+          mkdir -p target
+          python3 scripts/shard_tests.py list ${{ matrix.shard }} 3 > target/shard-includes.txt
+          echo "$(wc -l < target/shard-includes.txt) test classes in this shard, FX and other"
+
       - name: Test (FX suite)
-        run: ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 test
+        run: ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
       - name: Report flaky tests
         if: always()
@@ -287,7 +302,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: surefire-reports-fx-macos
+          name: surefire-reports-fx-macos-shard-${{ matrix.shard }}
           path: target/surefire-reports
           retention-days: 7
           if-no-files-found: ignore
