@@ -118,6 +118,9 @@ final class RemoteCoordinator {
 
         /** What can run on this window's host has changed: features that run tools there look again. */
         default void remoteExecChanged() {}
+
+        /** The window is connected to {@code authority} again, its tabs rebound to the new connection. */
+        default void remoteHostConnected(String authority) {}
     }
 
     private final CoordinatorHost host;
@@ -562,6 +565,7 @@ final class RemoteCoordinator {
         ops.setProjectRoot(root);
         ops.openProjectToolWindow();
         ops.restoreSessionTabs();
+        ops.remoteHostConnected(conn.id());
         host.setStatus(tr("status.remote.connected", conn.displayLabel()));
         activeConnection = conn;
         Platform.runLater(this::offerExecution); // after the folder is on screen, not in front of it

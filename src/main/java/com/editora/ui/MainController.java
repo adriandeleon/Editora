@@ -2753,8 +2753,14 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public void remoteHostConnected(String authority) {
+                lspCoordinator.remoteHostConnected(authority);
+            }
+
+            @Override
             public void remoteExecChanged() {
                 git.refresh();
+                lspCoordinator.remoteExecChanged(); // remote tabs start, or stop, their servers on the host
                 if (projectPanel != null) {
                     projectPanel.refreshRemoteWatch(); // the folder's host may be watched now, or no longer
                 }

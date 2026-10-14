@@ -760,7 +760,8 @@ public final class LspManager {
         for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
             if (!closed.contains(fileEdit.file())) {
                 edits.add(fileEdit);
-            } else if (WorkspaceEditMapper.unchangedSince(lastModified.applyAsLong(fileEdit.file()), sentAt)) {
+            } else if (WorkspaceEditMapper.unchangedSince(
+                    fileEdit.file(), lastModified.applyAsLong(fileEdit.file()), sentAt)) {
                 edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), null, null, sentAt));
             } else {
                 blocked.add(fileEdit.file());
@@ -775,7 +776,7 @@ public final class LspManager {
                 List.of());
     }
 
-    /** A local file's modification time in millis, or -1 when it cannot be read. */
+    /** A file's modification time in millis (by its own machine's clock), or -1 when it cannot be read. */
     private static long lastModifiedMillis(Path file) {
         try {
             return Files.getLastModifiedTime(file).toMillis();

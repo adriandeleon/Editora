@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -11,6 +12,7 @@ import java.util.function.Function;
 
 import com.editora.config.PathKeys;
 import com.editora.editor.LspTextEdit;
+import com.editora.process.ExecTargets;
 import org.eclipse.lsp4j.SnippetTextEdit;
 import org.eclipse.lsp4j.TextDocumentEdit;
 import org.eclipse.lsp4j.TextEdit;
@@ -74,6 +76,25 @@ public final class WorkspaceEditMapper {
         }
         long margin = lastModifiedMillis % 1000 == 0 ? COARSE_TIMESTAMP_MARGIN_MILLIS : 0;
         return lastModifiedMillis + margin < sentAtMillis;
+    }
+
+    /**
+     * As {@link #unchangedSince(long, long)}, for a modification time stamped by the clock of the machine
+     * {@code file} lives on. A remote host's clock is converted to the latest local instant it can stand for
+     * (after rounding a whole-second time up by the coarse margin, as SFTP reports whole seconds), so a skewed
+     * host clock cannot pass off a write made after the request as one made before it. A host whose clock
+     * cannot be read proves nothing.
+     */
+    public static boolean unchangedSince(Path file, long lastModifiedMillis, long sentAtMillis) {
+        if (file == null || file.getFileSystem() == FileSystems.getDefault()) {
+            return unchangedSince(lastModifiedMillis, sentAtMillis);
+        }
+        if (sentAtMillis <= 0 || lastModifiedMillis < 0) {
+            return false;
+        }
+        long margin = lastModifiedMillis % 1000 == 0 ? COARSE_TIMESTAMP_MARGIN_MILLIS : 0;
+        long local = ExecTargets.forPath(file).latestLocalTime(lastModifiedMillis + margin);
+        return local >= 0 && local < sentAtMillis;
     }
 
     /** A {@code RenameFile} resource operation — jdtls emits one when a public class is renamed (the

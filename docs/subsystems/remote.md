@@ -125,12 +125,28 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   pid means nothing there). Documents are keyed by their `sftp://` URI inside `LspManager` and sent as the
   host's own `file:` URIs (`WireUris.remote`). The command is the host's `lsp.<id>` tool, else the global
   setting when it is a bare name, else the server's default; whether it is on the host is asked once per host
-  (`LspManager.detectRemote`, `command -v`). The session root is the window's remote project, else the file's
-  folder (no marker probing over the network). Project `.editora/settings.json` overrides are not read for a
+  (`LspManager.detectRemote`, `command -v`). The session root is the window's remote project for every file on
+  its host, inside the project folder or not (a definition in the host's site-packages joins the project's
+  server instead of starting one per library folder, each holding a channel); a file on another host gets its
+  folder. No marker probing over the network. Project `.editora/settings.json` overrides are not read for a
   remote project. **jdtls and astro are not offered remotely yet.**
+- **Language servers and the connection:** a remote server that ends is given a second
+  (`LspCoordinator.afterRemoteCrashSettles`) for the connection's own listener to catch up. If its host can
+  no longer run commands, the connection went with it: its tabs go quiet, nothing is restarted and nothing
+  counts towards the crash-loop cap. `RemoteCoordinator.mount` calls `remoteHostConnected`, which forgets that
+  host's crash history and offers its (rebound) tabs to their servers again; consent or the setting changing
+  (`remoteExecChanged`) re-decides every remote tab.
+- **Workspace edits** (renames, code actions) stage, commit and roll back creates, renames and deletes on the
+  host through SFTP like any filesystem. The crash journal stays on this machine and names remote files by
+  their `sftp://` URI; a journal whose host is not connected is kept, not discarded, until it is
+  (`WorkspaceEditJournal.pending`). The check that a file the server did not have open is unchanged since the
+  request compares its host-stamped time through `ExecTarget.latestLocalTime`: the host's clock is read once per
+  connection (`date +%s`), and a whole-second SFTP time is rounded up by the coarse margin first, so a skewed
+  host clock cannot pass a later write off as an earlier one. The apply-time re-checks still `stat` on the FX
+  thread, one round trip per closed target.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
-  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), Run, Build,
-  tests, language servers and debugging.
+  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), jdtls and
+  debugging.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 

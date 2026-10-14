@@ -615,11 +615,101 @@ final class LspCoordinator {
      * (server, root) so a crash-looping server isn't re-forked forever.
      */
     private void onSessionCrashed(String serverId, Path root) {
+        if (root != null && com.editora.vfs.Vfs.isRemote(root)) {
+            // A server on another host also dies when the connection does, and the connection's own
+            // listener may hear about it a moment after the server's channel closed: let it settle first.
+            afterRemoteCrashSettles.accept(() -> remoteSessionEnded(serverId, root));
+            return;
+        }
+        sessionCrashed(serverId, root);
+    }
+
+    /** Runs a task once a remote server's death has had a moment to show up as a lost connection. */
+    java.util.function.Consumer<Runnable> afterRemoteCrashSettles = task -> {
+        javafx.animation.PauseTransition settle = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
+        settle.setOnFinished(e -> task.run());
+        settle.play();
+    };
+
+    /**
+     * A remote server ended. With its host still reachable that is a crash like any other. With the
+     * connection gone it is not: restarting would only fail against a dead connection (and count towards the
+     * crash-loop cap), so its buffers just go quiet until {@link #remoteHostConnected} brings them back.
+     */
+    private void remoteSessionEnded(String serverId, Path root) {
+        if (RemoteExec.runsFor(root)) {
+            sessionCrashed(serverId, root);
+            return;
+        }
+        forEachCrashedBuffer(serverId, root, b -> {
+            b.setLspActive(false);
+            clearDiagnostics(b.getPath());
+        });
+        updateStatusBar();
+    }
+
+    /**
+     * The window is connected to {@code authority} again (or for the first time): its tabs now hold paths on
+     * the new connection, so each one is offered to its server afresh — the active one at once, the others
+     * when shown — and the crashes counted against the lost connection's servers are forgotten.
+     */
+    void remoteHostConnected(String authority) {
+        if (authority == null) {
+            return;
+        }
+        String onHost = "sftp://" + authority + "/";
+        recentCrashes.keySet().removeIf(key -> key.contains(onHost));
+        resyncRemoteBuffers(authority);
+    }
+
+    /**
+     * Whether commands may run on remote hosts has changed (the setting, or a host's consent): remote tabs
+     * are offered to their servers, or closed on them, accordingly.
+     */
+    void remoteExecChanged() {
+        resyncRemoteBuffers(null);
+    }
+
+    /** Re-decides every remote tab on {@code authority} (any host when null): the active one now, others on show. */
+    private void resyncRemoteBuffers(String authority) {
+        host.forEachBuffer(b -> {
+            Path p = b.getPath();
+            if (p != null
+                    && com.editora.vfs.Vfs.isRemote(p)
+                    && (authority == null || authority.equals(com.editora.vfs.Vfs.authorityOf(p)))) {
+                syncBufferWhenShown(b);
+            }
+        });
+        updateStatusBar();
+    }
+
+    private void sessionCrashed(String serverId, Path root) {
         if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
             return;
         }
-        boolean restart = shouldAutoRestart(serverId + " " + root, System.nanoTime());
+        boolean restart = shouldAutoRestart(crashKey(serverId, root), System.nanoTime());
         host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
+        forEachCrashedBuffer(serverId, root, b -> {
+            Path p = b.getPath();
+            b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
+            clearDiagnostics(p); // …and its stale Problems entries (nothing will ever re-publish them)
+            if (restart) {
+                syncBufferWhenShown(b); // active → re-open (forks a fresh server) now; background → on show
+            }
+        });
+        updateStatusBar();
+    }
+
+    /** The crash-history key of one server on one root; a remote root by its URI, which names its host. */
+    private static String crashKey(String serverId, Path root) {
+        return serverId + " " + (root == null ? "" : com.editora.vfs.Vfs.toStorableString(root));
+    }
+
+    /** The open buffers the session of {@code serverId} on {@code root} was serving, now unmanaged. */
+    private void forEachCrashedBuffer(String serverId, Path root, java.util.function.Consumer<EditorBuffer> action) {
+        if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
+            return;
+        }
         host.forEachBuffer(b -> {
             Path p = b.getPath();
             if (p == null || !serverId.equals(serverIdForBuffer(b))) {
@@ -631,13 +721,8 @@ final class LspCoordinator {
             if (lspManager.isManaged(p)) {
                 return;
             }
-            b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
-            clearDiagnostics(p); // …and its stale Problems entries (nothing will ever re-publish them)
-            if (restart) {
-                syncBufferWhenShown(b); // active → re-open (forks a fresh server) now; background → on show
-            }
+            action.accept(b);
         });
-        updateStatusBar();
     }
 
     /** The per-folder trust record (inherited by subfolders) that also gates project LSP commands. */
@@ -1899,14 +1984,13 @@ final class LspCoordinator {
     private Path lspRootFor(EditorBuffer buffer, String serverId) {
         Path file = buffer.getPath();
         if (com.editora.vfs.Vfs.isRemote(file)) {
-            // No marker probing over the network on the FX thread: the window's remote project, else the folder.
+            // No marker probing over the network on the FX thread. A file on the project's host belongs to the
+            // project's server even outside its folder: a definition in the host's site-packages, module cache
+            // or registry is read where the project's server already runs, instead of starting a second server
+            // that would index that whole library folder and hold another of the connection's channels.
             Path project = ops.lspProjectRoot();
-            boolean inProject = project != null
-                    && project.getFileSystem() == file.getFileSystem()
-                    && file.toAbsolutePath()
-                            .normalize()
-                            .startsWith(project.toAbsolutePath().normalize());
-            return inProject ? project : file.getParent();
+            boolean sameHost = project != null && project.getFileSystem() == file.getFileSystem();
+            return sameHost ? project : file.getParent();
         }
         return com.editora.lsp.RootResolver.resolve(
                 ops.lspProjectRoot(),
@@ -3659,7 +3743,7 @@ final class LspCoordinator {
             return loaded.modifiedMillis() >= 0
                     && loaded.fingerprint() != null
                     && !loaded.differsFrom(onDisk.lastModifiedMillis(), onDisk.size())
-                    && com.editora.lsp.WorkspaceEditMapper.unchangedSince(onDisk.lastModifiedMillis(), since);
+                    && com.editora.lsp.WorkspaceEditMapper.unchangedSince(onDiskAt, onDisk.lastModifiedMillis(), since);
         } catch (java.io.IOException | RuntimeException failure) {
             return false;
         }
