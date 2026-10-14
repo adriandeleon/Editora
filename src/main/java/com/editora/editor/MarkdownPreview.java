@@ -53,7 +53,7 @@ final class MarkdownPreview {
 
     /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
      *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
-    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes) {}
+    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes, String source) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
     private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
@@ -157,11 +157,20 @@ final class MarkdownPreview {
         caretMarker.setVisible(false);
         caretMarker.setMouseTransparent(true);
         root.getChildren().add(caretMarker);
-        column.afterLayout(this::placeMarker);
-        // A double click on a block puts the editor's caret on the line it came from (not on a link, a task
-        // box or a <details> summary: those have their own click).
+        column.afterLayout(() -> {
+            placeMarker();
+            if (selection.isActive()) {
+                selection.invalidate(); // the highlight follows the text it is on
+            }
+        });
+        // A double click puts the editor's caret on the line the block came from — where it is not on text
+        // (there it selects the word), or with the shortcut key held anywhere. Not on a link, a task box or a
+        // <details> summary: those have their own click.
         column.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getClickCount() != 2 || e.getButton() != javafx.scene.input.MouseButton.PRIMARY) {
+                return;
+            }
+            if (!e.isShortcutDown() && selection.onText(e)) {
                 return;
             }
             Node target = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
@@ -239,6 +248,80 @@ final class MarkdownPreview {
         }
     }
 
+    private final PreviewSelection selection = new PreviewSelection(this, column, root);
+    private String shownSource;
+    private Path shownBaseDir;
+
+    /** The text selection of this document. */
+    PreviewSelection selection() {
+        return selection;
+    }
+
+    /** The source line {@code sceneY} of the block {@code target} is in came from; -1 off the document. */
+    int sourceLineAt(Node target, double sceneY) {
+        return target == null ? -1 : lineAt(target, sceneY);
+    }
+
+    /** Goes to the source line of the block at a point (the context menu's "Go to Source Line"). */
+    boolean jumpToSourceAt(Node target, double sceneY) {
+        int line = sourceLineAt(target, sceneY);
+        if (line >= 0) {
+            jumpToSource.accept(line);
+        }
+        return line >= 0;
+    }
+
+    /** The Markdown of the blocks {@code first}…{@code last} of the column, or null when one of them did not
+     *  come from source lines. */
+    private String sourceOf(int first, int last) {
+        if (shownSource == null) {
+            return null;
+        }
+        int from = -1;
+        int to = -1;
+        for (Entry e : entries) {
+            if (e.node() == column.getChildren().get(first)) {
+                from = e.startLine();
+            }
+            if (e.node() == column.getChildren().get(last)) {
+                to = e.endLine();
+            }
+        }
+        if (from < 0 || to < from) {
+            return null;
+        }
+        String[] lines = shownSource.split("\\R", -1);
+        return String.join("\n", java.util.Arrays.copyOfRange(lines, from, Math.min(lines.length, to + 1)));
+    }
+
+    /**
+     * Puts the selection on the clipboard, as plain text and as HTML: of the Markdown itself when the selection
+     * is whole blocks (or everything), else read off the selected nodes. False when nothing is selected.
+     */
+    boolean copySelection() {
+        if (!selection.isActive()) {
+            return false;
+        }
+        String text;
+        String markdown = null;
+        if (selection.isAll() && shownSource != null) {
+            markdown = shownSource;
+            text = MarkdownRenderer.plainText(shownSource);
+        } else {
+            text = selection.text();
+            int[] whole = selection.wholeBlocks();
+            markdown = whole == null ? null : sourceOf(whole[0], whole[1]);
+        }
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(text);
+        cc.putHtml(
+                markdown != null
+                        ? MarkdownClipboardHtml.toHtmlIn(markdown, MathImages.isEnabled(), shownBaseDir)
+                        : PreviewSelectionHtml.of(selection.parts()));
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        return true;
+    }
+
     /** The column of rendered blocks. */
     Parent column() {
         return column;
@@ -298,6 +381,7 @@ final class MarkdownPreview {
     /** Binds the scroll pane this document scrolls in; a gesture of the user's ends any anchoring. */
     void attach(ScrollPane scrollPane) {
         this.pane = scrollPane;
+        selection.attach(scrollPane);
         scrollPane.addEventFilter(javafx.scene.input.ScrollEvent.ANY, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> anchorUntil = 0);
         scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> anchorUntil = 0);
@@ -315,6 +399,7 @@ final class MarkdownPreview {
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
     void clear() {
+        selection.clear();
         find.clear();
         buildSeq++;
         entries = List.of();
@@ -359,7 +444,7 @@ final class MarkdownPreview {
             units.add(new Unit(n, last, key, start, end, slug, firstReferences(n, last, referred)));
             n = last.getNext();
         }
-        return new Plan(units, baseDir, footnotes);
+        return new Plan(units, baseDir, footnotes, md);
     }
 
     private static SourceSpan firstSpan(org.commonmark.node.Node n) {
@@ -508,6 +593,8 @@ final class MarkdownPreview {
      */
     void show(Plan plan, Consumer<String> onLinkClick, Boolean dark, double line) {
         this.linkOpener = onLinkClick == null ? u -> {} : onLinkClick;
+        this.shownSource = plan.source();
+        this.shownBaseDir = plan.baseDir();
         long seq = ++buildSeq; // whatever an earlier render still had to build is this render's business now
         // What is at the top now, as a node: text typed above it renumbers its lines but does not replace it.
         Node topNode = null;
@@ -649,6 +736,7 @@ final class MarkdownPreview {
         }
         find.reapply(); // rebuilt blocks lost their marks
         showEmptyNote(complete && column.getChildren().isEmpty());
+        selection.revalidate();
         markLine(markedLine); // the caret's block may be a new node, or on other lines
         if (complete) {
             shows.set(shows.get() + 1);

@@ -17,13 +17,83 @@ final class PreviewMenu {
 
     private PreviewMenu() {}
 
-    static ContextMenu build(EditorBuffer b) {
-        // No "Select All": nothing in the preview can be selected, and the item only ever copied.
-        MenuItem copy = new MenuItem(tr("previewmenu.copyAll"));
-        copy.setGraphic(MenuIcons.copy());
-        copy.setOnAction(ev -> b.copyPreviewToClipboard());
-        ContextMenu menu = new ContextMenu(copy);
+    /**
+     * Copies the preview to the clipboard: the selection when the rendered Markdown has one, else all of it —
+     * rendered plain text for Markdown, the source for a diagram.
+     *
+     * <p>Markdown additionally carries a {@code text/html} flavor ({@link MarkdownClipboardHtml}), so the same
+     * copy pastes as <em>formatted</em> text into Word / Teams / Outlook / Gmail while a plain-text target
+     * still gets the markup-stripped text. Both flavors always go on together: the consumer picks.
+     */
+    static void copy(EditorBuffer b) {
+        if (b.markdownPreview != null && b.isMarkdown() && b.markdownPreview.copySelection()) {
+            return;
+        }
+        copyAll(b);
+    }
+
+    static void copyAll(EditorBuffer b) {
+        String text = b.isMarkdown() ? MarkdownRenderer.plainText(b.getContent()) : b.getContent();
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(text == null ? "" : text);
         if (b.isMarkdown()) {
+            cc.putHtml(MarkdownClipboardHtml.toHtml(b.getContent(), MathImages.isEnabled(), b.getPath()));
+        }
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+    }
+
+    /**
+     * Copies the preview's HTML <em>markup</em> as plain text (for pasting into an HTML file), as opposed to
+     * {@link #copy}, which puts rendered rich text on the clipboard. Markdown only.
+     */
+    static boolean copyHtmlSource(EditorBuffer b) {
+        if (!b.isMarkdown()) {
+            return false;
+        }
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(MarkdownClipboardHtml.toMarkup(b.getContent(), MathImages.isEnabled()));
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        return true;
+    }
+
+    /**
+     * The editor's Copy or Select All command, when the rendered Markdown is where the user is — only the
+     * preview is showing, or its pane has the focus: Select All selects the preview's text, Copy copies its
+     * selection. False (nothing done) anywhere else, and for Copy when nothing is selected there.
+     */
+    static boolean editCommand(EditorBuffer b, javafx.scene.control.ScrollPane pane, boolean selectAll) {
+        MarkdownPreview preview = b.markdownPreview;
+        if (preview == null || !b.isMarkdown() || pane == null || !preview.isShowing()) {
+            return false;
+        }
+        if (!b.isPreviewOnly() && !pane.isFocused()) {
+            return false;
+        }
+        return selectAll ? preview.selection().selectAll() : preview.copySelection();
+    }
+
+    static ContextMenu build(EditorBuffer b) {
+        MenuItem copyAll = new MenuItem(tr("previewmenu.copyAll"));
+        copyAll.setGraphic(MenuIcons.copy());
+        copyAll.setOnAction(ev -> copyAll(b));
+        ContextMenu menu = new ContextMenu(copyAll);
+        if (b.isMarkdown()) {
+            // The selection: Copy is offered while there is one; Select All makes one.
+            MenuItem copy = new MenuItem(tr("previewmenu.copy"));
+            copy.setGraphic(MenuIcons.copy());
+            copy.setOnAction(ev -> b.markdownPreview.copySelection());
+            MenuItem selectAll = new MenuItem(tr("previewmenu.selectAll"));
+            selectAll.setOnAction(ev -> b.markdownPreview.selection().selectAll());
+            MenuItem toSource = new MenuItem(tr("previewmenu.goToSource"));
+            toSource.setOnAction(ev -> b.markdownPreview.jumpToSourceAt(b.previewMenuHit, b.previewMenuY));
+            menu.getItems().add(0, copy);
+            menu.getItems().addAll(selectAll, toSource);
+            menu.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {
+                MarkdownPreview preview = b.markdownPreview;
+                copy.setVisible(preview != null && preview.selection().isActive());
+                selectAll.setDisable(preview == null);
+                toSource.setVisible(preview != null && preview.sourceLineAt(b.previewMenuHit, b.previewMenuY) >= 0);
+            });
             // What the pointer was on when the menu opened: shown only when it was on one.
             MenuItem copyLink = new MenuItem(tr("previewmenu.copyLink"));
             copyLink.setGraphic(MenuIcons.copy());

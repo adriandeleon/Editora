@@ -754,6 +754,10 @@
 /* An empty document: one muted line where the rendering will be. */
 .md-preview-empty { -fx-text-fill: -color-fg-muted; -fx-font-size: 13px; -fx-padding: 48 0 0 0; }
 /* Split view: a thin bar beside the block the editor's caret is in. */
+/* Text selected in the preview: a translucent layer above the text (the column is opaque, nothing can go
+   under it). The swatch only carries the colour to shapes made after the CSS pass. */
+.md-selection-layer { -fx-opacity: 0.32; }
+.md-selection-fill { -fx-fill: -color-accent-emphasis; }
 .md-caret-marker { -fx-background-color: -color-accent-muted; -fx-background-radius: 2; }
 /* GitHub alerts (> [!NOTE] …): one colour per kind — the rule down the side, the icon and the title. */
 .markdown-preview .md-alert {
