@@ -53,7 +53,9 @@ class ChildLocalePolicyTest {
             "git/QuietGit.java", // settings sync: hooks are off, and push rejections are read from the output
             "github/GitHubService.java", // gh JSON
             "install/InstallService.java", // `npm root -g`: a path
+            "lsp/JavaServerEnvironment.java", // whether a host's jdtls is the launcher script (exit code)
             "lsp/LspManager.java", // `command -v` on a remote host: whether a server is there (exit code)
+            "lsp/RemoteJavaRuntimes.java", // a host's JDK folders and their release versions
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
             "search/RemoteFiles.java", // rg --version and file lists on a remote host

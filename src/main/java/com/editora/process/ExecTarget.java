@@ -41,6 +41,16 @@ public interface ExecTarget {
     PortForward forwardLocal(String host, int port) throws IOException;
 
     /**
+     * Where Editora may keep working files on this target ({@code ~/.cache/editora} on a remote host: a
+     * language server's index, a debugger's jar), as Editora reaches it; {@code null} when there is none to
+     * offer (the local target keeps its own under the config folder). May ask the target: call it off the FX
+     * thread. The folder is not created.
+     */
+    default Path cacheDir() throws IOException {
+        return null;
+    }
+
+    /**
      * The latest instant on this machine's clock that {@code targetMillis}, a time read from the target's
      * clock (a file's modification time), can stand for; {@code -1} when the target's clock is not known. A
      * caller asking "was this file written before that moment?" can trust a yes. The local target shares

@@ -32,6 +32,18 @@ final class JavaServerEnvironment {
      * {@code command} is the resolved launch command (its first element the executable's path when known).
      */
     static List<String> configure(String serverId, List<String> command, Map<String, String> environment) {
+        return configure(serverId, command, environment, JavaServerEnvironment::isJdtlsLauncher);
+    }
+
+    /**
+     * As {@link #configure(String, List, Map)}, with {@code isLauncher} deciding whether an executable is
+     * jdtls's own launcher script — on a remote host that is asked of the host, not of this machine's disk.
+     */
+    static List<String> configure(
+            String serverId,
+            List<String> command,
+            Map<String, String> environment,
+            java.util.function.Predicate<String> isLauncher) {
         if (!"java".equals(serverId) || command.isEmpty()) return command;
         // A command or inherited JVM option is an intentional override, including an explicit false.
         if (command.stream().anyMatch(arg -> arg.contains(JOIN))) return command;
@@ -42,7 +54,7 @@ final class JavaServerEnvironment {
         String executable = command.get(0);
         String argument = isJavaExecutable(executable)
                 ? OPTION // a JVM option, so before -jar / the main class
-                : isJdtlsLauncher(executable) ? "--jvm-arg=" + OPTION : null;
+                : isLauncherName(executable) && isLauncher.test(executable) ? "--jvm-arg=" + OPTION : null;
         if (argument != null) {
             List<String> extended = new ArrayList<>(command);
             extended.add(1, argument);
@@ -59,6 +71,30 @@ final class JavaServerEnvironment {
         return executable.substring(slash + 1).toLowerCase(Locale.ROOT);
     }
 
+    /** Named like jdtls's launcher script; whether it is one is for the caller's predicate to say. */
+    static boolean isLauncherName(String executable) {
+        String name = fileName(executable);
+        return name.equals("jdtls") || name.equals("jdtls.bat") || name.equals("jdtls.py");
+    }
+
+    /**
+     * Whether {@code executable}, as the host of remote {@code root} finds it on its {@code PATH}, is the
+     * launcher jdtls ships: a {@code jdtls.py} beside its real file. Runs a command: off the FX thread.
+     */
+    static boolean isRemoteJdtlsLauncher(Path root, String executable) {
+        com.editora.process.ProcessRunner.Result r = com.editora.process.ProcessRunner.run(
+                root,
+                java.time.Duration.ofSeconds(10),
+                List.of(
+                        "sh",
+                        "-c",
+                        "p=$(command -v \"$1\") || exit 1; r=$(readlink -f \"$p\" 2>/dev/null || printf '%s' \"$p\");"
+                                + " [ -f \"${r%/*}/jdtls.py\" ]",
+                        "sh",
+                        executable));
+        return r.ok();
+    }
+
     /** {@code java} itself, by any path: a {@code -D} right after it is always a JVM option. */
     static boolean isJavaExecutable(String executable) {
         String name = fileName(executable);
@@ -72,8 +108,7 @@ final class JavaServerEnvironment {
      * distribution's or the user's own wrapper — may not, so it is not extended.
      */
     static boolean isJdtlsLauncher(String executable) {
-        String name = fileName(executable);
-        if (!(name.equals("jdtls") || name.equals("jdtls.bat") || name.equals("jdtls.py"))) {
+        if (!isLauncherName(executable)) {
             return false;
         }
         try {

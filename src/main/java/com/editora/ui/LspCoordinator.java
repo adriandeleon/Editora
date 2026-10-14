@@ -1903,7 +1903,7 @@ final class LspCoordinator {
         boolean remote = path != null && com.editora.vfs.Vfs.isRemote(path);
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
-                // A remote file is served on its host when that may run commands; jdtls is not yet.
+                // A remote file is served on its host when that may run commands; astro-ls is not yet.
                 && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
@@ -1998,9 +1998,9 @@ final class LspCoordinator {
                 com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId));
     }
 
-    /** Servers that cannot run on a remote host yet (jdtls needs its workspace, runtimes and bundles there). */
+    /** Servers that cannot run on a remote host yet (astro-ls needs a trusted TypeScript SDK found there). */
     private static boolean remoteUnsupported(String serverId) {
-        return com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || "astro".equals(serverId);
+        return "astro".equals(serverId);
     }
 
     /**

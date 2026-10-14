@@ -61,8 +61,12 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     /** Every command line the server was asked to run (real-shell mode), in order. */
     private final List<String> commands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    /** The account's home directory on the host (real-shell mode): commands run with {@code HOME} here. */
+    private final Path home;
+
     private EmbeddedSftpFixture(Path base, boolean realShell) throws Exception {
         serverRoot = Files.createDirectories(base.resolve("remote-root")).toRealPath();
+        home = Files.createDirectories(base.resolve("remote-home")).toRealPath();
         SftpSubsystemFactory sftp = new LinkCountingSubsystemFactory();
         sftp.addSftpEventListener(new FaultListener());
         server = SshServer.setUpDefaultServer();
@@ -76,7 +80,7 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
             server.setForwardingFilter(org.apache.sshd.server.forward.AcceptAllForwardingFilter.INSTANCE);
             server.setCommandFactory((channel, command) -> {
                 commands.add(command);
-                return new ShellCommand(command);
+                return new ShellCommand(command, home);
             });
         } else {
             server.setFileSystemFactory(new VirtualFileSystemFactory(serverRoot));
@@ -127,6 +131,14 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
 
     public RemoteConnection connection() {
         return connection;
+    }
+
+    /**
+     * The host account's home in real-shell mode — a folder of the test's own, so what a command keeps in
+     * {@code ~} (a cache, a workspace) never lands in the home of whoever runs the tests.
+     */
+    public Path home() {
+        return home;
     }
 
     public Path serverPath(String relative) {
@@ -222,14 +234,16 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
      */
     private static final class ShellCommand implements Command {
         private final String commandLine;
+        private final Path home;
         private java.io.InputStream in;
         private java.io.OutputStream out;
         private java.io.OutputStream err;
         private org.apache.sshd.server.ExitCallback exit;
         private volatile Process process;
 
-        ShellCommand(String commandLine) {
+        ShellCommand(String commandLine, Path home) {
             this.commandLine = commandLine;
+            this.home = home;
         }
 
         @Override
@@ -259,7 +273,10 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
                     .contains("linux");
             List<String> argv =
                     linux ? List.of("setsid", "/bin/sh", "-c", commandLine) : List.of("/bin/sh", "-c", commandLine);
-            Process started = new ProcessBuilder(argv).start();
+            ProcessBuilder builder = new ProcessBuilder(argv);
+            builder.environment().put("HOME", home.toString());
+            builder.environment().remove("XDG_CACHE_HOME");
+            Process started = builder.start();
             process = started;
             STARTED.add(started);
             Thread stdout = pump(started.getInputStream(), out, false);
