@@ -612,7 +612,10 @@ public final class MarkdownRenderer {
             return renderTable(tb, ctx);
         }
         if (node instanceof YamlFrontMatterBlock fm) {
-            return ctx.live() != null && ctx.live().hideFrontMatter() ? null : frontMatterBlock(fm);
+            // The reader's choice to leave it out holds for the preview and for its print; a popup shows it.
+            boolean hidden =
+                    ctx.live() != null ? ctx.live().hideFrontMatter() : ctx.print() && PreviewPrefs.hideFrontMatter();
+            return hidden ? null : frontMatterBlock(fm);
         }
         if (node instanceof FootnoteDefinition def) {
             return footnoteDefinition(def, ctx);
