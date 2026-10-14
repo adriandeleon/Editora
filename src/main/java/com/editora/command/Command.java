@@ -21,6 +21,22 @@ public interface Command {
     }
 
     /**
+     * Words the palette also finds this command by, besides its title — matched only when the title itself
+     * does not match, and ranked below every title match. By default the id's namespace when the title does
+     * not carry it: {@code markdown.tableAddRow} is titled "Table: Add Row", and is found by "markdown table"
+     * too. Empty when there is nothing to add. Never shown; not localized (ids are not).
+     */
+    default String keywords() {
+        String id = id();
+        int dot = id.indexOf('.');
+        if (dot <= 0) {
+            return "";
+        }
+        String title = title();
+        return title.regionMatches(true, 0, id, 0, dot) ? "" : id.substring(0, dot);
+    }
+
+    /**
      * A command whose title is resolved (lazily, so it follows the active UI language) from the message
      * catalog key {@code "command." + id}. Preferred over the explicit-title overload for localization.
      */
