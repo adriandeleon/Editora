@@ -1,8 +1,6 @@
 package com.editora.markdown;
 
 import java.util.function.UnaryOperator;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The wiki link under a caret as something to edit — {@code [[note]]}, {@code [[note|label]]},
@@ -21,8 +19,10 @@ public final class MarkdownWiki {
      * @param heading the heading after {@code #}, or null
      * @param label the text after {@code |}, or null
      * @param embed whether it starts with {@code !}
+     * @param inTable whether it stands in a table row, where its bar is written {@code \|}
      */
-    public record Link(int start, int end, String target, String heading, String label, boolean embed) {
+    public record Link(
+            int start, int end, String target, String heading, String label, boolean embed, boolean inTable) {
 
         /** What the reader sees: the label, else the target (with its heading). */
         public String shown() {
@@ -38,41 +38,99 @@ public final class MarkdownWiki {
         }
     }
 
-    private static final Pattern WIKI =
-            Pattern.compile("(!?)\\[\\[([^\\[\\]|#\\n]*)(?:#([^\\[\\]|\\n]*))?(?:\\|([^\\[\\]\\n]*))?\\]\\]");
-
-    private MarkdownWiki() {}
-
-    /** The wiki link whose span contains {@code caret} (ends included), or null; never one inside a code span. */
+    /**
+     * The wiki link whose span contains {@code caret} (ends included), or null. What is and is not a wiki
+     * link is what the renderer's parser ({@link MarkdownWikiLinks}) says, so that the editing commands act on
+     * exactly what the preview shows as one:
+     *
+     * <ul>
+     *   <li>the inside of the brackets is read by {@link MarkdownWikiLinks#parse};
+     *   <li>never in a code span or a code block, and not when the brackets are escaped ({@code \[[note]]});
+     *   <li>not directly after a letter or a digit ({@code x[[1]]} is indexing);
+     *   <li>not when a destination or a label follows ({@code [[note]](url)}, {@code [[note]][ref]}): that is
+     *       an ordinary link whose text is in brackets;
+     *   <li>not when the document defines {@code [note]: …}: then it is that reference link, in brackets;
+     *   <li>the innermost pair counts: {@code [[[a]]]} is {@code [}, the link, {@code ]};
+     *   <li>in a table row the bar before the label is written {@code \|}; a bare {@code |} there ends the
+     *       cell, so it is no wiki link.
+     * </ul>
+     */
     public static Link at(String text, int caret) {
         int ls = text.lastIndexOf('\n', caret - 1) + 1;
         int le = text.indexOf('\n', caret);
         String line = text.substring(ls, le < 0 ? text.length() : le);
+        int col = caret - ls;
+        if (line.indexOf("[[") < 0) {
+            return null; // the line alone says no: nothing else is looked at
+        }
         int[] code = MarkdownBlocks.codeSpans(line);
-        Matcher m = WIKI.matcher(line);
-        while (m.find()) {
-            if (caret - ls >= m.start() && caret - ls <= m.end() && !MarkdownBlocks.inRanges(code, m.start())) {
-                String target = m.group(2).strip();
-                if (target.isEmpty() && m.group(3) == null) {
-                    return null; // "[[]]": nothing is named
-                }
-                return new Link(
-                        ls + m.start(),
-                        ls + m.end(),
-                        target,
-                        m.group(3) == null ? null : m.group(3).strip(),
-                        m.group(4) == null ? null : m.group(4).strip(),
-                        !m.group(1).isEmpty());
+        boolean table = MarkdownTable.isRow(line) && MarkdownTable.blockBounds(text, caret) != null;
+        for (int open = line.indexOf("[["); open >= 0; open = line.indexOf("[[", open + 1)) {
+            int close = line.indexOf("]]", open + 2);
+            if (close < 0) {
+                break;
             }
+            String inside = line.substring(open + 2, close);
+            boolean embed = open > 0 && line.charAt(open - 1) == '!' && !escaped(line, open - 1);
+            int start = embed ? open - 1 : open;
+            int end = close + 2;
+            if (col < start || col > end || inside.indexOf('[') >= 0) {
+                continue; // not here — or an outer bracket of "[[[a]]]": the inner pair is tried next
+            }
+            char before = start > 0 ? line.charAt(start - 1) : ' ';
+            char after = end < line.length() ? line.charAt(end) : ' ';
+            boolean followedByLabel = after == '[' && !(end + 1 < line.length() && line.charAt(end + 1) == '[');
+            if (escaped(line, open)
+                    || MarkdownBlocks.inRanges(code, open)
+                    || (!embed && Character.isLetterOrDigit(before))
+                    || after == '('
+                    || followedByLabel) {
+                return null;
+            }
+            if (table) {
+                if (inside.replace("\\|", "").indexOf('|') >= 0) {
+                    return null; // a bare bar in a table row ends the cell
+                }
+                inside = inside.replace("\\|", "|");
+            }
+            MarkdownWikiLinks.WikiLink parsed = MarkdownWikiLinks.parse(inside, embed);
+            if (parsed == null || MarkdownLinks.isDefined(text, inside) || !MarkdownLines.isProse(text, ls)) {
+                return null;
+            }
+            return new Link(
+                    ls + start, ls + end, parsed.getTarget(), parsed.getHeading(), parsed.getLabel(), embed, table);
         }
         return null;
     }
 
+    /** Whether the character at {@code index} is backslash-escaped (an odd number of backslashes before it). */
+    private static boolean escaped(String line, int index) {
+        int n = 0;
+        while (index - n > 0 && line.charAt(index - n - 1) == '\\') {
+            n++;
+        }
+        return n % 2 == 1;
+    }
+
     /** A wiki link written out; a label that says nothing the target does not is left off. */
     public static String write(String address, String label, boolean embed) {
-        String a = address == null ? "" : address.strip();
-        String l = label == null ? "" : label.strip().replace("|", "").replace("]]", "");
-        return (embed ? "!" : "") + "[[" + a + (l.isEmpty() || l.equals(a) ? "" : "|" + l) + "]]";
+        return write(address, label, embed, false);
+    }
+
+    /**
+     * {@link #write(String, String, boolean)} for a link in a table row ({@code inTable}): there the bar
+     * before the label is written {@code \|}, or it would end the cell. Brackets, bars and line breaks
+     * cannot be part of an address or a label and are dropped.
+     */
+    public static String write(String address, String label, boolean embed, boolean inTable) {
+        String a = plain(address);
+        String l = plain(label);
+        String bar = inTable ? "\\|" : "|";
+        return (embed ? "!" : "") + "[[" + a + (l.isEmpty() || l.equals(a) ? "" : bar + l) + "]]";
+    }
+
+    private static String plain(String part) {
+        return part == null ? "" : part.replaceAll("[\\[\\]|\\r\\n]", "").strip();
     }
 
     /**
@@ -101,6 +159,11 @@ public final class MarkdownWiki {
      * mailto:}) — which a wiki link cannot name.
      */
     public static MarkdownEdit toWiki(MarkdownLinks.Link link) {
+        return toWiki(link, false);
+    }
+
+    /** {@link #toWiki(MarkdownLinks.Link)} for a link in a table row, where the bar is written {@code \|}. */
+    public static MarkdownEdit toWiki(MarkdownLinks.Link link, boolean inTable) {
         String d = link.destination();
         if (d.isEmpty() || d.matches("(?i)^[a-z][a-z0-9+.-]*:.*") || d.startsWith("//")) {
             return null;
@@ -117,7 +180,7 @@ public final class MarkdownWiki {
         String address = fragment == null ? path : path + "#" + fragment;
         String name = path.substring(path.lastIndexOf('/') + 1);
         String label = link.text().equals(name) || link.text().equals(path) ? "" : link.text();
-        String made = write(address, label, link.image());
+        String made = write(address, label, link.image(), inTable);
         return new MarkdownEdit(
                 link.start(), link.end(), made, link.start() + made.length(), link.start() + made.length());
     }

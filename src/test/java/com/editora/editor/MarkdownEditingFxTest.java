@@ -625,6 +625,49 @@ class MarkdownEditingFxTest {
     }
 
     @Test
+    void theLinkToolsTakeForAWikiLinkOnlyWhatThePreviewDoes() throws Exception {
+        EditorFx.onFx(() -> {
+            // In a table the bar is \| — read on the way in, written on the way out.
+            EditorBuffer table = markdown("| a |\n|---|\n| [[no‸te\\|old]] |\n");
+            assertArrayEquals(
+                    new String[] {"old", "note", "wiki"}, table.markdown().linkForEditing());
+            table.markdown().setLink("new", "note#part");
+            assertEquals("| a |\n|---|\n| [[note#part\\|new]]‸ |\n", shown(table));
+            table.getArea().moveTo(table.getArea().getText().indexOf("note"));
+            assertEquals(0, table.markdown().convertWikiLink());
+            assertTrue(
+                    table.getArea().getText().contains("| [new](note.md#part) |"),
+                    table.getArea().getText());
+            table.getArea().moveTo(table.getArea().getText().indexOf("new"));
+            assertEquals(0, table.markdown().convertWikiLink());
+            assertTrue(
+                    table.getArea().getText().contains("| [[note#part\\|new]] |"),
+                    table.getArea().getText());
+
+            // Not wiki links: indexing, a defined reference, brackets around an ordinary link's text.
+            EditorBuffer index = markdown("x[[‸1]] and more\n");
+            assertEquals(1, index.markdown().convertWikiLink(), "no link under the caret");
+            assertFalse(index.markdown().removeLink());
+            EditorBuffer reference = markdown("see [[no‸te]] here\n\n[note]: http://x\n");
+            assertArrayEquals(
+                    new String[] {"note", "http://x", "link"},
+                    reference.markdown().linkForEditing(),
+                    "the reference link the document defines, not a wiki link");
+            EditorBuffer ordinary = markdown("see [[no‸te]](http://y) here\n");
+            assertEquals("link", ordinary.markdown().linkForEditing()[2]);
+            assertEquals("http://y", ordinary.markdown().linkForEditing()[1]);
+
+            // Three brackets: the link is the inner pair, the outer brackets stay text.
+            EditorBuffer triple = markdown("see [[[‸a]]] here\n");
+            assertTrue(triple.markdown().removeLink());
+            assertEquals("see [«a»] here\n", shown(triple));
+            for (EditorBuffer b : new EditorBuffer[] {table, index, reference, ordinary, triple}) {
+                b.dispose();
+            }
+        });
+    }
+
+    @Test
     void theBarKeepsOffTheSelectedText() {
         // caret line at y 100–120 in a pane 400 tall, bar 40 tall
         assertEquals(56, MarkdownFormatBar.placeY(100, 120, 40, 400, false), "above the caret line");
