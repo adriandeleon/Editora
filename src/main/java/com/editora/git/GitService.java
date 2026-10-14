@@ -399,13 +399,15 @@ public final class GitService {
         return known != null && known.endOfOptions();
     }
 
-    /** The refusal a command that changes a repository gets for a remote folder, or null for a local one. */
+    /**
+     * Cloning or creating a repository is still only done on this machine: the destination is chosen with a
+     * local folder dialog, and a remote one would need its own. Null for a local {@code dir}.
+     */
     private static ProcessRunner.Result refusedOnRemote(Path dir) {
-        return isLocal(dir) ? null : new ProcessRunner.Result(-1, "", REMOTE_READ_ONLY);
+        return isLocal(dir) ? null : new ProcessRunner.Result(-1, "", REMOTE_NOT_YET);
     }
 
-    /** Git commands that change a repository are not run on a remote host yet; reads are. */
-    static final String REMOTE_READ_ONLY = "Git commands that change a remote folder are not available yet";
+    static final String REMOTE_NOT_YET = "Cloning or creating a repository on a remote host is not available yet";
 
     /**
      * Environment of every background read: lock-free, never prompting, never paging, and never fetching a
@@ -422,6 +424,18 @@ public final class GitService {
      * message language pinned — see {@link GitSafety#userEnv}.
      */
     private static final Map<String, String> USER_ENV = GitSafety.userEnv(System.getenv());
+
+    /**
+     * {@link #USER_ENV} for a command on a remote host: the same pins, but nothing taken from this machine's
+     * environment (its {@code LC_ALL} names a locale the host may not have). The host's own locale comes with
+     * the command, from its login shell.
+     */
+    private static final Map<String, String> REMOTE_USER_ENV = GitSafety.userEnv(Map.of());
+
+    /** The environment of a user command run in {@code dir}. */
+    private static Map<String, String> userEnv(Path dir) {
+        return isLocal(dir) ? USER_ENV : REMOTE_USER_ENV;
+    }
 
     /** Whether the probed git understands {@code --end-of-options} (2.24+); see {@link GitSafety}. */
     private static volatile boolean endOfOptions;
@@ -1168,7 +1182,7 @@ public final class GitService {
             return List.of();
         }
         BlameOptions options = blameOptions;
-        BlameIgnoreRevs.Plan plan = ignoreRevsPlan(root);
+        BlameIgnoreRevs.Plan plan = ignoreRevsPlanFor(root);
         // Blame of the working file depends on the commit graph (HEAD) and on the file's bytes. Asking for
         // HEAD is one short process; the blame it saves walks the file's whole history.
         BlameKey key = blameKey(root, file, options, plan);
@@ -1197,7 +1211,7 @@ public final class GitService {
             return List.of();
         }
         BlameOptions options = blameOptions;
-        BlameIgnoreRevs.Plan plan = ignoreRevsPlan(root);
+        BlameIgnoreRevs.Plan plan = ignoreRevsPlanFor(root);
         String source = revision + ":" + path;
         BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(plan));
         List<BlameParser.BlameLine> cached = cachedBlame(key.source(), key);
@@ -1283,6 +1297,15 @@ public final class GitService {
     private final Map<Path, CachedIgnoreRevs> ignoreRevsConfig = new ConcurrentHashMap<>();
 
     /** The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are now. */
+    /**
+     * {@link #ignoreRevsPlan} for a local repository. A remote one leaves {@code blame.ignoreRevsFile} to the
+     * host's git: checking the files and rewriting the global configuration would mean temporary files on
+     * the host for every blame.
+     */
+    private BlameIgnoreRevs.Plan ignoreRevsPlanFor(Path root) {
+        return isLocal(root) ? ignoreRevsPlan(root) : BlameIgnoreRevs.Plan.NONE;
+    }
+
     private BlameIgnoreRevs.Plan ignoreRevsPlan(Path root) {
         long now = System.nanoTime();
         CachedIgnoreRevs cached = ignoreRevsConfig.get(root);
@@ -2200,7 +2223,10 @@ public final class GitService {
     public void clone(String url, Path destination, CloneOptions options, Consumer<ProcessRunner.Result> onResult) {
         submit(networkExec, () -> {
             ProcessRunner.Result r;
-            if (!gitAvailable()) {
+            ProcessRunner.Result remote = refusedOnRemote(destination);
+            if (remote != null) {
+                r = remote;
+            } else if (!gitAvailable()) {
                 r = NOT_INSTALLED;
             } else {
                 Path parent = destination.toAbsolutePath().getParent();
@@ -2231,6 +2257,11 @@ public final class GitService {
     public void init(Path dir, java.util.function.BiConsumer<ProcessRunner.Result, Path> onResult) {
         submit(exec, () -> {
             Path abs = dir.toAbsolutePath();
+            ProcessRunner.Result remote = refusedOnRemote(abs);
+            if (remote != null) {
+                Platform.runLater(() -> onResult.accept(remote, null));
+                return;
+            }
             if (!gitAvailable()) {
                 Platform.runLater(() -> onResult.accept(NOT_INSTALLED, null));
                 return;
@@ -2544,10 +2575,10 @@ public final class GitService {
                     ? NOT_INSTALLED
                     : userCommand(localCommands, () -> {
                         if (threeWay) {
-                            return gitWithInput(root, input, base, USER_ENV);
+                            return gitWithInput(root, input, base, userEnv(root));
                         }
-                        ProcessRunner.Result checked = gitWithInput(root, input, check, USER_ENV);
-                        return checked.ok() ? gitWithInput(root, input, base, USER_ENV) : checked;
+                        ProcessRunner.Result checked = gitWithInput(root, input, check, userEnv(root));
+                        return checked.ok() ? gitWithInput(root, input, base, userEnv(root)) : checked;
                     });
             Platform.runLater(() -> onResult.accept(posted));
         });
@@ -2672,7 +2703,7 @@ public final class GitService {
                 entry.found() || linkTarget != null
                         ? List.of("hash-object", "-w", "--no-filters", "--stdin")
                         : List.of("hash-object", "-w", "--stdin", "--path=" + path),
-                USER_ENV);
+                userEnv(root));
         String id = hashed.out().strip();
         if (!hashed.ok() || !OBJECT_ID.matcher(id).matches()) {
             return hashed.ok() ? new ProcessRunner.Result(1, "", "Git returned no blob id") : hashed;
@@ -2760,7 +2791,7 @@ public final class GitService {
         if (!indexPathResult.ok() || indexPathResult.out().isBlank()) {
             return indexPathResult;
         }
-        Path index = Path.of(indexPathResult.out().strip());
+        Path index = ExecTargets.forPath(root).toPath(indexPathResult.out().strip());
         if (!index.isAbsolute()) {
             index = root.resolve(index).normalize();
         }
@@ -2789,8 +2820,9 @@ public final class GitService {
                 return new ProcessRunner.Result(1, "", "The index changed after this diff was created");
             }
             temporary = parent.resolve(".editora-index-" + java.util.UUID.randomUUID() + ".tmp");
-            Map<String, String> env = new java.util.HashMap<>(USER_ENV);
-            env.put("GIT_INDEX_FILE", temporary.toAbsolutePath().toString());
+            Map<String, String> env = new java.util.HashMap<>(userEnv(root));
+            // As the machine running git names it: the index is on that machine.
+            env.put("GIT_INDEX_FILE", ExecTargets.forPath(root).toTargetPath(temporary.toAbsolutePath()));
             if (originalExists) {
                 Files.write(temporary, original, java.nio.file.StandardOpenOption.CREATE_NEW);
             } else {
@@ -2816,15 +2848,8 @@ public final class GitService {
                     || originalExists && !java.util.Arrays.equals(original, Files.readAllBytes(index))) {
                 return new ProcessRunner.Result(1, "", "The index changed while applying this hunk");
             }
-            try {
-                Files.move(
-                        lock,
-                        index,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
-                Files.move(lock, index, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            }
+            // Over SFTP a replacing move can delete the index before renaming: the server-side replacement never does.
+            com.editora.io.AtomicFileWrite.replaceAtomically(lock, index);
             return result;
         } catch (java.nio.file.FileAlreadyExistsException busy) {
             return new ProcessRunner.Result(1, "", "The Git index is busy");
@@ -3184,10 +3209,6 @@ public final class GitService {
      * {@link CommandLog} report. Background reads go through {@link #git} instead.
      */
     private ProcessRunner.Result gitLogged(Path dir, Duration timeout, String... args) {
-        ProcessRunner.Result refused = refusedOnRemote(dir);
-        if (refused != null) {
-            return refused;
-        }
         long startNanos = System.nanoTime();
         List<String> argv = gitArgv(dir, args);
         // The user's locale, not LC_ALL=C: the hooks this runs are the user's programs (see GitSafety.userEnv).
@@ -3198,7 +3219,7 @@ public final class GitService {
         localCommand = cancel;
         ProcessRunner.Result r;
         try {
-            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, USER_ENV, null, cancel);
+            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, userEnv(dir), null, cancel);
         } finally {
             localCommand = null;
         }
@@ -3230,10 +3251,6 @@ public final class GitService {
      * each line as git writes it, not only the finished transcript.
      */
     private ProcessRunner.Result gitStreamed(Path dir, Duration timeout, String... args) {
-        ProcessRunner.Result refused = refusedOnRemote(dir);
-        if (refused != null) {
-            return refused;
-        }
         long startNanos = System.nanoTime();
         List<String> argv = gitArgv(dir, args);
         CommandLog log = commandLog;
@@ -3242,7 +3259,7 @@ public final class GitService {
         ProcessRunner.Result r;
         try {
             log.started(argv);
-            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, USER_ENV, log::progress, cancel);
+            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, userEnv(dir), log::progress, cancel);
         } finally {
             streamedCommand = null;
         }
@@ -3320,10 +3337,6 @@ public final class GitService {
     /** Runs a logged user command with raw {@code stdin} bytes (a blob body must reach Git unre-encoded). */
     private ProcessRunner.Result gitWithInput(
             Path dir, byte[] stdin, List<String> args, Map<String, String> environment) {
-        ProcessRunner.Result refused = refusedOnRemote(dir);
-        if (refused != null) {
-            return refused;
-        }
         long startNanos = System.nanoTime();
         List<String> argv = new ArrayList<>(commandFor(dir));
         argv.addAll(args);

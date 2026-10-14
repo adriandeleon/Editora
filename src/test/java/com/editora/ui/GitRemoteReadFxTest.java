@@ -126,21 +126,6 @@ class GitRemoteReadFxTest {
     }
 
     @Test
-    void aCommandThatChangesTheRepositoryIsRefusedForNow() throws Exception {
-        Path file = remoteRepo.resolve("a.txt");
-        GitService.RepoState state = await(cb -> service.refresh(file, file, cb));
-        int before = sftp.commands().size();
-
-        ProcessRunner.Result r = await(cb -> service.runWorktreeMutation(state.root(), cb, "add", "a.txt"));
-
-        assertFalse(r.ok());
-        assertEquals("Git commands that change a remote folder are not available yet", r.err());
-        assertFalse(
-                sftp.commands().subList(before, sftp.commands().size()).stream().anyMatch(l -> l.contains("'add'")),
-                "the command reached the host");
-    }
-
-    @Test
     void aHostTheUserHasNotAllowedIsNotAskedEither() throws Exception {
         ExecTargets.setRemoteHostAllowed(id -> false);
         try {
