@@ -98,7 +98,8 @@ class WindowAdapterSweepFxTest {
                     }
                     String name = value.getClass().getName();
                     String path = item[1] + "." + f.getName();
-                    if (name.startsWith("com.editora.ui.MainController$") && !name.contains("$$Lambda")) {
+                    if (name.startsWith("com.editora.ui.MainController$") && !name.contains("$$Lambda")
+                            || isExtractedAdapter(value.getClass())) {
                         found.put(value, path);
                     }
                     if (depth < 2 && name.startsWith("com.editora.ui.") && !(value instanceof javafx.scene.Node)) {
@@ -108,6 +109,22 @@ class WindowAdapterSweepFxTest {
             }
         }
         return found;
+    }
+
+    /**
+     * An adapter that was moved out of {@code MainController} for the file's size (WindowCommandHost): a
+     * class of this package that keeps the window it adapts in a field, where an anonymous one captured it.
+     */
+    private static boolean isExtractedAdapter(Class<?> type) {
+        if (type == MainController.class || !type.getName().startsWith("com.editora.ui.") || type.isSynthetic()) {
+            return false;
+        }
+        for (Field f : type.getDeclaredFields()) {
+            if (f.getType() == MainController.class && !Modifier.isStatic(f.getModifiers())) {
+                return type.getSimpleName().endsWith("Host");
+            }
+        }
+        return false;
     }
 
     /** The one adapter of {@code controller} that implements {@code type}. To be called on the FX thread. */
@@ -165,6 +182,13 @@ class WindowAdapterSweepFxTest {
         buffer.setContent(content);
         FxTestSupport.call(controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
         return buffer;
+    }
+
+    @Test
+    void anAdapterMovedToItsOwnFileIsStillSwept() throws Exception {
+        // WindowCommandHost is no longer a MainController$N class; it must not have dropped out of the sweep.
+        Object host = FxTestSupport.callOnFx(() -> adapter(controller, WindowCommandRegistrar.Host.class));
+        assertEquals(WindowCommandHost.class, host.getClass());
     }
 
     /**

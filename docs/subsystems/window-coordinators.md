@@ -5,6 +5,12 @@ in the per-window owners below. Each owner receives a package-private `Host` ada
 current window state when called; constructors must not read callbacks before window initialization.
 Do not pass the controller itself or add inheritance to share its fields.
 
+Most adapters are anonymous classes inside `MainController`. The largest, the command table's, is
+`WindowCommandHost`: a file of its own that keeps the controller in a field, moved out only for
+`MainController`'s size. The owner (`WindowCommandRegistrar`) still sees just its `Host` interface. Moving
+another adapter the same way means its members of `MainController` become package-private, and
+`WindowAdapterSweepFxTest` picks it up as long as its name ends in `Host` and it holds the controller.
+
 | Owner | Responsibility |
 | --- | --- |
 | `WindowCommandRegistrar` | Registers window commands in their established order and applies palette gates |
