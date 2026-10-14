@@ -144,9 +144,23 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   connection (`date +%s`), and a whole-second SFTP time is rounded up by the coarse margin first, so a skewed
   host clock cannot pass a later write off as an earlier one. The apply-time re-checks still `stat` on the FX
   thread, one round trip per closed target.
+- **Debugging (Python, JavaScript):** a remote file is debugged on its host (`DapManager.startRemoteStdio` /
+  `startRemoteSocket`), asked for its adapter when the session starts rather than detected up front.
+  Python: the host's `dap.python` tool, else the Debugging setting when it is a bare name, else `python3`; a
+  leading `env NAME=value …` and interpreter arguments are taken apart (`DapManager.HostPython`) into the
+  adapter's environment, the launch's `env`, `python` and `pythonArgs`, because debugpy uses only the first
+  word of a `python` array. `-c "import debugpy"` is tried first so a missing debugpy is reported by name.
+  JavaScript: `dapDebugServer.js` is the host's `dap.js` tool (the file, or a folder to search) or found where
+  Editora's installer, mason and VS Code's server put it; it is started with port 0 on `127.0.0.1`, the port
+  it prints is tunnelled (`ExecTarget.forwardLocal`, closed with the session) and child sessions reach it
+  through the same tunnel. `node` can be set per host (`node` tool). Every `Source.path` crosses `DapPaths`
+  (host path out, path on the connection in; pseudo-sources such as `<node_internals>` come back as no file),
+  and a session sends only breakpoints of files on its own machine (`DapPaths.owns`). Breakpoints of remote
+  files are stored under their `sftp://` URI (`DebugCoordinator.key`), so a reconnect keeps them; a closed
+  remote file's are sent while its host is connected. Java on a host, attach and Debug Test are not done yet.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git), jdtls and
-  debugging.
+  Java debugging.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Debugging Python and JavaScript in remote folders (opt-in).** With remote commands switched on, Debug on a
+  remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
+  the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
+  and node; their locations can be set per host. Breakpoints of a remote file are kept across reconnects.
+  Debugging Java on a host is not available yet.
 - **Language servers for remote folders (opt-in).** With remote commands switched on, a file in a remote folder
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition

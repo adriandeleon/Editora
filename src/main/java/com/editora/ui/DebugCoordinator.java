@@ -288,6 +288,22 @@ final class DebugCoordinator {
         };
     }
 
+    /**
+     * As {@link #debugEffectiveFor(String)}, for {@code file}: a remote file is debugged on its host, which is
+     * asked for its adapter when the session starts (this machine's detection says nothing about it).
+     */
+    boolean debugEffectiveFor(String language, Path file) {
+        if (file == null || Vfs.isLocal(file)) {
+            return debugEffectiveFor(language);
+        }
+        if (!debugSupportEnabled() || language == null || !DapManager.debuggableOnHost(language)) {
+            return false;
+        }
+        var s = host.settings();
+        boolean enabled = "python".equals(language) ? s.isPythonDebugEnabled() : s.isJsDebugEnabled();
+        return enabled && RemoteExec.runsFor(file);
+    }
+
     /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
@@ -456,7 +472,14 @@ final class DebugCoordinator {
 
     /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
     boolean isDebuggableBuffer(EditorBuffer b) {
-        return b != null && host.isLocalBuffer(b) && DapServerRegistry.isDebuggable(b.getLanguage());
+        if (b == null || !DapServerRegistry.isDebuggable(b.getLanguage())) {
+            return false;
+        }
+        if (host.isLocalBuffer(b)) {
+            return true;
+        }
+        // A remote file is debugged on its host — Python and JavaScript so far — while that may run commands.
+        return b.getPath() != null && DapManager.debuggableOnHost(b.getLanguage()) && RemoteExec.runsFor(b.getPath());
     }
 
     // --- breakpoints -------------------------------------------------------------------------------
@@ -613,29 +636,34 @@ final class DebugCoordinator {
         if (newPath == null || newPath.equals(oldPath)) {
             return;
         }
-        if (com.editora.vfs.Vfs.isRemote(oldPath)) {
-            oldPath = null; // never debuggable, so nothing to carry over — and asking a closed connection throws
+        boolean oldGone = false;
+        if (oldPath != null) {
+            try {
+                oldGone = !Files.exists(oldPath);
+            } catch (RuntimeException closedConnection) {
+                oldPath = null; // a remote file whose connection is gone: nothing can be asked about it
+            }
         }
         var map = ops.breakpointMap();
         List<Breakpoint> stored = null;
-        if (oldPath != null && !Files.exists(oldPath)) {
-            stored = map.remove(oldPath.toString()); // renamed away; a Save As copy leaves the original its own
+        if (oldPath != null && oldGone) {
+            stored = map.remove(key(oldPath)); // renamed away; a Save As copy leaves the original its own
         } else if (oldPath != null) {
-            stored = map.get(oldPath.toString());
+            stored = map.get(key(oldPath));
         }
         pendingPersist.remove(buffer);
         if (buffer.isNarrowed()) {
             if (stored != null) {
-                map.put(newPath.toString(), new ArrayList<>(stored)); // region-relative lines cannot be snapshotted
+                map.put(key(newPath), new ArrayList<>(stored)); // region-relative lines cannot be snapshotted
             }
             ops.saveBreakpoints();
         } else {
             // The buffer now IS this file: breakpoints stored for a file it overwrote are replaced, not merged.
-            seenInStore.put(buffer, MarkMerge.keys(map.get(newPath.toString()), Breakpoint::line));
+            seenInStore.put(buffer, MarkMerge.keys(map.get(key(newPath)), Breakpoint::line));
             persistBreakpoints(buffer); // writes the file, also when the buffer has none (the old key is gone)
         }
         if (dapManager.isActive()) {
-            if (oldPath != null && sentBreakpoints.remove(oldPath) != null && !Files.exists(oldPath)) {
+            if (oldPath != null && sentBreakpoints.remove(oldPath) != null && oldGone) {
                 dapManager.updateBreakpoints(new DapModels.FileBreakpoints(oldPath, List.of()));
             }
             DapModels.FileBreakpoints now = fileBreakpoints(buffer);
@@ -651,10 +679,19 @@ final class DebugCoordinator {
      */
     void pathRenamed(Path old, Path target) {
         String sep = old.getFileSystem().getSeparator();
-        if (RenamedFileState.rekey(ops.breakpointMap(), old.toString(), target.toString(), sep)) {
+        if (RenamedFileState.rekey(ops.breakpointMap(), key(old), key(target), sep)) {
             ops.saveBreakpoints();
             ops.breakpointsStored(ops.breakpointMap(), null);
         }
+    }
+
+    /**
+     * The breakpoint store's key for {@code file}: its path for a local file, as it always was, and its
+     * {@code sftp://} URI for a remote one — which names the host (the bare path would be a local file's key)
+     * and survives a reconnect, whose new connection gives the same file a new {@link Path}.
+     */
+    static String key(Path file) {
+        return Vfs.toStorableString(file);
     }
 
     private void persistBreakpoints(EditorBuffer buffer) {
@@ -666,7 +703,7 @@ final class DebugCoordinator {
             return;
         }
         var map = ops.breakpointMap();
-        String key = file.toString();
+        String key = key(file);
         List<Breakpoint> stored = map.get(key);
         // Not the snapshot alone: a second window on this file has its own copy of the breakpoints, and
         // writing this one as the whole list deleted every breakpoint the other had set.
@@ -701,7 +738,7 @@ final class DebugCoordinator {
             if (b.getPath() == null || b.isNarrowed()) {
                 return; // a narrowed buffer's lines are region-relative; it merges when it next writes
             }
-            String key = b.getPath().toString();
+            String key = key(b.getPath());
             if (fileKey != null && !fileKey.equals(key)) {
                 return;
             }
@@ -723,7 +760,7 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        List<Breakpoint> stored = ops.breakpointMap().get(file.toString());
+        List<Breakpoint> stored = ops.breakpointMap().get(key(file));
         seenInStore.put(buffer, MarkMerge.keys(stored, Breakpoint::line));
         if (buffer.applyBreakpoints(stored)) {
             persistBreakpoints(buffer); // self-heal re-anchored indices once
@@ -776,7 +813,7 @@ final class DebugCoordinator {
             if (b.getPath() == null) {
                 return;
             }
-            open.add(b.getPath().toString());
+            open.add(key(b.getPath()));
             DapModels.FileBreakpoints fb = fileBreakpoints(b);
             sentBreakpoints.put(b.getPath(), fb);
             if (!fb.breakpoints().isEmpty()) {
@@ -784,7 +821,7 @@ final class DebugCoordinator {
             }
         });
         for (DapModels.FileBreakpoints fb : closedBreakpoints) {
-            if (fb.file() != null && !open.contains(fb.file().toString())) {
+            if (fb.file() != null && !open.contains(key(fb.file()))) {
                 out.add(fb);
             }
         }
@@ -801,14 +838,14 @@ final class DebugCoordinator {
         Set<String> openPaths = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null) {
-                openPaths.add(b.getPath().toString());
+                openPaths.add(key(b.getPath()));
             }
         });
         Map<String, List<Breakpoint>> map = new LinkedHashMap<>(ops.breakpointMap());
         Thread t = new Thread(
                 () -> {
-                    List<DapModels.FileBreakpoints> computed =
-                            closedFileBreakpoints(map, openPaths, Vfs::isLocal, DebugCoordinator::readLinesOrNull);
+                    List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
+                            map, openPaths, RemoteExec::runsFor, DebugCoordinator::readLinesOrNull);
                     Platform.runLater(() -> {
                         closedBreakpoints = computed;
                         then.run();
@@ -819,7 +856,7 @@ final class DebugCoordinator {
         t.start();
     }
 
-    /** Reads a local file's lines for re-anchoring, or {@code null} when it can't be used as-is (unreadable,
+    /** Reads a file's lines (over SFTP for a remote one; this runs off the FX thread) for re-anchoring, or {@code null} when it can't be used as-is (unreadable,
      *  too large, or non-UTF-8) — the caller then falls back to the stored line indices. */
     private static List<String> readLinesOrNull(Path p) {
         try {
@@ -834,7 +871,8 @@ final class DebugCoordinator {
 
     /**
      * The DAP breakpoints for files that have no open tab, each re-anchored against the file's current text.
-     * Pure/unit-testable: {@code isLocal} skips remote paths, {@code readLines} returns a file's lines (or
+     * Pure/unit-testable: {@code isLocal} skips files whose machine cannot debug (a remote host that may not
+     * run commands), {@code readLines} returns a file's lines (or
      * {@code null} to keep the stored indices). Open-tab files are excluded — their live buffer supplies them.
      * A file whose lines are read is re-anchored via {@link BreakpointManager#reanchor} (so an external edit
      * that shifted lines still hits the right code); an unreadable one keeps its persisted indices rather than
@@ -860,12 +898,12 @@ final class DebugCoordinator {
             }
             Path p;
             try {
-                p = Path.of(key);
+                p = Vfs.parseStorable(key); // a remote file's key is its URI: null while its host is not connected
             } catch (RuntimeException ex) {
                 continue;
             }
-            if (!isLocal.test(p)) {
-                continue; // remote/SFTP breakpoints aren't sent (the whole debug feature is local-only)
+            if (p == null || !isLocal.test(p)) {
+                continue; // a file whose host cannot run its debugger has nothing to send
             }
             List<String> lines = readLines.apply(p);
             List<DapModels.LineBreakpoint> out2 = new ArrayList<>();
@@ -1278,7 +1316,7 @@ final class DebugCoordinator {
             if (dapManager.state() == DapManager.State.SUSPENDED
                     || dapManager.isStepping() // a step in flight reads RUNNING, but it is the paused session
                     || !differentFile
-                    || !debugEffectiveFor(b.getLanguage())) {
+                    || !debugEffectiveFor(b.getLanguage(), b.getPath())) {
                 dapManager.resume(); // F5-style continue (no-op unless suspended)
                 return;
             }
@@ -1294,7 +1332,7 @@ final class DebugCoordinator {
             return;
         }
         String language = b.getLanguage();
-        if (!debugEffectiveFor(language)) {
+        if (!debugEffectiveFor(language, b.getPath())) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
         }
