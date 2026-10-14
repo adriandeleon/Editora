@@ -155,6 +155,10 @@ class ReleaseSupplyChainTest {
                 release.contains("tags: ['v[0-9]+.[0-9]+.[0-9]+*']"), "only version-shaped tags may start a release");
         Map<String, String> jobs = jobs(release);
         assertTrue(jobs.get("preflight").contains("check-release.py version"), "the tag/pom preflight is gone");
+        assertTrue(
+                jobs.get("preflight").contains("check-release.py ci")
+                        && jobs.get("preflight").contains("--mode enforce"),
+                "the preflight no longer refuses a commit that CI did not pass");
         for (String job : List.of("build", "native-experimental")) {
             assertTrue(jobs.get(job).contains("needs: preflight"), job + " must wait for the preflight");
         }
