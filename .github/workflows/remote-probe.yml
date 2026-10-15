@@ -1,0 +1,138 @@
+# Remote development against a real SSH server on another operating system: RealSshdProbeFxTest drives every
+# feature that runs on a host (Git, ripgrep, Run, kill, tunnels, the outside-change watch, pyright, jdtls with
+# Java debugging, debugpy, js-debug, a frozen and a dropped connection, ed25519 keys) through Editora's own
+# connection code, against the runner's own sshd started unprivileged on a high port.
+#
+# Not part of CI: it downloads the language servers and debuggers the probe needs and takes a while. Run it by
+# hand (Actions → Remote probe → Run workflow), or push a `probe/**` branch.
+name: Remote probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['probe/**']
+
+permissions:
+  contents: read
+
+jobs:
+  macos-sshd:
+    name: Probe (macos-15, the system's OpenSSH)
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      # What the probe runs on the host: the same pinned jdtls milestone and the same sources Editora's own
+      # installer uses (InstallCatalog), so the probe sees what a user's Install button would give them.
+      - name: Host tools
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          T="$RUNNER_TEMP/tools"
+          mkdir -p "$T/python" "$T/javascript" "$T/java-debug" "$T/jdtls"
+          command -v rg >/dev/null || brew install ripgrep
+          npm install -g pyright >/dev/null
+          python3 -m pip install --quiet --target "$T/python" debugpy \
+            || python3 -m pip install --quiet --break-system-packages --target "$T/python" debugpy
+          version=$(sed -n 's/.*JDTLS_VERSION = "\(.*\)";/\1/p' src/main/java/com/editora/install/InstallCatalog.java)
+          build=$(sed -n 's/.*JDTLS_BUILD = "\(.*\)";/\1/p' src/main/java/com/editora/install/InstallCatalog.java)
+          curl -fsSL "https://download.eclipse.org/jdtls/milestones/$version/jdt-language-server-$version-$build.tar.gz" \
+            | tar xz -C "$T/jdtls"
+          vsix=$(curl -fsSL https://open-vsx.org/api/vscjava/vscode-java-debug/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["files"]["download"])')
+          curl -fsSL "$vsix" -o "$T/java-debug.vsix"
+          unzip -q -j "$T/java-debug.vsix" 'extension/server/com.microsoft.java.debug.plugin-*.jar' -d "$T/java-debug"
+          dap=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest \
+            | python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].startswith("js-debug-dap-v") and a["name"].endswith(".tar.gz")))')
+          curl -fsSL "$dap" | tar xz -C "$T/javascript"
+          ls "$T/java-debug" "$T/javascript" "$T/jdtls/bin"
+
+      # An unprivileged sshd, as on Linux: it can log in only the account it runs as. The account's login
+      # profile gets what a real Mac user's has (Homebrew, npm's global bin, a JAVA_HOME), which the job's own
+      # environment has but an SSH login would not.
+      - name: Private sshd
+        shell: bash
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/sshd"
+          mkdir -p "$S/work"
+          cd "$S"
+          ssh-keygen -q -t ed25519 -N '' -f host_ed25519
+          ssh-keygen -q -t ecdsa -N '' -f host_ecdsa
+          ssh-keygen -q -t ecdsa -N '' -f client_ecdsa
+          ssh-keygen -q -t ed25519 -N '' -f client_ed25519
+          cat client_ecdsa.pub client_ed25519.pub > authorized_keys
+          chmod 600 authorized_keys
+          cat > sshd_config <<CFG
+          Port 22522
+          ListenAddress 127.0.0.1
+          HostKey $S/host_ed25519
+          HostKey $S/host_ecdsa
+          PidFile $S/sshd.pid
+          AuthorizedKeysFile $S/authorized_keys
+          UsePAM no
+          StrictModes no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          Subsystem sftp /usr/libexec/sftp-server
+          AllowTcpForwarding yes
+          MaxSessions 10
+          LogLevel VERBOSE
+          CFG
+          profile="export PATH=\"$(dirname "$(command -v node)"):$(npm prefix -g)/bin:$(dirname "$(command -v rg)"):\$PATH\"
+          export JAVA_HOME=\"$JAVA_HOME\""
+          printf '%s\n' "$profile" >> ~/.zprofile
+          printf '%s\n' "$profile" >> ~/.bash_profile
+          /usr/sbin/sshd -t -f sshd_config
+          /usr/sbin/sshd -f sshd_config -E "$S/sshd.log"
+          sleep 1
+          echo "sshd pid $(cat sshd.pid)"
+          sw_vers
+          ssh -V
+          dscl . -read "/Users/$(id -un)" UserShell
+          ls -l /bin/sh /private/var/select/sh 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$S/known_hosts" -o BatchMode=yes \
+            -i client_ecdsa -p 22522 "$(id -un)@127.0.0.1" \
+            'echo "login: $SHELL $HOME"; ps -o pid,ppid,pgid,sess,comm -p $$; for t in node rg pyright-langserver java python3 git setsid; do printf "%s: " $t; command -v $t || echo -; done'
+
+      - name: Probe
+        shell: bash
+        run: |
+          S="$RUNNER_TEMP/sshd"
+          T="$RUNNER_TEMP/tools"
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshdProbeFxTest \
+            -Dremote.probe="$(id -un)@127.0.0.1:22522" \
+            -Dremote.probe.key="$S/client_ecdsa" \
+            -Dremote.probe.ed25519Key="$S/client_ed25519" \
+            -Dremote.probe.dir="$S/work" \
+            -Dremote.probe.sshdPid="$(cat "$S/sshd.pid")" \
+            -Dremote.probe.jdtls="$T/jdtls/bin/jdtls" \
+            -Dremote.probe.javaDebug="$(ls "$T"/java-debug/com.microsoft.java.debug.plugin-*.jar)" \
+            -Dremote.probe.debugpy="$T/python" \
+            -Dremote.probe.jsDebug="$T/javascript" \
+            test | tee probe.log
+          status=${PIPESTATUS[0]}
+          { echo '### Probe report (macOS sshd)'; echo '```'; sed -n '/PROBE REPORT/,/^\[/p' probe.log | sed '$d'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Server log
+        if: always()
+        shell: bash
+        run: tail -n 200 "$RUNNER_TEMP/sshd/sshd.log" || true

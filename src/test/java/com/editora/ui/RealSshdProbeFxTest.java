@@ -115,7 +115,7 @@ class RealSshdProbeFxTest {
 
     /** Process ids in process group {@code pgid} on this machine (the host is this machine). */
     private static List<Long> group(long pgid) throws Exception {
-        Process ps = new ProcessBuilder("ps", "-eo", "pid=,pgid=").start();
+        Process ps = new ProcessBuilder("ps", "-A", "-o", "pid=,pgid=").start(); // -A: all, on Linux and macOS
         List<Long> out = new ArrayList<>();
         for (String line : new String(ps.getInputStream().readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
             String[] f = line.strip().split("\\s+");
@@ -126,13 +126,17 @@ class RealSshdProbeFxTest {
         return out;
     }
 
-    /** The process groups of {@code sshdPid}'s per-connection processes ({@code sshd-session [priv]} and its child). */
+    /**
+     * The process groups of {@code sshdPid}'s per-connection processes ({@code sshd-session [priv]} and its
+     * child). {@code ps --ppid} is GNU only, so every process is listed and the children picked here.
+     */
     private static List<Long> sessionGroups(String sshdPid) throws Exception {
-        Process ps = new ProcessBuilder("ps", "-o", "pgid=", "--ppid", sshdPid).start();
+        Process ps = new ProcessBuilder("ps", "-A", "-o", "ppid=,pgid=").start();
         List<Long> out = new ArrayList<>();
         for (String line : new String(ps.getInputStream().readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
-            if (!line.isBlank()) {
-                out.add(Long.parseLong(line.strip()));
+            String[] f = line.strip().split("\\s+");
+            if (f.length == 2 && f[0].equals(sshdPid.strip())) {
+                out.add(Long.parseLong(f[1]));
             }
         }
         return out;
@@ -236,7 +240,19 @@ class RealSshdProbeFxTest {
             ProcessRunner.Result r =
                     ProcessRunner.run(app, Duration.ofSeconds(30), List.of("sh", "-c", "command -v node; pwd"));
             check(r.ok(), "ran: " + r.err());
-            check(r.out().contains(".nvm/"), "the profile's PATH (nvm) is there: " + r.out());
+            // node as the login shell finds it: a version manager's or Homebrew's, which a bare command's PATH lacks.
+            ProcessRunner.Result login = ProcessRunner.run(
+                    app,
+                    Duration.ofSeconds(30),
+                    List.of(
+                            "sh",
+                            "-c",
+                            "exec \"${SHELL:-/bin/sh}\" -l -i -c 'command -v node' </dev/null 2>/dev/null"));
+            String node = login.out().lines().reduce((a, b) -> b).orElse("").strip();
+            check(!node.isEmpty(), "the login shell finds node: " + login.out());
+            check(
+                    r.out().lines().findFirst().orElse("").equals(node),
+                    "the same node as the login shell (" + node + "): " + r.out());
             check(r.out().strip().endsWith("/my app"), "ran in the folder with a space: " + r.out());
             return r.out().strip().replace('\n', ' ');
         });
