@@ -2082,6 +2082,8 @@ final class WindowCommandRegistrar {
                         "lsp.copyQualifiedName", () -> host.ifLsp(host.lspCoordinator()::copyQualifiedName)));
         host.registry()
                 .register(Command.of("lsp.reloadProject", () -> host.ifLsp(host.lspCoordinator()::reloadProject)));
+        // Not behind ifLsp: the caches stay on disk after LSP is turned off.
+        host.registry().register(Command.of("lsp.clearJavaIndexCaches", host.lspCoordinator()::clearJavaIndexCaches));
         host.registry()
                 .register(Command.of(
                         "lsp.toggleProjectProblems",

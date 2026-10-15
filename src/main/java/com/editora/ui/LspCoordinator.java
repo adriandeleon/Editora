@@ -2829,6 +2829,33 @@ final class LspCoordinator {
         host.setStatus(tr("status.lsp.projectReloading"));
     }
 
+    /**
+     * Deletes the Java server's saved project indexes that no running server uses
+     * ({@code lsp.clearJavaIndexCaches}), off the FX thread. Works with LSP off too: the caches outlive it.
+     */
+    void clearJavaIndexCaches() {
+        Path base = ops.jdtlsWorkspaceBase();
+        if (base == null) {
+            return;
+        }
+        host.setStatus(tr("status.lsp.javaCachesClearing"));
+        workspaceExecutor.execute(() -> {
+            LspManager.JdtlsCacheClearResult result = LspManager.clearJdtlsWorkspaces(base);
+            Platform.runLater(() -> host.setStatus(javaCachesClearedStatus(result)));
+        });
+    }
+
+    /** The status line for a finished {@link #clearJavaIndexCaches}. */
+    static String javaCachesClearedStatus(LspManager.JdtlsCacheClearResult result) {
+        String kept = result.kept() == 0 ? null : tr("status.lsp.javaCachesKept", result.kept());
+        if (result.deleted() == 0) {
+            return kept == null ? tr("status.lsp.javaCachesNone") : kept;
+        }
+        String cleared =
+                tr("status.lsp.javaCachesCleared", result.deleted(), StatusBar.formatSize(result.bytesFreed()));
+        return kept == null ? cleared : cleared + " " + kept;
+    }
+
     /** The active buffer if it is LSP-managed, reporting + returning null otherwise. */
     private EditorBuffer activeLspBuffer() {
         EditorBuffer b = host.activeBuffer();

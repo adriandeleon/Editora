@@ -1271,6 +1271,95 @@ public final class LspManager {
         }
     }
 
+    /** What {@link #clearJdtlsWorkspaces} did: the caches it deleted, the bytes they held, and the ones it kept
+     *  because a server still uses them (or a file in them could not be deleted). */
+    public record JdtlsCacheClearResult(int deleted, long bytesFreed, int kept) {}
+
+    /**
+     * Deletes every jdtls workspace under {@code base} that no server is using ({@code lsp.clearJavaIndexCaches}).
+     * Nothing else ever removes one: there is a workspace per Java folder ever opened, each ~40 MB before the
+     * project's own classes (jdtls indexes the JDK into every one), so the folder only grows. jdtls rebuilds a
+     * deleted one on its next start for that project.
+     *
+     * <p>A workspace is kept when a session in this process has claimed it, or another process (a second
+     * Editora) holds its Eclipse lock. The claim is taken here for the duration of the delete, so no session can
+     * start on a half-deleted cache. Failure markers go with their workspace. Blocking I/O: call it off the FX
+     * thread.
+     */
+    public static JdtlsCacheClearResult clearJdtlsWorkspaces(Path base) {
+        if (base == null || !Files.isDirectory(base)) {
+            return new JdtlsCacheClearResult(0, 0, 0);
+        }
+        List<Path> entries;
+        try (var list = Files.list(base)) {
+            entries = list.sorted().toList();
+        } catch (java.io.IOException e) {
+            LOG.log(java.util.logging.Level.FINE, "Could not list " + base, e);
+            return new JdtlsCacheClearResult(0, 0, 0);
+        }
+        int deleted = 0;
+        int kept = 0;
+        long freed = 0;
+        for (Path dir : entries) {
+            if (!Files.isDirectory(dir, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                continue;
+            }
+            String name = dir.getFileName().toString();
+            if (!claimedJdtlsWorkspaces.add(name)) {
+                kept++; // a live session in some window of this process
+                continue;
+            }
+            try {
+                long size = treeSize(dir);
+                if (deleteUnlockedJdtlsWorkspace(dir)) {
+                    deleted++;
+                    freed += size;
+                } else {
+                    kept++;
+                }
+            } finally {
+                claimedJdtlsWorkspaces.remove(name);
+            }
+        }
+        deleteOrphanedFailureMarkers(base);
+        return new JdtlsCacheClearResult(deleted, freed, kept);
+    }
+
+    /** Deletes the {@code .<name>.initialize-failed} markers whose workspace no longer exists. */
+    private static void deleteOrphanedFailureMarkers(Path base) {
+        String suffix = ".initialize-failed";
+        try (var list = Files.list(base)) {
+            for (Path marker : list.toList()) {
+                String file = marker.getFileName().toString();
+                if (file.startsWith(".") && file.endsWith(suffix) && file.length() > suffix.length() + 1) {
+                    String name = file.substring(1, file.length() - suffix.length());
+                    if (!Files.exists(base.resolve(name), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        Files.deleteIfExists(marker);
+                    }
+                }
+            }
+        } catch (java.io.IOException e) {
+            LOG.log(java.util.logging.Level.FINE, "Could not clear failure markers in " + base, e);
+        }
+    }
+
+    /** Total size of the regular files under {@code dir}, without following links; 0 when unreadable. */
+    private static long treeSize(Path dir) {
+        try (var paths = Files.walk(dir)) {
+            return paths.filter(p -> Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                    .mapToLong(p -> {
+                        try {
+                            return Files.size(p);
+                        } catch (java.io.IOException e) {
+                            return 0;
+                        }
+                    })
+                    .sum();
+        } catch (java.io.IOException | java.io.UncheckedIOException e) {
+            return 0;
+        }
+    }
+
     private LanguageServerSession sessionFor(Path file) {
         return file == null ? null : sessionByDocUri.get(uri(file));
     }

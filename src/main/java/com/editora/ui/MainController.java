@@ -673,8 +673,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public Path projectRoot() {
-                Project active = projects == null ? null : projects.active();
-                return active == null ? null : active.rootPath();
+                // This window's project, not the ProjectManager's active one (the last-focused window's): it is
+                // what $WORKSPACE_FOLDER and $WORKSPACE_NAME expand to in this window's snippets.
+                return windowProjectRoot();
             }
 
             @Override
@@ -5049,8 +5050,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public Path projectRoot() {
-            Project active = projects == null ? null : projects.active();
-            return active == null ? null : active.rootPath();
+            // This window's project, not the ProjectManager's active one (the last-focused window's): with no
+            // tab open, the Git context is the project root, and a window left behind another project's window
+            // used to declare its own repository "not a Git repository".
+            return windowProjectRoot();
         }
 
         @Override

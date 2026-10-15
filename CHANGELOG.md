@@ -155,12 +155,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Exports:** Word documents get real heading styles, numbered and bulleted lists, table alignment, inline images,
   internal links for `#heading` and a document title; OpenDocument gets table alignment. `.mdx`, `.Rmd`, `.qmd`,
   `.mdwn` and `.mkdn` open as Markdown.
+- **`LSP: Clear Java Index Caches` frees the disk space the Java language server used.** It keeps an index per
+  Java folder you have opened (in `~/.editora/jdtls-workspaces`, about 40 MB each and often far more), and nothing
+  ever removed one. The command deletes every index that no running server is using and reports the space freed;
+  jdtls rebuilds a project's index the next time it opens.
 - **Abbreviations show what they expand to.** With abbrev-mode on, an abbreviation typed out in full shows its
   expansion as muted text after the caret (`btw → by the way`), as a snippet trigger does. Tab expands it now,
   Escape hides the hint, and typing on expands it as before.
 
 ### Changed
 
+- **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
+  JVMs beside the server one.
 - **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
   as `code`, `link` or `bold` expands the snippet only when the word is alone on its line or is chosen from the
   completion popup.
@@ -198,6 +204,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a `JAVA_HOME`, `MAVEN_OPTS`, `GOPATH` or version-manager variable exported in `~/.bash_profile` (or
   `~/.zprofile`, `~/.profile`) was missing from builds, runs, Git and language servers on the host. Every
   variable the profile adds is now passed on, except the session's own (prompt, history, `SSH_*`, display).
+- **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
+  snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
   default — failed with "No more authentication methods available", and a server offering only an ed25519
   host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.
@@ -207,6 +215,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Starting a program on a host right after stopping another is no longer refused.** The place the stopped
   one held is freed a moment after the stop; a start waits up to 5 s for it instead of reporting that too
   many programs are running.
+- **Git in a project window with no file open** followed the project of the last window focused, not its own: once
+  another project's window had been used, closing this window's last tab made it say "Not a Git repository" and
+  refuse every Git command.
 - **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
   other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
 - **Previews:** the floating Editor / Split / Preview toggle covered the right end of the HTTP response panel's
