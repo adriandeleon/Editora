@@ -27,6 +27,9 @@ import org.fxmisc.richtext.CodeArea;
  * the text or size changes; scrolling just re-blits the cached image plus the viewport rectangle. A
  * render draws one row per line, or one per pixel row once lines are less than a pixel tall
  * ({@link MinimapRows}), and skips the snapshot when the runs it would draw are the ones already cached.
+ * The runs are drawn on a canvas that is never in the scene graph and that canvas is snapshotted: a
+ * snapshot of a node in the window's scene first runs CSS and layout over the whole window, between
+ * pulses, which is costly and can leave the window wrongly styled (see {@link #offscreen}).
  * A background tab keeps its content pixels on the CPU ({@link MinimapRetention}) so that switching back
  * re-blits instead of re-rendering; only the textures go.
  */
@@ -48,6 +51,19 @@ final class Minimap extends Region {
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(WIDTH, 1);
+    /**
+     * Where a content render draws its runs before they are cached as {@link #contentImage}. It is never
+     * added to the scene graph, so {@code snapshot()} processes this canvas alone.
+     *
+     * <p>Snapshotting {@link #canvas} instead made JavaFX run a CSS and layout pass over the entire window
+     * first, outside the normal pulse. Coming right after a tab was opened or its state changed, that pass
+     * could fail to resolve the theme's {@code .root} colour variables for the nodes it restyled ("Could not
+     * resolve '-color-fg-default'", a {@code ClassCastException} for {@code -fx-background-color}), and a
+     * node it left with the wrong value kept it until something restyled it again: the selected tab's title
+     * stayed black instead of the theme's colour for a modified file.
+     */
+    private final Canvas offscreen = new Canvas(WIDTH, 1);
+
     private WritableImage contentImage;
     /** Canvas logical dims at the last successful snapshot, so the {@link #contentImage} buffer can be
      *  reused (rather than reallocated each render) when the size is unchanged — see {@link #renderContent}. */
@@ -74,12 +90,13 @@ final class Minimap extends Region {
     private long lastRenderNanos;
     /** Holds an edit-driven render back until {@link MinimapPacing}'s interval has passed. */
     private final javafx.animation.PauseTransition pacedRender = new javafx.animation.PauseTransition();
-    /** Re-entrancy guard. {@link #renderContent}'s {@code canvas.snapshot()} forces a synchronous
-     *  full-scene layout pass that can settle the editor's viewport and fire the
+    /** Re-entrancy guard. A render ends in {@link #drawViewport}, whose {@code firstVisibleParToAllParIndex()}
+     *  can force a {@code VirtualFlow} layout that settles the editor's viewport and fires the
      *  {@code estimatedScrollYProperty} listener — re-entering {@link #redraw}/{@link #renderContent}
-     *  mid-render (with {@link #contentImage} momentarily null), which would paint a second, stale
-     *  viewport box over the in-progress frame. While a render is in flight, suppress nested paints;
-     *  the in-progress render draws the single, up-to-date viewport when it completes. */
+     *  mid-render, which would paint a second, stale viewport box over the in-progress frame. (The snapshot
+     *  used to force a whole-window layout too; it no longer does, see {@link #offscreen}.) While a render
+     *  is in flight, suppress nested paints; the in-progress render draws the single, up-to-date viewport
+     *  when it completes. */
     private boolean painting;
 
     private boolean redrawPending;
@@ -364,10 +381,8 @@ final class Minimap extends Region {
 
     /**
      * Repaints just the stripes over the already-cached content image. Crucially, this never forces a
-     * {@link #renderContent()} (which calls {@code snapshot()} — a synchronous full-scene layout): when
-     * there is no cached image yet (early startup, before the editor's first paint), it does nothing and
-     * lets the minimap's normal layout-driven first render draw the stripes. Forcing a snapshot at that
-     * point blanks the editor surface until the next relayout.
+     * {@link #renderContent()}: when there is no cached image yet (early startup, before the editor's first
+     * paint), it does nothing and lets the minimap's normal layout-driven first render draw the stripes.
      *
      * <p>Coalesced like the scroll repaint: diagnostics, lint marks and TODO marks routinely change in the
      * same turn (and again on the next keystroke), and each used to repaint the whole column by itself.
@@ -415,6 +430,7 @@ final class Minimap extends Region {
             retain();
             contentImage = null;
             CanvasGuards.release(canvas);
+            CanvasGuards.release(offscreen);
         }
     }
 
@@ -482,7 +498,7 @@ final class Minimap extends Region {
                 scheduleRedraw(); // the cached image is this size already: nothing to re-render
             } else {
                 // Dragging the window edge changes the height on every pulse, and a content render walks
-                // the document and then snapshots (a forced full-scene layout). Until the size settles
+                // the document and then draws and snapshots it. Until the size settles
                 // the cached image is re-blitted with the live viewport box and stripes over it; the
                 // render that matches the final size follows once.
                 scheduleRedraw();
@@ -675,13 +691,14 @@ final class Minimap extends Region {
      * Requests a content render, coalesced to at most one per pulse — and, for the <b>first</b> one, held
      * until the editor has actually painted.
      *
-     * <p>Both halves exist because a content render is far from free: it iterates every paragraph and then
-     * calls {@code canvas.snapshot()}, which forces a synchronous full-scene layout, and finishes in
-     * {@link #drawViewport} whose {@code firstVisibleParToAllParIndex()} forces a {@code VirtualFlow} layout
-     * on top of that. At startup the triggers arrive in a burst — theme colors, tab size, and the content
-     * settling all fire one each — so the minimap used to run that whole sequence three times over
-     * <em>before</em> the editor's first frame. Measured on a packaged build, it was the single largest
-     * piece of app code on the path to first paint (~135–230 ms of a ~1.6 s startup).
+     * <p>Both halves exist because a content render is far from free: it iterates every paragraph, draws and
+     * snapshots the runs, and finishes in {@link #drawViewport} whose {@code firstVisibleParToAllParIndex()}
+     * forces a {@code VirtualFlow} layout. (The snapshot also forced a whole-window layout until it moved to
+     * {@link #offscreen}; the measurement below predates that.) At startup the triggers arrive in a burst —
+     * theme colors, tab size, and the content settling all fire one each — so the minimap used to run that
+     * whole sequence three times over <em>before</em> the editor's first frame. Measured on a packaged build,
+     * it was the single largest piece of app code on the path to first paint (~135–230 ms of a ~1.6 s
+     * startup).
      *
      * <p>The minimap is a secondary navigation aid: nothing about it needs to precede the text the user is
      * waiting for. Deferring the first render by two animation frames guarantees the editor has painted
@@ -738,12 +755,12 @@ final class Minimap extends Region {
         }
     }
 
-    /** Runs a queued render, guarding against the nested paint {@code snapshot()}'s forced layout can cause. */
+    /** Runs a queued render, guarding against the nested paint a forced layout during it can cause. */
     private void renderNow() {
         renderPending = false;
         firstRenderDone = true;
         if (painting) {
-            return; // nested paint triggered by snapshot()'s forced layout — let the outer render finish
+            return; // nested paint triggered by a forced layout mid-render — let the outer render finish
         }
         painting = true;
         try {
@@ -787,6 +804,10 @@ final class Minimap extends Region {
         RENDERS_FOR_TEST.incrementAndGet();
         lastRenderNanos = System.nanoTime();
         g.clearRect(0, 0, w, h);
+        offscreen.setWidth(w);
+        offscreen.setHeight(h);
+        GraphicsContext og = offscreen.getGraphicsContext2D();
+        og.clearRect(0, 0, w, h);
         // Hold the prior buffer so a same-size re-render can reuse it (see the snapshot call below)
         // instead of allocating a fresh WritableImage.
         WritableImage prior = contentImage;
@@ -794,13 +815,13 @@ final class Minimap extends Region {
         boolean aggregated = MinimapRows.aggregated(rowHeight);
         // One whole pixel row per aggregated row; otherwise a block a little shorter than the line's row.
         double blockH = aggregated ? 1.0 : Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
-        g.setFill(textColor);
+        og.setFill(textColor);
         for (int k = 0, n = nextRuns.size(); k < n; k++) {
             double y = aggregated ? nextRuns.row(k) : nextRuns.row(k) * rowHeight;
             double x = nextRuns.startColumn(k) * CHAR_SCALE;
             double width = Math.min(w - x, (nextRuns.endColumn(k) - nextRuns.startColumn(k)) * CHAR_SCALE);
             if (x < w && width > 0) {
-                g.fillRect(x, y, width, blockH);
+                og.fillRect(x, y, width, blockH);
             }
         }
         SnapshotParameters sp = new SnapshotParameters();
@@ -809,17 +830,17 @@ final class Minimap extends Region {
         // a content re-render on edit), instead of allocating a fresh WritableImage every render.
         WritableImage reuse = (prior != null && w == lastSnapW && h == lastSnapH) ? prior : null;
         try {
-            contentImage = canvas.snapshot(sp, reuse);
+            contentImage = offscreen.snapshot(sp, reuse);
             lastSnapW = w;
             lastSnapH = h;
             lastTotal = total;
             lastTextColor = textColor;
             lastRuns.copyFrom(nextRuns);
+            g.drawImage(contentImage, 0, 0); // the same blit every later redraw paints
         } catch (RuntimeException ignored) {
-            // snapshot() forces a synchronous full-scene layout pass; during early startup the
-            // CodeArea's VirtualFlow may have no visible cell yet, and Flowless throws
-            // "Cell 0 is not visible". Leave the cache empty — a later render (layout settle,
-            // refresh(), or the next edit) re-caches once a cell is laid out.
+            // Leave the cache empty; a later render (layout settle, refresh(), or the next edit) re-caches.
+            // (Snapshotting the on-screen canvas used to fail this way at startup, when the window-wide
+            // layout it forced found Flowless with no visible cell yet: "Cell 0 is not visible".)
             contentImage = null;
         }
         drawViewport(g, w);
@@ -865,9 +886,9 @@ final class Minimap extends Region {
             return;
         }
         if (contentImage == null) {
-            // No cached content yet — e.g. the first renderContent()'s snapshot lost the startup
-            // layout race. Regenerate (draws the runs and retries the cache) instead of leaving the
-            // minimap blank with only the viewport box.
+            // No cached content yet — the first render has not run, or its snapshot failed. Regenerate
+            // (draws the runs and retries the cache) instead of leaving the minimap blank with only the
+            // viewport box.
             renderContent();
             return;
         }

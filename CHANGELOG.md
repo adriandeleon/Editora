@@ -294,6 +294,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
+  whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
+  to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and
+  the selected tab's title could stay black instead of the theme's colour until something restyled it again.
+  The minimap now draws off screen and leaves the window alone. A redraw also costs less, roughly a third as
+  much when the window has pending style changes.
 - **A language server that fails to start no longer leaves its tabs looking served.** When a server could not be
   started (its command cannot be run, or a remote connection broke while it was starting), its tabs stayed marked
   as served and the status bar could keep naming it until the tab was synced again. They now go quiet at once,
