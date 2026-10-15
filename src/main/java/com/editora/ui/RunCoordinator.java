@@ -106,6 +106,14 @@ final class RunCoordinator {
          *  fallback. Runs {@code bootRun} for a Spring Boot project, else {@code run}; {@code root} locates the
          *  build script. */
         void runGradleRunTask(Path root);
+
+        /**
+         * Runs every request of a {@code .http}/{@code .rest} buffer in the HTTP Client — what "Run File" means
+         * for a request file. Returns {@code false} when the window has no HTTP Client to hand it to.
+         */
+        default boolean runHttpFile(EditorBuffer buffer) {
+            return false;
+        }
     }
 
     private final CoordinatorHost host;
@@ -800,6 +808,13 @@ final class RunCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
             buffer.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+        }
+        if (buffer != null && buffer.isHttpFile()) {
+            // A request file is "run" by sending its requests — the generic path launched `java requests.http`.
+            if (!ops.runHttpFile(buffer)) {
+                host.setStatus(tr("status.run.notCompact"));
+            }
+            return;
         }
         if (buffer == null || !buffer.isRunnable()) {
             host.setStatus(tr("status.run.notCompact"));

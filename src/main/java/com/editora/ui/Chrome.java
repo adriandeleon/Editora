@@ -472,7 +472,8 @@ final class Chrome {
         if (id.startsWith("csv.")) {
             return c.csvFile() ? null : new DisabledReason("palette.disabled.needsCsv", null);
         }
-        if (id.startsWith("http.")) {
+        // Import cURL works anywhere: outside a .http file it opens the request in a new requests.http tab.
+        if (id.startsWith("http.") && !"http.importCurl".equals(id)) {
             return c.httpFile() ? null : new DisabledReason("palette.disabled.needsHttp", null);
         }
         if (id.startsWith("typst.")) {

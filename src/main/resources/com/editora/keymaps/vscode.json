@@ -63,5 +63,7 @@
   "M-S-right": "edit.expandSelection",
   "M-S-left": "edit.shrinkSelection",
   "C-S-\\": "nav.matchingBracket",
-  "C-S-l": "edit.selectAllOccurrences"
+  "C-S-l": "edit.selectAllOccurrences",
+  "C-M-r": "http.runRequest",
+  "C-M-k": "http.cancelRequest"
 }

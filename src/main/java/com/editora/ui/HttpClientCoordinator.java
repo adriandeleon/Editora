@@ -2,18 +2,25 @@ package com.editora.ui;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.stage.FileChooser;
 
+import com.editora.config.HttpResponseHistory;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
@@ -37,8 +44,11 @@ import static com.editora.i18n.Messages.tr;
  * attaches automatically. Unlike every other preview it is not rendered from the buffer text — the debounced
  * edit pulse deliberately skips it and only a completed run repopulates it.
  *
+ * <p>Per {@code .http} file it remembers, in the config folder ({@link HttpResponseHistory}), the environment
+ * chosen for it and its last responses, so reopening the file shows what it last returned.
+ *
  * <p>Beyond the shared {@link CoordinatorHost} it takes a small {@link WindowOps} extension for the few
- * http-specific window services (open a tab, re-gate the run affordance, persist the selected environment).
+ * http-specific window services (open a tab, re-gate the run affordance, the history store).
  */
 final class HttpClientCoordinator {
 
@@ -50,11 +60,23 @@ final class HttpClientCoordinator {
         /** Re-gates the run affordance for the active buffer (Run tool-window availability). */
         void updateRunGating();
 
-        /** The persisted selected environment for this window's session. */
-        String savedEnvironment();
+        /**
+         * The environment this window remembered before the choice became per file (the old window-wide
+         * setting). Used only for a file with no choice of its own, and only when that file defines it.
+         */
+        default String savedEnvironment() {
+            return "";
+        }
 
-        /** Persists the selected environment (workspace state + durable save). */
-        void persistEnvironment(String env);
+        /** Where each {@code .http} file's environment and last responses are kept; null = keep nothing. */
+        default HttpResponseHistory historyStore() {
+            return null;
+        }
+
+        /** The window's project root, where the search for env files stops; null when there is no project. */
+        default Path projectRoot() {
+            return null;
+        }
 
         /**
          * Local File History, which records a file's content before a {@code >>!} redirect replaces it; null
@@ -76,6 +98,22 @@ final class HttpClientCoordinator {
     /** The in-flight run of each buffer (FX thread only). A result is applied only while its handle is still
      *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
     private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
+
+    /** The environment chosen for each buffer's file ({@code ""} = none), once known (FX thread only). */
+    private final Map<EditorBuffer, String> environments = new IdentityHashMap<>();
+
+    /** Reads saved histories off the FX thread; idles out. */
+    private static final ExecutorService LOADER = loader();
+
+    private static ExecutorService loader() {
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
+            Thread t = new Thread(r, "http-history-load");
+            t.setDaemon(true);
+            return t;
+        });
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
 
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
@@ -147,6 +185,11 @@ final class HttpClientCoordinator {
         return host.settings().isHttpClientSupport() && !host.simpleModeActive();
     }
 
+    /** Why the HTTP Client cannot run: Simple UI mode, or the setting (and where to find it). */
+    private String disabledMessage() {
+        return host.simpleModeActive() ? tr("status.http.simpleMode") : tr("statusbar.tip.httpDisabled");
+    }
+
     // --- preview lifecycle -----------------------------------------------------------------------------
 
     /**
@@ -166,6 +209,7 @@ final class HttpClientCoordinator {
             panels.put(buffer, p);
             buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
             refreshEnvironments(buffer);
+            loadSaved(buffer, p);
         } else if (!want && has) {
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
             panels.remove(buffer);
@@ -183,6 +227,7 @@ final class HttpClientCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
             panels.remove(closed);
+            environments.remove(closed);
             com.editora.http.HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
                 run.cancel(); // nobody is left to read the response
@@ -198,8 +243,14 @@ final class HttpClientCoordinator {
                 this::openResponseInTab,
                 s.getFontFamily(),
                 editorFontSize());
-        p.setOnEnvironmentChanged(ops::persistEnvironment);
+        p.setOnEnvironmentChanged(env -> {
+            environments.put(buffer, env);
+            persist(buffer);
+        });
         p.setOnCancel(() -> cancelRun(buffer));
+        p.setOnRun(entry -> runAgain(buffer, entry));
+        p.setOnEscape(() -> buffer.getArea().requestFocus());
+        p.setOnCleared(() -> persist(buffer));
         return p;
     }
 
@@ -224,14 +275,14 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * Reconciles the feature with its setting: gates the request ▶ glyphs on every buffer, (de)attaches the
-     * in-editor preview, refreshes each panel's font, and re-gates the run affordance. Runs at startup and on
-     * every settings apply.
+     * Reconciles the feature with its setting: gates the request ▶ glyphs on every buffer (local files only —
+     * a remote file cannot run its requests from this machine), (de)attaches the in-editor preview, refreshes
+     * each panel's font, and re-gates the run affordance. Runs at startup and on every settings apply.
      */
     void applySupport() {
         boolean on = isEnabled();
         host.forEachBuffer(b -> {
-            b.setHttpEnabled(on);
+            b.setHttpEnabled(on && host.isLocalBuffer(b));
             ensureHttpPreview(b);
         });
         String family = host.settings().getFontFamily();
@@ -240,34 +291,64 @@ final class HttpClientCoordinator {
         ops.updateRunGating();
     }
 
-    /** Whether {@code line} of {@code buffer} should run a request (run-glyph handler / per-buffer gate). */
+    /** Runs the request whose block contains {@code line} of {@code buffer} (run glyph, editor menu, command). */
     void runRequest(EditorBuffer buffer, int line) {
         if (!isEnabled()) {
-            host.setStatus(tr("statusbar.tip.httpDisabled"));
+            host.setStatus(disabledMessage());
             return;
         }
         if (buffer == null || buffer.getPath() == null) {
             host.setStatus(tr("status.http.saveFirst"));
             return;
         }
-        String text = buffer.getContent();
-        int index = HttpFile.requestIndexAt(text, line);
+        int index = HttpFile.requestIndexAt(buffer.getContent(), line);
         if (index < 0) {
             host.setStatus(tr("status.http.noRequest"));
             return;
         }
-        HttpFile.Request req = HttpFile.parse(text).get(index);
-        HttpFile.Parsed parsed = HttpFile.parseRequest(req);
+        runIndex(buffer, index);
+    }
+
+    /** Runs request {@code index} (0-based, in file order) of {@code buffer}. */
+    private void runIndex(EditorBuffer buffer, int index) {
+        String text = buffer.getContent();
+        List<HttpFile.Request> requests = HttpFile.parse(text);
+        if (index < 0 || index >= requests.size()) {
+            host.setStatus(tr("status.http.noRequest"));
+            return;
+        }
+        HttpFile.Parsed parsed = HttpFile.parseRequest(requests.get(index));
         String label = parsed.method() + " " + parsed.url();
         startRun(buffer, label);
         Path baseDir = buffer.getPath().toAbsolutePath().getParent();
         com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
         run[0] = service.run(parsed, variables(buffer, text), baseDir, ex -> {
             if (running.remove(buffer, run[0])) {
-                finishRun(buffer, label, ex);
+                finishRun(buffer, List.of(parsed), List.of(index), List.of(ex), false);
             }
         });
         track(buffer, run[0]);
+    }
+
+    /**
+     * The response view's Run button: re-sends the request the selected history entry came from (when the
+     * file still has a request at that position), else the request at the caret.
+     */
+    private void runAgain(EditorBuffer buffer, HttpHistoryEntry entry) {
+        if (!isEnabled()) {
+            host.setStatus(disabledMessage());
+            return;
+        }
+        if (buffer.getPath() == null) {
+            host.setStatus(tr("status.http.saveFirst"));
+            return;
+        }
+        int index = entry == null ? -1 : entry.requestIndex();
+        if (index >= 0 && index < HttpFile.parse(buffer.getContent()).size()) {
+            runIndex(buffer, index);
+        } else {
+            runRequest(buffer, buffer.getArea().getCurrentParagraph());
+        }
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
@@ -339,18 +420,27 @@ final class HttpClientCoordinator {
             String label = b.getPath().getFileName().toString();
             startRun(b, label);
             Path baseDir = b.getPath().toAbsolutePath().getParent();
+            List<Integer> indexes = new ArrayList<>();
+            for (int i = 0; i < reqs.size(); i++) {
+                indexes.add(i);
+            }
             com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-            run[0] = service.runAll(reqs, variables(b, text), baseDir, exchanges -> {
-                if (!running.remove(b, run[0])) {
-                    return; // cancelled or superseded
-                }
-                HttpClientPanel p = panelFor(b);
-                if (p != null) {
-                    p.showExchanges(exchanges);
-                }
-                boolean allOk = exchanges.stream().allMatch(ex -> ex.result().ok());
-                host.setStatus(allOk ? tr("status.http.done", label) : tr("status.http.failed", exchanges.size()));
-            });
+            run[0] = service.runAll(
+                    reqs,
+                    variables(b, text),
+                    baseDir,
+                    i -> {
+                        HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
+                        if (p != null && i < reqs.size()) {
+                            HttpFile.Parsed r = reqs.get(i);
+                            p.progress(i, reqs.size(), r.method() + " " + r.url());
+                        }
+                    },
+                    exchanges -> {
+                        if (running.remove(b, run[0])) {
+                            finishRun(b, reqs, indexes, exchanges, true);
+                        }
+                    });
             track(b, run[0]);
         });
     }
@@ -370,7 +460,10 @@ final class HttpClientCoordinator {
         });
     }
 
-    /** {@code http.importCurl}: turn a clipboard {@code curl} command into a request block. */
+    /**
+     * {@code http.importCurl}: turn a clipboard {@code curl} command into a request block — appended to the
+     * active {@code .http} file, else opened as a new {@code requests.http} tab (save it to run it).
+     */
     void importCurl() {
         ifHttp(() -> {
             String clip = Clipboard.getSystemClipboard().getString();
@@ -384,13 +477,14 @@ final class HttpClientCoordinator {
                 String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
                 b.getArea().insertText(b.getArea().getLength(), snippet);
                 b.getArea().moveTo(b.getArea().getLength());
+                host.setStatus(tr("status.http.curlImported"));
             } else {
                 EditorBuffer nb = new EditorBuffer();
                 nb.setDisplayName("requests.http");
                 ops.openTab(nb);
                 nb.setContent(request);
+                host.setStatus(tr("status.http.curlImportedNew"));
             }
-            host.setStatus(tr("status.http.curlImported"));
         });
     }
 
@@ -400,7 +494,7 @@ final class HttpClientCoordinator {
             HttpClientPanel p = activePanel();
             HttpExchange ex = p == null ? null : p.getSelectedExchange();
             if (ex == null) {
-                host.setStatus(tr("status.http.noResponse"));
+                host.setStatus(tr("status.http.noResponseSelected"));
                 return;
             }
             copyAsCurl(ex);
@@ -413,7 +507,7 @@ final class HttpClientCoordinator {
             HttpClientPanel p = activePanel();
             HttpExchange ex = p == null ? null : p.getSelectedExchange();
             if (ex == null) {
-                host.setStatus(tr("status.http.noResponse"));
+                host.setStatus(tr("status.http.noResponseSelected"));
                 return;
             }
             openResponseInTab(ex);
@@ -421,14 +515,16 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * Updates this buffer's environment picker from the {@code .env}/env-JSON files beside it (called when
-     * the preview is attached and from the focus/tab-switch run-gating pass).
+     * Updates this buffer's environment picker from the env files that apply to it — the nearest folder, from
+     * the file's own up to the project root, holding {@code http-client.env.json} or its private twin — with
+     * the names of both files. Called when the preview is attached and from the focus/tab-switch pass.
      */
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
         if (p != null && buffer.getPath() != null) {
-            Path dir = buffer.getPath().toAbsolutePath().getParent();
-            p.setEnvironments(environmentNames(dir), ops.savedEnvironment());
+            List<String> names = environmentNames(envDir(buffer));
+            String chosen = environments.get(buffer);
+            p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
         }
     }
 
@@ -448,13 +544,37 @@ final class HttpClientCoordinator {
         host.setStatus(tr("status.http.running", label));
     }
 
-    private void finishRun(EditorBuffer buffer, String label, HttpExchange ex) {
+    /**
+     * Lands a run's {@code exchanges} (for {@code requests} at {@code indexes}) in the response view and the
+     * saved history, and says in the status bar what was sent (variables resolved) and how it went.
+     */
+    private void finishRun(
+            EditorBuffer buffer,
+            List<HttpFile.Parsed> requests,
+            List<Integer> indexes,
+            List<HttpExchange> exchanges,
+            boolean all) {
+        long now = System.currentTimeMillis();
+        List<HttpHistoryEntry> entries = new ArrayList<>();
+        for (int i = 0; i < exchanges.size(); i++) {
+            HttpFile.Parsed req = i < requests.size() ? requests.get(i) : null;
+            entries.add(new HttpHistoryEntry(
+                    exchanges.get(i),
+                    req == null ? null : req.name(),
+                    i < indexes.size() ? indexes.get(i) : -1,
+                    now,
+                    false,
+                    false,
+                    req != null && req.directives().noLog())); // # @no-log: shown now, never written to disk
+        }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
-            p.showExchanges(List.of(ex));
+            p.showEntries(entries);
+            persist(buffer);
         }
-        HttpResult r = ex.result();
-        host.setStatus(r.failed() || !r.ok() ? tr("status.http.failed", r.status()) : tr("status.http.done", label));
+        if (!exchanges.isEmpty()) {
+            host.setStatus(all ? HttpStatusText.finishedAll(exchanges) : HttpStatusText.finished(exchanges.get(0)));
+        }
     }
 
     private void copyAsCurl(HttpExchange ex) {
@@ -468,11 +588,11 @@ final class HttpClientCoordinator {
     private void openResponseInTab(HttpExchange ex) {
         HttpResult r = ex.result();
         if (r.failed()) {
-            host.setStatus(tr("status.http.noResponse"));
+            host.setStatus(tr("status.http.noResponseSelected"));
             return;
         }
         if (r.binary()) {
-            host.setStatus(tr("status.http.binaryResponse")); // no text form — ">> file" keeps the bytes
+            host.setStatus(tr("status.http.binaryResponse")); // no text form — Save keeps the bytes
             return;
         }
         EditorBuffer buffer = new EditorBuffer();
@@ -481,33 +601,80 @@ final class HttpClientCoordinator {
         buffer.setContent(r.body()); // the body as received; the viewer's pretty-printing is display-only
     }
 
-    /** Save-response, bound to the owning buffer's own panel when it is created. */
+    /**
+     * Save response: the body exactly as received (the default — the bytes, so an image or an archive is the
+     * real file), or the whole response with its status line and headers as text.
+     */
     private void saveResponse(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
-        String text = p == null ? null : p.getResponseText();
-        if (text == null || text.isEmpty()) {
-            host.setStatus(tr("status.http.noResponse"));
+        HttpExchange ex = p == null ? null : p.getSelectedExchange();
+        if (ex == null || ex.result().failed()) {
+            host.setStatus(tr("status.http.noResponseSelected"));
             return;
         }
+        HttpResult r = ex.result();
+        String ext = HttpResponseFormat.extensionFor(r.contentType());
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveResponse.title"));
-        chooser.setInitialFileName("response.txt");
+        FileChooser.ExtensionFilter bodyOnly =
+                new FileChooser.ExtensionFilter(tr("dialog.saveResponse.body"), "*" + (ext.isEmpty() ? ".txt" : ext));
+        FileChooser.ExtensionFilter report =
+                new FileChooser.ExtensionFilter(tr("dialog.saveResponse.withHeaders"), "*.txt");
+        chooser.getExtensionFilters().setAll(bodyOnly, report);
+        chooser.setSelectedExtensionFilter(bodyOnly);
+        chooser.setInitialFileName(saveName(ex.url(), ext));
+        Path dir = buffer.getPath() == null
+                ? null
+                : buffer.getPath().toAbsolutePath().getParent();
+        if (dir != null && Files.isDirectory(dir)) {
+            chooser.setInitialDirectory(dir.toFile());
+        }
         File chosen = chooser.showSaveDialog(host.window());
         if (chosen == null) {
             return;
         }
         try {
             // Staged: the Save dialog may have confirmed replacing a file, which a failed write must not empty.
-            com.editora.io.StagedExport.writeString(chosen.toPath(), text);
+            if (chooser.getSelectedExtensionFilter() == report) {
+                com.editora.io.StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
+            } else {
+                byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
+                        ? r.rawBody()
+                        : r.body().getBytes(StandardCharsets.UTF_8);
+                com.editora.io.StagedExport.write(chosen.toPath(), bytes);
+            }
             host.setStatus(tr("status.http.saved", chosen.toPath().getFileName()));
         } catch (IOException e) {
             host.setStatus(tr("status.http.saveFailed", e.getMessage()));
         }
     }
 
+    /**
+     * The file name Save offers: the URL's last path segment when it already names a file ({@code logo.png}),
+     * else {@code response} plus the extension of the content type ({@code response.json}). Pure.
+     */
+    static String saveName(String url, String ext) {
+        String u = url == null ? "" : url;
+        int cut = u.length();
+        for (char c : new char[] {'?', '#'}) {
+            int at = u.indexOf(c);
+            if (at >= 0) {
+                cut = Math.min(cut, at);
+            }
+        }
+        String path = u.substring(0, cut);
+        int scheme = path.indexOf("://");
+        int slash = path.lastIndexOf('/');
+        String last = slash < 0 || slash <= scheme + 2 ? "" : path.substring(slash + 1);
+        if (last.matches("[\\w-]+(\\.[\\w-]+)*\\.[A-Za-z0-9]{1,8}")) {
+            return last;
+        }
+        return "response" + (ext == null || ext.isEmpty() ? ".txt" : ext);
+    }
+
     /** The resolved variable map for a {@code .http} buffer: env vars overlaid with the file's {@code @var}s. */
     private Map<String, String> variables(EditorBuffer buffer, String text) {
-        Path dir = buffer.getPath().toAbsolutePath().getParent();
+        Path dir = envDir(buffer);
         // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
         // against the environment selected for the file being run.
         HttpClientPanel p = panelFor(buffer);
@@ -529,27 +696,98 @@ final class HttpClientCoordinator {
         }
     }
 
-    /** The environment names declared in the {@code .http} file's directory (for the picker). */
-    private List<String> environmentNames(Path dir) {
+    /** The folder whose env files apply to {@code buffer}'s file (its own, or the nearest one above it). */
+    private Path envDir(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        Path dir = file == null ? null : file.toAbsolutePath().getParent();
+        return dir == null ? null : HttpEnvFiles.envDir(dir, ops.projectRoot());
+    }
+
+    /** The environment names declared in {@code dir}'s env files, public first, then private-only ones. */
+    private static List<String> environmentNames(Path dir) {
         if (dir == null) {
             return List.of();
         }
-        Path env = dir.resolve("http-client.env.json");
-        if (!Files.exists(env)) {
+        return HttpEnvFiles.mergedNames(
+                namesIn(dir.resolve(HttpEnvFiles.PUBLIC)), namesIn(dir.resolve(HttpEnvFiles.PRIVATE)));
+    }
+
+    private static List<String> namesIn(Path file) {
+        if (!Files.exists(file)) {
             return List.of();
         }
         try {
-            return HttpEnv.environmentNames(Files.readString(env));
+            return HttpEnv.environmentNames(Files.readString(file));
         } catch (IOException e) {
             return List.of();
         }
+    }
+
+    // --- saved history ---------------------------------------------------------------------------------
+
+    /** Reads {@code buffer}'s saved environment + responses off the FX thread, then puts them in its panel. */
+    private void loadSaved(EditorBuffer buffer, HttpClientPanel panel) {
+        HttpResponseHistory store = ops.historyStore();
+        Path file = buffer.getPath();
+        if (store == null || file == null) {
+            return;
+        }
+        LOADER.execute(() -> {
+            HttpResponseHistory.Stored stored;
+            try {
+                stored = store.load(file);
+            } catch (RuntimeException e) {
+                return; // an unreadable history is the same as none
+            }
+            List<HttpHistoryEntry> entries = new ArrayList<>();
+            for (HttpResponseHistory.Response r : stored.responses) {
+                try {
+                    entries.add(HttpHistoryEntry.fromStored(r));
+                } catch (RuntimeException ignored) {
+                    // skip a damaged entry
+                }
+            }
+            String env = stored.environment;
+            javafx.application.Platform.runLater(() -> {
+                if (panels.get(buffer) != panel) {
+                    return; // closed, or the feature was switched off, while reading
+                }
+                if (!stored.file.isEmpty()) {
+                    environments.putIfAbsent(buffer, env); // a file never saved keeps the window's old choice
+                }
+                refreshEnvironments(buffer);
+                panel.restore(entries);
+            });
+        });
+    }
+
+    /** Saves {@code buffer}'s environment choice and its last responses (never {@code @no-log} ones). */
+    private void persist(EditorBuffer buffer) {
+        HttpResponseHistory store = ops.historyStore();
+        HttpClientPanel p = panelFor(buffer);
+        Path file = buffer.getPath();
+        if (store == null || p == null || file == null) {
+            return;
+        }
+        HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
+        String env = environments.get(buffer);
+        state.environment = env == null ? p.getSelectedEnvironment() : env;
+        for (HttpHistoryEntry e : p.history()) {
+            if (state.responses.size() >= HttpResponseHistory.MAX_RESPONSES) {
+                break;
+            }
+            if (!e.noLog()) {
+                state.responses.add(e.toStored());
+            }
+        }
+        store.save(file, state);
     }
 
     private void ifHttp(Runnable action) {
         if (isEnabled()) {
             action.run();
         } else {
-            host.setStatus(tr("statusbar.tip.httpDisabled"));
+            host.setStatus(disabledMessage());
         }
     }
 

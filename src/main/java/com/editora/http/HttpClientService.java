@@ -160,6 +160,19 @@ public final class HttpClientService {
             Map<String, String> vars,
             Path baseDir,
             Consumer<List<HttpExchange>> onResult) {
+        return runAll(requests, vars, baseDir, null, onResult);
+    }
+
+    /**
+     * As {@link #runAll(List, Map, Path, Consumer)}, telling {@code onStart} (on the FX thread, may be null)
+     * the index of each request as it starts, so the viewer can show "2 of 5" while the run is in flight.
+     */
+    public Handle runAll(
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            java.util.function.IntConsumer onStart,
+            Consumer<List<HttpExchange>> onResult) {
         Handle handle = new Handle();
         active.add(handle);
         exec.submit(() -> {
@@ -168,6 +181,10 @@ public final class HttpClientService {
                 CookieManager cookies = new CookieManager();
                 CapturedResponses captured = new CapturedResponses();
                 for (HttpFile.Parsed req : requests) {
+                    if (onStart != null) {
+                        int index = out.size();
+                        Platform.runLater(() -> onStart.accept(index));
+                    }
                     HttpExchange ex = execute(handle, req, vars, baseDir, captured, cookies);
                     captured.put(req.name(), ex.result());
                     out.add(ex);

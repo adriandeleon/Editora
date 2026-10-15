@@ -3690,6 +3690,15 @@
 .csv-grid .csv-grid-bar { -fx-padding: 0 2 4 2; -fx-alignment: center-left; }
 .csv-grid .csv-grid-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
 .csv-grid-table { -fx-border-color: -color-border-muted; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4; }
+
+/* HTTP Client response view: the status line is coloured by outcome (2xx green, 3xx accent, 4xx amber,
+   5xx and failures red), so a glance says how the request went. */
+.http-panel .http-status { -fx-font-weight: bold; }
+.http-panel .http-status.http-status-ok { -fx-text-fill: -state-green; }
+.http-panel .http-status.http-status-redirect { -fx-text-fill: -state-accent; }
+.http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; }
+.http-panel .http-status.http-status-server-error,
+.http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; }
 /* Bold column headers (double-click renames when the grid is editable). */
 .csv-grid-table .column-header .csv-grid-col-header { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; -fx-padding: 0 2 0 2; }
 .csv-grid-table .column-header-background { -fx-background-color: -color-bg-subtle; }

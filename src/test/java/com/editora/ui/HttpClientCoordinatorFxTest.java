@@ -70,7 +70,6 @@ class HttpClientCoordinatorFxTest {
     private static final class FakeOps implements HttpClientCoordinator.WindowOps {
         int openTab;
         int updateRunGating;
-        String persistedEnv;
 
         @Override
         public void openTab(EditorBuffer buffer) {
@@ -85,11 +84,6 @@ class HttpClientCoordinatorFxTest {
         @Override
         public String savedEnvironment() {
             return "";
-        }
-
-        @Override
-        public void persistEnvironment(String env) {
-            persistedEnv = env;
         }
     }
 
@@ -348,8 +342,8 @@ class HttpClientCoordinatorFxTest {
             });
             assertTrue(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)), "the request is in flight");
             HttpClientPanel panel = FxTestSupport.callOnFx(() -> c.panelForTest(b));
-            javafx.scene.control.Button cancel = FxTestSupport.field(panel, "cancelButton");
-            assertFalse(FxTestSupport.callOnFx(cancel::isDisabled));
+            javafx.scene.control.Button cancel = FxTestSupport.field(panel, "runButton");
+            assertTrue(FxTestSupport.callOnFx(panel::isRunning), "the Run button is Cancel while it runs");
 
             java.util.Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running =
                     FxTestSupport.field(c, "running");
@@ -358,7 +352,8 @@ class HttpClientCoordinatorFxTest {
             FxTestSupport.runOnFx(c::cancelActiveRequest);
             assertEquals(tr("status.http.cancelled"), host.lastStatus);
             assertFalse(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)));
-            assertTrue(FxTestSupport.callOnFx(cancel::isDisabled));
+            assertFalse(FxTestSupport.callOnFx(panel::isRunning));
+            assertEquals(tr("httppanel.run"), FxTestSupport.callOnFx(cancel::getText));
             assertTrue(run.isCancelled());
             run.delivered().get(30, java.util.concurrent.TimeUnit.SECONDS); // the late callback has now run
             assertEquals(tr("status.http.cancelled"), host.lastStatus, "…and did not report a failed request");

@@ -5,6 +5,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 
 import com.editora.http.HttpExchange;
@@ -15,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -124,23 +125,169 @@ class HttpClientPanelFxTest {
     }
 
     @Test
-    void cancelIsEnabledOnlyWhileARequestRuns() throws Exception {
+    void theRunButtonTurnsIntoCancelOnlyWhileARequestRuns() throws Exception {
         HttpClientPanel p = panel();
-        Button cancel = FxTestSupport.field(p, "cancelButton");
+        Button run = FxTestSupport.field(p, "runButton");
         int[] cancels = {0};
-        FxTestSupport.runOnFx(() -> p.setOnCancel(() -> cancels[0]++));
-        assertTrue(FxTestSupport.callOnFx(cancel::isDisabled), "nothing to cancel yet");
+        int[] runs = {0};
+        FxTestSupport.runOnFx(() -> {
+            p.setOnCancel(() -> cancels[0]++);
+            p.setOnRun(e -> runs[0]++);
+        });
+        assertEquals(tr("httppanel.run"), FxTestSupport.callOnFx(run::getText), "nothing to cancel yet");
+        FxTestSupport.runOnFx(run::fire);
+        assertEquals(1, runs[0], "Run runs the request again");
 
         FxTestSupport.runOnFx(() -> p.started("GET http://x.test/"));
-        assertFalse(FxTestSupport.callOnFx(cancel::isDisabled));
-        FxTestSupport.runOnFx(cancel::fire);
+        assertEquals(tr("httppanel.cancel"), FxTestSupport.callOnFx(run::getText));
+        FxTestSupport.runOnFx(run::fire);
         assertEquals(1, cancels[0]);
 
         FxTestSupport.runOnFx(p::cancelled);
-        assertTrue(FxTestSupport.callOnFx(cancel::isDisabled));
+        assertEquals(tr("httppanel.run"), FxTestSupport.callOnFx(run::getText));
 
         FxTestSupport.runOnFx(() -> p.started("GET http://x.test/"));
         show(p, exchange("done", ok("ok", "text/plain", List.of())));
-        assertTrue(FxTestSupport.callOnFx(cancel::isDisabled), "a finished run can no longer be cancelled");
+        assertEquals(
+                tr("httppanel.run"), FxTestSupport.callOnFx(run::getText), "a finished run can no longer be cancelled");
+    }
+
+    @Test
+    void theStatusLineSaysTheStatusTimeAndSizeAndTheHeadersBoxOnlyTheHeaders() throws Exception {
+        HttpClientPanel p = panel();
+        HttpResult r = new HttpResult(
+                404, List.<String[]>of(new String[] {"content-type", "text/plain"}), "gone", "text/plain", 12, 4, null);
+        show(p, exchange("missing", r));
+        assertEquals("404 Not Found  ·  12 ms  ·  4 B", FxTestSupport.callOnFx(p::statusForTest));
+        Label status = FxTestSupport.field(p, "status");
+        assertTrue(FxTestSupport.callOnFx(() -> status.getStyleClass().contains(HttpStatusText.CLIENT_ERROR)));
+        String head = FxTestSupport.callOnFx(() -> ((TextArea) FxTestSupport.field(p, "headersArea")).getText());
+        assertEquals("HTTP 404 Not Found\ncontent-type: text/plain\n", head, "no summary line under the headers");
+    }
+
+    @Test
+    void whileARequestRunsTheOldResponseIsClearedAndTheElapsedTimeShown() throws Exception {
+        HttpClientPanel p = panel();
+        show(p, exchange("old", ok("old body", "text/plain", List.of())));
+        FxTestSupport.runOnFx(() -> p.started("GET http://x.test/slow"));
+        assertEquals("", FxTestSupport.callOnFx(p::shownBodyForTest), "the previous body is not left under Running");
+        String text = FxTestSupport.callOnFx(p::statusForTest);
+        assertTrue(text.contains("GET http://x.test/slow") && text.contains(" s"), text);
+        FxTestSupport.runOnFx(() -> p.progress(1, 5, "GET http://x.test/b"));
+        assertTrue(FxTestSupport.callOnFx(p::statusForTest)
+                .contains(tr("httppanel.runningOf", 2, 5, "GET http://x.test/b")));
+        FxTestSupport.runOnFx(p::cancelled);
+        assertEquals(
+                "old body",
+                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()),
+                "cancelling shows the last response again");
+    }
+
+    @Test
+    void theRequestAsSentIsShownWithItsHeadersAndBody() {
+        HttpExchange ex = new HttpExchange(
+                "POST http://x.test/a",
+                "POST",
+                "http://x.test/a?u=alice",
+                List.<String[]>of(new String[] {"X-Token", "t-dev"}),
+                "{\"a\":1}",
+                ok("", "text/plain", List.of()));
+        assertEquals("POST http://x.test/a?u=alice\nX-Token: t-dev\n\n{\"a\":1}", HttpClientPanel.requestText(ex));
+    }
+
+    @Test
+    void aRunAllLandsOnItsFirstFailure() throws Exception {
+        HttpClientPanel p = panel();
+        HttpExchange good = exchange("good", ok("fine", "text/plain", List.of()));
+        HttpExchange bad = exchange("bad", HttpResult.failure("Connection refused", List.of()));
+        CompletableFuture<Void> render = FxTestSupport.callOnFx(() -> {
+            p.showExchanges(List.of(good, bad, good));
+            return p.bodyRenderForTest();
+        });
+        render.get(30, TimeUnit.SECONDS);
+        assertEquals("bad", FxTestSupport.callOnFx(() -> p.getSelectedExchange().label()));
+        assertEquals(tr("httppanel.requestFailed"), FxTestSupport.callOnFx(p::statusForTest));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "saveButton")).isDisabled()),
+                "a request that failed has nothing to save");
+    }
+
+    @Test
+    void anImageResponseIsShownAsAPicture() throws Exception {
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(4, 3, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", png);
+        HttpClientPanel p = panel();
+        show(
+                p,
+                exchange(
+                        "img",
+                        HttpResult.ofBytes(200, List.of(), png.toByteArray(), "image/png", 2, List.of(), false)));
+        assertTrue(FxTestSupport.callOnFx(p::showsImageForTest));
+    }
+
+    @Test
+    void oneLineXmlIsIndentedInTheViewOnly() throws Exception {
+        HttpClientPanel p = panel();
+        String raw = "<a><b id=\"1\">x</b><c/></a>";
+        String shown = show(p, exchange("xml", ok(raw, "application/xml", List.of())));
+        assertEquals("<a>\n  <b id=\"1\">x</b>\n  <c/>\n</a>", shown);
+        assertEquals(
+                raw,
+                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()));
+    }
+
+    @Test
+    void anEntryWhoseBodyWasDroppedSaysSoAndKeepsItsStatus() throws Exception {
+        HttpClientPanel p = panel();
+        HttpHistoryEntry dropped = HttpHistoryEntry.of(exchange("big", ok("x".repeat(5000), "text/plain", List.of())))
+                .withoutBody();
+        CompletableFuture<Void> render = FxTestSupport.callOnFx(() -> {
+            p.restore(List.of(dropped));
+            return p.bodyRenderForTest();
+        });
+        render.get(30, TimeUnit.SECONDS);
+        assertEquals(
+                com.editora.i18n.Messages.tr("httppanel.bodyDropped", "4.9 KB"),
+                FxTestSupport.callOnFx(p::shownBodyForTest));
+        assertTrue(FxTestSupport.callOnFx(p::statusForTest).startsWith("200 OK"));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "saveButton")).isDisabled()),
+                "a dropped body cannot be saved");
+    }
+
+    @Test
+    void escapeGoesBackToTheEditorAndTabLeavesTheResponseBody() throws Exception {
+        HttpClientPanel p = panel();
+        int[] escapes = {0};
+        javafx.scene.Node body = FxTestSupport.field(p, "bodyArea");
+        Button run = FxTestSupport.field(p, "runButton");
+        javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
+            p.setOnEscape(() -> escapes[0]++);
+            javafx.stage.Stage st = new javafx.stage.Stage();
+            st.setScene(new javafx.scene.Scene(p, 800, 600));
+            st.show();
+            body.requestFocus();
+            return st;
+        });
+        try {
+            FxTestSupport.runOnFx(
+                    () -> javafx.event.Event.fireEvent(body, key(javafx.scene.input.KeyCode.ESCAPE, false)));
+            assertEquals(1, escapes[0]);
+            FxTestSupport.runOnFx(() -> javafx.event.Event.fireEvent(body, key(javafx.scene.input.KeyCode.TAB, false)));
+            assertSame(run, FxTestSupport.callOnFx(() -> stage.getScene().getFocusOwner()), "Tab moves on");
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    private static javafx.scene.input.KeyEvent key(javafx.scene.input.KeyCode code, boolean shift) {
+        return new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", code, shift, false, false, false);
+    }
+
+    private static String tr(String key, Object... args) {
+        return com.editora.i18n.Messages.tr(key, args);
     }
 }

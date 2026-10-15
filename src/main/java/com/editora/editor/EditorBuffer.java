@@ -622,13 +622,17 @@ public class EditorBuffer implements TabContent {
     /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
      *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
     private boolean shellRunEnabled;
-    /** Whether the HTTP Client feature is enabled (gated by {@code Settings.httpClientSupport} + ijhttp
-     *  detection) — a {@code .http} file then shows a Run glyph on every request line. */
+    /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
+     *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
     private boolean httpFeatureEnabled;
     /** The 0-based start lines of each request in a {@code .http} buffer (each gets a Run glyph). */
     private java.util.List<Integer> httpRequestLines = java.util.List.of();
     /** Fired with the clicked request's start line when a {@code .http} Run glyph is clicked. */
     private java.util.function.IntConsumer httpRunHandler = i -> {};
+    /** Runs every request of this {@code .http} buffer (the editor menu's "Run All Requests"). */
+    private Runnable httpRunAllHandler = () -> {};
+    /** Hover text for a {@code .http} request ▶ (built by the controller, so it can name the current chord). */
+    private java.util.function.Supplier<String> httpRunTooltip = () -> null;
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -1839,7 +1843,16 @@ public class EditorBuffer implements TabContent {
                 debugTest.setOnAction(ev -> testDebugHandler.accept(testTarget));
                 items.addAll(java.util.List.of(runTests, debugTest));
                 items.add(new SeparatorMenuItem());
-            } else if (runnable && runHandler != null) {
+            } else if (httpFeatureEnabled && isHttpFile() && runnable) {
+                // A .http file runs requests, never "Run File" (which launched `java requests.http`).
+                MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
+                runRequest.setGraphic(FoldManager.runGlyph());
+                runRequest.setOnAction(ev -> httpRunHandler.accept(at.line()));
+                MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
+                runAll.setOnAction(ev -> httpRunAllHandler.run());
+                items.addAll(java.util.List.of(runRequest, runAll));
+                items.add(new SeparatorMenuItem());
+            } else if (runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
@@ -3473,8 +3486,8 @@ public class EditorBuffer implements TabContent {
         return "http".equals(language);
     }
 
-    /** Enables/disables the HTTP Client Run glyphs for a {@code .http} buffer (gated by the feature +
-     *  ijhttp detection). */
+    /** Enables/disables the HTTP Client Run glyphs for a {@code .http} buffer (gated by the feature, Simple UI
+     *  mode and a local file). */
     public void setHttpEnabled(boolean enabled) {
         if (enabled != httpFeatureEnabled) {
             httpFeatureEnabled = enabled;
@@ -3485,6 +3498,16 @@ public class EditorBuffer implements TabContent {
     /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
     public void setHttpRunHandler(java.util.function.IntConsumer handler) {
         this.httpRunHandler = handler == null ? i -> {} : handler;
+    }
+
+    /** Injects "run every request in this file" (the {@code .http} editor menu's Run All Requests). */
+    public void setHttpRunAllHandler(Runnable handler) {
+        this.httpRunAllHandler = handler == null ? () -> {} : handler;
+    }
+
+    /** Injects the hover text of a {@code .http} request ▶ (evaluated on hover; null = no tooltip). */
+    public void setHttpRunTooltip(java.util.function.Supplier<String> tooltip) {
+        this.httpRunTooltip = tooltip == null ? () -> null : tooltip;
     }
 
     /** True for a GNU Makefile buffer — each rule target line then shows a Run glyph ({@code make <target>}),
@@ -3623,7 +3646,10 @@ public class EditorBuffer implements TabContent {
         }
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
-            return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
+            if (httpFeatureEnabled && isHttpFile() && httpRequestLines.contains(line)) {
+                return httpRunTooltip.get(); // "Run request (chord)": the ▶ is the request's run button
+            }
+            return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
         return t.methodName() == null
                 ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))

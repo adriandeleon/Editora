@@ -204,5 +204,6 @@
   "C-M-b": "nav.backwardSexp",
   "C-M-a": "nav.beginningOfDefun",
   "C-M-e": "nav.endOfDefun",
-  "M-r": "nav.moveToWindowLine"
+  "M-r": "nav.moveToWindowLine",
+  "C-c C-c": "http.runRequest"
 }

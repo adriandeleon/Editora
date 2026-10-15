@@ -1,0 +1,70 @@
+package com.editora.ui;
+
+import java.util.List;
+
+import com.editora.http.HttpExchange;
+import com.editora.http.HttpResult;
+import org.junit.jupiter.api.Test;
+
+import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+/** The response view's status line and the status-bar words — no more "exit 404" (C3, C4, B15). */
+class HttpStatusTextTest {
+
+    private static HttpExchange ex(HttpResult r) {
+        return new HttpExchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
+    }
+
+    private static HttpResult status(int code) {
+        return new HttpResult(code, List.of(), "", "text/plain", 32, 44, null);
+    }
+
+    @Test
+    void aStatusComesWithItsReasonPhrase() {
+        assertEquals("200 OK", HttpStatusText.statusWithReason(200));
+        assertEquals("404 Not Found", HttpStatusText.statusWithReason(404));
+        assertEquals("503 Service Unavailable", HttpStatusText.statusWithReason(503));
+        assertEquals("599", HttpStatusText.statusWithReason(599), "an unknown code stands alone");
+    }
+
+    @Test
+    void theSummaryHasStatusTimeAndSize() {
+        assertEquals(tr("httppanel.summary", "201 Created", "32", "44 B"), HttpStatusText.summary(status(201)));
+        assertEquals(tr("httppanel.requestFailed"), HttpStatusText.summary(HttpResult.failure("refused", List.of())));
+    }
+
+    @Test
+    void eachOutcomeHasItsColour() {
+        assertEquals(HttpStatusText.OK, HttpStatusText.styleClass(status(204)));
+        assertEquals(HttpStatusText.REDIRECT, HttpStatusText.styleClass(status(304)));
+        assertEquals(HttpStatusText.CLIENT_ERROR, HttpStatusText.styleClass(status(404)));
+        assertEquals(HttpStatusText.SERVER_ERROR, HttpStatusText.styleClass(status(500)));
+        assertEquals(HttpStatusText.FAILED, HttpStatusText.styleClass(HttpResult.failure("x", List.of())));
+    }
+
+    @Test
+    void theStatusBarNamesTheRequestAndHowItWent() {
+        assertEquals(
+                tr("status.http.finished", "GET http://x.test/a", "200 OK"), HttpStatusText.finished(ex(status(200))));
+        assertEquals(
+                tr("status.http.failedStatus", "GET http://x.test/a", "404 Not Found"),
+                HttpStatusText.finished(ex(status(404))));
+        assertEquals(
+                tr("status.http.failedError", "GET http://x.test/a", "Connection refused"),
+                HttpStatusText.finished(ex(HttpResult.failure("Connection refused\nmore detail", List.of()))),
+                "only the first line of the error");
+    }
+
+    @Test
+    void aRunAllCountsTheFailuresNotTheRequests() {
+        HttpExchange ok = ex(status(200));
+        HttpExchange bad = ex(status(404));
+        HttpExchange refused = ex(HttpResult.failure("refused", List.of()));
+        assertEquals(tr("status.http.allDone", 3), HttpStatusText.finishedAll(List.of(ok, ok, ok)));
+        assertEquals(tr("status.http.someFailed", 2, 5), HttpStatusText.finishedAll(List.of(ok, bad, ok, refused, ok)));
+        assertEquals(1, HttpStatusText.firstToShow(List.of(ok, bad, refused)), "the first failure is shown");
+        assertEquals(0, HttpStatusText.firstToShow(List.of(ok, ok)));
+        assertEquals(-1, HttpStatusText.firstToShow(List.of()));
+    }
+}
