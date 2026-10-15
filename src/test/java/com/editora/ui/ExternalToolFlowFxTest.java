@@ -163,7 +163,8 @@ class ExternalToolFlowFxTest {
         FxTestSupport.runOnFx(() -> registry.run(id));
         assertEquals(tr("status.externalTool.running", "Java Version"), host.await());
         assertEquals(tr("status.externalTool.done", "Java Version"), host.await());
-        assertEquals(1, ops.consoleOpened);
+        // A console tool opens the console at launch (it spins while the tool runs) and again with the result.
+        assertEquals(2, ops.consoleOpened);
         String console = consoleText();
         assertTrue(console.contains("version"), console);
 
@@ -195,7 +196,7 @@ class ExternalToolFlowFxTest {
         FxTestSupport.runOnFx(() -> registry.run("externalTool.rerunLast"));
         host.await();
         assertEquals(tr("status.externalTool.done", "Java Version"), host.await());
-        assertEquals(4, ops.consoleOpened);
+        assertEquals(8, ops.consoleOpened);
 
         // Clearing the console is a command too.
         FxTestSupport.runOnFx(() -> registry.run("externalTool.clearOutput"));
