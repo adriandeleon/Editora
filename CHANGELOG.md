@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition
   and the rest work as for local files. Renames and other cross-file edits create, move and delete files on the
-  host. A file outside the project on the same host (a library source reached by Go to Definition) is served by
+  host, and checking such an edit before it lands no longer pauses the window for a round trip per file. A file outside the project on the same host (a library source reached by Go to Definition) is served by
   the project's server. Losing the connection stops the servers without reporting a crash, and reconnecting
   starts them again. Java works too: jdtls runs on the host with the host's JDKs and keeps its index in
   `~/.cache/editora` there (the host-consent question now says so).
