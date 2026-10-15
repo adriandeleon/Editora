@@ -61,6 +61,9 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     /** Every command line the server was asked to run (real-shell mode), in order. */
     private final List<String> commands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    /** A command line containing this is never run: the connection drops as it arrives (see {@link #dropConnectionOnCommand}). */
+    private final AtomicReference<String> dropOnCommand = new AtomicReference<>();
+
     /** The account's home directory on the host (real-shell mode): commands run with {@code HOME} here. */
     private final Path home;
 
@@ -80,6 +83,12 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
             server.setForwardingFilter(org.apache.sshd.server.forward.AcceptAllForwardingFilter.INSTANCE);
             server.setCommandFactory((channel, command) -> {
                 commands.add(command);
+                String needle = dropOnCommand.get();
+                if (needle != null && command.contains(needle) && dropOnCommand.compareAndSet(needle, null)) {
+                    // Off the server's own thread: closing the session from inside its command factory is not safe.
+                    Thread.ofVirtual().start(this::dropConnection);
+                    return new ShellCommand("sleep 30", home);
+                }
                 return new ShellCommand(command, home);
             });
         } else {
@@ -191,6 +200,15 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         for (var session : server.getActiveSessions()) {
             session.close(true);
         }
+    }
+
+    /**
+     * The next command whose line contains {@code needle} is not run: the connection drops as it arrives, so
+     * the client loses it while still starting the command — the moment a network failure can otherwise only
+     * hit by chance.
+     */
+    public void dropConnectionOnCommand(String needle) {
+        dropOnCommand.set(needle);
     }
 
     public Path reconnect() throws Exception {
