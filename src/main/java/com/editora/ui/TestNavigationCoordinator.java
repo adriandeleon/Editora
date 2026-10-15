@@ -180,12 +180,12 @@ final class TestNavigationCoordinator {
         return normalized.equals(relPath) || normalized.endsWith("/" + relPath);
     }
 
-    /** The folder source lookups search: this window's project, else the active project. */
+    /**
+     * The folder source lookups search: this window's project. It used to fall back to the {@code ProjectManager}'s
+     * active project (the window opened last), so a window without a project resolved a trace into another one's.
+     */
     private Path projectRoot() {
         Project project = host.windowProject();
-        if (project == null && host.projects() != null) {
-            project = host.projects().active();
-        }
         return project == null ? null : project.rootPath();
     }
 
@@ -232,9 +232,7 @@ final class TestNavigationCoordinator {
             // which don't exist locally — try progressively shorter repo-relative suffixes under the project
             // root so a GitHub Actions failure frame still jumps to the local file. Exact paths are tried
             // first (candidate 0), so local behaviour is unchanged.
-            Project activeProject =
-                    host.projects() == null ? null : host.projects().active();
-            Path root = activeProject == null ? null : activeProject.rootPath();
+            Path root = projectRoot(); // this window's project, not the window opened last
             if (root != null) {
                 for (String candidate : com.editora.run.RunnerPaths.candidates(fileToken)) {
                     Path c = root.resolve(candidate);

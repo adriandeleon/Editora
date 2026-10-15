@@ -3049,6 +3049,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public Project windowProject() {
+            return enabledWindowProject();
+        }
+
+        @Override
         public WindowManager windowManager() {
             return windowManager;
         }
@@ -3576,6 +3581,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public ProjectManager projects() {
             return projects;
+        }
+
+        @Override
+        public Project windowProject() {
+            return enabledWindowProject();
         }
 
         @Override
@@ -6264,9 +6274,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public Path projectRoot() {
-                    Project active =
-                            (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-                    return active == null ? null : active.rootPath();
+                    return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
                 }
 
                 @Override
@@ -8753,7 +8761,13 @@ public class MainController implements com.editora.mcp.McpBridge {
      * {@code projectRoot()} / {@code activeProjectRoot()} reads {@code windowProject} for that reason.
      */
     private Path windowProjectRoot() {
-        return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
+        Project project = enabledWindowProject();
+        return project == null ? null : project.rootPath();
+    }
+
+    /** This window's project, or null when it has none or Projects are switched off. */
+    private Project enabledWindowProject() {
+        return windowProject != null && projectsEnabled() ? windowProject : null;
     }
 
     // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---

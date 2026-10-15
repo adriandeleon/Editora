@@ -18,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * What a project window does for "the project" is <em>its</em> project, not the {@code ProjectManager}'s active
  * one: that is the window opened last, and focusing a window does not change it. Each case below used the active
- * project, so in project A's window, after project B's window had been opened, it acted on project B.
+ * project, so in project A's window, after project B's window had been opened, it acted on project B. (The Git,
+ * snippet and AI agent readers have their own tests: GitWindowProjectRootFxTest and the like.)
  */
 @Tag("fx")
 class WindowProjectReadersFxTest {
@@ -93,6 +94,22 @@ class WindowProjectReadersFxTest {
                     return active == null || !inB.equals(active.getPath());
                 }),
                 "not opened in project A's window");
+    }
+
+    @Test
+    void templatesTheFileFinderTestNavigationAndHttpUseThisWindowsProject() throws Exception {
+        assertEquals("projA", FxTestSupport.callOnFx(windowA.templateActions::projectName), "${projectName}");
+        assertEquals(
+                a, FxTestSupport.callOnFx(windowA.templateActions::defaultNewDir), "a new file, with no file open");
+        assertEquals(
+                a, FxTestSupport.callOnFx(windowA.navigation::finderStartDir), "the file finder, with no file open");
+        assertEquals(
+                a,
+                FxTestSupport.callOnFx(
+                        () -> FxTestSupport.call(windowA.testNavigation, "projectRoot", new Class<?>[] {})),
+                "where a stack trace's or a CI log's files are looked up");
+        HttpClientCoordinator.WindowOps http = FxTestSupport.field(windowA.httpClient, "ops");
+        assertEquals(a, FxTestSupport.callOnFx(http::projectRoot), "where http-client.env.json is looked up");
     }
 
     private static EditorBuffer awaitActive(MainController window, java.util.function.Predicate<Path> wanted)
