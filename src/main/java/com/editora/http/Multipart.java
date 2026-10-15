@@ -14,20 +14,28 @@ import java.util.function.Function;
  * Pure {@code multipart/form-data} body builder for a request authored in a {@code .http} file. The body is
  * split on {@code --boundary} lines into {@link Part}s, each with its own headers and either inline content
  * or a {@code < ./file} reference; {@link #build} assembles the wire bytes (CRLF framing), substituting
- * {@code {{vars}}} in inline parts and slurping file parts from the request file's directory. The split is
+ * {@code {{vars}}} in inline parts, part headers and file paths (and in {@code <@ ./file} parts), and slurping
+ * file parts from the request file's directory. The split is
  * unit-tested; {@link #build} is verified on its byte output.
  */
 public final class Multipart {
 
     /** One multipart section: its {@code headers}, the {@code inlineBody} (when authored inline), or a
-     *  {@code filePath} (relative to the request file) to slurp instead. */
-    public record Part(Map<String, String> headers, String inlineBody, String filePath) {}
+     *  {@code filePath} (relative to the request file) to slurp instead — with its {@code {{vars}}}
+     *  substituted when {@code substituteFile} (a {@code <@ ./file} part). */
+    public record Part(Map<String, String> headers, String inlineBody, String filePath, boolean substituteFile) {
+
+        public Part(Map<String, String> headers, String inlineBody, String filePath) {
+            this(headers, inlineBody, filePath, false);
+        }
+    }
 
     private Multipart() {}
 
     /** True for a multipart content type (so the executor builds the body via {@link #build}). */
     public static boolean isMultipart(String contentType) {
-        return contentType != null && contentType.toLowerCase().contains("multipart/");
+        return contentType != null
+                && contentType.toLowerCase(java.util.Locale.ROOT).contains("multipart/");
     }
 
     /** Extracts the {@code boundary=…} token from a multipart Content-Type, or {@code ""} if absent. */
@@ -35,19 +43,17 @@ public final class Multipart {
         if (contentType == null) {
             return "";
         }
-        int b = contentType.toLowerCase().indexOf("boundary=");
+        int b = contentType.toLowerCase(java.util.Locale.ROOT).indexOf("boundary=");
         if (b < 0) {
             return "";
         }
         String v = contentType.substring(b + "boundary=".length()).trim();
+        if (v.startsWith("\"")) {
+            int close = v.indexOf('"', 1);
+            return close > 0 ? v.substring(1, close) : v.substring(1); // a quoted boundary may hold a ';'
+        }
         int semi = v.indexOf(';');
-        if (semi >= 0) {
-            v = v.substring(0, semi).trim();
-        }
-        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
-            v = v.substring(1, v.length() - 1);
-        }
-        return v;
+        return semi >= 0 ? v.substring(0, semi).trim() : v;
     }
 
     /** Splits a multipart {@code body} on {@code --boundary} lines into its parts. */
@@ -94,13 +100,18 @@ public final class Multipart {
                         line.substring(colon + 1).strip());
             }
         }
+        // The blank lines between a part's content and the next boundary are layout, not part of the value.
+        int end = lines.size();
+        while (end > i && lines.get(end - 1).strip().isEmpty()) {
+            end--;
+        }
         StringBuilder content = new StringBuilder();
-        String filePath = null;
-        for (; i < lines.size(); i++) {
+        HttpFile.BodyRef file = null;
+        for (; i < end; i++) {
             String t = lines.get(i).stripLeading();
             // Same rule as a request body: "< path" needs the whitespace, so an XML/HTML part stays inline.
-            if (filePath == null && content.length() == 0 && HttpFile.isBodyFileRef(t)) {
-                filePath = HttpFile.parseBodyRef(t).path();
+            if (file == null && content.length() == 0 && HttpFile.isBodyFileRef(t)) {
+                file = HttpFile.parseBodyRef(t);
                 continue;
             }
             if (content.length() > 0) {
@@ -108,7 +119,9 @@ public final class Multipart {
             }
             content.append(lines.get(i));
         }
-        return new Part(headers, filePath == null ? content.toString() : "", filePath);
+        return file == null
+                ? new Part(headers, content.toString(), null, false)
+                : new Part(headers, "", file.path(), file.substitute());
     }
 
     /** Assembles the multipart wire bytes; inline parts pass through {@code subst} and file parts are read
@@ -129,20 +142,25 @@ public final class Multipart {
         for (Part p : parts) {
             write(out, delim + "\r\n");
             for (Map.Entry<String, String> h : p.headers().entrySet()) {
-                write(out, h.getKey() + ": " + h.getValue() + "\r\n");
+                // Part headers take {{vars}} too: a filename="{{name}}" must not go out literally.
+                String value = subst == null ? h.getValue() : subst.apply(h.getValue());
+                write(out, h.getKey() + ": " + value + "\r\n");
             }
             write(out, "\r\n");
             if (p.filePath() != null) {
+                String path = subst == null ? p.filePath() : subst.apply(p.filePath());
                 try {
                     // contained: a file part must not read outside the request file's own folder
-                    Path file = HttpPaths.contained(baseDir, p.filePath());
+                    Path file = HttpPaths.contained(baseDir, path);
                     if (file == null) {
-                        problems.add("multipart file is outside the request folder: " + p.filePath());
+                        problems.add("multipart file is outside the request folder: " + path);
+                    } else if (p.substituteFile() && subst != null) {
+                        write(out, subst.apply(Files.readString(file, StandardCharsets.UTF_8)));
                     } else {
                         out.writeBytes(Files.readAllBytes(file));
                     }
                 } catch (Exception e) {
-                    problems.add("multipart file not found: " + p.filePath()); // the part stays empty
+                    problems.add("multipart file not found: " + path); // the part stays empty
                 }
             } else {
                 write(out, subst == null ? p.inlineBody() : subst.apply(p.inlineBody()));

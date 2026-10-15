@@ -33,4 +33,20 @@ class DotEnvTest {
         assertTrue(DotEnv.parse("").isEmpty());
         assertTrue(DotEnv.parse(null).isEmpty());
     }
+
+    @Test
+    void inlineCommentsEndAnUnquotedValueAndDoubleQuotesExpandEscapes() {
+        Map<String, String> env = DotEnv.parse("""
+                A=1 # the count
+                B="x # not a comment"
+                C="multi\\nline \\"quoted\\""
+                D='raw\\n'
+                E=pass#word
+                """);
+        assertEquals("1", env.get("A"));
+        assertEquals("x # not a comment", env.get("B"));
+        assertEquals("multi\nline \"quoted\"", env.get("C"));
+        assertEquals("raw\\n", env.get("D"));
+        assertEquals("pass#word", env.get("E"), "a # inside a word is part of the value");
+    }
 }

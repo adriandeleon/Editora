@@ -20,7 +20,7 @@ class HttpDirectiveExtrasTest {
                 """;
         Directives d = HttpFile.parse(text).get(0).directives();
         assertTrue(d.noAutoEncoding());
-        assertEquals(5, d.connectionTimeoutSeconds());
+        assertEquals(5_000, d.connectionTimeoutMillis());
     }
 
     @Test
@@ -29,8 +29,8 @@ class HttpDirectiveExtrasTest {
         Directives d = HttpFile.parse("### x\n# @timeout 30\nGET https://api.test/x\n")
                 .get(0)
                 .directives();
-        assertEquals(30, d.timeoutSeconds());
-        assertEquals(0, d.connectionTimeoutSeconds());
+        assertEquals(30_000, d.timeoutMillis());
+        assertEquals(0, d.connectionTimeoutMillis());
         assertFalse(d.noAutoEncoding());
     }
 }

@@ -93,7 +93,7 @@ class CurlImportFormsTest {
     @Test
     void continuationsWorkWithWindowsLineEndingsToo() {
         assertEquals(List.of("curl", "-X", "POST", "u"), CurlImport.tokenize("curl \\\r\n -X POST \\\n u"));
-        // A backslash that is not at a line end is an ordinary character.
-        assertEquals(List.of("a\\b", "\\"), CurlImport.tokenize("a\\b \\"));
+        // Outside quotes a backslash escapes the next character, as in a POSIX shell; a trailing one is kept.
+        assertEquals(List.of("ab", "a b", "\\"), CurlImport.tokenize("a\\b a\\ b \\"));
     }
 }

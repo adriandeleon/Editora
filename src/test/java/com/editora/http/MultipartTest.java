@@ -54,4 +54,41 @@ class MultipartTest {
         assertTrue(wire.contains("FILE-CONTENT"), wire);
         assertTrue(wire.endsWith("--X--\r\n"), wire);
     }
+
+    @Test
+    void partHeadersAndFilePathsTakeVariables(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("up.txt"), "UP");
+        String body = "--X\nContent-Disposition: form-data; name=\"{{field}}\"; filename=\"{{fname}}\"\n\n"
+                + "< ./{{fname}}\n--X--";
+        String wire = new String(
+                Multipart.build(
+                        Multipart.parse(body, "X"),
+                        "X",
+                        dir,
+                        s -> s.replace("{{field}}", "doc").replace("{{fname}}", "up.txt")),
+                StandardCharsets.UTF_8);
+        assertTrue(wire.contains("name=\"doc\"; filename=\"up.txt\""), wire);
+        assertTrue(wire.contains("\r\n\r\nUP\r\n"), wire);
+    }
+
+    @Test
+    void blankLinesBeforeTheNextBoundaryAreNotPartOfTheValue() {
+        List<Multipart.Part> parts =
+                Multipart.parse("--X\nContent-Disposition: form-data; name=\"a\"\n\nhello\n\n\n--X--", "X");
+        assertEquals("hello", parts.get(0).inlineBody());
+    }
+
+    @Test
+    void aSubstitutedFilePartIsMarked() {
+        List<Multipart.Part> parts =
+                Multipart.parse("--X\nContent-Disposition: form-data; name=\"a\"\n\n<@ ./t.json\n--X--", "X");
+        assertTrue(parts.get(0).substituteFile());
+        assertEquals("./t.json", parts.get(0).filePath());
+    }
+
+    @Test
+    void aQuotedBoundaryMayHoldASemicolon() {
+        assertEquals("a;b", Multipart.boundaryOf("multipart/form-data; boundary=\"a;b\"; charset=utf-8"));
+        assertEquals("plain", Multipart.boundaryOf("multipart/form-data; boundary=plain; charset=utf-8"));
+    }
 }

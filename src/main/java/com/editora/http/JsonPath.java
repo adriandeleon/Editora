@@ -21,17 +21,29 @@ public final class JsonPath {
 
     /** The value at {@code path} in {@code json} as text (objects/arrays serialized), or {@code ""}. */
     public static String eval(String json, String path) {
+        String v = find(json, path);
+        return v == null ? "" : v;
+    }
+
+    /**
+     * The value at {@code path} in {@code json} as text (objects/arrays serialized; a JSON {@code null} is
+     * {@code ""}), or {@code null} when there is nothing there — the path misses, or {@code json} is not JSON.
+     */
+    public static String find(String json, String path) {
         if (json == null || json.isBlank()) {
-            return "";
+            return null;
         }
         try {
             JsonNode node = node(MAPPER.readTree(json), path);
-            if (node == null || node.isMissingNode() || node.isNull()) {
+            if (node == null || node.isMissingNode()) {
+                return null;
+            }
+            if (node.isNull()) {
                 return "";
             }
             return node.isValueNode() ? node.asText() : node.toString();
         } catch (Exception e) {
-            return "";
+            return null;
         }
     }
 

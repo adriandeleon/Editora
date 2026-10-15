@@ -18,7 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -50,8 +50,9 @@ import static com.editora.i18n.Messages.tr;
 /**
  * UI-facing façade for running {@code .http} requests with the <b>built-in JDK {@code HttpClient}</b>
  * (no external CLI): each run gets its own daemon worker and results post back on the JavaFX thread. A run
- * gets a fresh {@link CookieManager} (a per-run cookie jar) and a {@link CapturedResponses} session, so a
- * later request can reference an earlier one's response ({@code {{name.response.body.$.x}}}). Per-request
+ * gets a fresh {@link CookieManager} (a per-run cookie jar) and resolves against a {@link CapturedResponses}
+ * session — the caller's per-buffer one, so a request can reference the response of one run earlier
+ * ({@code {{name.response.body.$.x}}}), alone or in Run All. Per-request
  * directives ({@code @no-redirect}/{@code @no-cookie-jar}/{@code @timeout}), external bodies, multipart, and
  * the {@code >>}/{@code >>!} response-redirect operators are honored here. Each call returns an
  * {@link HttpExchange} carrying the fully resolved request alongside its {@link HttpResult}.
@@ -227,12 +228,27 @@ public final class HttpClientService {
     /** Runs a single request off-thread (its own cookie jar, no prior context), posting on the FX thread. */
     public Handle run(
             HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
+        return run(request, vars, baseDir, new CapturedResponses(), onResult);
+    }
+
+    /**
+     * Runs a single request off-thread (its own cookie jar), resolving {@code {{name.response…}}} against
+     * {@code captured} — the buffer's session — and recording this request's result there under its name.
+     */
+    public Handle run(
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured,
+            Consumer<HttpExchange> onResult) {
         Handle handle = new Handle();
         active.add(handle);
+        CapturedResponses responses = captured == null ? new CapturedResponses() : captured;
         exec.submit(() -> {
             HttpExchange ex;
             try (Session session = new Session(new CookieManager())) {
-                ex = executeSafely(handle, request, vars, baseDir, new CapturedResponses(), session);
+                ex = executeSafely(handle, request, vars, baseDir, responses, session);
+                responses.put(request.name(), ex.result());
             } finally {
                 active.remove(handle);
             }
@@ -248,12 +264,22 @@ public final class HttpClientService {
             Map<String, String> vars,
             Path baseDir,
             Consumer<List<HttpExchange>> onResult) {
+        return runAll(requests, vars, baseDir, new CapturedResponses(), onResult);
+    }
+
+    /** As {@link #runAll(List, Map, Path, Consumer)}, resolving and recording responses in {@code session}. */
+    public Handle runAll(
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses responses,
+            Consumer<List<HttpExchange>> onResult) {
         Handle handle = new Handle();
         active.add(handle);
+        CapturedResponses captured = responses == null ? new CapturedResponses() : responses;
         exec.submit(() -> {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
-                CapturedResponses captured = new CapturedResponses();
                 for (HttpFile.Parsed req : requests) {
                     HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session);
                     captured.put(req.name(), ex.result());
@@ -312,17 +338,24 @@ public final class HttpClientService {
             Path baseDir,
             CapturedResponses captured,
             Session session) {
-        LocalDateTime now = LocalDateTime.now();
-        Function<String, String> sub = s -> HttpVars.substitute(s, vars, now, captured, baseDir);
+        // The clock is a real instant in the user's zone: $timestamp/$isoTimestamp are UTC whatever the zone.
+        ZonedDateTime now = ZonedDateTime.now();
+        // The variables this request sees: the environment's, then the @var lines above it (in order), resolved
+        // now — so they may use an earlier response or $dotenv beside the file. What cannot be resolved is
+        // collected and reported, never sent silently as an empty value.
+        HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
+        HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir);
+        Function<String, String> sub = s -> HttpVars.substitute(s, scope, now, captured, baseDir, unresolved);
         String method = request.method().isEmpty() ? "GET" : request.method();
 
         List<String[]> headers = new ArrayList<>();
         for (String[] h : request.headers()) {
             headers.add(new String[] {h[0], sub.apply(h[1])});
         }
-        // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header.
+        // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header; a target without
+        // a scheme is http:// (JetBrains).
         HttpTargets.Target target = HttpTargets.resolve(sub.apply(request.url()).trim(), headers);
-        String url = target.url();
+        String url = UrlEncoding.withScheme(target.url(), null);
         headers = new ArrayList<>(target.headers());
         if (!request.directives().noAutoEncoding()) {
             url = UrlEncoding.encodeIllegal(url); // default auto-encoding (off under @no-auto-encoding)
@@ -334,11 +367,10 @@ public final class HttpClientService {
         HttpHeaders.Partition hp = HttpHeaders.partition(headers);
         headers = new ArrayList<>(hp.sendable());
         List<String> warnings = new ArrayList<>();
-        if (request.warning() != null) {
-            warnings.add(request.warning()); // e.g. a body written without the required blank line before it
-        }
+        // e.g. a body written without the required blank line before it, an ignored script, a bad @timeout
+        warnings.addAll(request.warnings());
         warnings.addAll(hp.warnings());
-        String requestedVersion = null; // LEAD-WIRE: request.httpVersion() (A adds it to HttpFile.Parsed)
+        String requestedVersion = request.httpVersion();
         HttpVersions.Choice version = HttpVersions.choose(requestedVersion, url);
         if (version.warning() != null) {
             warnings.add(version.warning());
@@ -362,7 +394,14 @@ public final class HttpClientService {
                 requestedVersion,
                 null,
                 noLog);
+        if (request.error() != null) {
+            // A GraphQL/WebSocket/gRPC request: sending it as plain HTTP would only produce a confusing error.
+            warnings.addAll(unresolved.warnings());
+            HttpResult notSent = HttpResult.failure(request.error(), warnings);
+            return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
+        }
         if (bc.problem() != null) {
+            warnings.addAll(unresolved.warnings());
             // The body the request names cannot be read. Sending the request without it would look like a
             // server problem (and could create an empty resource), so it is not sent at all.
             warnings.add(bc.problem());
@@ -370,14 +409,15 @@ public final class HttpClientService {
             return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
         }
         if (handle.isCancelled()) {
+            warnings.addAll(unresolved.warnings());
             return new HttpExchange(
                     label, method, url, headers, bc.display(), HttpResult.failure(CANCELLED, warnings), details);
         }
-        boolean explicitTimeout = request.directives().timeoutSeconds() > 0;
+        boolean explicitTimeout = request.directives().timeoutMillis() > 0;
         Duration timeout =
-                explicitTimeout ? Duration.ofSeconds(request.directives().timeoutSeconds()) : REQUEST_TIMEOUT;
-        Duration connect = request.directives().connectionTimeoutSeconds() > 0
-                ? Duration.ofSeconds(request.directives().connectionTimeoutSeconds())
+                explicitTimeout ? Duration.ofMillis(request.directives().timeoutMillis()) : REQUEST_TIMEOUT;
+        Duration connect = request.directives().connectionTimeoutMillis() > 0
+                ? Duration.ofMillis(request.directives().connectionTimeoutMillis())
                 : CONNECT_TIMEOUT;
         try {
             HttpClient client = session.client(new ClientKey(
@@ -443,6 +483,7 @@ public final class HttpClientService {
                     warnings,
                     sub,
                     handle::isCancelled);
+            warnings.addAll(unresolved.warnings()); // after the >> paths, which may name variables too
             HttpResult result = HttpResult.ofBytes(
                     resp.statusCode(),
                     respHeaders,
@@ -455,6 +496,7 @@ public final class HttpClientService {
                     HttpVersions.label(resp.version()));
             return new HttpExchange(label, method, url, headers, bc.display(), result, details.withFinalUrl(finalUrl));
         } catch (Exception e) {
+            warnings.addAll(unresolved.warnings());
             String message = handle.isCancelled()
                     ? CANCELLED
                     : withUrl(HttpErrors.message(e, url, timeout, connect, explicitTimeout), url);

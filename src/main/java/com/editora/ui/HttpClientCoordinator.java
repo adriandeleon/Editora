@@ -15,6 +15,7 @@ import javafx.scene.input.ClipboardContent;
 import javafx.stage.FileChooser;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.http.CapturedResponses;
 import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
 import com.editora.http.HttpEnv;
@@ -86,6 +87,10 @@ final class HttpClientCoordinator {
     /** The in-flight run of each buffer (FX thread only). A result is applied only while its handle is still
      *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
     private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
+
+    /** Each buffer's request-chaining session: every run (single or Run All) records into it, so a request
+     *  can use the response of one run earlier. Cleared when the environment changes or the buffer closes. */
+    private final Map<EditorBuffer, CapturedResponses> captures = new IdentityHashMap<>();
 
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
@@ -193,6 +198,7 @@ final class HttpClientCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
             panels.remove(closed);
+            captures.remove(closed);
             com.editora.http.HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
                 run.cancel(); // nobody is left to read the response
@@ -276,7 +282,7 @@ final class HttpClientCoordinator {
         startRun(buffer, label);
         Path baseDir = buffer.getPath().toAbsolutePath().getParent();
         com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-        run[0] = service.run(parsed, vars, baseDir, ex -> {
+        run[0] = service.run(parsed, vars, baseDir, capturesFor(buffer), ex -> {
             if (running.remove(buffer, run[0])) {
                 finishRun(buffer, label, ex);
             }
@@ -359,7 +365,7 @@ final class HttpClientCoordinator {
             startRun(b, label);
             Path baseDir = b.getPath().toAbsolutePath().getParent();
             com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-            run[0] = service.runAll(reqs, vars, baseDir, exchanges -> {
+            run[0] = service.runAll(reqs, vars, baseDir, capturesFor(b), exchanges -> {
                 if (!running.remove(b, run[0])) {
                     return; // cancelled or superseded
                 }
@@ -524,27 +530,41 @@ final class HttpClientCoordinator {
         }
     }
 
-    /** The resolved variable map for a {@code .http} buffer: env vars overlaid with the file's {@code @var}s. */
+    /**
+     * The environment variables for a {@code .http} buffer: the selected environment of both env files, merged
+     * as JetBrains does (public {@code $shared} < private {@code $shared} < public env < private env). They are
+     * not resolved here: the run resolves them, with the {@code @var} lines above each request, the file's
+     * folder for {@code $dotenv}, and the buffer's captured responses — and reports what does not resolve.
+     */
     private Map<String, String> variables(EditorBuffer buffer, String text) {
         Path dir = buffer.getPath().toAbsolutePath().getParent();
         // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
         // against the environment selected for the file being run.
         HttpClientPanel p = panelFor(buffer);
         String env = p == null ? "" : p.getSelectedEnvironment();
-        Map<String, String> envVars = new LinkedHashMap<>();
-        envVars.putAll(envVars(dir == null ? null : dir.resolve("http-client.env.json"), env));
-        envVars.putAll(envVars(dir == null ? null : dir.resolve("http-client.private.env.json"), env));
-        return HttpVars.resolve(envVars, HttpFile.fileVariablePairs(text), LocalDateTime.now());
+        Path envDir = dir; // LEAD-WIRE: the env folder C finds up the parents (HttpEnv.findEnvDir(dir, projectRoot))
+        return HttpEnv.merged(
+                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE)),
+                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PRIVATE_FILE)),
+                env);
     }
 
-    private Map<String, String> envVars(Path file, String env) {
-        if (file == null || env == null || env.isEmpty() || !Files.exists(file)) {
-            return Map.of();
+    /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */
+    private CapturedResponses capturesFor(EditorBuffer buffer) {
+        CapturedResponses session = captures.computeIfAbsent(buffer, b -> new CapturedResponses());
+        HttpClientPanel p = panelFor(buffer);
+        session.resetUnlessEnvironment(p == null ? "" : p.getSelectedEnvironment());
+        return session;
+    }
+
+    private static String readOrNull(Path file) {
+        if (file == null || !Files.isRegularFile(file)) {
+            return null;
         }
         try {
-            return HttpEnv.variables(Files.readString(file), env);
+            return Files.readString(file);
         } catch (IOException e) {
-            return Map.of();
+            return null;
         }
     }
 
