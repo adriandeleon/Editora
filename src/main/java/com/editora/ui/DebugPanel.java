@@ -13,6 +13,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
@@ -112,6 +113,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private final Actions actions;
     private final Label status = new Label();
+    /** Spins while a before-launch build prepares, the session starts, or the program runs — not while paused. */
+    private final ProgressIndicator busy = RunPanel.busySpinner();
+
     private final Button start = new Button();
     private final Button pause = new Button();
     private final Button stop = new Button();
@@ -248,8 +252,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(stepOut, "debug.stepOut", "F", actions::stepOut, Icons.debugStepOut()),
                 btn(runToCursor, "debug.runToCursor", "U", actions::runToCursor, Icons.debugRunToCursor()),
                 spacer(),
+                busy,
                 status);
         start.getStyleClass().add("debug-start"); // green play accent
+        HBox.setMargin(busy, new Insets(0, 4, 0, 0)); // the toolbar packs its buttons 2px apart
         toolbar.setAlignment(Pos.CENTER_LEFT);
         // gdb-style single-key shortcuts, live only while focus is somewhere in this panel (the eval field
         // is exempt so the REPL types normally). Bare letters aren't bound in any keymap, so the scene
@@ -600,6 +606,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean active = lastState != DapManager.State.INACTIVE;
         start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
         stop.setDisable(!active && !preparing);
+        refreshStatus();
     }
 
     /** Records the file the session is debugging; shown beside the state while the session lives. */
@@ -615,6 +622,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         : tr("debugpanel.state.exceptionNamed", stoppedException))
                 : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
         status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
+        RunPanel.showSpinner(
+                busy, preparing || lastState == DapManager.State.STARTING || lastState == DapManager.State.RUNNING);
     }
 
     /**

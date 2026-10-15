@@ -46,7 +46,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     private final Label status = new Label();
     /** Spins while a program (or a before-launch step) is running, so a quiet long run still looks alive. */
-    private final ProgressIndicator busy = new ProgressIndicator();
+    private final ProgressIndicator busy = busySpinner();
 
     private final CodeArea output = AreaUndo.none(new CodeArea());
     private final TextField input = new TextField();
@@ -69,10 +69,6 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(6));
 
         status.getStyleClass().add("run-status");
-        busy.getStyleClass().add("run-busy");
-        busy.setPrefSize(14, 14);
-        busy.setMaxSize(14, 14);
-        busy.setFocusTraversable(false);
         stopButton.setText(tr("run.stop"));
         stopButton.setMinWidth(Region.USE_PREF_SIZE);
         stopButton.getStyleClass().add("run-stop");
@@ -194,6 +190,24 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /** The small header spinner the Run, Output and Test Results tool windows show while something runs;
+     *  starts hidden (see {@link #showSpinner}). */
+    static ProgressIndicator busySpinner() {
+        ProgressIndicator busy = new ProgressIndicator();
+        busy.getStyleClass().add("run-busy");
+        busy.setPrefSize(14, 14);
+        busy.setMaxSize(14, 14);
+        busy.setFocusTraversable(false);
+        showSpinner(busy, false);
+        return busy;
+    }
+
+    /** Shows or hides a {@link #busySpinner}; a hidden indicator also stops animating. */
+    static void showSpinner(ProgressIndicator busy, boolean running) {
+        busy.setVisible(running);
+        busy.setManaged(running);
+    }
+
     private static Region spacer() {
         Region r = new Region();
         HBox.setHgrow(r, Priority.ALWAYS);
@@ -264,13 +278,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         setRunning(false);
     }
 
-    /** Stop, the stdin field, and the spinner all follow whether a process is alive. A hidden indicator also
-     *  stops its animation, so an idle panel costs nothing per frame. */
+    /** Stop, the stdin field, and the spinner all follow whether a process is alive. */
     private void setRunning(boolean running) {
         stopButton.setDisable(!running);
         input.setDisable(!running);
-        busy.setVisible(running);
-        busy.setManaged(running);
+        showSpinner(busy, running);
     }
 
     @Override

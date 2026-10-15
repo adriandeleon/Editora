@@ -41,9 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installed app now includes the JDK's extended charsets (ISO-2022-JP, the Hebrew, Arabic, Baltic and
   Vietnamese Windows code pages, MacRoman…), so the list is the same on every OS. File Information shows the
   file's real encoding instead of always UTF-8.
-- **The Run tool window shows a spinner while a program runs.** A long script that prints little or nothing
-  no longer looks stalled: a small spinner beside the run status turns from launch (including a before-launch
-  command) until the program exits, is stopped, or fails to start.
+- **The Run, Output, Test Results, Debug and External Tools windows show a spinner while something runs.** A long
+  script, build or test run that prints little or nothing no longer looks stalled: a small spinner beside the status turns
+  from launch (including a run configuration's before-launch command) until it exits, is stopped, or fails to
+  start. In Output, each tool's tab spins only for its own build, and a Git tab spins while a clone streams;
+  the tab's title spins too, so a build in a tab you are not looking at still shows it is running.
+  In Test Results it covers the compile step before the first test reports, when the progress bar is still empty.
+  Debug spins while the before-launch build, the session start or the program runs, and stops at a breakpoint.
+  An external tool that writes to the console now opens it at launch with the spinner, instead of only when it
+  finishes; a tool that writes into the editor spins the External Tools header too.
 - **Remote development is on, and set per host.** The tools Editora drives — Git, gh, ripgrep, builds, tests,
   language servers and debuggers — run on the host of a remote folder by default. The first time you open a
   folder on a host, Editora asks once whether it may run commands there. Settings → Remote now shows, for

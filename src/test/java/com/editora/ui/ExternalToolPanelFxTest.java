@@ -36,6 +36,41 @@ class ExternalToolPanelFxTest {
         return FxTestSupport.callOnFx(s::getText);
     }
 
+    private static boolean spinning(ExternalToolPanel p) throws Exception {
+        javafx.scene.control.ProgressIndicator busy = FxTestSupport.field(p, "busy");
+        return FxTestSupport.callOnFx(() -> busy.isVisible() && busy.isManaged());
+    }
+
+    @Test
+    void spinsUntilEveryLaunchedToolHasEnded() throws Exception {
+        ExternalToolPanel p = panel();
+        assertFalse(spinning(p), "no spinner before a run");
+        String idle = status(p);
+
+        // Two launches queue on the service's one thread: the spinner outlasts the first result.
+        FxTestSupport.runOnFx(() -> {
+            p.started("lint");
+            p.started("black");
+        });
+        assertTrue(spinning(p), "spins while a tool runs");
+        assertTrue(status(p).contains("black"), "the header names the tool last launched");
+        FxTestSupport.runOnFx(() -> {
+            p.ended();
+            p.show("lint", "lint x", "ok\n", "", 0);
+        });
+        assertTrue(spinning(p), "still spinning: black has not come back");
+        assertTrue(status(p).contains("black"), "the queued tool's header stays until it ends");
+
+        // black wrote into the editor (no show): the header goes back to lint's settled result, not idle.
+        FxTestSupport.runOnFx(p::ended);
+        assertFalse(spinning(p), "stops once every launched tool has ended");
+        assertTrue(status(p).contains("lint") && !status(p).equals(idle), "the last shown run's header returns");
+
+        FxTestSupport.runOnFx(p::ended); // an extra ended() cannot drive the count negative
+        FxTestSupport.runOnFx(() -> p.started("fmt"));
+        assertTrue(spinning(p), "a later launch spins again");
+    }
+
     @Test
     void showRendersCommandStdoutAndStderr() throws Exception {
         ExternalToolPanel p = panel();

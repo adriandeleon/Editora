@@ -8,6 +8,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -23,7 +24,8 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The "External Tools" output tool window: a read-only console showing the captured stdout/stderr of a
- * one-shot external-tool run, with a header (tool — command, exit code) and a Clear action. A
+ * one-shot external-tool run, with a header (tool — command, exit code; a spinner while a tool runs) and a
+ * Clear action. A
  * {@link ToolWindowContent} modeled on {@link RunPanel} but without the Stop/stdin controls (External Tools
  * runs are one-shot; stdin, if any, is fed at launch). A RichTextFX {@link CodeArea} so stderr is colored
  * ({@code .text.run-stderr}); reuses the {@code run-*} styles + the shared double-click stack-trace link
@@ -34,8 +36,17 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
+    /** Spins from {@link #started} until every launched tool has {@link #ended} (runs queue one at a time). */
+    private final ProgressIndicator busy = RunPanel.busySpinner();
+
     private final CodeArea output = AreaUndo.none(new CodeArea());
     private Consumer<StackTraceLinks.Link> onLink;
+
+    /** Tools launched and not yet {@link #ended}. */
+    private int running;
+
+    /** The header once nothing runs: idle, or the last {@link #show}n run's result. */
+    private String settledStatus = tr("externalTool.idle");
 
     public ExternalToolPanel() {
         getStyleClass().add("run-panel");
@@ -44,12 +55,12 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(6));
 
         status.getStyleClass().add("run-status");
-        status.setText(tr("externalTool.idle"));
+        status.setText(settledStatus);
         Button clear = new Button(tr("run.clear"));
         clear.setMinWidth(Region.USE_PREF_SIZE);
         clear.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, status, spacer(), clear);
+        HBox header = new HBox(8, busy, status, spacer(), clear);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -75,13 +86,38 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
     /** Clears the output console (the Clear button + the {@code externalTool.clearOutput} palette command). */
     public void clearConsole() {
         output.clear();
-        status.setText(tr("externalTool.idle"));
+        settle(tr("externalTool.idle"));
+    }
+
+    /** A tool was launched: the header says so and spins until it has {@link #ended}. */
+    public void started(String toolName) {
+        running++;
+        status.setText(tr("status.externalTool.running", toolName));
+        RunPanel.showSpinner(busy, true);
+    }
+
+    /** A launched tool's result is back (before it is {@link #show}n, if it is). The last one stops the spinner
+     *  and puts back the settled header — a tool whose output went into the editor leaves the previous run's. */
+    public void ended() {
+        running = Math.max(0, running - 1);
+        if (running == 0) {
+            RunPanel.showSpinner(busy, false);
+            status.setText(settledStatus);
+        }
+    }
+
+    /** Records the header for when nothing runs; shows it now unless a queued tool is still running. */
+    private void settle(String text) {
+        settledStatus = text;
+        if (running == 0) {
+            status.setText(text);
+        }
     }
 
     /** Shows one tool run's output: a header (name + command), then stdout, then stderr (colored), then the
      *  status line. */
     public void show(String toolName, String commandLine, String out, String err, int exit) {
-        status.setText(exit == 0 ? tr("externalTool.done", toolName) : tr("externalTool.exited", toolName, exit));
+        settle(exit == 0 ? tr("externalTool.done", toolName) : tr("externalTool.exited", toolName, exit));
         StringBuilder sb = new StringBuilder();
         sb.append("$ ").append(commandLine).append('\n');
         if (out != null && !out.isEmpty()) {
