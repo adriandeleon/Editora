@@ -65,7 +65,8 @@ mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package    # → target/d
 - an antrun step strips `META-INF/*.SF,*.RSA,*.DSA,*.EC` from the **code-signed** tm4e jar —
   `jlink` rejects signed modular jars.
 - `jlink` builds a stripped runtime (`--strip-debug --no-man-pages --no-header-files
-  --compress=zip-6`). `--strip-native-commands` is deliberately **omitted** so `bin/java`
+  --compress=zip-6 --vm=server`). `--vm=server` keeps only the VM the launcher starts: the release JDK
+  (Liberica) also carries the client and minimal VMs, which jlink copies by default (22 MB in 0.21.0). `--strip-native-commands` is deliberately **omitted** so `bin/java`
   survives for the AOT training step; the helper deletes `bin/` afterward.
 - jpackage `<javaOptions>` (mirrored into `javafx:run` so dev == prod) set the heap/GC caps,
   the texture-pool safety net, and the per-OS Prism pipeline.

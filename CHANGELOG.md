@@ -155,12 +155,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Exports:** Word documents get real heading styles, numbered and bulleted lists, table alignment, inline images,
   internal links for `#heading` and a document title; OpenDocument gets table alignment. `.mdx`, `.Rmd`, `.qmd`,
   `.mdwn` and `.mkdn` open as Markdown.
+- **`LSP: Clear Java Index Caches` frees the disk space the Java language server used.** It keeps an index per
+  Java folder you have opened (in `~/.editora/jdtls-workspaces`, about 40 MB each and often far more), and nothing
+  ever removed one. The command deletes every index that no running server is using and reports the space freed;
+  jdtls rebuilds a project's index the next time it opens.
 - **Abbreviations show what they expand to.** With abbrev-mode on, an abbreviation typed out in full shows its
   expansion as muted text after the caret (`btw → by the way`), as a snippet trigger does. Tab expands it now,
   Escape hides the hint, and typing on expands it as before.
 
 ### Changed
 
+- **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
+  JVMs beside the server one.
 - **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
   as `code`, `link` or `bold` expands the snippet only when the word is alone on its line or is chosen from the
   completion popup.
