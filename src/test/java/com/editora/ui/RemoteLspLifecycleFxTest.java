@@ -220,6 +220,35 @@ class RemoteLspLifecycleFxTest {
     }
 
     @Test
+    void aConnectionLostWhileTheServerStartsLeavesTheTabQuietUntilReconnected() throws Exception {
+        sftp.dropConnectionOnCommand("fake_lsp.py");
+        EditorBuffer main = open(sftp.remotePath("my app/main.py"));
+        await("the server's start was attempted", () -> launches() == 1);
+        // The start itself fails, which is not a crash: no restart, but the tab must not look served either.
+        await("main.py went quiet", () -> {
+            try {
+                return !FxTestSupport.callOnFx(main::isLspActive);
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        assertFalse(managed(main));
+        Thread.sleep(1500); // past the settle delay: a restart, if one were coming, would have been tried
+        FxTestSupport.drainFx();
+        assertEquals(1, launches(), "nothing is started against a dead connection");
+
+        sftp.reconnect();
+        String authority = sftp.connection().id();
+        FxTestSupport.runOnFx(() -> {
+            main.setPath(Vfs.parseStorable(Vfs.toStorableString(main.getPath())));
+            coordinator.remoteHostConnected(authority);
+        });
+        await("main.py is back on a server", () -> managed(main));
+        assertTrue(FxTestSupport.callOnFx(main::isLspActive));
+        await("the server is started on the new connection", () -> launches() == 2);
+    }
+
+    @Test
     void aServerThatDiesWhileTheHostIsReachableIsRestartedLikeALocalOne() throws Exception {
         EditorBuffer crash = open(sftp.remotePath("my app/crash.py"));
         String crashed = tr("status.lsp.crashed", pythonLabel());
