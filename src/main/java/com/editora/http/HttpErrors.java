@@ -80,6 +80,16 @@ public final class HttpErrors {
             return tr("status.http.error.refused", host);
         }
         String all = messages(failure).toLowerCase(Locale.ROOT);
+        if (all.contains("too many bytes in request body") || all.contains("too few bytes returned by the publisher")) {
+            // The JDK checks the body against the length announced up front: a file part changed while it was sent.
+            return tr("status.http.error.bodyChanged");
+        }
+        if (all.contains("invalid status line") || all.contains("bad status line")) {
+            return tr("status.http.error.notHttp", host);
+        }
+        if (all.contains("port out of range")) {
+            return tr("status.http.error.badUrl", detail(failure));
+        }
         if (all.contains("invalid uri scheme")) {
             return tr("status.http.error.scheme", scheme(url));
         }
@@ -91,7 +101,9 @@ public final class HttpErrors {
                 || all.contains("header parser received no bytes")
                 || all.contains("connection reset")
                 || all.contains("connection closed")) {
-            return tr("status.http.error.closed", host);
+            boolean plain = url != null && url.regionMatches(true, 0, "http:", 0, 5);
+            // An https-only port answers a plain request by hanging up: say what to try.
+            return tr(plain ? "status.http.error.closedHttp" : "status.http.error.closed", host);
         }
         return tr("status.http.error.other", detail(failure));
     }

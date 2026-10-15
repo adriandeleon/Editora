@@ -222,6 +222,7 @@ public final class HttpClientPanel extends VBox {
         });
 
         copyCurlButton.setText(tr("httppanel.copyAsCurl"));
+        copyCurlButton.setTooltip(new javafx.scene.control.Tooltip(tr("httppanel.copyAsCurl.tip"))); // POSIX quoting
         copyCurlButton.setOnAction(e -> withSelected(onCopyAsCurl));
         openTabButton.setText(tr("httppanel.openInTab"));
         openTabButton.setOnAction(e -> withSelected(onOpenInTab));

@@ -160,6 +160,8 @@ public final class HttpClientService {
         private final CompletableFuture<Void> delivered = new CompletableFuture<>();
         private volatile CompletableFuture<?> pending;
         private volatile InputStream stream;
+        /** The request body of the exchange in flight, whose files a cancel closes (they stay open otherwise). */
+        private volatile BodyContent body;
 
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
@@ -168,6 +170,10 @@ public final class HttpClientService {
                     f.cancel(true);
                 }
                 closeQuietly(stream);
+                BodyContent b = body;
+                if (b != null) {
+                    b.release();
+                }
             }
         }
 
@@ -451,6 +457,10 @@ public final class HttpClientService {
         Duration connect = request.directives().connectionTimeoutMillis() > 0
                 ? Duration.ofMillis(request.directives().connectionTimeoutMillis())
                 : CONNECT_TIMEOUT;
+        handle.body = bc;
+        if (handle.isCancelled()) {
+            bc.release(); // cancel() ran before the body was registered
+        }
         try {
             HttpClient client = session.client(new ClientKey(
                     request.directives().noRedirect(), request.directives().noCookieJar(), connect, version.version()));
@@ -481,6 +491,9 @@ public final class HttpClientService {
             String respType = resp.headers().firstValue("content-type").orElse("");
             if (resp.undecoded() != null) {
                 warnings.add(tr("status.http.warn.undecoded", resp.undecoded()));
+            }
+            if (resp.overLayered() != null) {
+                warnings.add(tr("status.http.warn.tooManyEncodings", ContentDecoding.MAX_LAYERS, resp.overLayered()));
             }
             if (resp.truncated()) {
                 warnings.add("response truncated at " + megabytes(maxResponseBytes)
@@ -528,6 +541,9 @@ public final class HttpClientService {
                     : withUrl(HttpErrors.message(e, url, timeout, connect, explicitTimeout), url);
             return new HttpExchange(
                     label, method, url, headers, bc.display(), HttpResult.failure(message, warnings), details);
+        } finally {
+            handle.body = null;
+            bc.release(); // the upload's files, whether it finished, failed or was cancelled
         }
     }
 
@@ -571,7 +587,29 @@ public final class HttpClientService {
             String problem,
             DigestAuth.BodyFeed digestFeed,
             Path file,
-            List<HttpExchange.FormPart> parts) {
+            List<HttpExchange.FormPart> parts,
+            java.io.Closeable files) {
+
+        BodyContent(
+                HttpRequest.BodyPublisher publisher,
+                String display,
+                String problem,
+                DigestAuth.BodyFeed digestFeed,
+                Path file,
+                List<HttpExchange.FormPart> parts) {
+            this(publisher, display, problem, digestFeed, file, parts, null);
+        }
+
+        /** Closes the files the body streams from: after the exchange, and at once when the run is cancelled. */
+        void release() {
+            if (files != null) {
+                try {
+                    files.close();
+                } catch (IOException ignored) {
+                    // closing to release the file: nothing more to do
+                }
+            }
+        }
 
         static BodyContent of(byte[] bytes, String display) {
             return new BodyContent(
@@ -610,6 +648,7 @@ public final class HttpClientService {
             boolean truncated,
             Stop stopped,
             String undecoded,
+            String overLayered,
             HttpClient.Version version,
             URI uri,
             List<URI> redirects) {}
@@ -647,7 +686,8 @@ public final class HttpClientService {
                     null,
                     form::feed,
                     null,
-                    formParts(form.parts()));
+                    formParts(form.parts()),
+                    form);
         }
         Charset charset = HttpResult.charsetOf(contentType);
         // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
@@ -665,13 +705,9 @@ public final class HttpClientService {
                     // multi-gigabyte upload must not be read into memory first.
                     long size = Files.size(bodyFile);
                     String shown = shownFileBody(bodyFile, size, ref.path(), cs);
+                    FileBodyPublisher upload = new FileBodyPublisher(bodyFile);
                     return new BodyContent(
-                            HttpRequest.BodyPublishers.ofFile(bodyFile),
-                            shown,
-                            null,
-                            md -> feedFile(bodyFile, md),
-                            bodyFile,
-                            List.of());
+                            upload, shown, null, md -> feedFile(bodyFile, md), bodyFile, List.of(), upload);
                 }
                 String content = sub.apply(new String(Files.readAllBytes(bodyFile), cs));
                 return BodyContent.of(encode(content, charset, warnings), content);
@@ -825,16 +861,17 @@ public final class HttpClientService {
                     raw, resp.headers().firstValue("Content-Encoding").orElse(null));
             AtomicLong lastRead = new AtomicLong(System.nanoTime());
             ScheduledFuture<?> watchdog = watch(raw, stopped, lastRead, idle);
-            try {
+            try (InputStream body = decoded.stream()) { // closing it ends the decoders' inflaters
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
-                boolean truncated = readCapped(decoded.stream(), out, maxResponseBytes, handle, stopped, lastRead);
+                boolean truncated = readCapped(body, out, maxResponseBytes, handle, stopped, lastRead);
                 return new Received(
                         resp.statusCode(),
                         resp.headers(),
                         out.toByteArray(),
                         truncated,
                         stopped.get(),
-                        decoded.undecoded(),
+                        decoded.tooManyLayers() ? null : decoded.undecoded(),
+                        decoded.tooManyLayers() ? decoded.undecoded() : null,
                         resp.version(),
                         resp.uri(),
                         redirects);

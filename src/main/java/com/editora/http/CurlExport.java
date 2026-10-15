@@ -14,6 +14,10 @@ import java.util.regex.Pattern;
  * not end the quoting. The body goes out with {@code --data-raw}, so one that starts with {@code @} is sent as
  * text instead of making curl read a local file.
  *
+ * <p>The quoting is POSIX (bash, zsh, sh), and the UI says so: fish reads {@code \\} inside single quotes as one
+ * backslash, PowerShell escapes a quote by doubling it and continues lines with a backtick, and the Windows
+ * command prompt has no single quotes at all.
+ *
  * <p>The command reproduces what Editora sent, not its display text: a {@code < file} body is
  * {@code --data-binary @file}, a multipart form becomes {@code -F} / {@code --form-string} fields, the Digest
  * shorthand becomes {@code --digest -u}, redirects are followed ({@code -L}) unless the request said
