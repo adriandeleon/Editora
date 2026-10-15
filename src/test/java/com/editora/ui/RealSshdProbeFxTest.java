@@ -261,7 +261,14 @@ class RealSshdProbeFxTest {
             ProcessRunner.Result login = ProcessRunner.run(
                     app,
                     Duration.ofSeconds(30),
-                    List.of("sh", "-c", "exec \"${SHELL:-/bin/sh}\" -l -i -c env </dev/null 2>/dev/null"));
+                    // From an environment like the one sshd gives a login: this command already carries what
+                    // the profile exports, and a profile that prepends (Homebrew's INFOPATH) would add it twice.
+                    List.of(
+                            "sh",
+                            "-c",
+                            "exec env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"$LOGNAME\" SHELL=\"$SHELL\""
+                                    + " PATH=/usr/bin:/bin:/usr/sbin:/sbin \"${SHELL:-/bin/sh}\" -l -i -c env"
+                                    + " </dev/null 2>/dev/null"));
             ProcessRunner.Result ours = ProcessRunner.run(app, Duration.ofSeconds(30), List.of("env"));
             Map<String, String> theirs = new LinkedHashMap<>();
             for (String line : login.out().split("\n")) {
