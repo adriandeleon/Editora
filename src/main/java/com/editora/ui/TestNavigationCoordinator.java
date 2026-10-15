@@ -294,13 +294,16 @@ final class TestNavigationCoordinator {
                         && c.isDetected());
     }
 
-    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + local + a detected Maven/Gradle
-     *  project). */
+    /** Pushes the project main-method gutter gate to a buffer (not Simple mode + a file whose machine can run it +
+     *  a detected Maven/Gradle project). */
     void applyMainGutter(EditorBuffer buffer) {
         // Show the ▶ for any detected Maven/Gradle project; run/debug availability (jdtls, or the mvn
         // classpath fallback) is checked at click time so the gutter is not hidden when only the fallback works.
-        buffer.setMainGutterEnabled(
-                !host.chrome().simpleModeActive() && host.isLocalBuffer(buffer) && jvmBuildDetected());
+        // A remote project's main class runs on its host (while that may run commands).
+        buffer.setMainGutterEnabled(!host.chrome().simpleModeActive()
+                && buffer.getPath() != null
+                && RemoteExec.runsFor(buffer.getPath())
+                && jvmBuildDetected());
     }
 
     /** Pushes the JUnit test-gutter gate to a buffer (Test Runner on + not Simple mode + local + JVM project). */

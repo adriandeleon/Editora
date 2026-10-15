@@ -131,8 +131,14 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tools (sent as `JAVA_HOME`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
   the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
   file whatever the host allows; a refusal is reported when it is launched.
-- **Not yet for Run:** a Java *project* main class (it needs jdtls or a Maven classpath file on the host), the
-  main-class gutter, and Makefile detection for the run-configuration toolbar.
+- **Java projects:** the main class (gutter ▶, Run Main Class, a saved configuration) runs on the host with
+  the class path the host's jdtls resolves, or — without java-debug — Maven's (`MavenClasspathResolver`
+  runs `mvn … dependency:build-classpath` there, writes the list into the module's `target/` with `:`
+  separators, and reads it back over SFTP). The JDK is the host's (`jdk.home`, else what jdtls resolved, else
+  its `java`); this machine's JDK setting, `JAVA_HOME` and `PATH` are never sent
+  (`RunCoordinator.jdkHomeFor` / `javaEnvironment` / `hostJava`). A configuration's working directory is a
+  folder on the host. Gradle projects use their `run` task, as locally.
+- **Not yet for Run:** Makefile detection for the run-configuration toolbar.
 - **Outside changes:** a remote project's folder is watched on its host (`ui/RemoteWatcher`): one long-lived
   command, `inotifywait -m -r` when the host has it, else `find -newer` every 4 s (a folder whose entries
   changed is reported as itself, which is how a deletion shows). `.git` and `node_modules` are left out. Its
@@ -195,12 +201,12 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   working directory is named as the host names it, and the JDK is the one the host's jdtls resolves (a JDK
   setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
   through `RunService` in the host folder the adapter names. Attach and Debug Test go through the host's
-  jdtls, so `localhost` there is the host. Not on a host yet: a loose file (it is compiled with this
-  machine's `javac`) and debugging a saved run configuration (its routing is shared with Run, which does not
-  run a remote Java project yet).
+  jdtls, so `localhost` there is the host. A saved configuration is debugged on the host too, with its
+  folder there and none of this machine's JDK environment. Not on a host yet: a loose file (it is compiled
+  with this machine's `javac`).
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
-  a Java project's main-class run and its gutter ▶, debugging a loose Java file or a saved run configuration.
+  debugging a loose Java file.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged `sshd` on localhost):
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and

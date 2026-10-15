@@ -25,13 +25,18 @@ public final class MavenClasspath {
      * fresh before the run.
      */
     public static List<String> argv(Path outputFile) {
+        return argv(outputFile.toString(), File.pathSeparator);
+    }
+
+    /** As {@link #argv(Path)}, naming the file and the separator as the machine Maven runs on does. */
+    public static List<String> argv(String outputFile, String pathSeparator) {
         return List.of(
                 "mvn",
                 "-q",
                 "compile",
                 "dependency:build-classpath",
                 "-Dmdep.outputFile=" + outputFile,
-                "-Dmdep.pathSeparator=" + File.pathSeparator);
+                "-Dmdep.pathSeparator=" + pathSeparator);
     }
 
     /**
@@ -41,6 +46,11 @@ public final class MavenClasspath {
      * path (the working directory is the reactor root, not the module).
      */
     public static List<String> reactorArgv(Path outputFile, String moduleSelector) {
+        return reactorArgv(outputFile.toString(), moduleSelector, File.pathSeparator);
+    }
+
+    /** As {@link #reactorArgv(Path, String)}, naming the file and the separator as Maven's machine does. */
+    public static List<String> reactorArgv(String outputFile, String moduleSelector, String pathSeparator) {
         return List.of(
                 "mvn",
                 "-q",
@@ -50,7 +60,7 @@ public final class MavenClasspath {
                 "compile",
                 "dependency:build-classpath",
                 "-Dmdep.outputFile=" + outputFile,
-                "-Dmdep.pathSeparator=" + File.pathSeparator);
+                "-Dmdep.pathSeparator=" + pathSeparator);
     }
 
     /**
@@ -59,12 +69,23 @@ public final class MavenClasspath {
      * entries are dropped. {@code root} is the Maven module root ({@code root/target/classes}).
      */
     public static List<String> assemble(String dependencyClasspath, Path root) {
+        return assemble(
+                dependencyClasspath,
+                root == null ? null : root.resolve("target").resolve("classes").toString(),
+                File.pathSeparator);
+    }
+
+    /**
+     * As {@link #assemble(String, Path)}, with the module's output folder and the separator named as the
+     * machine the program runs on names them (a remote host's paths, {@code :}).
+     */
+    public static List<String> assemble(String dependencyClasspath, String classesFolder, String pathSeparator) {
         List<String> cp = new ArrayList<>();
-        if (root != null) {
-            cp.add(root.resolve("target").resolve("classes").toString());
+        if (classesFolder != null) {
+            cp.add(classesFolder);
         }
         if (dependencyClasspath != null) {
-            for (String e : dependencyClasspath.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+            for (String e : dependencyClasspath.split(java.util.regex.Pattern.quote(pathSeparator))) {
                 String t = e.strip();
                 if (!t.isEmpty()) {
                     cp.add(t);
