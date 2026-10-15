@@ -25,7 +25,6 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.CapturedResponses;
 import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
-import com.editora.http.HttpEnv;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResponseFormat;
@@ -671,7 +670,7 @@ final class HttpClientCoordinator {
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
-            List<String> names = environmentNames(envDir(buffer));
+            List<String> names = HttpEnvironments.read(envDir(buffer)).names();
             String chosen = environments.get(buffer);
             p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
             environmentListener.accept(buffer); // the list (or the env files) may have changed
@@ -692,7 +691,7 @@ final class HttpClientCoordinator {
         return p == null ? "" : p.getSelectedEnvironment();
     }
 
-    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvFiles#envDir}), or null. */
+    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvironments}), or null. */
     Path envDirFor(EditorBuffer buffer) {
         return buffer == null ? null : envDir(buffer);
     }
@@ -851,11 +850,7 @@ final class HttpClientCoordinator {
         // against the environment selected for the file being run.
         HttpClientPanel p = panelFor(buffer);
         String env = p == null ? "" : p.getSelectedEnvironment();
-        Path envDir = envDir(buffer); // the file's own folder, or the nearest one above it with env files
-        return HttpEnv.merged(
-                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE)),
-                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PRIVATE_FILE)),
-                env);
+        return HttpEnvironments.read(envDir(buffer)).variables(env);
     }
 
     /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */
@@ -866,35 +861,9 @@ final class HttpClientCoordinator {
         return session;
     }
 
-    private static String readOrNull(Path file) {
-        if (file == null || !Files.isRegularFile(file)) {
-            return null;
-        }
-        try {
-            return Files.readString(file);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /** The folder whose env files apply to {@code buffer}'s file (its own, or the nearest one above it). */
+    /** The folder whose env files apply to {@code buffer}'s file (see {@link HttpEnvironments}), or null. */
     private Path envDir(EditorBuffer buffer) {
-        Path dir = folderOf(buffer);
-        Path project = ops.projectRoot();
-        if (dir == null) {
-            // An untitled buffer has no folder of its own: the project root's env files, or none.
-            return project == null ? null : HttpEnvFiles.envDir(project, project);
-        }
-        return HttpEnvFiles.envDir(dir, project);
-    }
-
-    /** The environment names declared in {@code dir}'s env files, public first, then private-only ones. */
-    private static List<String> environmentNames(Path dir) {
-        if (dir == null) {
-            return List.of();
-        }
-        return HttpEnv.environmentNames(
-                readOrNull(dir.resolve(HttpEnv.PUBLIC_FILE)), readOrNull(dir.resolve(HttpEnv.PRIVATE_FILE)));
+        return HttpEnvironments.forFile(buffer == null ? null : buffer.getPath(), ops.projectRoot());
     }
 
     // --- secrets trust gate --------------------------------------------------------------------------
@@ -951,33 +920,11 @@ final class HttpClientCoordinator {
         for (String[] pair : HttpFile.fileVariablePairs(text)) {
             defs.computeIfAbsent(pair[0], k -> new java.util.ArrayList<>()).add(pair[1]);
         }
-        rawEnvironment(dir)
+        HttpEnvironments.read(dir)
+                .everyValue()
                 .forEach((k, v) -> defs.computeIfAbsent(k, x -> new java.util.ArrayList<>())
                         .add(v));
         return defs;
-    }
-
-    /** Every value of every environment in the folder's env files (any could be the one picked next). */
-    private Map<String, String> rawEnvironment(Path dir) {
-        Map<String, String> out = new LinkedHashMap<>();
-        if (dir == null) {
-            return out;
-        }
-        for (String name : List.of("http-client.env.json", "http-client.private.env.json")) {
-            Path file = dir.resolve(name);
-            if (!Files.exists(file)) {
-                continue;
-            }
-            try {
-                String json = Files.readString(file);
-                for (String env : HttpEnv.environmentNames(json)) {
-                    HttpEnv.variables(json, env).forEach((k, v) -> out.merge(k, v, (a, b) -> a + "\n" + b));
-                }
-            } catch (IOException | RuntimeException unreadable) {
-                // an unreadable env file contributes nothing to resolve either
-            }
-        }
-        return out;
     }
 
     private static String substitutedBodyFile(Path dir, HttpFile.BodyRef ref) {
