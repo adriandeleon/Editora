@@ -125,7 +125,11 @@ public final class HttpVars {
         Map<String, String> raw = envVars == null ? Map.of() : envVars;
         Map<String, String> values = new LinkedHashMap<>();
         Map<String, Unresolved> missing = new HashMap<>();
-        EnvResolver env = new EnvResolver(raw, values, missing, now, dir);
+        Set<String> fileNames = new HashSet<>();
+        if (fileVars != null) {
+            fileVars.forEach(pair -> fileNames.add(pair[0]));
+        }
+        EnvResolver env = new EnvResolver(raw, fileNames, values, missing, now, dir);
         for (String key : raw.keySet()) {
             env.resolve(key, new HashSet<>());
         }
@@ -144,6 +148,7 @@ public final class HttpVars {
     /** Resolves environment values that refer to other environment values, depth-first with a cycle guard. */
     private record EnvResolver(
             Map<String, String> raw,
+            Set<String> fileNames,
             Map<String, String> values,
             Map<String, Unresolved> missing,
             ZonedDateTime now,
@@ -165,8 +170,13 @@ public final class HttpVars {
             inProgress.add(key);
             String v = expand(
                     rawValue,
-                    raw::containsKey,
+                    name -> raw.containsKey(name) || fileNames.contains(name),
                     (name, sink) -> {
+                        if (!raw.containsKey(name)) {
+                            // Environment values are resolved before, and without, the file's @var lines.
+                            sink.add(ref(name), tr("http.unresolved.reason.envUsesFileVar"));
+                            return "";
+                        }
                         if (!values.containsKey(name) && (inProgress.contains(name) || inProgress.size() > MAX_DEPTH)) {
                             sink.add(ref(name), tr("http.unresolved.reason.cycle"));
                             return "";

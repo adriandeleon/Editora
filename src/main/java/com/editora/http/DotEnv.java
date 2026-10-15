@@ -19,23 +19,39 @@ public final class DotEnv {
         if (content == null || content.isBlank()) {
             return out;
         }
-        for (String raw : content.split("\n", -1)) {
-            String line = raw.strip();
+        String[] lines = content.split("\n", -1);
+        for (int k = 0; k < lines.length; k++) {
+            String line = lines[k].strip();
             if (line.isEmpty() || line.startsWith("#")) {
                 continue;
             }
-            if (line.startsWith("export ")) {
-                line = line.substring("export ".length()).strip();
+            if (line.startsWith("export") && line.length() > 6 && Character.isWhitespace(line.charAt(6))) {
+                line = line.substring("export".length()).strip();
             }
             int eq = line.indexOf('=');
             if (eq <= 0) {
                 continue;
             }
-            out.put(
-                    line.substring(0, eq).strip(),
-                    unquote(line.substring(eq + 1).strip()));
+            String value = line.substring(eq + 1).strip();
+            // A double-quoted value may span lines (KEY="line 1⏎line 2"); an unclosed quote stays one line.
+            if (value.startsWith("\"") && closingQuote(value) < 0) {
+                StringBuilder joined = new StringBuilder(value);
+                for (int m = k + 1; m < lines.length; m++) {
+                    joined.append('\n').append(stripCr(lines[m]));
+                    if (closingQuote(joined.toString()) > 0) {
+                        value = joined.toString();
+                        k = m;
+                        break;
+                    }
+                }
+            }
+            out.put(line.substring(0, eq).strip(), unquote(value));
         }
         return out;
+    }
+
+    private static String stripCr(String s) {
+        return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s;
     }
 
     /**
