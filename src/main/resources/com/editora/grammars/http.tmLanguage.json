@@ -1,27 +1,35 @@
 {
   "name": "HTTP Request",
   "scopeName": "source.http",
+  "comment": "Editora's .http grammar. It mirrors com.editora.http.HttpFile: a request runs from its request line to the next ### separator; headers until the first blank line, then the body. Comment lines (# or //) are comments everywhere, including inside a body, as the JetBrains spec says and the parser strips them. {{variables}} use constant.other.placeholder so they take a theme colour of their own.",
   "patterns": [
-    { "include": "#comment" },
     { "include": "#separator" },
+    { "include": "#directive" },
+    { "include": "#comment" },
     { "include": "#variable-declaration" },
-    { "include": "#request-line" },
-    { "include": "#header" },
-    { "include": "#variable" }
+    { "include": "#pre-request-script" },
+    { "include": "#request" }
   ],
   "repository": {
+    "separator": {
+      "match": "^\\s*(###)(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.separator.http" },
+        "2": { "name": "entity.name.section.http" }
+      }
+    },
+    "directive": {
+      "match": "^\\s*((?:#|//)\\s*)(@(?:name|no-redirect|no-cookie-jar|no-log|no-auto-encoding|timeout|connection-timeout)\\b)(.*)$",
+      "name": "comment.line.directive.http",
+      "captures": {
+        "2": { "name": "entity.other.attribute-name.directive.http" }
+      }
+    },
     "comment": {
       "patterns": [
         { "match": "^\\s*#(?!##).*$", "name": "comment.line.number-sign.http" },
         { "match": "^\\s*//.*$", "name": "comment.line.double-slash.http" }
       ]
-    },
-    "separator": {
-      "match": "^\\s*(###)\\s*(.*)$",
-      "captures": {
-        "1": { "name": "punctuation.definition.separator.http" },
-        "2": { "name": "entity.name.section.http" }
-      }
     },
     "variable-declaration": {
       "match": "^\\s*(@)([A-Za-z0-9_.\\-]+)\\s*(=)\\s*(.*)$",
@@ -32,29 +40,173 @@
         "4": { "name": "string.unquoted.http", "patterns": [{ "include": "#variable" }] }
       }
     },
-    "request-line": {
-      "match": "^\\s*(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT)\\b\\s*(.*?)\\s*(HTTP/[0-9.]+)?\\s*$",
+    "variable": {
+      "match": "(\\{\\{)([^{}]*)(\\}\\})",
+      "name": "constant.other.placeholder.http",
       "captures": {
+        "1": { "name": "punctuation.definition.variable.begin.http" },
+        "3": { "name": "punctuation.definition.variable.end.http" }
+      }
+    },
+    "pre-request-script": {
+      "patterns": [
+        {
+          "begin": "^\\s*(<)\\s*(\\{%)",
+          "end": "(%\\})",
+          "beginCaptures": {
+            "1": { "name": "keyword.operator.script.http" },
+            "2": { "name": "punctuation.section.embedded.begin.http" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.embedded.end.http" } },
+          "contentName": "meta.embedded.block.javascript",
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "^\\s*(<)\\s+(\\S.*\\.js)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.operator.script.http" },
+            "2": { "name": "string.unquoted.path.http" }
+          }
+        }
+      ]
+    },
+    "request": {
+      "comment": "Any other non-blank line at the top level is a request line: [METHOD] target [HTTP/version].",
+      "begin": "^\\s*(?:([A-Za-z][A-Za-z_-]*)\\s+(?=\\S))?(\\S.*?)(?:\\s+(HTTP/[0-9.]+(?:\\s*\\([^)]*\\))?))?\\s*$",
+      "beginCaptures": {
         "1": { "name": "keyword.control.http" },
+        "2": { "name": "markup.underline.link.http", "patterns": [{ "include": "#variable" }] },
+        "3": { "name": "constant.language.http-version.http" }
+      },
+      "end": "^(?=\\s*###)",
+      "patterns": [
+        { "include": "#directive" },
+        { "include": "#comment" },
+        { "include": "#trailer" },
+        { "include": "#url-continuation" },
+        { "include": "#header" },
+        { "include": "#body" }
+      ]
+    },
+    "url-continuation": {
+      "match": "^(\\s+)([?&/#].*?)(?:\\s+(HTTP/[0-9.]+(?:\\s*\\([^)]*\\))?))?\\s*$",
+      "captures": {
         "2": { "name": "markup.underline.link.http", "patterns": [{ "include": "#variable" }] },
         "3": { "name": "constant.language.http-version.http" }
       }
     },
     "header": {
-      "match": "^\\s*([A-Za-z][A-Za-z0-9\\-]*)\\s*(:)\\s*(.*)$",
+      "match": "^\\s*([!#$%&'*+.^_`|~0-9A-Za-z-]+)\\s*(:)\\s*(.*)$",
       "captures": {
         "1": { "name": "entity.name.tag.http" },
         "2": { "name": "punctuation.separator.key-value.http" },
         "3": { "name": "string.unquoted.http", "patterns": [{ "include": "#variable" }] }
       }
     },
-    "variable": {
-      "match": "(\\{\\{)([^}]*)(\\}\\})",
-      "name": "variable.other.readwrite.http",
+    "body": {
+      "comment": "The body starts at the first blank line of a request and runs to the next separator.",
+      "begin": "^\\s*$",
+      "end": "^(?=\\s*###)",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#trailer" },
+        { "include": "#file-ref" },
+        { "include": "#json-body" },
+        { "include": "#xml-body" },
+        { "include": "#multipart" },
+        { "include": "#variable" }
+      ]
+    },
+    "file-ref": {
+      "match": "^\\s*(<@?[A-Za-z0-9_-]*)\\s+(\\S.*)$",
       "captures": {
-        "1": { "name": "punctuation.definition.variable.begin.http" },
-        "3": { "name": "punctuation.definition.variable.end.http" }
+        "1": { "name": "keyword.operator.file-reference.http" },
+        "2": { "name": "string.unquoted.path.http", "patterns": [{ "include": "#variable" }] }
       }
+    },
+    "trailer": {
+      "patterns": [
+        {
+          "begin": "^\\s*(>)\\s*(\\{%)",
+          "end": "(%\\})",
+          "beginCaptures": {
+            "1": { "name": "keyword.operator.handler.http" },
+            "2": { "name": "punctuation.section.embedded.begin.http" }
+          },
+          "endCaptures": { "1": { "name": "punctuation.section.embedded.end.http" } },
+          "contentName": "meta.embedded.block.javascript",
+          "patterns": [{ "include": "source.js" }]
+        },
+        {
+          "match": "^\\s*(>>!?)\\s*(\\S.*)$",
+          "captures": {
+            "1": { "name": "keyword.operator.redirect.http" },
+            "2": { "name": "string.unquoted.path.http", "patterns": [{ "include": "#variable" }] }
+          }
+        },
+        {
+          "match": "^\\s*(<>|>)\\s+(\\S.*)$",
+          "captures": {
+            "1": { "name": "keyword.operator.handler.http" },
+            "2": { "name": "string.unquoted.path.http" }
+          }
+        }
+      ]
+    },
+    "json-body": {
+      "begin": "^(?=\\s*[\\[{](?!\\{))",
+      "end": "^(?=\\s*(?:###|>{1,2}!?\\s|>\\s*\\{%|<>\\s))",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#variable" },
+        {
+          "begin": "(\")(?=(?:[^\"\\\\]|\\\\.)*\"\\s*:)",
+          "end": "(\")",
+          "name": "support.type.property-name.json",
+          "patterns": [{ "include": "#variable" }, { "match": "\\\\.", "name": "constant.character.escape.json" }]
+        },
+        {
+          "begin": "\"",
+          "end": "\"|$",
+          "name": "string.quoted.double.json",
+          "patterns": [{ "include": "#variable" }, { "match": "\\\\.", "name": "constant.character.escape.json" }]
+        },
+        { "match": "-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b", "name": "constant.numeric.json" },
+        { "match": "\\b(?:true|false|null)\\b", "name": "constant.language.json" }
+      ]
+    },
+    "xml-body": {
+      "begin": "^(?=\\s*<(?:[?!A-Za-z_]))",
+      "end": "^(?=\\s*(?:###|>{1,2}!?\\s|>\\s*\\{%|<>\\s))",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#variable" },
+        { "match": "<!--.*?-->", "name": "comment.block.xml" },
+        {
+          "match": "(</?|<\\?)([A-Za-z_][\\w:.-]*)",
+          "captures": { "2": { "name": "entity.name.tag.xml" } }
+        },
+        { "match": "\\s([A-Za-z_][\\w:.-]*)(?==)", "captures": { "1": { "name": "entity.other.attribute-name.xml" } } },
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.xml",
+          "patterns": [{ "include": "#variable" }]
+        }
+      ]
+    },
+    "multipart": {
+      "patterns": [
+        { "match": "^\\s*--[^\\s-][^\\s]*$", "name": "entity.name.section.boundary.http" },
+        {
+          "match": "^\\s*(Content-[A-Za-z-]+)\\s*(:)\\s*(.*)$",
+          "captures": {
+            "1": { "name": "entity.name.tag.http" },
+            "2": { "name": "punctuation.separator.key-value.http" },
+            "3": { "name": "string.unquoted.http", "patterns": [{ "include": "#variable" }] }
+          }
+        }
+      ]
     }
   }
 }
