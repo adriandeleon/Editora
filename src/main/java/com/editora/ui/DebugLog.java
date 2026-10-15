@@ -40,6 +40,7 @@ public final class DebugLog {
     private static final Object LOCK = new Object();
     private static final Deque<String> RECORDS = new ArrayDeque<>();
     private static boolean installed;
+    private static boolean captureSuspendedForTest; // guarded by LOCK; see suspendCaptureForTest
     private static PrintWriter file; // optional mirror to <configDir>/editora-session.log
 
     private DebugLog() {}
@@ -56,7 +57,7 @@ public final class DebugLog {
             @Override
             public void publish(LogRecord record) {
                 if (isLoggable(record)) {
-                    append(format(record));
+                    capture(format(record));
                 }
             }
 
@@ -77,7 +78,7 @@ public final class DebugLog {
                             "Uncaught exception in thread \"" + thread.getName() + "\"" + focusContext())
                     + System.lineSeparator()
                     + stackTrace(error);
-            append(record);
+            capture(record);
             // Native Image smoke runs can fail before start() attaches the session log.
             // Keep those early failures visible in the captured process stderr.
             if (Boolean.getBoolean("editora.debug.stderr")) {
@@ -161,6 +162,20 @@ public final class DebugLog {
         }
     }
 
+    /**
+     * TEST SEAM — while suspended, records arriving through the installed log handler and the uncaught
+     * exception handler are dropped; {@link #append(String)} still works. Surefire reuses the fork, so once
+     * any test has called {@link #install()} every thread's log records land in this buffer — CSS warnings
+     * from a scene an earlier test left pulsing among them — and a test asserting exact contents would race
+     * them. Checked under the same lock as the append, so nothing captured after this returns can slip in.
+     * Always resume in a {@code finally} or {@code @AfterEach}.
+     */
+    static void suspendCaptureForTest(boolean suspended) {
+        synchronized (LOCK) {
+            captureSuspendedForTest = suspended;
+        }
+    }
+
     /** The session log file path under {@code configDir}, for display in the viewer. */
     public static Path sessionFile(Path configDir) {
         return configDir == null ? null : configDir.resolve("editora-session.log");
@@ -202,6 +217,15 @@ public final class DebugLog {
             if (file != null) {
                 file.println(record);
                 file.flush();
+            }
+        }
+    }
+
+    /** A record from the log handler or the uncaught-exception handler, unless a test suspended capture. */
+    private static void capture(String record) {
+        synchronized (LOCK) {
+            if (!captureSuspendedForTest) {
+                append(record);
             }
         }
     }

@@ -49,6 +49,7 @@ class ConsoleWindowsFxTest {
             }
         });
         DebugLog.clear();
+        DebugLog.suspendCaptureForTest(false);
     }
 
     private static MouseEvent mouse(javafx.event.EventType<MouseEvent> type, double x, double y, int clicks) {
@@ -273,6 +274,8 @@ class ConsoleWindowsFxTest {
 
     @Test
     void theDebugLogWindowShowsTheLogAndItsButtonsRefreshClearAndClose() throws Exception {
+        // The window's text is asserted exactly; showing it can log CSS warnings on the FX thread itself.
+        DebugLog.suspendCaptureForTest(true);
         DebugLog.clear();
         DebugLog.append("first record");
         Path sessionFile = Path.of("config", "editora-session.log").toAbsolutePath();
