@@ -11,6 +11,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -231,8 +232,16 @@ final class HttpClientCoordinator {
             loadSaved(buffer, p);
         } else if (!want && has) {
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
-            panels.remove(buffer);
+            HttpClientPanel gone = panels.remove(buffer);
             historyPaths.remove(buffer);
+            com.editora.http.HttpClientService.Handle run = running.remove(buffer);
+            if (run != null) {
+                run.cancel(); // the feature went off mid-run: nothing is left to show the response
+                buffer.setHttpRunning(-1);
+            }
+            if (gone != null) {
+                gone.dispose(); // stops its elapsed-time timer, which otherwise kept the panel alive
+            }
         } else if (want && buffer.getPath() != null && !buffer.getPath().equals(historyPaths.get(buffer))) {
             adoptSavedPath(buffer); // a first Save of an untitled buffer, or a Save As: its history moves along
         }
@@ -292,7 +301,10 @@ final class HttpClientCoordinator {
     /** Drops the closed buffer's panel (the map is strongly keyed, so this hook is required). */
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
-            panels.remove(closed);
+            HttpClientPanel gone = panels.remove(closed);
+            if (gone != null) {
+                gone.dispose(); // a run in flight left its timer going for ever, pinning the panel and the buffer
+            }
             historyPaths.remove(closed);
             captures.remove(closed);
             environments.remove(closed);
@@ -318,9 +330,38 @@ final class HttpClientCoordinator {
         });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
-        p.setOnEscape(() -> buffer.getArea().requestFocus());
+        p.setOnEscape(() -> {
+            // In Preview the editor is hidden, so focusing it did nothing: show it beside the response first.
+            if (buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
+                buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
+            }
+            focusWhenShown(buffer.getArea());
+        });
         p.setOnCleared(() -> persist(buffer));
         return p;
+    }
+
+    /**
+     * Focuses {@code node} now, or as soon as it is back in a scene: a Split's SplitPane adds the editor to the
+     * scene only when its skin lays it out, so right after leaving Preview a focus request would go nowhere.
+     */
+    private static void focusWhenShown(javafx.scene.Node node) {
+        if (node.getScene() != null) {
+            node.requestFocus();
+            return;
+        }
+        node.sceneProperty().addListener(new javafx.beans.value.ChangeListener<>() {
+            @Override
+            public void changed(
+                    javafx.beans.value.ObservableValue<? extends javafx.scene.Scene> o,
+                    javafx.scene.Scene was,
+                    javafx.scene.Scene now) {
+                if (now != null) {
+                    o.removeListener(this);
+                    node.requestFocus();
+                }
+            }
+        });
     }
 
     private int editorFontSize() {
@@ -397,17 +438,27 @@ final class HttpClientCoordinator {
         if (baseDir == null) {
             List<String> needs = HttpScratch.needsFolder(req, parsed, rawDefinitions(text, envDir(buffer)));
             if (!needs.isEmpty()) {
-                finishRun(buffer, List.of(parsed), List.of(index), List.of(notSent(parsed, needs)), false);
+                HttpExchange unsent = notSent(parsed, needs);
+                finishRun(
+                        buffer,
+                        List.of(parsed),
+                        List.of(index),
+                        List.of(unsent),
+                        new long[] {System.currentTimeMillis()},
+                        identitySet(List.of(unsent)),
+                        false);
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
         String label = HttpScratch.label(parsed, vars, session, baseDir, java.time.ZonedDateTime.now());
         startRun(buffer, label);
         buffer.setHttpRunning(index);
+        long startedAt = System.currentTimeMillis();
         com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
         run[0] = service.run(parsed, vars, baseDir, session, ex -> {
             if (running.remove(buffer, run[0])) {
-                finishRun(buffer, List.of(parsed), List.of(index), List.of(ex), false);
+                finishRun(
+                        buffer, List.of(parsed), List.of(index), List.of(ex), new long[] {startedAt}, Set.of(), false);
             }
         });
         track(buffer, run[0]);
@@ -417,6 +468,13 @@ final class HttpClientCoordinator {
     private static Path folderOf(EditorBuffer buffer) {
         Path file = buffer == null ? null : buffer.getPath();
         return file == null ? null : file.toAbsolutePath().getParent();
+    }
+
+    /** An identity set of {@code exchanges} (records compare by value; two "not sent" results may be equal). */
+    private static java.util.Set<HttpExchange> identitySet(java.util.Collection<HttpExchange> exchanges) {
+        java.util.Set<HttpExchange> set = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        set.addAll(exchanges);
+        return set;
     }
 
     /** What a request an untitled buffer cannot send reports instead: not sent, save the file first. */
@@ -551,8 +609,12 @@ final class HttpClientCoordinator {
             for (int i = 0; i < reqs.size(); i++) {
                 indexes.add(i);
             }
+            // When each request started (by file position), for its History time; the ones not sent: now.
+            long[] startedAt = new long[reqs.size()];
+            java.util.Arrays.fill(startedAt, System.currentTimeMillis());
+            java.util.Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
-                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), true);
+                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
                 return;
             }
             startRun(b, label);
@@ -568,6 +630,7 @@ final class HttpClientCoordinator {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {
                             int index = sent.get(i);
+                            startedAt[index] = System.currentTimeMillis();
                             b.setHttpRunning(index); // the ■ follows the request in flight
                             p.progress(
                                     index,
@@ -578,7 +641,14 @@ final class HttpClientCoordinator {
                     },
                     exchanges -> {
                         if (running.remove(b, run[0])) {
-                            finishRun(b, reqs, indexes, merged(reqs.size(), sent, exchanges, skipped), true);
+                            finishRun(
+                                    b,
+                                    reqs,
+                                    indexes,
+                                    merged(reqs.size(), sent, exchanges, skipped),
+                                    startedAt,
+                                    unsent,
+                                    true);
                         }
                     });
             track(b, run[0]);
@@ -735,24 +805,29 @@ final class HttpClientCoordinator {
             List<HttpFile.Parsed> requests,
             List<Integer> indexes,
             List<HttpExchange> exchanges,
+            long[] startedAt,
+            java.util.Set<HttpExchange> unsent,
             boolean all) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         long now = System.currentTimeMillis();
         List<HttpHistoryEntry> entries = new ArrayList<>();
         for (int i = 0; i < exchanges.size(); i++) {
             HttpFile.Parsed req = i < requests.size() ? requests.get(i) : null;
+            HttpExchange ex = exchanges.get(i);
             entries.add(new HttpHistoryEntry(
-                    exchanges.get(i),
+                    ex,
                     req == null ? null : req.name(),
                     i < indexes.size() ? indexes.get(i) : -1,
-                    now,
+                    startedAt != null && i < startedAt.length ? startedAt[i] : now,
                     false,
                     false,
-                    req != null && req.directives().noLog())); // # @no-log: shown now, never written to disk
+                    // # @no-log, and an untitled buffer's "not sent — save first": shown now, never written to disk
+                    (req != null && req.directives().noLog()) || unsent.contains(ex)));
         }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             p.showEntries(entries);
+            p.showRunSummary(all ? HttpStatusText.runAllSummary(exchanges) : null);
             persist(buffer);
         }
         if (!exchanges.isEmpty()) {
@@ -1063,13 +1138,11 @@ final class HttpClientCoordinator {
         HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
         String env = environments.get(buffer);
         state.environment = env == null ? p.getSelectedEnvironment() : env;
-        for (HttpHistoryEntry e : p.history()) {
-            if (state.responses.size() >= HttpResponseHistory.MAX_RESPONSES) {
-                break;
-            }
-            if (!e.noLog()) {
-                state.responses.add(e.toStored());
-            }
+        List<HttpHistoryEntry> loggable =
+                p.history().stream().filter(e -> !e.noLog()).toList();
+        // Each request's newest response first: one Run All cannot push out every other request's last response.
+        for (HttpHistoryEntry e : HttpHistoryRetention.keep(loggable, HttpResponseHistory.MAX_RESPONSES)) {
+            state.responses.add(e.toStored());
         }
         store.save(file, state);
     }

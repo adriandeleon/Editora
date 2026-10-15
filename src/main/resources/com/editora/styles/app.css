@@ -3699,6 +3699,14 @@
 .http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; }
 .http-panel .http-status.http-status-server-error,
 .http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; }
+.http-panel .http-warn-badge { -fx-text-fill: -state-amber; -fx-font-weight: bold; -fx-cursor: hand; }
+.http-panel .http-run-summary { -fx-text-fill: -color-fg-muted; }
+.http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
+.http-history-code.http-status-ok { -fx-text-fill: -state-green; }
+.http-history-code.http-status-redirect { -fx-text-fill: -state-accent; }
+.http-history-code.http-status-client-error { -fx-text-fill: -state-amber; }
+.http-history-code.http-status-server-error,
+.http-history-code.http-status-failed { -fx-text-fill: -state-red; }
 /* Bold column headers (double-click renames when the grid is editable). */
 .csv-grid-table .column-header .csv-grid-col-header { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; -fx-padding: 0 2 0 2; }
 .csv-grid-table .column-header-background { -fx-background-color: -color-bg-subtle; }
