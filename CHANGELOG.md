@@ -265,6 +265,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A language server that fails to start no longer leaves its tabs looking served.** When a server could not be
+  started (its command cannot be run, or a remote connection broke while it was starting), its tabs stayed marked
+  as served and the status bar could keep naming it until the tab was synced again. They now go quiet at once,
+  as after a lost connection, and the server is not restarted in a loop. While Editora was finding out which
+  servers are installed, such a server was also tried again once for every other server it checked (up to 22
+  failed starts at launch); now only its own check, a settings change, Restart Servers or a reconnect tries
+  it again.
 - **Right-click menus close when you click outside them.** A click anywhere else in the tree, list, editor or
   panel the menu was opened on used to leave it open, and right-clicking another row opened a second menu
   beside the first. Now any click outside a right-click menu closes it, in every panel, and the click still
