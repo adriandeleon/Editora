@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.List;
 
 import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.Test;
 
@@ -13,11 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class HttpStatusTextTest {
 
     private static HttpExchange ex(HttpResult r) {
-        return new HttpExchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
+        return HttpFixtures.exchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
     }
 
     private static HttpResult status(int code) {
-        return new HttpResult(code, List.of(), "", "text/plain", 32, 44, null);
+        return HttpFixtures.text(code, List.of(), "", "text/plain", 32, 44, null);
     }
 
     @Test

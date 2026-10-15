@@ -9,6 +9,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 
 import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -38,17 +39,17 @@ class HttpClientPanelFxTest {
     }
 
     private static HttpExchange exchange(String label, HttpResult r) {
-        return new HttpExchange(label, "GET", "http://x.test/", List.of(), "", r);
+        return HttpFixtures.exchange(label, "GET", "http://x.test/", List.of(), "", r);
     }
 
     private static HttpResult ok(String body, String contentType, List<String> warnings) {
-        return new HttpResult(200, List.of(), body, contentType, 3, body.length(), null, warnings);
+        return HttpFixtures.text(200, List.of(), body, contentType, 3, body.length(), null, warnings);
     }
 
     /** Shows {@code ex}, waits for its background render to land on the FX thread, and returns the body text. */
     private static String show(HttpClientPanel p, HttpExchange ex) throws Exception {
         CompletableFuture<Void> render = FxTestSupport.callOnFx(() -> {
-            p.showExchanges(List.of(ex));
+            p.showEntries(entries(ex));
             return p.bodyRenderForTest();
         });
         render.get(30, TimeUnit.SECONDS);
@@ -67,7 +68,7 @@ class HttpClientPanelFxTest {
         assertTrue(marker.contains("400,000"), "the cut is announced, with the shown length: " + marker);
         assertTrue(marker.contains("660,000"), "…and the full length: " + marker);
 
-        String saved = FxTestSupport.callOnFx(p::getResponseText);
+        String saved = FxTestSupport.callOnFx(() -> responseText(p));
         assertTrue(saved.contains(body), "Save writes the whole body, not the truncated view");
     }
 
@@ -79,7 +80,7 @@ class HttpClientPanelFxTest {
         assertTrue(shown.contains("\"price\" : 10.50"), shown);
         assertTrue(shown.contains("\"n\" : 1e2"), shown);
         assertEquals(raw, shown.replaceAll("\\s+", ""), "whitespace is the only change");
-        String saved = FxTestSupport.callOnFx(p::getResponseText);
+        String saved = FxTestSupport.callOnFx(() -> responseText(p));
         assertTrue(saved.contains("\n" + raw + "\n"), "the report holds the raw body: " + saved);
         assertEquals(
                 raw,
@@ -94,9 +95,9 @@ class HttpClientPanelFxTest {
         HttpExchange fast = exchange("second", ok("second body", "text/plain", List.of()));
         // Both are queued in the same FX pulse: the first render's result must be dropped, not painted late.
         List<CompletableFuture<Void>> renders = FxTestSupport.callOnFx(() -> {
-            p.showExchanges(List.of(slow));
+            p.showEntries(entries(slow));
             CompletableFuture<Void> a = p.bodyRenderForTest();
-            p.showExchanges(List.of(fast));
+            p.showEntries(entries(fast));
             return List.of(a, p.bodyRenderForTest());
         });
         for (CompletableFuture<Void> r : renders) {
@@ -109,7 +110,7 @@ class HttpClientPanelFxTest {
     void warningsAndABinaryBodyAreShownNotSwallowed() throws Exception {
         HttpClientPanel p = panel();
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0, 0, 0, 1};
-        HttpResult r = HttpResult.ofBytes(
+        HttpResult r = HttpFixtures.bytes(
                 200,
                 List.of(),
                 png,
@@ -161,7 +162,7 @@ class HttpClientPanelFxTest {
     @Test
     void theStatusLineSaysTheStatusTimeAndSizeAndTheHeadersBoxOnlyTheHeaders() throws Exception {
         HttpClientPanel p = panel();
-        HttpResult r = new HttpResult(
+        HttpResult r = HttpFixtures.text(
                 404, List.<String[]>of(new String[] {"content-type", "text/plain"}), "gone", "text/plain", 12, 4, null);
         show(p, exchange("missing", r));
         assertEquals("404 Not Found  ·  12 ms  ·  4 B", FxTestSupport.callOnFx(p::statusForTest));
@@ -191,7 +192,7 @@ class HttpClientPanelFxTest {
 
     @Test
     void theRequestAsSentIsShownWithItsHeadersAndBody() {
-        HttpExchange ex = new HttpExchange(
+        HttpExchange ex = HttpFixtures.exchange(
                 "POST http://x.test/a",
                 "POST",
                 "http://x.test/a?u=alice",
@@ -207,7 +208,7 @@ class HttpClientPanelFxTest {
         HttpExchange good = exchange("good", ok("fine", "text/plain", List.of()));
         HttpExchange bad = exchange("bad", HttpResult.failure("Connection refused", List.of()));
         CompletableFuture<Void> render = FxTestSupport.callOnFx(() -> {
-            p.showExchanges(List.of(good, bad, good));
+            p.showEntries(entries(good, bad, good));
             return p.bodyRenderForTest();
         });
         render.get(30, TimeUnit.SECONDS);
@@ -229,7 +230,7 @@ class HttpClientPanelFxTest {
                 p,
                 exchange(
                         "img",
-                        HttpResult.ofBytes(200, List.of(), png.toByteArray(), "image/png", 2, List.of(), false)));
+                        HttpFixtures.bytes(200, List.of(), png.toByteArray(), "image/png", 2, List.of(), false)));
         assertTrue(FxTestSupport.callOnFx(p::showsImageForTest));
     }
 
@@ -295,5 +296,16 @@ class HttpClientPanelFxTest {
 
     private static String tr(String key, Object... args) {
         return com.editora.i18n.Messages.tr(key, args);
+    }
+
+    /** Finished exchanges as the coordinator hands them over: no name, no position. */
+    private static List<HttpHistoryEntry> entries(com.editora.http.HttpExchange... exchanges) {
+        return java.util.Arrays.stream(exchanges).map(HttpHistoryEntry::of).toList();
+    }
+
+    /** What Save writes with "status and headers": the selected response as a full text report. */
+    private static String responseText(HttpClientPanel p) {
+        com.editora.http.HttpExchange ex = p.getSelectedExchange();
+        return ex == null ? "" : com.editora.http.HttpResponseFormat.render(ex.result());
     }
 }

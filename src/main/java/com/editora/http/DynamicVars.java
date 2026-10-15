@@ -2,7 +2,6 @@ package com.editora.http;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -61,11 +60,6 @@ public final class DynamicVars {
     /** True for a dynamic-variable name (begins with {@code $}). */
     public static boolean isDynamic(String name) {
         return name != null && name.startsWith("$");
-    }
-
-    /** {@link #value(String, ZonedDateTime, Path)} for a wall-clock {@code now} in the system time zone. */
-    public static String value(String name, LocalDateTime now, Path dir) {
-        return value(name, now == null ? null : now.atZone(ZoneId.systemDefault()), dir);
     }
 
     /**

@@ -178,7 +178,7 @@ class ResponseRedirectsTest {
     void variablesInTheTargetPathAreFilledInBeforeContainment() throws Exception {
         java.util.Map<String, String> vars = java.util.Map.of("out", "results", "id", "42", "up", "..");
         java.util.function.Function<String, String> sub =
-                s -> HttpVars.substitute(s, vars, java.time.LocalDateTime.now());
+                s -> HttpFixtures.substitute(s, vars, java.time.ZonedDateTime.now());
         ResponseRedirects.write(
                 redirects("GET http://x.test/\n\n>> {{out}}/r-{{id}}.json\n>> {{up}}/escape.txt\n"),
                 dir,

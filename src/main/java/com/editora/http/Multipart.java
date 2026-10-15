@@ -313,26 +313,6 @@ public final class Multipart {
         return bytes.length;
     }
 
-    /** Assembles the multipart wire bytes; inline parts pass through {@code subst} and file parts are read
-     *  from {@code baseDir}. Best-effort — a missing file leaves its part empty rather than throwing. */
-    public static byte[] build(List<Part> parts, String boundary, Path baseDir, Function<String, String> subst) {
-        return build(parts, boundary, baseDir, subst, new ArrayList<>());
-    }
-
-    /**
-     * As {@link #build(List, String, Path, Function)}, but reports each file part that could not be read in
-     * {@code problems}. The whole body in memory: the request itself streams {@link #assemble}'s {@link Body}.
-     */
-    public static byte[] build(
-            List<Part> parts, String boundary, Path baseDir, Function<String, String> subst, List<String> problems) {
-        try {
-            return assemble(parts, boundary, baseDir, subst, problems).toBytes();
-        } catch (IOException e) {
-            problems.add("multipart file not readable: " + e.getMessage());
-            return new byte[0];
-        }
-    }
-
     private static void write(ByteArrayOutputStream out, String s) {
         out.writeBytes(s.getBytes(StandardCharsets.UTF_8));
     }

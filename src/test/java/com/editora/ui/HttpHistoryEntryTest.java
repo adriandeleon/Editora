@@ -7,6 +7,7 @@ import java.util.List;
 
 import com.editora.config.HttpResponseHistory;
 import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.Test;
 
@@ -19,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HttpHistoryEntryTest {
 
     private static HttpExchange ex(String body, List<String[]> reqHeaders, List<String[]> respHeaders) {
-        HttpResult r = new HttpResult(200, respHeaders, body, "application/json", 5, body.length(), null, List.of());
-        return new HttpExchange("GET http://x.test/u", "GET", "http://x.test/u", reqHeaders, "{\"p\":1}", r);
+        HttpResult r = HttpFixtures.text(200, respHeaders, body, "application/json", 5, body.length(), null, List.of());
+        return HttpFixtures.exchange("GET http://x.test/u", "GET", "http://x.test/u", reqHeaders, "{\"p\":1}", r);
     }
 
     private static HttpHistoryEntry entry(int bodyChars) {
@@ -32,7 +33,7 @@ class HttpHistoryEntryTest {
         HttpHistoryEntry named =
                 new HttpHistoryEntry(ex("{}", List.of(), List.of()), "Get user", 2, 3_723_000L, false, false, false);
         assertEquals("200  01:02:03  Get user — GET http://x.test/u", named.label(ZoneOffset.UTC));
-        HttpHistoryEntry failed = HttpHistoryEntry.of(new HttpExchange(
+        HttpHistoryEntry failed = HttpHistoryEntry.of(HttpFixtures.exchange(
                 "GET http://x.test/u", "GET", "http://x.test/u", List.of(), "", HttpResult.failure("x", List.of())));
         assertTrue(failed.label(ZoneOffset.UTC).startsWith("⚠  "), failed.label(ZoneOffset.UTC));
     }
@@ -92,8 +93,9 @@ class HttpHistoryEntryTest {
     @Test
     void aBinaryBodyIsNotSavedAndComesBackAsNotKept() {
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0, 0, 0, 1};
-        HttpResult r = HttpResult.ofBytes(200, List.of(), png, "image/png", 3, List.of(), false);
-        HttpExchange e = new HttpExchange("GET http://x.test/i.png", "GET", "http://x.test/i.png", List.of(), "", r);
+        HttpResult r = HttpFixtures.bytes(200, List.of(), png, "image/png", 3, List.of(), false);
+        HttpExchange e =
+                HttpFixtures.exchange("GET http://x.test/i.png", "GET", "http://x.test/i.png", List.of(), "", r);
         HttpResponseHistory.Response s = HttpHistoryEntry.of(e).toStored();
         assertTrue(s.binary());
         assertEquals("", s.body());

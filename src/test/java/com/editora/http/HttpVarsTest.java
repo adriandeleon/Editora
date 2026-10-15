@@ -18,24 +18,24 @@ class HttpVarsTest {
     @Test
     void substitutesNamedVariables() {
         Map<String, String> vars = Map.of("host", "https://api.test", "token", "abc");
-        assertEquals("https://api.test/users", HttpVars.substitute("{{host}}/users", vars, CLOCK));
-        assertEquals("Bearer abc", HttpVars.substitute("Bearer {{token}}", vars, CLOCK));
+        assertEquals("https://api.test/users", HttpFixtures.substitute("{{host}}/users", vars, CLOCK));
+        assertEquals("Bearer abc", HttpFixtures.substitute("Bearer {{token}}", vars, CLOCK));
     }
 
     @Test
     void unknownVariableBecomesEmpty() {
-        assertEquals("/x", HttpVars.substitute("{{missing}}/x", Map.of(), CLOCK));
+        assertEquals("/x", HttpFixtures.substitute("{{missing}}/x", Map.of(), CLOCK));
     }
 
     @Test
     void builtinTimestampUsesTheClock() {
         long expected = CLOCK.toEpochSecond();
-        assertEquals(String.valueOf(expected), HttpVars.substitute("{{$timestamp}}", Map.of(), CLOCK));
+        assertEquals(String.valueOf(expected), HttpFixtures.substitute("{{$timestamp}}", Map.of(), CLOCK));
     }
 
     @Test
     void builtinUuidIsAUuid() {
-        String s = HttpVars.substitute("{{$uuid}}", Map.of(), CLOCK);
+        String s = HttpFixtures.substitute("{{$uuid}}", Map.of(), CLOCK);
         assertEquals(36, s.length());
         assertTrue(s.matches("[0-9a-f-]{36}"));
     }
@@ -46,7 +46,8 @@ class HttpVarsTest {
         List<String[]> fileVars = List.of(
                 new String[] {"base", "{{host}}/v1"}, // references an env var
                 new String[] {"users", "{{base}}/users"}); // references an earlier @var
-        Map<String, String> resolved = HttpVars.resolve(env, fileVars, CLOCK, null);
+        Map<String, String> resolved =
+                HttpVars.scope(env, fileVars, CLOCK, null, null).values();
         assertEquals("https://api.test/v1", resolved.get("base"));
         assertEquals("https://api.test/v1/users", resolved.get("users"));
     }

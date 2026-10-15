@@ -58,7 +58,7 @@ class CurlExportTest {
 
     @Test
     void getOmitsMethodFlag() {
-        String curl = CurlExport.toCurl("GET", "https://api.test/x", List.of(), null);
+        String curl = CurlExport.toCurl("GET", "https://api.test/x", List.of(), null, null);
         assertTrue(curl.startsWith("curl -L 'https://api.test/x'"), curl); // follows redirects, as a run does
         assertFalse(curl.contains("-X"), curl);
     }
@@ -69,7 +69,8 @@ class CurlExportTest {
                 "POST",
                 "https://api.test/x",
                 List.<String[]>of(new String[] {"Content-Type", "application/json"}),
-                "{\"k\":\"v\"}");
+                "{\"k\":\"v\"}",
+                null);
         assertTrue(curl.contains("-X POST"), curl);
         assertTrue(curl.contains("-H 'Content-Type: application/json'"), curl);
         assertTrue(curl.contains("--data-raw '{\"k\":\"v\"}'"), curl);
@@ -77,27 +78,27 @@ class CurlExportTest {
 
     @Test
     void singleQuotesAreEscaped() {
-        String curl = CurlExport.toCurl("POST", "https://api.test/x", List.of(), "it's");
+        String curl = CurlExport.toCurl("POST", "https://api.test/x", List.of(), "it's", null);
         assertTrue(curl.contains("it'\\''s"), curl);
     }
 
     @Test
     void aQuoteInTheUrlCannotEndTheQuotingAndRunACommand() {
         String url = "http://127.0.0.1:1/dump?q=a'$(touch$IFS/tmp/pwned)'b";
-        String curl = CurlExport.toCurl("GET", url, List.of(), null);
+        String curl = CurlExport.toCurl("GET", url, List.of(), null, null);
         assertEquals(List.of("curl", "-L", url), shellWords(curl), curl);
     }
 
     @Test
     void headerNamesAndValuesAreQuotedAsOneWord() {
-        String curl =
-                CurlExport.toCurl("GET", "http://h/", List.<String[]>of(new String[] {"X-It's", "v'$(id)'"}), null);
+        String curl = CurlExport.toCurl(
+                "GET", "http://h/", List.<String[]>of(new String[] {"X-It's", "v'$(id)'"}), null, null);
         assertEquals(List.of("curl", "-L", "http://h/", "-H", "X-It's: v'$(id)'"), shellWords(curl), curl);
     }
 
     @Test
     void aBodyStartingWithAtIsSentAsTextNotReadFromAFile() {
-        String curl = CurlExport.toCurl("POST", "http://h/", List.of(), "@/etc/passwd");
+        String curl = CurlExport.toCurl("POST", "http://h/", List.of(), "@/etc/passwd", null);
         List<String> words = shellWords(curl);
         assertEquals(List.of("--data-raw", "@/etc/passwd"), words.subList(words.size() - 2, words.size()), curl);
     }
@@ -178,7 +179,7 @@ class CurlExportTest {
     void anUnusualMethodIsQuoted() {
         assertEquals(
                 List.of("curl", "-X", "PROP;FIND", "-L", "http://h/"),
-                shellWords(CurlExport.toCurl("PROP;FIND", "http://h/", List.of(), null)));
+                shellWords(CurlExport.toCurl("PROP;FIND", "http://h/", List.of(), null, null)));
     }
 
     @Test

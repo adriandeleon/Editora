@@ -1,8 +1,6 @@
 package com.editora.http;
 
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -249,43 +247,7 @@ public final class HttpVars {
         }
     }
 
-    /** The resolved values of {@link #scope} (no captured responses), for clock {@code now}. */
-    public static Map<String, String> resolve(
-            Map<String, String> envVars, List<String[]> fileVars, ZonedDateTime now, Path dir) {
-        return new LinkedHashMap<>(scope(envVars, fileVars, now, null, dir).values());
-    }
-
-    /** {@link #substitute(String, Scope, ZonedDateTime, CapturedResponses, Path, Unresolved)} for a plain map,
-     *  with no chaining/dir context and no record of what did not resolve. */
-    public static String substitute(String text, Map<String, String> vars, ZonedDateTime now) {
-        return substitute(text, Scope.of(vars), now, null, null, null);
-    }
-
-    /** {@link #resolve(Map, List, LocalDateTime, Path)} with no file directory (no {@code $dotenv}). */
-    public static Map<String, String> resolve(Map<String, String> envVars, List<String[]> fileVars, LocalDateTime now) {
-        return resolve(envVars, fileVars, now, null);
-    }
-
-    /** The resolved values of {@link #scope} for a wall-clock {@code now} in the system time zone. */
-    public static Map<String, String> resolve(
-            Map<String, String> envVars, List<String[]> fileVars, LocalDateTime now, Path dir) {
-        return new LinkedHashMap<>(
-                scope(envVars, fileVars, zoned(now), null, dir).values());
-    }
-
     // --- substituting -------------------------------------------------------------------------------
-
-    /** {@link #substitute(String, Map, LocalDateTime, CapturedResponses, Path)} with no chaining/dir context. */
-    public static String substitute(String text, Map<String, String> vars, LocalDateTime now) {
-        return substitute(text, vars, now, null, null);
-    }
-
-    /** {@link #substitute(String, Scope, ZonedDateTime, CapturedResponses, Path, Unresolved)} for a plain map,
-     *  a wall-clock {@code now} in the system time zone, and no record of what did not resolve. */
-    public static String substitute(
-            String text, Map<String, String> vars, LocalDateTime now, CapturedResponses captured, Path dir) {
-        return substitute(text, Scope.of(vars), zoned(now), captured, dir, null);
-    }
 
     /**
      * Replaces every {@code {{name}}} in {@code text}: dynamic {@code $…} built-ins (resolved with {@code now}
@@ -376,9 +338,5 @@ public final class HttpVars {
 
     private static String ref(String name) {
         return "{{" + name + "}}";
-    }
-
-    private static ZonedDateTime zoned(LocalDateTime now) {
-        return now == null ? null : now.atZone(ZoneId.systemDefault());
     }
 }

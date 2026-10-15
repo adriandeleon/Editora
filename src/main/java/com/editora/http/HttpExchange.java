@@ -21,14 +21,9 @@ public record HttpExchange(
         HttpResult result,
         Details details) {
 
+    /** {@code details} may be null for a request that was never built (it is then {@link Details#NONE}). */
     public HttpExchange {
         details = details == null ? Details.NONE : details;
-    }
-
-    /** An exchange without request details (tests, a request that was never built). */
-    public HttpExchange(
-            String label, String method, String url, List<String[]> headers, String requestBody, HttpResult result) {
-        this(label, method, url, headers, requestBody, result, Details.NONE);
     }
 
     /**

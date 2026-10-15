@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CapturedResponsesTest {
 
     private static HttpResult result() {
-        return new HttpResult(
+        return HttpFixtures.text(
                 201,
                 List.of(new String[] {"Content-Type", "application/json"}, new String[] {"X-Trace", "t-1"}),
                 "{ \"token\": \"abc\", \"id\": 7 }",
@@ -83,7 +83,7 @@ class CapturedResponsesTest {
         byte[] raw = huge.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         cr.put(
                 "dump",
-                HttpResult.ofBytes(
+                HttpFixtures.bytes(
                         200,
                         List.<String[]>of(new String[] {"ETag", "e1"}),
                         raw,

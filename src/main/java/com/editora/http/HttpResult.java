@@ -37,116 +37,14 @@ public record HttpResult(
         written = written == null ? List.of() : List.copyOf(written);
     }
 
-    /**
-     * A result with the files its redirects saved and no known protocol version. {@code protocol} is the version the
-     * response arrived over ({@code HTTP/1.1}, {@code HTTP/2}), or null when unknown.
-     */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings,
-            byte[] rawBody,
-            boolean truncated,
-            List<String> written) {
-        this(
-                status,
-                headers,
-                body,
-                contentType,
-                elapsedMs,
-                sizeBytes,
-                error,
-                warnings,
-                rawBody,
-                truncated,
-                written,
-                null);
-    }
-
-    /** A result whose request saved nothing to disk. */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings,
-            byte[] rawBody,
-            boolean truncated) {
-        this(status, headers, body, contentType, elapsedMs, sizeBytes, error, warnings, rawBody, truncated, List.of());
-    }
-
     /** How far into the payload {@link #looksBinary} looks for a NUL byte (git's heuristic). */
     private static final int SNIFF_BYTES = 8000;
 
-    /** A text result (tests, errors): the raw bytes are the UTF-8 form of {@code body}. */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings) {
-        this(
-                status,
-                headers,
-                body,
-                contentType,
-                elapsedMs,
-                sizeBytes,
-                error,
-                warnings,
-                body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8),
-                false);
-    }
-
-    /** A result with no request-side warnings (the common case). */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error) {
-        this(status, headers, body, contentType, elapsedMs, sizeBytes, error, List.of());
-    }
-
-    /** A completed response built from its raw bytes; the display text is decoded with the response charset. */
-    public static HttpResult ofBytes(
-            int status,
-            List<String[]> headers,
-            byte[] raw,
-            String contentType,
-            long elapsedMs,
-            List<String> warnings,
-            boolean truncated) {
-        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, List.of());
-    }
-
-    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean)}, with the files the redirects saved. */
-    public static HttpResult ofBytes(
-            int status,
-            List<String[]> headers,
-            byte[] raw,
-            String contentType,
-            long elapsedMs,
-            List<String> warnings,
-            boolean truncated,
-            List<String> written) {
-        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, written, null);
-    }
-
-    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean, List)}, with the protocol version. */
+    /**
+     * A completed response built from its raw bytes; the display text is decoded with the response charset.
+     * {@code written} lists what its {@code >>} redirects saved; {@code protocol} is the version it arrived over
+     * ({@code HTTP/1.1}, {@code HTTP/2}), or null when unknown.
+     */
     public static HttpResult ofBytes(
             int status,
             List<String[]> headers,
@@ -176,7 +74,7 @@ public record HttpResult(
 
     /** A request that never produced a response (not sent, connection failure, cancelled). */
     public static HttpResult failure(String error, List<String> warnings) {
-        return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings);
+        return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings, new byte[0], false, List.of(), null);
     }
 
     public boolean failed() {

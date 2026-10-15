@@ -430,7 +430,8 @@ final class HttpClientCoordinator {
                 parsed.url(),
                 parsed.headers(),
                 "",
-                HttpResult.failure(tr("httppanel.saveFirstToUse", String.join(", ", needs)), List.of()));
+                HttpResult.failure(tr("httppanel.saveFirstToUse", String.join(", ", needs)), List.of()),
+                null);
     }
 
     /**

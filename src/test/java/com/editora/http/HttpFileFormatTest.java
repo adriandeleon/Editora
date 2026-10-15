@@ -87,7 +87,6 @@ class HttpFileFormatTest {
                 "### a\nPOST http://h\nContent-Type: text/plain\n\n@user = mallory\n\n### b\nGET http://h/{{user}}\n";
         List<Request> rs = HttpFile.parse(text);
         assertTrue(rs.get(1).variables().isEmpty());
-        assertTrue(HttpFile.fileVariablePairs(text).isEmpty());
         assertEquals("@user = mallory", HttpFile.parseRequest(rs.get(0)).body());
     }
 

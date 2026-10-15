@@ -359,28 +359,12 @@ public final class HttpClientService {
     private record ClientKey(
             boolean noRedirect, boolean noCookieJar, Duration connectTimeout, HttpClient.Version version) {}
 
-    /** Runs a single request off-thread (its own cookie jar, no prior context), posting on the FX thread. */
-    public Handle run(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
-        return run(request, vars, baseDir, new CapturedResponses(), onResult);
-    }
-
     /**
      * Runs a single request off-thread (its own cookie jar), resolving {@code {{name.response…}}} against
-     * {@code captured} — the buffer's session — and recording this request's result there under its name.
-     */
-    public Handle run(
-            HttpFile.Parsed request,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses captured,
-            Consumer<HttpExchange> onResult) {
-        return run(request, vars, baseDir, captured, SecretGate.UNCHECKED, onResult);
-    }
-
-    /**
-     * As {@link #run(HttpFile.Parsed, Map, Path, CapturedResponses, Consumer)}, asking {@code gate} on the worker,
-     * before anything is sent, when the request reads a secret; refused, the request is reported unsent.
+     * {@code captured} — the buffer's session, a fresh one when null — and recording this request's result there
+     * under its name. {@code gate} is asked on the worker, before anything is sent, when the request reads a secret
+     * ({@link SecretGate#UNCHECKED} asks nothing); refused, the request is reported unsent. The result posts on the FX
+     * thread.
      */
     public Handle run(
             HttpFile.Parsed request,
@@ -406,57 +390,12 @@ public final class HttpClientService {
         return handle;
     }
 
-    /** Runs {@code requests} sequentially off-thread, sharing one cookie jar + captured-response session so
-     *  later requests can reference earlier responses; posts all exchanges together on the FX thread. */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, null, null, onResult);
-    }
-
-    /** As {@link #runAll(List, Map, Path, Consumer)}, resolving and recording responses in {@code responses}. */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses responses,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, responses, null, onResult);
-    }
-
     /**
-     * As {@link #runAll(List, Map, Path, Consumer)}, telling {@code onStart} (on the FX thread, may be null)
-     * the index of each request as it starts, so the viewer can show "2 of 5" while the run is in flight.
-     */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            java.util.function.IntConsumer onStart,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, null, onStart, onResult);
-    }
-
-    /**
-     * Runs {@code requests} in order, resolving and recording responses in {@code responses} (the buffer's
-     * chaining session; a fresh one when null) and telling {@code onStart} each request's index as it starts.
-     */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses responses,
-            java.util.function.IntConsumer onStart,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, responses, SecretGate.UNCHECKED, onStart, onResult);
-    }
-
-    /**
-     * As {@link #runAll(List, Map, Path, CapturedResponses, java.util.function.IntConsumer, Consumer)}, asking
-     * {@code gate} once, before the first request is sent, about every secret the requests read; refused, the
-     * requests that read one are reported unsent and the others still run.
+     * Runs {@code requests} in order off-thread, sharing one cookie jar and the captured-response session
+     * {@code responses} (the buffer's; a fresh one when null), so later requests can reference earlier responses.
+     * {@code gate} is asked once, before the first request is sent, about every secret the requests read; refused,
+     * the requests that read one are reported unsent and the others still run. {@code onStart} (on the FX thread,
+     * may be null) is told each request's index as it starts ("2 of 5"); all exchanges post together at the end.
      */
     public Handle runAll(
             List<HttpFile.Parsed> requests,
@@ -505,8 +444,9 @@ public final class HttpClientService {
             CapturedResponses captured,
             Session session,
             Approval approval) {
+        HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
         try {
-            return execute(handle, request, vars, baseDir, captured, session, approval);
+            return execute(handle, request, vars, baseDir, captured, session, approval, unresolved);
         } catch (Throwable failure) { // also an OutOfMemoryError: the arrays it was filling are garbage by now
             String method = request == null
                             || request.method() == null
@@ -519,8 +459,11 @@ public final class HttpClientService {
                     : failure instanceof OutOfMemoryError
                             ? tr("status.http.error.memory")
                             : tr("status.http.error.internal", describe(failure));
+            // What was known before it broke — a parse warning, a variable that did not resolve — still helps.
+            List<String> warnings = new ArrayList<>(request == null ? List.of() : request.warnings());
+            warnings.addAll(unresolved.warnings());
             return new HttpExchange(
-                    method + " " + url, method, url, List.of(), "", HttpResult.failure(message, List.of()));
+                    method + " " + url, method, url, List.of(), "", HttpResult.failure(message, warnings), null);
         }
     }
 
@@ -536,13 +479,13 @@ public final class HttpClientService {
             Path baseDir,
             CapturedResponses captured,
             Session session,
-            Approval approval) {
+            Approval approval,
+            HttpVars.Unresolved unresolved) {
         // The clock is a real instant in the user's zone: $timestamp/$isoTimestamp are UTC whatever the zone.
         ZonedDateTime now = ZonedDateTime.now();
         // The variables this request sees: the environment's, then the @var lines above it (in order), resolved
         // now — so they may use an earlier response or $dotenv beside the file. What cannot be resolved is
-        // collected and reported, never sent silently as an empty value.
-        HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
+        // collected (in the caller's `unresolved`, so a failure still reports it) and never sent silently as "".
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir);
         Function<String, String> sub = s -> HttpVars.substitute(s, scope, now, captured, baseDir, unresolved);
         Prepared p = prepare(request, baseDir, sub);

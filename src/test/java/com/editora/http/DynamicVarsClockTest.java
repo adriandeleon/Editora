@@ -1,9 +1,7 @@
 package com.editora.http;
 
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.TimeZone;
 
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.BeforeAll;
@@ -43,19 +41,6 @@ class DynamicVarsClockTest {
         assertEquals("2026-06-10T09:30:00Z", value("$datetime iso8601"));
         assertEquals("Wed, 10 Jun 2026 09:30:00 GMT", value("$datetime rfc1123"));
         assertEquals("09:30", value("$datetime \"HH:mm\""));
-    }
-
-    @Test
-    void theWallClockOverloadReadsLocalTimeInTheSystemZone() {
-        TimeZone saved = TimeZone.getDefault();
-        try {
-            TimeZone.setDefault(TimeZone.getTimeZone("America/Monterrey"));
-            long now = System.currentTimeMillis() / 1000;
-            long sent = Long.parseLong(DynamicVars.value("$timestamp", LocalDateTime.now(), null));
-            assertTrue(Math.abs(sent - now) < 5, "a wall-clock now in UTC-6 is still the real epoch: " + sent);
-        } finally {
-            TimeZone.setDefault(saved);
-        }
     }
 
     @Test

@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.Test;
 
@@ -89,6 +90,6 @@ class HttpScratchTest {
     }
 
     private static HttpExchange ex(String label) {
-        return new HttpExchange(label, "GET", "http://x.test/", List.of(), "", HttpResult.failure("x", List.of()));
+        return HttpFixtures.exchange(label, "GET", "http://x.test/", List.of(), "", HttpResult.failure("x", List.of()));
     }
 }

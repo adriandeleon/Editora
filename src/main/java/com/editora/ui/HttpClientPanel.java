@@ -509,14 +509,6 @@ public final class HttpClientPanel extends VBox {
 
     // --- showing responses -----------------------------------------------------------------------------
 
-    /** Adds finished exchanges with no name/position (tests and simple callers); see {@link #showEntries}. */
-    public void showExchanges(List<HttpExchange> exchanges) {
-        showEntries(
-                exchanges == null
-                        ? null
-                        : exchanges.stream().map(HttpHistoryEntry::of).toList());
-    }
-
     /**
      * Adds the finished {@code entries} (in run order) to the top of the history and shows the first that did
      * not succeed — for a Run All, the failure the user needs to see — else the first.
@@ -895,12 +887,6 @@ public final class HttpClientPanel extends VBox {
     /** The selected history entry, or {@code null}. */
     HttpHistoryEntry getSelectedEntry() {
         return historyCombo.getValue();
-    }
-
-    /** The current response as a full text report with the body as received (Save → "with headers"). */
-    public String getResponseText() {
-        HttpExchange ex = getSelectedExchange();
-        return ex == null ? "" : HttpResponseFormat.render(ex.result());
     }
 
     /** Focuses the environment picker (the {@code http.selectEnvironment} command's target). */

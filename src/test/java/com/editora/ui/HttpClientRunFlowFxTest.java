@@ -176,7 +176,7 @@ class HttpClientRunFlowFxTest {
         assertFalse(coordinator.isRunningForTest(b));
         HttpExchange shown = FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange());
         assertEquals(200, shown.result().status());
-        assertTrue(FxTestSupport.callOnFx(() -> panel(b).getResponseText()).contains("{\"ok\":true}"));
+        assertTrue(FxTestSupport.callOnFx(() -> responseText(panel(b))).contains("{\"ok\":true}"));
         assertTrue(panelStatus(b).startsWith("200 OK  ·  "), "status, reason, timing and size: " + panelStatus(b));
         assertTrue(panelStatus(b).endsWith("11 B"), panelStatus(b));
         assertTrue(FxTestSupport.callOnFx(b::hasHttpPreview));
@@ -478,7 +478,7 @@ class HttpClientRunFlowFxTest {
         Button clear = FxTestSupport.field(panel(b), "clearButton");
         FxTestSupport.runOnFx(clear::fire);
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
-        assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getResponseText()));
+        assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
         assertTrue(FxTestSupport.callOnFx(copyCurl::isDisabled));
         assertEquals(tr("httppanel.idle"), panelStatus(b));
     }
@@ -698,5 +698,11 @@ class HttpClientRunFlowFxTest {
             askedHosts.add(hosts);
             return trust;
         }
+    }
+
+    /** The selected response as the full text report Save writes ("" when nothing is selected). */
+    private static String responseText(HttpClientPanel p) {
+        com.editora.http.HttpExchange ex = p.getSelectedExchange();
+        return ex == null ? "" : com.editora.http.HttpResponseFormat.render(ex.result());
     }
 }

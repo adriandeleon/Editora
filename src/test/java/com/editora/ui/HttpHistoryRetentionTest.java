@@ -3,7 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.Test;
 
@@ -13,9 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class HttpHistoryRetentionTest {
 
     private static HttpHistoryEntry entry(String name, String url, long at) {
-        HttpResult r = new HttpResult(200, List.of(), "", "text/plain", 1, 1, null);
+        HttpResult r = HttpFixtures.text(200, List.of(), "", "text/plain", 1, 1, null);
         return new HttpHistoryEntry(
-                new HttpExchange("GET " + url, "GET", url, List.of(), "", r), name, -1, at, false, false, false);
+                HttpFixtures.exchange("GET " + url, "GET", url, List.of(), "", r), name, -1, at, false, false, false);
     }
 
     private static List<String> names(List<HttpHistoryEntry> entries) {

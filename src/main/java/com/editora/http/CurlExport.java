@@ -27,10 +27,6 @@ public final class CurlExport {
 
     private static final Pattern PLAIN_METHOD = Pattern.compile("[A-Za-z][A-Za-z0-9-]*");
 
-    /** The details of a request known only by its text: nothing beyond method, URL, headers and body. */
-    private static final HttpExchange.Details TEXT_ONLY =
-            HttpExchange.Details.NONE; // redirects followed, as a run does
-
     private CurlExport() {}
 
     /** The cURL command for an executed request, from its resolved values and how it was sent. */
@@ -38,13 +34,9 @@ public final class CurlExport {
         return toCurl(ex.method(), ex.url(), ex.headers(), ex.requestBody(), ex.details());
     }
 
-    /** The cURL command for a request known only by its text (no redirect, upload or auth details). */
-    public static String toCurl(String method, String url, List<String[]> headers, String body) {
-        return toCurl(method, url, headers, body, TEXT_ONLY);
-    }
-
+    /** The cURL command for a request from its parts; {@code details} null means known only by its text. */
     static String toCurl(String method, String url, List<String[]> headers, String body, HttpExchange.Details details) {
-        HttpExchange.Details d = details == null ? TEXT_ONLY : details;
+        HttpExchange.Details d = details == null ? HttpExchange.Details.NONE : details;
         StringBuilder sb = new StringBuilder("curl");
         String m = method == null ? "" : method.strip();
         if (m.equalsIgnoreCase("HEAD")) {
