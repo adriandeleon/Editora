@@ -87,6 +87,7 @@ final class FxWindowFixture implements AutoCloseable {
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
+            quietRemoteExecution(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
@@ -98,6 +99,15 @@ final class FxWindowFixture implements AutoCloseable {
     }
 
     /**
+     * Remote execution starts off in a test window, as it did before it became the default: mounting a remote
+     * folder with it on puts the one-time host question, a modal dialog nobody here answers. A test about
+     * running on a host switches it on itself.
+     */
+    private static void quietRemoteExecution(SharedConfig shared) {
+        shared.getSettings().setRemoteExecution(false);
+    }
+
+    /**
      * Boot a default window after {@code beforeWindows} has prepared the shared config — the place where
      * {@code App.start} does its own pre-window wiring (claiming the config dir, for one).
      */
@@ -106,6 +116,7 @@ final class FxWindowFixture implements AutoCloseable {
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
+            quietRemoteExecution(shared);
             beforeWindows.accept(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
@@ -123,6 +134,7 @@ final class FxWindowFixture implements AutoCloseable {
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
+            quietRemoteExecution(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));

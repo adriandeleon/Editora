@@ -9,12 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Debugging Python and JavaScript in remote folders (opt-in).** With remote commands switched on, Debug on a
+- **Remote development is on, and set per host.** The tools Editora drives — Git, gh, ripgrep, builds, tests,
+  language servers and debuggers — run on the host of a remote folder by default. The first time you open a
+  folder on a host, Editora asks once whether it may run commands there. Settings → Remote now shows, for
+  each saved site, whether that host may run commands (you can withdraw it there) and the command for each
+  tool on that host when its PATH does not find the right one: Git, GitHub CLI, ripgrep, a JDK, Node.js,
+  debugpy's Python, js-debug, java-debug, and any language server (`server = command`, one per line).
+  Changes reach open windows at once. The global switch is in Settings → Remote and in the
+  `Remote: Toggle Running Commands on the Host` command.
+- **Debugging Python and JavaScript in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
   and node; their locations can be set per host. Breakpoints of a remote file are kept across reconnects.
   Debugging Java on a host is not available yet.
-- **Language servers for remote folders (opt-in).** With remote commands switched on, a file in a remote folder
+- **Language servers for remote folders.** On a host you have allowed to run commands, a file in a remote folder
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition
   and the rest work as for local files. Renames and other cross-file edits create, move and delete files on the
@@ -23,20 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   starts them again. Java works too: jdtls runs on the host with the host's JDKs and keeps its index in
   `~/.cache/editora` there (the host-consent question now says so). Debugging Java and running a Java project's
   main class on a host are not available yet.
-- **Remote folders notice outside changes (opt-in).** With remote commands switched on, a remote project's
+- **Remote folders notice outside changes.** On a host you have allowed to run commands, a remote project's
   folder is watched on its host, so a `git pull` or a build there updates the Project tree, Git, language
   servers and an open file that changed, as for a local folder. Hosts with `inotifywait` report at once;
   others are checked every few seconds.
-- **Run, builds and tests for remote folders (opt-in).** With remote commands switched on, Run on a remote file,
+- **Run, builds and tests for remote folders.** On a host you have allowed to run commands, Run on a remote file,
   script / make / npm run configurations in a remote project, and Maven, Gradle, npm, Cargo and Go builds and
   test runs start on the host, over the same SSH connection; output, input and Stop work as for local runs.
   The host's own Java is used (or a JDK configured for that host). Running a Java project's main class on a
   remote host is not available yet.
-- **Find in Files and Go to File for remote folders (opt-in).** With remote commands switched on, Find in Files
+- **Find in Files and Go to File for remote folders.** On a host you have allowed to run commands, Find in Files
   in a remote (SFTP) folder is done by the host's own ripgrep when it has one, instead of reading every file
   over the connection, and Go to File lists a remote project's files on the host. Go to Symbol has no
   symbols for a remote project.
-- **Git for remote folders (opt-in).** With "Run commands on the remote host" switched on in Settings → Remote,
+- **Git for remote folders.** On a host you have allowed to run commands,
   a repository on a remote (SFTP) host works as a local one does: branch, changed files, change bars, log and
   blame, and staging (whole files or single hunks), committing, branches, stashes and fetch / pull / push. It
   is the host's own `git`, over the same SSH connection, with the host's credentials. Editora asks once per host
@@ -120,11 +128,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode** keeps the caret line centred while typing. Lists and block quotes fold.
 - **Exported HTML is self-contained:** local images are embedded, code blocks are highlighted, and Mermaid diagrams
   are drawn when the Mermaid CLI is available.
-- **Remote: a setting to run commands on the host (groundwork).** Settings → Remote has a new switch, off by
-  default, and there is a `Remote: Toggle Running Commands on the Host` command. It allows the tools Editora
-  drives to run on the host of a remote (SFTP) folder over the same SSH connection. No tool uses it yet: Run,
-  Build, Git, language servers and debugging are still local-only, and will be enabled for remote folders in
-  later changes.
 - **Markdown: links inside a document can be followed.** `Markdown: Open Link`, Ctrl/Cmd-click and a click in the
   preview now follow `#heading`, `other.md#heading` and reference links (`[text][label]`); the jump is recorded, so
   Back returns to the link. The table of contents Editora generates is navigable. Link destinations with

@@ -5065,6 +5065,69 @@ public class SettingsWindow {
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
 
+        // --- the selected site's host: may Editora run commands there, and with which tools ---
+        CheckBox hostAllowed = new CheckBox(tr("settings.remote.host.allowed"));
+        hostAllowed.setWrapText(true);
+        java.util.Map<String, TextField> toolFields = new java.util.LinkedHashMap<>();
+        // Each label above its field: beside them, the longer tool names widened the page past the smallest
+        // Settings window, which then scrolled sideways.
+        VBox toolsGrid = new VBox(2);
+        for (HostTools.Tool tool : HostTools.NAMED) {
+            TextField field = new TextField();
+            field.setPromptText(tr("settings.remote.tool.prompt"));
+            toolFields.put(tool.id(), field);
+            Label name = new Label(tr(tool.labelKey()));
+            VBox.setMargin(name, new javafx.geometry.Insets(4, 0, 0, 0));
+            toolsGrid.getChildren().addAll(name, field);
+        }
+        javafx.scene.control.TextArea servers = new javafx.scene.control.TextArea();
+        servers.setPromptText(tr("settings.remote.tool.servers.prompt"));
+        servers.setPrefRowCount(3);
+        servers.setPrefColumnCount(20);
+        servers.setWrapText(false);
+        Label serversName = new Label(tr("settings.remote.tool.servers"));
+        VBox.setMargin(serversName, new javafx.geometry.Insets(4, 0, 0, 0));
+        toolsGrid.getChildren().addAll(serversName, servers);
+        Label hostTitle = new Label(tr("settings.remote.host.title"));
+        hostTitle.getStyleClass().add("settings-card-title");
+        Label hostNote = note(tr("settings.remote.host.note"));
+        hostNote.setWrapText(true);
+        hostNote.setMaxWidth(460);
+        VBox hostBox = new VBox(6, new javafx.scene.control.Separator(), hostTitle, hostAllowed, toolsGrid, hostNote);
+        hostBox.disableProperty().bind(form.disabledProperty());
+        hostAllowed.setOnAction(e -> {
+            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            if (cur != null && !loadingRemote) {
+                config.setRemoteExecAllowed(cur.id(), hostAllowed.isSelected());
+            }
+        });
+        Runnable commitTools = () -> {
+            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            if (cur == null || loadingRemote) {
+                return;
+            }
+            java.util.Map<String, String> named = new java.util.LinkedHashMap<>();
+            toolFields.forEach((id, field) -> named.put(id, field.getText()));
+            java.util.Map<String, String> previous = config.remoteTools(cur.id());
+            java.util.Map<String, String> merged = HostTools.merge(previous, named, servers.getText());
+            if (!merged.equals(previous)) {
+                config.setRemoteTools(cur.id(), merged);
+            }
+        };
+        toolFields.values().forEach(field -> {
+            field.setOnAction(e -> commitTools.run());
+            field.focusedProperty().addListener((o, was, now) -> {
+                if (!now) {
+                    commitTools.run();
+                }
+            });
+        });
+        servers.focusedProperty().addListener((o, was, now) -> {
+            if (!now) {
+                commitTools.run();
+            }
+        });
+
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
             com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
@@ -5087,6 +5150,9 @@ public class SettingsWindow {
                     keyPath.getText().strip(),
                     label.getText().strip(),
                     cur.lastPath()); // preserve the remembered path; not edited here
+            // What was decided for the host (may run commands, its tools) follows the connection when its host,
+            // user or port is edited; the save below would otherwise drop it as belonging to no saved site.
+            config.renameRemoteHost(cur.id(), updated.id());
             remoteItems.set(i, updated);
             list.refresh();
             persistRemote();
@@ -5130,6 +5196,10 @@ public class SettingsWindow {
                 auth.setValue(now == null ? null : now.auth());
                 keyPath.setText(now == null ? "" : nullToEmpty(now.keyPath()));
                 keyRow.setDisable(now == null || now.auth() != com.editora.vfs.RemoteConnection.AuthMethod.KEY);
+                java.util.Map<String, String> tools = now == null ? java.util.Map.of() : config.remoteTools(now.id());
+                hostAllowed.setSelected(now != null && config.remoteExecAllowed(now.id()));
+                toolFields.forEach((id, field) -> field.setText(tools.getOrDefault(id, "")));
+                servers.setText(HostTools.serversText(tools));
             } finally {
                 loadingRemote = false;
             }
@@ -5170,7 +5240,7 @@ public class SettingsWindow {
         save.setOnAction(e -> commit.run());
         HBox saveRow = new HBox(save);
         saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow);
+        VBox right = new VBox(8, form, saveRow, hostBox);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 

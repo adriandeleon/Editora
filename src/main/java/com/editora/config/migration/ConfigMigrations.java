@@ -873,6 +873,14 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /** v121→122: {@code remoteExecution} on (see the step's note in {@link ConfigSchema}). Safe to repeat. */
+    static JsonNode remoteExecutionOn(JsonNode input) {
+        if (input instanceof ObjectNode o && o.has("remoteExecution")) {
+            o.put("remoteExecution", true);
+        }
+        return input;
+    }
+
     private static void blankIfEqual(ObjectNode o, String key, String frozen) {
         JsonNode value = o.get(key);
         if (value != null && value.isTextual() && frozen.equals(value.asText().strip())) {

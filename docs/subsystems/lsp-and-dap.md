@@ -77,8 +77,9 @@ language id — so js/ts/jsx/tsx in one project share a single `tsserver`. It ow
   definition/references) marshaled to the FX thread via `Platform.runLater`.
 
 `LspManager` warms the augmented PATH off-thread in its constructor (`ProcessRunner::augmentedPath`),
-since both detection and the FX-thread session start read it. Remote (SFTP) files are never managed —
-`isManaged` bails on `!Vfs.isLocal` before `toUri()`, which would throw for such paths.
+since both detection and the FX-thread session start read it. A remote (SFTP) file is served by a server on
+its host, and debugged there; how documents are named across the connection (`WireUris`, `DapPaths`), where
+jdtls keeps its workspace and how the debuggers are reached is in [remote](remote.md).
 
 `shutdownAll()` is the restart/disable primitive and leaves the manager usable. A window that is closing
 calls `close()` instead: it shuts everything down **and makes the manager terminal**, so a callback that
