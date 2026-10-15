@@ -54,6 +54,19 @@ final class JavaLaunchSupport {
         }
     }
 
+    /** As {@link #sameFile(String, Path)}, for a path {@code reported} by an adapter that names files by {@code paths}. */
+    static boolean sameFile(String reported, Path file, DapPaths paths) {
+        if (paths == DapPaths.LOCAL) {
+            return sameFile(reported, file);
+        }
+        Path named = reported == null ? null : paths.fromAdapter(reported);
+        return named != null
+                && file != null
+                && com.editora.config.PathKeys.samePath(
+                        named.toAbsolutePath().normalize(),
+                        file.toAbsolutePath().normalize());
+    }
+
     private static Path real(Path p) {
         try {
             return p.toRealPath();

@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
   and node; their locations can be set per host. Breakpoints of a remote file are kept across reconnects.
-  Debugging Java on a host is not available yet.
+  Java files in a Maven or Gradle project are debugged through the jdtls on the host (Debug, Debug Main
+  Class, Attach and Debug Test); Editora copies its java-debug plugin into `~/.cache/editora` there. A Java
+  file outside a project, and debugging a saved run configuration, are not available on a host yet.
 - **Language servers for remote folders (opt-in).** With remote commands switched on, a file in a remote folder
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition

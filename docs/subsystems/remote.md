@@ -170,10 +170,20 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   (host path out, path on the connection in; pseudo-sources such as `<node_internals>` come back as no file),
   and a session sends only breakpoints of files on its own machine (`DapPaths.owns`). Breakpoints of remote
   files are stored under their `sftp://` URI (`DebugCoordinator.key`), so a reconnect keeps them; a closed
-  remote file's are sent while its host is connected. Java on a host, attach and Debug Test are not done yet.
+  remote file's are sent while its host is connected.
+- **Debugging Java:** java-debug runs inside the host's jdtls. Its jar is the host's `dap.java` tool, else this
+  machine's copied into `<cache>/java-debug/` (`LspManager.remoteDebugBundles`; sent again only when the size
+  differs, the name carries the version). The port `vscode.java.startDebugSession` returns is on the host and
+  is tunnelled (`DapManager.connectJava`). jdtls's main class is matched to the file by host path, the
+  working directory is named as the host names it, and the JDK is the one the host's jdtls resolves (a JDK
+  setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
+  through `RunService` in the host folder the adapter names. Attach and Debug Test go through the host's
+  jdtls, so `localhost` there is the host. Not on a host yet: a loose file (it is compiled with this
+  machine's `javac`) and debugging a saved run configuration (its routing is shared with Run, which does not
+  run a remote Java project yet).
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
-  Java debugging, a Java project's main-class run and its gutter ▶.
+  a Java project's main-class run and its gutter ▶, debugging a loose Java file or a saved run configuration.
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
 
