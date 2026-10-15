@@ -418,6 +418,7 @@ class CommandSweepFxTest {
                         FxTestSupport.runOnFx(() -> editedBehindThePreview(id));
                         FxTestSupport.runOnFx(this::restore);
                         async.awaitFx();
+                        awaitRepository();
                     } catch (Throwable failure) {
                         problems.add(id + ": the window could not be put back afterwards: " + describe(failure));
                     }
@@ -575,18 +576,29 @@ class CommandSweepFxTest {
                 baseline = Set.copyOf(Window.getWindows());
             });
             FxTestSupport.drainFx();
-            if (state == State.GIT_PROJECT) {
-                // The window finds its repository in the background. Swept before that, every Git command only
-                // says "not a repository" — and git.applyPatch never reached its chooser on the macOS runner.
-                MainController window = controller;
-                long deadline = System.nanoTime() + 30_000_000_000L;
-                while (FxTestSupport.callOnFx(() -> window.git.repoRoot() == null)) {
-                    if (System.nanoTime() > deadline) {
-                        throw new AssertionError("the Git project window never found its repository");
-                    }
-                    Thread.sleep(20);
-                    FxTestSupport.drainFx();
+            awaitRepository();
+        }
+
+        /**
+         * In the Git project state, waits until the window knows its repository: it finds it in the background,
+         * at start-up and again after a command that made it look (view.toggleGit switches Git off and on).
+         * Swept before that, every Git command only says "not a repository", and git.applyPatch never reached
+         * its chooser on the macOS runner. Run after each command, as the rest of the window is put back: with
+         * a slower git, the commands that followed kept starting new lookups that replaced the pending one, and
+         * the window went without a repository for the rest of the sweep.
+         */
+        private void awaitRepository() throws Exception {
+            if (state != State.GIT_PROJECT) {
+                return;
+            }
+            MainController window = controller;
+            long deadline = System.nanoTime() + 30_000_000_000L;
+            while (FxTestSupport.callOnFx(() -> window.git.repoRoot() == null)) {
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("the Git project window never found its repository");
                 }
+                Thread.sleep(20);
+                FxTestSupport.drainFx();
             }
         }
 

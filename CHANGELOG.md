@@ -209,6 +209,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Starting a program on a host right after stopping another is no longer refused.** The place the stopped
   one held is freed a moment after the stop; a start waits up to 5 s for it instead of reporting that too
   many programs are running.
+- **Git in a project window with no file open** followed the project of the last window focused, not its own: once
+  another project's window had been used, closing this window's last tab made it say "Not a Git repository" and
+  refuse every Git command.
 - **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
   other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
 - **Previews:** the floating Editor / Split / Preview toggle covered the right end of the HTTP response panel's
