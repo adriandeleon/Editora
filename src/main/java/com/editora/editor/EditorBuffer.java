@@ -5243,6 +5243,46 @@ public class EditorBuffer implements TabContent {
         return placeOccurrenceCarets(matches, anchor);
     }
 
+    /**
+     * Sublime's Split into Lines ({@code atLineEnds} false: each line's selected part becomes a selection) or
+     * VS Code's Add Cursors to Line Ends (true: a bare caret at the end of each selected line), for every
+     * selection there is. Returns the number of carets placed; 0 when nothing is selected.
+     */
+    public int splitSelectionIntoLines(boolean atLineEnds) {
+        MultiCarets carets = activeCarets();
+        CodeArea a = getFocusedArea();
+        if (carets == null) {
+            return 0;
+        }
+        String text = a.getText();
+        java.util.TreeMap<Long, int[]> ranges = new java.util.TreeMap<>(); // in document order, none twice
+        for (int[] sel : carets.selections()) {
+            List<int[]> parts = atLineEnds
+                    ? com.editora.editops.CaretPlans.caretsAtLineEnds(text, sel[0], sel[1])
+                    : com.editora.editops.CaretPlans.splitIntoLines(text, sel[0], sel[1]);
+            for (int[] r : parts) {
+                ranges.put(((long) r[0] << 32) | r[1], r);
+            }
+        }
+        return ranges.isEmpty()
+                ? 0
+                : placeOccurrenceCarets(
+                        new java.util.ArrayList<>(ranges.values()),
+                        a.getSelection().getStart());
+    }
+
+    /** Moves the newest selection to the next occurrence (VS Code Ctrl+K Ctrl+D); false when it cannot. */
+    public boolean skipOccurrence() {
+        MultiCarets carets = activeCarets();
+        return carets != null && carets.skipOccurrence();
+    }
+
+    /** Removes the extra caret added last (VS Code Ctrl+U); false when there is only one caret. */
+    public boolean undoLastCaret() {
+        MultiCarets carets = activeCarets();
+        return carets != null && carets.undoLastCaret();
+    }
+
     /** Adds a caret on the line above the topmost caret. */
     public void addCaretAbove() {
         addCaretOnNextLine(false);

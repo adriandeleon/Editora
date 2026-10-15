@@ -41,5 +41,6 @@
   "M-S-left": "edit.shrinkSelection",
   "C-M-r": "http.runRequest",
   "C-M-S-r": "http.runFile",
-  "C-S-t": "buffer.reopenClosed"
+  "C-S-t": "buffer.reopenClosed",
+  "M-S-i": "edit.addCaretsToLineEnds"
 }

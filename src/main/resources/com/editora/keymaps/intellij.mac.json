@@ -62,5 +62,7 @@
   "M-up": "edit.expandSelection",
   "M-down": "edit.shrinkSelection",
   "C-M-r": "http.runRequest",
-  "C-M-S-r": "http.runFile"
+  "C-M-S-r": "http.runFile",
+  "M-S-g": "edit.addCaretsToLineEnds",
+  "M-S-j": "edit.undoLastCaret"
 }

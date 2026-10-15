@@ -11,10 +11,12 @@ import javafx.geometry.Bounds;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
+import com.editora.editops.CaretPlans;
 import com.editora.editops.MultiTab;
 import org.fxmisc.richtext.CaretNode;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Selection;
+import org.fxmisc.richtext.model.TwoDimensional.Bias;
 import org.fxmisc.richtext.multi.MultiCaretController;
 import org.fxmisc.richtext.multi.MultiCaretManager;
 import org.reactfx.Subscription;
@@ -126,6 +128,72 @@ final class MultiCarets {
     void collapse() {
         manager.collapseToPrimary();
         anchorsStale = false;
+    }
+
+    /** Every caret as {@code {anchor, caret}}: the primary first, then the extras in the order they were added. */
+    List<int[]> selections() {
+        syncAnchors();
+        List<int[]> out = new ArrayList<>();
+        out.add(new int[] {area.getAnchor(), area.getCaretPosition()});
+        for (Extra x : extras()) {
+            out.add(new int[] {x.anchor(), x.caret()});
+        }
+        return out;
+    }
+
+    /**
+     * VS Code's Ctrl+K Ctrl+D: moves the most recently added selection on to the next occurrence of the
+     * primary selection's text, leaving the one it was on unselected. With no extra carets the primary
+     * selection moves. False when there is nothing selected or no other occurrence to move to.
+     */
+    boolean skipOccurrence() {
+        syncAnchors();
+        String term = area.getSelectedText();
+        if (term.isEmpty()) {
+            return false;
+        }
+        List<Extra> extras = extras();
+        List<int[]> taken = new ArrayList<>();
+        int[] newest;
+        if (extras.isEmpty()) {
+            newest = new int[] {
+                area.getSelection().getStart(), area.getSelection().getEnd()
+            };
+        } else {
+            Extra last = extras.getLast();
+            newest = new int[] {Math.min(last.anchor(), last.caret()), Math.max(last.anchor(), last.caret())};
+            taken.add(new int[] {
+                area.getSelection().getStart(), area.getSelection().getEnd()
+            });
+            for (Extra x : extras.subList(0, extras.size() - 1)) {
+                taken.add(new int[] {x.anchor(), x.caret()});
+            }
+        }
+        int[] next = CaretPlans.nextOccurrence(area.getText(), term, newest[1], taken);
+        if (next == null || (next[0] == newest[0] && next[1] == newest[1])) {
+            return false;
+        }
+        if (extras.isEmpty()) {
+            area.selectRange(next[0], next[1]);
+        } else {
+            List<Extra> kept = new ArrayList<>(extras.subList(0, extras.size() - 1));
+            kept.add(new Extra(Integer.MAX_VALUE, next[0], next[1]));
+            rebuild(kept);
+        }
+        area.showParagraphInViewport(
+                area.offsetToPosition(next[1], Bias.Forward).getMajor());
+        return true;
+    }
+
+    /** VS Code's Ctrl+U: removes the extra caret added last. False when there is only the primary caret. */
+    boolean undoLastCaret() {
+        syncAnchors();
+        List<Extra> extras = extras();
+        if (extras.isEmpty()) {
+            return false;
+        }
+        rebuild(new ArrayList<>(extras.subList(0, extras.size() - 1)));
+        return true;
     }
 
     // --- Anchors ---------------------------------------------------------------------------------

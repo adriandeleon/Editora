@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More ways to place multiple cursors.**
+  - `Edit: Split Selection into Lines` turns each selected line into its own selection (Sublime's
+    `Ctrl+Shift+L`; also in the Edit menu).
+  - `Edit: Add Carets to Line Ends` puts a cursor at the end of every selected line (VS Code's and CUA's
+    `Shift+Alt+I`, IntelliJ's `Alt+Shift+G`).
+  - `Edit: Skip Occurrence` moves the newest selection on to the next match instead of adding one, wrapping
+    round to the start (`Ctrl+K Ctrl+D` in VS Code and Sublime).
+  - `Edit: Remove Last Added Caret` takes back the cursor added last (`Ctrl+U` in VS Code and Sublime,
+    IntelliJ's `Alt+Shift+J`).
+
+  In the Sublime keymap, `Select All Occurrences` moves to Sublime's own `Alt+F3` (`Ctrl+Cmd+G` on macOS),
+  freeing `Ctrl+Shift+L` for Split into Lines.
 - **Save All, Revert File and Reopen Closed Tab.** `File: Save All` saves every modified file in the window,
   across all editor groups, then reports how many it saved, how many it could not save, and how many untitled
   buffers it skipped. `File: Revert File` reads the file again from disk, asking first when that discards
