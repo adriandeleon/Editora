@@ -496,6 +496,28 @@ public final class HttpClientPanel extends VBox {
         showEntry(history.get(0));
     }
 
+    /**
+     * Appends {@code older} entries (a file's saved history, found when an untitled buffer is first saved under
+     * that name) after the ones already here; with none here yet it behaves like {@link #restore}.
+     */
+    public void addOlder(List<HttpHistoryEntry> older) {
+        if (older == null || older.isEmpty()) {
+            return;
+        }
+        if (history.isEmpty() && !running) {
+            restore(older);
+            return;
+        }
+        HttpHistoryEntry selected = historyCombo.getValue();
+        history.addAll(older);
+        trimHistory();
+        updatingHistory = true;
+        historyCombo.getItems().setAll(history);
+        historyCombo.setValue(selected != null && history.contains(selected) ? selected : null);
+        updatingHistory = false;
+        updateActions();
+    }
+
     /** The history, newest first (for saving). */
     public List<HttpHistoryEntry> history() {
         return List.copyOf(history);
