@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Save All, Revert File and Reopen Closed Tab.** `File: Save All` saves every modified file in the window,
+  across all editor groups, then reports how many it saved, how many it could not save, and how many untitled
+  buffers it skipped. `File: Revert File` reads the file again from disk, asking first when that discards
+  unsaved changes. The caret, scroll position and folds stay put, the file is read in the encoding chosen for
+  it, and Local History keeps the discarded text. `Buffer: Reopen Closed Tab` brings back the file whose tab
+  you closed last, with its caret where it was. It skips files deleted since and goes to a file that is
+  already open again. All three are in the File menu. Keys: Save All is `Ctrl+K S` (VS Code; `⌥⌘S` on macOS)
+  and `C-x s` (Emacs). Reopen Closed Tab is `Ctrl+Shift+T` in the VS Code, Sublime and CUA keymaps (`⇧⌘T` on
+  macOS). To make room, the File menu's export formats moved into an Export submenu.
 - **Choose a file's encoding.** Click the encoding in the status bar, or use `Buffer: Reopen with
   Encoding…` and `Buffer: Save with Encoding…` from the command palette. Reopening reads the file again in
   the encoding you pick — Shift_JIS, GBK, windows-1251 and about 40 other common ones are listed by script,

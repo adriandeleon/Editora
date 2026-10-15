@@ -53,5 +53,6 @@
   "M-S-left": "edit.shrinkSelection",
   "C-S-l": "edit.selectAllOccurrences",
   "C-M-r": "http.runRequest",
-  "C-M-S-r": "http.runFile"
+  "C-M-S-r": "http.runFile",
+  "C-S-t": "buffer.reopenClosed"
 }
