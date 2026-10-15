@@ -299,8 +299,10 @@ class HttpClientRunFlowFxTest {
 
         // Choosing another environment in the picker is remembered for this file.
         FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        HttpHistorySync.awaitIdleForTest(); // saved off the FX thread
         assertEquals("prod", ops.store.load(dir.resolve("all.http")).environment);
         FxTestSupport.runOnFx(() -> env.setValue(null));
+        HttpHistorySync.awaitIdleForTest();
         assertEquals("", ops.store.load(dir.resolve("all.http")).environment);
         assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
 

@@ -29,7 +29,7 @@ public final class CurlExport {
 
     /** The details of a request known only by its text: nothing beyond method, URL, headers and body. */
     private static final HttpExchange.Details TEXT_ONLY =
-            new HttpExchange.Details(null, List.of(), null, null, false, null, null, false);
+            HttpExchange.Details.NONE; // redirects followed, as a run does
 
     private CurlExport() {}
 
@@ -72,8 +72,9 @@ public final class CurlExport {
             }
         }
         if (d.digestUser() != null) {
+            // Without the password (a restored entry never has it) curl asks for it instead of sending a wrong one.
             sb.append(" \\\n  --digest -u ")
-                    .append(quote(d.digestUser() + ":" + (d.digestPass() == null ? "" : d.digestPass())));
+                    .append(quote(d.digestPass() == null ? d.digestUser() : d.digestUser() + ":" + d.digestPass()));
         }
         if (form) {
             for (HttpExchange.FormPart p : d.formParts()) {

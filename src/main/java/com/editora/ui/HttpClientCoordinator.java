@@ -11,10 +11,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -110,6 +106,10 @@ final class HttpClientCoordinator {
      *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
     private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
 
+    /** The run of each buffer the user cancelled and whose results have not arrived yet: what it finished before
+     *  the cancel (a Run All's earlier requests) still lands in History. Dropped when a newer run starts. */
+    private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> cancelling = new IdentityHashMap<>();
+
     /** Each buffer's request-chaining session: every run (single or Run All) records into it, so a request
      *  can use the response of one run earlier. Cleared when the environment changes or the buffer closes. */
     private final Map<EditorBuffer, CapturedResponses> captures = new IdentityHashMap<>();
@@ -117,25 +117,14 @@ final class HttpClientCoordinator {
     /** The environment chosen for each buffer's file ({@code ""} = none), once known (FX thread only). */
     private final Map<EditorBuffer, String> environments = new IdentityHashMap<>();
 
-    /** The file each panel's history belongs to (null while untitled), to notice a first Save / a Save As. */
-    private final Map<EditorBuffer, Path> historyPaths = new IdentityHashMap<>();
-
-    /** Reads saved histories off the FX thread; idles out. */
-    private static final ExecutorService LOADER = loader();
-
-    private static ExecutorService loader() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
-            Thread t = new Thread(r, "http-history-load");
-            t.setDaemon(true);
-            return t;
-        });
-        pool.allowCoreThreadTimeOut(true);
-        return pool;
-    }
+    /** Each panel's saved history: read, saved, merged across windows, and moved with its file. */
+    private final HttpHistorySync history;
 
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
+        this.history =
+                new HttpHistorySync(host, ops::historyStore, this::panelFor, environments, this::refreshEnvironments);
         service.setRedirectGuard(this::beforeRedirectOverwrite);
     }
 
@@ -226,60 +215,15 @@ final class HttpClientCoordinator {
             HttpClientPanel p = createPanelFor(buffer);
             panels.put(buffer, p);
             buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
-            historyPaths.put(buffer, buffer.getPath());
             refreshEnvironments(buffer);
-            loadSaved(buffer, p);
+            history.attached(buffer, p);
         } else if (!want && has) {
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
             panels.remove(buffer);
-            historyPaths.remove(buffer);
-        } else if (want && buffer.getPath() != null && !buffer.getPath().equals(historyPaths.get(buffer))) {
-            adoptSavedPath(buffer); // a first Save of an untitled buffer, or a Save As: its history moves along
+            history.detached(buffer);
+        } else if (want) {
+            history.followPath(buffer); // a first Save of an untitled buffer, a Save As, a rename: history follows
         }
-    }
-
-    /**
-     * {@code buffer} now has a file (first Save) or another one (Save As): what its panel holds is merged with
-     * any history saved for that file (older entries after the panel's) and written there, so the responses
-     * of an untitled scratch buffer are not lost when it is saved.
-     */
-    private void adoptSavedPath(EditorBuffer buffer) {
-        HttpClientPanel panel = panelFor(buffer);
-        Path file = buffer.getPath();
-        historyPaths.put(buffer, file);
-        HttpResponseHistory store = ops.historyStore();
-        if (panel == null || store == null) {
-            refreshEnvironments(buffer);
-            return;
-        }
-        LOADER.execute(() -> {
-            HttpResponseHistory.Stored stored;
-            try {
-                stored = store.load(file);
-            } catch (RuntimeException e) {
-                stored = new HttpResponseHistory.Stored();
-            }
-            List<HttpHistoryEntry> older = new ArrayList<>();
-            for (HttpResponseHistory.Response r : stored.responses) {
-                try {
-                    older.add(HttpHistoryEntry.fromStored(r));
-                } catch (RuntimeException ignored) {
-                    // skip a damaged entry
-                }
-            }
-            String env = stored.file.isEmpty() ? null : stored.environment;
-            javafx.application.Platform.runLater(() -> {
-                if (panels.get(buffer) != panel || !file.equals(buffer.getPath())) {
-                    return; // closed, switched off, or saved elsewhere again meanwhile
-                }
-                if (env != null) {
-                    environments.putIfAbsent(buffer, env);
-                }
-                panel.addOlder(older);
-                refreshEnvironments(buffer);
-                persist(buffer);
-            });
-        });
     }
 
     /** Re-target on tab switch: (re)evaluate the active buffer's preview attachment + environment list. */
@@ -293,7 +237,7 @@ final class HttpClientCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
             panels.remove(closed);
-            historyPaths.remove(closed);
+            history.closed(closed);
             captures.remove(closed);
             environments.remove(closed);
             com.editora.http.HttpClientService.Handle run = running.remove(closed);
@@ -313,13 +257,13 @@ final class HttpClientCoordinator {
                 editorFontSize());
         p.setOnEnvironmentChanged(env -> {
             environments.put(buffer, env);
-            persist(buffer);
+            history.persist(buffer);
             environmentListener.accept(buffer); // the editor's {{variable}} marks follow the choice
         });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
         p.setOnEscape(() -> buffer.getArea().requestFocus());
-        p.setOnCleared(() -> persist(buffer));
+        p.setOnCleared(() -> history.cleared(buffer));
         return p;
     }
 
@@ -408,6 +352,8 @@ final class HttpClientCoordinator {
         run[0] = service.run(parsed, vars, baseDir, session, ex -> {
             if (running.remove(buffer, run[0])) {
                 finishRun(buffer, List.of(parsed), List.of(index), List.of(ex), false);
+            } else if (cancelling.remove(buffer, run[0])) {
+                landCancelled(buffer, List.of(parsed), List.of(index), List.of(ex), 1);
             }
         });
         track(buffer, run[0]);
@@ -454,6 +400,7 @@ final class HttpClientCoordinator {
         if (previous != null) {
             previous.cancel();
         }
+        cancelling.remove(buffer); // superseded: a cancelled run's late results must not land over this one
     }
 
     /** {@code http.cancelRequest}: cancel the active {@code .http} buffer's in-flight request(s). */
@@ -469,6 +416,7 @@ final class HttpClientCoordinator {
             return;
         }
         run.cancel();
+        cancelling.put(buffer, run); // what it finished before the cancel still lands (landCancelled)
         buffer.setHttpRunning(-1);
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
@@ -543,7 +491,12 @@ final class HttpClientCoordinator {
                 return;
             }
             startRun(b, label);
-            b.setHttpRunning(sent.get(0));
+            String[] startText = text.split("\n", -1); // each request's line as the run saw it, for the ■
+            java.util.function.IntFunction<String> requestLine = i -> {
+                int line = blocks.get(i).startLine();
+                return line >= 0 && line < startText.length ? startText[line] : null;
+            };
+            b.setHttpRunning(sent.get(0), requestLine.apply(sent.get(0)));
             List<HttpFile.Parsed> toSend = sent.stream().map(reqs::get).toList();
             com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
             run[0] = service.runAll(
@@ -555,7 +508,7 @@ final class HttpClientCoordinator {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {
                             int index = sent.get(i);
-                            b.setHttpRunning(index); // the ■ follows the request in flight
+                            b.setHttpRunning(index, requestLine.apply(index)); // the ■ follows the request in flight
                             p.progress(
                                     index,
                                     reqs.size(),
@@ -566,6 +519,8 @@ final class HttpClientCoordinator {
                     exchanges -> {
                         if (running.remove(b, run[0])) {
                             finishRun(b, reqs, indexes, merged(reqs.size(), sent, exchanges, skipped), true);
+                        } else if (cancelling.remove(b, run[0])) {
+                            landCancelled(b, reqs, indexes, merged(reqs.size(), sent, exchanges, skipped), reqs.size());
                         }
                     });
             track(b, run[0]);
@@ -740,14 +695,54 @@ final class HttpClientCoordinator {
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             p.showEntries(entries);
-            persist(buffer);
+            history.persist(buffer);
         }
         if (!exchanges.isEmpty()) {
             host.setStatus(all ? HttpStatusText.finishedAll(exchanges) : HttpStatusText.finished(exchanges.get(0)));
         }
     }
 
+    /**
+     * The results of a run the user cancelled: the requests that finished before the cancel (a Run All's first
+     * ones, whose effects on the server are real) go into History like any others; the cancelled one does not.
+     * The view stays as the cancel left it when nothing had finished.
+     */
+    private void landCancelled(
+            EditorBuffer buffer,
+            List<HttpFile.Parsed> requests,
+            List<Integer> indexes,
+            List<HttpExchange> exchanges,
+            int total) {
+        List<HttpFile.Parsed> keptRequests = new ArrayList<>();
+        List<Integer> keptIndexes = new ArrayList<>();
+        List<HttpExchange> kept = new ArrayList<>();
+        for (int i = 0; i < exchanges.size(); i++) {
+            HttpExchange ex = exchanges.get(i);
+            if (ex.result().failed()
+                    && com.editora.http.HttpClientService.CANCELLED.equals(
+                            ex.result().error())) {
+                continue;
+            }
+            keptRequests.add(i < requests.size() ? requests.get(i) : null);
+            keptIndexes.add(i < indexes.size() ? indexes.get(i) : -1);
+            kept.add(ex);
+        }
+        if (kept.isEmpty()) {
+            return;
+        }
+        finishRun(buffer, keptRequests, keptIndexes, kept, total > 1);
+        host.setStatus(tr("status.http.cancelledAfter", kept.size(), total));
+    }
+
     private void copyAsCurl(HttpExchange ex) {
+        HttpExchange.Details how = ex.details();
+        if (HttpExchange.isBodyPlaceholder(ex.requestBody())
+                && how.bodyFile() == null
+                && how.formParts().isEmpty()) {
+            // Saved by an older version, which kept only the body's summary: a command would upload that text.
+            host.setStatus(tr("status.http.curlUnavailable"));
+            return;
+        }
         String curl = CurlExport.toCurl(ex); // from how it was sent: file upload, form fields, digest, -L
         ClipboardContent cc = new ClipboardContent();
         cc.putString(curl);
@@ -811,7 +806,11 @@ final class HttpClientCoordinator {
                         : r.body().getBytes(StandardCharsets.UTF_8);
                 com.editora.io.StagedExport.write(chosen.toPath(), bytes);
             }
-            host.setStatus(tr("status.http.saved", chosen.toPath().getFileName()));
+            HttpHistoryEntry entry = p.getSelectedEntry();
+            boolean partial = entry != null && entry.bodyCut();
+            host.setStatus(tr(
+                    partial ? "status.http.savedPartial" : "status.http.saved",
+                    chosen.toPath().getFileName()));
         } catch (IOException e) {
             host.setStatus(tr("status.http.saveFailed", e.getMessage()));
         }
@@ -999,66 +998,6 @@ final class HttpClientCoordinator {
         } catch (RuntimeException e) {
             return url.strip();
         }
-    }
-
-    // --- saved history ---------------------------------------------------------------------------------
-
-    /** Reads {@code buffer}'s saved environment + responses off the FX thread, then puts them in its panel. */
-    private void loadSaved(EditorBuffer buffer, HttpClientPanel panel) {
-        HttpResponseHistory store = ops.historyStore();
-        Path file = buffer.getPath();
-        if (store == null || file == null) {
-            return;
-        }
-        LOADER.execute(() -> {
-            HttpResponseHistory.Stored stored;
-            try {
-                stored = store.load(file);
-            } catch (RuntimeException e) {
-                return; // an unreadable history is the same as none
-            }
-            List<HttpHistoryEntry> entries = new ArrayList<>();
-            for (HttpResponseHistory.Response r : stored.responses) {
-                try {
-                    entries.add(HttpHistoryEntry.fromStored(r));
-                } catch (RuntimeException ignored) {
-                    // skip a damaged entry
-                }
-            }
-            String env = stored.environment;
-            javafx.application.Platform.runLater(() -> {
-                if (panels.get(buffer) != panel) {
-                    return; // closed, or the feature was switched off, while reading
-                }
-                if (!stored.file.isEmpty()) {
-                    environments.putIfAbsent(buffer, env); // a file never saved keeps the window's old choice
-                }
-                refreshEnvironments(buffer);
-                panel.restore(entries);
-            });
-        });
-    }
-
-    /** Saves {@code buffer}'s environment choice and its last responses (never {@code @no-log} ones). */
-    private void persist(EditorBuffer buffer) {
-        HttpResponseHistory store = ops.historyStore();
-        HttpClientPanel p = panelFor(buffer);
-        Path file = buffer.getPath();
-        if (store == null || p == null || file == null) {
-            return;
-        }
-        HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
-        String env = environments.get(buffer);
-        state.environment = env == null ? p.getSelectedEnvironment() : env;
-        for (HttpHistoryEntry e : p.history()) {
-            if (state.responses.size() >= HttpResponseHistory.MAX_RESPONSES) {
-                break;
-            }
-            if (!e.noLog()) {
-                state.responses.add(e.toStored());
-            }
-        }
-        store.save(file, state);
     }
 
     private void ifHttp(Runnable action) {

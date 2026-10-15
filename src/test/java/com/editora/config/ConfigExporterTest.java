@@ -216,4 +216,27 @@ class ConfigExporterTest {
             shared.shutdown();
         }
     }
+
+    @Test
+    void theHttpResponseHistoryIsExportedOnlyWhenAskedFor(@TempDir Path tmp) throws Exception {
+        Path cfg = Files.createDirectories(tmp.resolve(".editora"));
+        Files.writeString(cfg.resolve("settings.json"), "{}");
+        Files.createDirectories(cfg.resolve("http-history"));
+        Files.writeString(cfg.resolve("http-history/abc.json"), "{\"responses\":[{\"url\":\"http://h/?key=FAKE\"}]}");
+        for (boolean include : new boolean[] {false, true}) {
+            Path dest = Files.createDirectories(tmp.resolve("home-" + include));
+            Path zip = ConfigExporter.export(cfg, dest, "1.0.0", "tester", WHEN, include);
+            List<String> entries = new ArrayList<>();
+            try (ZipFile zf = new ZipFile(zip.toFile())) {
+                zf.stream().forEach(e -> entries.add(e.getName()));
+            }
+            assertTrue(entries.contains("settings.json"), entries.toString());
+            assertEquals(include, entries.contains("http-history/abc.json"), include + ": " + entries);
+        }
+        Path dest = Files.createDirectories(tmp.resolve("home-default"));
+        try (ZipFile zf = new ZipFile(
+                ConfigExporter.export(cfg, dest, "1.0.0", "tester", WHEN).toFile())) {
+            assertEquals(null, zf.getEntry("http-history/abc.json"), "left out by default");
+        }
+    }
 }

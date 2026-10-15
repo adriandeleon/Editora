@@ -193,6 +193,11 @@ public record HttpResult(
         return rawBody != null && looksBinary(rawBody, contentType);
     }
 
+    /** The charset this response's text was decoded with (see {@link #charsetOf(String, byte[])}). */
+    public String bodyCharset() {
+        return charsetOf(contentType, rawBody).name();
+    }
+
     /** The {@code charset=} of a Content-Type, defaulting to UTF-8 when absent or unknown. */
     static Charset charsetOf(String contentType) {
         return forName(charsetName(contentType));
