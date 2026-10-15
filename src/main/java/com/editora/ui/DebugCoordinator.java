@@ -300,7 +300,18 @@ final class DebugCoordinator {
             return false;
         }
         var s = host.settings();
-        boolean enabled = "python".equals(language) ? s.isPythonDebugEnabled() : s.isJsDebugEnabled();
+        boolean enabled =
+                switch (language) {
+                    case "python" -> s.isPythonDebugEnabled();
+                    case "javascript" -> s.isJsDebugEnabled();
+                    // jdtls runs on the host and is handed the java-debug jar there (copied from this machine,
+                    // or the host's own), so the adapter is the host's jdtls's.
+                    default ->
+                        lspEnabled()
+                                && lsp.serverEnabled("java")
+                                && (dapManager.isAdapterAvailable()
+                                        || com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null);
+                };
         return enabled && RemoteExec.runsFor(file);
     }
 
@@ -1493,11 +1504,11 @@ final class DebugCoordinator {
     }
 
     private void startMainClassDebug(EditorBuffer b, String targetFqn) {
-        if (!debugEffectiveFor("java")) {
+        if (!debugEffectiveFor("java", b == null ? null : b.getPath())) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
         }
-        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+        if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.debug.needJavaFile"));
             return;
         }
@@ -1629,7 +1640,8 @@ final class DebugCoordinator {
      * {@code anchorFile} names the debug session and anchors breakpoint resolution.
      */
     void attachToPort(Path anchorFile, String attachHost, int port) {
-        if (!debugEffective()) {
+        // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
+        if (!debugEffectiveFor("java", anchorFile)) {
             host.setStatus(tr("status.debug.unavailable"));
             return;
         }
@@ -1647,7 +1659,12 @@ final class DebugCoordinator {
     private Path attachRouting(Path anchor) {
         List<Path> openJava = new ArrayList<>();
         host.forEachBuffer(b -> {
-            if (b.getPath() != null && host.isLocalBuffer(b) && "java".equals(b.getLanguage())) {
+            // Java files on the anchor's own machine: the attach goes through that machine's jdtls.
+            if (b.getPath() != null
+                    && "java".equals(b.getLanguage())
+                    && (anchor == null
+                            ? host.isLocalBuffer(b)
+                            : com.editora.config.PathKeys.sameFileSystem(b.getPath(), anchor))) {
                 openJava.add(b.getPath());
             }
         });

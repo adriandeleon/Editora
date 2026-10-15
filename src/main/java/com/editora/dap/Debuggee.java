@@ -36,8 +36,15 @@ final class Debuggee {
      * that variable). Returns the process id, or throws with the reason the program could not be started.
      */
     long start(String cwd, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
+        return start(cwd == null || cwd.isBlank() ? null : Path.of(cwd), argv, env, sink);
+    }
+
+    /**
+     * As above, in {@code dir} — a folder on a remote host's connection starts the program on that host, as
+     * Run does.
+     */
+    long start(Path dir, List<String> argv, Map<String, String> env, Sink sink) throws java.io.IOException {
         String[] failure = {null};
-        Path dir = cwd == null || cwd.isBlank() ? null : Path.of(cwd);
         service.runInDir(dir, argv, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {}

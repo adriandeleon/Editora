@@ -548,14 +548,15 @@ public final class DapManager implements DapClient.Host {
                 compileAndLaunch(file, fqn, javaExecOverride, epoch, null);
                 return;
             }
+            DapPaths paths = pathsFor(file);
             MainClassOption match = options.stream()
-                    .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file))
+                    .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
                     .findFirst()
                     .orElse(null);
             // A project's main class runs in the project root — what Run, the gutter and a saved
             // configuration use — and only a loose file in its own folder.
             Path dir = projectRoot != null ? projectRoot : file.getParent();
-            String cwd = dir == null ? null : dir.toString();
+            String cwd = dir == null ? null : paths.toAdapter(dir);
             if (match != null && projectRoot == null) {
                 // The file's own main class, in no build project: jdtls lists it from an "invisible
                 // project" whose output folder nothing ever compiles into (autobuild is off), so the
@@ -656,7 +657,11 @@ public final class DapManager implements DapClient.Host {
         if (managerClosed) {
             return false;
         }
-        if (!javaDebugUsable()) {
+        boolean hostPlugin = file != null
+                && com.editora.vfs.Vfs.isRemote(file)
+                && enabled
+                && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
+        if (!javaDebugUsable() && !hostPlugin) {
             listener.onError("Java debugging is not available (enable it and install the java-debug plugin).");
             return false;
         }
@@ -705,7 +710,11 @@ public final class DapManager implements DapClient.Host {
                             proj,
                             r.classPaths(),
                             r.modulePaths(),
-                            javaExecOverride == null || javaExecOverride.isBlank() ? r.javaExec() : javaExecOverride,
+                            // A remote file runs on its host's JDK, as jdtls there resolves it: the override is
+                            // a JDK on this machine.
+                            javaExecOverride == null || javaExecOverride.isBlank() || com.editora.vfs.Vfs.isRemote(file)
+                                    ? r.javaExec()
+                                    : javaExecOverride,
                             cwd,
                             programArgs,
                             JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
@@ -818,7 +827,8 @@ public final class DapManager implements DapClient.Host {
         debugFile = routingFile;
         long epoch = beginSession();
         setState(State.STARTING);
-        resolveAndLaunch(routingFile, opt, cwd == null ? null : cwd.toString(), javaExecOverride, epoch);
+        resolveAndLaunch(
+                routingFile, opt, cwd == null ? null : pathsFor(routingFile).toAdapter(cwd), javaExecOverride, epoch);
     }
 
     /**
@@ -829,6 +839,13 @@ public final class DapManager implements DapClient.Host {
      * Runs off the FX thread (javac is a subprocess).
      */
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
+        if (com.editora.vfs.Vfs.isRemote(file)) {
+            // Compiling happens with this machine's javac into a folder of its own; a host has neither.
+            fail(
+                    epoch,
+                    "Debugging a Java file outside a Maven or Gradle project is not available on a remote host yet.");
+            return;
+        }
         Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
             Path out = null;
@@ -1089,6 +1106,7 @@ public final class DapManager implements DapClient.Host {
             lspLease.run();
             lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
+            c.setPaths(pathsFor(file));
             if (!attach && programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
@@ -1102,7 +1120,7 @@ public final class DapManager implements DapClient.Host {
             // Connect off the FX thread (the socket open blocks with retries), then launch/attach. The
             // connect future completes on the DAP reader thread, so every state change here must be
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
-            io.submit(() -> c.connect(port, "java").whenComplete((caps, e) -> {
+            io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
                 if (e != null) {
                     fail(epoch, "Could not connect to the debug adapter: " + msg(e));
                     return;
@@ -1123,6 +1141,31 @@ public final class DapManager implements DapClient.Host {
                 });
             }));
         });
+    }
+
+    /**
+     * Connects to the java-debug adapter jdtls opened on {@code port}: on this machine directly, on a remote
+     * file's host through a tunnel that closes with the session.
+     */
+    private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(DapClient c, Path file, int port) {
+        if (!com.editora.vfs.Vfs.isRemote(file)) {
+            return c.connect(port, "java");
+        }
+        try {
+            com.editora.process.PortForward forward =
+                    com.editora.process.ExecTargets.forPath(file).forwardLocal("127.0.0.1", port);
+            c.closeOnDispose(forward);
+            return c.connect(forward.localPort(), "java");
+        } catch (java.io.IOException | RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    /** How the adapter of a session for {@code file} names files: its host's paths for a remote file. */
+    static DapPaths pathsFor(Path file) {
+        return file != null && com.editora.vfs.Vfs.isRemote(file)
+                ? DapPaths.on(com.editora.process.ExecTargets.forPath(file), file.getFileSystem())
+                : DapPaths.LOCAL;
     }
 
     // --- Standalone adapters (python / javascript) ----------------------------------------------
@@ -1381,9 +1424,9 @@ public final class DapManager implements DapClient.Host {
 
     // --- On a remote host ------------------------------------------------------------------------
 
-    /** Languages a remote file is debugged in on its own host so far (Java needs jdtls's java-debug there). */
+    /** Languages a remote file is debugged in on its own host (Java through the jdtls running there). */
     public static boolean debuggableOnHost(String language) {
-        return "python".equals(language) || "javascript".equals(language);
+        return "python".equals(language) || "javascript".equals(language) || "java".equals(language);
     }
 
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
@@ -2224,7 +2267,13 @@ public final class DapManager implements DapClient.Host {
         killDebuggee(); // a session has one program
         Debuggee program = new Debuggee();
         try {
-            long pid = program.start(cwd, argv, env, new Debuggee.Sink() {
+            // The adapter names the folder as its machine does: on a remote file's host, a path there.
+            DapPaths paths = pathsFor(debugFile);
+            Path dir = cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
+            if (dir == null && paths != DapPaths.LOCAL) {
+                dir = debugFile.getParent(); // never this machine's folder of the same name
+            }
+            long pid = program.start(dir, argv, env, new Debuggee.Sink() {
                 @Override
                 public void output(String text, boolean stderr) {
                     if (debuggee == program && isCurrent(epoch)) {

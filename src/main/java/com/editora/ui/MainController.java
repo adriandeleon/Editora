@@ -6016,7 +6016,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public boolean debugAvailable() {
-            return debugCoordinator.debugEffectiveFor("java"); // already folds in the master gate
+            // Already folds in the master gate; a remote file's tests are debugged on its host.
+            EditorBuffer active = activeBuffer();
+            return debugCoordinator.debugEffectiveFor("java", active == null ? null : active.getPath());
         }
 
         @Override
