@@ -267,8 +267,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment value may refer to another. Run File on a `.http` file no longer launches `java api.http`, and the
   "feature disabled" message names the right Settings page. Remote `.http` files no longer regain the ▶ after a
   settings change.
+- **Stopping a debug session can no longer hold the window on a debugger connection that is slow to close.**
+  The connection is half-closed first, so the adapter ends it, and the close itself no longer runs on the
+  thread that pressed Stop. A close that never returned held two test runs on macOS for half an hour.
+- **Remote commands get what the account's login profile sets.** Only `PATH` and the locale were carried over,
+  so a `JAVA_HOME`, `MAVEN_OPTS`, `GOPATH` or version-manager variable exported in `~/.bash_profile` (or
+  `~/.zprofile`, `~/.profile`) was missing from builds, runs, Git and language servers on the host. Every
+  variable the profile adds is now passed on, except the session's own (prompt, history, `SSH_*`, display).
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
+- **The AI agent works in its own window's project.** Started in a project's window after another project had been
+  opened, it worked in the other project: that was its working folder and the boundary of the files it could read
+  and write.
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
   default — failed with "No more authentication methods available", and a server offering only an ed25519
   host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.

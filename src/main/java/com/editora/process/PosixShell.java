@@ -55,8 +55,17 @@ public final class PosixShell {
      * @throws IllegalArgumentException if a variable name is not a valid shell identifier
      */
     public static String commandLine(ExecSpec spec, String cwd, String path, Map<String, String> userLocale) {
+        return commandLine(spec, cwd, path, userLocale, Map.of());
+    }
+
+    /**
+     * As above, with {@code profile}: variables the host's login profile sets, exported first so that
+     * {@code PATH}, the locale and the caller's own variables still win over them.
+     */
+    public static String commandLine(
+            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
         StringBuilder line = new StringBuilder("exec /bin/sh -c ")
-                .append(quote(script(spec, cwd, path, userLocale)))
+                .append(quote(script(spec, cwd, path, userLocale, profile)))
                 .append(" editora");
         for (String arg : spec.argv()) {
             line.append(' ').append(quote(arg));
@@ -79,6 +88,11 @@ public final class PosixShell {
 
     /** The {@code sh} script that sets the child up and then becomes it, so the pid it printed stays true. */
     static String script(ExecSpec spec, String cwd, String path, Map<String, String> userLocale) {
+        return script(spec, cwd, path, userLocale, Map.of());
+    }
+
+    static String script(
+            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
         StringBuilder script = new StringBuilder("printf '\\036EDITORA %s\\n' \"$$\" >&2\n");
         if (spec.longLived()) {
             script.append(WATCHDOG);
@@ -86,7 +100,15 @@ public final class PosixShell {
         if (cwd != null) {
             script.append("cd -- ").append(quote(cwd)).append(" || exit 126\n");
         }
-        // The same order as a local child's environment: PATH, the locale, then the caller's own variables.
+        // The same order as a local child's environment: what the login profile sets, PATH, the locale, then
+        // the caller's own variables.
+        if (profile != null) {
+            profile.forEach((name, value) -> {
+                if (name != null && VARIABLE_NAME.matcher(name).matches() && value != null) {
+                    export(script, name, value);
+                }
+            });
+        }
         if (path != null) {
             export(script, "PATH", path);
         }

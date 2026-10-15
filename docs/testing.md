@@ -97,6 +97,11 @@ waits forever is then reported by name instead of holding its CI job until the j
 limit kills it. The slowest whole test class in CI takes about a minute, so the limit only ever
 catches a hang.
 
+A test blocked where an interrupt cannot reach it (a socket close under a blocked read, a native call) is
+not ended by that timeout. The CI pure and FX jobs therefore start `scripts/dump-stuck-jvms.sh` in the
+background: a few minutes before the job limit it writes `jcmd Thread.print` for every JVM still running,
+and the "Thread dumps of a hung test run" step prints them, so a hang names where it stuck.
+
 - The timeout **interrupts** the thread running the test. A wait that ignores interruption is only
   reported once it returns, and a test that leaves the FX thread itself stuck (a dialog nobody
   answers) still stalls every FX test after it — each for five minutes.

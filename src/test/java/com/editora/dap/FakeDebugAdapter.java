@@ -131,12 +131,39 @@ public final class FakeDebugAdapter implements AutoCloseable {
         }
     }
 
+    /**
+     * Closes like {@link DapClient#closeSocket}: half-close each session, then close everything on a daemon
+     * thread waited for only so long. A close with a thread blocked in accept or read under it never returned
+     * on the macOS CI runner, and held the test class until the job was killed.
+     */
     @Override
     public void close() throws IOException {
         closed = true;
-        server.close();
         for (Session session : sessions) {
-            session.socket.close();
+            try {
+                session.socket.shutdownOutput();
+            } catch (IOException | RuntimeException ignored) {
+                // already closed
+            }
+        }
+        Thread closer = Thread.ofPlatform().daemon().name("fake-dap-close").start(() -> {
+            try {
+                server.close();
+            } catch (IOException ignored) {
+                // best effort
+            }
+            for (Session session : sessions) {
+                try {
+                    session.socket.close();
+                } catch (IOException ignored) {
+                    // best effort
+                }
+            }
+        });
+        try {
+            closer.join(java.time.Duration.ofSeconds(2));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
