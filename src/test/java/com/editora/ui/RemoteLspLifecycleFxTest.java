@@ -179,6 +179,15 @@ class RemoteLspLifecycleFxTest {
     void aLostConnectionIsNotRestartedAndReconnectingBringsTheServerBack() throws Exception {
         EditorBuffer main = open(sftp.remotePath("my app/main.py"));
         await("main.py is on the server", () -> managed(main));
+        // Managed as soon as the session exists, before the start executor has even run the SSH command. A
+        // connection dropped that early fails the start itself (a different path), so wait for a running server.
+        await("the server is up", () -> {
+            try {
+                return logText().contains("\"initialize\"");
+            } catch (Exception e) {
+                return false;
+            }
+        });
         assertEquals(1, launches());
 
         sftp.dropConnection();

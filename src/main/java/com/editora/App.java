@@ -127,6 +127,9 @@ public class App extends Application {
         // list covers windows opened later, so each project window, dialog and popup picks it up.
         // See installUiFont.
         installUiFont();
+        // A press anywhere outside an open right-click menu closes it, including inside the control it was
+        // opened on, which JavaFX's own auto-hide leaves alone. See ContextMenuDismissal.
+        com.editora.ui.ContextMenuDismissal.install();
 
         // Hold back the probes nothing on screen needs (login-shell PATH, rg, gh, the release check, the spell
         // dictionary) until the first content has painted; see AfterFirstPaint. Only a real launch holds —

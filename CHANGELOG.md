@@ -254,6 +254,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Right-click menus close when you click outside them.** A click anywhere else in the tree, list, editor or
+  panel the menu was opened on used to leave it open, and right-clicking another row opened a second menu
+  beside the first. Now any click outside a right-click menu closes it, in every panel, and the click still
+  does what it would have done (selects the row, moves the caret, opens that row's menu).
 - **The window moves when you drag its title.** With the menu bar merged into the title bar, dragging the file
   name in the middle did nothing; only the empty parts of the bar moved the window.
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`
