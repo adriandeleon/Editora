@@ -11,6 +11,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -32,7 +33,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * One build tool's console — a single tab inside the shared {@link BuildOutputPanel} "Output" tool
  * window. Streams that tool's running invocation's stdout/stderr (see {@code com.editora.build.BuildService})
- * with a header showing the run state plus Stop and Clear. {@link BuildOutputPanel} creates one of these per
+ * with a header showing the run state (a spinner while something runs) plus Stop and Clear. {@link BuildOutputPanel} creates one of these per
  * tool that runs, so Maven/npm/Cargo/Go/Gradle each get their own tab. Modeled on {@link RunPanel} minus the
  * stdin field (a build isn't interactive), using a read-only RichTextFX {@link CodeArea} so each line can be
  * colored by the tool's {@link OutputStyle}. Reuses the {@code .run-panel}/{@code .run-status} CSS + the
@@ -44,6 +45,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
+    /** Spins while this tab's build (or, in log mode, a long command) is running. */
+    private final ProgressIndicator busy = RunPanel.busySpinner();
+
     private final CodeArea output = AreaUndo.none(new CodeArea());
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
@@ -63,6 +67,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private boolean logMode;
 
     private boolean logRunning;
+
+    /** A build {@link #started} in this tab and has not finished, failed, or been reset to idle. */
+    private boolean buildRunning;
 
     /** The last line is progress its command will overwrite ({@link #appendProgress}). */
     private boolean transientTail;
@@ -87,7 +94,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         clearButton.setMinWidth(Region.USE_PREF_SIZE);
         clearButton.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, status, spacer(), clearButton, stopButton);
+        HBox header = new HBox(8, busy, status, spacer(), clearButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -184,6 +191,12 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         logRunning = onStop != null;
         stopButton.setDisable(!logRunning);
         showStop(!logMode || logRunning);
+        showBusy();
+    }
+
+    /** Shown while a build or a long logged command runs; hidden, the indicator also stops animating. */
+    private void showBusy() {
+        RunPanel.showSpinner(busy, buildRunning || logRunning);
     }
 
     private void showStop(boolean show) {
@@ -205,6 +218,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public void idle() {
         status.setText(tr("run.idle"));
         stopButton.setDisable(true);
+        buildRunning = false;
+        showBusy();
     }
 
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
@@ -221,6 +236,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         clearConsole();
         status.setText(tr("run.running", header));
         stopButton.setDisable(false);
+        buildRunning = true;
+        showBusy();
     }
 
     /**
@@ -320,11 +337,15 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public void finished(int code) {
         status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
         stopButton.setDisable(true);
+        buildRunning = false;
+        showBusy();
     }
 
     public void failed(String message) {
         status.setText(tr("run.failed", message));
         stopButton.setDisable(true);
+        buildRunning = false;
+        showBusy();
     }
 
     @Override

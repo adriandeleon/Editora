@@ -4,6 +4,7 @@ import java.util.Collection;
 import java.util.List;
 
 import javafx.scene.Scene;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.Tab;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
@@ -53,6 +54,40 @@ class BuildOutputPanelFxTest {
 
     private static List<String> tabTitles(BuildOutputPanel p) {
         return p.getTabs().stream().map(Tab::getText).toList();
+    }
+
+    /** Whether {@code owner}'s console tab is showing its header spinner. Call on the FX thread. */
+    private static boolean spinning(BuildOutputPanel p, Object owner) {
+        java.util.Map<Object, BuildToolPanel> consoles = FxTestSupport.field(p, "consoles");
+        ProgressIndicator busy = FxTestSupport.field(consoles.get(owner), "busy");
+        return busy.isVisible() && busy.isManaged();
+    }
+
+    @Test
+    void eachTabSpinsOnlyWhileItsOwnBuildOrCommandRuns() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            p.started(MAVEN, "Maven", "mvn verify", OutputStyle.passthrough(), () -> {});
+            p.started(NPM, "npm", "npm test", OutputStyle.passthrough(), () -> {});
+            assertTrue(spinning(p, MAVEN) && spinning(p, NPM), "both running builds spin");
+
+            p.finished(MAVEN, 0);
+            assertFalse(spinning(p, MAVEN), "Maven's spinner stops when it exits");
+            assertTrue(spinning(p, NPM), "npm's tab keeps spinning — its build is still running");
+            p.failed(NPM, "npm not found");
+            assertFalse(spinning(p, NPM), "a failed launch stops the spinner");
+
+            // A transcript tab spins while a long command (a clone) streams, and not for finished one-shots.
+            p.logCommand(GIT, "Git", entry("git", "status"));
+            assertFalse(spinning(p, GIT), "a logged one-shot command never spins");
+            p.commandStarted(GIT, "Git", List.of("git", "clone", "https://example.com/r.git"), () -> {});
+            assertTrue(spinning(p, GIT), "a streaming clone spins");
+            p.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(List.of("git", "clone", "https://example.com/r.git"), 0, "", "", 9, true));
+            assertFalse(spinning(p, GIT), "the clone's exit stops the spinner");
+        });
     }
 
     @Test
