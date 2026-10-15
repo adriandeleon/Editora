@@ -983,8 +983,10 @@ public final class LspManager {
                 return;
             }
             List<JavaRuntimes.Jdk> jdks = hostJdks;
-            // A remote jdtls is told about the host's JDKs, and is not handed this machine's debug bundles.
-            List<String> startBundles = remote ? List.of() : bundles;
+            // A remote jdtls is told about the host's JDKs, and gets the debug bundles as files on the host.
+            List<String> startBundles = remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                    ? remoteDebugBundles(root, bundles)
+                    : remote ? List.of() : bundles;
             session.configureStart(
                     startCommand,
                     remoteEnvironment,
@@ -994,6 +996,46 @@ public final class LspManager {
             }
         });
         return session;
+    }
+
+    /**
+     * The java-debug bundle(s) for a jdtls on the host of remote {@code root}, as paths there: the host's
+     * {@code dap.java} tool when set, else this machine's jars copied into the host's cache
+     * ({@code <cache>/java-debug/<jar name>}, sent again only when the size differs — the name carries the
+     * version). Empty when there is nothing to offer; debugging then reports the plugin missing.
+     */
+    static List<String> remoteDebugBundles(Path root, List<String> localJars) {
+        String configured = com.editora.process.ExecTargets.remoteTool(root, "dap.java");
+        if (configured != null && !configured.isBlank()) {
+            return List.of(configured.strip());
+        }
+        if (localJars == null || localJars.isEmpty()) {
+            return List.of();
+        }
+        try {
+            var target = com.editora.process.ExecTargets.forPath(root);
+            Path cache = target.cacheDir();
+            if (cache == null) {
+                return List.of();
+            }
+            Path dir = Files.createDirectories(cache.resolve("java-debug"));
+            List<String> out = new ArrayList<>();
+            for (String jar : localJars) {
+                Path source = Path.of(jar);
+                Path copy = dir.resolve(source.getFileName().toString());
+                if (!Files.isRegularFile(copy) || Files.size(copy) != Files.size(source)) {
+                    // Written aside and moved in, so a jdtls never loads half a jar.
+                    Path part = dir.resolve(copy.getFileName() + ".part");
+                    Files.copy(source, part, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    Files.deleteIfExists(copy);
+                    Files.move(part, copy);
+                }
+                out.add(target.toTargetPath(copy));
+            }
+            return List.copyOf(out);
+        } catch (java.io.IOException | RuntimeException e) {
+            return List.of();
+        }
     }
 
     /**
