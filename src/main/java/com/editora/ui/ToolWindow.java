@@ -2,6 +2,8 @@ package com.editora.ui;
 
 import java.util.function.Supplier;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.scene.Node;
@@ -20,6 +22,9 @@ public final class ToolWindow {
     /** Mutable so a tool window can retitle itself at runtime (e.g. Project ⇄ Current Folder); the
      *  header label binds to it. */
     private final StringProperty title = new SimpleStringProperty();
+
+    /** Something this tool window shows is under way (a program running); its stripe button badges a spinner. */
+    private final BooleanProperty busy = new SimpleBooleanProperty(this, "busy");
 
     private final Side side;
     private final Supplier<Node> iconSupplier;
@@ -69,6 +74,11 @@ public final class ToolWindow {
 
     public StringProperty titleProperty() {
         return title;
+    }
+
+    /** True while this window's work runs — bound by its owner (the Run window to its program's run state). */
+    public BooleanProperty busyProperty() {
+        return busy;
     }
 
     public Side getSide() {

@@ -49,7 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   In Test Results it covers the compile step before the first test reports, when the progress bar is still empty.
   Debug spins while the before-launch build, the session start or the program runs, and stops at a breakpoint.
   An external tool that writes to the console now opens it at launch with the spinner, instead of only when it
-  finishes; a tool that writes into the editor spins the External Tools header too.
+  finishes; a tool that writes into the editor spins the External Tools header too. The Run window's stripe
+  button also badges a small spinner on its icon while a program runs, so a run still shows it is alive with
+  the Run window closed or another window open in its place.
 - **Remote development is on, and set per host.** The tools Editora drives — Git, gh, ripgrep, builds, tests,
   language servers and debuggers — run on the host of a remote folder by default. The first time you open a
   folder on a host, Editora asks once whether it may run commands there. Settings → Remote now shows, for

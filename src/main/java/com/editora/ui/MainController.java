@@ -2417,6 +2417,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         hierarchyToolWindow =
                 toolWindow("hierarchy", ToolWindow.Side.BOTTOM, Icons::structure, lspCoordinator::hierarchyPanel);
         runToolWindow = toolWindow("run", ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel);
+        runToolWindow.busyProperty().bind(runCoordinator.runningProperty()); // spinner badge on its stripe button
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
