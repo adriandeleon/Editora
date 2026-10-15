@@ -20,6 +20,8 @@ final class HttpVariableMarks {
     private final Supplier<MarkdownLintOverlay> overlay;
     private final Supplier<String> text;
     private final BooleanSupplier eligible;
+    /** Whether Markdown lint, which shares the overlay, still needs it when the marks turn off. */
+    private final BooleanSupplier sharedUse;
 
     private BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator;
     private boolean enabled;
@@ -30,11 +32,17 @@ final class HttpVariableMarks {
      * @param overlay  the buffer's (lazily attached) squiggle overlay
      * @param text     the document text, read when a check starts
      * @param eligible whether the buffer is an {@code .http} file with the HTTP Client on (and not a huge file)
+     * @param sharedUse whether Markdown lint is using the same overlay (it is left on for it when the marks go off)
      */
-    HttpVariableMarks(Supplier<MarkdownLintOverlay> overlay, Supplier<String> text, BooleanSupplier eligible) {
+    HttpVariableMarks(
+            Supplier<MarkdownLintOverlay> overlay,
+            Supplier<String> text,
+            BooleanSupplier eligible,
+            BooleanSupplier sharedUse) {
         this.overlay = overlay;
         this.text = text;
         this.eligible = eligible;
+        this.sharedUse = sharedUse;
     }
 
     /** Injects the analysis ({@code accept(text, diagnostics -> …)}); null turns the marks off. */
@@ -49,7 +57,14 @@ final class HttpVariableMarks {
         if (on != enabled) {
             enabled = on;
             generation++;
-            overlay.get().setActive(on);
+            if (!on) {
+                overlay.get().setActive(sharedUse.getAsBoolean());
+            }
+        }
+        if (on) {
+            // Re-asserted on every update, not only when the marks switch on: the overlay is shared, and
+            // something else (a Markdown-lint pass over every buffer) may have switched it off meanwhile.
+            overlay.get().setActive(true);
         }
         schedule();
     }
