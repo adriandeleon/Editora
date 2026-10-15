@@ -502,6 +502,8 @@
                         <editora.trash>off</editora.trash>
                         <!-- No window opened by a test asks GitHub for the latest release. -->
                         <editora.updateCheck>off</editora.updateCheck>
+                        <!-- As App.main sets it: a .http request may send its own Host header. -->
+                        <jdk.httpclient.allowRestrictedHeaders>host</jdk.httpclient.allowRestrictedHeaders>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

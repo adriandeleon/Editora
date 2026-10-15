@@ -46,10 +46,10 @@ class HttpHeadersTest {
 
     @Test
     void aRestrictedHeaderNameIsSurfaced() {
-        HttpHeaders.Partition p = partition("Host", "evil.example.com");
+        HttpHeaders.Partition p = partition("Connection", "close");
         assertTrue(p.sendable().isEmpty());
         assertEquals(1, p.warnings().size());
-        assertTrue(p.warnings().get(0).contains("Host"));
+        assertTrue(p.warnings().get(0).contains("Connection"));
     }
 
     @Test
@@ -57,10 +57,19 @@ class HttpHeadersTest {
         HttpHeaders.Partition p = HttpHeaders.partition(List.<String[]>of(
                 new String[] {"Authorization", "Bearer ok\r\n"}, // fixable → sent
                 new String[] {"X-Custom", "fine"}, // fine → sent
-                new String[] {"Host", "nope"})); // restricted → warned
+                new String[] {"Content-Length", "5"})); // restricted → warned
         assertEquals(2, p.sendable().size());
         assertEquals(1, p.warnings().size());
         assertEquals("Bearer ok", p.sendable().get(0)[1]);
+    }
+
+    @Test
+    void aHostHeaderIsSendableBecauseEditoraAllowsIt() {
+        // App.main (and the test JVM) set jdk.httpclient.allowRestrictedHeaders=host: a request may name its
+        // virtual host itself.
+        HttpHeaders.Partition p = partition("Host", "api.example.test");
+        assertEquals(1, p.sendable().size());
+        assertTrue(p.warnings().isEmpty(), p.warnings().toString());
     }
 
     @Test
