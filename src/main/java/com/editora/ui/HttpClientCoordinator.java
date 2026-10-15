@@ -432,20 +432,33 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * The response view's Run button: re-sends the request the selected history entry came from (when the
-     * file still has a request at that position), else the request at the caret.
+     * The response view's Run button: re-sends the request the selected history entry came from — found by its
+     * name, else by its method and URL template ({@link HttpRerunTarget}), never by its old position alone,
+     * since requests move — else, saying so, the request at the caret. With nothing selected: the caret's.
      */
     private void runAgain(EditorBuffer buffer, HttpHistoryEntry entry) {
         if (!isEnabled()) {
             host.setStatus(disabledMessage());
             return;
         }
-        int index = entry == null ? -1 : entry.requestIndex();
-        if (index >= 0 && index < HttpFile.parse(buffer.getContent()).size()) {
-            runIndex(buffer, index);
-        } else {
+        if (entry == null) {
             runRequest(buffer, buffer.getArea().getCurrentParagraph());
+            return;
         }
+        HttpExchange ex = entry.exchange();
+        int index = HttpRerunTarget.find(
+                HttpFile.parse(buffer.getContent()), entry.name(), ex.method(), ex.url(), entry.requestIndex());
+        if (index >= 0) {
+            runIndex(buffer, index);
+            return;
+        }
+        int caret = buffer.getArea().getCurrentParagraph();
+        if (HttpFile.requestIndexAt(buffer.getContent(), caret) < 0) {
+            host.setStatus(tr("status.http.rerunGone"));
+            return;
+        }
+        runRequest(buffer, caret);
+        host.setStatus(tr("status.http.rerunAtCaret", ex.method() + " " + ex.url()));
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
