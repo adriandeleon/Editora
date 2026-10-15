@@ -205,34 +205,35 @@ class HttpClientRunFlowFxTest {
                 "@token = {{$processEnv.PATH}}\n\n### leak\nGET " + url("/json")
                         + "\nX-Token: {{token}}\n\n### plain\nGET " + url("/json") + "\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
-        String refused = host.awaitStatus();
-        assertTrue(refused.contains("$processEnv.PATH"), refused);
+        String refused = host.awaitStatus(s -> s.contains("$processEnv.PATH"));
+        assertTrue(refused.contains(tr("status.http.secretsRefused", "$processEnv.PATH")), refused);
         assertEquals(List.of(List.of("$processEnv.PATH")), ops.askedReads);
         assertEquals(List.of(List.of("127.0.0.1:" + port)), ops.askedHosts);
-        assertFalse(coordinator.isRunningForTest(b), "nothing was started");
+        assertFalse(coordinator.isRunningForTest(b), "the run is over");
         Thread.sleep(200);
         assertEquals(List.of(), hits, "nothing was sent");
 
-        // Run All asks too: the file holds a request that reads the secret.
+        // Run All asks once too; the request that reads no secret still goes out.
         FxTestSupport.runOnFx(() -> {
             host.active = b;
             coordinator.runFile();
         });
-        host.awaitStatus();
+        host.awaitStatus(s -> s.equals(tr("status.http.someFailed", 1, 2)));
         assertEquals(2, ops.askedReads.size());
-        assertEquals(List.of(), hits);
+        Thread.sleep(200);
+        assertEquals(List.of("json null"), hits, "only the request without a secret was sent");
 
         // A request that reads no secret is never asked about.
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 7));
         host.awaitStatus(s -> s.equals(tr("status.http.finished", "GET " + url("/json"), "200 OK")));
         assertEquals(2, ops.askedReads.size());
-        assertEquals(List.of("json null"), hits);
+        assertEquals(List.of("json null", "json null"), hits);
 
         // Trusted: it is sent, with the value filled in.
         ops.trust = true;
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
         host.awaitStatus(s -> s.equals(tr("status.http.finished", "GET " + url("/json"), "200 OK")));
-        assertEquals("json " + System.getenv("PATH"), hits.get(1));
+        assertEquals("json " + System.getenv("PATH"), hits.get(2));
     }
 
     @Test

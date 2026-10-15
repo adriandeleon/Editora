@@ -43,6 +43,20 @@ public final class DynamicVars {
 
     private DynamicVars() {}
 
+    /**
+     * Whether {@code name} reads a secret from outside the {@code .http} file: an environment variable of the editor
+     * process ({@code $processEnv X}, {@code $processEnv.X}, {@code $env.X}, {@code $env X}) or a key of the
+     * {@code .env} file ({@code $dotenv X}). {@link #resolve} reads the process environment and {@code .env} only for
+     * such a name, so the trust gate, which asks about exactly these, cannot miss a form the resolver accepts.
+     */
+    public static boolean isSecretSource(String name) {
+        if (name == null) {
+            return false;
+        }
+        String n = name.trim();
+        return n.startsWith("$processEnv") || n.startsWith("$env.") || n.startsWith("$env ") || n.startsWith("$dotenv");
+    }
+
     /** True for a dynamic-variable name (begins with {@code $}). */
     public static boolean isDynamic(String name) {
         return name != null && name.startsWith("$");
@@ -117,14 +131,14 @@ public final class DynamicVars {
         if (n.equals("$datetime") || n.startsWith("$datetime ")) {
             return datetime(n.substring("$datetime".length()), clock, false, reason);
         }
-        if (n.startsWith("$processEnv") || n.startsWith("$env.") || n.startsWith("$env ")) {
+        if (isSecretSource(n)) { // the only branch that reads the process environment or .env
+            if (n.startsWith("$dotenv")) {
+                String v = dotenv(key(n.substring("$dotenv".length())), dir);
+                return v == null ? miss(reason, "http.unresolved.reason.dotenv") : v;
+            }
             String key = key(n.substring(n.startsWith("$processEnv") ? "$processEnv".length() : "$env".length()));
             String v = key.isEmpty() ? null : System.getenv(key);
             return v == null ? miss(reason, "http.unresolved.reason.env") : v;
-        }
-        if (n.startsWith("$dotenv")) {
-            String v = dotenv(key(n.substring("$dotenv".length())), dir);
-            return v == null ? miss(reason, "http.unresolved.reason.dotenv") : v;
         }
         return miss(reason, "http.unresolved.reason.dynamic");
     }

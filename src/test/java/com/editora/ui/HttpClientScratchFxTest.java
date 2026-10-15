@@ -216,7 +216,9 @@ class HttpClientScratchFxTest {
     void aSecretReadFromAnUntitledBufferIsTrustedAsTheProjectOrRefused() throws Exception {
         EditorBuffer b = untitled("GET " + url("/json") + "?k={{$processEnv.HOME}}\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
-        assertEquals(tr("status.http.secretsNeedFolder", "$processEnv.HOME"), host.last, "no project: not read");
+        // The gate is asked on the run's worker: the request is reported unsent, with why.
+        String refused = host.awaitStatus(s -> s.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")));
+        assertTrue(refused.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")), "no project: not read");
         assertEquals(List.of(), hits);
 
         ops.projectRoot = project;

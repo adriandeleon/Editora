@@ -22,9 +22,8 @@ class HttpScratchTest {
         return HttpFile.parse(text).get(0);
     }
 
-    private static List<String> needs(String text, Map<String, List<String>> defs) {
-        HttpFile.Request b = block(text);
-        return HttpScratch.needsFolder(b, HttpFile.parseRequest(b), defs);
+    private static List<String> needs(String text, Map<String, String> env) {
+        return HttpScratch.needsFolder(HttpFile.parseRequest(block(text)), env);
     }
 
     @Test
@@ -42,9 +41,17 @@ class HttpScratchTest {
         assertEquals(List.of("$dotenv.KEY"), needs("GET http://x.test/?k={{$dotenv.KEY}}\n", Map.of()));
         assertEquals(
                 List.of("$dotenv.KEY"),
-                needs("GET http://x.test/?k={{key}}\n", Map.of("key", List.of("{{$dotenv.KEY}}"))),
+                needs("GET http://x.test/?k={{key}}\n", Map.of("key", "{{$dotenv.KEY}}")),
                 "behind a variable too");
         assertEquals(List.of(), needs("GET http://x.test/?k={{$processEnv.HOME}}\n", Map.of()), "not a folder read");
+        assertEquals(
+                List.of("$dotenv KEY"),
+                needs("@k = {{$dotenv KEY}}\nGET http://x.test/?k={{k}}\n", Map.of()),
+                "through an @var line, named as written");
+        assertEquals(
+                List.of(),
+                needs("@k = {{$dotenv KEY}}\nGET http://x.test/\n", Map.of()),
+                "a declaration the request never uses reads nothing");
     }
 
     @Test
@@ -58,6 +65,12 @@ class HttpScratchTest {
         assertEquals(
                 "GET http://127.0.0.1:8080/api/users/7?n={{nonce}}&r={{$random.integer}}&x={{missing}}",
                 HttpScratch.label(p, env, null, null, NOW));
+        Map<String, String> secretEnv = Map.of("a", "{{$processEnv PATH}}", "b", "{{a}}");
+        assertEquals(
+                "GET http://x.test/?k={{b}}",
+                HttpScratch.label(
+                        HttpFile.parseRequest(block("GET http://x.test/?k={{b}}\n")), secretEnv, null, null, NOW),
+                "a variable that stands for a secret stays as written: the status bar never shows it");
         HttpFile.Parsed plain = HttpFile.parseRequest(block("POST http://x.test/a\n"));
         assertEquals("POST http://x.test/a", HttpScratch.label(plain, Map.of(), null, null, NOW));
     }

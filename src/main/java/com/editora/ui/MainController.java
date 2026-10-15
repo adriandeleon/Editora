@@ -6703,22 +6703,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads}
-     * ({@code $processEnv.X} / {@code $dotenv.X}) runs only from a trusted folder, the same trust store as build
-     * wrappers. Asked about the open project when the file is inside it, else the file's own folder.
+     * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads} (the secret
+     * sources it resolves, as written — {@code $env TOKEN}, {@code $dotenv KEY}) runs only from a trusted folder,
+     * the same trust store as build wrappers. Asked about the open project when the file is inside it, else the
+     * file's own folder — both canonical, the way the trust store compares them (see {@link HttpSecretGate#trustRoot}).
      */
     private boolean confirmHttpSecretReads(Path file, List<String> hosts, List<String> reads) {
-        Path dir = file.toAbsolutePath().getParent();
+        Path dir = com.editora.config.PathKeys.canonical(file.toAbsolutePath().getParent());
         if (config.getTrustStore().isTrusted(dir)) {
             return true;
         }
-        Path project = projectRoot();
-        Path root = project != null && dir.startsWith(project.toAbsolutePath()) ? project.toAbsolutePath() : dir;
+        Path root = HttpSecretGate.trustRoot(file, projectRoot());
         Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.httpTrust.accept"), ButtonBar.ButtonData.OK_DONE);
         Alert confirm = new Alert(
                 Alert.AlertType.WARNING,
-                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString()),
+                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString())
+                        + "\n\n" + tr("dialog.httpTrust.redirects"),
                 ButtonType.CANCEL,
                 trust);
         confirm.initOwner(stage);
