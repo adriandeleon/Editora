@@ -1364,7 +1364,8 @@ final class DebugCoordinator {
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
         boolean compactSource = "java".equals(language) && b.isCompactSource();
-        String jdkHome = !"java".equals(language)
+        // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
+        String jdkHome = !"java".equals(language) || Vfs.isRemote(b.getPath())
                 ? ""
                 : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
@@ -1449,14 +1450,20 @@ final class DebugCoordinator {
             return;
         }
         EditorBuffer b = host.activeBuffer();
-        if (b != null && b.isDirty() && host.isLocalBuffer(b) && !ops.saveBuffer(b)) {
+        if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
             return; // save whatever the user was editing before launching, as before
         }
-        Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
-        String jdkHome = configuredJdkHome(root, cfg);
+        Path configuredDir = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
+        Path cwd = configuredDir != null ? configuredDir : root;
+        // On a remote project the debuggee runs on its host: the JDK jdtls resolves there (DapManager ignores
+        // a java of this machine), and none of this machine's PATH or JAVA_HOME.
+        boolean onHost = Vfs.isRemote(root);
+        String jdkHome = onHost ? "" : configuredJdkHome(root, cfg);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
-        java.util.LinkedHashMap<String, String> launchEnv = new java.util.LinkedHashMap<>(
-                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
+        java.util.Map<String, String> jdkEnv = onHost
+                ? java.util.Map.of()
+                : com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath());
+        java.util.LinkedHashMap<String, String> launchEnv = new java.util.LinkedHashMap<>(jdkEnv);
         launchEnv.putAll(com.editora.run.EnvVars.parse(cfg.env()));
         // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
         // the previous class files, where every breakpoint would sit on a stale line number.
@@ -1470,33 +1477,27 @@ final class DebugCoordinator {
             return;
         }
         relaunch = () -> debugConfig(cfg);
-        beforeLaunch.run(
-                host,
-                cfg,
-                cwd,
-                com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()),
-                beforeLaunchConsole(),
-                () -> {
-                    // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
-                    // resolve below comes back "no language server for file" while jdtls is running perfectly.
-                    lsp.ensureManaged(routing);
-                    dapManager.resolveMainClasses(routing, options -> {
-                        DapManager.MainClassOption match = options.stream()
-                                .filter(o -> cfg.mainClass().equals(o.className()))
-                                .findFirst()
-                                .orElse(null);
-                        if (match == null) {
-                            host.setStatus(tr("status.debug.noMainClass"));
-                            return;
-                        }
-                        ops.openToolWindow();
-                        nameSession(shortName(match.mainClass()));
-                        dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
-                        dapManager.setVmArgs(cfg.vmArgs());
-                        dapManager.setEnv(launchEnv);
-                        withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd, javaExec));
-                    });
-                });
+        beforeLaunch.run(host, cfg, cwd, jdkEnv, beforeLaunchConsole(), () -> {
+            // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
+            // resolve below comes back "no language server for file" while jdtls is running perfectly.
+            lsp.ensureManaged(routing);
+            dapManager.resolveMainClasses(routing, options -> {
+                DapManager.MainClassOption match = options.stream()
+                        .filter(o -> cfg.mainClass().equals(o.className()))
+                        .findFirst()
+                        .orElse(null);
+                if (match == null) {
+                    host.setStatus(tr("status.debug.noMainClass"));
+                    return;
+                }
+                ops.openToolWindow();
+                nameSession(shortName(match.mainClass()));
+                dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
+                dapManager.setVmArgs(cfg.vmArgs());
+                dapManager.setEnv(launchEnv);
+                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd, javaExec));
+            });
+        });
     }
 
     private void startMainClassDebug(String targetFqn) {
@@ -1572,6 +1573,9 @@ final class DebugCoordinator {
 
     /** The default JDK for a loose file or Maven project; a saved configuration may override it. */
     private String configuredJdkHome(Path root, RunConfiguration cfg) {
+        if (root != null && Vfs.isRemote(root)) {
+            return ""; // a JDK setting names a folder on this machine; the host's jdtls resolves its own
+        }
         if (root != null && !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
             return "";
         }

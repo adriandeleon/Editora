@@ -295,16 +295,11 @@ class SshExecTargetFxTest {
             assertEquals(
                     0, ProcessRunner.run(remoteDir, TIMEOUT, List.of("true")).exit());
 
+            // A start right behind a stop gets the place the stop frees, a moment later, instead of a refusal
+            // (found against a real server: stopping a run and starting the next one was refused).
             Process first = running.removeFirst();
             first.destroyForcibly();
-            assertTrue(first.waitFor(10, TimeUnit.SECONDS));
-            for (int i = 0; i < 100 && running.size() < SshExecTarget.MAX_LONG_LIVED; i++) {
-                try {
-                    running.add(target.start(program)); // the place is released just after the exit is seen
-                } catch (IOException notYet) {
-                    Thread.sleep(50);
-                }
-            }
+            running.add(target.start(program));
             assertEquals(SshExecTarget.MAX_LONG_LIVED, running.size());
         } finally {
             for (Process p : running) {

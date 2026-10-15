@@ -212,14 +212,14 @@ final class RunCoordinator {
     static Path routingFor(CoordinatorHost host, RunConfiguration cfg) {
         List<Path> open = new java.util.ArrayList<>();
         host.forEachBuffer(b -> {
-            if (b.getPath() != null && host.isLocalBuffer(b) && "java".equals(b.getLanguage())) {
+            if (b.getPath() != null && RemoteExec.runsFor(b.getPath()) && "java".equals(b.getLanguage())) {
                 open.add(b.getPath());
             }
         });
         EditorBuffer active = host.activeBuffer();
         Path activeJava = active != null
                         && active.getPath() != null
-                        && host.isLocalBuffer(active)
+                        && RemoteExec.runsFor(active.getPath())
                         && "java".equals(active.getLanguage())
                 ? active.getPath()
                 : null;
@@ -322,12 +322,14 @@ final class RunCoordinator {
         Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
         Path project = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
-        String jdkHome = effectiveMavenJdk(project, cfg);
+        String jdkHome = project == null ? effectiveMavenJdk(null, cfg) : jdkHomeFor(project, cfg);
         beforeLaunch.run(
                 host,
                 cfg,
                 cwd,
-                JdkToolchain.environment(jdkHome, processPath()),
+                project == null
+                        ? JdkToolchain.environment(jdkHome, processPath())
+                        : javaEnvironment(project, jdkHome, null),
                 new BeforeLaunchStep.Console() {
                     @Override
                     public void started(String commandLine) {
@@ -396,16 +398,19 @@ final class RunCoordinator {
             return;
         }
         EditorBuffer b = host.activeBuffer();
-        if (b != null && b.isDirty() && host.isLocalBuffer(b) && !ops.saveBuffer(b)) {
+        if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
             return; // save whatever the user was editing before launching, as before
         }
-        Path cwd = cfg.workingDir().isBlank() ? root : Path.of(cfg.workingDir());
+        Path configuredDir = RunConfigWorkingDirectory.resolve(cfg, root);
+        Path cwd = configuredDir != null ? configuredDir : root;
         List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());
         List<String> args = ProgramArgs.tokenize(cfg.args());
         java.util.Map<String, String> env = com.editora.run.EnvVars.parse(cfg.env());
-        String jdkHome = effectiveMavenJdk(root, cfg);
-        java.util.Map<String, String> launchEnv = launchEnvironment(jdkHome, env);
-        String javaOverride = JdkToolchain.javaExecutable(jdkHome);
+        String jdkHome = jdkHomeFor(root, cfg);
+        java.util.Map<String, String> launchEnv = javaEnvironment(root, jdkHome, env);
+        boolean onHost = com.editora.vfs.Vfs.isRemote(root);
+        String javaOverride =
+                onHost ? (jdkHome.isBlank() ? "" : hostJava(jdkHome, null)) : JdkToolchain.javaExecutable(jdkHome);
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
             // Ask jdtls to enumerate its own main classes first and use the entry it returns, exactly as the
@@ -453,7 +458,13 @@ final class RunCoordinator {
                 streamRun(
                         label,
                         cwd,
-                        JavaRunCommand.build(javaOverride, List.of(), cp, cfg.mainClass(), vm, args),
+                        JavaRunCommand.build(
+                                javaOverride.isBlank() && onHost ? "java" : javaOverride,
+                                List.of(),
+                                cp,
+                                cfg.mainClass(),
+                                vm,
+                                args),
                         launchEnv);
             });
         } else {
@@ -463,7 +474,10 @@ final class RunCoordinator {
 
     private void startMainClassRun(String targetFqn) {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || !host.isLocalBuffer(b) || !"java".equals(b.getLanguage())) {
+        if (b == null
+                || b.getPath() == null
+                || !RemoteExec.runsFor(b.getPath()) // a remote project's class runs on its host
+                || !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.run.needJavaFile"));
             return;
         }
@@ -604,16 +618,17 @@ final class RunCoordinator {
 
     private void resolveMavenAndRun(EditorBuffer b, Path root, com.editora.run.MainMethodScanner.MainMethod m) {
         host.setStatus(tr("status.run.resolvingClasspath"));
-        String jdkHome = effectiveMavenJdk(root, null);
+        String jdkHome = jdkHomeFor(root, null);
         ops.resolveMavenClasspath(root, jdkHome, cp -> {
             if (cp == null || cp.isEmpty()) {
                 host.setStatus(tr("status.run.resolveFailed"));
                 return;
             }
             List<String> args = ProgramArgs.tokenize(ops.programArgs(b.getPath()));
-            List<String> command =
-                    JavaRunCommand.build(JdkToolchain.javaExecutable(jdkHome), List.of(), cp, m.fqn(), List.of(), args);
-            streamRun(shortName(m.fqn()), root, command, JdkToolchain.environment(jdkHome, processPath()));
+            String java =
+                    com.editora.vfs.Vfs.isRemote(root) ? hostJava(jdkHome, null) : JdkToolchain.javaExecutable(jdkHome);
+            List<String> command = JavaRunCommand.build(java, List.of(), cp, m.fqn(), List.of(), args);
+            streamRun(shortName(m.fqn()), root, command, javaEnvironment(root, jdkHome, null));
         });
     }
 
@@ -648,8 +663,8 @@ final class RunCoordinator {
                     mc.fqn(),
                     info.vmArgs(List.of()),
                     args);
-            String jdkHome = effectiveMavenJdk(root, null);
-            streamRun(shortName(mc.className()), root, command, JdkToolchain.environment(jdkHome, processPath()));
+            String jdkHome = jdkHomeFor(root, null);
+            streamRun(shortName(mc.className()), root, command, javaEnvironment(root, jdkHome, null));
         });
     }
 
@@ -663,8 +678,40 @@ final class RunCoordinator {
     }
 
     private String javaExecutableFor(Path root, String resolved) {
+        if (com.editora.vfs.Vfs.isRemote(root)) {
+            return hostJava(remoteJdkHome(root), resolved);
+        }
         String configured = JdkToolchain.javaExecutable(effectiveMavenJdk(root, null));
         return configured.isBlank() ? resolved : configured;
+    }
+
+    /**
+     * The JDK a Java project's program runs with: for a project on a remote host the host's ({@code jdk.home}
+     * in its tools, or blank for its own java), never this machine's setting, which names a folder here.
+     */
+    private String jdkHomeFor(Path root, RunConfiguration cfg) {
+        return com.editora.vfs.Vfs.isRemote(root) ? remoteJdkHome(root) : effectiveMavenJdk(root, cfg);
+    }
+
+    /** The environment for a Java program or build of {@code root}: on a host, its JDK only — not this PATH. */
+    private static java.util.Map<String, String> javaEnvironment(
+            Path root, String jdkHome, java.util.Map<String, String> configured) {
+        if (!com.editora.vfs.Vfs.isRemote(root)) {
+            return launchEnvironment(jdkHome, configured);
+        }
+        java.util.LinkedHashMap<String, String> env = new java.util.LinkedHashMap<>(remoteJdkEnvironment(jdkHome));
+        if (configured != null) {
+            env.putAll(configured);
+        }
+        return java.util.Map.copyOf(env);
+    }
+
+    /** {@code java} on a host: under its configured JDK, else what jdtls resolved there, else its PATH's. */
+    static String hostJava(String jdkHome, String resolved) {
+        if (jdkHome != null && !jdkHome.isBlank()) {
+            return jdkHome.strip().replaceAll("/+$", "") + "/bin/java";
+        }
+        return resolved == null || resolved.isBlank() ? "java" : resolved;
     }
 
     private static java.util.Map<String, String> launchEnvironment(
@@ -699,7 +746,12 @@ final class RunCoordinator {
             return "";
         }
         try {
-            return ops.programArgs(Path.of(mc.filePath()));
+            // jdtls names the file as its machine does: on a remote project, a path on the host.
+            Path project = ops.projectRoot();
+            Path file = project != null && com.editora.vfs.Vfs.isRemote(project)
+                    ? com.editora.process.ExecTargets.forPath(project).toPath(mc.filePath())
+                    : Path.of(mc.filePath());
+            return ops.programArgs(file);
         } catch (RuntimeException e) {
             return "";
         }

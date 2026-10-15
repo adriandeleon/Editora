@@ -63,7 +63,12 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
   dies: an SSH server signals nobody when a connection drops.
 - `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale.
 - Channels are budgeted against the server's `MaxSessions` (three short commands at once, five long-lived).
-- `ExecTarget.forwardLocal` forwards a loopback port; sessions send keep-alives every 30 s.
+  Short commands queue; a long-lived one waits up to 5 s for a place (the one a program just stopped frees
+  when its channel closes, a moment after the stop), then is refused with a message.
+- `ExecTarget.forwardLocal` forwards a loopback port. Sessions send keep-alives every 30 s and give up after
+  three go unanswered (`RemoteFileSystems.HEARTBEAT_MISSES`, like `ssh`'s `ServerAliveCountMax`), so a
+  connection that goes silent is noticed in about 90 s. The host's side is the server's: its programs are
+  ended when its `sshd` notices, which with `ClientAliveInterval` unset can take as long as TCP does.
 
 ### Who may run what
 
@@ -126,8 +131,14 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tools (sent as `JAVA_HOME`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
   the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
   file whatever the host allows; a refusal is reported when it is launched.
-- **Not yet for Run:** a Java *project* main class (it needs jdtls or a Maven classpath file on the host), the
-  main-class gutter, and Makefile detection for the run-configuration toolbar.
+- **Java projects:** the main class (gutter ▶, Run Main Class, a saved configuration) runs on the host with
+  the class path the host's jdtls resolves, or — without java-debug — Maven's (`MavenClasspathResolver`
+  runs `mvn … dependency:build-classpath` there, writes the list into the module's `target/` with `:`
+  separators, and reads it back over SFTP). The JDK is the host's (`jdk.home`, else what jdtls resolved, else
+  its `java`); this machine's JDK setting, `JAVA_HOME` and `PATH` are never sent
+  (`RunCoordinator.jdkHomeFor` / `javaEnvironment` / `hostJava`). A configuration's working directory is a
+  folder on the host. Gradle projects use their `run` task, as locally.
+- **Not yet for Run:** Makefile detection for the run-configuration toolbar.
 - **Outside changes:** a remote project's folder is watched on its host (`ui/RemoteWatcher`): one long-lived
   command, `inotifywait -m -r` when the host has it, else `find -newer` every 4 s (a folder whose entries
   changed is reported as itself, which is how a deletion shows). `.git` and `node_modules` are left out. Its
@@ -190,14 +201,24 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   working directory is named as the host names it, and the JDK is the one the host's jdtls resolves (a JDK
   setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
   through `RunService` in the host folder the adapter names. Attach and Debug Test go through the host's
-  jdtls, so `localhost` there is the host. Not on a host yet: a loose file (it is compiled with this
-  machine's `javac`) and debugging a saved run configuration (its routing is shared with Run, which does not
-  run a remote Java project yet).
+  jdtls, so `localhost` there is the host. A saved configuration is debugged on the host too, with its
+  folder there and none of this machine's JDK environment. Not on a host yet: a loose file (it is compiled
+  with this machine's `javac`).
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
-  a Java project's main-class run and its gutter ▶, debugging a loose Java file or a saved run configuration.
+  debugging a loose Java file.
 
-Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
+Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged `sshd` on localhost):
+`RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
+a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
+argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
+outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
+dropped connection, and ed25519 keys (all pass since Bouncy Castle). Not checked: dropbear, macOS's sshd.
+
+**ed25519** keys and host keys work through Bouncy Castle (`bcprov-jdk18on`, see
+[dependencies](../dependencies.md)): MINA SSHD has no EdDSA of its own and turns `ssh-ed25519` on only when a
+provider is present. Without it a login whose only key was ed25519 — `ssh-keygen`'s default — failed, as did
+a server offering only an ed25519 host key. `RemoteFileSystemsEd25519FxTest` pins it.
 
 Tests: `EmbeddedSftpFixture` is an in-process MINA server; `startWithShell` makes it run command lines with a
 real `/bin/sh`. Tests that use it need the JavaFX toolkit (the connect result is posted to the FX thread), so

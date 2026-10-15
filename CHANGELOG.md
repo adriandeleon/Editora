@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
   and node; their locations can be set per host. Breakpoints of a remote file are kept across reconnects.
   Java files in a Maven or Gradle project are debugged through the jdtls on the host (Debug, Debug Main
-  Class, Attach and Debug Test); Editora copies its java-debug plugin into `~/.cache/editora` there. A Java
-  file outside a project, and debugging a saved run configuration, are not available on a host yet.
+  Class, Attach, Debug Test and a saved configuration); Editora copies its java-debug plugin into
+  `~/.cache/editora` there. A Java file outside a project is not debugged on a host yet.
 - **Language servers for remote folders.** On a host you have allowed to run commands, a file in a remote folder
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition
@@ -31,8 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host. A file outside the project on the same host (a library source reached by Go to Definition) is served by
   the project's server. Losing the connection stops the servers without reporting a crash, and reconnecting
   starts them again. Java works too: jdtls runs on the host with the host's JDKs and keeps its index in
-  `~/.cache/editora` there (the host-consent question now says so). Debugging Java and running a Java project's
-  main class on a host are not available yet.
+  `~/.cache/editora` there (the host-consent question now says so).
 - **Remote folders notice outside changes.** On a host you have allowed to run commands, a remote project's
   folder is watched on its host, so a `git pull` or a build there updates the Project tree, Git, language
   servers and an open file that changed, as for a local folder. Hosts with `inotifywait` report at once;
@@ -40,8 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Run, builds and tests for remote folders.** On a host you have allowed to run commands, Run on a remote file,
   script / make / npm run configurations in a remote project, and Maven, Gradle, npm, Cargo and Go builds and
   test runs start on the host, over the same SSH connection; output, input and Stop work as for local runs.
-  The host's own Java is used (or a JDK configured for that host). Running a Java project's main class on a
-  remote host is not available yet.
+  The host's own Java is used (or a JDK configured for that host). A Java project's main class — the gutter ▶,
+  Run Main Class or a saved configuration — runs on the host too, with the class path its jdtls or Maven gives.
 - **Find in Files and Go to File for remote folders.** On a host you have allowed to run commands, Find in Files
   in a remote (SFTP) folder is done by the host's own ripgrep when it has one, instead of reading every file
   over the connection, and Go to File lists a remote project's files on the host. Go to Symbol has no
@@ -169,8 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preview selection entry above for the new ways to go to the source).
 - **The remote-images setting** is now a choice (Always / Ask / Never); a stored "off" becomes Never.
   `View: Toggle Markdown Remote Images` switches between Always and Never.
-- **Markdown strikethrough needs two tildes in the preview** (`~~struck~~`); a single tilde attached to a word is now
-  a subscript (`H~2~O`). An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
+- **A single tilde pair attached to the word before it is a subscript** in the Markdown preview (`H~2~O`); standing
+  apart, `~struck~` is still strikethrough, as is `~~struck~~`. An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
   Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
 - **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
   keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word
@@ -195,6 +194,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
+  default — failed with "No more authentication methods available", and a server offering only an ed25519
+  host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.
+- **A remote connection that goes silent is noticed.** Editora asks the server "are you there?" every 30 s
+  and now gives up after three unanswered asks (about a minute and a half), so a network that drops packets
+  instead of refusing them no longer leaves a window holding a dead folder until TCP times out.
+- **Starting a program on a host right after stopping another is no longer refused.** The place the stopped
+  one held is freed a moment after the stop; a start waits up to 5 s for it instead of reporting that too
+  many programs are running.
 - **Git in a project window with no file open** followed the project of the last window focused, not its own: once
   another project's window had been used, closing this window's last tab made it say "Not a Git repository" and
   refuse every Git command.

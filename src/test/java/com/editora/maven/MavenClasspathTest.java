@@ -53,4 +53,18 @@ class MavenClasspathTest {
         assertEquals(List.of(Path.of("/p/target/classes").toString()), MavenClasspath.assemble("", Path.of("/p")));
         assertEquals(List.of(Path.of("/p/target/classes").toString()), MavenClasspath.assemble(null, Path.of("/p")));
     }
+
+    /** On a remote host the file and the separator are the host's, whatever this machine uses. */
+    @Test
+    void aHostsFileAndSeparatorAreUsedAsGiven() {
+        List<String> argv = MavenClasspath.argv("/home/u/app/target/editora-cp-1.txt", ":");
+        assertTrue(argv.contains("-Dmdep.outputFile=/home/u/app/target/editora-cp-1.txt"), argv.toString());
+        assertTrue(argv.contains("-Dmdep.pathSeparator=:"), argv.toString());
+        List<String> reactor = MavenClasspath.reactorArgv("/home/u/r/target/cp.txt", ":app", ":");
+        assertTrue(reactor.contains("-Dmdep.pathSeparator=:"), reactor.toString());
+
+        assertEquals(
+                List.of("/home/u/app/target/classes", "/home/u/.m2/a.jar", "/home/u/.m2/b.jar"),
+                MavenClasspath.assemble("/home/u/.m2/a.jar: /home/u/.m2/b.jar:", "/home/u/app/target/classes", ":"));
+    }
 }

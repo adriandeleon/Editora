@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Copy me into Markdown</title>
+</head>
+<body>
+<!-- Open this page in a browser, select everything, copy, and paste into a Markdown buffer
+     (or use "Markdown: Paste as Markdown"). It becomes a heading, a table, lists, links,
+     emphasis, code and a definition list. -->
+<h2>Release checklist</h2>
+<p>Read the <a href="https://example.com/guide">guide</a> first. <strong>Bold</strong>, <em>italic</em>
+and <code>code</code> survive the paste.</p>
+<table>
+  <thead><tr><th>Step</th><th colspan="2">Owner and date</th></tr></thead>
+  <tbody>
+    <tr><td>Tag</td><td>Ana</td><td>Monday</td></tr>
+    <tr><td rowspan="2">Publish</td><td>Ben</td><td>Tuesday</td></tr>
+    <tr><td>Cy</td><td>Wednesday</td></tr>
+  </tbody>
+</table>
+<ol>
+  <li>Build</li>
+  <li>Test
+    <ul><li>unit</li><li>integration</li></ul>
+  </li>
+</ol>
+<dl>
+  <dt>Snapshot</dt><dd>A build between releases.</dd>
+  <dt>Release</dt><dd>A tagged build.</dd>
+</dl>
+<pre><code>mvn -Pdist package</code></pre>
+</body>
+</html>

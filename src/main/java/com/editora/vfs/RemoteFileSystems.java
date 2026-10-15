@@ -150,14 +150,22 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
 
     /**
      * Has every session ask the server "are you there?" each {@code interval} ({@code keepalive@openssh.com},
-     * what {@code ssh}'s ServerAliveInterval sends). Two reasons: a connection that only carries a quiet
-     * language server is otherwise idle long enough for a NAT or firewall to forget it, and a peer that has
-     * vanished is otherwise noticed only when something next tries to use it.
+     * what {@code ssh}'s ServerAliveInterval sends), and close it after {@link #HEARTBEAT_MISSES} go
+     * unanswered. Two reasons: a connection that only carries a quiet language server is otherwise idle long
+     * enough for a NAT or firewall to forget it, and a peer that has vanished is otherwise noticed only when
+     * something next tries to use it.
      */
     static void keepAlive(SshClient client, Duration interval) {
         CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, interval);
         CoreModuleProperties.HEARTBEAT_REQUEST.set(client, "keepalive@openssh.com");
+        // And give up on a server that stops answering, as ssh's ServerAliveCountMax does: without a limit a
+        // silently dead connection (a network that drops packets rather than refusing them) was never noticed
+        // — the window kept a dead folder, and nothing was ended until TCP itself timed out, hours later.
+        CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(client, HEARTBEAT_MISSES);
     }
+
+    /** Unanswered keep-alives before a connection is taken as dead: about a minute and a half at 30 s. */
+    static final int HEARTBEAT_MISSES = 3;
 
     /**
      * Registers {@code listener} to be told, on the FX thread, when a connection comes up ({@code true}) and

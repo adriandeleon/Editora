@@ -1,12 +1,18 @@
 package com.editora.ui;
 
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for {@link DebugLog}'s pure helpers (logger-name shortening, bounded buffer, formatting). */
@@ -22,15 +28,62 @@ class DebugLogTest {
 
     @Test
     void bufferIsBoundedAndEvictsOldest() {
-        DebugLog.clear();
-        for (int i = 0; i < DebugLog.MAX_RECORDS + 5; i++) {
-            DebugLog.append("rec" + i);
+        assertBoundedAndEvictsOldest();
+    }
+
+    /**
+     * The same guarantee while another thread appends, which is what a full run looks like: the fork is
+     * reused, so an earlier test can leave the root-logger handler installed and a scene still logging CSS
+     * warnings from the FX thread.
+     */
+    @Test
+    void bufferIsBoundedAndEvictsOldestWhileAnotherThreadLogs() throws Exception {
+        AtomicBoolean running = new AtomicBoolean(true);
+        CountDownLatch logging = new CountDownLatch(1);
+        Thread noise = new Thread(
+                () -> {
+                    while (running.get()) {
+                        DebugLog.append("WARNING  CssStyleHelper: noise" + System.lineSeparator() + "\tat a.Frame");
+                        logging.countDown();
+                        Thread.onSpinWait();
+                    }
+                },
+                "debug-log-noise");
+        noise.setDaemon(true);
+        noise.start();
+        try {
+            assertTrue(logging.await(10, TimeUnit.SECONDS), "the noise thread never started");
+            assertBoundedAndEvictsOldest();
+        } finally {
+            running.set(false);
+            noise.join();
+            DebugLog.clear();
         }
-        String[] lines = DebugLog.snapshot().split("\\R");
-        assertEquals(DebugLog.MAX_RECORDS, lines.length);
-        assertEquals("rec5", lines[0]); // the first five were evicted
-        assertEquals("rec" + (DebugLog.MAX_RECORDS + 4), lines[lines.length - 1]);
+    }
+
+    /**
+     * Fills the buffer past its bound and checks what is left. Only this test's own records are compared:
+     * a record logged by another thread meanwhile takes a slot too, so it pushes out one more of ours —
+     * which must still be the oldest one.
+     */
+    private static void assertBoundedAndEvictsOldest() {
+        String prefix = "bounded-rec-";
+        int appended = DebugLog.MAX_RECORDS + 5;
         DebugLog.clear();
+        for (int i = 0; i < appended; i++) {
+            DebugLog.append(prefix + i);
+        }
+        List<String> records = DebugLog.recordsForTest();
+        DebugLog.clear();
+
+        assertEquals(DebugLog.MAX_RECORDS, records.size());
+        List<String> own = records.stream().filter(r -> r.startsWith(prefix)).toList();
+        assertFalse(own.isEmpty());
+        // What survives is the newest run, in order: at least the first five are gone, never a later one.
+        List<String> newest = IntStream.range(appended - own.size(), appended)
+                .mapToObj(i -> prefix + i)
+                .toList();
+        assertEquals(newest, own);
     }
 
     @Test
@@ -51,9 +104,13 @@ class DebugLogTest {
         DebugLog.install(); // idempotent
         DebugLog.clear();
         Logger.getLogger("com.editora.test.Capture").warning("hello-capture-marker");
-        String snapshot = DebugLog.snapshot();
-        assertTrue(snapshot.contains("hello-capture-marker"), snapshot);
-        assertTrue(snapshot.contains("WARNING"), snapshot);
+        List<String> records = DebugLog.recordsForTest();
         DebugLog.clear();
+        // Its own record, not whichever one another thread logged at WARNING meanwhile.
+        List<String> captured =
+                records.stream().filter(r -> r.contains("hello-capture-marker")).toList();
+        assertEquals(1, captured.size(), records.toString());
+        assertTrue(captured.get(0).contains("WARNING"), captured.get(0));
+        assertTrue(captured.get(0).contains("Capture"), captured.get(0));
     }
 }

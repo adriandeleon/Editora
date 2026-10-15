@@ -1,0 +1,11 @@
+// A project lint config, read as markdownlint reads it: comments, aliases, rule options.
+// It applies to the Markdown files in this folder only (the lookup starts at the document's folder).
+{
+  "default": true,
+  // Trailing spaces are fine here only as a hard line break of exactly two.
+  "MD009": { "br_spaces": 2 },
+  // Switch line length on (off by default), at 100 columns.
+  "line-length": { "line_length": 100 },
+  // Repeated headings are fine in this folder.
+  "no-duplicate-heading": false
+}
