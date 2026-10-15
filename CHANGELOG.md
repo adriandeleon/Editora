@@ -250,6 +250,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window moves when you drag its title.** With the menu bar merged into the title bar, dragging the file
+  name in the middle did nothing; only the empty parts of the bar moved the window.
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`
   were off by the local UTC offset (six hours early in Mexico City). Day.js formats (`"DD-MM-YYYY"`) no longer
   give wrong dates, and `$env.NAME` and `{{$randomInt 1 10}}` work.
