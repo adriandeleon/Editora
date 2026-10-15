@@ -1257,13 +1257,7 @@ public final class DapClient implements IDebugProtocolClient {
                 // refused, or not answered in time: close anyway
             }
         }
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (Exception ignored) {
-            // best effort
-        }
+        closeSocket(socket);
         if (out != null) {
             out.close();
         }
@@ -1279,6 +1273,44 @@ public final class DapClient implements IDebugProtocolClient {
             }
         }
         executor.shutdownNow();
+    }
+
+    /** How long {@link #closeSocket} lets a close take before the caller goes on without it. */
+    static final long CLOSE_WAIT_MILLIS = 2_000;
+
+    /**
+     * Ends a socket transport without letting the close hold the caller. The reader thread is always blocked
+     * reading this socket, and a close must first get it out of that read; on the macOS CI runner a close that
+     * never returned held a test for half an hour (twice, in two different tests) — and the caller in the app
+     * is the FX thread, behind the Stop button. So: half-close first, which tells the adapter we are done (it
+     * closes its end, and the read returns end-of-stream), then close on a daemon thread, waited for only so
+     * long. A close that does hang leaks one parked thread instead of freezing the window.
+     */
+    static void closeSocket(Socket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            if (!socket.isClosed() && !socket.isOutputShutdown()) {
+                socket.shutdownOutput();
+            }
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // already gone: the close below still runs
+        }
+        Thread closer = Thread.ofPlatform().daemon().name("dap-socket-close").start(() -> {
+            try {
+                socket.close();
+            } catch (java.io.IOException | RuntimeException ignored) {
+                // best effort
+            }
+        });
+        try {
+            if (!closer.join(java.time.Duration.ofMillis(CLOSE_WAIT_MILLIS))) {
+                LOG.log(Level.WARNING, "a debug adapter socket did not close in time; leaving it to finish alone");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** What else this session holds open until it ends: the tunnel to a remote adapter's port. */
