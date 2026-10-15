@@ -42,5 +42,8 @@
   "C-M-r": "http.runRequest",
   "C-M-S-r": "http.runFile",
   "C-S-t": "buffer.reopenClosed",
-  "M-S-i": "edit.addCaretsToLineEnds"
+  "M-S-i": "edit.addCaretsToLineEnds",
+  "C-enter": "edit.insertLineBelow",
+  "C-S-enter": "edit.insertLineAbove",
+  "C-S-k": "edit.deleteLine"
 }

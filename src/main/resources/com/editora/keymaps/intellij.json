@@ -65,5 +65,8 @@
   "C-M-r": "http.runRequest",
   "C-M-S-r": "http.runFile",
   "M-S-g": "edit.addCaretsToLineEnds",
-  "M-S-j": "edit.undoLastCaret"
+  "M-S-j": "edit.undoLastCaret",
+  "S-enter": "edit.insertLineBelow",
+  "C-M-enter": "edit.insertLineAbove",
+  "C-y": "edit.deleteLine"
 }

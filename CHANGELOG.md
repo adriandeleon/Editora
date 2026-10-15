@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Line commands, at every cursor.**
+  - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
+    the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
+  - `Edit: Delete Line` (`Ctrl+Shift+K`, IntelliJ's `Ctrl+Y`) deletes the line or every selected line
+    without touching the clipboard or the kill ring. Emacs' Kill Whole Line is unchanged.
+  - `Edit: Select Line` (`Ctrl+L`) selects the line, and grows by a line each time.
+  - `Edit: Indent Lines` / `Edit: Outdent Lines` (`Ctrl+]` / `Ctrl+[`) shift the line or selection by the
+    file's indent unit, wherever the cursor is.
+
+  Each runs at every cursor as one undo step, opens a collapsed fold before changing it, and renumbers an
+  ordered Markdown list it changes. Keys are in the VS Code and Sublime keymaps, partly in CUA and IntelliJ
+  (`⌘` on macOS); Delete Line is also in the Edit menu.
 - **More ways to place multiple cursors.**
   - `Edit: Split Selection into Lines` turns each selected line into its own selection (Sublime's
     `Ctrl+Shift+L`; also in the Edit menu).
