@@ -2738,6 +2738,39 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.trimTrailingWhitespace",
                         () -> host.editing().lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
+        host.registry()
+                .register(Command.of(
+                        "edit.sortLinesCaseSensitive",
+                        () -> host.editing().lineTransform(com.editora.editops.LineTransforms::sortCaseSensitive)));
+        host.registry()
+                .register(Command.of(
+                        "edit.sortLinesUnique",
+                        () -> host.editing().lineTransform(com.editora.editops.LineTransforms::sortUnique)));
+        host.registry()
+                .register(Command.of("edit.keepLines", () -> host.editing().filterLines(true)));
+        host.registry()
+                .register(Command.of("edit.removeLines", () -> host.editing().filterLines(false)));
+        for (var codec : java.util.Map.<String, java.util.function.UnaryOperator<String>>of(
+                        "edit.encode.base64", com.editora.editops.TextCodecs::base64Encode,
+                        "edit.decode.base64", com.editora.editops.TextCodecs::base64Decode,
+                        "edit.encode.url", com.editora.editops.TextCodecs::urlEncode,
+                        "edit.decode.url", com.editora.editops.TextCodecs::urlDecode,
+                        "edit.escape.json", com.editora.editops.TextCodecs::jsonEscape,
+                        "edit.unescape.json", com.editora.editops.TextCodecs::jsonUnescape,
+                        "edit.escape.html", com.editora.editops.TextCodecs::htmlEscape,
+                        "edit.unescape.html", com.editora.editops.TextCodecs::htmlUnescape,
+                        "edit.escape.unicode", com.editora.editops.TextCodecs::unicodeEscape,
+                        "edit.unescape.unicode", com.editora.editops.TextCodecs::unicodeUnescape)
+                .entrySet()) {
+            host.registry()
+                    .register(Command.of(codec.getKey(), () -> host.editing().selectionCodec(codec.getValue())));
+        }
+        host.registry()
+                .register(
+                        Command.of("edit.incrementNumber", () -> host.editing().changeNumber(1)));
+        host.registry()
+                .register(
+                        Command.of("edit.decrementNumber", () -> host.editing().changeNumber(-1)));
         host.registry().register(Command.of("edit.tabify", host.editing()::tabifyRegion));
         host.registry().register(Command.of("edit.untabify", host.editing()::untabifyRegion));
         host.registry()

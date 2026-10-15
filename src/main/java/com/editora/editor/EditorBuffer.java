@@ -5312,8 +5312,7 @@ public class EditorBuffer implements TabContent {
                 folds.expandHeaderAt(Math.max(sel[0], sel[1]));
             }
         }
-        String text = a.getText();
-        MultiTab.CaretEdits edits = (s, e, ignored) -> switch (command) {
+        return atEachCaret((text, s, e) -> switch (command) {
             case INSERT_BELOW ->
                 com.editora.editops.LineCommands.insertBelow(
                         text, s, e, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, indentUnit()));
@@ -5323,7 +5322,25 @@ public class EditorBuffer implements TabContent {
             case INDENT, OUTDENT ->
                 com.editora.editops.LineCommands.indentLines(
                         text, s, e, command == LineCommand.OUTDENT, (from, to, back) -> tabEdit(from, to, back));
-        };
+        });
+    }
+
+    /** One caret's edit: its change and its selection afterwards, given the text and the caret's selection. */
+    @FunctionalInterface
+    public interface CaretEdit {
+        Indenter.TabEdit edit(String text, int selStart, int selEnd);
+    }
+
+    /**
+     * Runs {@code edit} at every caret of the focused area — the primary and the extras, or the one caret when
+     * multiple cursors are off — as one undoable edit. False when {@code edit} declines a caret (returns null);
+     * an exception it throws propagates before anything changes.
+     */
+    public boolean atEachCaret(CaretEdit edit) {
+        CodeArea a = getFocusedArea();
+        MultiCarets carets = activeCarets();
+        String text = a.getText();
+        MultiTab.CaretEdits edits = (s, e, ignored) -> edit.edit(text, s, e);
         boolean done;
         if (carets != null) {
             done = carets.applyAtEachCaret(edits, false);
