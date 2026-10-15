@@ -95,6 +95,7 @@ class RemoteJavaDebugFxTest {
         lsp.shutdownAll();
         adapter.close();
         sftp.close();
+        ExecTargets.setRemoteTools(null);
         ExecTargets.setRemoteEnabled(null);
     }
 
@@ -165,18 +166,38 @@ class RemoteJavaDebugFxTest {
         assertEquals(file, stops.get(0).get(0).file(), "the frame is the remote file");
     }
 
+    /**
+     * A Java file in no project is compiled for the debugger — on its host, with the host's javac, into a
+     * folder of the host's cache — and launched from there; the launch names the host's folders.
+     */
     @Test
-    void aLooseRemoteFileIsRefusedRatherThanCompiledHere() throws Exception {
+    void aLooseRemoteFileIsCompiledOnItsHostAndDebuggedFromThere() throws Exception {
         Path file = open("loose/Hello.java", "public class Hello {\n    public static void main(String[] a) {}\n}\n");
         replies.put("vscode.java.resolveMainClass", p -> List.of());
+        // The host's JDK, as its tools name it (the test host's login PATH has no javac of its own).
+        String jdk = System.getProperty("java.home");
+        ExecTargets.setRemoteTools((id, tool) -> "jdk.home".equals(tool) ? jdk : null);
 
-        onFx(() -> dap.startLaunch(file, "java", (o, c) -> c.accept(null), "", null));
+        onFx(() -> dap.startLaunch(file, "java", (o, c) -> c.accept(null), "/opt/local-only/bin/java", null));
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (errors.isEmpty() && System.nanoTime() < deadline) {
-            Thread.sleep(20);
+        FakeDebugAdapter.Session session;
+        try {
+            session = adapter.awaitSession();
+        } catch (AssertionError e) {
+            throw new AssertionError("no session; errors " + errors, e);
         }
-        assertTrue(errors.stream().anyMatch(e -> e.contains("not available on a remote host")), errors.toString());
-        assertEquals(0, adapter.sessionCount());
+        session.awaitRequest("launch");
+        assertEquals(List.of(), errors);
+        Map<String, Object> launch = session.launchArgs;
+        assertEquals("Hello", launch.get("mainClass"));
+        assertEquals(sftp.serverPath("loose").toString(), launch.get("cwd"));
+        assertEquals(jdk + "/bin/java", launch.get("javaExec"), "the host's JDK, not this machine's setting");
+        String classes = String.valueOf(((List<?>) launch.get("classPaths")).get(0));
+        Path cache = sftp.home().resolve(".cache/editora/debug-classes");
+        assertTrue(classes.startsWith(cache.toString()), "compiled into the host's cache: " + classes);
+        assertTrue(Files.isRegularFile(Path.of(classes, "Hello.class")), "by the host's javac");
+        assertTrue(
+                sftp.commands().stream().anyMatch(c -> c.contains("/bin/javac'") && c.contains("'-g'")),
+                "javac ran on the host: " + sftp.commands());
     }
 }

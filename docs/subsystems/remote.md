@@ -143,7 +143,9 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   its `java`); this machine's JDK setting, `JAVA_HOME` and `PATH` are never sent
   (`RunCoordinator.jdkHomeFor` / `javaEnvironment` / `hostJava`). A configuration's working directory is a
   folder on the host. Gradle projects use their `run` task, as locally.
-- **Not yet for Run:** Makefile detection for the run-configuration toolbar.
+- **Makefiles:** a makefile at a remote project's root shows the run-configuration toolbar like a local one;
+  it is looked for once per root off the FX thread (`RunConfigurationCoordinator.projectHasMakefile`), and the
+  toolbar is refreshed when the answer comes.
 - **Outside changes:** a remote project's folder is watched on its host (`ui/RemoteWatcher`): one long-lived
   command, `inotifywait -m -r` when the host has it, else `find -newer` every 4 s (a folder whose entries
   changed is reported as itself, which is how a deletion shows). `.git` and `node_modules` are left out. Its
@@ -207,11 +209,12 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
   through `RunService` in the host folder the adapter names. Attach and Debug Test go through the host's
   jdtls, so `localhost` there is the host. A saved configuration is debugged on the host too, with its
-  folder there and none of this machine's JDK environment. Not on a host yet: a loose file (it is compiled
-  with this machine's `javac`).
+  folder there and none of this machine's JDK environment. A loose file (no Maven or Gradle project) is
+  compiled for the debugger on its host, with the host's `javac` (beside its `jdk.home`, else on its `PATH`),
+  into `<cache>/debug-classes/<id>` (removed when the session ends), and launched from there
+  (`DapManager.compileOnHost`).
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
-  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
-  debugging a loose Java file.
+  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git).
 
 Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged `sshd` on localhost):
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and

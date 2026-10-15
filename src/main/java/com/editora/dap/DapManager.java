@@ -839,32 +839,31 @@ public final class DapManager implements DapClient.Host {
      * Runs off the FX thread (javac is a subprocess).
      */
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
-        if (com.editora.vfs.Vfs.isRemote(file)) {
-            // Compiling happens with this machine's javac into a folder of its own; a host has neither.
-            fail(
-                    epoch,
-                    "Debugging a Java file outside a Maven or Gradle project is not available on a remote host yet.");
-            return;
-        }
+        // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
+        boolean remote = com.editora.vfs.Vfs.isRemote(file);
+        DapPaths paths = pathsFor(file);
         Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
             Path out = null;
             boolean retained = false;
             try {
-                out = Files.createTempDirectory("editora-dap-");
+                out = remote ? hostCompilationDirectory(file) : Files.createTempDirectory("editora-dap-");
                 Path compileFile = file;
                 if (sourceVersion != null) {
                     compileFile = out.resolve(file.getFileName() + ".java");
                     Files.writeString(compileFile, withoutShebang(Files.readString(file)));
                 }
-                String javaExec = javaExecOverride == null || javaExecOverride.isBlank()
-                        ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
-                        : javaExecOverride;
+                String javaExec = remote
+                        ? hostJava(file)
+                        : javaExecOverride == null || javaExecOverride.isBlank()
+                                ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
+                                : javaExecOverride;
                 // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
                 // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
                 // and both pipes are drained concurrently (no fill-the-buffer deadlock).
-                ProcessRunner.Result r =
-                        compileStandalone(file, compileFile, out, javaExec, launchEnvironment, sourceVersion);
+                ProcessRunner.Result r = remote
+                        ? compileOnHost(file, compileFile, out, javaExec, launchEnvironment, sourceVersion)
+                        : compileStandalone(file, compileFile, out, javaExec, launchEnvironment, sourceVersion);
                 if (!r.ok()) {
                     fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
                     return;
@@ -879,8 +878,8 @@ public final class DapManager implements DapClient.Host {
                     }
                     retained = true;
                 }
-                String cwd = file.getParent() == null ? null : file.getParent().toString();
-                Path classes = out;
+                String cwd = file.getParent() == null ? null : paths.toAdapter(file.getParent());
+                String classes = paths.toAdapter(out);
                 // The classes come from a temp dir, so java-debug cannot infer the project it compiles
                 // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
                 // source in (its invisible project for a loose file).
@@ -891,7 +890,7 @@ public final class DapManager implements DapClient.Host {
                                 LaunchConfig.launch(
                                         fqn,
                                         project,
-                                        List.of(classes.toString()),
+                                        List.of(classes),
                                         List.of(),
                                         javaExec,
                                         cwd,
@@ -932,6 +931,49 @@ public final class DapManager implements DapClient.Host {
         command.addAll(List.of("-d", outputDir.toString(), source.toString()));
         return ProcessRunner.runInUserLocale(
                 original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
+    }
+
+    /**
+     * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its host's cache, made
+     * over the connection. Removed when the session ends, like a local one's temporary folder.
+     */
+    private static Path hostCompilationDirectory(Path file) throws java.io.IOException {
+        Path cache = com.editora.process.ExecTargets.forPath(file).cacheDir();
+        if (cache == null) {
+            throw new java.io.IOException("the host has no folder for Editora's files");
+        }
+        return Files.createDirectories(cache.resolve("debug-classes")
+                .resolve(java.util.UUID.randomUUID().toString()));
+    }
+
+    /** {@code java} on a remote file's host: under its configured JDK ({@code jdk.home}), else its PATH's. */
+    static String hostJava(Path file) {
+        String home = com.editora.process.ExecTargets.remoteTool(file, "jdk.home");
+        return home == null || home.isBlank() ? "java" : home.strip().replaceAll("/+$", "") + "/bin/java";
+    }
+
+    /** {@code javac} beside a host's {@code java} ({@link #hostJava}). Pure. */
+    static String hostJavac(String java) {
+        return java.endsWith("/bin/java") ? java.substring(0, java.length() - "java".length()) + "javac" : "javac";
+    }
+
+    /** {@link #compileStandalone} on a remote file's host: its javac, its paths. */
+    private static ProcessRunner.Result compileOnHost(
+            Path original,
+            Path source,
+            Path outputDir,
+            String hostJava,
+            Map<String, String> environment,
+            Integer sourceVersion) {
+        DapPaths paths = pathsFor(original);
+        List<String> command = new ArrayList<>(List.of(hostJavac(hostJava), "-g"));
+        if (sourceVersion != null) {
+            command.add("--release");
+            command.add(sourceVersion.toString());
+        }
+        command.addAll(List.of("-d", paths.toAdapter(outputDir), paths.toAdapter(source)));
+        return ProcessRunner.runInUserLocale(
+                original.getParent(), java.time.Duration.ofSeconds(120), command, environment);
     }
 
     /** Blank the first line without changing later line numbers for breakpoints and stack frames. */

@@ -360,8 +360,8 @@ final class RunConfigurationCoordinator {
      * Whether this window's project root holds a makefile, cached per root.
      *
      * <p>The probe is a stat, but the visibility refresh runs on the tab-switch/focus/save cadence and the
-     * root changes far more rarely than that — and an SFTP root would make it a network round trip, hence the
-     * locality guard.
+     * root changes far more rarely than that. A remote root's stats are network round trips, so there it is
+     * asked once off the FX thread — no makefile until the answer comes, then the toolbar is refreshed.
      */
     boolean projectHasMakefile() {
         Path root = host.windowProjectRoot();
@@ -371,8 +371,20 @@ final class RunConfigurationCoordinator {
         }
         if (!root.equals(makefileProbedRoot)) {
             makefileProbedRoot = root;
-            makefileAtProjectRoot =
-                    com.editora.vfs.Vfs.isLocal(root) && com.editora.run.RunConfigToolbar.hasMakefile(root);
+            makefileAtProjectRoot = false;
+            if (com.editora.vfs.Vfs.isLocal(root)) {
+                makefileAtProjectRoot = com.editora.run.RunConfigToolbar.hasMakefile(root);
+            } else {
+                Thread.ofVirtual().name("remote-makefile-probe").start(() -> {
+                    boolean found = com.editora.run.RunConfigToolbar.hasMakefile(root);
+                    javafx.application.Platform.runLater(() -> {
+                        if (found && root.equals(makefileProbedRoot)) {
+                            makefileAtProjectRoot = true;
+                            refreshRunConfigToolbar();
+                        }
+                    });
+                });
+            }
         }
         return makefileAtProjectRoot;
     }

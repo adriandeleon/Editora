@@ -547,6 +547,14 @@ class RealSshdProbeFxTest {
                                 List.of()));
                 check(out.contains("sum 2"), "ran on the host: " + out);
                 seen.add("ran with " + info.javaExec());
+                // And a Java file in no project: compiled on the host for the debugger, then debugged.
+                Path loose = Files.createDirectories(work.resolve("loose"));
+                String looseText =
+                        "public class Loose {\n  public static void main(String[] a) {\n    int x = 1;\n    System.out.println(\"sum \" + (x + 1));\n  }\n}\n";
+                Path looseFile = Files.writeString(loose.resolve("Loose.java"), looseText);
+                onFx(() -> lsp.openDocument(looseFile, loose, "java", looseText));
+                Thread.sleep(3000);
+                debug(dap, looseFile, "java", null, seen, 2, () -> dap.configure(true, javaDebug));
                 return String.join(" | ", seen);
             } finally {
                 onFx(dap::shutdown);
