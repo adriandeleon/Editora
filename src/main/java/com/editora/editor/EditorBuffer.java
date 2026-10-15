@@ -609,7 +609,8 @@ public class EditorBuffer implements TabContent {
     private final HttpVariableMarks httpVariableMarks = new HttpVariableMarks(
             this::mdLintOverlay,
             this::documentTextSnapshot,
-            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile);
+            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile,
+            () -> this.markdownLintEnabled);
 
     private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
@@ -3259,7 +3260,8 @@ public class EditorBuffer implements TabContent {
     public void setMarkdownLintEnabled(boolean on) {
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
         if (this.markdownLintEnabled || mdLintOverlay != null) {
-            mdLintOverlay().setActive(this.markdownLintEnabled);
+            // The overlay is shared with a .http buffer's {{variable}} marks: keep it on while they are.
+            mdLintOverlay().setActive(this.markdownLintEnabled || httpVariableMarks.enabled());
         }
         minimap.setLintEnabled(this.markdownLintEnabled);
         updateMarkdownLintStripe();

@@ -802,7 +802,7 @@ public final class HttpClientPanel extends VBox {
         if (!items.equals(envCombo.getItems())) {
             envCombo.getItems().setAll(items);
         }
-        envCombo.setValue(HttpEnvFiles.choose(active, items)); // a name this file does not define → none
+        envCombo.setValue(HttpEnvironments.choose(active, items)); // a name this file does not define → none
         envCombo.setDisable(items.size() <= 1);
         updatingEnv = false;
     }

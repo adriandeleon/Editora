@@ -50,4 +50,17 @@ class HttpEnvMergeTest {
     void noFilesMeanNoVariables() {
         assertTrue(HttpEnv.merged(null, null, "dev").isEmpty());
     }
+
+    @Test
+    void aNestedObjectIsTheSameMergedObjectAsItsMembers() {
+        String pub = "{\"dev\":{\"obj\":{\"a\":1,\"b\":2},\"s\":{\"x\":1}}}";
+        String priv = "{\"dev\":{\"obj\":{\"c\":3,\"b\":20},\"s\":\"text\"}}";
+        Map<String, String> m = HttpEnv.merged(pub, priv, "dev");
+        assertEquals("{\"a\":1,\"b\":20,\"c\":3}", m.get("obj"), "the object holds every merged member");
+        assertEquals("1", m.get("obj.a"));
+        assertEquals("20", m.get("obj.b"), "the private member wins");
+        assertEquals("3", m.get("obj.c"));
+        assertEquals("text", m.get("s"), "a value replaces an object");
+        assertTrue(!m.containsKey("s.x"), "and its old members are gone: " + m);
+    }
 }

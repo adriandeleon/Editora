@@ -109,6 +109,7 @@ class HttpVariableHintsFxTest {
 
     @Test
     void theMarksFollowTheEnvironmentAndItsFiles(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve(".git")); // one repository: its root's env files apply below it
         Path api = Files.createDirectories(root.resolve("api"));
         Files.writeString(root.resolve("http-client.env.json"), "{\"dev\":{\"host\":\"http://h\"},\"prod\":{}}");
         Files.writeString(api.resolve(".env"), "KEY=v\n");

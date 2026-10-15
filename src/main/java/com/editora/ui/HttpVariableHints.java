@@ -21,7 +21,7 @@ import com.editora.markdown.MarkdownLint;
 /**
  * Feeds a {@code .http} buffer's unresolved-variable squiggles and its {@code {{} completion from
  * {@link HttpVariableIndex}: the selected environment of the file (both env files of the folder
- * {@link HttpEnvFiles#envDir} finds), the {@code .env} beside it, and the document text. The check runs on its
+ * {@link HttpEnvironments} finds), the {@code .env} beside it, and the document text. The check runs on its
  * own worker thread after an edit settles (the buffer asks), and again when the environment choice or the env
  * files change (the coordinator tells {@link #refresh}); the result is applied on the FX thread.
  */
@@ -85,12 +85,23 @@ final class HttpVariableHints {
                 : buffer.getPath().toAbsolutePath().getParent();
         fingerprints.put(buffer, fingerprint(buffer));
         worker.execute(() -> {
-            HttpVariableIndex.Context ctx = context(env, envDir, dir);
-            List<MarkdownLint.Diagnostic> marks =
-                    diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
+            HttpVariableIndex.Context ctx;
+            List<MarkdownLint.Diagnostic> marks;
+            try {
+                ctx = context(env, envDir, dir);
+                marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
+            } catch (RuntimeException unexpected) {
+                // Never leave the previous marks standing as if they were current: clear them instead.
+                java.util.logging.Logger.getLogger(HttpVariableHints.class.getName())
+                        .log(java.util.logging.Level.WARNING, "{{variable}} check failed", unexpected);
+                ctx = HttpVariableIndex.Context.EMPTY;
+                marks = List.of();
+            }
+            HttpVariableIndex.Context checked = ctx;
+            List<MarkdownLint.Diagnostic> result = marks;
             Platform.runLater(() -> {
-                contexts.put(buffer, ctx);
-                done.accept(marks);
+                contexts.put(buffer, checked);
+                done.accept(result);
             });
         });
     }
@@ -100,10 +111,7 @@ final class HttpVariableHints {
         if (envDir == null || env == null || env.isEmpty()) {
             return new HttpVariableIndex.Context(Map.of(), dir);
         }
-        return new HttpVariableIndex.Context(
-                HttpEnv.merged(
-                        read(envDir.resolve(HttpEnv.PUBLIC_FILE)), read(envDir.resolve(HttpEnv.PRIVATE_FILE)), env),
-                dir);
+        return new HttpVariableIndex.Context(HttpEnvironments.read(envDir).variables(env), dir);
     }
 
     /** One amber squiggle per problem (lint diagnostics are 1-based); the tooltip reads {@code {{name}}: reason}. */
@@ -136,14 +144,6 @@ final class HttpVariableHints {
                     : "-";
         } catch (IOException e) {
             return "?";
-        }
-    }
-
-    private static String read(Path file) {
-        try {
-            return Files.isRegularFile(file) ? Files.readString(file) : null;
-        } catch (IOException e) {
-            return null;
         }
     }
 }

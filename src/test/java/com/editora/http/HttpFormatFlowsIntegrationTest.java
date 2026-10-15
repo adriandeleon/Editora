@@ -237,4 +237,77 @@ class HttpFormatFlowsIntegrationTest {
         assertEquals(120_000, p.directives().timeoutMillis());
         assertEquals(1_500, p.directives().connectionTimeoutMillis());
     }
+
+    // --- round-2 fixes (F5, F6, F10, F11): what the server receives -----------------------------------------
+
+    @Test
+    void fullMonthAndWeekdayNamesReachTheServer() throws Exception {
+        java.time.format.DateTimeFormatter english =
+                java.time.format.DateTimeFormatter.ofPattern("MMMM EEEE", java.util.Locale.ENGLISH);
+        String before = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).format(english);
+        run(
+                "POST " + host() + "/d\nContent-Type: text/plain\n\n{{$datetime 'MMMM dddd'}}\n",
+                0,
+                Map.of(),
+                null,
+                new CapturedResponses());
+        String after = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).format(english);
+        String got = seen.get(0);
+        assertTrue(got.endsWith(" body=" + before) || got.endsWith(" body=" + after), got);
+    }
+
+    @Test
+    void anIndentedBodyKeepsItsFirstLineIndentation() throws Exception {
+        run(
+                "POST " + host() + "/y\nContent-Type: application/yaml\n\n  a: 1\n  b:\n    - x\n\n\n",
+                0,
+                Map.of(),
+                null,
+                new CapturedResponses());
+        assertEquals("POST /y body=  a: 1\n  b:\n    - x", seen.get(0));
+    }
+
+    @Test
+    void anEnvironmentValueThatUsesAFileVariableSaysSo() throws Exception {
+        HttpExchange ex = run(
+                "@base = " + host() + "\nGET {{base}}/e?u={{url}}\n",
+                0,
+                Map.of("url", "{{base}}/x"),
+                null,
+                new CapturedResponses());
+        assertEquals("GET /e?u=/x", seen.get(0));
+        assertTrue(
+                ex.result().warnings().stream().anyMatch(w -> w.contains("{{base}}") && w.contains("@variables")),
+                ex.result().warnings().toString());
+    }
+
+    @Test
+    void copyAsCurlOfAMultipartUploadReimportsAndSendsTheSameFile(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("body.json"), "{\"from\":\"file\"}");
+        HttpExchange first = run(
+                "POST " + host() + "/up\nContent-Type: multipart/form-data; boundary=B\n\n--B\n"
+                        + "Content-Disposition: form-data; name=\"f\"; filename=\"b.json\"\n\n< ./body.json\n--B--\n",
+                0,
+                Map.of(),
+                dir,
+                new CapturedResponses());
+        String imported = CurlImport.toHttpRequest(CurlExport.toCurl(first));
+        run(imported, 0, Map.of(), dir, new CapturedResponses());
+        assertEquals(2, seen.size(), seen.toString());
+        for (String got : seen) {
+            assertTrue(got.contains("filename=\"b.json\"") && got.contains("{\"from\":\"file\"}"), got);
+        }
+    }
+
+    @Test
+    void anImportedUploadFileIsPut(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("data.bin"), "DATA");
+        run(
+                CurlImport.toHttpRequest("curl -T ./data.bin " + host() + "/put"),
+                0,
+                Map.of(),
+                dir,
+                new CapturedResponses());
+        assertEquals("PUT /put body=DATA", seen.get(0));
+    }
 }

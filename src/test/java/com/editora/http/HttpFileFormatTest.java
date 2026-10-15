@@ -189,4 +189,12 @@ class HttpFileFormatTest {
                 ">not a handler\n=>arrow",
                 only("POST http://h\n\n>not a handler\n=>arrow\n").body());
     }
+
+    @Test
+    void onlyBlankLinesAreTrimmedFromAnInlineBody() {
+        Parsed p = HttpFile.parseRequest(
+                "POST http://h/\nContent-Type: application/yaml\n\n\n  a: 1\n  b:   \n    - x\n\n  \n");
+        assertEquals("  a: 1\n  b:   \n    - x", p.body(), "first-line indentation and inner spaces are kept");
+        assertEquals("", HttpFile.parseRequest("POST http://h/\n\n   \n\n").body());
+    }
 }

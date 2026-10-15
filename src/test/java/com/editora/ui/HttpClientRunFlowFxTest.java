@@ -120,6 +120,14 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
     }
 
+    private void awaitHits(int n) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+        while (hits.size() < n) {
+            assertTrue(System.nanoTime() < deadline, "the server got " + hits);
+            Thread.sleep(20);
+        }
+    }
+
     private String url(String path) {
         return "http://127.0.0.1:" + port + path;
     }
@@ -312,6 +320,36 @@ class HttpClientRunFlowFxTest {
                 List.of("", "only", "dev"),
                 FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())),
                 "the public file's names, then those only the private file defines");
+    }
+
+    /**
+     * F4/S5: a file opened on its own (no project) must not pick up a private env file from a parent folder the
+     * user never associated with it — only from inside its own repository.
+     */
+    @Test
+    void aPrivateEnvFileAboveTheFilesRepositoryIsNeverSent(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("http-client.private.env.json"), "{\"dev\":{\"token\":\"parent-value\"}}");
+        Path sub = Files.createDirectories(dir.resolve("downloaded"));
+        ops.saved = "dev";
+        String text = "GET " + url("/json") + "\nX-Token: {{token}}\n";
+        EditorBuffer b = httpBuffer(sub.resolve("api.http"), text);
+        assertEquals(
+                List.of(""),
+                FxTestSupport.callOnFx(() -> List.copyOf(FxTestSupport.<ComboBox<String>>field(panel(b), "envCombo")
+                        .getItems())),
+                "no environments offered");
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
+        awaitHits(1);
+        assertFalse(hits.get(0).contains("parent-value"), "the parent folder's private value was sent: " + hits);
+
+        // The same layout inside one repository: the env file at its root applies.
+        Files.createDirectories(dir.resolve(".git"));
+        FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b));
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.<ComboBox<String>>field(panel(b), "envCombo").setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
+        awaitHits(2);
+        assertEquals("json parent-value", hits.get(1), "the repository root's env file is used");
     }
 
     @Test

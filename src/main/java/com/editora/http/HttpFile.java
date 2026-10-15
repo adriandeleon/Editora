@@ -389,7 +389,7 @@ public final class HttpFile {
                 rl.method(),
                 rl.url(),
                 headers,
-                body.toString().strip(),
+                trimBlankLines(body.toString()),
                 null,
                 bodyRef,
                 redirects,
@@ -421,6 +421,23 @@ public final class HttpFile {
                 req.variables(),
                 warnings,
                 p.error());
+    }
+
+    /**
+     * {@code body} without its leading and trailing blank lines. Only whole blank lines go: the first line keeps its
+     * indentation (a YAML or indented-text body would otherwise change meaning) and inner lines are untouched.
+     */
+    static String trimBlankLines(String body) {
+        String[] lines = body.split("\n", -1);
+        int first = 0;
+        int last = lines.length - 1;
+        while (first <= last && lines[first].isBlank()) {
+            first++;
+        }
+        while (last >= first && lines[last].isBlank()) {
+            last--;
+        }
+        return first > last ? "" : String.join("\n", java.util.Arrays.copyOfRange(lines, first, last + 1));
     }
 
     /**

@@ -49,4 +49,14 @@ class DotEnvTest {
         assertEquals("raw\\n", env.get("D"));
         assertEquals("pass#word", env.get("E"), "a # inside a word is part of the value");
     }
+
+    @Test
+    void exportWithATabAndMultiLineQuotedValues() {
+        Map<String, String> env = DotEnv.parse("export\tB=2\nC=\"first\nsecond\"\nD=after\nE=\"never closed\nF=6\n");
+        assertEquals("2", env.get("B"));
+        assertEquals("first\nsecond", env.get("C"), "a double-quoted value may span lines");
+        assertEquals("after", env.get("D"));
+        assertEquals("\"never closed", env.get("E"), "an unclosed quote does not swallow the lines below");
+        assertEquals("6", env.get("F"));
+    }
 }
