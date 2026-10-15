@@ -368,7 +368,11 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     }
 
     private void refreshTextSettings(EditorBuffer buffer) {
-        encodingValue.setText(tr("fileinfo.encoding.utf8"));
+        String charset = buffer.getEffectiveCharset();
+        encodingValue.setText(
+                com.editora.editorconfig.EditorConfigCharset.UTF_8.equals(charset)
+                        ? tr("fileinfo.encoding.utf8")
+                        : com.editora.editorconfig.EditorConfigCharset.displayName(charset));
         lineEndingsValue.setText(buffer.getLineEnding());
         modeValue.setText(modeLabel(buffer));
     }

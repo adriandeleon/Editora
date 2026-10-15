@@ -295,6 +295,14 @@ final class FileWorkflowCoordinator {
 
     FileWorkflowCoordinator(Host host) {
         this.host = host;
+        this.encodings = new EncodingCommands(host, this);
+    }
+
+    /** Reopen / Save with Encoding. */
+    private final EncodingCommands encodings;
+
+    EncodingCommands encodings() {
+        return encodings;
     }
 
     void setDocumentWriter(DocumentWriter documentWriter) {
@@ -918,8 +926,16 @@ final class FileWorkflowCoordinator {
                     null);
         }
         byte[] bytes = Files.readAllBytes(file);
+        // An encoding the user chose for this file wins over detection and .editorconfig — while the bytes are
+        // still valid in it. When they are not, the file opens as it would without the choice, and the FX side
+        // (applyPreparedLoad) forgets it.
+        String chosen = chosenEncoding(file);
+        com.editora.io.TextEncodings.Decoded forced =
+                chosen == null ? null : com.editora.io.TextEncodings.decode(bytes, chosen);
+        boolean useChosen = forced != null && forced.ok();
         // BOM-less UTF-16 is half NUL bytes; when .editorconfig declares it, it is text, not a hex dump.
         if (sniffBinary
+                && !useChosen
                 && !com.editora.editorconfig.EditorConfigCharset.isBomlessUtf16(bytes, editorConfig.charset())) {
             byte[] sample = bytes.length <= BinarySniff.SAMPLE_BYTES
                     ? bytes
@@ -947,8 +963,10 @@ final class FileWorkflowCoordinator {
             }
         }
         // Strict, never with replacement: a U+FFFD substituted here would be written back on the next save.
-        com.editora.editorconfig.EditorConfigCharset.Decoded decoded =
-                com.editora.editorconfig.EditorConfigCharset.decodeLossless(bytes, editorConfig.charset());
+        com.editora.editorconfig.EditorConfigCharset.Decoded decoded = useChosen
+                ? new com.editora.editorconfig.EditorConfigCharset.Decoded(
+                        forced.text(), forced.charset(), forced.charset(), false)
+                : com.editora.editorconfig.EditorConfigCharset.decodeLossless(bytes, editorConfig.charset());
         String charset = decoded.charset();
         String content = decoded.text();
         boolean large = size >= EditorBuffer.LARGE_FILE_BYTES;
@@ -977,6 +995,32 @@ final class FileWorkflowCoordinator {
                 false,
                 bytes,
                 decoded.declared());
+    }
+
+    /**
+     * The encoding the user chose for {@code file} (Reopen or Save with Encoding), or null. Safe on the
+     * file-load worker: the map is concurrent.
+     */
+    String chosenEncoding(Path file) {
+        if (file == null) {
+            return null;
+        }
+        com.editora.config.WorkspaceState ws = host.config().getWorkspaceState();
+        return ws == null ? null : ws.getFileEncodings().get(file.toString());
+    }
+
+    /** Remembers {@code charset} as {@code file}'s encoding, or forgets the choice when it is null. FX thread. */
+    void rememberEncoding(Path file, String charset) {
+        com.editora.config.WorkspaceState ws = host.config().getWorkspaceState();
+        if (file == null || ws == null || java.util.Objects.equals(charset, chosenEncoding(file))) {
+            return;
+        }
+        if (charset == null) {
+            ws.getFileEncodings().remove(file.toString());
+        } else {
+            ws.getFileEncodings().put(file.toString(), charset);
+        }
+        host.requestSave();
     }
 
     /** {max, used} heap bytes; replaced by tests to stand in for a heap that is nearly full. */
@@ -1062,6 +1106,7 @@ final class FileWorkflowCoordinator {
         } else if (!load.truncated()) {
             host.logViewer().sniffLoaded(buffer, load.content()); // a log its name does not announce
         }
+        String forgotten = applyChosenEncoding(buffer, load);
         if (load.truncated()) {
             return tr(
                     load.tail() ? "status.load.hugeLog" : "status.load.hugeFile",
@@ -1070,6 +1115,13 @@ final class FileWorkflowCoordinator {
                     StatusBar.formatSize(load.content().length()));
         }
         MixedLineEndings.Source mixed = MixedLineEndings.of(buffer);
+        if (forgotten != null) {
+            return tr(
+                    "status.encodingForgotten",
+                    load.file().getFileName(),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(forgotten),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
+        }
         if (load.charsetAssumed()) {
             // "…so no bytes are lost" is only true of a file whose line endings are uniform.
             return tr(
@@ -1094,6 +1146,22 @@ final class FileWorkflowCoordinator {
             return tr("status.longLineFileTier", load.maxLineLength());
         }
         return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
+    }
+
+    /**
+     * Gives a loaded buffer the encoding the user chose for its file, so it is also the one written — or, when
+     * the file is no longer valid in that encoding (the load fell back to detection), forgets the choice and
+     * returns it for the status line. A capped load ignores choices: it is read as UTF-8 and read-only.
+     */
+    private String applyChosenEncoding(EditorBuffer buffer, PreparedLoad load) {
+        String chosen = load.truncated() || load.content() == null ? null : chosenEncoding(load.file());
+        if (chosen != null && !chosen.equals(load.charset())) {
+            rememberEncoding(load.file(), null);
+            buffer.setUserCharset(null);
+            return chosen;
+        }
+        buffer.setUserCharset(chosen);
+        return null;
     }
 
     /** Reads up to {@code maxChars} characters (UTF-8) from {@code file}, bounding memory use. */
@@ -1987,7 +2055,8 @@ final class FileWorkflowCoordinator {
         // SaveEncoding decides what is written instead, and refuses when nothing safe can be.
         String charset = buffer.getEffectiveCharset();
         boolean bom = !(isUtf16(charset) && bomlessUtf16.contains(buffer));
-        SaveEncoding.Plan plan = SaveEncoding.plan(text, charset, buffer.isCharsetAssumed(), bom);
+        boolean chosen = buffer.getUserCharset() != null;
+        SaveEncoding.Plan plan = SaveEncoding.plan(text, charset, buffer.isCharsetAssumed() || chosen, bom);
         SaveNotes notes = SaveNotes.of(
                 mixed,
                 mixedSource,
@@ -1997,7 +2066,8 @@ final class FileWorkflowCoordinator {
                 p,
                 buffer.getDetectedCharset(),
                 charset,
-                !buffer.isCharsetAssumed() && plan.fallbackFrom() == null);
+                !buffer.isCharsetAssumed() && plan.fallbackFrom() == null,
+                chosen);
         return new SavePayload(text, plan, notes);
     }
 
@@ -2124,13 +2194,22 @@ final class FileWorkflowCoordinator {
                                     buffer.getTitle(),
                                     String.valueOf(first.line()),
                                     first.display())
-                            : tr(
-                                    "status.save.cannotEncodeAssumed",
-                                    buffer.getTitle(),
-                                    com.editora.editorconfig.EditorConfigCharset.displayName(
-                                            buffer.getEffectiveCharset()),
-                                    first == null ? "?" : first.character(),
-                                    first == null ? "?" : String.valueOf(first.line())));
+                            : buffer.getUserCharset() != null && !buffer.isCharsetAssumed()
+                                    ? tr(
+                                            "status.save.cannotEncodeChosen",
+                                            buffer.getTitle(),
+                                            com.editora.editorconfig.EditorConfigCharset.displayName(
+                                                    buffer.getEffectiveCharset()),
+                                            first == null ? "?" : first.character(),
+                                            first == null ? "?" : String.valueOf(first.line()),
+                                            tr("command.buffer.saveWithEncoding"))
+                                    : tr(
+                                            "status.save.cannotEncodeAssumed",
+                                            buffer.getTitle(),
+                                            com.editora.editorconfig.EditorConfigCharset.displayName(
+                                                    buffer.getEffectiveCharset()),
+                                            first == null ? "?" : first.character(),
+                                            first == null ? "?" : String.valueOf(first.line())));
             return null;
         }
         pendingSaves.merge(buffer, 1, Integer::sum);
@@ -2587,7 +2666,11 @@ final class FileWorkflowCoordinator {
             host.editorSettings().refreshStatusBarFor(buffer);
         }
         if (notes.charsetChanged()) {
-            buffer.setDetectedCharset(notes.charsetTo());
+            buffer.charsetSaved(notes.charsetTo());
+        }
+        if (buffer.getUserCharset() != null) {
+            // The file is in the chosen encoding now; the next open must read it in that one too.
+            rememberEncoding(request.target(), buffer.getUserCharset());
         }
     }
 

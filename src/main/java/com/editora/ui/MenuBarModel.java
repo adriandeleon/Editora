@@ -88,6 +88,8 @@ final class MenuBarModel {
                                 "file.save",
                                 "file.saveAs",
                                 "file.saveAsAdmin",
+                                "buffer.reopenWithEncoding",
+                                "buffer.saveWithEncoding",
                                 SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",

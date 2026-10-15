@@ -285,6 +285,9 @@ final class WindowCommandRegistrar {
 
         void applyAutoSave();
 
+        /** Buffer: Reopen with Encoding… / Save with Encoding… and the status bar's encoding chooser. */
+        EncodingCommands encodings();
+
         void toggleAutoSave();
 
         void onCloseTab();
@@ -1710,6 +1713,15 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("buffer.setLanguage", host.editorSettings()::chooseLanguage));
         host.registry().register(Command.of("buffer.setTabSize", host.editorSettings()::chooseTabSize));
         host.registry().register(Command.of("buffer.convertLineEndings", host.editorSettings()::chooseLineEndings));
+        host.registry()
+                .register(Command.of(
+                        EncodingCommands.REOPEN, () -> host.encodings().reopen()));
+        host.registry()
+                .register(
+                        Command.of(EncodingCommands.SAVE, () -> host.encodings().save()));
+        host.registry()
+                .register(Command.of(
+                        EncodingCommands.CHOOSE, () -> host.encodings().choose()));
         host.registry().register(Command.of("window.other", host.chrome()::otherWindow));
         // Cross-platform via JavaFX Stage (handles the per-OS window manager specifics on macOS/Linux/Windows).
         host.registry()

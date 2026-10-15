@@ -18,6 +18,8 @@ package com.editora.recovery;
  * @param caret caret offset in {@code text}
  * @param windowKey the window the buffer was open in ({@code ""} = the no-project window)
  * @param text the whole document with {@code \n} line ends; {@code null} in a listing that left it on disk
+ * @param charsetChosen {@code charset} is one the user chose (Save with Encoding), not one detected or set by
+ *     {@code .editorconfig}; absent from records older than the field, which read as false
  */
 public record RecoveryRecord(
         String bufferId,
@@ -33,7 +35,42 @@ public record RecoveryRecord(
         long savedAtMillis,
         int caret,
         String windowKey,
-        String text) {
+        String text,
+        boolean charsetChosen) {
+
+    /** A record whose charset was not chosen by the user. */
+    public RecoveryRecord(
+            String bufferId,
+            String path,
+            String title,
+            String displayName,
+            String charset,
+            boolean bom,
+            String lineEnding,
+            long baseModifiedMillis,
+            long baseSize,
+            String baseFingerprint,
+            long savedAtMillis,
+            int caret,
+            String windowKey,
+            String text) {
+        this(
+                bufferId,
+                path,
+                title,
+                displayName,
+                charset,
+                bom,
+                lineEnding,
+                baseModifiedMillis,
+                baseSize,
+                baseFingerprint,
+                savedAtMillis,
+                caret,
+                windowKey,
+                text,
+                false);
+    }
 
     /** Whether the buffer had no file yet. */
     public boolean untitled() {
@@ -58,6 +95,7 @@ public record RecoveryRecord(
                         savedAtMillis,
                         caret,
                         windowKey,
-                        null);
+                        null,
+                        charsetChosen);
     }
 }

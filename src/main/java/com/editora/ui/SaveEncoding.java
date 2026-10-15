@@ -53,10 +53,11 @@ final class SaveEncoding {
     private SaveEncoding() {}
 
     /**
-     * @param assumed the charset is a lossless stand-in, not the file's real encoding
+     * @param keep the charset must not be swapped for UTF-8: it is a lossless stand-in, not the file's real
+     *     encoding, or it is the encoding the user chose for the file (Save with Encoding)
      * @param bom false for a UTF-16 file that was read without a byte-order mark
      */
-    static Plan plan(String text, String charset, boolean assumed, boolean bom) {
+    static Plan plan(String text, String charset, boolean keep, boolean bom) {
         if (EditorConfigCharset.canEncode(text, charset)) {
             return new Plan(EditorConfigCharset.encode(text, charset, bom), null, null);
         }
@@ -67,7 +68,7 @@ final class SaveEncoding {
         if (broken != null) {
             return new Plan(null, null, broken);
         }
-        if (assumed) {
+        if (keep) {
             return new Plan(null, null, firstUnencodable(text, charset));
         }
         return new Plan(EditorConfigCharset.encode(text, EditorConfigCharset.UTF_8_BOM), charset, null);

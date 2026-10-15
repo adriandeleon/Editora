@@ -115,7 +115,8 @@ public final class StatusBar extends HBox {
     /** Words in a prose buffer (or in its selection); see {@link StatusWordCount}. */
     final StatusWordCount wordCount;
 
-    private final Label encoding = new Label("UTF-8");
+    /** The active file's encoding; clicking it offers Reopen / Save with Encoding. */
+    private final Label encoding = segment("buffer.chooseEncoding", tr("statusbar.tip.encoding"));
 
     /**
      * Indent, line endings and encoding as ONE segment ({@code Tab 4 · LF · UTF-8}).
@@ -194,7 +195,6 @@ public final class StatusBar extends HBox {
         backgroundTasks.getStyleClass().add("status-segment");
         backgroundProgress.setPrefWidth(60);
         setBackgroundTasks(null, 0);
-        encoding.getStyleClass().add("status-segment");
 
         // Narrowing hides part of the file, so the indicator is not optional — without it a narrowed
         // buffer just looks like a truncated one. Clicking it widens.
@@ -869,10 +869,27 @@ public final class StatusBar extends HBox {
         indent.setText(tr(
                 "statusbar.tabSizeShort",
                 hasBuffer ? buffer.getTabSize() : settings.get().getTabSize()));
+        boolean assumed = hasBuffer && buffer.isCharsetAssumed();
         encoding.setText(
                 hasBuffer
                         ? com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset())
                         : "UTF-8");
+        // An assumed encoding is a stand-in that keeps the bytes, not what the file is in: say so where it shows.
+        if (assumed != encoding.getStyleClass().contains("status-encoding-assumed")) {
+            if (assumed) {
+                encoding.getStyleClass().add("status-encoding-assumed");
+            } else {
+                encoding.getStyleClass().remove("status-encoding-assumed");
+            }
+        }
+        encoding.getTooltip()
+                .setText(
+                        assumed
+                                ? tr(
+                                        "statusbar.tip.encodingAssumed",
+                                        com.editora.editorconfig.EditorConfigCharset.displayName(
+                                                buffer.getDetectedCharset()))
+                                : tr("statusbar.tip.encoding"));
         // Show the EditorConfig indicator only when an .editorconfig actually applies to the active buffer
         // (the buffer's resolved properties are non-empty). Hidden in Simple UI mode.
         var ecProps = hasBuffer ? buffer.getEditorConfigProps() : null;

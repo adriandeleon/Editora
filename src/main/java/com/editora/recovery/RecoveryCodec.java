@@ -64,6 +64,7 @@ public final class RecoveryCodec {
         header.put("title", record.title());
         header.put("displayName", record.displayName());
         header.put("charset", record.charset());
+        header.put("charsetChosen", record.charsetChosen());
         header.put("bom", record.bom());
         header.put("lineEnding", record.lineEnding());
         header.put("baseModifiedMillis", record.baseModifiedMillis());
@@ -161,7 +162,8 @@ public final class RecoveryCodec {
                 header.path("savedAtMillis").asLong(0),
                 header.path("caret").asInt(0),
                 text(header, "windowKey"),
-                body);
+                body,
+                header.path("charsetChosen").asBoolean(false));
     }
 
     private static String text(JsonNode header, String field) {
