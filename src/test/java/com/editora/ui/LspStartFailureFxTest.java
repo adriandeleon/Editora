@@ -89,8 +89,8 @@ class LspStartFailureFxTest {
                 () -> host.statuses.stream().filter(starting::equals).count());
     }
 
-    @Test
-    void aFailedStartLeavesTheTabQuietAndIsNotRetried() throws Exception {
+    /** Opens main.py as the active tab and waits for its server's start to fail. */
+    private EditorBuffer openAndFail() throws Exception {
         Path file = base.resolve("app/main.py");
         EditorBuffer buffer = FxTestSupport.callOnFx(EditorBuffer::new);
         FxTestSupport.runOnFx(() -> {
@@ -112,11 +112,17 @@ class LspStartFailureFxTest {
                 return false;
             }
         });
+        return buffer;
+    }
+
+    @Test
+    void aFailedStartLeavesTheTabQuietAndIsNotRetried() throws Exception {
+        EditorBuffer buffer = openAndFail();
 
         Thread.sleep(500); // a retry, if one were coming, would have started by now
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
-            assertFalse(manager.isManaged(file));
+            assertFalse(manager.isManaged(buffer.getPath()));
             assertFalse(buffer.isLspActive());
             assertEquals(Boolean.FALSE, ops.loading.get(ops.loading.size() - 1), "the loading bar stopped");
             assertNull(ops.statusBarLabels.get(ops.statusBarLabels.size() - 1), "no server named in the status bar");
@@ -124,5 +130,21 @@ class LspStartFailureFxTest {
         assertEquals(1, startsAnnounced(), "a failed start is not retried");
         String crashed = tr("status.lsp.crashed", "not-a-server");
         assertFalse(host.statuses.contains(crashed), "a failed start is not reported as a crash: " + host.statuses);
+    }
+
+    @Test
+    void anotherServersProbeResultDoesNotRetryAFailedStart() throws Exception {
+        EditorBuffer buffer = openAndFail();
+
+        // What startup does 22 more times: another server answers its probe.
+        FxTestSupport.runOnFx(() -> coordinator.serverDetected("go", true));
+        Thread.sleep(500);
+        FxTestSupport.drainFx();
+        assertEquals(1, startsAnnounced(), "a probe of gopls must not re-open a Python tab");
+        assertFalse(FxTestSupport.callOnFx(buffer::isLspActive));
+
+        // Its own server's answer does re-gate it: that is the one that could have changed.
+        FxTestSupport.runOnFx(() -> coordinator.serverDetected("python", true));
+        assertEquals(2, startsAnnounced());
     }
 }
