@@ -46,7 +46,10 @@ final class EditorFx {
             return;
         }
         FxToolkit.registerPrimaryStage();
-        onFx(() -> Messages.init("en"));
+        onFx(() -> {
+            Messages.init("en");
+            com.editora.ui.ContextMenuDismissal.install(); // as App.start: a press closes an open right-click menu
+        });
         booted = true;
     }
 
