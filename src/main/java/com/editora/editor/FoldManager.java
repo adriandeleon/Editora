@@ -99,6 +99,11 @@ public final class FoldManager {
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
     static final String RUN_GLYPH_PATH = "M8 5v14l11-7z";
 
+    /** Style class of a {@code .http} request's glyph while it runs: a ■ (stop) instead of the ▶. */
+    public static final String HTTP_RUNNING_CLASS = "http-running-marker";
+
+    static final String STOP_GLYPH_PATH = "M7 7h10v10H7z";
+
     /** Notified after a user-driven fold/unfold so callers can persist the new state. */
     private Runnable onFoldStateChanged = () -> {};
     /** Notified after regions are recomputed (e.g. on text or language change). */
@@ -1799,7 +1804,7 @@ public final class FoldManager {
     /** {@code extraClass} (e.g. {@code test-run-marker}) tints/distinguishes the glyph; null for the plain ▶. */
     static Node runGlyph(String extraClass) {
         SVGPath svg = new SVGPath();
-        svg.setContent(RUN_GLYPH_PATH);
+        svg.setContent(HTTP_RUNNING_CLASS.equals(extraClass) ? STOP_GLYPH_PATH : RUN_GLYPH_PATH);
         svg.getStyleClass().add("run-marker");
         if (extraClass != null) {
             svg.getStyleClass().add(extraClass);

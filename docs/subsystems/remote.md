@@ -52,15 +52,20 @@ readable ones with their caret and pin. There are no placeholder tabs while disc
 local or null directory, and otherwise the `vfs/SshExecTarget` of the connection that owns the path, but only
 while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its working directory.
 
-- A command is one string built by `process/PosixShell`: `exec /bin/sh -c '<script>' editora '<argv>'…`, parsed
-  once by the login shell. The script prints a pid line on stderr, sets directory and environment, and
-  `exec`s the program. No PTY.
+- A command is one string built by `process/PosixShell`:
+  `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
+  pid line on stderr, sets directory and environment, and `exec`s the program. No PTY.
+- The guard makes the command lead a process group, which stopping it relies on. OpenSSH starts a command
+  without a terminal in a session of its own; dropbear leaves it in its per-connection process's group, so
+  there the guard re-runs the script under `setsid` (same pid: `setsid` forks only for a group leader). The
+  test is `kill -0 -$$`, the one spelling dash, bash and BusyBox all answer correctly. A host without
+  `setsid` runs the command where it is, and a stop then reaches only the command itself.
 - `vfs/SshExecProcess` exposes the exec channel as a `RemoteProcess` (a `Process` with no local pid or
   `ProcessHandle`). Its exit comes from the channel's close notification.
 - Stopping a tree is a `kill -s TERM -- -PID` on a second channel (`PosixShell.killCommandLine`). `dash`
   rejects `kill -TERM -- -N`; the `-s` form works in dash and bash.
-- A long-lived child starts a watchdog that kills its process group when the server's per-connection process
-  dies: an SSH server signals nobody when a connection drops.
+- A long-lived child starts a watchdog that kills its process group (or itself, when it leads none) when the
+  server's per-connection process dies: an SSH server signals nobody when a connection drops.
 - `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale, and for every
   other variable its profile exports: the probe prints the environment a plain command gets, then the login
   shell's, and what the profile adds or changes (`JAVA_HOME`, `MAVEN_OPTS`, `GOPATH`, a version manager's) is
@@ -185,8 +190,11 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   (`WorkspaceEditJournal.pending`). The check that a file the server did not have open is unchanged since the
   request compares its host-stamped time through `ExecTarget.latestLocalTime`: the host's clock is read once per
   connection (`date +%s`), and a whole-second SFTP time is rounded up by the coarse margin first, so a skewed
-  host clock cannot pass a later write off as an earlier one. The apply-time re-checks still `stat` on the FX
-  thread, one round trip per closed target.
+  host clock cannot pass a later write off as an earlier one. No check of a remote edit reads the host from the
+  FX thread: the destructive-edit question, the Local History capture, the rename preview and the stale-file
+  check stat their files on the workspace worker first (`LspCoordinator.withDiskView`), and the apply-time
+  re-checks, which must run in the FX turn that lands the edit, read a `WorkspaceFileSnapshot` the worker took
+  after staging. A local edit still stats in place, which is cheap.
 - **Debugging (Python, JavaScript):** a remote file is debugged on its host (`DapManager.startRemoteStdio` /
   `startRemoteSocket`), asked for its adapter when the session starts rather than detected up front.
   Python: the host's `dap.python` tool, else the Debugging setting when it is a bare name, else `python3`; a
@@ -216,12 +224,24 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
 - **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git).
 
-Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged `sshd` on localhost):
+Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
+servers on localhost), and against macOS 15.7's own OpenSSH 9.9p2 with a bash login shell and no `setsid`
+(the `Remote probe` workflow, below):
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
 a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
 argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
 outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
-dropped connection, and ed25519 keys (all pass since Bouncy Castle). Not checked: dropbear, macOS's sshd.
+dropped connection, and ed25519 keys; all pass on all three. dropbear needed the group guard above: before it, Stop
+left a program's children running and a dropped connection left the program itself. Its `authorized_keys`
+folder (`-D`) and every folder above it must not be group- or world-writable, so not under `/tmp`. The guard
+was also checked with BusyBox's `sh` and `setsid`.
+
+The `Remote probe` workflow (`.github/workflows/remote-probe.yml`; run it from the Actions tab, or push a
+`probe/**` branch) runs the probe on a `macos-15` runner against the runner's own `/usr/sbin/sshd`, started
+unprivileged on a high port. It installs the host's tools from the sources Editora's installer uses (the
+pinned jdtls milestone, java-debug from Open VSX, js-debug from GitHub, debugpy with pip, pyright with npm),
+and gives the account a login profile like a Mac user's: Homebrew's and npm's `bin` on `PATH`, a
+`JAVA_HOME`. It is not part of CI.
 
 **ed25519** keys and host keys work through Bouncy Castle (`bcprov-jdk18on`, see
 [dependencies](../dependencies.md)): MINA SSHD has no EdDSA of its own and turns `ssh-ed25519` on only when a

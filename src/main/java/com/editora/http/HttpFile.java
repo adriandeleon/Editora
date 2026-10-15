@@ -489,7 +489,7 @@ public final class HttpFile {
 
     // --- helpers ----------------------------------------------------------------------------------
 
-    private static boolean isSeparator(String line) {
+    static boolean isSeparator(String line) {
         return line.stripLeading().startsWith("###");
     }
 
@@ -505,7 +505,7 @@ public final class HttpFile {
         return s.isEmpty() ? null : s;
     }
 
-    private static boolean isComment(String stripped) {
+    static boolean isComment(String stripped) {
         return (stripped.startsWith("#") && !stripped.startsWith("###")) || stripped.startsWith("//");
     }
 
@@ -707,7 +707,7 @@ public final class HttpFile {
         return new Redirect(line.substring(force ? 3 : 2).strip(), force);
     }
 
-    private static boolean isVarDecl(String stripped) {
+    static boolean isVarDecl(String stripped) {
         if (!stripped.startsWith("@")) {
             return false;
         }
@@ -715,7 +715,7 @@ public final class HttpFile {
         return eq > 1; // "@x = ..." (at least one name char before '=')
     }
 
-    private static String[] varPair(String stripped) {
+    static String[] varPair(String stripped) {
         int eq = stripped.indexOf('=');
         return new String[] {
             stripped.substring(1, eq).strip(), stripped.substring(eq + 1).strip()

@@ -3,6 +3,7 @@ package com.editora.http;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -463,13 +464,7 @@ public final class HttpClientService {
                 Map<String, String> challenge = DigestAuth.strongest(challenges);
                 if (challenge != null) {
                     String authz = DigestAuth.authorization(
-                            digest,
-                            method,
-                            requestTarget(url),
-                            challenge,
-                            randomHex(),
-                            "00000001",
-                            bc.bytesForDigest());
+                            digest, method, requestTarget(url), challenge, randomHex(), "00000001", bc.digestFeed());
                     resp = send(handle, client, url, method, headers, timeout, idle, bc.publisher(), authz);
                 } else if (DigestAuth.offersDigest(challenges)) {
                     warnings.add(tr("status.http.warn.digestUnsupported", String.join(" | ", challenges)));
@@ -566,36 +561,38 @@ public final class HttpClientService {
     /**
      * The request body: its publisher, a display string (for the history/cURL view), and how it went out (a file
      * streamed as is, multipart fields) for the cURL export. A non-null {@code problem} means the body the request
-     * refers to could not be read and the request must not be sent.
+     * refers to could not be read and the request must not be sent. {@code digestFeed} feeds the body to a
+     * {@code qop=auth-int} Digest answer; a streamed body (a {@code < file}, a multipart form with file parts) is
+     * read again for it as it goes, never held in memory whole.
      */
     private record BodyContent(
             HttpRequest.BodyPublisher publisher,
             String display,
             String problem,
-            byte[] bytes,
+            DigestAuth.BodyFeed digestFeed,
             Path file,
             List<HttpExchange.FormPart> parts) {
 
         static BodyContent of(byte[] bytes, String display) {
             return new BodyContent(
-                    HttpRequest.BodyPublishers.ofByteArray(bytes), display, null, bytes, null, List.of());
+                    HttpRequest.BodyPublishers.ofByteArray(bytes),
+                    display,
+                    null,
+                    md -> md.update(bytes),
+                    null,
+                    List.of());
         }
 
         static BodyContent unreadable(String problem) {
             return new BodyContent(
-                    HttpRequest.BodyPublishers.noBody(), "(" + problem + ")", problem, new byte[0], null, List.of());
+                    HttpRequest.BodyPublishers.noBody(), "(" + problem + ")", problem, md -> {}, null, List.of());
         }
+    }
 
-        /** The bytes a {@code qop=auth-int} Digest answer hashes. */
-        byte[] bytesForDigest() {
-            if (bytes != null) {
-                return bytes;
-            }
-            try {
-                return file == null ? new byte[0] : Files.readAllBytes(file);
-            } catch (IOException e) {
-                return new byte[0];
-            }
+    /** Feeds {@code file} to a digest in chunks. */
+    private static void feedFile(Path file, java.security.MessageDigest md) throws IOException {
+        try (InputStream in = Files.newInputStream(file)) {
+            in.transferTo(new java.security.DigestOutputStream(OutputStream.nullOutputStream(), md));
         }
     }
 
@@ -633,17 +630,24 @@ public final class HttpClientService {
             }
             List<String> problems = new ArrayList<>();
             List<Multipart.Part> parsed = Multipart.parse(request.body(), boundary);
-            byte[] bytes = Multipart.build(parsed, boundary, baseDir, sub, problems);
+            // File parts stay files: the body is streamed from them while it is sent, its length known up front.
+            Multipart.Body form = Multipart.assemble(parsed, boundary, baseDir, sub, problems);
             if (!problems.isEmpty()) {
                 return BodyContent.unreadable(String.join("; ", problems));
             }
+            HttpRequest.BodyPublisher publisher;
+            try {
+                publisher = form.publisher();
+            } catch (java.io.FileNotFoundException gone) {
+                return BodyContent.unreadable("multipart file not found: " + gone.getMessage());
+            }
             return new BodyContent(
-                    HttpRequest.BodyPublishers.ofByteArray(bytes),
-                    "(multipart/form-data, " + bytes.length + " bytes)",
+                    publisher,
+                    "(multipart/form-data, " + form.length() + " bytes)",
                     null,
-                    bytes,
+                    form::feed,
                     null,
-                    formParts(parsed, baseDir, sub));
+                    formParts(form.parts()));
         }
         Charset charset = HttpResult.charsetOf(contentType);
         // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
@@ -662,7 +666,12 @@ public final class HttpClientService {
                     long size = Files.size(bodyFile);
                     String shown = shownFileBody(bodyFile, size, ref.path(), cs);
                     return new BodyContent(
-                            HttpRequest.BodyPublishers.ofFile(bodyFile), shown, null, null, bodyFile, List.of());
+                            HttpRequest.BodyPublishers.ofFile(bodyFile),
+                            shown,
+                            null,
+                            md -> feedFile(bodyFile, md),
+                            bodyFile,
+                            List.of());
                 }
                 String content = sub.apply(new String(Files.readAllBytes(bodyFile), cs));
                 return BodyContent.of(encode(content, charset, warnings), content);
@@ -677,7 +686,7 @@ public final class HttpClientService {
         }
         String body = sub.apply(request.body());
         if (body == null || body.isBlank()) {
-            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "", null, new byte[0], null, List.of());
+            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "", null, md -> {}, null, List.of());
         }
         return BodyContent.of(encode(body, charset, warnings), body);
     }
@@ -715,17 +724,19 @@ public final class HttpClientService {
     private static final Pattern DISPOSITION_PARAM =
             Pattern.compile("(?i)(?:^|;)\\s*(name|filename)\\s*=\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[^;]*)");
 
-    /** The multipart parts as form fields for the cURL export: names, inline values (substituted), files. */
-    private static List<HttpExchange.FormPart> formParts(
-            List<Multipart.Part> parts, Path baseDir, Function<String, String> sub) {
+    /**
+     * The multipart parts as form fields for the cURL export, from the parts as they went out: names, the text sent
+     * (an inline value, or a {@code <@ ./file} part after substitution) and the files streamed.
+     */
+    private static List<HttpExchange.FormPart> formParts(List<Multipart.Resolved> parts) {
         List<HttpExchange.FormPart> out = new ArrayList<>();
-        for (Multipart.Part p : parts) {
+        for (Multipart.Resolved p : parts) {
             String name = null;
             String filename = null;
             String type = null;
             for (Map.Entry<String, String> h : p.headers().entrySet()) {
                 if (h.getKey().equalsIgnoreCase("Content-Disposition")) {
-                    Matcher m = DISPOSITION_PARAM.matcher(sub.apply(h.getValue()));
+                    Matcher m = DISPOSITION_PARAM.matcher(h.getValue());
                     while (m.find()) {
                         String v = m.group(2).strip();
                         if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
@@ -738,20 +749,14 @@ public final class HttpClientService {
                         }
                     }
                 } else if (h.getKey().equalsIgnoreCase("Content-Type")) {
-                    type = sub.apply(h.getValue());
+                    type = h.getValue();
                 }
             }
-            if (p.filePath() != null) {
-                Path file = HttpPaths.contained(baseDir, p.filePath());
-                out.add(new HttpExchange.FormPart(
-                        name,
-                        null,
-                        file == null ? p.filePath() : file.toAbsolutePath().toString(),
-                        filename,
-                        type));
-            } else {
-                out.add(new HttpExchange.FormPart(name, sub.apply(p.inlineBody()), null, null, type));
-            }
+            out.add(
+                    p.file() != null
+                            ? new HttpExchange.FormPart(
+                                    name, null, p.file().toAbsolutePath().toString(), filename, type)
+                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, null, type));
         }
         return out;
     }

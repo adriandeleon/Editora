@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ProgressIndicator;
 
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,6 +38,37 @@ class RunPanelFxTest {
     private static boolean stopDisabled(RunPanel p) throws Exception {
         Button stop = FxTestSupport.field(p, "stopButton");
         return FxTestSupport.callOnFx(stop::isDisable);
+    }
+
+    private static boolean spinnerShown(RunPanel p) throws Exception {
+        ProgressIndicator busy = FxTestSupport.field(p, "busy");
+        return FxTestSupport.callOnFx(() -> busy.isVisible() && busy.isManaged() && busy.isIndeterminate());
+    }
+
+    @Test
+    void spinnerShowsOnlyWhileARunIsAlive() throws Exception {
+        RunPanel p = panel();
+        assertFalse(spinnerShown(p), "no spinner before any run");
+
+        FxTestSupport.runOnFx(() -> p.started("python long_script.py"));
+        assertTrue(spinnerShown(p), "spinner while the program runs");
+        FxTestSupport.runOnFx(() -> p.appendOutput("still going", false));
+        assertTrue(spinnerShown(p), "output does not stop the spinner");
+
+        FxTestSupport.runOnFx(() -> p.finished(0));
+        assertFalse(spinnerShown(p), "spinner gone after exit");
+
+        FxTestSupport.runOnFx(() -> p.started("python again.py"));
+        FxTestSupport.runOnFx(() -> p.finished(-1));
+        assertFalse(spinnerShown(p), "spinner gone after Stop");
+
+        FxTestSupport.runOnFx(() -> p.started("missing-binary"));
+        FxTestSupport.runOnFx(() -> p.failed("not found"));
+        assertFalse(spinnerShown(p), "spinner gone after a launch failure");
+
+        FxTestSupport.runOnFx(() -> p.started("python app.py"));
+        FxTestSupport.runOnFx(p::idle);
+        assertFalse(spinnerShown(p), "spinner gone when reset to idle");
     }
 
     @Test

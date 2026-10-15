@@ -104,6 +104,9 @@ final class BufferCompletion {
     }
 
     private CompletionProvider completionProvider = (s, d, p, sp, prose) -> List.of();
+    /** What {@code {{} completion offers in a {@code .http} buffer; null: only the dynamic built-ins. */
+    private java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> httpVariables;
+
     private final Host host;
 
     BufferCompletion(Host host) {
@@ -251,6 +254,11 @@ final class BufferCompletion {
 
     private boolean isCompletionPrefixChar(char c) {
         return isPrefixChar(c) || ("java".equals(host.language()) && Character.isJavaIdentifierPart(c));
+    }
+
+    /** Injects the {@code .http} variable context for {@code {{} completion (see {@link HttpCompletions}). */
+    public void setHttpVariables(java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> context) {
+        this.httpVariables = context;
     }
 
     /** Injects the completion lookup (set by the controller), mirroring {@link #setSnippetProvider}. */
@@ -878,7 +886,9 @@ final class BufferCompletion {
             start--;
         }
         String prefix = text.substring(start);
-        if (showMarkdownOffer(a, caret, prefix, manual) || (!manual && showAbbrevGhost(a))) {
+        if (showHttpOffer(a, caret, prefix, manual)
+                || showMarkdownOffer(a, caret, prefix, manual)
+                || (!manual && showAbbrevGhost(a))) {
             return;
         }
         int min = manual && host.lspActive()
@@ -1064,6 +1074,44 @@ final class BufferCompletion {
         }
         MarkdownCompletions.Offer offer =
                 markdown.offer(a.getText(), line, column, prefix, host.getSpellLanguage(), manual);
+        return showOffer(a, caret, prefix, manual, line, column, offer);
+    }
+
+    /**
+     * In a {@code .http} buffer with the caret inside an open {@code {{}, shows the variables, dynamic built-ins
+     * and request responses {@link HttpCompletions} has for it. The document is read only when the caret's own
+     * line has an unclosed {@code {{} before the caret.
+     */
+    private boolean showHttpOffer(CodeArea a, int caret, String prefix, boolean manual) {
+        if (!"http".equals(host.language())) {
+            return false;
+        }
+        int line = a.getCurrentParagraph();
+        int column = a.getCaretColumn();
+        String lineText = a.getParagraph(line).getText();
+        String before = lineText.substring(0, Math.min(column, lineText.length()));
+        int open = before.lastIndexOf("{{");
+        if (open < 0 || before.indexOf("}}", open) >= 0) {
+            return false;
+        }
+        MarkdownCompletions.Offer offer = HttpCompletions.offer(
+                a.getText(),
+                line,
+                before,
+                lineText.substring(before.length()),
+                httpVariables == null ? null : httpVariables.get());
+        return showOffer(a, caret, prefix, manual, line, column, offer);
+    }
+
+    /** Shows a structural {@code offer} (rows that replace from {@code offer.start()}) as the local list. */
+    private boolean showOffer(
+            CodeArea a,
+            int caret,
+            String prefix,
+            boolean manual,
+            int line,
+            int column,
+            MarkdownCompletions.Offer offer) {
         if (offer == null || a.getScene() == null) {
             return false;
         }
