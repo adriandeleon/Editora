@@ -1537,6 +1537,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> mavenProjectCoordinator.shutdown(), // archetype:generate process + catalog fetch thread
                 () -> externalToolCoordinator.shutdown(), // the external-tool worker thread
                 () -> httpClient.shutdown(), // the http-client worker thread
+                () -> httpVariableHints.shutdown(), // the {{variable}} check's worker thread
                 () -> remoteCoordinator.shutdown(), // SFTP sessions + the SSH client (and un-pin the Vfs hooks)
                 () -> {
                     if (projectPanel != null) {
@@ -2259,6 +2260,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
+                            httpVariableHints.forget(closed);
                             recovery.untrack(closed); // closed by choice: its recovery copy goes with it
                             if (closed.getPath() != null && tabForPath(closed.getPath()) == null) {
                                 git.service().forgetBlame(closed.getPath()); // per-line records of a closed file
@@ -6288,6 +6290,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
+    /** The {@code .http} editor's unresolved-variable marks and {@code {{} completion. */
+    final HttpVariableHints httpVariableHints = new HttpVariableHints(new HttpVariableHints.Source() {
+        @Override
+        public String environment(EditorBuffer buffer) {
+            return httpClient.selectedEnvironment(buffer);
+        }
+
+        @Override
+        public java.nio.file.Path envDir(EditorBuffer buffer) {
+            return httpClient.envDirFor(buffer);
+        }
+    });
+
+    {
+        httpClient.setEnvironmentListener(httpVariableHints::refresh);
+    }
+
     // --- AI Agent (an embedded ACP agent — Claude Code etc. — in the chat tool window) -------------
 
     final AgentCoordinator agentCoordinator = new AgentCoordinator(coordinatorHost, new AgentCoordinator.Ops() {
@@ -7625,6 +7644,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setHttpRunAllHandler(httpClient::runFile); // .http editor menu → Run All Requests (active buffer)
         buffer.setHttpRunTooltip(() -> httpRunTooltip(keymap));
         buffer.setHttpCancelHandler(() -> httpClient.cancelRun(buffer)); // the running request's ■
+        httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool

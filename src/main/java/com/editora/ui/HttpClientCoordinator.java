@@ -314,6 +314,7 @@ final class HttpClientCoordinator {
         p.setOnEnvironmentChanged(env -> {
             environments.put(buffer, env);
             persist(buffer);
+            environmentListener.accept(buffer); // the editor's {{variable}} marks follow the choice
         });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
@@ -673,7 +674,27 @@ final class HttpClientCoordinator {
             List<String> names = environmentNames(envDir(buffer));
             String chosen = environments.get(buffer);
             p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
+            environmentListener.accept(buffer); // the list (or the env files) may have changed
         }
+    }
+
+    /** Told when a buffer's environment choice, or the env files it comes from, may have changed. */
+    private java.util.function.Consumer<EditorBuffer> environmentListener = b -> {};
+
+    /** Sets who is told about environment changes (the editor's {@code {{variable}}} hints). */
+    void setEnvironmentListener(java.util.function.Consumer<EditorBuffer> listener) {
+        this.environmentListener = listener == null ? b -> {} : listener;
+    }
+
+    /** The environment selected for {@code buffer}'s file ({@code ""}: none), as a run would use it. */
+    String selectedEnvironment(EditorBuffer buffer) {
+        HttpClientPanel p = panelFor(buffer);
+        return p == null ? "" : p.getSelectedEnvironment();
+    }
+
+    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvFiles#envDir}), or null. */
+    Path envDirFor(EditorBuffer buffer) {
+        return buffer == null ? null : envDir(buffer);
     }
 
     // --- internals ---
