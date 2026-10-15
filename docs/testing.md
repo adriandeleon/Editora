@@ -279,6 +279,14 @@ python3 scripts/shard_tests.py list 2 4 > target/shard-includes.txt
 mvn -Dsurefire.includesFile=target/shard-includes.txt test
 ```
 
+Dependencies come from the Maven cache that `actions/setup-java` restores, so a run should fetch little from
+Maven Central. A cache is saved once per key, by the first job to finish, so the Format job (which needs only
+Spotless) keeps a key of its own: the jobs that build and test hash `.mvn/maven.config` along with the poms
+(`cache-dependency-path`). When it shared their key it saved 20 MB of the 77 MB they need, and every Linux test
+job fetched the rest on every run. What is still fetched is retried: `.mvn/maven.config` gives Maven
+Resolver five tries and adds 500, 502 and 504 to the answers worth retrying (429 and 503 by default); a
+connection reset or closed before an answer is retried already. A transfer cut off mid-body is not.
+
 A plain `mvn verify` still runs everything in one JVM. Two consequences for a test: it must not depend on
 another class having run before it in the same JVM (which classes share a JVM changes whenever a test
 class is added), and a new test class needs a name Surefire's defaults match (`*Test`, `Test*`, `*Tests`,

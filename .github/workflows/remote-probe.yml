@@ -33,6 +33,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       # What the probe runs on the host: the same pinned jdtls milestone and the same sources Editora's own
       # installer uses (InstallCatalog), so the probe sees what a user's Install button would give them.

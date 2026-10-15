@@ -42,6 +42,11 @@ jobs:
       # Palantir Java Format currently depends on JDK 25-era javac internals. Keep formatting
       # isolated here so a newer-JDK compatibility lane (JDK 27, disabled for now) can exercise the
       # application itself.
+      #
+      # Its Maven cache holds only Spotless, so it has a key of its own (the poms alone). The jobs that build
+      # and test hash .mvn/maven.config too: a cache is saved once per key, by the first job to finish, and
+      # this one finishes first. Sharing the key, it saved 20 MB of the 77 MB the test jobs need, and every
+      # Linux test job then fetched the rest from Maven Central on every run.
       - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -82,6 +87,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       # Tests guarded by a tool on the PATH skip, they do not fail, when the tool is missing. ripgrep
       # backs Find and Replace in Files; without it those tests would be silently skipped here.
@@ -149,6 +157,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       # Into target/: surefire-reports/ from all four shards (one file per test class, so they do not
       # collide) and jacoco-shard-N.exec from each.
@@ -236,6 +247,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       # The background dump fires at 23 minutes, and the step stops at 26, before the job's own 30-minute limit.
       # A job stopped at that limit ends as "cancelled", and on 15 October 2026 GitHub kept no log at all for
@@ -305,6 +319,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       - name: List this shard's test classes
         run: |
@@ -388,6 +405,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
 
       - name: Install JDT LS and Java debug adapter
         run: |
