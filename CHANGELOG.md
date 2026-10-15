@@ -253,6 +253,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A language server that fails to start no longer leaves its tabs looking served.** When a server could not be
+  started (its command cannot be run, or a remote connection broke while it was starting), its tabs stayed marked
+  as served and the status bar could keep naming it until the tab was synced again. They now go quiet at once,
+  as after a lost connection, and the server is not restarted in a loop.
 - **The window moves when you drag its title.** With the menu bar merged into the title bar, dragging the file
   name in the middle did nothing; only the empty parts of the bar moved the window.
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`

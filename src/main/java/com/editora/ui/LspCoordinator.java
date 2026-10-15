@@ -410,6 +410,7 @@ final class LspCoordinator {
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
+        lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -747,6 +748,18 @@ final class LspCoordinator {
             }
         });
         host.setStatus(tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
+        updateStatusBar();
+    }
+
+    /**
+     * A server's start failed: its command could not be run, or a remote host's connection broke while it
+     * was being started. The buffers it was opened for go inactive and the loading bar stops; the session's
+     * own error status already said why. Not a crash, so nothing is retried here — the same command would
+     * only fail again, and a remote tab comes back through {@link #remoteHostConnected}.
+     */
+    private void onStartFailed(String serverId, Path root) {
+        forEachCrashedBuffer(serverId, root, b -> b.setLspActive(false));
+        ops.setLspLoading(false);
         updateStatusBar();
     }
 

@@ -135,6 +135,9 @@ final class LanguageServerSession implements LanguageClient {
     private final java.util.concurrent.atomic.AtomicBoolean deadReported =
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean disposed;
+    /** Set when {@link #start()} threw before the server was up (not when it was disposed meanwhile). */
+    private volatile boolean startFailed;
+
     private volatile Consumer<String> onRefresh = kind -> {};
     // Written on the LSP4J init thread (initialize().whenComplete), read on the FX thread (capabilities()).
     // volatile gives the FX reader the happens-before edge so it can't transiently see null after init completed.
@@ -392,6 +395,7 @@ final class LanguageServerSession implements LanguageClient {
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to start language server " + command, e);
             onStatus.accept("Error", "Failed to start language server: " + e.getMessage());
+            startFailed = !disposed; // a dispose during the fork is a teardown, not a failure
             dispose();
             return false;
         }
@@ -834,6 +838,12 @@ final class LanguageServerSession implements LanguageClient {
      *  never disposed died on its own (crash / failed handshake), which is what the auto-restart keys on. */
     boolean isDisposed() {
         return disposed;
+    }
+
+    /** Whether {@link #start()} failed on its own — the command could not be run, or a remote host's
+     *  connection broke while it was being started. Such a session is disposed, so it is not a crash. */
+    boolean startFailed() {
+        return startFailed;
     }
 
     /** Whether this session ever completed its initialize handshake. */
