@@ -100,13 +100,22 @@ class PosixShellProcessTest {
     }
 
     /**
-     * Starts {@code spec} the way an SSH server does: in its own session and group, as the child of a process
-     * (standing in for the per-connection server process) that the test can kill. Returns that parent; the
-     * child's pid is read from its pid line.
+     * Starts {@code spec} the way an SSH server does, as the child of a process (standing in for the
+     * per-connection server process) that the test can kill: in its own session and group as OpenSSH does,
+     * or, as dropbear does, in the group of that parent. Returns the parent; the child's pid is read from its
+     * pid line.
      */
-    private static Process startUnderAParent(ExecSpec spec) throws IOException {
+    private static Process startUnderAParent(ExecSpec spec, boolean ownGroup) throws IOException {
         String line = PosixShell.commandLine(spec, null, null, null);
-        return new ProcessBuilder("/bin/sh", "-c", "setsid /bin/sh -c " + PosixShell.quote(line) + " & wait").start();
+        String start = (ownGroup ? "setsid " : "") + "/bin/sh -c " + PosixShell.quote(line);
+        return new ProcessBuilder("/bin/sh", "-c", start + " & wait").start();
+    }
+
+    private static long groupOf(long pid) throws IOException, InterruptedException {
+        Process ps = new ProcessBuilder("ps", "-o", "pgid=", "-p", String.valueOf(pid)).start();
+        String out = new String(ps.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        ps.waitFor(5, TimeUnit.SECONDS);
+        return Long.parseLong(out);
     }
 
     private static long pidLine(Process parent) throws IOException {
@@ -130,11 +139,36 @@ class PosixShellProcessTest {
 
     private static final List<String> TREE = List.of("sh", "-c", "sleep 600 & exec sleep 600");
 
+    /** dropbear leaves the command in its own group; the command line leaves it for one of its own, same pid. */
     @Test
     @org.junit.jupiter.api.condition.EnabledOnOs(OS.LINUX) // setsid(1)
-    void aLongLivedTreeDiesWhenTheProcessThatStartedItDoes() throws Exception {
+    void theCommandLeadsAGroupEvenWhenTheServerKeepsItInItsOwn() throws Exception {
+        Process parent =
+                startUnderAParent(ExecSpec.of(List.of("sleep", "600"), null, Map.of(), ExecSpec.Locale.USER), false);
+        long pid = pidLine(parent);
+        try {
+            assertEquals(pid, groupOf(pid), "the pid it announced leads its group");
+            assertTrue(groupOf(parent.pid()) != pid);
+            assertEquals(
+                    "sleep",
+                    ProcessHandle.of(pid)
+                            .orElseThrow()
+                            .info()
+                            .command()
+                            .map(c -> Path.of(c).getFileName().toString())
+                            .orElse("?"));
+        } finally {
+            ProcessHandle.of(pid).ifPresent(ProcessHandle::destroyForcibly);
+            parent.destroyForcibly();
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "server gives it a group: {0}")
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    @org.junit.jupiter.api.condition.EnabledOnOs(OS.LINUX) // setsid(1)
+    void aLongLivedTreeDiesWhenTheProcessThatStartedItDoes(boolean ownGroup) throws Exception {
         Process parent = startUnderAParent(
-                ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER).withLongLived(true));
+                ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER).withLongLived(true), ownGroup);
         long pid = pidLine(parent);
         List<ProcessHandle> group = new java.util.ArrayList<>(
                 ProcessHandle.of(pid).orElseThrow().children().toList());
@@ -147,10 +181,11 @@ class PosixShellProcessTest {
         }
     }
 
-    @Test
+    @org.junit.jupiter.params.ParameterizedTest(name = "server gives it a group: {0}")
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
     @org.junit.jupiter.api.condition.EnabledOnOs(OS.LINUX) // setsid(1)
-    void aOneShotCommandIsLeftToFinishAndTheKillCommandStopsItsGroup() throws Exception {
-        Process parent = startUnderAParent(ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER));
+    void aOneShotCommandIsLeftToFinishAndTheKillCommandStopsItsGroup(boolean ownGroup) throws Exception {
+        Process parent = startUnderAParent(ExecSpec.of(TREE, null, Map.of(), ExecSpec.Locale.USER), ownGroup);
         long pid = pidLine(parent);
         List<ProcessHandle> children =
                 ProcessHandle.of(pid).orElseThrow().children().toList();
