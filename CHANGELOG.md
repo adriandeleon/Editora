@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and node; their locations can be set per host. Breakpoints of a remote file are kept across reconnects.
   Java files in a Maven or Gradle project are debugged through the jdtls on the host (Debug, Debug Main
   Class, Attach, Debug Test and a saved configuration); Editora copies its java-debug plugin into
-  `~/.cache/editora` there. A Java file outside a project is not debugged on a host yet.
+  `~/.cache/editora` there. A Java file outside a project is compiled on the host for the debugger too. A
+  makefile at a remote project's root shows the run-configuration toolbar, as it does locally.
 - **Language servers for remote folders.** On a host you have allowed to run commands, a file in a remote folder
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition

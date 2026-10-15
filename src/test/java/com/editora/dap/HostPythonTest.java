@@ -37,4 +37,11 @@ class HostPythonTest {
         assertEquals(
                 "python3", DapManager.HostPython.parse(List.of("env", "A=1")).executable());
     }
+
+    /** The compiler beside a host's java: under its configured JDK, else its PATH's. */
+    @Test
+    void theHostsJavacSitsBesideItsJava() {
+        assertEquals("/opt/jdk-21/bin/javac", DapManager.hostJavac("/opt/jdk-21/bin/java"));
+        assertEquals("javac", DapManager.hostJavac("java"));
+    }
 }
