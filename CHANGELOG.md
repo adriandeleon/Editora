@@ -195,6 +195,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A remote connection that goes silent is noticed.** Editora asks the server "are you there?" every 30 s
+  and now gives up after three unanswered asks (about a minute and a half), so a network that drops packets
+  instead of refusing them no longer leaves a window holding a dead folder until TCP times out.
+- **Starting a program on a host right after stopping another is no longer refused.** The place the stopped
+  one held is freed a moment after the stop; a start waits up to 5 s for it instead of reporting that too
+  many programs are running.
 - **Remote:** trusting a folder on a server no longer also trusts the local folder with the same path (and the
   other way round). `Remote: Disconnect` now closes the SSH connection, not only its file channel.
 - **Previews:** the floating Editor / Split / Preview toggle covered the right end of the HTTP response panel's
