@@ -31,7 +31,10 @@ class PosixShellTest {
                 spec(ExecSpec.Locale.PARSE_STABLE, Map.of(), "git", "log", "--grep=it's"), null, null, null);
 
         assertTrue(line.startsWith("exec /bin/sh -c '"), line);
-        assertTrue(line.endsWith("' editora 'git' 'log' '--grep=it'\\''s'"), line);
+        assertTrue(line.contains("' editora '"), line);
+        assertTrue(
+                line.endsWith("exec \"$@\"\n' 'git' 'log' '--grep=it'\\''s'"),
+                "the script, then each argument: " + line);
     }
 
     @Test

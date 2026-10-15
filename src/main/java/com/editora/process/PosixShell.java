@@ -12,6 +12,11 @@ import java.util.regex.Pattern;
  *
  * <p>Everything is single-quoted, which bash, zsh, dash and ksh read the same way. Shells that do not (fish
  * treats a backslash inside single quotes as an escape; csh has its own rules) are not supported targets.
+ *
+ * <p>Stopping a command means signalling its process group, so the command must lead one. OpenSSH starts a
+ * command without a terminal in a session of its own; dropbear leaves it in the group of its per-connection
+ * process, where a group signal could not reach it alone. So a command that finds itself not leading a group
+ * re-runs under {@code setsid}, which keeps its pid ({@link #GROUP_GUARD}).
  */
 public final class PosixShell {
 
@@ -22,8 +27,8 @@ public final class PosixShell {
     public static final String PID_MARK = "\u001eEDITORA ";
 
     /**
-     * Ends a long-lived child when the connection that started it goes away. An SSH server gives a command
-     * without a terminal its own session and process group, and exits its per-connection process when the
+     * Ends a long-lived child when the connection that started it goes away. An SSH server runs a command
+     * without a terminal in a process group the command leads ({@link #GROUP_GUARD}), and exits its per-connection process when the
      * client disappears, but it signals nobody: the command is re-parented and runs on. This subshell waits
      * for that parent ({@code $PPID}) to die, then stops the whole group, politely and then for good. It
      * leaves by itself when the command ends first, and its streams are detached so it never holds the
@@ -32,8 +37,21 @@ public final class PosixShell {
     private static final String WATCHDOG = """
             ( trap '' TERM
               while kill -0 "$PPID" 2>/dev/null && kill -0 $$ 2>/dev/null; do sleep 2; done
-              kill -0 $$ 2>/dev/null && { kill -s TERM -- -$$; sleep 3; kill -s KILL -- -$$; }
+              kill -0 $$ 2>/dev/null && { kill -s TERM -- -$$ || kill -s TERM $$; sleep 3; kill -s KILL -- -$$ || kill -s KILL $$; }
             ) </dev/null >/dev/null 2>&1 &
+            """;
+
+    /**
+     * Runs the script in {@code $1} with the rest as its arguments, leading a process group of its own: when
+     * this shell does not lead one ({@code kill -0 -$$} is the spelling dash, bash and BusyBox all answer
+     * correctly), it becomes {@code setsid}'s. {@code setsid} forks only for a process that already leads a
+     * group, which this one does not, so the pid stays the one the script prints. Without {@code setsid} the
+     * command runs where it is, and a stop reaches only the command itself.
+     */
+    private static final String GROUP_GUARD = """
+            s=$1; shift
+            kill -0 -$$ 2>/dev/null || ! command -v setsid >/dev/null 2>&1 || exec setsid /bin/sh -c "$s" editora "$@"
+            eval "$s"
             """;
 
     private static final Pattern VARIABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -65,8 +83,9 @@ public final class PosixShell {
     public static String commandLine(
             ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
         StringBuilder line = new StringBuilder("exec /bin/sh -c ")
-                .append(quote(script(spec, cwd, path, userLocale, profile)))
-                .append(" editora");
+                .append(quote(GROUP_GUARD))
+                .append(" editora ")
+                .append(quote(script(spec, cwd, path, userLocale, profile)));
         for (String arg : spec.argv()) {
             line.append(' ').append(quote(arg));
         }
