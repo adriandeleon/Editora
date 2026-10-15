@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   debugpy's Python, js-debug, java-debug, and any language server (`server = command`, one per line).
   Changes reach open windows at once. The global switch is in Settings → Remote and in the
   `Remote: Toggle Running Commands on the Host` command. Works with OpenSSH servers (on Linux and on macOS, where Remote Login is one) and dropbear: on a
-  dropbear host, stopping a program also stops what it started, and a lost connection ends it.
+  dropbear host, stopping a program also stops what it started, and a lost connection ends it. Removing a
+  saved site keeps that host's answer and tool commands, for when it is added back.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
