@@ -9,6 +9,7 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,10 +24,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DebugLogSessionFileTest {
 
+    /** Exact contents are asserted below: keep records other threads log through the handler out. */
+    @BeforeEach
+    void suspendCapture() {
+        DebugLog.suspendCaptureForTest(true);
+    }
+
     @AfterEach
     void detach() {
         DebugLog.detachFileForTest();
         DebugLog.clear();
+        DebugLog.suspendCaptureForTest(false);
     }
 
     @Test
