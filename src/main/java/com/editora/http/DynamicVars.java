@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.IsoFields;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -109,7 +110,7 @@ public final class DynamicVars {
         if (n.equals("$timestamp") || n.startsWith("$timestamp ")) {
             String[] tok = tokens(n.substring("$timestamp".length()));
             ZonedDateTime at = tok.length >= 2 ? applyOffset(clock, parseInt(tok[0], 0), tok[1]) : clock;
-            return String.valueOf(at.toEpochSecond());
+            return at == null ? miss(reason, "http.unresolved.reason.dateRange") : String.valueOf(at.toEpochSecond());
         }
         if (n.equals("$localDatetime") || n.startsWith("$localDatetime ")) {
             return datetime(n.substring("$localDatetime".length()), clock, true, reason);
@@ -146,6 +147,9 @@ public final class DynamicVars {
         String[] tok = tokens(suffix);
         String fmt = tok.length >= 1 ? tok[0] : "";
         ZonedDateTime at = tok.length >= 3 ? applyOffset(now, parseInt(tok[1], 0), tok[2]) : now;
+        if (at == null) {
+            return miss(reason, "http.unresolved.reason.dateRange");
+        }
         ZonedDateTime shown = at.withZoneSameInstant(local ? ZoneId.systemDefault() : ZoneOffset.UTC);
         try {
             if (fmt.isEmpty() || fmt.equalsIgnoreCase("iso8601")) {
@@ -162,65 +166,130 @@ public final class DynamicVars {
             if (fmt.equals("x")) {
                 return String.valueOf(shown.toInstant().toEpochMilli()); // Day.js unix milliseconds
             }
-            return shown.format(DateTimeFormatter.ofPattern(javaPattern(fmt), Locale.ROOT));
+            // English names, not the root locale's: Locale.ROOT has no full names ("MMMM" printed "Dec").
+            return isDayjs(fmt) ? dayjs(fmt, shown) : shown.format(DateTimeFormatter.ofPattern(fmt, Locale.ENGLISH));
         } catch (RuntimeException e) {
             return miss(reason, "http.unresolved.reason.format");
         }
     }
 
     /**
-     * The Java {@link DateTimeFormatter} pattern for {@code fmt}. A Java pattern ({@code yyyy-MM-dd}) is used
-     * as is; a Day.js/moment pattern — the VS Code REST Client's — is translated. A pattern is taken as Day.js
-     * when it uses {@code Y}, {@code D}, {@code A}, {@code ddd} or a {@code [literal]}: in Java those are the
-     * week-based year, the day of the year, the milli-of-day, a three-digit day of the month and an optional
-     * section, which a date format meant for Java practically never wants (and
+     * Whether {@code fmt} is a Day.js/moment pattern (the VS Code REST Client's) rather than a Java
+     * {@link DateTimeFormatter} pattern. A pattern with a lowercase {@code y} or a {@code 'quoted'} literal is
+     * Java; otherwise one that uses {@code Y}, {@code D}, {@code A}, {@code ddd} or a {@code [literal]} is Day.js:
+     * in Java those are the week-based year, the day of the year, the milli-of-day, a three-digit day of the month
+     * and an optional section, which a date format meant for Java practically never wants (and
      * {@code "DD-MM-YYYY"} would silently print {@code 364-12-2027} for 30 December 2026).
      */
-    static String javaPattern(String fmt) {
-        if (fmt.indexOf('Y') < 0
-                && fmt.indexOf('D') < 0
-                && fmt.indexOf('[') < 0
-                && fmt.indexOf('A') < 0
-                && !fmt.contains("ddd")) {
-            return fmt;
+    static boolean isDayjs(String fmt) {
+        String outside = fmt.replaceAll("\\[[^\\]]*]", ""); // a [literal] may hold anything
+        if (outside.indexOf('y') >= 0 || outside.indexOf('\'') >= 0) {
+            return false;
         }
-        StringBuilder out = new StringBuilder();
-        int i = 0;
-        int n = fmt.length();
-        while (i < n) {
-            char c = fmt.charAt(i);
-            if (c == '[') {
-                int end = fmt.indexOf(']', i + 1);
-                String literal = end < 0 ? fmt.substring(i + 1) : fmt.substring(i + 1, end);
-                out.append('\'').append(literal.replace("'", "''")).append('\'');
-                i = end < 0 ? n : end + 1;
-                continue;
-            }
-            int run = 1;
-            while (i + run < n && fmt.charAt(i + run) == c) {
-                run++;
-            }
-            out.append(dayjsToken(c, run));
-            i += run;
-        }
-        return out.toString();
+        return fmt.indexOf('Y') >= 0
+                || fmt.indexOf('D') >= 0
+                || fmt.indexOf('[') >= 0
+                || fmt.indexOf('A') >= 0
+                || fmt.contains("ddd");
     }
 
-    private static String dayjsToken(char c, int run) {
-        String token = String.valueOf(c).repeat(run);
-        return switch (c) {
-            case 'Y' -> run >= 4 ? "yyyy" : "yy";
-            case 'D' -> run >= 2 ? "dd" : "d";
-            case 'd' -> run >= 3 ? (run >= 4 ? "EEEE" : "EEE") : token; // dddd/ddd: weekday names
-            case 'A', 'a' -> "a";
-            case 'Z' -> run >= 2 ? "xx" : "xxx";
-            case '\'' -> "''";
-            default -> Character.isLetter(c) && "MHhmsS".indexOf(c) < 0 ? "'" + token + "'" : token;
+    /** The Day.js format tokens, longest first (as Day.js matches them); any other character is literal. */
+    private static final Pattern DAYJS_TOKEN = Pattern.compile(
+            "\\[[^\\]]*]|YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|Do|DD|D|dddd|ddd|dd|d|HH|H|hh|h|mm|m|ss|s|SSS|SS|S"
+                    + "|A|a|ZZ|Z|X|x|Q|WW|W");
+
+    /** Formats {@code t} with the Day.js pattern {@code fmt} (English names), token by token. */
+    static String dayjs(String fmt, ZonedDateTime t) {
+        StringBuilder out = new StringBuilder();
+        Matcher m = DAYJS_TOKEN.matcher(fmt);
+        int at = 0;
+        while (m.find()) {
+            out.append(fmt, at, m.start());
+            out.append(dayjsToken(m.group(), t));
+            at = m.end();
+        }
+        return out.append(fmt.substring(at)).toString();
+    }
+
+    private static String dayjsToken(String token, ZonedDateTime t) {
+        if (token.startsWith("[")) {
+            return token.substring(1, token.length() - 1);
+        }
+        int hour12 = t.getHour() % 12 == 0 ? 12 : t.getHour() % 12;
+        return switch (token) {
+            case "YYYY" -> pad(t.getYear(), 4);
+            case "YY" -> pad(Math.floorMod(t.getYear(), 100), 2);
+            case "MMMM" -> name(t, "MMMM");
+            case "MMM" -> name(t, "MMM");
+            case "MM" -> pad(t.getMonthValue(), 2);
+            case "M" -> String.valueOf(t.getMonthValue());
+            case "DDDD" -> pad(t.getDayOfYear(), 3);
+            case "DDD" -> String.valueOf(t.getDayOfYear());
+            case "Do" -> t.getDayOfMonth() + ordinal(t.getDayOfMonth());
+            case "DD" -> pad(t.getDayOfMonth(), 2);
+            case "D" -> String.valueOf(t.getDayOfMonth());
+            case "dddd" -> name(t, "EEEE");
+            case "ddd" -> name(t, "EEE");
+            case "dd" -> name(t, "EEE").substring(0, 2);
+            case "d" -> String.valueOf(t.getDayOfWeek().getValue() % 7); // Sunday is 0
+            case "HH" -> pad(t.getHour(), 2);
+            case "H" -> String.valueOf(t.getHour());
+            case "hh" -> pad(hour12, 2);
+            case "h" -> String.valueOf(hour12);
+            case "mm" -> pad(t.getMinute(), 2);
+            case "m" -> String.valueOf(t.getMinute());
+            case "ss" -> pad(t.getSecond(), 2);
+            case "s" -> String.valueOf(t.getSecond());
+            case "SSS" -> pad(t.getNano() / 1_000_000, 3);
+            case "SS" -> pad(t.getNano() / 10_000_000, 2);
+            case "S" -> String.valueOf(t.getNano() / 100_000_000);
+            case "A" -> t.getHour() < 12 ? "AM" : "PM";
+            case "a" -> t.getHour() < 12 ? "am" : "pm";
+            case "ZZ" -> t.format(DateTimeFormatter.ofPattern("xx", Locale.ENGLISH));
+            case "Z" -> t.format(DateTimeFormatter.ofPattern("xxx", Locale.ENGLISH));
+            case "X" -> String.valueOf(t.toEpochSecond());
+            case "x" -> String.valueOf(t.toInstant().toEpochMilli());
+            case "Q" -> String.valueOf((t.getMonthValue() - 1) / 3 + 1);
+            case "WW" -> pad(t.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR), 2);
+            case "W" -> String.valueOf(t.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR));
+            default -> token;
         };
     }
 
-    /** Adds a signed {@code amount} of {@code unit} (y/M/w/d/h/m/s/ms) to {@code t} for date-math vars. */
+    private static String name(ZonedDateTime t, String pattern) {
+        return t.format(DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH));
+    }
+
+    private static String pad(int value, int width) {
+        String s = String.valueOf(Math.abs(value));
+        return (value < 0 ? "-" : "") + "0".repeat(Math.max(0, width - s.length())) + s;
+    }
+
+    private static String ordinal(int day) {
+        if (day % 100 >= 11 && day % 100 <= 13) {
+            return "th";
+        }
+        return switch (day % 10) {
+            case 1 -> "st";
+            case 2 -> "nd";
+            case 3 -> "rd";
+            default -> "th";
+        };
+    }
+
+    /**
+     * Adds a signed {@code amount} of {@code unit} (y/M/w/d/h/m/s/ms) to {@code t} for date-math vars, or
+     * {@code null} when the result is beyond the dates Java can hold ({@code 999999999 y}).
+     */
     private static ZonedDateTime applyOffset(ZonedDateTime t, int amount, String unit) {
+        try {
+            return plus(t, amount, unit);
+        } catch (java.time.DateTimeException | ArithmeticException outOfRange) {
+            return null;
+        }
+    }
+
+    private static ZonedDateTime plus(ZonedDateTime t, int amount, String unit) {
         return switch (unit) {
             case "y" -> t.plusYears(amount);
             case "M" -> t.plusMonths(amount);

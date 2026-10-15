@@ -85,12 +85,23 @@ final class HttpVariableHints {
                 : buffer.getPath().toAbsolutePath().getParent();
         fingerprints.put(buffer, fingerprint(buffer));
         worker.execute(() -> {
-            HttpVariableIndex.Context ctx = context(env, envDir, dir);
-            List<MarkdownLint.Diagnostic> marks =
-                    diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
+            HttpVariableIndex.Context ctx;
+            List<MarkdownLint.Diagnostic> marks;
+            try {
+                ctx = context(env, envDir, dir);
+                marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
+            } catch (RuntimeException unexpected) {
+                // Never leave the previous marks standing as if they were current: clear them instead.
+                java.util.logging.Logger.getLogger(HttpVariableHints.class.getName())
+                        .log(java.util.logging.Level.WARNING, "{{variable}} check failed", unexpected);
+                ctx = HttpVariableIndex.Context.EMPTY;
+                marks = List.of();
+            }
+            HttpVariableIndex.Context checked = ctx;
+            List<MarkdownLint.Diagnostic> result = marks;
             Platform.runLater(() -> {
-                contexts.put(buffer, ctx);
-                done.accept(marks);
+                contexts.put(buffer, checked);
+                done.accept(result);
             });
         });
     }
