@@ -79,7 +79,10 @@ public final class HttpResponseFormat {
         if (r.failed()) {
             return sb.append("⚠  ").append(r.error()).toString();
         }
-        sb.append("HTTP ").append(r.status()).append('\n');
+        sb.append(r.protocol() == null ? "HTTP" : r.protocol())
+                .append(' ')
+                .append(r.status())
+                .append('\n');
         for (String[] h : r.headers()) {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
         }
