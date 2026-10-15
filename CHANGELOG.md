@@ -200,6 +200,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stopping a debug session can no longer hold the window on a debugger connection that is slow to close.**
+  The connection is half-closed first, so the adapter ends it, and the close itself no longer runs on the
+  thread that pressed Stop. A close that never returned held two test runs on macOS for half an hour.
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
 - **The AI agent works in its own window's project.** Started in a project's window after another project had been
