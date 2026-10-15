@@ -16,10 +16,15 @@ permissions:
   contents: read
 
 # A new push to a pull request cancels the run still going for the previous one: nobody reads that verdict,
-# and the account runs only a handful of macOS jobs at once, so stale runs made live ones queue. A run on
-# master is never cancelled — each merge keeps its own result.
+# and the account runs only a handful of macOS jobs at once, so stale runs made live ones queue.
+#
+# Every other run (a push to master, a dispatched run) has a group of its own, its commit, so it is never
+# queued or cancelled and each merge keeps its own result. They shared one group, `refs/heads/master`, until
+# 15 October 2026: GitHub keeps at most one run *waiting* in a group, so with cancel-in-progress off a merge
+# landing behind another cancelled the run still waiting before it, and 13 of 60 merge commits had no CI run.
+# The release preflight requires the checks to have passed on the tagged commit.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
