@@ -937,6 +937,28 @@ public class SharedConfig {
         return connectionStore.tool(id, tool);
     }
 
+    /** Grants or withdraws the agreement to run commands on the host of connection {@code id}, and persists it. */
+    public void setRemoteExecAllowed(String id, boolean allowed) {
+        connectionStore.setExecAllowed(id, allowed);
+        saveConnections();
+    }
+
+    /** The tool commands configured for the host of connection {@code id} (tool id → command). */
+    public Map<String, String> remoteTools(String id) {
+        return connectionStore.tools(id);
+    }
+
+    /** Replaces the tool commands of the host of connection {@code id}, and persists them. */
+    public void setRemoteTools(String id, Map<String, String> tools) {
+        connectionStore.setTools(id, tools);
+        saveConnections();
+    }
+
+    /** Carries a host's execution settings over to the connection's new id (not persisted: the caller saves). */
+    public void renameRemoteHost(String from, String to) {
+        connectionStore.renameExec(from, to);
+    }
+
     public void saveConnections() {
         writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS, this::rewriteConnections);
         onStoreChanged.run();

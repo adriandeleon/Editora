@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 121;
+    public static final int SCHEMA_VERSION = 122;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -262,7 +262,11 @@ public class Settings {
     /** Tab expands the snippet trigger before the caret; off leaves snippets to the popup and the picker. */
     private boolean snippetTabExpansion = true;
 
-    private boolean remoteExecution = false;
+    /**
+     * Whether the tools Editora drives may run on the host of a remote folder. On by default since v122; each
+     * host is still asked once (the connection store keeps the answer) before anything runs there.
+     */
+    private boolean remoteExecution = true;
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;

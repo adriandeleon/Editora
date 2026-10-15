@@ -1449,6 +1449,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         fileWorkflows.applyAdminSaveSupport(); // the admin-save toggle may have flipped
         runConfigurations.refreshRunConfigs(); // the Settings page edits the same list this selector shows
         lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.json
+        remoteExecSettingsMayHaveChanged();
+    }
+
+    /** The remote-execution setting, or this window's host's agreement or tools, may have been edited. */
+    public void remoteExecSettingsMayHaveChanged() {
+        if (remoteCoordinator != null) {
+            remoteCoordinator.recheckExecution();
+        }
     }
 
     /**
@@ -2753,12 +2761,18 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
+            public java.util.Map<String, String> remoteTools(String id) {
+                return config.remoteTools(id);
+            }
+
+            @Override
             public void remoteHostConnected(String authority) {
                 lspCoordinator.remoteHostConnected(authority);
             }
 
             @Override
             public void remoteExecChanged() {
+                lspManager.forgetRemoteDetections(); // a server's command on the host may have been set
                 git.refresh();
                 lspCoordinator.remoteExecChanged(); // remote tabs start, or stop, their servers on the host
                 if (projectPanel != null) {

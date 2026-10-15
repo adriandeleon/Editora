@@ -57,6 +57,9 @@ class RemoteProjectWindowFxTest {
         projects = new ProjectManager(dir.resolve("config"));
         ops = new Ops();
         host = new Host();
+        // Off, as before it became the default: a mount with it on puts the host question, a modal dialog.
+        // The tests about that question switch it on.
+        host.settings.setRemoteExecution(false);
         remote = new RemoteCoordinator(host, ops, sftp.fileSystems());
     }
 

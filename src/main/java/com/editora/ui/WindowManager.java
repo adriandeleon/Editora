@@ -336,6 +336,7 @@ public class WindowManager {
         }
         for (Holder h : new ArrayList<>(windows)) {
             h.controller().settingsWindow().syncStoreBackedEditors();
+            h.controller().remoteExecSettingsMayHaveChanged(); // a host's agreement or tools live in that store
         }
         settingsSync.markDirty();
     }

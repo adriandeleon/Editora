@@ -322,6 +322,11 @@ public final class LspManager {
     /** Per host and server: whether the server's command is on that host. */
     private final Map<String, Boolean> remoteAvailable = new ConcurrentHashMap<>();
 
+    /** Forgets what {@link #detectRemote} found on every host: a server's command there may have changed. */
+    public void forgetRemoteDetections() {
+        remoteAvailable.clear();
+    }
+
     /** What {@link #detectRemote} last found for {@code serverId} on {@code anchor}'s host, or null. */
     public Boolean remoteAvailability(Path anchor, String serverId) {
         return remoteAvailable.get(

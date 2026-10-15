@@ -46,6 +46,53 @@ public class ConnectionStore {
         exec.computeIfAbsent(id, k -> new HostExec()).allowed = true;
     }
 
+    /** Grants or withdraws the agreement to run commands on host {@code id}. */
+    public void setExecAllowed(String id, boolean allowed) {
+        if (id == null) {
+            return;
+        }
+        exec.computeIfAbsent(id, k -> new HostExec()).allowed = allowed;
+        dropIfEmpty(id);
+    }
+
+    /** Host {@code id}'s tool commands (tool id → command), a copy. */
+    public Map<String, String> tools(String id) {
+        HostExec host = id == null ? null : exec.get(id);
+        return host == null || host.tools == null ? Map.of() : Map.copyOf(host.tools);
+    }
+
+    /** Replaces host {@code id}'s tool commands; a blank command means "the host's PATH" and is not kept. */
+    public void setTools(String id, Map<String, String> tools) {
+        if (id == null) {
+            return;
+        }
+        Map<String, String> kept = new LinkedHashMap<>();
+        if (tools != null) {
+            tools.forEach((tool, command) -> {
+                if (tool != null && !tool.isBlank() && command != null && !command.isBlank()) {
+                    kept.put(tool.strip(), command.strip());
+                }
+            });
+        }
+        exec.computeIfAbsent(id, k -> new HostExec()).tools = kept;
+        dropIfEmpty(id);
+    }
+
+    /** Moves what was decided for host {@code from} to {@code to} (the connection's host, user or port was edited). */
+    public void renameExec(String from, String to) {
+        if (from == null || to == null || from.equals(to) || !exec.containsKey(from)) {
+            return;
+        }
+        exec.put(to, exec.remove(from));
+    }
+
+    private void dropIfEmpty(String id) {
+        HostExec host = exec.get(id);
+        if (host != null && !host.allowed && (host.tools == null || host.tools.isEmpty())) {
+            exec.remove(id);
+        }
+    }
+
     /** The command configured for {@code tool} on host {@code id}, or null to use the host's PATH. */
     public String tool(String id, String tool) {
         HostExec host = id == null ? null : exec.get(id);

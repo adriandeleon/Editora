@@ -413,14 +413,15 @@ class ConfigMigrationsTest {
 
     /** v119→120: remoteExecution is new — nobody's editor starts running commands on a server on upgrade. */
     @Test
-    void remoteExecutionArrivesOffWithoutTouchingAnythingElse() throws Exception {
+    void remoteExecutionArrivesWithoutTouchingAnythingElse() throws Exception {
         JsonNode v119 = mapper.readTree("{\"schemaVersion\":119,\"fontSize\":15}");
 
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v119.deepCopy(), mapper);
 
         assertEquals(15, out.get("fontSize").asInt());
         assertFalse(out.has("remoteExecution"), "left to the default");
-        assertFalse(mapper.treeToValue(out, com.editora.config.Settings.class).isRemoteExecution());
+        // On since v122 (see remoteExecutionIsTurnedOnOnce…); each host is still asked first.
+        assertTrue(mapper.treeToValue(out, com.editora.config.Settings.class).isRemoteExecution());
         JsonNode chosen = mapper.readTree("{\"schemaVersion\":120,\"remoteExecution\":true}");
         assertTrue(mapper.treeToValue(chosen, com.editora.config.Settings.class).isRemoteExecution());
     }
@@ -715,6 +716,20 @@ class ConfigMigrationsTest {
 
         // Safe to repeat.
         assertEquals(off.deepCopy(), ConfigMigrations.remoteImagesToPolicy(off));
+    }
+
+    @Test
+    void remoteExecutionIsTurnedOnOnceWhereAnEarlierBuildStoredItsOldDefault() throws Exception {
+        JsonNode stored = ConfigMigrations.remoteExecutionOn(mapper.readTree("{\"remoteExecution\":false}"));
+        assertTrue(stored.get("remoteExecution").asBoolean());
+
+        JsonNode absent = ConfigMigrations.remoteExecutionOn(mapper.readTree("{\"tabSize\":4}"));
+        assertEquals(mapper.readTree("{\"tabSize\":4}"), absent, "absent is the new default already");
+
+        ObjectNode up = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":121,\"remoteExecution\":false}"), mapper);
+        assertTrue(up.get("remoteExecution").asBoolean());
+        assertTrue(new com.editora.config.Settings().isRemoteExecution(), "on for a new install too");
     }
 
     @Test

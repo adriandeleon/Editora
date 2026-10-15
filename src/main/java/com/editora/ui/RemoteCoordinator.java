@@ -116,6 +116,11 @@ final class RemoteCoordinator {
         /** Records that agreement. */
         default void allowRemoteExec(String id) {}
 
+        /** The tool commands configured for the host of connection {@code id}. */
+        default java.util.Map<String, String> remoteTools(String id) {
+            return java.util.Map.of();
+        }
+
         /** What can run on this window's host has changed: features that run tools there look again. */
         default void remoteExecChanged() {}
 
@@ -568,6 +573,8 @@ final class RemoteCoordinator {
         ops.remoteHostConnected(conn.id());
         host.setStatus(tr("status.remote.connected", conn.displayLabel()));
         activeConnection = conn;
+        execSignature = null;
+        recheckExecution(); // the baseline later Settings edits are compared with
         Platform.runLater(this::offerExecution); // after the folder is on screen, not in front of it
     }
 
@@ -724,6 +731,28 @@ final class RemoteCoordinator {
         alert.setTitle(tr("dialog.remoteExec.title"));
         alert.setHeaderText(tr("dialog.remoteExec.header", conn.host()));
         return Dialogs.styled(alert).showAndWait().orElse(notNow) == allow;
+    }
+
+    /** What {@link #recheckExecution} last saw: the setting, this window's host's agreement and its tools. */
+    private String execSignature;
+
+    /**
+     * Something that decides what runs on this window's host may have changed — the setting, or the host's
+     * agreement or tool commands, edited in Settings by this window or another. When it did, the features
+     * that run tools there look again; nothing happens otherwise (this runs on every settings apply).
+     */
+    void recheckExecution() {
+        com.editora.config.Settings settings = host.settings();
+        RemoteConnection conn = activeConnection;
+        String id = conn == null || !conn.id().equals(activeRemoteAuthority) ? null : conn.id();
+        String now = (settings != null && settings.isRemoteExecution()) + "|"
+                + (id != null && ops.remoteExecAllowed(id)) + "|"
+                + (id == null ? "" : ops.remoteTools(id));
+        String before = execSignature;
+        execSignature = now;
+        if (before != null && !before.equals(now)) {
+            ops.remoteExecChanged();
+        }
     }
 
     /** Flips {@code Settings.remoteExecution}: whether commands for a remote folder may run on its host. */

@@ -217,6 +217,22 @@ public class ConfigManager {
         shared.allowRemoteExec(id);
     }
 
+    public void setRemoteExecAllowed(String id, boolean allowed) {
+        shared.setRemoteExecAllowed(id, allowed);
+    }
+
+    public java.util.Map<String, String> remoteTools(String id) {
+        return shared.remoteTools(id);
+    }
+
+    public void setRemoteTools(String id, java.util.Map<String, String> tools) {
+        shared.setRemoteTools(id, tools);
+    }
+
+    public void renameRemoteHost(String from, String to) {
+        shared.renameRemoteHost(from, to);
+    }
+
     public void setConnections(List<com.editora.vfs.RemoteConnection> conns) {
         shared.setConnections(conns);
     }

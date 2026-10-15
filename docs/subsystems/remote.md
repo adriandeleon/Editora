@@ -46,7 +46,7 @@ in for the host), when a login handed to it fails, when the connection is lost
 `WindowSessionCoordinator.reopenUnreachable` scans the waiting entries off the FX thread and reopens the
 readable ones with their caret and pin. There are no placeholder tabs while disconnected.
 
-## Execution (off by default)
+## Execution
 
 `process/ExecTarget` is where a command runs. `ExecTargets.forPath(dir)` answers the local machine for a
 local or null directory, and otherwise the `vfs/SshExecTarget` of the connection that owns the path, but only
@@ -69,15 +69,27 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
 
 Three things have to hold before anything runs on a host, all checked by `ExecTargets.forPath`:
 
-1. `Settings.remoteExecution` is on (the user's global switch, off by default).
+1. `Settings.remoteExecution` is on (the user's global switch; on by default since settings v122, whose
+   migration turns a stored `false` on once — before that it was a switch with nothing behind it).
 2. The user has agreed for *that host*: `ConnectionStore.exec[<user@host:port>].allowed`. The question is put
    once per host by `RemoteCoordinator.offerExecution` after a folder is mounted (and when the setting is
    turned on with a folder mounted); "Not Now" is respected for the session.
 3. The connection is open.
 
-`ConnectionStore.exec[…].tools` holds a command per tool id (`git`, …) for a host whose `PATH` does not have
-the right one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they
-are paths on this machine. There is no UI for `tools` yet; it is edited in `connections.json`.
+`ConnectionStore.exec[…].tools` holds a command per tool id for a host whose `PATH` does not have the right
+one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they are paths
+on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `dap.python`, `dap.js`, `dap.java`, and
+`lsp.<server id>`.
+
+Settings → Remote edits both per saved site, below the connection form: "Allow running commands on this host"
+(withdrawing it is the only way to take the answer back) and a field per named tool, plus one box of
+`server = command` lines for language servers (`ui/HostTools`; a tool id the page has no field for is kept as
+it is). Editing a site's host, user or port carries its execution settings to the new id
+(`ConnectionStore.renameExec`); removing the site drops them. Every window compares the setting and its own
+host's agreement and tools after each settings apply and each connection-store write
+(`RemoteCoordinator.recheckExecution`) and, when they changed, runs the same refresh as the consent question:
+Git, the outside-change watch and language servers look again, and `LspManager.forgetRemoteDetections`
+drops what was found on the host.
 
 A feature gates on `ui/RemoteExec.runsFor(path)`: any local file, or a remote one whose host passes the three
 checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
