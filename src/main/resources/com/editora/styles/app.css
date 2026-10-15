@@ -2901,6 +2901,10 @@
     -fx-border-width: 0;
     -fx-padding: 3 4 3 4;
 }
+/* An encoding Editora could not detect: shown through a lossless stand-in, so it reads as a warning. */
+.status-bar .status-format-group .status-encoding-assumed {
+    -fx-text-fill: -color-warning-fg;
+}
 .status-bar .status-format-sep {
     -fx-text-fill: -color-fg-subtle;
     -fx-padding: 3 0 3 0;

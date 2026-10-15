@@ -632,6 +632,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public EncodingCommands encodings() {
+        return mc.fileWorkflows.encodings();
+    }
+
+    @Override
     public void toggleAutoSave() {
         mc.fileWorkflows.toggleAutoSave();
     }
