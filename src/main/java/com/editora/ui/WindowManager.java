@@ -994,6 +994,32 @@ public class WindowManager {
         setActiveAndSave(key);
     }
 
+    /**
+     * Opens {@code file} in the window for {@code projectKey} where it was last left (its remembered caret, no
+     * jump): a file chosen from the recent-files list that belongs to another project. Focuses that window if it
+     * is open, else builds it with the file as a start-up target. A deleted project falls back to the global
+     * window, as in {@link #openInWindow}.
+     */
+    public void openRecentInWindow(String projectKey, Path file) {
+        String key = projectKey == null ? "" : projectKey;
+        Project project = key.isEmpty() ? null : findProject(key);
+        if (!key.isEmpty() && project == null) {
+            key = "";
+        }
+        Holder existing = findHolder(key);
+        if (existing != null && existing.controller() != null) {
+            focus(existing.stage());
+            setActiveAndSave(key);
+            existing.controller().openRecentHere(file);
+            return;
+        }
+        Path stateFile = key.isEmpty() ? null : projects().stateFile(project);
+        buildWindow(
+                key, project, stateFile, List.of(new MainController.OpenTarget(file, 0, 0)), false, false, null, false);
+        projects().markOpen(key);
+        setActiveAndSave(key);
+    }
+
     private void setActiveAndSave(String key) {
         projects().setActive(key);
         projects().save();

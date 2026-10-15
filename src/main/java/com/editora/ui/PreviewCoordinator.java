@@ -63,7 +63,7 @@ final class PreviewCoordinator {
         /** Opens {@code url} through the app's external-link opener (the rule documentation of a lint issue). */
         void openExternalUrl(String url);
 
-        /** The active project's root, or null with no project open (bounds the lint-config lookup). */
+        /** This window's project root, or null with no project open (bounds the lint-config lookup). */
         java.nio.file.Path activeProjectRoot();
 
         /** The window's status bar (the Markdown-lint issue count lives there). */

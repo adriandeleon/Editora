@@ -275,6 +275,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a `JAVA_HOME`, `MAVEN_OPTS`, `GOPATH` or version-manager variable exported in `~/.bash_profile` (or
   `~/.zprofile`, `~/.profile`) was missing from builds, runs, Git and language servers on the host. Every
   variable the profile adds is now passed on, except the session's own (prompt, history, `SSH_*`, display).
+- **Each project window acts on its own project.** Back in a project's window after opening another project, several
+  things used the other one: a Typst file's `#import` root, where the Markdown lint configuration and
+  `http-client.env.json` are looked up, **Project: Edit Settings**, the Project tree put back after **Remote:
+  Disconnect**, exporting or importing run configurations, a template's `${projectName}`, the folder a new file or a
+  new project is offered, the file finder's starting folder, and where a stack trace's or a CI log's files are
+  found. A recent file of another project opened in this window after focusing that project's; it now opens in that
+  project's window, where it was last left.
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
 - **The AI agent works in its own window's project.** Started in a project's window after another project had been

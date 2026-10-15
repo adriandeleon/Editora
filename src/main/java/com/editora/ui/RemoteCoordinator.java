@@ -60,7 +60,7 @@ final class RemoteCoordinator {
         /** Opens the Project tool window (so the mounted remote folder is visible). */
         void openProjectToolWindow();
 
-        /** The active local project's root, or null — used to restore the tree on disconnect. */
+        /** This window's local project root, or null — used to restore the tree on disconnect. */
         Path activeProjectRoot();
 
         /** Shows a scrollable error dialog (reuses the Git error reporter) + a short status summary. */

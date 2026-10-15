@@ -75,6 +75,9 @@ final class TemplateCoordinator {
 
         ProjectManager projects();
 
+        /** This window's project, or null (none, or Projects switched off). */
+        Project windowProject();
+
         WindowManager windowManager();
 
         boolean projectsEnabled();
@@ -325,7 +328,7 @@ final class TemplateCoordinator {
     /** Asks for the folder and the template's variables, then applies; applies directly when there is nothing to ask. */
     void beginTemplate(Template t, Path targetDir, Consumer<Path> onCreated) {
         List<TemplateEngine.TemplateVar> vars =
-                TemplateEngine.promptedVariables(t, new TemplateEngine.Context(activeProject() != null));
+                TemplateEngine.promptedVariables(t, new TemplateEngine.Context(windowProject() != null));
         // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
         // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
         // disk, so it goes through the wizard (which requires the target folder) even with no variables.
@@ -473,7 +476,7 @@ final class TemplateCoordinator {
         String home = System.getProperty("user.home");
         Path base = context;
         if (base == null) {
-            Project p = activeProject();
+            Project p = windowProject();
             base = p == null ? null : p.rootPath();
         }
         if (base == null && !isAbsoluteInput(typed)) {
@@ -609,12 +612,12 @@ final class TemplateCoordinator {
     }
 
     /**
-     * Where a new project goes by default: beside the active project (its root's parent), else the home
+     * Where a new project goes by default: beside this window's project (its root's parent), else the home
      * folder. Never the active file's folder — a project scaffolded inside a source package is the
      * accident this wizard exists to prevent.
      */
     Path defaultProjectParent() {
-        Project p = activeProject();
+        Project p = windowProject();
         if (p != null) {
             Path root = p.remote() ? null : p.rootPath(); // a new project is created on this machine
             Path parent =
@@ -847,7 +850,7 @@ final class TemplateCoordinator {
                 dir,
                 answers,
                 host.config().getSettings().getAuthorName(),
-                projectName != null ? projectName : activeProjectName(),
+                projectName != null ? projectName : projectName(),
                 projectRoot,
                 java.time.LocalDateTime.now(),
                 this::editorConfigFor);
@@ -926,13 +929,17 @@ final class TemplateCoordinator {
 
     // --- context ----------------------------------------------------------------------------------
 
-    private Project activeProject() {
-        return host.projects() == null ? null : host.projects().active();
+    /**
+     * This window's project. Not the {@code ProjectManager}'s active one: that is the window opened last, and a new
+     * file's folder, {@code ${projectName}} and a new project's location followed it into another project.
+     */
+    private Project windowProject() {
+        return host.windowProject();
     }
 
-    /** The active project's name for {@code ${projectName}}, or {@code ""} when there is none. */
-    String activeProjectName() {
-        Project p = activeProject();
+    /** This window's project's name for {@code ${projectName}}, or {@code ""} when there is none. */
+    String projectName() {
+        Project p = windowProject();
         return p == null ? "" : p.name();
     }
 
@@ -964,7 +971,7 @@ final class TemplateCoordinator {
         if (b != null && b.getPath() != null && b.getPath().getParent() != null) {
             return b.getPath().getParent();
         }
-        Project p = activeProject();
+        Project p = windowProject();
         if (p != null) {
             return p.rootPath();
         }
