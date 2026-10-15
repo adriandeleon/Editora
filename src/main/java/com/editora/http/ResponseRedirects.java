@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Writes a response body to the request's {@code >>} / {@code >>!} targets, and says what it did.
  *
@@ -133,6 +135,11 @@ public final class ResponseRedirects {
                 warnings.add("response not saved to " + shown + ": the request was cancelled");
                 continue;
             }
+            String unusable = unusablePath(path);
+            if (unusable != null) {
+                warnings.add(tr("http.warn.redirectPath", shown, unusable));
+                continue;
+            }
             try {
                 Path target = HttpPaths.containedForWrite(baseDir, path);
                 if (target == null) {
@@ -233,9 +240,8 @@ public final class ResponseRedirects {
      */
     private static Line createNumbered(Path target, String shown, byte[] body) throws IOException {
         String name = target.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        String stem = dot > 0 ? name.substring(0, dot) : name;
-        String ext = dot > 0 ? name.substring(dot) : "";
+        String stem = numberedStem(name);
+        String ext = name.substring(stem.length());
         for (int n = 1; n <= MAX_NUMBERED; n++) {
             Path candidate = target.resolveSibling(stem + "-" + n + ext);
             if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
@@ -302,6 +308,37 @@ public final class ResponseRedirects {
     private static String stem(Path target) {
         String name = target.getFileName().toString();
         return name.length() > 40 ? name.substring(0, 40) : name;
+    }
+
+    /**
+     * The part of {@code name} a number goes after: everything before the extension. Leading dots belong to
+     * the name ({@code .env} → {@code .env-1}, {@code ..hidden} → {@code ..hidden-1}), and a trailing dot is not
+     * an extension ({@code notes.} → {@code notes.-1}). Pure.
+     */
+    static String numberedStem(String name) {
+        int lead = 0;
+        while (lead < name.length() && name.charAt(lead) == '.') {
+            lead++;
+        }
+        int dot = name.lastIndexOf('.');
+        return dot > lead && dot < name.length() - 1 ? name.substring(0, dot) : name;
+    }
+
+    /**
+     * Why {@code path} (substituted) cannot name a file to save to, or null: it ends in a folder separator, or
+     * it holds a line break or another control character (a variable whose value ran over a line). Pure.
+     */
+    static String unusablePath(String path) {
+        if (path.endsWith("/") || path.endsWith("\\")) {
+            return tr("http.warn.redirectPath.folder");
+        }
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c < 0x20 || c == 0x7f) {
+                return tr("http.warn.redirectPath.control");
+            }
+        }
+        return null;
     }
 
     private static String display(Path baseDir, Path target) {

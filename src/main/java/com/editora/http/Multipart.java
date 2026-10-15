@@ -144,8 +144,9 @@ public final class Multipart {
      * part as the file itself, read only while the body is sent. A large upload is therefore never held in
      * memory, and {@link #length()} — the sum of the pieces — keeps the request's {@code Content-Length} known.
      */
-    public static final class Body {
+    public static final class Body implements java.io.Closeable {
         private final List<Object> pieces; // byte[] or Path, in wire order
+        private final List<FileBodyPublisher> filePublishers = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final long length;
         private final List<Resolved> parts;
 
@@ -176,16 +177,28 @@ public final class Multipart {
             return out;
         }
 
-        /** A publisher that sends the pieces in order, files straight from disk, with the summed length. */
+        /**
+         * A publisher that sends the pieces in order, files straight from disk, with the summed length. Its files
+         * are closed by {@link #close}, also while an upload is still reading them (a cancelled run).
+         */
         public HttpRequest.BodyPublisher publisher() throws FileNotFoundException {
             List<HttpRequest.BodyPublisher> publishers = new ArrayList<>();
             for (Object p : pieces) {
-                publishers.add(
-                        p instanceof Path file
-                                ? HttpRequest.BodyPublishers.ofFile(file)
-                                : HttpRequest.BodyPublishers.ofByteArray((byte[]) p));
+                if (p instanceof Path file) {
+                    FileBodyPublisher f = new FileBodyPublisher(file);
+                    filePublishers.add(f);
+                    publishers.add(f);
+                } else {
+                    publishers.add(HttpRequest.BodyPublishers.ofByteArray((byte[]) p));
+                }
             }
             return HttpRequest.BodyPublishers.concat(publishers.toArray(HttpRequest.BodyPublisher[]::new));
+        }
+
+        /** Closes the files of every publisher made by {@link #publisher}. Idempotent. */
+        @Override
+        public void close() {
+            filePublishers.forEach(FileBodyPublisher::close);
         }
 
         /** Writes the whole body to {@code out}, reading the files as it goes. */

@@ -84,7 +84,8 @@ class HttpHistoryEntryTest {
         assertEquals("n", back.name());
         assertEquals(1, back.requestIndex());
         assertEquals(200, back.result().status());
-        assertTrue(back.result().truncated(), "a cut body is shown as cut");
+        assertTrue(back.bodyCut(), "a cut body is shown as cut by the history");
+        assertFalse(back.result().truncated(), "…not as a download that stopped short");
         assertEquals("{\"p\":1}", back.exchange().requestBody());
     }
 

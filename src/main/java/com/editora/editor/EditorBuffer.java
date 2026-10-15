@@ -642,6 +642,8 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Supplier<String> httpRunTooltip = () -> null;
     /** The request (index in file order) whose ▶ shows as running — a ■ that cancels it; -1 = none. */
     private int httpRunningIndex = -1;
+    /** The running request's method/URL line as it read when the run started: the ■ follows it (HttpRunMark). */
+    private String httpRunningText;
     /** Cancels this buffer's running request (a click on the running ■). */
     private Runnable httpCancelHandler = () -> {};
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
@@ -3549,7 +3551,9 @@ public class EditorBuffer implements TabContent {
     public void setHttpRunning(int index) {
         int before = httpRunningLine();
         httpRunningIndex = index;
-        int after = httpRunningLine();
+        int line = httpRunningLine();
+        httpRunningText = line >= 0 ? paragraphTextOrNull(line) : null;
+        int after = line;
         if (before != after) {
             if (before >= 0) {
                 refreshGutterLine(before);
@@ -3558,6 +3562,27 @@ public class EditorBuffer implements TabContent {
                 refreshGutterLine(after);
             }
         }
+    }
+
+    /**
+     * As {@link #setHttpRunning(int)} for request {@code index} of the text a run started with, whose method/URL
+     * line read {@code requestLine}: when the requests moved since, the one with that line is marked.
+     */
+    public void setHttpRunning(int index, String requestLine) {
+        boolean moved = index < 0
+                || index >= httpRequestLines.size()
+                || requestLine == null
+                || !requestLine.equals(paragraphTextOrNull(httpRequestLines.get(index)));
+        setHttpRunning(
+                moved && index >= 0
+                        ? HttpRunMark.find(httpRequestLines, this::paragraphTextOrNull, requestLine, index)
+                        : index);
+    }
+
+    private String paragraphTextOrNull(int line) {
+        return line >= 0 && line < area.getParagraphs().size()
+                ? area.getParagraph(line).getText()
+                : null;
     }
 
     /** The line of the running request's glyph, or -1. */
@@ -3817,7 +3842,10 @@ public class EditorBuffer implements TabContent {
                 || !now.mainLines().equals(mainLines);
         int oldLine = runLine;
         if (!now.httpLines().equals(httpRequestLines)) {
-            httpRunningIndex = -1; // the requests moved: a running mark would now sit on the wrong one
+            // The requests moved: the ■ follows the running request's line, or goes when that line was edited.
+            int follow =
+                    HttpRunMark.find(now.httpLines(), this::paragraphTextOrNull, httpRunningText, httpRunningIndex);
+            httpRunningIndex = httpRunningIndex < 0 ? -1 : follow;
         }
         runnable = now.runnable();
         runLine = now.line();

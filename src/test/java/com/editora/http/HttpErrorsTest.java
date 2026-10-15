@@ -84,4 +84,33 @@ class HttpErrorsTest {
                 msg(new OutOfMemoryError(), "http://h/"));
         assertEquals("The request failed: IllegalStateException", msg(new IllegalStateException(), "http://h/"));
     }
+
+    @Test
+    void jdkInternalsAreTranslated() {
+        assertEquals(
+                "The request body changed size while it was being sent: a file it uploads was modified. Run the request again",
+                msg(
+                        new IOException(
+                                "SocketTube(6) [HttpClient-6-Worker-1] Too many bytes in request body. Expected: 3, got: 5"),
+                        "http://h/"));
+        assertEquals(
+                "The request body changed size while it was being sent: a file it uploads was modified. Run the request again",
+                msg(new IOException("Too few bytes returned by the publisher (1000/2000000)"), "http://h/"));
+        assertEquals(
+                "h:22 did not answer with HTTP — is this the right port?",
+                msg(new IOException("Invalid status line: \"SSH-2.0-OpenSSH_9.6\""), "http://h:22/"));
+        assertEquals(
+                "The URL is not valid: port out of range:99999",
+                msg(new IllegalArgumentException("port out of range:99999"), "http://h:99999/"));
+    }
+
+    @Test
+    void aPlainRequestThatIsHungUpOnSuggestsHttps() {
+        assertEquals(
+                "h:8443 closed the connection without answering — if the server expects https://, use https://",
+                msg(new java.io.EOFException("EOF reached while reading"), "http://h:8443/"));
+        assertEquals(
+                "h:443 closed the connection without answering",
+                msg(new java.io.EOFException("EOF reached while reading"), "https://h/"));
+    }
 }

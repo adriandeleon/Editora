@@ -222,6 +222,7 @@ public final class HttpClientPanel extends VBox {
         });
 
         copyCurlButton.setText(tr("httppanel.copyAsCurl"));
+        copyCurlButton.setTooltip(new javafx.scene.control.Tooltip(tr("httppanel.copyAsCurl.tip"))); // POSIX quoting
         copyCurlButton.setOnAction(e -> withSelected(onCopyAsCurl));
         openTabButton.setText(tr("httppanel.openInTab"));
         openTabButton.setOnAction(e -> withSelected(onOpenInTab));
@@ -702,7 +703,16 @@ public final class HttpClientPanel extends VBox {
             text.append(tr("httppanel.binaryBody", humanSize(r.sizeBytes())));
         }
         if (view.clipped()) {
-            text.append("\n\n").append(tr("httppanel.bodyClipped", view.text().length(), view.totalChars()));
+            // A body the saved history cut is not whole in Save or Open in tab either: do not promise it.
+            text.append("\n\n")
+                    .append(tr(
+                            entry.bodyCut() ? "httppanel.bodyClippedOnly" : "httppanel.bodyClipped",
+                            view.text().length(),
+                            view.totalChars()));
+        }
+        if (entry.bodyCut()) {
+            text.append("\n\n")
+                    .append(tr("httppanel.historyCut", humanSize(r.rawBody().length), humanSize(r.sizeBytes())));
         }
         if (r.truncated()) {
             text.append("\n\n").append(tr("httppanel.responseTruncated", humanSize(r.sizeBytes())));

@@ -14,6 +14,10 @@ import java.util.regex.Pattern;
  * not end the quoting. The body goes out with {@code --data-raw}, so one that starts with {@code @} is sent as
  * text instead of making curl read a local file.
  *
+ * <p>The quoting is POSIX (bash, zsh, sh), and the UI says so: fish reads {@code \\} inside single quotes as one
+ * backslash, PowerShell escapes a quote by doubling it and continues lines with a backtick, and the Windows
+ * command prompt has no single quotes at all.
+ *
  * <p>The command reproduces what Editora sent, not its display text: a {@code < file} body is
  * {@code --data-binary @file}, a multipart form becomes {@code -F} / {@code --form-string} fields, the Digest
  * shorthand becomes {@code --digest -u}, redirects are followed ({@code -L}) unless the request said
@@ -25,7 +29,7 @@ public final class CurlExport {
 
     /** The details of a request known only by its text: nothing beyond method, URL, headers and body. */
     private static final HttpExchange.Details TEXT_ONLY =
-            new HttpExchange.Details(null, List.of(), null, null, false, null, null, false);
+            HttpExchange.Details.NONE; // redirects followed, as a run does
 
     private CurlExport() {}
 
@@ -68,8 +72,9 @@ public final class CurlExport {
             }
         }
         if (d.digestUser() != null) {
+            // Without the password (a restored entry never has it) curl asks for it instead of sending a wrong one.
             sb.append(" \\\n  --digest -u ")
-                    .append(quote(d.digestUser() + ":" + (d.digestPass() == null ? "" : d.digestPass())));
+                    .append(quote(d.digestPass() == null ? d.digestUser() : d.digestUser() + ":" + d.digestPass()));
         }
         if (form) {
             for (HttpExchange.FormPart p : d.formParts()) {

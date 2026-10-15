@@ -69,5 +69,19 @@ public record HttpExchange(
      * One {@code multipart/form-data} field: its {@code name} and either an inline {@code value} or a {@code file}
      * (absolute path) uploaded under {@code filename}; {@code contentType} when the part declared one.
      */
+    /**
+     * Whether {@code requestBody} is the one-line summary the response view shows for a body that was streamed
+     * ({@code (multipart/form-data, N bytes)}, {@code (body from ./x, 2 MB)}) rather than the text sent. Without
+     * {@link Details} saying how it was sent, such an entry cannot be turned back into a command. Pure.
+     */
+    public static boolean isBodyPlaceholder(String requestBody) {
+        if (requestBody == null || !requestBody.startsWith("(") || !requestBody.endsWith(")")) {
+            return false;
+        }
+        return requestBody.startsWith("(multipart/form-data, ")
+                || requestBody.startsWith("(body from ")
+                || requestBody.startsWith("(binary body from ");
+    }
+
     public record FormPart(String name, String value, String file, String filename, String contentType) {}
 }

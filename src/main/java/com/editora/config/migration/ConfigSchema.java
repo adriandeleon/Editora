@@ -318,7 +318,9 @@ public enum ConfigSchema {
     /** Trusted workspace roots. Failing open to defaults (= nothing trusted) is the safe direction here. */
     TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of()),
     /** One file per {@code .http} file: its chosen environment and last responses (HTTP Client). */
-    HTTP_HISTORY(HttpResponseHistory.SCHEMA_VERSION, 1, Map.of());
+    // v1 → v2: each response gained protocol, charset and `sent` (how the request went out, for Copy as cURL),
+    // and the file gained clearedAt — all additive (absent ⇒ unknown / never cleared).
+    HTTP_HISTORY(HttpResponseHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity));
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

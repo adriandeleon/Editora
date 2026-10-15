@@ -9179,10 +9179,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
+        boolean includeHttpHistory = false;
+        if (config.shared().hasHttpHistory()) { // saved responses hold bodies and URLs: asked, off by default
+            java.util.Optional<Boolean> choice = ExportConfigDialog.ask(stage);
+            if (choice.isEmpty()) {
+                return;
+            }
+            includeHttpHistory = choice.get();
+        }
         BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
-                .exportConfigAsync()
+                .exportConfigAsync(includeHttpHistory)
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
