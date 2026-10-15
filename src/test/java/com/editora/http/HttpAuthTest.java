@@ -32,4 +32,14 @@ class HttpAuthTest {
         assertEquals("Bearer xyz", out.get(1)[1]);
         assertEquals("application/json", out.get(2)[1]);
     }
+
+    @Test
+    void aShorthandPasswordMayContainSpacesOrBeWrittenWithAColon() {
+        List<String[]> in = List.of(
+                new String[] {"Authorization", "Basic user my pass"},
+                new String[] {"Authorization", "Basic user:pa:ss"});
+        List<String[]> out = HttpAuth.normalizeHeaders(in);
+        assertEquals(HttpAuth.basic("user", "my pass"), out.get(0)[1]);
+        assertEquals(HttpAuth.basic("user", "pa:ss"), out.get(1)[1]);
+    }
 }
