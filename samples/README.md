@@ -90,21 +90,66 @@ them: kill ring (`C-k`/`C-y`/`M-y`), rectangles (`C-x r …`), narrowing (`C-x n
 (`M-%`), the mark ring (`C-SPC`/`C-x C-SPC`), occur (`M-s o`), and the `C-u` prefix argument
 (`C-u 5 C-n`). Abbreviations need a dictionary — define one with `C-x a g`, then expand with `C-x a e`.
 
-## markdown/ — preview, GFM, math, embedded Mermaid
+## markdown/ — preview, editing, links, lint, exports
+
+Open the folder as a project for the project-wide features (link completion, wiki links, Backlinks,
+link updates on rename, *Markdown Lint: Lint Project*). Every file here except the two lint files and
+`format-me.md` lints clean with the default rules; those three are broken on purpose and say so.
 
 - `samples/markdown/gfm.md` — toggle preview (Editor/Split/Preview): bold/italic/code, a task list
   with real checkboxes, a column-aligned table, a fenced code block, and a shields.io SVG **badge**
-  (exercises the SVG rasterizer).
-- `samples/markdown/math.md` — inline `$…$` and block `$$…$$` math (needs `mathSupport`).
-- `samples/markdown/mermaid-in-markdown.md` — a fenced `mermaid` block renders inline (needs `mmdc`).
+  (exercises the SVG rasterizer; needs the network).
 - `samples/markdown/extras.md` — everything `gfm.md` leaves out: YAML front matter, footnotes (reference
   and inline), strikethrough, inserted text, an autolink, nested and task lists, nested block quotes,
   an indented code block, and **local** images (`../images/…`, so the preview needs no network).
   Five heading levels make it the file for the outline and *Markdown: Insert/Update Table of Contents*.
-- `samples/markdown/lint.md` — **Markdown lint**: trips each of the 16 rules exactly where a comment
+- `samples/markdown/syntax.md` — the extended syntax: GitHub alerts (`> [!NOTE]` … `[!CAUTION]`), emoji
+  shortcodes, `==highlight==`, superscript `^2^` and subscript `H~2~O`, and definition lists. Compare
+  the preview with the HTML, Word, OpenDocument and PDF exports.
+- `samples/markdown/math.md` — inline `$…$` and block `$$…$$` math, `\(…\)` and `\[…\]`, a ```` ```math ````
+  fence, LaTeX that Markdown must leave alone (`\{`, `\,`, `*`, `\\`), and dollars that are not math
+  (prices, `$HOME` in prose, code spans, escaped `\$`). Needs `mathSupport`.
+- `samples/markdown/mermaid-in-markdown.md` — a fenced `mermaid` block renders inline (needs `mmdc`).
+- `samples/markdown/preview.md` — the preview workout: front matter shown as a table, the safe HTML
+  subset (`<kbd>`, `<br>`, `<sub>`/`<sup>`, `<details>`, `<img>`, a centred paragraph), clickable task
+  boxes, click-to-enlarge images, a missing image (alt text), a remote badge for the *Remote images*
+  setting (Ask shows a Load bar), long inline code that wraps, a wide table and a long code line that
+  scroll sideways, and numbered footnotes. Also the file for text selection, Copy and Find in the preview.
+- `samples/markdown/editing.md` — a playground for the editing commands: the format bar, list
+  continuation, Tab/Shift-Tab on list items, renumbering, task toggles, heading promote/demote, table
+  tools (reformat, move, sort — numbers, text, an empty cell and CJK), wrapping lines in a fence or a
+  quote, link tools, footnotes, a `<!-- toc -->` block to fill, and smart typography.
+- `samples/markdown/format-me.md` — deliberately messy (setext headings, mixed bullets, out-of-order
+  numbers, mixed emphasis styles, a ragged table, missing blank lines, trailing spaces): run
+  *Markdown: Format Document*, then undo. The repo `.editorconfig` keeps its trailing spaces.
+- `samples/markdown/structure.md` — TOML (`+++`) front matter, a setext heading, lists and quotes that
+  fold, a four-backtick fence holding a three-backtick one, a tilde fence, headings hidden in an HTML
+  comment and found again inside `<details>`, the source styling of `[ ]`/`[x]` and bare URLs, and
+  heading levels for the outline, the heading breadcrumb, *Project: Go to Markdown Heading…* and
+  *Markdown: Number Headings*.
+- `samples/markdown/links.md` — every link Editora follows: `#heading` in the same file,
+  `other.md#heading`, `<…>` and `%20` paths, a URL with parentheses, autolinks, a titled link, HTML
+  `href`/`src`, and reference links. Rename `extras.md` to see the links to it offered for updating.
+- `samples/markdown/notes/index.md`, `samples/markdown/notes/ideas.md`,
+  `samples/markdown/notes/archive/old-plan.md`, `samples/markdown/notes/a note with spaces.md` — **wiki
+  links**: `[[note]]`, `[[note|label]]`, `[[note#heading]]`, `[[#heading]]`, an embed `![[…]]`, a note
+  found by name in a sub-folder, and the forms that are not wiki links (code, glued to a word, `\|` in
+  a table). Try *Markdown: Show Backlinks*, completion after `[[`, and renaming `ideas.md`.
+- `samples/markdown/lint.md` — **Markdown lint**: trips each of the first 16 rules exactly where a comment
   says so (MD001 … MD052), shows a `markdownlint-disable` directive suppressing one, and has a long
   line for the optional MD013. Try the quick fixes, then undo. It is deliberately malformed — the
   repo `.editorconfig` exempts it from the final-newline rule so saving it does not "repair" MD047.
+- `samples/markdown/lint-more.md` — the rules added later, each tripped once where the text says so
+  (MD003 … MD058) plus Editora's own `LINK001` (missing file), `LINK002` (missing heading in another
+  file) and `LINK003` (unresolved wiki link); MD013 and MD033 are off by default, switch them on to see
+  them. Deliberately malformed.
+- `samples/markdown/lint-config/.markdownlint.jsonc`, `samples/markdown/lint-config/configured.md` — a
+  project lint config with comments, a rule alias and rule options, applying to that folder only: line
+  length on at 100 columns, repeated headings allowed. Edit and save it to see open files re-linted.
+- `samples/markdown/clipboard.html` — open in a browser, select all, copy, and paste into a Markdown
+  buffer (or *Markdown: Paste as Markdown*): a heading, links, emphasis, a table with merged cells,
+  nested lists, a definition list and code arrive as Markdown.
+- `samples/markdown/component.mdx` — `.mdx` (like `.Rmd` and `.qmd`) opens as plain Markdown.
 
 ## mermaid/ — standalone diagrams + lint
 
