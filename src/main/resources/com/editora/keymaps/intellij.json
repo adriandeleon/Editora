@@ -62,5 +62,6 @@
   "M-S-down": "edit.moveLineDown",
   "C-w": "edit.expandSelection",
   "C-S-w": "edit.shrinkSelection",
-  "C-M-r": "http.runRequest"
+  "C-M-r": "http.runRequest",
+  "C-M-S-r": "http.runFile"
 }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Run tool window shows a spinner while a program runs.** A long script that prints little or nothing
+  no longer looks stalled: a small spinner beside the run status turns from launch (including a before-launch
+  command) until the program exits, is stopped, or fails to start.
 - **Remote development is on, and set per host.** The tools Editora drives — Git, gh, ripgrep, builds, tests,
   language servers and debuggers — run on the host of a remote folder by default. The first time you open a
   folder on a host, Editora asks once whether it may run commands there. Settings → Remote now shows, for
@@ -30,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is served by a language server running on its host (pyright, gopls, rust-analyzer, the TypeScript server and
   the others), found on the host's PATH or configured per host: completion, hover, diagnostics, go to definition
   and the rest work as for local files. Renames and other cross-file edits create, move and delete files on the
-  host. A file outside the project on the same host (a library source reached by Go to Definition) is served by
+  host, and checking such an edit before it lands no longer pauses the window for a round trip per file. A file outside the project on the same host (a library source reached by Go to Definition) is served by
   the project's server. Losing the connection stops the servers without reporting a crash, and reconnecting
   starts them again. Java works too: jdtls runs on the host with the host's JDKs and keeps its index in
   `~/.cache/editora` there (the host-consent question now says so).
@@ -188,10 +191,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
   cleared when the environment changes.
 - **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
-  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code). Escape in the response view returns to
-  the editor. Run File and the editor's context menu run the file's requests. `.http` files get request folding,
-  one Structure entry per request, completion for methods and headers, a starter request in New File, and
-  richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
+  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code), and Run All Requests to `C-c C-r` (Emacs)
+  and `Ctrl+Alt+Shift+R`; the ▶ tooltip names both. While a request runs its ▶ turns into a ■ that cancels it,
+  and the "Running …" line shows the request with its variables filled in. Escape in the response view returns
+  to the editor. Run File and the editor's context menu run the file's requests. `.http` files get request
+  folding, one Structure entry per request, completion for methods and headers, a starter request in New File,
+  and richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
+- **HTTP Client: unresolved variables are underlined as you type.** A `{{variable}}` that cannot resolve with the
+  selected environment, the `@var` lines above it and the built-ins gets a warning underline; hover for the
+  reason. Typing `{{` offers the variables available there, the dynamic built-ins, `.env` keys and
+  `name.response.` for each request in the file.
+- **HTTP Client: an untitled `.http` file can send requests.** It uses the project's environment files, and its
+  responses are kept when you save it. A request that needs the file's folder (a body file, a `>>` target,
+  `$dotenv`) is not sent and says to save the file first.
 - **HTTP Client: Save response writes the body exactly as received** (an image saves as the image), named after
   the URL, in the request's folder. The status-and-headers text report is the second choice in the dialog.
 - **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
@@ -241,6 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window moves when you drag its title.** With the menu bar merged into the title bar, dragging the file
+  name in the middle did nothing; only the empty parts of the bar moved the window.
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`
   were off by the local UTC offset (six hours early in Mexico City). Day.js formats (`"DD-MM-YYYY"`) no longer
   give wrong dates, and `$env.NAME` and `{{$randomInt 1 10}}` work.
@@ -251,6 +265,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP Client: a request that fails unexpectedly reports it.** An internal error or running out of memory left
   the view on "Running…" for good and dropped the rest of a Run All; it now shows as that request's failure.
   The response history keeps at most 100 MB of bodies per file.
+- **HTTP Client: large multipart uploads are streamed from disk** instead of read into memory, also for Digest
+  `auth-int`, and Copy as cURL fills in variables in multipart file paths.
 - **HTTP Client: responses and requests are byte-correct.** gzip and deflate responses are decoded (a browser's
   "Copy as cURL" with `accept-encoding` showed garbage), the charset of an HTML `<meta>` or XML prolog is used, and
   octet-stream, images, PDFs and archives count as binary. Request bodies use the charset `Content-Type` declares.

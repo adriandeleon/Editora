@@ -3902,6 +3902,9 @@
 /* JUnit test gutter ▶ — accent, so it's tellable-apart from the green script/make ▶. */
 .run-marker.test-run-marker { -fx-fill: -color-accent-fg; }
 .fold-gutter .run-slot:hover .run-marker.test-run-marker { -fx-fill: -color-accent-emphasis; }
+/* A .http request in flight: its ▶ turns into a red ■ that cancels it. */
+.run-marker.http-running-marker { -fx-fill: -state-red; }
+.fold-gutter .run-slot:hover .run-marker.http-running-marker { -fx-fill: derive(-state-red, 25%); }
 
 /* Gutter breakpoint dot (leftmost strip). Plain = solid red; conditional/logpoint tint it; disabled is
    hollow/grey. A faint dot previews on hover over an empty strip so the click target is discoverable. */

@@ -9,6 +9,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
@@ -28,7 +29,8 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The "Run" tool window: a console that streams a launched program's stdout/stderr (see
- * {@link com.editora.run.RunService}), with a header showing the run state plus Stop and Clear actions.
+ * {@link com.editora.run.RunService}), with a header showing the run state (a spinner while something runs)
+ * plus Stop and Clear actions.
  * A {@link ToolWindowContent} modeled on {@link ProblemsPanel}; the controller drives it via
  * {@code started/appendOutput/finished/failed} on the FX thread.
  *
@@ -43,6 +45,9 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
+    /** Spins while a program (or a before-launch step) is running, so a quiet long run still looks alive. */
+    private final ProgressIndicator busy = new ProgressIndicator();
+
     private final CodeArea output = AreaUndo.none(new CodeArea());
     private final TextField input = new TextField();
     private final Button stopButton = new Button();
@@ -64,6 +69,10 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(6));
 
         status.getStyleClass().add("run-status");
+        busy.getStyleClass().add("run-busy");
+        busy.setPrefSize(14, 14);
+        busy.setMaxSize(14, 14);
+        busy.setFocusTraversable(false);
         stopButton.setText(tr("run.stop"));
         stopButton.setMinWidth(Region.USE_PREF_SIZE);
         stopButton.getStyleClass().add("run-stop");
@@ -77,7 +86,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         clearButton.setMinWidth(Region.USE_PREF_SIZE);
         clearButton.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, status, spacer(), clearButton, stopButton);
+        HBox header = new HBox(8, busy, status, spacer(), clearButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -194,8 +203,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     /** Resets to the idle state (no run yet / finished and cleared). */
     public void idle() {
         status.setText(tr("run.idle"));
-        stopButton.setDisable(true);
-        input.setDisable(true);
+        setRunning(false);
     }
 
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
@@ -208,8 +216,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     public void started(String commandLine) {
         clearConsole();
         status.setText(tr("run.running", commandLine));
-        stopButton.setDisable(false);
-        input.setDisable(false);
+        setRunning(true);
     }
 
     /** Appends one line of program output, applying stderr/log-level colors and clickable URL styling. */
@@ -248,15 +255,22 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
     public void finished(int code) {
         status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
-        stopButton.setDisable(true);
-        input.setDisable(true);
+        setRunning(false);
     }
 
     /** The process failed to launch (e.g. {@code java} not found). */
     public void failed(String message) {
         status.setText(tr("run.failed", message));
-        stopButton.setDisable(true);
-        input.setDisable(true);
+        setRunning(false);
+    }
+
+    /** Stop, the stdin field, and the spinner all follow whether a process is alive. A hidden indicator also
+     *  stops its animation, so an idle panel costs nothing per frame. */
+    private void setRunning(boolean running) {
+        stopButton.setDisable(!running);
+        input.setDisable(!running);
+        busy.setVisible(running);
+        busy.setManaged(running);
     }
 
     @Override

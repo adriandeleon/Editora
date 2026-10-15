@@ -605,6 +605,12 @@ public class EditorBuffer implements TabContent {
 
     private MermaidLintOverlay lintOverlay; // lazily attached — see lintOverlay()
     private MarkdownLintOverlay mdLintOverlay; // lazily attached when Markdown linting turns on — see mdLintOverlay()
+    /** Squiggles under unresolvable {{variables}} of a .http buffer (on the same overlay as Markdown lint). */
+    private final HttpVariableMarks httpVariableMarks = new HttpVariableMarks(
+            this::mdLintOverlay,
+            this::documentTextSnapshot,
+            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile);
+
     private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
      *  lazily attached when LSP first activates for this buffer — see {@link #diagnosticStripe()}. */
@@ -633,6 +639,10 @@ public class EditorBuffer implements TabContent {
     private Runnable httpRunAllHandler = () -> {};
     /** Hover text for a {@code .http} request ▶ (built by the controller, so it can name the current chord). */
     private java.util.function.Supplier<String> httpRunTooltip = () -> null;
+    /** The request (index in file order) whose ▶ shows as running — a ■ that cancels it; -1 = none. */
+    private int httpRunningIndex = -1;
+    /** Cancels this buffer's running request (a click on the running ■). */
+    private Runnable httpCancelHandler = () -> {};
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -997,7 +1007,9 @@ public class EditorBuffer implements TabContent {
                 () -> runnable || !mainLines.isEmpty(),
                 this::isRunGlyphLine,
                 this::onRunGlyph,
-                line -> testLines.containsKey(line) ? "test-run-marker" : null,
+                line -> testLines.containsKey(line)
+                        ? "test-run-marker"
+                        : line == httpRunningLine() ? FoldManager.HTTP_RUNNING_CLASS : null,
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -1203,10 +1215,14 @@ public class EditorBuffer implements TabContent {
                 UndoMerge.PAUSE,
                 () -> !disposed && !largeFile && area.getLength() <= UNDO_HISTORY_MAX_BYTES,
                 this::captureUndoCheckpoint);
-        settledEdits.at(Duration.ofMillis(450), () -> mermaidLintEnabled || markdownLintEnabled, () -> {
-            scheduleMermaidLint();
-            scheduleMarkdownLint();
-        });
+        settledEdits.at(
+                Duration.ofMillis(450),
+                () -> mermaidLintEnabled || markdownLintEnabled || httpVariableMarks.enabled(),
+                () -> {
+                    scheduleMermaidLint();
+                    scheduleMarkdownLint();
+                    httpVariableMarks.schedule();
+                });
         settledEdits.at(
                 Duration.ofMillis(600),
                 () -> completionActions.aiCompletionEnabled && focusedArea != null && focusedArea.isFocused(),
@@ -3493,6 +3509,29 @@ public class EditorBuffer implements TabContent {
             httpFeatureEnabled = enabled;
             recomputeRun();
         }
+        httpVariableMarks.update();
+    }
+
+    /** Injects the {@code .http} unresolved-variable check ({@code accept(text, diagnostics -> …)}); null: off. */
+    public void setHttpVariableLint(
+            java.util.function.BiConsumer<String, java.util.function.Consumer<java.util.List<MarkdownLint.Diagnostic>>>
+                    validator) {
+        httpVariableMarks.setValidator(validator);
+    }
+
+    /** Checks the {@code {{variables}}} again (the environment or the env files changed). */
+    public void refreshHttpVariableLint() {
+        httpVariableMarks.update();
+    }
+
+    /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
+    public java.util.List<MarkdownLint.Diagnostic> httpVariableDiagnostics() {
+        return httpVariableMarks.diagnostics();
+    }
+
+    /** Injects what {@code {{} completion offers in a {@code .http} buffer (the environment, the file's folder). */
+    public void setHttpVariableContext(java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> c) {
+        completionActions.setHttpVariables(c);
     }
 
     /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
@@ -3503,6 +3542,36 @@ public class EditorBuffer implements TabContent {
     /** Injects "run every request in this file" (the {@code .http} editor menu's Run All Requests). */
     public void setHttpRunAllHandler(Runnable handler) {
         this.httpRunAllHandler = handler == null ? () -> {} : handler;
+    }
+
+    /** Injects what a click on a running request's ■ does: cancel that run. */
+    public void setHttpCancelHandler(Runnable handler) {
+        this.httpCancelHandler = handler == null ? () -> {} : handler;
+    }
+
+    /**
+     * Shows request {@code index} (file order; -1 = none) as running: its ▶ becomes a ■ that cancels the run.
+     * Cleared by the caller when the run ends, and here when the requests move (the mark would be stale).
+     */
+    public void setHttpRunning(int index) {
+        int before = httpRunningLine();
+        httpRunningIndex = index;
+        int after = httpRunningLine();
+        if (before != after) {
+            if (before >= 0) {
+                refreshGutterLine(before);
+            }
+            if (after >= 0) {
+                refreshGutterLine(after);
+            }
+        }
+    }
+
+    /** The line of the running request's glyph, or -1. */
+    public int httpRunningLine() {
+        return httpRunningIndex >= 0 && httpRunningIndex < httpRequestLines.size()
+                ? httpRequestLines.get(httpRunningIndex)
+                : -1;
     }
 
     /** Injects the hover text of a {@code .http} request ▶ (evaluated on hover; null = no tooltip). */
@@ -3646,6 +3715,9 @@ public class EditorBuffer implements TabContent {
         }
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
+            if (httpFeatureEnabled && isHttpFile() && line == httpRunningLine()) {
+                return tr("editmenu.cancelHttpRequest.tip"); // the running request's ■ cancels it
+            }
             if (httpFeatureEnabled && isHttpFile() && httpRequestLines.contains(line)) {
                 return httpRunTooltip.get(); // "Run request (chord)": the ▶ is the request's run button
             }
@@ -3664,7 +3736,11 @@ public class EditorBuffer implements TabContent {
         } else if (mainTarget != null) {
             mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
         } else if (httpFeatureEnabled && isHttpFile()) {
-            httpRunHandler.accept(line);
+            if (line == httpRunningLine()) {
+                httpCancelHandler.run(); // the ■ of the request in flight
+            } else {
+                httpRunHandler.accept(line);
+            }
         } else if (isMakefile()) {
             String target = makeTargets.get(line);
             if (target != null) {
@@ -3747,6 +3823,9 @@ public class EditorBuffer implements TabContent {
                 || !now.testLines().equals(testLines)
                 || !now.mainLines().equals(mainLines);
         int oldLine = runLine;
+        if (!now.httpLines().equals(httpRequestLines)) {
+            httpRunningIndex = -1; // the requests moved: a running mark would now sit on the wrong one
+        }
         runnable = now.runnable();
         runLine = now.line();
         httpRequestLines = now.httpLines();
@@ -6743,7 +6822,7 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        MarkdownLintHover.install(a, () -> markdownLintEnabled ? mdLintOverlay : null);
+        MarkdownLintHover.install(a, () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null);
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);

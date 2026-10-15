@@ -65,5 +65,6 @@
   "Cmd-S-\\": "nav.matchingBracket",
   "Cmd-S-l": "edit.selectAllOccurrences",
   "M-Cmd-r": "http.runRequest",
+  "M-Cmd-S-r": "http.runFile",
   "M-Cmd-k": "http.cancelRequest"
 }

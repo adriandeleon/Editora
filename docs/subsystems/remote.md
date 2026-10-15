@@ -190,8 +190,11 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   (`WorkspaceEditJournal.pending`). The check that a file the server did not have open is unchanged since the
   request compares its host-stamped time through `ExecTarget.latestLocalTime`: the host's clock is read once per
   connection (`date +%s`), and a whole-second SFTP time is rounded up by the coarse margin first, so a skewed
-  host clock cannot pass a later write off as an earlier one. The apply-time re-checks still `stat` on the FX
-  thread, one round trip per closed target.
+  host clock cannot pass a later write off as an earlier one. No check of a remote edit reads the host from the
+  FX thread: the destructive-edit question, the Local History capture, the rename preview and the stale-file
+  check stat their files on the workspace worker first (`LspCoordinator.withDiskView`), and the apply-time
+  re-checks, which must run in the FX turn that lands the edit, read a `WorkspaceFileSnapshot` the worker took
+  after staging. A local edit still stats in place, which is cheap.
 - **Debugging (Python, JavaScript):** a remote file is debugged on its host (`DapManager.startRemoteStdio` /
   `startRemoteSocket`), asked for its adapter when the session starts rather than detected up front.
   Python: the host's `dap.python` tool, else the Debugging setting when it is a bare name, else `python3`; a
