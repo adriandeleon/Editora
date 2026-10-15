@@ -187,10 +187,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
   cleared when the environment changes.
 - **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
-  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code). Escape in the response view returns to
-  the editor. Run File and the editor's context menu run the file's requests. `.http` files get request folding,
-  one Structure entry per request, completion for methods and headers, a starter request in New File, and
-  richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
+  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code), and Run All Requests to `C-c C-r` (Emacs)
+  and `Ctrl+Alt+Shift+R`; the ▶ tooltip names both. While a request runs its ▶ turns into a ■ that cancels it,
+  and the "Running …" line shows the request with its variables filled in. Escape in the response view returns
+  to the editor. Run File and the editor's context menu run the file's requests. `.http` files get request
+  folding, one Structure entry per request, completion for methods and headers, a starter request in New File,
+  and richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
+- **HTTP Client: unresolved variables are underlined as you type.** A `{{variable}}` that cannot resolve with the
+  selected environment, the `@var` lines above it and the built-ins gets a warning underline; hover for the
+  reason. Typing `{{` offers the variables available there, the dynamic built-ins, `.env` keys and
+  `name.response.` for each request in the file.
+- **HTTP Client: an untitled `.http` file can send requests.** It uses the project's environment files, and its
+  responses are kept when you save it. A request that needs the file's folder (a body file, a `>>` target,
+  `$dotenv`) is not sent and says to save the file first.
 - **HTTP Client: Save response writes the body exactly as received** (an image saves as the image), named after
   the URL, in the request's folder. The status-and-headers text report is the second choice in the dialog.
 - **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
@@ -250,6 +259,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP Client: a request that fails unexpectedly reports it.** An internal error or running out of memory left
   the view on "Running…" for good and dropped the rest of a Run All; it now shows as that request's failure.
   The response history keeps at most 100 MB of bodies per file.
+- **HTTP Client: large multipart uploads are streamed from disk** instead of read into memory, also for Digest
+  `auth-int`, and Copy as cURL fills in variables in multipart file paths.
 - **HTTP Client: responses and requests are byte-correct.** gzip and deflate responses are decoded (a browser's
   "Copy as cURL" with `accept-encoding` showed garbage), the charset of an HTML `<meta>` or XML prolog is used, and
   octet-stream, images, PDFs and archives count as binary. Request bodies use the charset `Content-Type` declares.

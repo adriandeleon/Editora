@@ -1,5 +1,7 @@
 package com.editora.http;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -187,6 +189,36 @@ public final class DigestAuth {
             String cnonce,
             String nc,
             byte[] body) {
+        byte[] bytes = body == null ? new byte[0] : body;
+        try {
+            return authorization(creds, method, uri, challenge, cnonce, nc, md -> md.update(bytes));
+        } catch (IOException impossible) {
+            throw new UncheckedIOException(impossible); // feeding a byte array cannot fail
+        }
+    }
+
+    /**
+     * Feeds the request body to a digest, for a {@code qop=auth-int} answer: a streamed upload (a large file, a
+     * multipart form with file parts) is hashed as it is read, never held in memory whole.
+     */
+    @FunctionalInterface
+    public interface BodyFeed {
+        void into(MessageDigest digest) throws IOException;
+    }
+
+    /**
+     * As {@link #authorization(Credentials, String, String, Map, String, String, byte[])}, with the body fed to the
+     * digest by {@code body} — called only when the challenge offers nothing but {@code qop=auth-int}.
+     */
+    public static String authorization(
+            Credentials creds,
+            String method,
+            String uri,
+            Map<String, String> challenge,
+            String cnonce,
+            String nc,
+            BodyFeed body)
+            throws IOException {
         String realm = challenge.getOrDefault("realm", "");
         String nonce = challenge.getOrDefault("nonce", "");
         String opaque = challenge.get("opaque");
@@ -204,7 +236,11 @@ public final class DigestAuth {
         }
         String a2 = method + ":" + uri;
         if ("auth-int".equals(qop)) {
-            a2 += ":" + hash(digestName, body == null ? new byte[0] : body);
+            MessageDigest entity = digest(digestName);
+            if (body != null) {
+                body.into(entity);
+            }
+            a2 += ":" + hex(entity.digest());
         }
         String ha2 = hash(digestName, a2);
         String response = qop != null
@@ -253,15 +289,22 @@ public final class DigestAuth {
     }
 
     private static String hash(String algorithm, byte[] bytes) {
+        return hex(digest(algorithm).digest(bytes));
+    }
+
+    private static MessageDigest digest(String algorithm) {
         try {
-            byte[] d = MessageDigest.getInstance(algorithm).digest(bytes);
-            StringBuilder sb = new StringBuilder(d.length * 2);
-            for (byte b : d) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
+            return MessageDigest.getInstance(algorithm);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("digest algorithm missing from the JDK: " + algorithm, e);
         }
+    }
+
+    private static String hex(byte[] d) {
+        StringBuilder sb = new StringBuilder(d.length * 2);
+        for (byte b : d) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
     }
 }

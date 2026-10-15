@@ -236,7 +236,7 @@ class HttpClientRunFlowFxTest {
     }
 
     @Test
-    void aRequestCannotRunWhenDisabledUnsavedOrAwayFromAnyRequest(@TempDir Path dir) throws Exception {
+    void aRequestCannotRunWhenDisabledOrAwayFromAnyRequest(@TempDir Path dir) throws Exception {
         EditorBuffer b = httpBuffer(dir.resolve("api.http"), "# only a comment\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         assertEquals(tr("status.http.noRequest"), host.last);
@@ -244,19 +244,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.noRequest"), host.last, "a file without requests");
 
         FxTestSupport.runOnFx(() -> coordinator.runRequest(null, 0));
-        assertEquals(tr("status.http.saveFirst"), host.last);
-        EditorBuffer unsaved = FxTestSupport.callOnFx(() -> {
-            EditorBuffer created = new EditorBuffer();
-            created.setDisplayName("scratch.http");
-            created.setContent("GET " + url("/json") + "\n");
-            return created;
-        });
-        buffers.add(unsaved);
-        host.active = unsaved;
-        FxTestSupport.runOnFx(() -> coordinator.runRequest(unsaved, 0));
-        assertEquals(tr("status.http.saveFirst"), host.last);
-        FxTestSupport.runOnFx(coordinator::runFile);
-        assertEquals(tr("status.http.saveFirst"), host.last);
+        assertEquals(tr("status.http.noRequest"), host.last);
 
         // Not an .http buffer at all.
         EditorBuffer plain = FxTestSupport.callOnFx(EditorBuffer::new);
