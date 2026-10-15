@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -70,6 +72,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** A build {@link #started} in this tab and has not finished, failed, or been reset to idle. */
     private boolean buildRunning;
+
+    /** Whether the spinner shows: a build or a long logged command is running ({@link #runningProperty}). */
+    private final ReadOnlyBooleanWrapper running = new ReadOnlyBooleanWrapper(this, "running");
 
     /** The last line is progress its command will overwrite ({@link #appendProgress}). */
     private boolean transientTail;
@@ -196,7 +201,13 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** Shown while a build or a long logged command runs; hidden, the indicator also stops animating. */
     private void showBusy() {
-        RunPanel.showSpinner(busy, buildRunning || logRunning);
+        running.set(buildRunning || logRunning);
+        RunPanel.showSpinner(busy, running.get());
+    }
+
+    /** True while this tab's build or long logged command runs — {@link BuildOutputPanel} spins its tab title. */
+    public ReadOnlyBooleanProperty runningProperty() {
+        return running.getReadOnlyProperty();
     }
 
     private void showStop(boolean show) {

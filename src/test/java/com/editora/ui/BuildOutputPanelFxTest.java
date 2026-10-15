@@ -59,12 +59,16 @@ class BuildOutputPanelFxTest {
     /** Whether {@code owner}'s console tab is showing its header spinner. Call on the FX thread. */
     private static boolean spinning(BuildOutputPanel p, Object owner) {
         java.util.Map<Object, BuildToolPanel> consoles = FxTestSupport.field(p, "consoles");
+        java.util.Map<Object, Tab> tabs = FxTestSupport.field(p, "tabs");
         ProgressIndicator busy = FxTestSupport.field(consoles.get(owner), "busy");
-        return busy.isVisible() && busy.isManaged();
+        boolean header = busy.isVisible() && busy.isManaged();
+        boolean title = tabs.get(owner).getGraphic() instanceof ProgressIndicator;
+        assertEquals(header, title, "the tab title spins exactly when the console header does");
+        return header;
     }
 
     @Test
-    void eachTabSpinsOnlyWhileItsOwnBuildOrCommandRuns() throws Exception {
+    void eachTabAndItsTitleSpinOnlyWhileItsOwnBuildOrCommandRuns() throws Exception {
         FxTestSupport.runOnFx(() -> {
             BuildOutputPanel p = new BuildOutputPanel();
             p.started(MAVEN, "Maven", "mvn verify", OutputStyle.passthrough(), () -> {});
