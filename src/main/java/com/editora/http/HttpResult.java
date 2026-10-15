@@ -30,10 +30,42 @@ public record HttpResult(
         List<String> warnings,
         byte[] rawBody,
         boolean truncated,
-        List<String> written) {
+        List<String> written,
+        String protocol) {
 
     public HttpResult {
         written = written == null ? List.of() : List.copyOf(written);
+    }
+
+    /**
+     * A result with the files its redirects saved and no known protocol version. {@code protocol} is the version the
+     * response arrived over ({@code HTTP/1.1}, {@code HTTP/2}), or null when unknown.
+     */
+    public HttpResult(
+            int status,
+            List<String[]> headers,
+            String body,
+            String contentType,
+            long elapsedMs,
+            long sizeBytes,
+            String error,
+            List<String> warnings,
+            byte[] rawBody,
+            boolean truncated,
+            List<String> written) {
+        this(
+                status,
+                headers,
+                body,
+                contentType,
+                elapsedMs,
+                sizeBytes,
+                error,
+                warnings,
+                rawBody,
+                truncated,
+                written,
+                null);
     }
 
     /** A result whose request saved nothing to disk. */
@@ -111,10 +143,35 @@ public record HttpResult(
             List<String> warnings,
             boolean truncated,
             List<String> written) {
+        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, written, null);
+    }
+
+    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean, List)}, with the protocol version. */
+    public static HttpResult ofBytes(
+            int status,
+            List<String[]> headers,
+            byte[] raw,
+            String contentType,
+            long elapsedMs,
+            List<String> warnings,
+            boolean truncated,
+            List<String> written,
+            String protocol) {
         byte[] bytes = raw == null ? new byte[0] : raw;
-        String text = looksBinary(bytes, contentType) ? "" : new String(bytes, charsetOf(contentType));
+        String text = looksBinary(bytes, contentType) ? "" : new String(bytes, charsetOf(contentType, bytes));
         return new HttpResult(
-                status, headers, text, contentType, elapsedMs, bytes.length, null, warnings, bytes, truncated, written);
+                status,
+                headers,
+                text,
+                contentType,
+                elapsedMs,
+                bytes.length,
+                null,
+                warnings,
+                bytes,
+                truncated,
+                written,
+                protocol);
     }
 
     /** A request that never produced a response (not sent, connection failure, cancelled). */
@@ -138,12 +195,70 @@ public record HttpResult(
 
     /** The {@code charset=} of a Content-Type, defaulting to UTF-8 when absent or unknown. */
     static Charset charsetOf(String contentType) {
-        String name = charsetName(contentType);
+        return forName(charsetName(contentType));
+    }
+
+    /**
+     * The charset to decode {@code bytes} with: the Content-Type's {@code charset=}; else, for HTML, a
+     * {@code <meta charset>} / {@code <meta http-equiv content="…charset=…">} near the start, and for XML the
+     * prolog's {@code encoding=}; else UTF-8.
+     */
+    static Charset charsetOf(String contentType, byte[] bytes) {
+        String declared = charsetName(contentType);
+        if (declared != null) {
+            return forName(declared);
+        }
+        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (bytes != null && (ct.contains("html") || ct.contains("xml"))) {
+            // The prolog and <meta> are ASCII in every charset a server would declare this way.
+            String head =
+                    new String(bytes, 0, Math.min(bytes.length, SNIFF_CHARSET_BYTES), StandardCharsets.ISO_8859_1);
+            java.util.regex.Matcher m = (ct.contains("html") ? META_CHARSET : XML_ENCODING).matcher(head);
+            if (m.find()) {
+                return forName(m.group(1));
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    private static Charset forName(String name) {
         try {
             return name == null ? StandardCharsets.UTF_8 : Charset.forName(name);
         } catch (RuntimeException e) {
             return StandardCharsets.UTF_8;
         }
+    }
+
+    /** How far into an HTML/XML body the charset declaration is looked for (HTML requires it in the first 1024). */
+    private static final int SNIFF_CHARSET_BYTES = 2048;
+
+    private static final java.util.regex.Pattern META_CHARSET =
+            java.util.regex.Pattern.compile("(?i)<meta[^>]+charset\\s*=\\s*[\"']?\\s*([A-Za-z0-9._:-]+)");
+
+    private static final java.util.regex.Pattern XML_ENCODING =
+            java.util.regex.Pattern.compile("^\\s*<\\?xml[^>]*?encoding\\s*=\\s*[\"']([A-Za-z0-9._:-]+)[\"']");
+
+    /** Media types that are never text, whatever their bytes look like. */
+    private static boolean binaryType(String ct) {
+        return ct.startsWith("image/") && !ct.contains("svg")
+                || ct.startsWith("audio/")
+                || ct.startsWith("video/")
+                || ct.startsWith("font/")
+                || ct.startsWith("application/octet-stream")
+                || ct.startsWith("application/zip")
+                || ct.startsWith("application/gzip")
+                || ct.startsWith("application/x-gzip")
+                || ct.startsWith("application/x-tar")
+                || ct.startsWith("application/x-7z")
+                || ct.startsWith("application/pdf")
+                || ct.startsWith("application/protobuf")
+                || ct.startsWith("application/x-protobuf")
+                || ct.startsWith("application/grpc")
+                || ct.startsWith("application/msgpack")
+                || ct.startsWith("application/cbor")
+                || ct.startsWith("application/wasm")
+                || ct.startsWith("application/vnd.ms-excel")
+                || ct.startsWith("application/vnd.openxmlformats");
     }
 
     private static String charsetName(String contentType) {
@@ -166,16 +281,21 @@ public record HttpResult(
     }
 
     /**
-     * Whether {@code bytes} are not text: no declared charset, not a textual media type, and a NUL byte near
-     * the start. A declared charset wins (UTF-16 text is full of NULs).
+     * Whether {@code bytes} are not text: no declared charset and not a textual media type, and either a media
+     * type that is never text (an image, {@code application/octet-stream}, a PDF, …) or a NUL byte near the
+     * start. A declared charset wins (UTF-16 text is full of NULs).
      */
     static boolean looksBinary(byte[] bytes, String contentType) {
         if (charsetName(contentType) != null) {
             return false;
         }
-        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        String ct =
+                contentType == null ? "" : contentType.toLowerCase(Locale.ROOT).strip();
         if (ct.startsWith("text/") || ct.contains("json") || ct.contains("xml") || ct.contains("javascript")) {
             return false;
+        }
+        if (binaryType(ct)) {
+            return true;
         }
         int n = Math.min(bytes.length, SNIFF_BYTES);
         for (int i = 0; i < n; i++) {

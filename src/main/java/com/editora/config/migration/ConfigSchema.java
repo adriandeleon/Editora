@@ -8,6 +8,7 @@ import com.editora.config.BookmarkStore;
 import com.editora.config.BreakpointStore;
 import com.editora.config.ConnectionStore;
 import com.editora.config.HistoryStore;
+import com.editora.config.HttpResponseHistory;
 import com.editora.config.MacroStore;
 import com.editora.config.NoteStore;
 import com.editora.config.PluginStore;
@@ -315,7 +316,9 @@ public enum ConfigSchema {
     MACROS(MacroStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::macrosGainIds)),
     ABBREVIATIONS(AbbrevStore.SCHEMA_VERSION, 1, Map.of()),
     /** Trusted workspace roots. Failing open to defaults (= nothing trusted) is the safe direction here. */
-    TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of());
+    TRUST(TrustStore.SCHEMA_VERSION, 1, Map.of()),
+    /** One file per {@code .http} file: its chosen environment and last responses (HTTP Client). */
+    HTTP_HISTORY(HttpResponseHistory.SCHEMA_VERSION, 1, Map.of());
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

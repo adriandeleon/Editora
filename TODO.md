@@ -1451,6 +1451,12 @@ A backlog of planned features and improvements. Unordered within each section.
       (`$random`/`$datetime` with date math/`$dotenv`), request chaining, multipart + external-file bodies,
       environment files (`http-client.env.json` + `$shared`), Basic/Digest auth, auto URL-encoding,
       response-to-file, per-request directives, run-whole-file
+- [ ] HTTP Client — JetBrains gaps left by the 2026-10 review (the review's 55 findings are fixed): response
+      assertions / capture (a small `# @assert` / `# @capture` DSL on `JsonPath` before any JavaScript engine),
+      WebSocket / GraphQL / SSE streaming, OAuth 2.0 (`{{$auth.token}}`), TLS options (`SSLConfiguration`: skip
+      verification, client certificates) and a proxy setting, a persistent cookie jar, `{{` variable / env-name
+      completion and an unresolved-variable mark in the editor, compare with a previous response, a running
+      state on the gutter ▶, Postman / OpenAPI import, and a headless `--http-run` for CI
 - [x] HTML Live Preview — a floating browser icon on `.html`/`.htm`/`.xhtml` files opens them in a detected
       browser (Safari/Chrome/Firefox/Edge/system default) served over a loopback JDK `HttpServer`, with
       live-as-you-type reload (assets load from disk; the page from the live buffer text); off by default

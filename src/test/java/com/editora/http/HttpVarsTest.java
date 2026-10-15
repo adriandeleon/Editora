@@ -1,7 +1,7 @@
 package com.editora.http;
 
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Unit tests for the pure {@code {{variable}}} substitution. */
 class HttpVarsTest {
 
-    private static final LocalDateTime CLOCK = LocalDateTime.of(2026, 6, 10, 9, 30, 0);
+    private static final ZonedDateTime CLOCK = ZonedDateTime.of(2026, 6, 10, 9, 30, 0, 0, ZoneOffset.UTC);
 
     @Test
     void substitutesNamedVariables() {
@@ -29,7 +29,7 @@ class HttpVarsTest {
 
     @Test
     void builtinTimestampUsesTheClock() {
-        long expected = CLOCK.toEpochSecond(ZoneOffset.UTC);
+        long expected = CLOCK.toEpochSecond();
         assertEquals(String.valueOf(expected), HttpVars.substitute("{{$timestamp}}", Map.of(), CLOCK));
     }
 
@@ -46,7 +46,7 @@ class HttpVarsTest {
         List<String[]> fileVars = List.of(
                 new String[] {"base", "{{host}}/v1"}, // references an env var
                 new String[] {"users", "{{base}}/users"}); // references an earlier @var
-        Map<String, String> resolved = HttpVars.resolve(env, fileVars, CLOCK);
+        Map<String, String> resolved = HttpVars.resolve(env, fileVars, CLOCK, null);
         assertEquals("https://api.test/v1", resolved.get("base"));
         assertEquals("https://api.test/v1/users", resolved.get("users"));
     }

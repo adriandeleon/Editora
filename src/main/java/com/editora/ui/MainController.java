@@ -895,7 +895,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator
                 .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
-        httpClient.applySupport(); // .http run glyphs + response window off when disabled (default)
+        httpClient.applySupport(); // .http run glyphs + response preview (off when disabled or in Simple UI mode)
         htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
@@ -5993,6 +5993,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             }
         }
+
+        @Override
+        public boolean runHttpFile(EditorBuffer buffer) {
+            httpClient.runFile(); // the active buffer — the one "Run File" was asked for
+            return true;
+        }
     });
 
     /** Builds IntelliJ-style Test Results from recognized build-tool test runs. */
@@ -6258,14 +6264,25 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void persistEnvironment(String env) {
-                    config.getWorkspaceState().setHttpEnvironment(env);
-                    config.save();
+                public com.editora.config.HttpResponseHistory historyStore() {
+                    return config.shared().httpHistory();
+                }
+
+                @Override
+                public Path projectRoot() {
+                    Project active =
+                            (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
+                    return active == null ? null : active.rootPath();
                 }
 
                 @Override
                 public HistoryCoordinator history() {
                     return historyCoordinator;
+                }
+
+                @Override
+                public boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
+                    return confirmHttpSecretReads(file, hosts, reads);
                 }
             });
 
@@ -6662,6 +6679,37 @@ public class MainController implements com.editora.mcp.McpBridge {
         confirm.setHeaderText(tr("dialog.mavenProject.trustHeader", archetype.artifactId()));
         confirm.getDialogPane().setMinWidth(520);
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == proceed;
+    }
+
+    /**
+     * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads}
+     * ({@code $processEnv.X} / {@code $dotenv.X}) runs only from a trusted folder, the same trust store as build
+     * wrappers. Asked about the open project when the file is inside it, else the file's own folder.
+     */
+    private boolean confirmHttpSecretReads(Path file, List<String> hosts, List<String> reads) {
+        Path dir = file.toAbsolutePath().getParent();
+        if (config.getTrustStore().isTrusted(dir)) {
+            return true;
+        }
+        Path project = projectRoot();
+        Path root = project != null && dir.startsWith(project.toAbsolutePath()) ? project.toAbsolutePath() : dir;
+        Path name = root.getFileName();
+        ButtonType trust = new ButtonType(tr("dialog.httpTrust.accept"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING,
+                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString()),
+                ButtonType.CANCEL,
+                trust);
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.trust.title"));
+        confirm.setHeaderText(tr("dialog.httpTrust.header", name == null ? root.toString() : name.toString()));
+        confirm.getDialogPane().setMinWidth(520);
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != trust) {
+            return false;
+        }
+        config.getTrustStore().trust(root);
+        saveTrustDecision(); // durable: a security decision must survive a crash
+        return true;
     }
 
     private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
@@ -7562,6 +7610,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
+        buffer.setHttpRunAllHandler(httpClient::runFile); // .http editor menu → Run All Requests (active buffer)
+        buffer.setHttpRunTooltip(() -> ChordHint.tr(keymap, "editmenu.runHttpRequest.tip", "http.runRequest"));
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool

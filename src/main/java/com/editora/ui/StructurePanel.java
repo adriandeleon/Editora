@@ -1094,6 +1094,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer.isTypst()) {
             return typstHeadingNodes(area.getText());
         }
+        if (buffer.isHttpFile()) {
+            return httpRequestNodes(area.getText());
+        }
         int paras = area.getParagraphs().size();
         List<Region> regions =
                 new ArrayList<>(new LinkedHashSet<>(buffer.getFoldManager().regions()));
@@ -1298,6 +1301,17 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * sections showed one entry reading {@code #align()}. Sections are what a Typst document is navigated
      * by, and nothing else in the outline was worth keeping alongside them.
      */
+    /** One node per request of a {@code .http} file: its name (when it has one) and method + URL. */
+    private static List<StructureNode> httpRequestNodes(String text) {
+        List<StructureNode> roots = new ArrayList<>();
+        for (com.editora.http.HttpFile.Request r : com.editora.http.HttpFile.parse(text)) {
+            String call = r.method() + " " + r.url();
+            String label = r.name() == null || r.name().isBlank() ? call : r.name() + " — " + call;
+            roots.add(new StructureNode(null, label, "method", r.startLine()));
+        }
+        return roots;
+    }
+
     private static List<StructureNode> typstHeadingNodes(String text) {
         List<StructureNode> roots = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();

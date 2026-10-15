@@ -502,14 +502,11 @@ class WindowOpsFxTest {
             assertSame(explained, active());
 
             assertEquals(config.getWorkspaceState().getHttpEnvironment(), http.savedEnvironment());
-            http.persistEnvironment("staging");
-            assertEquals("staging", http.savedEnvironment());
+            assertSame(config.shared().httpHistory(), http.historyStore());
             EditorBuffer response = new EditorBuffer();
             http.openTab(response);
             assertSame(response, active());
         });
-        assertTrue(
-                Files.readString(fx.configDir.resolve("workspace-state.json")).contains("staging"));
     }
 
     // --- Doctor, builds, new Maven project -------------------------------------------------------

@@ -149,11 +149,80 @@ class ResponseRedirectsTest {
         write(">> kept.txt\n>> new/created.txt", 200, "body", false, guard(ResponseRedirects.Verdict.KEPT_IN_HISTORY));
 
         assertEquals("kept", Files.readString(existing));
+        assertEquals("body", Files.readString(dir.resolve("kept-1.txt")), "a taken name gets the next numbered copy");
         assertEquals("body", Files.readString(dir.resolve("new/created.txt")));
         assertTrue(guarded.isEmpty());
-        assertEquals(List.of("response saved to new/created.txt"), written);
-        assertEquals(1, warnings.size());
-        assertTrue(warnings.get(0).contains("kept.txt") && warnings.get(0).contains("already exists"), warnings.get(0));
+        assertEquals(2, written.size(), written.toString());
+        assertTrue(written.get(0).startsWith("response saved to kept-1.txt")
+                && written.get(0).contains("kept.txt"));
+        assertEquals("response saved to new/created.txt", written.get(1));
+        assertTrue(warnings.isEmpty(), warnings.toString());
+    }
+
+    @Test
+    void numberedCopiesCountUpAndKeepTheExtensionAndFolder() throws Exception {
+        Files.createDirectories(dir.resolve("out"));
+        Files.writeString(dir.resolve("out/r.json"), "0");
+        Files.writeString(dir.resolve("out/r-1.json"), "1");
+        Files.writeString(dir.resolve("noext"), "x");
+
+        write(">> out/r.json\n>> noext", 200, "new", false, null);
+
+        assertEquals("new", Files.readString(dir.resolve("out/r-2.json")));
+        assertEquals("1", Files.readString(dir.resolve("out/r-1.json")));
+        assertEquals("new", Files.readString(dir.resolve("noext-1")));
+        assertTrue(written.get(0).startsWith("response saved to out/r-2.json"), written.get(0));
+    }
+
+    @Test
+    void variablesInTheTargetPathAreFilledInBeforeContainment() throws Exception {
+        java.util.Map<String, String> vars = java.util.Map.of("out", "results", "id", "42", "up", "..");
+        java.util.function.Function<String, String> sub =
+                s -> HttpVars.substitute(s, vars, java.time.LocalDateTime.now());
+        ResponseRedirects.write(
+                redirects("GET http://x.test/\n\n>> {{out}}/r-{{id}}.json\n>> {{up}}/escape.txt\n"),
+                dir,
+                200,
+                "body".getBytes(UTF_8),
+                false,
+                null,
+                written,
+                warnings,
+                sub,
+                () -> false);
+
+        assertEquals("body", Files.readString(dir.resolve("results/r-42.json")));
+        assertFalse(Files.exists(dir.resolve("{{out}}")), "no literal {{out}} folder");
+        assertEquals(List.of("response saved to results/r-42.json"), written);
+        assertFalse(Files.exists(dir.resolveSibling("escape.txt")));
+        assertTrue(warnings.get(0).contains("../escape.txt"), warnings.get(0));
+    }
+
+    @Test
+    void aCancelledRunWritesNothingEvenWhenTheCancelArrivesDuringTheGuard() throws Exception {
+        Path out = Files.writeString(dir.resolve("out.txt"), "previous");
+        boolean[] cancelled = {false};
+        ResponseRedirects.Guard slowGuard = target -> {
+            cancelled[0] = true; // the user presses Cancel while Local History is recording
+            return ResponseRedirects.Decision.of(ResponseRedirects.Verdict.NOT_KEPT);
+        };
+        ResponseRedirects.write(
+                redirects("GET http://x.test/\n\n>>! out.txt\n>> fresh.txt\n"),
+                dir,
+                200,
+                "new".getBytes(UTF_8),
+                false,
+                slowGuard,
+                written,
+                warnings,
+                null,
+                () -> cancelled[0]);
+
+        assertEquals("previous", Files.readString(out));
+        assertFalse(Files.exists(dir.resolve("fresh.txt")));
+        assertTrue(written.isEmpty(), written.toString());
+        assertEquals(2, warnings.size(), warnings.toString());
+        assertTrue(warnings.get(0).contains("cancelled") && warnings.get(1).contains("cancelled"), warnings.toString());
     }
 
     @Test

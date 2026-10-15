@@ -10,6 +10,8 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 /**
  * Writes a response body to the request's {@code >>} / {@code >>!} targets, and says what it did.
@@ -18,8 +20,11 @@ import java.util.List;
  * writes to disk on its own, so the rules are deliberately narrow:
  *
  * <ul>
- *   <li>{@code >> file} creates the file and never touches an existing one (exclusive create, so a file that
- *       appears between the check and the write is safe too).
+ *   <li>{@code >> file} creates the file and never touches an existing one: when the name is taken it writes
+ *       {@code file-1.ext}, {@code file-2.ext}, … instead, as the JetBrains client does (exclusive create, so a
+ *       file that appears between the check and the write is safe too).
+ *   <li>The path may use {@code {{variables}}}; they are filled in before the containment check.
+ *   <li>A run the user cancelled writes nothing, also when the cancel arrives while the guard is deciding.
  *   <li>{@code >>! file} may replace an existing file, but only with a complete, successful response: an error
  *       status or a body that was cut short (size cap, deadline) leaves the file alone. Before the replace the
  *       {@link Guard} is asked to preserve the previous content (Local History); a refusal leaves the file
@@ -94,15 +99,42 @@ public final class ResponseRedirects {
             Guard guard,
             List<String> written,
             List<String> warnings) {
+        write(redirects, baseDir, status, body, truncated, guard, written, warnings, Function.identity(), () -> false);
+    }
+
+    /**
+     * As {@link #write(List, Path, int, byte[], boolean, Guard, List, List)}, with {@code sub} filling in the
+     * {@code {{variables}}} of each target path, and {@code cancelled} telling a run the user cancelled — it
+     * writes nothing from then on.
+     */
+    static void write(
+            List<HttpFile.Redirect> redirects,
+            Path baseDir,
+            int status,
+            byte[] body,
+            boolean truncated,
+            Guard guard,
+            List<String> written,
+            List<String> warnings,
+            Function<String, String> sub,
+            BooleanSupplier cancelled) {
         if (baseDir == null || redirects == null) {
             return;
         }
         byte[] bytes = body == null ? new byte[0] : body;
         Guard effective = guard == null ? Guard.UNPROTECTED : guard;
+        Function<String, String> fill = sub == null ? Function.identity() : sub;
+        BooleanSupplier stop = cancelled == null ? () -> false : cancelled;
         for (HttpFile.Redirect redirect : redirects) {
-            String shown = redirect.path() == null ? "" : redirect.path().strip();
+            String path =
+                    redirect.path() == null ? "" : fill.apply(redirect.path()).strip();
+            String shown = path;
+            if (stop.getAsBoolean()) {
+                warnings.add("response not saved to " + shown + ": the request was cancelled");
+                continue;
+            }
             try {
-                Path target = HttpPaths.containedForWrite(baseDir, redirect.path());
+                Path target = HttpPaths.containedForWrite(baseDir, path);
                 if (target == null) {
                     // a ">> ../../x" (or a symlink) must not write outside the request file's folder
                     warnings.add("response not saved to " + shown
@@ -110,7 +142,7 @@ public final class ResponseRedirects {
                     continue;
                 }
                 shown = display(baseDir, target);
-                Line line = writeOne(target, shown, redirect.force(), status, bytes, truncated, effective);
+                Line line = writeOne(target, shown, redirect.force(), status, bytes, truncated, effective, stop);
                 (line.written() ? written : warnings).add(line.text());
             } catch (IOException | RuntimeException failure) {
                 // a failed redirect write never aborts the response — but it is reported
@@ -131,13 +163,24 @@ public final class ResponseRedirects {
     }
 
     private static Line writeOne(
-            Path target, String shown, boolean force, int status, byte[] body, boolean truncated, Guard guard)
+            Path target,
+            String shown,
+            boolean force,
+            int status,
+            byte[] body,
+            boolean truncated,
+            Guard guard,
+            BooleanSupplier cancelled)
             throws IOException {
         if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            return createNew(target, shown, body);
+            Line created = createNew(target, shown, body);
+            if (created.written() || force) {
+                return created;
+            }
+            // a file appeared there since the check: fall through to the numbered name
         }
         if (!force) {
-            return Line.skipped("response not saved to " + shown + ": the file already exists (>>! replaces it)");
+            return createNumbered(target, shown, body);
         }
         if (truncated) {
             return Line.skipped(shown + " not replaced: the response is incomplete");
@@ -148,6 +191,9 @@ public final class ResponseRedirects {
         Decision decision = guard.beforeOverwrite(target);
         if (decision == null) {
             decision = Decision.of(Verdict.REFUSED_NOT_PRESERVED);
+        }
+        if (cancelled.getAsBoolean()) {
+            return Line.skipped(shown + " not replaced: the request was cancelled");
         }
         if (!decision.allowed()) {
             return Line.skipped(
@@ -176,6 +222,35 @@ public final class ResponseRedirects {
                     "response not saved to " + shown + ": a file appeared there while the request was running");
         }
         return Line.saved("response saved to " + shown);
+    }
+
+    /** The most numbered siblings tried for a {@code >>} onto a taken name before giving up. */
+    private static final int MAX_NUMBERED = 1000;
+
+    /**
+     * {@code >>} onto an existing file: writes {@code name-1.ext}, {@code name-2.ext}, … — the first that does not
+     * exist — and never touches the original.
+     */
+    private static Line createNumbered(Path target, String shown, byte[] body) throws IOException {
+        String name = target.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        String ext = dot > 0 ? name.substring(dot) : "";
+        for (int n = 1; n <= MAX_NUMBERED; n++) {
+            Path candidate = target.resolveSibling(stem + "-" + n + ext);
+            if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
+                continue;
+            }
+            try {
+                Files.write(candidate, body, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            } catch (FileAlreadyExistsException appeared) {
+                continue;
+            }
+            String parent = shown.lastIndexOf('/') >= 0 ? shown.substring(0, shown.lastIndexOf('/') + 1) : "";
+            return Line.saved("response saved to " + parent + candidate.getFileName() + " (" + shown
+                    + " already exists; >>! replaces it)");
+        }
+        return Line.skipped("response not saved to " + shown + ": the file and its numbered copies already exist");
     }
 
     /**
