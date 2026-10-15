@@ -241,6 +241,52 @@ class RealSshdProbeFxTest {
             return r.out().strip().replace('\n', ' ');
         });
 
+        step("what the login profile exports reaches commands", () -> {
+            ProcessRunner.Result login = ProcessRunner.run(
+                    app,
+                    Duration.ofSeconds(30),
+                    List.of("sh", "-c", "exec \"${SHELL:-/bin/sh}\" -l -i -c env </dev/null 2>/dev/null"));
+            ProcessRunner.Result ours = ProcessRunner.run(app, Duration.ofSeconds(30), List.of("env"));
+            Map<String, String> theirs = new LinkedHashMap<>();
+            for (String line : login.out().split("\n")) {
+                int eq = line.indexOf('=');
+                if (eq > 0 && line.substring(0, eq).matches("[A-Z][A-Z0-9_]*")) {
+                    theirs.put(line.substring(0, eq), line.substring(eq + 1));
+                }
+            }
+            List<String> missing = new ArrayList<>();
+            java.util.Set<String> session = java.util.Set.of(
+                    "PWD",
+                    "OLDPWD",
+                    "SHLVL",
+                    "PS1",
+                    "PS2",
+                    "PS4",
+                    "TERM",
+                    "COLUMNS",
+                    "LINES",
+                    "MAIL",
+                    "DISPLAY",
+                    "LS_COLORS",
+                    "LANG",
+                    "LANGUAGE",
+                    "PATH",
+                    "_");
+            for (var e : theirs.entrySet()) {
+                String name = e.getKey();
+                boolean sessionOwn = session.contains(name)
+                        || java.util.stream.Stream.of("SSH_", "BASH_", "LC_", "HIST", "XDG_SESSION")
+                                .anyMatch(name::startsWith);
+                if (!sessionOwn && !ours.out().contains(name + "=" + e.getValue())) {
+                    missing.add(name);
+                }
+            }
+            check(missing.isEmpty(), "a command lacks what the login shell has: " + missing);
+            return theirs.containsKey("JAVA_HOME")
+                    ? "JAVA_HOME=" + theirs.get("JAVA_HOME")
+                    : theirs.size() + " variables";
+        });
+
         step("arguments survive quoting", () -> {
             String tricky = "a 'quoted' \"double\" $HOME `x` ä; rm -rf /tmp/nothing";
             ProcessRunner.Result r = ProcessRunner.run(app, Duration.ofSeconds(30), List.of("printf", "%s", tricky));
