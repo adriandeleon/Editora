@@ -348,6 +348,12 @@ Apache MINA SSHD — org.apache.sshd:sshd-osgi, org.apache.sshd:sshd-sftp
     https://mina.apache.org/sshd-project/
     https://www.apache.org/licenses/LICENSE-2.0
 
+Bouncy Castle Crypto APIs — org.bouncycastle:bcprov-jdk18on
+    The EdDSA (ed25519) support Apache MINA SSHD uses for ed25519 keys and host
+    keys. Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc.
+    (https://www.bouncycastle.org). Licensed under the MIT License.
+    https://www.bouncycastle.org/licence.html
+
 Simple Icons (browser + file-type glyphs)
     The Chrome, Firefox, and Microsoft Edge glyphs in the HTML Live Preview
     browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the

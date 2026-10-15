@@ -195,6 +195,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
+  default — failed with "No more authentication methods available", and a server offering only an ed25519
+  host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.
 - **A remote connection that goes silent is noticed.** Editora asks the server "are you there?" every 30 s
   and now gives up after three unanswered asks (about a minute and a half), so a network that drops packets
   instead of refusing them no longer leaves a window holding a dead folder until TCP times out.

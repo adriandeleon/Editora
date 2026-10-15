@@ -107,6 +107,14 @@ needed): RichTextFX & friends, tm4e core, **PDFBox** (`pdfbox`/`pdfbox-io`/`font
   The package set of 2.20.0 is identical to 2.16.0's, so the descriptor needed no change; the bump has
   not yet been exercised by a `-Pdist` jlink build on every platform or by the native-image lane.
 
+- **Bouncy Castle** (`bcprov-jdk18on`) is there for MINA SSHD's ed25519 alone: MINA has no EdDSA of its
+  own and does not use the JDK's, and enables `ssh-ed25519` keys and host keys only when Bouncy Castle (or
+  the unmaintained `net.i2p.crypto:eddsa`, which has CVE-2020-36843) is on the module path. It is a real
+  module (`org.bouncycastle.provider`, ~7 MB). Editora's `module-info` requires it so it is resolved, and the
+  sshd descriptor `requires static` it so MINA's Bouncy Castle classes can link. Its jar is signed: `-Pdist`
+  strips the signature like tm4e's and lsp4j's (OpenJDK does not require a signed provider, and MINA calls
+  its EdDSA classes directly). `RemoteFileSystemsEd25519FxTest` pins the support.
+
 If you add a dependency that turns out to be an automatic module, expect to add a moditect entry.
 
 ## Bundled fonts & grammars

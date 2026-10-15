@@ -61,6 +61,9 @@ module com.editora {
     // Automatic modules — moditect injects descriptors for the jlink dist build.
     requires org.apache.sshd.osgi;
     requires org.apache.sshd.sftp;
+    // Bouncy Castle, for MINA SSHD's ed25519 (keys and host keys). Editora does not use it itself; required
+    // here so the module is resolved at run time — MINA only reaches it by name.
+    requires org.bouncycastle.provider;
 
     opens com.editora to
             javafx.fxml;
