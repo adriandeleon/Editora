@@ -65,12 +65,16 @@ final class ExtendedWindow {
      *
      * <p>The menu bar is marked {@link HeaderDragType#NONE}: a header is draggable by default, and a menu
      * bar that begins a window drag instead of opening its menu is unusable.
+     *
+     * <p>The title is {@link HeaderDragType#DRAGGABLE_SUBTREE}, not {@code DRAGGABLE}: the latter covers only
+     * the label itself, and a press on the words lands on the skin's text node inside it, which then blocks
+     * the drag — the window moved from the gaps around the title but not from the title.
      */
     static HeaderBar header(Node menuBar, Stage stage) {
         Label title = new Label();
         title.getStyleClass().add("window-header-title");
         title.textProperty().bind(stage.titleProperty());
-        HeaderBar.setDragType(title, HeaderDragType.DRAGGABLE);
+        HeaderBar.setDragType(title, HeaderDragType.DRAGGABLE_SUBTREE);
         HeaderBar.setDragType(menuBar, HeaderDragType.NONE);
 
         HeaderBar header = new HeaderBar();
