@@ -1,16 +1,11 @@
 package com.editora.http;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** How the two environment files combine, and how nested values are reached (the JetBrains rules). */
@@ -52,15 +47,7 @@ class HttpEnvMergeTest {
     }
 
     @Test
-    void theNearestFolderWithAnEnvFileApplies(@TempDir Path root) throws IOException {
-        Path sub = Files.createDirectories(root.resolve("api/v1"));
-        assertNull(HttpEnv.findEnvDir(sub, root));
-        Files.writeString(root.resolve(HttpEnv.PRIVATE_FILE), "{}");
-        assertEquals(root.toAbsolutePath().normalize(), HttpEnv.findEnvDir(sub, root));
-        Files.writeString(root.resolve("api").resolve(HttpEnv.PUBLIC_FILE), "{}");
-        assertEquals(root.resolve("api").toAbsolutePath().normalize(), HttpEnv.findEnvDir(sub, root));
-        // Never above the stop folder.
-        assertNull(HttpEnv.findEnvDir(sub, sub));
+    void noFilesMeanNoVariables() {
         assertTrue(HttpEnv.merged(null, null, "dev").isEmpty());
     }
 }

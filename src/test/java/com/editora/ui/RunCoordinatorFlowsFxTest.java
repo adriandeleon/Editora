@@ -213,6 +213,14 @@ class RunCoordinatorFlowsFxTest {
         public void runGradleRunTask(Path r) {
             gradleRuns.add(r.toString());
         }
+
+        final List<String> httpRuns = new ArrayList<>();
+
+        @Override
+        public boolean runHttpFile(EditorBuffer b) {
+            httpRuns.add(String.valueOf(b.getPath().getFileName()));
+            return true;
+        }
     }
 
     private Host host;
@@ -353,6 +361,18 @@ class RunCoordinatorFlowsFxTest {
         assertEquals(List.of(tr("status.run.notCompact"), tr("status.run.notCompact")), statuses());
         assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
         assertEquals(tr("run.idle"), panelStatus());
+    }
+
+    @Test
+    void runFileOnARequestFileSendsItsRequestsInsteadOfLaunchingJava() throws Exception {
+        // It used to run `java api.http` ("Could not find or load main class"): the requests make it runnable.
+        open("api.http", "### one\nGET http://127.0.0.1:1/\n", false);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.runOnFx(run::runActiveFileWithArgs);
+
+        assertEquals(List.of("api.http", "api.http"), ops.httpRuns);
+        assertEquals(0, ops.toolWindowOpened, "nothing was launched in the Run console");
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
     }
 
     @Test

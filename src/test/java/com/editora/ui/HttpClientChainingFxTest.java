@@ -189,9 +189,6 @@ class HttpClientChainingFxTest {
             return "";
         }
 
-        @Override
-        public void persistEnvironment(String env) {}
-
         /** The folder is trusted: these tests are about resolution, not the secrets gate. */
         @Override
         public boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {

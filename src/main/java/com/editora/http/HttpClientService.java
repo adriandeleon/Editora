@@ -264,15 +264,42 @@ public final class HttpClientService {
             Map<String, String> vars,
             Path baseDir,
             Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, new CapturedResponses(), onResult);
+        return runAll(requests, vars, baseDir, null, null, onResult);
     }
 
-    /** As {@link #runAll(List, Map, Path, Consumer)}, resolving and recording responses in {@code session}. */
+    /** As {@link #runAll(List, Map, Path, Consumer)}, resolving and recording responses in {@code responses}. */
     public Handle runAll(
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
             Path baseDir,
             CapturedResponses responses,
+            Consumer<List<HttpExchange>> onResult) {
+        return runAll(requests, vars, baseDir, responses, null, onResult);
+    }
+
+    /**
+     * As {@link #runAll(List, Map, Path, Consumer)}, telling {@code onStart} (on the FX thread, may be null)
+     * the index of each request as it starts, so the viewer can show "2 of 5" while the run is in flight.
+     */
+    public Handle runAll(
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            java.util.function.IntConsumer onStart,
+            Consumer<List<HttpExchange>> onResult) {
+        return runAll(requests, vars, baseDir, null, onStart, onResult);
+    }
+
+    /**
+     * Runs {@code requests} in order, resolving and recording responses in {@code responses} (the buffer's
+     * chaining session; a fresh one when null) and telling {@code onStart} each request's index as it starts.
+     */
+    public Handle runAll(
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses responses,
+            java.util.function.IntConsumer onStart,
             Consumer<List<HttpExchange>> onResult) {
         Handle handle = new Handle();
         active.add(handle);
@@ -281,6 +308,10 @@ public final class HttpClientService {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
                 for (HttpFile.Parsed req : requests) {
+                    if (onStart != null) {
+                        int index = out.size();
+                        Platform.runLater(() -> onStart.accept(index));
+                    }
                     HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session);
                     captured.put(req.name(), ex.result());
                     out.add(ex);

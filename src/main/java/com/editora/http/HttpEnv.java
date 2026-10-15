@@ -1,7 +1,5 @@
 package com.editora.http;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,8 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * {@code http-client.private.env.json}): JSON objects whose top-level keys are environment names
  * ({@code {"dev": {...}, "prod": {...}}}) plus the reserved {@code $shared} environment, whose variables every
  * environment inherits. It lists the environment names (for the picker) and builds the variables of the
- * selected one, which {@link HttpVars} then substitutes. Pure apart from {@link #findEnvDir} (which only
- * checks for the files), so it is unit-tested.
+ * selected one, which {@link HttpVars} then substitutes. Pure, so it is unit-tested.
  *
  * <p>JetBrains semantics: the private file overrides the public one, and a specific environment overrides
  * {@code $shared} — so the merge order, lowest first, is public {@code $shared}, private {@code $shared},
@@ -128,28 +125,5 @@ public final class HttpEnv {
             }
         }
         return names;
-    }
-
-    /**
-     * The folder whose environment files apply to a {@code .http} file in {@code start}: {@code start} itself
-     * when it holds either env file, else the nearest parent that does, looking no higher than {@code stop}
-     * (the project root; {@code null} means the filesystem root). {@code null} when there is none.
-     */
-    public static Path findEnvDir(Path start, Path stop) {
-        if (start == null) {
-            return null;
-        }
-        Path dir = start.toAbsolutePath().normalize();
-        Path limit = stop == null ? null : stop.toAbsolutePath().normalize();
-        while (dir != null) {
-            if (Files.isRegularFile(dir.resolve(PUBLIC_FILE)) || Files.isRegularFile(dir.resolve(PRIVATE_FILE))) {
-                return dir;
-            }
-            if (limit != null && (dir.equals(limit) || !dir.startsWith(limit))) {
-                return null;
-            }
-            dir = dir.getParent();
-        }
-        return null;
     }
 }

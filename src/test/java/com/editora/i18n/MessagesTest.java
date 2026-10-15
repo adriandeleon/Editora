@@ -383,8 +383,6 @@ class MessagesTest {
             Map.entry("run.exited", new int[] {0}),
             Map.entry("status.run.exit", new int[] {0}),
             Map.entry("status.build.exit", new int[] {1}),
-            Map.entry("status.http.failed", new int[] {0}),
-            Map.entry("httppanel.failed", new int[] {0}),
             Map.entry("lsp.peek.title", new int[] {1}),
             Map.entry("markdownLint.row", new int[] {0, 1}),
             Map.entry("mermaid.diagnosticLine", new int[] {0, 1}),

@@ -77,6 +77,7 @@ public final class FoldRegions {
                     "typescriptreact",
                     "dot" -> braces(text, Syntax.of(language));
             case "typst" -> typst(text);
+            case "http" -> http(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };
@@ -439,6 +440,36 @@ public final class FoldRegions {
      * front matter and a multi-line HTML comment fold, a setext heading opens a section like an ATX one, and
      * a {@code #} line in code or in a commented-out section opens none.
      */
+    /**
+     * A {@code .http} file folds per request: from its {@code ###} separator (or, for the first request, its
+     * request line) to the last non-blank line before the next one — the block JetBrains folds.
+     */
+    static List<Region> http(String text) {
+        List<Region> out = new ArrayList<>();
+        String[] lines = text.split("\n", -1);
+        for (com.editora.http.HttpFile.Request r : com.editora.http.HttpFile.parse(text)) {
+            int start = r.startLine();
+            if (start > 0 && lines[start - 1].strip().startsWith("###")) {
+                start--; // the separator (with its title) is the fold header
+            } else {
+                for (int k = start - 1; k >= 0; k--) {
+                    String t = lines[k].strip();
+                    if (t.startsWith("###")) {
+                        start = k; // comments/directives sit between the separator and the request line
+                        break;
+                    }
+                    if (!t.isEmpty() && !t.startsWith("#") && !t.startsWith("//")) {
+                        break;
+                    }
+                }
+            }
+            if (r.endLine() > start) {
+                out.add(new Region(start, r.endLine()));
+            }
+        }
+        return out;
+    }
+
     private static List<Region> markdown(String text) {
         com.editora.markdown.MarkdownBlocks blocks = com.editora.markdown.MarkdownBlocks.scan(text);
         int count = blocks.lineCount();

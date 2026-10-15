@@ -129,6 +129,7 @@ public class SharedConfig {
 
     private SearchHistory searchHistory;
     private AgentSessionHistory agentSessions;
+    private HttpResponseHistory httpHistory;
 
     /**
      * Whether the Local History index in memory can be collected against — false when it was lost, lists
@@ -792,6 +793,14 @@ public class SharedConfig {
             searchHistory = new SearchHistory(configDir, sinkFor(ConfigSchema.SEARCH_HISTORY), this::onLoadProblem);
         }
         return searchHistory;
+    }
+
+    /** The HTTP Client's per-{@code .http}-file history (environment + last responses), shared by every window. */
+    public HttpResponseHistory httpHistory() {
+        if (httpHistory == null) {
+            httpHistory = new HttpResponseHistory(configDir, sinkFor(ConfigSchema.HTTP_HISTORY), this::onLoadProblem);
+        }
+        return httpHistory;
     }
 
     /** The AI Agent chat-session history, shared like {@link #recentFiles()}. */

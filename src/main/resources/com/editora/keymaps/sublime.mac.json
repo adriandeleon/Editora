@@ -51,5 +51,6 @@
   "M-down": "edit.moveLineDown",
   "C-Cmd-S-right": "edit.expandSelection",
   "C-Cmd-S-left": "edit.shrinkSelection",
-  "Cmd-S-l": "edit.selectAllOccurrences"
+  "Cmd-S-l": "edit.selectAllOccurrences",
+  "M-Cmd-r": "http.runRequest"
 }
