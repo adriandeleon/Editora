@@ -149,6 +149,7 @@ final class MenuBarModel {
                                 "edit.expandSelection",
                                 "edit.shrinkSelection",
                                 "edit.selectAllOccurrences",
+                                "edit.splitSelectionIntoLines",
                                 SEPARATOR,
                                 "edit.toggleComment",
                                 "edit.duplicateLine",

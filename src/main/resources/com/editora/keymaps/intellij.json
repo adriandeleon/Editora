@@ -64,5 +64,7 @@
   "C-S-w": "edit.shrinkSelection",
   "C-M-r": "http.runRequest",
   "C-M-S-enter": "http.runFile",
-  "C-M-k": "http.cancelRequest"
+  "C-M-k": "http.cancelRequest",
+  "M-S-g": "edit.addCaretsToLineEnds",
+  "M-S-j": "edit.undoLastCaret"
 }

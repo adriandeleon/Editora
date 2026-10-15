@@ -68,5 +68,8 @@
   "M-Cmd-S-enter": "http.runFile",
   "M-Cmd-k": "http.cancelRequest",
   "M-Cmd-s": "file.saveAll",
-  "Cmd-S-t": "buffer.reopenClosed"
+  "Cmd-S-t": "buffer.reopenClosed",
+  "M-S-i": "edit.addCaretsToLineEnds",
+  "Cmd-k Cmd-d": "edit.skipOccurrence",
+  "Cmd-u": "edit.undoLastCaret"
 }
