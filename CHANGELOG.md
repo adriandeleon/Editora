@@ -192,8 +192,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
   cleared when the environment changes.
 - **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
-  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code), and Run All Requests to `C-c C-r` (Emacs)
-  and `Ctrl+Alt+Shift+R`; the ▶ tooltip names both. While a request runs its ▶ turns into a ■ that cancels it,
+  (VS Code, CUA, Sublime, IntelliJ), Run All Requests to `C-c C-r` (Emacs) and `Ctrl+Alt+Shift+Enter`
+  (`Option+Cmd+Shift+Enter` on macOS; GNOME keeps `Ctrl+Alt+Shift+R` for screen recording), and Cancel to
+  `C-c C-k` (Emacs) and `Ctrl+Alt+K` (`Option+Cmd+K` on macOS; the IntelliJ keymap on macOS keeps Control+Option);
+  the ▶ tooltip names both run chords. While a request runs its ▶ turns into a ■ that cancels it,
   and the "Running …" line shows the request with its variables filled in. Escape in the response view returns
   to the editor. Run File and the editor's context menu run the file's requests. `.http` files get request
   folding, one Structure entry per request, completion for methods and headers, a starter request in New File,

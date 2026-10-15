@@ -80,7 +80,8 @@ class HttpRedirectOverwriteFxTest {
             assertEquals("hand-written notes\n", historyBody(fx, target), "the replaced content is recoverable");
             String shown = FxTestSupport.callOnFx(() -> {
                 HttpClientCoordinator http = FxTestSupport.field(fx.controller, "httpClient");
-                TextArea head = FxTestSupport.field(http.panelForTest(request), "headersArea");
+                TextArea head =
+                        FxTestSupport.field(http.panelForTest(request), "notesArea"); // warnings + files written
                 return head.getText();
             });
             assertTrue(shown.contains("out.txt") && shown.contains("Local History"), shown);
@@ -102,7 +103,8 @@ class HttpRedirectOverwriteFxTest {
             assertEquals("saved draft", Files.readString(target), "the file under a dirty buffer is left alone");
             String shown = FxTestSupport.callOnFx(() -> {
                 HttpClientCoordinator http = FxTestSupport.field(fx.controller, "httpClient");
-                TextArea head = FxTestSupport.field(http.panelForTest(request), "headersArea");
+                TextArea head =
+                        FxTestSupport.field(http.panelForTest(request), "notesArea"); // warnings + files written
                 return head.getText();
             });
             assertTrue(shown.contains("draft.txt") && shown.contains("unsaved changes"), shown);

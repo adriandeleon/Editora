@@ -381,7 +381,40 @@ public final class HttpResponseHistory {
             all.removeIf(r -> r.at() <= out.clearedAt);
         }
         all.sort(java.util.Comparator.comparingLong(Response::at).reversed()); // stable: a Run All keeps its order
-        out.responses = new ArrayList<>(all.subList(0, Math.min(MAX_RESPONSES, all.size())));
+        out.responses = retain(all, MAX_RESPONSES);
+        return out;
+    }
+
+    /**
+     * {@code newestFirst} cut to at most {@code max} entries, keeping each request's newest entry first (its name,
+     * else its method and URL), so one long Run All cannot push out every other request's only response; the rest
+     * fills by time. The disk-side twin of {@code ui.HttpHistoryRetention}. Pure.
+     */
+    static List<Response> retain(List<Response> newestFirst, int max) {
+        if (newestFirst.size() <= max) {
+            return new ArrayList<>(newestFirst);
+        }
+        java.util.Set<Integer> chosen = new java.util.LinkedHashSet<>();
+        java.util.Set<String> requests = new java.util.HashSet<>();
+        for (int i = 0; i < newestFirst.size() && chosen.size() < max; i++) {
+            Response r = newestFirst.get(i);
+            String request = r.name() != null
+                    ? "name:" + r.name()
+                    : "url:" + (r.method() == null ? "" : r.method().toUpperCase(java.util.Locale.ROOT)) + " "
+                            + r.url();
+            if (requests.add(request)) {
+                chosen.add(i);
+            }
+        }
+        for (int i = 0; i < newestFirst.size() && chosen.size() < max; i++) {
+            chosen.add(i);
+        }
+        List<Response> out = new ArrayList<>(chosen.size());
+        for (int i = 0; i < newestFirst.size(); i++) {
+            if (chosen.contains(i)) {
+                out.add(newestFirst.get(i));
+            }
+        }
         return out;
     }
 

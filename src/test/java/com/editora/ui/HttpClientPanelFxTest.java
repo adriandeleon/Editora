@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -119,8 +120,13 @@ class HttpClientPanelFxTest {
         String shown = show(p, exchange("img", r));
         assertTrue(shown.contains("binary"), shown);
         assertTrue(shown.contains("truncated"), "a size-capped response says so in the body pane: " + shown);
-        String head = FxTestSupport.callOnFx(() -> ((TextArea) FxTestSupport.field(p, "headersArea")).getText());
-        assertTrue(head.startsWith("⚠  response truncated at 50 MB"), head);
+        String notes = FxTestSupport.callOnFx(p::notesForTest); // warnings sit apart from the headers (U4)
+        assertTrue(notes.startsWith("⚠  response truncated at 50 MB"), notes);
+        assertEquals(tr("httppanel.warnings", 1), FxTestSupport.callOnFx(p::warnBadgeForTest));
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> ((org.fxmisc.richtext.CodeArea) FxTestSupport.field(p, "bodyArea")).isWrapText()),
+                "a note in place of the body wraps (U7)");
         assertTrue(FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "openTabButton")).isDisabled()));
     }
 

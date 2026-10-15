@@ -1,10 +1,10 @@
 package com.editora.ui;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.editora.http.HttpExchange;
-import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 
 import static com.editora.i18n.Messages.tr;
@@ -118,10 +118,40 @@ final class HttpStatusText {
             return tr("httppanel.requestFailed");
         }
         return tr(
-                "httppanel.summary",
-                statusWithReason(r.status()),
-                String.valueOf(r.elapsedMs()),
-                HttpResponseFormat.humanSize(r.sizeBytes()));
+                "httppanel.summary", statusWithReason(r.status()), String.valueOf(r.elapsedMs()), size(r.sizeBytes()));
+    }
+
+    /** The UI language's locale, for numbers in the response view ({@code 1,4 s} in German). */
+    static Locale uiLocale() {
+        return Locale.forLanguageTag(com.editora.i18n.Messages.current());
+    }
+
+    /** Seconds with one decimal in the UI language ({@code 1.4} / {@code 1,4}). */
+    static String seconds(double seconds) {
+        return String.format(uiLocale(), "%.1f", seconds);
+    }
+
+    /** A byte count as the response view shows it ({@code 598 B}, {@code 4.9 KB} / {@code 4,9 KB}). */
+    static String size(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double kb = bytes / 1024.0;
+        return kb < 1024 ? String.format(uiLocale(), "%.1f KB", kb) : String.format(uiLocale(), "%.1f MB", kb / 1024);
+    }
+
+    /**
+     * The response view's line for a finished Run All: "Run All: 3 of 13 failed" or "Run All: all 13 succeeded";
+     * null for a single run.
+     */
+    static String runAllSummary(List<HttpExchange> exchanges) {
+        if (exchanges == null || exchanges.size() < 2) {
+            return null;
+        }
+        long failed = exchanges.stream().filter(ex -> !ex.result().ok()).count();
+        return failed == 0
+                ? tr("httppanel.runAllOk", exchanges.size())
+                : tr("httppanel.runAllFailed", failed, exchanges.size());
     }
 
     /** The status-bar message after a single request: what was sent, and how it went. */
@@ -129,7 +159,7 @@ final class HttpStatusText {
         String label = ex.label();
         HttpResult r = ex.result();
         if (r.failed()) {
-            return tr("status.http.failedError", label, firstLine(r.error()));
+            return tr("status.http.failedError", label, withoutUrl(firstLine(r.error()), ex.url()));
         }
         return r.ok()
                 ? tr("status.http.finished", label, statusWithReason(r.status()))
@@ -152,6 +182,32 @@ final class HttpStatusText {
             }
         }
         return exchanges.isEmpty() ? -1 : 0;
+    }
+
+    /** {@code lines} with repeats shown once, as {@code "line (×3)"}, in first-seen order. Pure. */
+    static List<String> grouped(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (String l : lines) {
+            if (l != null && !l.isBlank()) {
+                counts.merge(l, 1, Integer::sum);
+            }
+        }
+        List<String> out = new java.util.ArrayList<>(counts.size());
+        counts.forEach((l, n) -> out.add(n == 1 ? l : l + " (×" + n + ")"));
+        return out;
+    }
+
+    /** {@code error} without the {@code  (url)} the engine appends: the status bar already starts with the URL. */
+    static String withoutUrl(String error, String url) {
+        if (error == null || url == null || url.isBlank()) {
+            return error;
+        }
+        String suffix = "(" + url + ")";
+        String e = error.strip();
+        return e.endsWith(suffix) ? e.substring(0, e.length() - suffix.length()).strip() : error;
     }
 
     private static String firstLine(String s) {
