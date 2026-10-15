@@ -6273,8 +6273,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     final AgentCoordinator agentCoordinator = new AgentCoordinator(coordinatorHost, new AgentCoordinator.Ops() {
         @Override
         public Path projectRoot() {
-            Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-            return active == null ? null : active.rootPath();
+            // This window's project, not the ProjectManager's active one (the window opened last): it is the
+            // folder the agent works in and the boundary of what it may read and write.
+            return windowProjectRoot();
         }
 
         @Override
