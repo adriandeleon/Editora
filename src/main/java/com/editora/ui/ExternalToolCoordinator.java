@@ -214,7 +214,14 @@ final class ExternalToolCoordinator {
         // whatever tab happened to be active when the subprocess finished — switch tabs during a 600 ms
         // `black -` run and REPLACE_BUFFER overwrote the whole of an unrelated file.
         Launch launch = Launch.of(active);
-        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> applyResult(tool, inv, r, launch));
+        if (tool.getOutput() == ExternalTool.OutputTarget.CONSOLE) {
+            ops.openConsole(); // now, not on completion: a slow tool's console shows it running
+        }
+        panel().started(tool.getName());
+        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> {
+            panel().ended(); // the service always calls back, an Error included, so the spinner always stops
+            applyResult(tool, inv, r, launch);
+        });
     }
 
     /**

@@ -6,6 +6,7 @@ import java.util.List;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.TreeItem;
@@ -120,6 +121,27 @@ class TestRunnerPanelFxTest {
         FxTestSupport.runOnFx(() -> panel.finishRun(run, 1));
         Label status = FxTestSupport.field(panel, "status");
         assertTrue(status.getText() != null && !status.getText().isBlank());
+    }
+
+    @Test
+    void spinnerShowsFromStartToFinish() throws Exception {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestRunnerPanel panel = FxTestSupport.callOnFx(TestRunnerPanel::new);
+        ProgressIndicator busy = FxTestSupport.field(panel, "busy");
+        assertFalse(FxTestSupport.callOnFx(busy::isVisible), "no spinner before a run");
+
+        FxTestSupport.runOnFx(() -> panel.startRun("test ./..."));
+        assertTrue(FxTestSupport.callOnFx(() -> busy.isVisible() && busy.isManaged()), "spins while the run is live");
+
+        FxTestSupport.runOnFx(() -> {
+            run.finish(1, 5L);
+            panel.finishRun(run, 1); // also the path a launch error and Stop take
+        });
+        assertFalse(FxTestSupport.callOnFx(busy::isVisible), "stops when the run finishes");
+
+        FxTestSupport.runOnFx(() -> panel.startRun("test ./..."));
+        FxTestSupport.runOnFx(panel::idle);
+        assertFalse(FxTestSupport.callOnFx(busy::isVisible), "stops when reset to idle");
     }
 
     @Test

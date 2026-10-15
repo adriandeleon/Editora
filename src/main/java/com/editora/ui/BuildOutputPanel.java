@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
@@ -21,7 +22,8 @@ import com.editora.run.StackTraceLinks;
  * owner is the coordinator): {@link #started} lazily creates the tool's tab (titled with the tool name) and
  * selects it, and {@link #appendOutput}/{@link #finished}/{@link #failed} route to that tool's own console, so
  * two concurrent builds stream side by side into their own tabs without interleaving. Tabs persist for the
- * session (bounded — at most one per tool), so a finished build's output stays readable.
+ * session (bounded — at most one per tool), so a finished build's output stays readable. A tab whose build is
+ * running carries a spinner in its title, so a build in a tab the user is not looking at still reads as live.
  *
  * <p>It is not only builds: any CLI Editora runs on the user's behalf can claim a tab through the same
  * owner-routed API. {@link #started}/{@link #appendOutput}/{@link #finished} are the <em>streaming</em> shape
@@ -188,6 +190,12 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
                 console.setOutputFont(fontFamily, fontSize);
             }
             Tab tab = new Tab(toolName, console);
+            ProgressIndicator titleSpinner = RunPanel.busySpinner();
+            titleSpinner.setPrefSize(11, 11);
+            titleSpinner.setMaxSize(11, 11);
+            RunPanel.showSpinner(titleSpinner, true);
+            // Attached only while running, so an idle tab's title keeps no gap where the spinner was.
+            console.runningProperty().addListener((obs, was, now) -> tab.setGraphic(now ? titleSpinner : null));
             consoles.put(owner, console);
             tabs.put(owner, tab);
             getTabs().add(tab);
