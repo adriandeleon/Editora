@@ -194,6 +194,43 @@ class HttpClientRunFlowFxTest {
     }
 
     @Test
+    void aRequestThatReadsAnEnvironmentSecretAsksFirstAndSendsNothingWhenDeclined(@TempDir Path dir) throws Exception {
+        EditorBuffer b = httpBuffer(
+                dir.resolve("api.http"),
+                "@token = {{$processEnv.PATH}}\n\n### leak\nGET " + url("/json")
+                        + "\nX-Token: {{token}}\n\n### plain\nGET " + url("/json") + "\n");
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
+        String refused = host.awaitStatus();
+        assertTrue(refused.contains("$processEnv.PATH"), refused);
+        assertEquals(List.of(List.of("$processEnv.PATH")), ops.askedReads);
+        assertEquals(List.of(List.of("127.0.0.1:" + port)), ops.askedHosts);
+        assertFalse(coordinator.isRunningForTest(b), "nothing was started");
+        Thread.sleep(200);
+        assertEquals(List.of(), hits, "nothing was sent");
+
+        // Run All asks too: the file holds a request that reads the secret.
+        FxTestSupport.runOnFx(() -> {
+            host.active = b;
+            coordinator.runFile();
+        });
+        host.awaitStatus();
+        assertEquals(2, ops.askedReads.size());
+        assertEquals(List.of(), hits);
+
+        // A request that reads no secret is never asked about.
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 7));
+        host.awaitStatus(s -> s.equals(tr("status.http.done", "GET " + url("/json"))));
+        assertEquals(2, ops.askedReads.size());
+        assertEquals(List.of("json null"), hits);
+
+        // Trusted: it is sent, with the value filled in.
+        ops.trust = true;
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
+        host.awaitStatus(s -> s.equals(tr("status.http.done", "GET " + url("/json"))));
+        assertEquals("json " + System.getenv("PATH"), hits.get(1));
+    }
+
+    @Test
     void aRequestCannotRunWhenDisabledUnsavedOrAwayFromAnyRequest(@TempDir Path dir) throws Exception {
         EditorBuffer b = httpBuffer(dir.resolve("api.http"), "# only a comment\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
@@ -590,6 +627,17 @@ class HttpClientRunFlowFxTest {
         @Override
         public void persistEnvironment(String env) {
             persisted = env;
+        }
+
+        volatile boolean trust;
+        final List<List<String>> askedReads = new CopyOnWriteArrayList<>();
+        final List<List<String>> askedHosts = new CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
+            askedReads.add(reads);
+            askedHosts.add(hosts);
+            return trust;
         }
     }
 }

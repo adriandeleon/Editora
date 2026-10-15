@@ -63,6 +63,16 @@ final class HttpClientCoordinator {
         default HistoryCoordinator history() {
             return null;
         }
+
+        /**
+         * Whether a request in {@code file} may read the secrets {@code reads} ({@code $processEnv.X},
+         * {@code $dotenv.X}) and send them to {@code hosts}: true when the file's folder is trusted, or the user
+         * trusts it now (the build-wrapper trust store, so one answer covers both). Blocking, on the FX thread. A
+         * window without a trust store refuses, so nothing secret is sent unasked.
+         */
+        default boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
+            return false;
+        }
     }
 
     private final CoordinatorHost host;
@@ -258,11 +268,15 @@ final class HttpClientCoordinator {
         }
         HttpFile.Request req = HttpFile.parse(text).get(index);
         HttpFile.Parsed parsed = HttpFile.parseRequest(req);
+        Map<String, String> vars = variables(buffer, text);
+        if (!secretReadsAllowed(buffer, text, List.of(req), List.of(parsed), vars)) {
+            return; // the folder is not trusted and the user declined: nothing is sent
+        }
         String label = parsed.method() + " " + parsed.url();
         startRun(buffer, label);
         Path baseDir = buffer.getPath().toAbsolutePath().getParent();
         com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-        run[0] = service.run(parsed, variables(buffer, text), baseDir, ex -> {
+        run[0] = service.run(parsed, vars, baseDir, ex -> {
             if (running.remove(buffer, run[0])) {
                 finishRun(buffer, label, ex);
             }
@@ -330,17 +344,22 @@ final class HttpClientCoordinator {
                 return;
             }
             String text = b.getContent();
+            List<HttpFile.Request> blocks = HttpFile.parse(text);
             List<HttpFile.Parsed> reqs =
-                    HttpFile.parse(text).stream().map(HttpFile::parseRequest).toList();
+                    blocks.stream().map(HttpFile::parseRequest).toList();
             if (reqs.isEmpty()) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
+            }
+            Map<String, String> vars = variables(b, text);
+            if (!secretReadsAllowed(b, text, blocks, reqs, vars)) {
+                return; // the folder is not trusted and the user declined: nothing is sent
             }
             String label = b.getPath().getFileName().toString();
             startRun(b, label);
             Path baseDir = b.getPath().toAbsolutePath().getParent();
             com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-            run[0] = service.runAll(reqs, variables(b, text), baseDir, exchanges -> {
+            run[0] = service.runAll(reqs, vars, baseDir, exchanges -> {
                 if (!running.remove(b, run[0])) {
                     return; // cancelled or superseded
                 }
@@ -458,7 +477,7 @@ final class HttpClientCoordinator {
     }
 
     private void copyAsCurl(HttpExchange ex) {
-        String curl = CurlExport.toCurl(ex.method(), ex.url(), ex.headers(), ex.requestBody());
+        String curl = CurlExport.toCurl(ex); // from how it was sent: file upload, form fields, digest, -L
         ClipboardContent cc = new ClipboardContent();
         cc.putString(curl);
         Clipboard.getSystemClipboard().setContent(cc);
@@ -542,6 +561,101 @@ final class HttpClientCoordinator {
             return HttpEnv.environmentNames(Files.readString(env));
         } catch (IOException e) {
             return List.of();
+        }
+    }
+
+    // --- secrets trust gate --------------------------------------------------------------------------
+
+    /**
+     * The trust gate for secrets: a request that reads {@code $processEnv} / {@code $dotenv} — directly, through a
+     * {@code @var} line or an environment value — runs only from a trusted folder, or once the user trusts it.
+     * A {@code .http} file from a cloned repository could otherwise send {@code AWS_SECRET_ACCESS_KEY} to any host
+     * on one click. Requests that read no secrets are never asked about.
+     */
+    private boolean secretReadsAllowed(
+            EditorBuffer buffer,
+            String text,
+            List<HttpFile.Request> blocks,
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars) {
+        Path dir = buffer.getPath().toAbsolutePath().getParent();
+        StringBuilder sent = new StringBuilder();
+        for (int i = 0; i < blocks.size(); i++) {
+            sent.append(blocks.get(i).block()).append('\n');
+            HttpFile.BodyRef ref = requests.get(i).bodyRef();
+            if (ref != null && ref.substitute()) {
+                sent.append(substitutedBodyFile(dir, ref)).append('\n'); // "<@ file" fills in its {{vars}} too
+            }
+        }
+        // LEAD-WIRE: use A's merged raw env map (parent folders, both files) instead of rawEnvironment(dir)
+        List<String> reads = com.editora.http.SecretReads.find(sent.toString(), rawDefinitions(text, dir));
+        if (reads.isEmpty()) {
+            return true;
+        }
+        java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
+        for (HttpFile.Parsed p : requests) {
+            hosts.add(hostOf(HttpVars.substitute(p.url(), vars, LocalDateTime.now())));
+        }
+        if (ops.allowSecretReads(buffer.getPath(), List.copyOf(hosts), reads)) {
+            return true;
+        }
+        host.setStatus(tr("status.http.secretsRefused", String.join(", ", reads)));
+        return false;
+    }
+
+    /** What {@code {{name}}} can stand for, unsubstituted: the file's {@code @var} lines and the environment. */
+    private Map<String, List<String>> rawDefinitions(String text, Path dir) {
+        Map<String, List<String>> defs = new LinkedHashMap<>();
+        for (String[] pair : HttpFile.fileVariablePairs(text)) {
+            defs.computeIfAbsent(pair[0], k -> new java.util.ArrayList<>()).add(pair[1]);
+        }
+        rawEnvironment(dir)
+                .forEach((k, v) -> defs.computeIfAbsent(k, x -> new java.util.ArrayList<>())
+                        .add(v));
+        return defs;
+    }
+
+    /** Every value of every environment in the folder's env files (any could be the one picked next). */
+    private Map<String, String> rawEnvironment(Path dir) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (dir == null) {
+            return out;
+        }
+        for (String name : List.of("http-client.env.json", "http-client.private.env.json")) {
+            Path file = dir.resolve(name);
+            if (!Files.exists(file)) {
+                continue;
+            }
+            try {
+                String json = Files.readString(file);
+                for (String env : HttpEnv.environmentNames(json)) {
+                    HttpEnv.variables(json, env).forEach((k, v) -> out.merge(k, v, (a, b) -> a + "\n" + b));
+                }
+            } catch (IOException | RuntimeException unreadable) {
+                // an unreadable env file contributes nothing to resolve either
+            }
+        }
+        return out;
+    }
+
+    private static String substitutedBodyFile(Path dir, HttpFile.BodyRef ref) {
+        try {
+            Path file = com.editora.http.HttpPaths.contained(dir, ref.path());
+            // {{ and }} are ASCII in any encoding a body file may declare, so Latin-1 never fails to decode
+            return file == null || !Files.isRegularFile(file)
+                    ? ""
+                    : new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.ISO_8859_1);
+        } catch (IOException | RuntimeException unreadable) {
+            return ""; // the run reports an unreadable body file itself
+        }
+    }
+
+    private static String hostOf(String url) {
+        try {
+            java.net.URI u = java.net.URI.create(url.strip());
+            return u.getHost() == null ? url.strip() : u.getHost() + (u.getPort() >= 0 ? ":" + u.getPort() : "");
+        } catch (RuntimeException e) {
+            return url.strip();
         }
     }
 
