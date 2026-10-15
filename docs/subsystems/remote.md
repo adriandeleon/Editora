@@ -207,12 +207,12 @@ Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged 
 a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
 argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
 outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
-dropped connection, and ed25519 keys. Not checked: dropbear, macOS's sshd.
+dropped connection, and ed25519 keys (all pass since Bouncy Castle). Not checked: dropbear, macOS's sshd.
 
-**ed25519 keys are not supported.** MINA SSHD needs an EdDSA provider (`net.i2p.crypto:eddsa` or Bouncy
-Castle) for them and Editora ships neither. A login whose only key is ed25519 fails ("No more authentication
-methods available"), and so does a server that offers only an ed25519 host key. With the default keys an
-unreadable `id_ed25519` is skipped and `id_ecdsa` / `id_rsa` are tried.
+**ed25519** keys and host keys work through Bouncy Castle (`bcprov-jdk18on`, see
+[dependencies](../dependencies.md)): MINA SSHD has no EdDSA of its own and turns `ssh-ed25519` on only when a
+provider is present. Without it a login whose only key was ed25519 — `ssh-keygen`'s default — failed, as did
+a server offering only an ed25519 host key. `RemoteFileSystemsEd25519FxTest` pins it.
 
 Tests: `EmbeddedSftpFixture` is an in-process MINA server; `startWithShell` makes it run command lines with a
 real `/bin/sh`. Tests that use it need the JavaFX toolkit (the connect result is posted to the FX thread), so

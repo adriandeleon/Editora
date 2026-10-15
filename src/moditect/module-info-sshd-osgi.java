@@ -4,6 +4,8 @@ module org.apache.sshd.osgi {
     requires java.logging;
     requires java.rmi;
     requires java.security.jgss;
+    // Optional providers MINA links against when present: Bouncy Castle gives it EdDSA (ed25519).
+    requires static org.bouncycastle.provider;
     exports org.apache.sshd.agent;
     exports org.apache.sshd.agent.common;
     exports org.apache.sshd.agent.local;
