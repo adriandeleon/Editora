@@ -202,6 +202,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
+- **The AI agent works in its own window's project.** Started in a project's window after another project had been
+  opened, it worked in the other project: that was its working folder and the boundary of the files it could read
+  and write.
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
   default — failed with "No more authentication methods available", and a server offering only an ed25519
   host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.
