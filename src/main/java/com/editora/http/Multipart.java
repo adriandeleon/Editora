@@ -29,7 +29,7 @@ import java.util.function.Function;
 public final class Multipart {
 
     /** One multipart section: its {@code headers}, the {@code inlineBody} (when authored inline), or a
-     *  {@code filePath} (relative to the request file) to slurp instead — with its {@code {{vars}}}
+     *  {@code filePath} (relative to the request file) sent instead — streamed as is, or read and its {@code {{vars}}}
      *  substituted when {@code substituteFile} (a {@code <@ ./file} part). */
     public record Part(Map<String, String> headers, String inlineBody, String filePath, boolean substituteFile) {
 
