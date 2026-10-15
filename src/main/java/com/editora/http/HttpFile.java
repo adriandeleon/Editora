@@ -289,7 +289,7 @@ public final class HttpFile {
                 // JetBrains .http convention we still send no body (a colon-bearing body line like `{"a": 1}`
                 // would otherwise be parsed as a bogus header); surface a warning so the empty request doesn't
                 // look like a server problem, rather than guessing where the body starts.
-                malformed = "a request body must be separated from the headers by a blank line (found \"" + t + "\")";
+                malformed = tr("http.warn.noBlankLine", t);
             }
         }
         if (malformed != null) {

@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * The outcome of a built-in HTTP request: the {@code status} code, response {@code headers}
  * ({@code [name, value]}), the {@code body} text, the {@code contentType}, timing/size, an {@code error}
@@ -75,6 +77,14 @@ public record HttpResult(
     /** A request that never produced a response (not sent, connection failure, cancelled). */
     public static HttpResult failure(String error, List<String> warnings) {
         return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings, new byte[0], false, List.of(), null);
+    }
+
+    /**
+     * {@link #error()} as shown to the user: the marker of a cancelled run ({@link HttpClientService#CANCELLED},
+     * compared as is) reads in the UI language.
+     */
+    public String shownError() {
+        return HttpClientService.CANCELLED.equals(error) ? tr("http.request.cancelled") : error;
     }
 
     public boolean failed() {

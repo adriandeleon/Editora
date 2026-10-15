@@ -159,7 +159,7 @@ final class HttpStatusText {
         String label = ex.label();
         HttpResult r = ex.result();
         if (r.failed()) {
-            return tr("status.http.failedError", label, withoutUrl(firstLine(r.error()), ex.url()));
+            return tr("status.http.failedError", label, withoutUrl(firstLine(r.shownError()), ex.url()));
         }
         return r.ok()
                 ? tr("status.http.finished", label, statusWithReason(r.status()))

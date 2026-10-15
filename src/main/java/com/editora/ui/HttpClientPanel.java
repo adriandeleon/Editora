@@ -591,7 +591,7 @@ public final class HttpClientPanel extends VBox {
         showNotes(r.warnings(), r.written()); // an unsent header, a truncated body…; the files a ">>" wrote
         StringBuilder head = new StringBuilder();
         if (r.failed()) {
-            head.append("⚠  ").append(r.error());
+            head.append("⚠  ").append(r.shownError());
         } else {
             String protocol = r.protocol() == null || r.protocol().isBlank() ? "HTTP" : r.protocol();
             head.append(protocol)

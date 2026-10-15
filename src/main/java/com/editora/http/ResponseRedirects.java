@@ -132,7 +132,7 @@ public final class ResponseRedirects {
                     redirect.path() == null ? "" : fill.apply(redirect.path()).strip();
             String shown = path;
             if (stop.getAsBoolean()) {
-                warnings.add("response not saved to " + shown + ": the request was cancelled");
+                warnings.add(tr("http.redirect.notSavedCancelled", shown));
                 continue;
             }
             String unusable = unusablePath(path);
@@ -144,8 +144,7 @@ public final class ResponseRedirects {
                 Path target = HttpPaths.containedForWrite(baseDir, path);
                 if (target == null) {
                     // a ">> ../../x" (or a symlink) must not write outside the request file's folder
-                    warnings.add("response not saved to " + shown
-                            + ": the path must be a regular file inside the request file's folder");
+                    warnings.add(tr("http.redirect.notSavedOutside", shown));
                     continue;
                 }
                 shown = display(baseDir, target);
@@ -153,7 +152,7 @@ public final class ResponseRedirects {
                 (line.written() ? written : warnings).add(line.text());
             } catch (IOException | RuntimeException failure) {
                 // a failed redirect write never aborts the response — but it is reported
-                warnings.add("response not saved to " + shown + ": " + reason(failure));
+                warnings.add(tr("http.redirect.notSaved", shown, reason(failure)));
             }
         }
     }
@@ -190,31 +189,31 @@ public final class ResponseRedirects {
             return createNumbered(target, shown, body);
         }
         if (truncated) {
-            return Line.skipped(shown + " not replaced: the response is incomplete");
+            return Line.skipped(tr("http.redirect.notReplacedIncomplete", shown));
         }
         if (status < 200 || status > 299) {
-            return Line.skipped(shown + " not replaced: the response is an error (HTTP " + status + ")");
+            return Line.skipped(tr("http.redirect.notReplacedError", shown, String.valueOf(status)));
         }
         Decision decision = guard.beforeOverwrite(target);
         if (decision == null) {
             decision = Decision.of(Verdict.REFUSED_NOT_PRESERVED);
         }
         if (cancelled.getAsBoolean()) {
-            return Line.skipped(shown + " not replaced: the request was cancelled");
+            return Line.skipped(tr("http.redirect.notReplacedCancelled", shown));
         }
         if (!decision.allowed()) {
             return Line.skipped(
                     decision.verdict() == Verdict.REFUSED_UNSAVED_CHANGES
-                            ? shown + " not replaced: it is open with unsaved changes"
-                            : shown + " not replaced: its current content could not be kept in Local History");
+                            ? tr("http.redirect.notReplacedUnsaved", shown)
+                            : tr("http.redirect.notReplacedNotKept", shown));
         }
         if (!replace(target, decision.expectedBytes(), body)) {
-            return Line.skipped(shown + " not replaced: it changed while the response was being saved");
+            return Line.skipped(tr("http.redirect.notReplacedChanged", shown));
         }
         return Line.saved(
                 decision.verdict() == Verdict.KEPT_IN_HISTORY
-                        ? "response saved to " + shown + ", replacing the file (previous version in Local History)"
-                        : "response saved to " + shown + ", replacing the file (previous version not kept)");
+                        ? tr("http.redirect.replacedKept", shown)
+                        : tr("http.redirect.replacedNotKept", shown));
     }
 
     private static Line createNew(Path target, String shown, byte[] body) throws IOException {
@@ -225,10 +224,9 @@ public final class ResponseRedirects {
             // Raw bytes, exclusive create: a file (or a link) that appeared since the checks is never written.
             Files.write(target, body, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         } catch (FileAlreadyExistsException appeared) {
-            return Line.skipped(
-                    "response not saved to " + shown + ": a file appeared there while the request was running");
+            return Line.skipped(tr("http.redirect.appeared", shown));
         }
-        return Line.saved("response saved to " + shown);
+        return Line.saved(tr("http.redirect.saved", shown));
     }
 
     /** The most numbered siblings tried for a {@code >>} onto a taken name before giving up. */
@@ -253,10 +251,9 @@ public final class ResponseRedirects {
                 continue;
             }
             String parent = shown.lastIndexOf('/') >= 0 ? shown.substring(0, shown.lastIndexOf('/') + 1) : "";
-            return Line.saved("response saved to " + parent + candidate.getFileName() + " (" + shown
-                    + " already exists; >>! replaces it)");
+            return Line.saved(tr("http.redirect.savedNumbered", parent + candidate.getFileName(), shown));
         }
-        return Line.skipped("response not saved to " + shown + ": the file and its numbered copies already exist");
+        return Line.skipped(tr("http.redirect.allTaken", shown));
     }
 
     /**
@@ -273,7 +270,7 @@ public final class ResponseRedirects {
         }
         Path dir = target.toAbsolutePath().getParent();
         if (dir == null) {
-            throw new IOException("no folder to stage the file in");
+            throw new IOException(tr("http.redirect.noFolder"));
         }
         Path staged = Files.createTempFile(dir, "." + stem(target) + ".", ".editora-tmp");
         try {

@@ -84,7 +84,10 @@ public final class HttpClientService {
     /** The JDK client's limit on the exchanges of one request (the original one plus the redirects followed). */
     private static final int REDIRECT_LIMIT = Integer.getInteger("jdk.httpclient.redirects.retrylimit", 5);
 
-    /** The {@link HttpResult#error()} of a request the user cancelled. */
+    /**
+     * The {@link HttpResult#error()} of a request the user cancelled: a marker compared as is (and saved so in the
+     * history), shown translated by {@link HttpResult#shownError()}.
+     */
     public static final String CANCELLED = "request cancelled";
 
     static {
@@ -497,7 +500,7 @@ public final class HttpClientService {
             // The body the request names cannot be read. Sending the request without it would look like a
             // server problem (and could create an empty resource), so it is not sent at all.
             warnings.add(bc.problem());
-            HttpResult notSent = HttpResult.failure("request not sent: " + bc.problem(), warnings);
+            HttpResult notSent = HttpResult.failure(tr("http.request.notSent", bc.problem()), warnings);
             return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
         }
         if (approval != null && !approval.reads().containsAll(unresolved.secretReads())) {
@@ -560,12 +563,13 @@ public final class HttpClientService {
                 warnings.add(tr("status.http.warn.tooManyEncodings", ContentDecoding.MAX_LAYERS, resp.overLayered()));
             }
             if (resp.truncated()) {
-                warnings.add("response truncated at " + megabytes(maxResponseBytes)
-                        + " — the rest of the body was not downloaded");
+                warnings.add(tr("http.warn.truncated", megabytes(maxResponseBytes)));
             }
             if (resp.stopped() == Stop.DEADLINE) {
-                warnings.add("response still arriving after " + bodyDeadline.toSeconds() + " s — stopped; showing the "
-                        + resp.body().length + " bytes received so far");
+                warnings.add(tr(
+                        "http.warn.deadline",
+                        String.valueOf(bodyDeadline.toSeconds()),
+                        String.valueOf(resp.body().length)));
             } else if (resp.stopped() == Stop.IDLE) {
                 warnings.add(tr("status.http.warn.idle", seconds(timeout), resp.body().length));
             }

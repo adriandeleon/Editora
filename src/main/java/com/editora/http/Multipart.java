@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Pure {@code multipart/form-data} body builder for a request authored in a {@code .http} file. The body is
  * split on {@code --boundary} lines into {@link Part}s, each with its own headers and either inline content
@@ -261,10 +263,10 @@ public final class Multipart {
                     file = null;
                 }
                 if (file == null) {
-                    problems.add("multipart file is outside the request folder: " + path);
+                    problems.add(tr("http.multipart.outside", path));
                     resolved.add(new Resolved(headers, null, null));
                 } else if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
-                    problems.add("multipart file not found: " + path); // the part stays empty
+                    problems.add(tr("http.multipart.notFound", path)); // the part stays empty
                     resolved.add(new Resolved(headers, null, null));
                 } else if (p.substituteFile()) {
                     try {
@@ -272,7 +274,7 @@ public final class Multipart {
                         write(text, content);
                         resolved.add(new Resolved(headers, content, null));
                     } catch (IOException | RuntimeException unreadable) {
-                        problems.add("multipart file not found: " + path);
+                        problems.add(tr("http.multipart.notFound", path));
                         resolved.add(new Resolved(headers, null, null));
                     }
                 } else {
@@ -280,7 +282,7 @@ public final class Multipart {
                     try {
                         size = Files.size(file);
                     } catch (IOException unreadable) {
-                        problems.add("multipart file not found: " + path);
+                        problems.add(tr("http.multipart.notFound", path));
                         resolved.add(new Resolved(headers, null, null));
                         write(text, "\r\n");
                         continue;

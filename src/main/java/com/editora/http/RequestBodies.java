@@ -123,11 +123,11 @@ final class RequestBodies {
             try {
                 publisher = form.publisher();
             } catch (java.io.FileNotFoundException gone) {
-                return Content.unreadable("multipart file not found: " + gone.getMessage());
+                return Content.unreadable(tr("http.multipart.notFound", gone.getMessage()));
             }
             return new Content(
                     publisher,
-                    "(multipart/form-data, " + form.length() + " bytes)",
+                    tr("http.body.multipart", String.valueOf(form.length())),
                     null,
                     form::feed,
                     null,
@@ -142,7 +142,7 @@ final class RequestBodies {
                 Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
                 Path bodyFile = HttpPaths.contained(baseDir, ref.path());
                 if (bodyFile == null) {
-                    return Content.unreadable("body file outside the request folder: " + ref.path());
+                    return Content.unreadable(tr("http.body.outside", ref.path()));
                 }
                 if (!ref.substitute()) {
                     // "< file": the file's bytes are the body, untouched and streamed — a decode/re-encode round
@@ -157,12 +157,12 @@ final class RequestBodies {
                 return Content.of(encode(content, charset, warnings), content);
             } catch (Exception e) {
                 return Content.unreadable(
-                        "body file not found: " + request.bodyRef().path());
+                        tr("http.body.notFound", request.bodyRef().path()));
             }
         }
         if (request.bodyRef() != null) {
-            return Content.unreadable("body file needs a saved request file to resolve against: "
-                    + request.bodyRef().path());
+            return Content.unreadable(
+                    tr("http.body.needsFolder", request.bodyRef().path()));
         }
         String body = sub.apply(request.body());
         if (body == null || body.isBlank()) {
@@ -174,11 +174,11 @@ final class RequestBodies {
     /** What the history shows for a {@code < file} body: its text when small and textual, else a note. */
     private static String shownFileBody(Path file, long size, String shownPath, Charset cs) throws IOException {
         if (size > SHOWN_FILE_BODY_BYTES) {
-            return "(body from " + shownPath + ", " + HttpResponseFormat.humanSize(size) + ")";
+            return tr("http.body.fromFile", shownPath, HttpResponseFormat.humanSize(size));
         }
         byte[] raw = Files.readAllBytes(file);
         return HttpResult.looksBinary(raw, null)
-                ? "(binary body from " + shownPath + ", " + raw.length + " bytes)"
+                ? tr("http.body.binaryFromFile", shownPath, String.valueOf(raw.length))
                 : new String(raw, cs);
     }
 
