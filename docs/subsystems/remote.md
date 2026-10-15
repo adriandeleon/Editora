@@ -63,7 +63,12 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
   dies: an SSH server signals nobody when a connection drops.
 - `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale.
 - Channels are budgeted against the server's `MaxSessions` (three short commands at once, five long-lived).
-- `ExecTarget.forwardLocal` forwards a loopback port; sessions send keep-alives every 30 s.
+  Short commands queue; a long-lived one waits up to 5 s for a place (the one a program just stopped frees
+  when its channel closes, a moment after the stop), then is refused with a message.
+- `ExecTarget.forwardLocal` forwards a loopback port. Sessions send keep-alives every 30 s and give up after
+  three go unanswered (`RemoteFileSystems.HEARTBEAT_MISSES`, like `ssh`'s `ServerAliveCountMax`), so a
+  connection that goes silent is noticed in about 90 s. The host's side is the server's: its programs are
+  ended when its `sshd` notices, which with `ClientAliveInterval` unset can take as long as TCP does.
 
 ### Who may run what
 
@@ -197,7 +202,17 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git),
   a Java project's main-class run and its gutter ▶, debugging a loose Java file or a saved run configuration.
 
-Checked against OpenSSH 10.0 with a dash `/bin/sh`. Not checked: dropbear, macOS's sshd.
+Checked against OpenSSH 10.0 with a dash `/bin/sh` (2026-10-15, an unprivileged `sshd` on localhost):
+`RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
+a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
+argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
+outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
+dropped connection, and ed25519 keys. Not checked: dropbear, macOS's sshd.
+
+**ed25519 keys are not supported.** MINA SSHD needs an EdDSA provider (`net.i2p.crypto:eddsa` or Bouncy
+Castle) for them and Editora ships neither. A login whose only key is ed25519 fails ("No more authentication
+methods available"), and so does a server that offers only an ed25519 host key. With the default keys an
+unreadable `id_ed25519` is skipped and `id_ecdsa` / `id_rsa` are tried.
 
 Tests: `EmbeddedSftpFixture` is an in-process MINA server; `startWithShell` makes it run command lines with a
 real `/bin/sh`. Tests that use it need the JavaFX toolkit (the connect result is posted to the FX thread), so

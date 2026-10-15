@@ -42,6 +42,7 @@ final class SshExecTarget implements ExecTarget {
 
     static final int MAX_LONG_LIVED = 5;
     private static final Duration QUEUE_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration LONG_LIVED_WAIT = Duration.ofSeconds(5);
 
     private final Semaphore oneShots = new Semaphore(MAX_ONE_SHOT, true);
     private final Semaphore longLived = new Semaphore(MAX_LONG_LIVED);
@@ -96,7 +97,16 @@ final class SshExecTarget implements ExecTarget {
 
     private Semaphore acquire(boolean isLongLived) throws IOException {
         if (isLongLived) {
-            if (!longLived.tryAcquire()) {
+            // A program just stopped frees its slot when its channel closes, a moment after the stop returns:
+            // a start right behind it waits that moment rather than being refused.
+            boolean got;
+            try {
+                got = longLived.tryAcquire(LONG_LIVED_WAIT.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted waiting to start a program on " + id, e);
+            }
+            if (!got) {
                 throw new IOException("too many programs are already running on " + id + " (" + MAX_LONG_LIVED
                         + " at once); stop one of them first");
             }
