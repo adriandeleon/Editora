@@ -673,8 +673,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public Path projectRoot() {
-                Project active = projects == null ? null : projects.active();
-                return active == null ? null : active.rootPath();
+                // This window's project, not the ProjectManager's active one (the last-focused window's): it is
+                // what $WORKSPACE_FOLDER and $WORKSPACE_NAME expand to in this window's snippets.
+                return windowProjectRoot();
             }
 
             @Override
