@@ -165,6 +165,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **HTTP Client: what a request sends is closer to the JetBrains format.** Lines starting with `#` or `//`
+  inside a request body are comments and are no longer sent (shell or Markdown bodies that need such lines can
+  go in a `< ./file`). Directives (`# @no-redirect`, `# @timeout`) count only above the request line, and
+  `@timeout` / `@connection-timeout` take units (`500 ms`, `5 s`, `2 m`). An `@var` line applies to the requests
+  below it, so a later one can redefine it. `http://` requests go out as HTTP/1.1, without the `Upgrade: h2c`
+  headers the JDK used to add, and `HTTP/1.1` or `HTTP/2` on the request line is honoured. `>>` onto a file that
+  exists writes `name-1.json`, `name-2.json`, … instead of skipping the save, and `>>` paths take `{{variables}}`.
+  GraphQL, WebSocket and gRPC requests are reported as not supported instead of being sent as broken GETs.
+- **HTTP Client: the response view shows what happened.** The top line reads `404 Not Found · 12 ms · 4 B`,
+  coloured by outcome, with the protocol version above the headers and a "Request" section showing the request as
+  sent, variables filled in. A running request shows its elapsed time, Run All shows "2 of 5: GET …" and finishes
+  on the first failure, and one Run / Cancel button re-sends the selected request. The toolbar wraps instead of
+  shrinking to "…". Long lines can be wrapped, one-line XML is indented, and images are shown as pictures.
+- **HTTP Client: history and environments are remembered per file.** The last 10 responses of each `.http` file,
+  and its environment, are kept in Editora's config folder and come back when the file is reopened. Bodies are
+  capped at 1 MB, credential headers (Authorization, cookies, API keys and tokens) are masked, and requests
+  marked `# @no-log` are never saved. Environment files are found in the file's folder or the nearest folder above
+  it up to the project root, and environments defined only in `http-client.private.env.json` are listed. A
+  chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
+  cleared when the environment changes.
+- **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
+  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code). Escape in the response view returns to
+  the editor. Run File and the editor's context menu run the file's requests. `.http` files get request folding,
+  one Structure entry per request, completion for methods and headers, a starter request in New File, and
+  richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
+- **HTTP Client: Save response writes the body exactly as received** (an image saves as the image), named after
+  the URL, in the request's folder. The status-and-headers text report is the second choice in the dialog.
 - **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
   JVMs beside the server one.
 - **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
@@ -198,8 +225,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OpenDocument export is in the File menu. The HTML and office document title comes from the front matter's
   `title:`, then the first heading, then the file name. Exported HTML follows the reader's light/dark preference.
 
+### Security
+
+- **An `.http` file can no longer send your environment secrets without asking.** A request that reads
+  `$processEnv` or `$dotenv` (directly, through an `@var` line, an environment value or a `<@` body file) from a
+  folder you have not trusted now asks first, naming the variables and the hosts; declining sends nothing. It uses
+  the same trust as build scripts, so a trusted project is asked once. Before, a request in a cloned repository
+  could send, say, `AWS_SECRET_ACCESS_KEY` to any host on one click.
+- **HTTP Client: Copy as cURL is safe to paste.** The URL and header names were put in the shell command
+  unquoted, so a crafted URL ran commands when the copied cURL was pasted into a terminal, and a body starting
+  with `@` made curl upload a local file. Every word is quoted now, and the command reproduces what was sent:
+  `--data-binary @file` for file bodies, `-F` for forms, `--digest`, `-L` and the HTTP version.
+
 ### Fixed
 
+- **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`
+  were off by the local UTC offset (six hours early in Mexico City). Day.js formats (`"DD-MM-YYYY"`) no longer
+  give wrong dates, and `$env.NAME` and `{{$randomInt 1 10}}` work.
+- **HTTP Client: nothing goes out silently wrong.** A `{{variable}}` that cannot be resolved (a typo, no
+  environment selected, an earlier request not run yet, a missing `.env` key) is still sent empty but is now
+  named in the response's warnings, as are skipped JetBrains `> {% %}` / `< {% %}` scripts. A pre-request script
+  above a request no longer turns into the request line. `{{$dotenv X}}` works in `@var` lines.
+- **HTTP Client: a request that fails unexpectedly reports it.** An internal error or running out of memory left
+  the view on "Running…" for good and dropped the rest of a Run All; it now shows as that request's failure.
+  The response history keeps at most 100 MB of bodies per file.
+- **HTTP Client: responses and requests are byte-correct.** gzip and deflate responses are decoded (a browser's
+  "Copy as cURL" with `accept-encoding` showed garbage), the charset of an HTML `<meta>` or XML prolog is used, and
+  octet-stream, images, PDFs and archives count as binary. Request bodies use the charset `Content-Type` declares.
+  Emoji in URLs are encoded correctly, a stray `%` is escaped, and non-ASCII host names work. Multipart parts fill
+  in variables and lose the stray trailing newline.
+- **HTTP Client: more requests work.** `GET /path` with a `Host:` header, a custom `Host`, lowercase and custom
+  methods (`PROPFIND`, `QUERY`), a URL without `http://`, indented headers, and the caret on a request's `###`,
+  `# @name` or directive line. Digest answers SHA-256 and other RFC 7616 challenges, and Basic/Digest shorthand
+  passwords may contain spaces. `@timeout` also stops a body that stalls. Import cURL handles browser and Windows
+  copies, `-F`, `--json`, `-d @file`, `-G`, `-I` and options with arguments, and works outside a `.http` file.
+- **HTTP Client: clearer messages.** "Connection refused — is a server listening on …?", "Host not found",
+  untrusted certificates and timeouts read as sentences instead of `ConnectException`; failures no longer read
+  "exit 404" or "exit 5". A redirect to another host names the custom headers that went along, and a redirect
+  loop or an HTTPS→HTTP redirect says why it stopped. Environment merging follows JetBrains (a private `$shared`
+  value no longer beats a public environment's), nested environment objects are reachable as `{{a.b}}`, and an
+  environment value may refer to another. Run File on a `.http` file no longer launches `java api.http`, and the
+  "feature disabled" message names the right Settings page. Remote `.http` files no longer regain the ▶ after a
+  settings change.
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
