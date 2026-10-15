@@ -1,6 +1,7 @@
 package com.editora.config;
 
 import java.util.List;
+import java.util.Map;
 
 import com.editora.vfs.RemoteConnection;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,19 +43,51 @@ class ConnectionStoreExecTest {
     }
 
     @Test
-    void forgettingAHostForgetsWhatWasAllowedOnIt() {
+    void aRemovedSiteAddedBackKeepsWhatWasAllowedAndItsTools() {
         ConnectionStore store = new ConnectionStore();
         store.put(conn("build"));
         store.put(conn("other"));
         store.allowExec("ana@build:22");
+        store.setTools("ana@build:22", Map.of("git", "/opt/git/bin/git"));
         store.allowExec("ana@other:22");
 
         store.remove("ana@build:22");
-        assertFalse(store.execAllowed("ana@build:22"));
-
         store.connections = new java.util.ArrayList<>(List.of()); // the Settings editor removed the rest
-        store.pruneExec();
-        assertTrue(store.exec.isEmpty());
+
+        assertTrue(store.connections.isEmpty());
+        store.put(conn("build"));
+        assertTrue(store.execAllowed("ana@build:22"), "not asked again");
+        assertEquals("/opt/git/bin/git", store.tool("ana@build:22", "git"));
+        assertTrue(store.execAllowed("ana@other:22"), "a site removed in the editor keeps it too");
+    }
+
+    /** Through the store's owner, as Remote Sites' Remove and the Settings editor save, and across a restart. */
+    @Test
+    void removingSitesKeepsTheirHostsSettingsOnDisk(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        SharedConfig shared = new SharedConfig(dir, false);
+        shared.load();
+        shared.putConnection(conn("build"));
+        shared.putConnection(conn("other"));
+        shared.allowRemoteExec("ana@build:22");
+        shared.setRemoteTools("ana@build:22", Map.of("rg", "/opt/rg"));
+        shared.allowRemoteExec("ana@other:22");
+
+        shared.removeConnection("ana@build:22"); // Remote Sites' Remove
+        shared.setConnections(List.of()); // the Settings editor, with the last site removed
+        assertTrue(shared.flushWrites());
+        shared.shutdown();
+
+        SharedConfig restarted = new SharedConfig(dir, false);
+        restarted.load();
+        try {
+            assertTrue(restarted.getConnections().isEmpty());
+            restarted.putConnection(conn("build"));
+            assertTrue(restarted.remoteExecAllowed("ana@build:22"), "added back: not asked again");
+            assertEquals("/opt/rg", restarted.remoteTool("ana@build:22", "rg"));
+            assertTrue(restarted.remoteExecAllowed("ana@other:22"));
+        } finally {
+            restarted.shutdown();
+        }
     }
 
     @Test

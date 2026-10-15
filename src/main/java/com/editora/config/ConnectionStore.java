@@ -24,7 +24,8 @@ public class ConnectionStore {
     /**
      * What the user has decided about <em>running commands</em> on a host, by connection id
      * ({@code user@host:port}). Kept beside the connections rather than in them: a connection is rebuilt from
-     * the connect form every time it is used, and must not lose this on the way.
+     * the connect form every time it is used, and must not lose this on the way. Removing a saved connection
+     * keeps it too, so a site added back is not asked about again and keeps its tool commands.
      */
     public Map<String, HostExec> exec = new LinkedHashMap<>();
 
@@ -106,13 +107,8 @@ public class ConnectionStore {
         connections.add(0, conn);
     }
 
+    /** Removes the saved connection; what was decided about running commands on its host stays ({@link #exec}). */
     public void remove(String id) {
         connections.removeIf(c -> c.id().equals(id));
-        exec.remove(id); // forgetting a host forgets what was allowed on it
-    }
-
-    /** Drops the execution settings of every host that is no longer a saved connection. */
-    public void pruneExec() {
-        exec.keySet().removeIf(id -> connections.stream().noneMatch(c -> c.id().equals(id)));
     }
 }

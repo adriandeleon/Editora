@@ -100,7 +100,8 @@ Settings → Remote edits both per saved site, below the connection form: "Allow
 (withdrawing it is the only way to take the answer back) and a field per named tool, plus one box of
 `server = command` lines for language servers (`ui/HostTools`; a tool id the page has no field for is kept as
 it is). Editing a site's host, user or port carries its execution settings to the new id
-(`ConnectionStore.renameExec`); removing the site drops them. Every window compares the setting and its own
+(`ConnectionStore.renameExec`); removing the site keeps them, so a site added back is not asked about again
+and keeps its tools (to withdraw the answer for a removed site, add it back and untick it). Every window compares the setting and its own
 host's agreement and tools after each settings apply and each connection-store write
 (`RemoteCoordinator.recheckExecution`) and, when they changed, runs the same refresh as the consent question:
 Git, the outside-change watch and language servers look again, and `LspManager.forgetRemoteDetections`

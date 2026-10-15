@@ -897,6 +897,8 @@ public class EditorBuffer implements TabContent {
     private String charsetOverride; // EditorConfig charset to write; null = keep detected
     /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
     private boolean charsetAssumed;
+    /** The encoding the user chose (Reopen / Save with Encoding); outranks EditorConfig. Null = none. */
+    private String userCharset;
 
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
@@ -1960,15 +1962,6 @@ public class EditorBuffer implements TabContent {
             contextMenu.getItems().setAll(items);
             contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
-        });
-
-        // A left-click in the editor dismisses an open context menu. RichTextFX consumes the
-        // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
-        // not consumed, so the click still positions the caret as usual.
-        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-            if (contextMenu != null && contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
-                contextMenu.hide();
-            }
         });
     }
 
@@ -4920,15 +4913,7 @@ public class EditorBuffer implements TabContent {
             // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
             // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
             previewPane.setFocusTraversable(true);
-            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
-                // A press in the preview dismisses an open preview context menu. The ScrollPane consumes
-                // the press before the popup's auto-hide can fire (same as the editor menu — see
-                // installContextMenu), so close it explicitly; the click still falls through to focus.
-                if (previewContextMenu != null && previewContextMenu.isShowing()) {
-                    previewContextMenu.hide();
-                }
-                previewPane.requestFocus();
-            });
+            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> previewPane.requestFocus());
             // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
             previewPane.setOnContextMenuRequested(e -> {
                 Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
@@ -7580,7 +7565,30 @@ public class EditorBuffer implements TabContent {
      * the override never understood.
      */
     public String getEffectiveCharset() {
+        if (userCharset != null) {
+            return userCharset;
+        }
         return charsetOverride != null && !charsetAssumed ? charsetOverride : detectedCharset;
+    }
+
+    /** The encoding the user chose for this file, or null when it follows EditorConfig and detection. */
+    public String getUserCharset() {
+        return userCharset;
+    }
+
+    /**
+     * Chooses the encoding this buffer is written in, whatever EditorConfig says; null returns it to the rules.
+     * A choice other than the encoding on disk is an unsaved change, like a line-ending conversion.
+     */
+    public void setUserCharset(String charset) {
+        this.userCharset = charset;
+        dirty.set(differsFromSaved());
+    }
+
+    /** A save wrote the file in {@code charset}: that is what is on disk now, and no longer a pending change. */
+    public void charsetSaved(String charset) {
+        setDetectedCharset(charset);
+        dirty.set(differsFromSaved());
     }
 
     public void setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties props) {
@@ -9365,10 +9373,11 @@ public class EditorBuffer implements TabContent {
         dirty.set(false);
     }
 
-    /** Whether the buffer differs from what is on disk: its text, its line ending, or a forced flag. */
+    /** Whether the buffer differs from what is on disk: its text, line ending or encoding, or a forced flag. */
     private boolean differsFromSaved() {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
+                || (userCharset != null && !userCharset.equals(detectedCharset))
                 || (baseline != null && (contentLength() != baseline.length() || !baseline.matches(getContent())));
     }
 

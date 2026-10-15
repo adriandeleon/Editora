@@ -43,6 +43,7 @@ final class FxTestSupport {
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(Themes.DEFAULT));
             FXMLLoader.setDefaultClassLoader(FxTestSupport.class.getClassLoader());
             Thread.currentThread().setContextClassLoader(FxTestSupport.class.getClassLoader());
+            ContextMenuDismissal.install();
         });
         booted = true;
     }

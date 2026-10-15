@@ -301,8 +301,13 @@ final class RecoveryCoordinator {
         return state.copied
                 && state.copiedVersion == buffer.docVersion()
                 && java.util.Objects.equals(state.copiedLineEnding, buffer.getLineEnding())
-                && java.util.Objects.equals(state.copiedCharset, buffer.getEffectiveCharset())
+                && java.util.Objects.equals(state.copiedCharset, charsetKey(buffer))
                 && java.util.Objects.equals(state.copiedPath, buffer.getPath());
+    }
+
+    /** The charset a copy records, and whether the user chose it: a change to either needs a new copy. */
+    private static String charsetKey(EditorBuffer buffer) {
+        return (buffer.getUserCharset() != null ? "chosen:" : "") + buffer.getEffectiveCharset();
     }
 
     private void copy(EditorBuffer buffer, Tracked state, long nowNanos) {
@@ -325,11 +330,12 @@ final class RecoveryCoordinator {
                 System.currentTimeMillis(),
                 Math.clamp(buffer.getArea().getCaretPosition(), 0, text.length()),
                 windowKey.get(),
-                text));
+                text,
+                buffer.getUserCharset() != null));
         state.copied = true;
         state.copiedVersion = buffer.docVersion();
         state.copiedLineEnding = buffer.getLineEnding();
-        state.copiedCharset = buffer.getEffectiveCharset();
+        state.copiedCharset = charsetKey(buffer);
         state.copiedPath = path;
         state.copiedAtNanos = nowNanos;
     }
@@ -460,6 +466,7 @@ final class RecoveryCoordinator {
             } else {
                 open.replaceWholeDocument(record.text());
                 applyLineEnding(open, record.lineEnding());
+                keepChosenCharset(open, record);
                 Tab tab = files.host().tabForBuffer(open);
                 if (tab != null) {
                     files.host().editorArea().select(tab);
@@ -501,6 +508,7 @@ final class RecoveryCoordinator {
         applyLineEnding(buffer, record.lineEnding());
         Tab tab = files.host().addBuffer(buffer, true);
         files.setWritesBom(buffer, record.bom());
+        keepChosenCharset(buffer, record);
         if (path != null) {
             // As every open of a file does: a tab without its marks would write empty lists over the stored ones.
             restorePerFileState.accept(buffer);
@@ -512,6 +520,16 @@ final class RecoveryCoordinator {
             files.host().updateTabMeta(tab, buffer);
         }
         finish(entry, buffer, status);
+    }
+
+    /**
+     * An encoding the user chose for the buffer (Save with Encoding) — saved or not yet — is still the one the
+     * restored text is written in, whatever detection or {@code .editorconfig} would pick.
+     */
+    private static void keepChosenCharset(EditorBuffer buffer, RecoveryRecord record) {
+        if (record.charsetChosen() && record.charset() != null) {
+            buffer.setUserCharset(record.charset());
+        }
     }
 
     private static void applyLineEnding(EditorBuffer buffer, String lineEnding) {

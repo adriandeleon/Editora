@@ -926,7 +926,6 @@ public class SharedConfig {
     /** Replaces the whole saved-connection list (preserving order) and persists — backs the Settings editor. */
     public void setConnections(List<com.editora.vfs.RemoteConnection> conns) {
         connectionStore.connections = new java.util.ArrayList<>(conns == null ? List.of() : conns);
-        connectionStore.pruneExec();
         saveConnections();
     }
 

@@ -46,6 +46,20 @@ class SaveEncodingTest {
     }
 
     @Test
+    void aChosenCharsetIsKeptAndTheSaveRefusedRatherThanSwitchedToUtf8() {
+        // The user picked Shift_JIS with Save with Encoding: a character it lacks stops the save.
+        SaveEncoding.Plan plan = SaveEncoding.plan("日本\nok 😀\n", "Shift_JIS", true, true);
+
+        assertNull(plan.bytes());
+        assertNull(plan.fallbackFrom());
+        assertEquals("😀", plan.refused().character());
+        assertEquals(2, plan.refused().line());
+        assertArrayEquals(
+                "日本\n".getBytes(java.nio.charset.Charset.forName("Shift_JIS")),
+                SaveEncoding.plan("日本\n", "Shift_JIS", true, true).bytes());
+    }
+
+    @Test
     void aDeclaredCharsetFallsBackToUtf8WithAByteOrderMark() {
         SaveEncoding.Plan plan = SaveEncoding.plan("€café\n", EditorConfigCharset.LATIN1, false, true);
 

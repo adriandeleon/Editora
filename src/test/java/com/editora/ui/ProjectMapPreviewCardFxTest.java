@@ -445,8 +445,7 @@ class ProjectMapPreviewCardFxTest {
 
                 ContextMenuEvent request =
                         new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 300, 300, false, null);
-                r.card.editor().getOnContextMenuRequested().handle(request);
-                assertTrue(request.isConsumed());
+                javafx.event.Event.fireEvent(r.card.editor(), request); // through the window, as a real one is
                 assertTrue(r.menu().isShowing());
                 assertNotNull(r.item("editmenu.copy"));
 
