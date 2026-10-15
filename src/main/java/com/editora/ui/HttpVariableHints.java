@@ -56,8 +56,10 @@ final class HttpVariableHints {
 
     /** Gives {@code buffer} its check and its completion context (the buffer itself decides when it is on). */
     void wire(EditorBuffer buffer) {
-        buffer.setHttpVariableContext(() -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY));
-        buffer.setHttpVariableLint((text, done) -> check(buffer, text, done));
+        buffer.setHttpHooks(buffer.httpHooks()
+                .withVariables(
+                        (text, done) -> check(buffer, text, done),
+                        () -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY)));
     }
 
     /** Checks {@code buffer} again if its environment, env files or {@code .env} changed since the last check. */

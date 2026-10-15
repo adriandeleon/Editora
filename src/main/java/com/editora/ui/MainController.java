@@ -7641,10 +7641,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
-        buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
-        buffer.setHttpRunAllHandler(httpClient::runFile); // .http editor menu → Run All Requests (active buffer)
-        buffer.setHttpRunTooltip(() -> httpRunTooltip(keymap));
-        buffer.setHttpCancelHandler(() -> httpClient.cancelRun(buffer)); // the running request's ■
+        // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■
+        buffer.setHttpHooks(new com.editora.editor.HttpHooks(
+                line -> httpClient.runRequest(buffer, line),
+                httpClient::runFile,
+                () -> httpClient.cancelRun(buffer),
+                () -> httpRunTooltip(keymap),
+                null,
+                null));
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶

@@ -236,7 +236,7 @@ class EditorInteractionFxTest {
             List<Integer> requests = new ArrayList<>();
             AtomicInteger runnableChanges = new AtomicInteger();
             http.setOnRunnableChanged(runnableChanges::incrementAndGet);
-            http.setHttpRunHandler(requests::add);
+            http.setHttpHooks(new HttpHooks(requests::add, null, null, null, null, null));
             assertTrue(http.isHttpFile());
             assertFalse(http.isRunnable());
             http.setHttpEnabled(true);
@@ -247,7 +247,7 @@ class EditorInteractionFxTest {
             assertFalse(EditorFx.<Boolean>call(http, "isRunGlyphLine", new Class<?>[] {int.class}, 1));
             EditorFx.call(http, "onRunGlyph", new Class<?>[] {int.class}, 3);
             assertEquals(List.of(3), requests);
-            http.setHttpRunHandler(null);
+            http.setHttpHooks(null);
             EditorFx.call(http, "onRunGlyph", new Class<?>[] {int.class}, 0);
             assertEquals(1, requests.size());
             http.setOnRunnableChanged(null);

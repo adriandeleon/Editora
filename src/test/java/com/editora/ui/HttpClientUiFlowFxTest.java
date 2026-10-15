@@ -284,9 +284,8 @@ class HttpClientUiFlowFxTest {
             EditorBuffer b = new EditorBuffer();
             buffers.add(b);
             b.setDisplayName("api.http");
-            b.setHttpRunHandler(line -> runs[0] = line);
-            b.setHttpRunAllHandler(() -> runs[1]++);
-            b.setHttpRunTooltip(() -> "Run this request (C-M-r)");
+            b.setHttpHooks(new com.editora.editor.HttpHooks(
+                    line -> runs[0] = line, () -> runs[1]++, null, () -> "Run this request (C-M-r)", null, null));
             b.setHttpEnabled(true);
             b.setContent("### one\nGET http://127.0.0.1:1/\nAccept: */*\n");
             b.settleRunScan();
