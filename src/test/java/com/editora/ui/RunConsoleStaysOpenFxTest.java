@@ -91,6 +91,28 @@ class RunConsoleStaysOpenFxTest {
     }
 
     @Test
+    void theRunStripeButtonBadgesASpinnerWhileTheProgramRuns() throws Exception {
+        FxTestSupport.runOnFx(() -> registry.run(RunConfiguration.commandIdFor("Slow"))); // sleeps 0.5 s
+        long deadline = System.nanoTime() + 20_000_000_000L;
+        boolean sawBusy = false;
+        while (!sawBusy && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            sawBusy = FxTestSupport.callOnFx(
+                    () -> runWindow.busyProperty().get() && stripeBadge().isVisible());
+        }
+        assertTrue(sawBusy, "the Run stripe button badges a spinner while the program runs");
+        awaitExit("Slow");
+        assertFalse(FxTestSupport.callOnFx(() -> runWindow.busyProperty().get()), "not busy after the exit");
+        assertFalse(FxTestSupport.callOnFx(() -> stripeBadge().isVisible()), "the badge goes with it");
+    }
+
+    private static javafx.scene.Node stripeBadge() {
+        return FxTestSupport.<Map<ToolWindow, Button>>field(toolWindows, "stripeButtons")
+                .get(runWindow)
+                .lookup(".tool-stripe-busy");
+    }
+
+    @Test
     void anInstantlyExitingProgramStillShowsItsConsole() throws Exception {
         runAndAwaitExit("Instant");
         assertConsoleShowing("instant-output");
@@ -124,6 +146,10 @@ class RunConsoleStaysOpenFxTest {
 
     private static void runAndAwaitExit(String name) throws Exception {
         FxTestSupport.runOnFx(() -> registry.run(RunConfiguration.commandIdFor(name)));
+        awaitExit(name);
+    }
+
+    private static void awaitExit(String name) throws Exception {
         long deadline = System.nanoTime() + 20_000_000_000L;
         while (true) {
             Thread.sleep(40);

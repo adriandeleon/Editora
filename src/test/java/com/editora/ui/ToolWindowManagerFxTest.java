@@ -9,6 +9,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Region;
@@ -103,6 +104,34 @@ class ToolWindowManagerFxTest {
         scene.getRoot().applyCss();
         scene.getRoot().layout();
         return new Rig(manager, config, scene);
+    }
+
+    @Test
+    void aBusyWindowsStripeButtonBadgesASpinnerWithoutChangingSize() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Rig rig = rig();
+            ToolWindow run = rig.add("run", ToolWindow.Side.BOTTOM);
+            ToolWindow side = rig.add("side", ToolWindow.Side.RIGHT);
+            rig.layout();
+            Button button = rig.button(run);
+            ProgressIndicator badge = (ProgressIndicator) button.lookup(".tool-stripe-busy");
+            assertTrue(badge != null && !badge.isVisible(), "an idle window shows no badge");
+            double width = button.getWidth();
+            double height = button.getHeight();
+
+            run.busyProperty().set(true);
+            rig.layout();
+            assertTrue(badge.isVisible(), "busy badges the button");
+            assertEquals(width, button.getWidth(), 0.01, "the badge overlays the icon: the label does not move");
+            assertEquals(height, button.getHeight(), 0.01);
+            assertFalse(
+                    ((ProgressIndicator) rig.button(side).lookup(".tool-stripe-busy")).isVisible(),
+                    "only the busy window's button");
+            assertTrue(badge.isMouseTransparent(), "clicks still reach the button");
+
+            run.busyProperty().set(false);
+            assertFalse(badge.isVisible(), "the badge goes when the work ends");
+        });
     }
 
     @Test
