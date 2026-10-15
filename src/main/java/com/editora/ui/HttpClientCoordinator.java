@@ -240,6 +240,7 @@ final class HttpClientCoordinator {
             history.closed(closed);
             captures.remove(closed);
             environments.remove(closed);
+            cancelling.remove(closed); // a cancelled run's late results have no panel to land in
             com.editora.http.HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
                 run.cancel(); // nobody is left to read the response
