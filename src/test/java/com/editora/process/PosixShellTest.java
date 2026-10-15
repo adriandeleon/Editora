@@ -67,6 +67,30 @@ class PosixShellTest {
     }
 
     @Test
+    void theLoginProfilesVariablesComeFirstSoEverythingElseWins() {
+        Map<String, String> profile = new LinkedHashMap<>();
+        profile.put("JAVA_HOME", "/opt/jdk-17");
+        profile.put("MAVEN_OPTS", "-Xmx2g");
+        profile.put("BAD NAME", "x"); // not a variable name: never exported
+        String script = PosixShell.script(
+                spec(ExecSpec.Locale.PARSE_STABLE, Map.of("JAVA_HOME", "/opt/jdk-21"), "mvn"),
+                null,
+                "/usr/bin",
+                null,
+                profile);
+
+        assertEquals("""
+                printf '\\036EDITORA %s\\n' "$$" >&2
+                JAVA_HOME='/opt/jdk-17'; export JAVA_HOME
+                MAVEN_OPTS='-Xmx2g'; export MAVEN_OPTS
+                PATH='/usr/bin'; export PATH
+                LC_ALL='C'; export LC_ALL
+                JAVA_HOME='/opt/jdk-21'; export JAVA_HOME
+                exec "$@"
+                """, script);
+    }
+
+    @Test
     void discardedStreamsAreClosedAfterThePidLine() {
         String script = PosixShell.script(
                 spec(ExecSpec.Locale.USER, Map.of(), "node").withDiscardedOutput(true, true), null, null, null);

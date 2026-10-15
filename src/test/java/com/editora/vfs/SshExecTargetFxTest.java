@@ -94,6 +94,30 @@ class SshExecTargetFxTest {
         assertEquals("oops\n", r.err(), "the pid line is the transport's, not the command's");
     }
 
+    /**
+     * A variable the account's login profile exports — JAVA_HOME, MAVEN_OPTS, a version manager's — reaches a
+     * command, as it would in the account's own terminal; a command's own value still wins. Before, only PATH
+     * and the locale were carried over: a JAVA_HOME set in ~/.bash_profile was missing from every build.
+     */
+    @Test
+    void whatTheLoginProfileExportsReachesACommandUnlessTheCommandSaysOtherwise() throws Exception {
+        String profile = "export EDITORA_TEST_FROM_PROFILE='set by the profile'\nexport TOOL_HOME=/opt/tool\n";
+        for (String name : List.of(".bash_profile", ".zprofile", ".profile")) {
+            Files.writeString(fixture.home().resolve(name), profile); // whichever the login shell reads
+        }
+
+        ProcessRunner.Result r = ProcessRunner.run(
+                remoteDir,
+                TIMEOUT,
+                List.of("sh", "-c", "echo \"$TOOL_HOME|$SSH_CONNECTION_TEST|$EDITORA_TEST_FROM_PROFILE\""),
+                Map.of("TOOL_HOME", "/opt/override"));
+
+        assertEquals(0, r.exit(), r.err());
+        assertEquals("/opt/override||\n", r.out(), "the command's own value wins; EDITORA_ names are Editora's own");
+        ProcessRunner.Result plain = ProcessRunner.run(remoteDir, TIMEOUT, List.of("sh", "-c", "echo \"$TOOL_HOME\""));
+        assertEquals("/opt/tool\n", plain.out(), "the profile's value, for a command that sets none");
+    }
+
     @Test
     void stdinReachesTheCommandAndItsEndDoesToo() {
         ProcessRunner.Result r = ProcessRunner.run(remoteDir, TIMEOUT, List.of("cat"), Map.of(), "línea\n");
