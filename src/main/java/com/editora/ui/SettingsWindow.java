@@ -5151,7 +5151,7 @@ public class SettingsWindow {
                     label.getText().strip(),
                     cur.lastPath()); // preserve the remembered path; not edited here
             // What was decided for the host (may run commands, its tools) follows the connection when its host,
-            // user or port is edited; the save below would otherwise drop it as belonging to no saved site.
+            // user or port is edited: it is kept by id, and the new id would otherwise start with none.
             config.renameRemoteHost(cur.id(), updated.id());
             remoteItems.set(i, updated);
             list.refresh();
