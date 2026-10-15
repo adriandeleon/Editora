@@ -1695,14 +1695,139 @@ final class FileWorkflowCoordinator {
         if (buffer.getPath() == null) {
             return saveAs(buffer);
         }
-        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
-            buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
-        }
+        updateTocForExplicitSave(buffer);
         if (adminSaveApplicable(buffer.getPath())) {
             saveAsAdmin(buffer); // async elevated write; the buffer stays dirty until it completes
             return true;
         }
         return writeBuffer(buffer, buffer.getPath());
+    }
+
+    private void updateTocForExplicitSave(EditorBuffer buffer) {
+        if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
+            buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
+        }
+    }
+
+    /**
+     * {@code file.saveAll}: saves every modified file in this window — every editor group — as File: Save
+     * would, then says how many were written. An untitled buffer is skipped (Save All asks for no names);
+     * a tab that is not a text buffer (a diff's Result pane) keeps its own Save.
+     */
+    void saveAll() {
+        List<CompletableFuture<Boolean>> writes = new ArrayList<>();
+        int untitled = 0;
+        for (Tab tab : host.editorArea().tabs()) {
+            EditorBuffer buffer = host.bufferOf(tab);
+            if (buffer == null || !buffer.isDirty() || !buffer.isEditable()) {
+                continue;
+            }
+            if (buffer.getPath() == null) {
+                untitled++;
+                continue;
+            }
+            CompletableFuture<Boolean> write = saveTracked(buffer);
+            if (write != null) {
+                writes.add(write);
+            }
+        }
+        if (writes.isEmpty() && untitled == 0) {
+            host.setStatus(tr("status.saveAll.none"));
+            return;
+        }
+        int skipped = untitled;
+        CompletableFuture.allOf(writes.toArray(CompletableFuture[]::new))
+                .thenRunAsync(
+                        () -> {
+                            long saved = writes.stream()
+                                    .filter(w -> Boolean.TRUE.equals(w.getNow(false)))
+                                    .count();
+                            long notSaved = writes.size() - saved;
+                            host.setStatus(
+                                    notSaved == 0 && skipped == 0
+                                            ? tr("status.saveAll.done", String.valueOf(saved))
+                                            : tr(
+                                                    "status.saveAll.partial",
+                                                    String.valueOf(saved),
+                                                    String.valueOf(notSaved),
+                                                    String.valueOf(skipped)));
+                        },
+                        Platform::runLater);
+    }
+
+    /**
+     * An explicit save of a file-backed buffer whose outcome can be awaited: completes on the FX thread with
+     * whether the bytes reached the disk. Null for an elevated (administrator) save, which reports itself.
+     */
+    private CompletableFuture<Boolean> saveTracked(EditorBuffer buffer) {
+        if (refuseUnsavable(buffer)) {
+            return CompletableFuture.completedFuture(false);
+        }
+        host.previews().lint().beforeSave(buffer);
+        updateTocForExplicitSave(buffer);
+        Path file = buffer.getPath();
+        if (adminSaveApplicable(file)) {
+            saveAsAdmin(buffer);
+            return null;
+        }
+        SaveRequest request = captureSave(buffer, file, false);
+        if (request == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        CompletableFuture<Boolean> completed = new CompletableFuture<>();
+        try {
+            saveExecutor(file).submit(() -> writeAsync(request, false, completed));
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            finishRequest(request);
+            completed.complete(false);
+        }
+        return completed;
+    }
+
+    /** Asked before a revert discards unsaved changes (Local History keeps them). Replaced by tests. */
+    volatile java.util.function.Predicate<EditorBuffer> confirmRevert = this::confirmRevertDialog;
+
+    /**
+     * {@code file.revert}: replaces the active buffer's text with its file on disk — after asking, when that
+     * discards unsaved changes. The caret, scroll position and folds stay where they were, and the file is
+     * read in the encoding chosen for it, if any.
+     */
+    void revert() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            host.setStatus(tr("status.noFileOpen"));
+            return;
+        }
+        Path file = buffer.getPath();
+        if (file == null) {
+            host.setStatus(tr("status.revert.untitled", buffer.getTitle()));
+            return;
+        }
+        if (buffer.isLoading() || loadingBuffers.contains(buffer)) {
+            return; // what is on disk is what is being read already
+        }
+        if (com.editora.vfs.Vfs.isLocal(file) && !Files.exists(file)) {
+            host.setStatus(tr("status.revert.missing", buffer.getTitle()));
+            return;
+        }
+        if (buffer.isDirty() && !confirmRevert.test(buffer)) {
+            return;
+        }
+        Tab tab = host.tabFor(buffer);
+        reloadFromDisk(tab, buffer, applied -> {
+            if (applied) {
+                host.setStatus(tr("status.revert.done", buffer.getTitle()));
+            }
+        });
+    }
+
+    private boolean confirmRevertDialog(EditorBuffer buffer) {
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
+        alert.initOwner(host.stage());
+        alert.setTitle(tr("command.file.revert"));
+        alert.setHeaderText(tr("dialog.revert.header", buffer.getTitle()));
+        alert.setContentText(tr("dialog.revert.content"));
+        return alert.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
     }
 
     /**

@@ -25,24 +25,43 @@ final class MenuBarModel {
     /** Placeholder entry rendering a separator line rather than a command. */
     static final String SEPARATOR = "---";
 
+    private static final String SUBMENU = "submenu:";
+
+    /**
+     * Placeholder entry that shows the menu's submenu titled {@code titleKey} at this position, rather than
+     * below the entries with the others.
+     */
+    static String submenu(String titleKey) {
+        return SUBMENU + titleKey;
+    }
+
+    /** The submenu title key an entry places inline, or null when it is a command id or a separator. */
+    static String inlineSubmenu(String entry) {
+        return entry.startsWith(SUBMENU) ? entry.substring(SUBMENU.length()) : null;
+    }
+
     /**
      * One menu: an i18n key for its title, its ordered entries (command ids / separators), and — after
      * those, below a separator — its submenus. A submenu is a {@code MenuSpec} too (it has none of its own).
+     * A submenu named by a {@link #submenu} entry is shown at that entry instead.
      *
-     * <p>Submenus exist for the one menu that outgrew a flat list: VCS had some sixty entries. The daily
-     * actions stay in {@link #entries}; everything else is one level down, grouped by what it acts on.
+     * <p>Submenus exist for menus that outgrew a flat list: VCS had some sixty entries. The daily actions
+     * stay in {@link #entries}; everything else is one level down, grouped by what it acts on. File keeps its
+     * export formats in one: the menu is as tall as a small screen allows (MenuPopupBoundsFxTest).
      */
     record MenuSpec(String titleKey, List<String> entries, List<MenuSpec> submenus) {
         MenuSpec(String titleKey, List<String> entries) {
             this(titleKey, entries, List.of());
         }
 
-        /** Every entry of the menu and of its submenus, top level first. */
+        /** Every entry of the menu and of its submenus, top level first, without the inline-submenu places. */
         List<String> allEntries() {
-            if (submenus.isEmpty()) {
-                return entries;
+            List<String> all = new java.util.ArrayList<>();
+            for (String entry : entries) {
+                if (inlineSubmenu(entry) == null) {
+                    all.add(entry);
+                }
             }
-            List<String> all = new java.util.ArrayList<>(entries);
             for (MenuSpec submenu : submenus) {
                 all.addAll(submenu.allEntries());
             }
@@ -84,10 +103,13 @@ final class MenuBarModel {
                                 "maven.newProject",
                                 "file.open",
                                 "project.open",
+                                "buffer.reopenClosed",
                                 SEPARATOR,
                                 "file.save",
                                 "file.saveAs",
+                                "file.saveAll",
                                 "file.saveAsAdmin",
+                                "file.revert",
                                 SEPARATOR,
                                 "buffer.close",
                                 "buffer.closeOthers",
@@ -96,17 +118,22 @@ final class MenuBarModel {
                                 // The file as text first — these work for every file — then its rendered
                                 // preview, which only some files have.
                                 "editor.print",
-                                "editor.exportPdf",
                                 "preview.print",
-                                "preview.exportPdf",
-                                "preview.exportDocx",
-                                "preview.exportOdt",
-                                "preview.exportHtml",
+                                submenu("menubar.file.export"),
                                 SEPARATOR,
                                 "file.clearRecent",
                                 "config.export",
                                 SEPARATOR,
-                                "app.quit")),
+                                "app.quit"),
+                        List.of(new MenuSpec(
+                                "menubar.file.export",
+                                List.of(
+                                        "editor.exportPdf",
+                                        SEPARATOR,
+                                        "preview.exportPdf",
+                                        "preview.exportDocx",
+                                        "preview.exportOdt",
+                                        "preview.exportHtml")))),
                 new MenuSpec(
                         "menubar.edit",
                         List.of(

@@ -66,5 +66,7 @@
   "Cmd-S-l": "edit.selectAllOccurrences",
   "M-Cmd-r": "http.runRequest",
   "M-Cmd-S-r": "http.runFile",
-  "M-Cmd-k": "http.cancelRequest"
+  "M-Cmd-k": "http.cancelRequest",
+  "M-Cmd-s": "file.saveAll",
+  "Cmd-S-t": "buffer.reopenClosed"
 }

@@ -637,6 +637,21 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public void saveAll() {
+        mc.fileWorkflows.saveAll();
+    }
+
+    @Override
+    public void revertFile() {
+        mc.fileWorkflows.revert();
+    }
+
+    @Override
+    public void reopenClosedTab() {
+        mc.reopenClosedTab();
+    }
+
+    @Override
     public void toggleAutoSave() {
         mc.fileWorkflows.toggleAutoSave();
     }

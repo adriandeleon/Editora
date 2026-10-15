@@ -66,5 +66,7 @@
   "C-S-l": "edit.selectAllOccurrences",
   "C-M-r": "http.runRequest",
   "C-M-S-r": "http.runFile",
-  "C-M-k": "http.cancelRequest"
+  "C-M-k": "http.cancelRequest",
+  "C-k s": "file.saveAll",
+  "C-S-t": "buffer.reopenClosed"
 }

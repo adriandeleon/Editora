@@ -58,6 +58,32 @@ class MenuBarModelTest {
         }
     }
 
+    /** An inline-submenu entry names a submenu of the same menu; one that names none would show nothing. */
+    @Test
+    void everyInlineSubmenuEntryNamesASubmenu() {
+        for (boolean simple : new boolean[] {false, true}) {
+            for (MenuBarModel.MenuSpec menu : MenuBarModel.menus(simple)) {
+                for (String entry : menu.entries()) {
+                    String key = MenuBarModel.inlineSubmenu(entry);
+                    if (key != null) {
+                        assertTrue(
+                                menu.submenus().stream().anyMatch(m -> key.equals(m.titleKey())),
+                                menu.titleKey() + " places a submenu it does not have: " + key);
+                    }
+                }
+            }
+        }
+        assertFalse(MenuBarModel.allCommandIds().stream().anyMatch(id -> MenuBarModel.inlineSubmenu(id) != null));
+    }
+
+    @Test
+    void theFileMenuReachesSaveAllRevertAndReopenClosedTab() {
+        List<String> file = MenuBarModel.menus(false).get(0).entries();
+        for (String id : List.of("file.saveAll", "file.revert", "buffer.reopenClosed")) {
+            assertTrue(file.contains(id), id + " is missing from File: " + file);
+        }
+    }
+
     @Test
     void everyMenuTitleIsLocalized() throws Exception {
         Properties messages = messages();
@@ -124,7 +150,7 @@ class MenuBarModelTest {
                     .filter(m -> "menubar.file".equals(m.titleKey()))
                     .findFirst()
                     .orElseThrow(() -> new AssertionError("no File menu, simple=" + simple))
-                    .entries();
+                    .allEntries();
             assertTrue(file.contains("editor.print"), "File should offer Print (simple=" + simple + "): " + file);
             assertTrue(
                     file.contains("editor.exportPdf"),
@@ -136,8 +162,18 @@ class MenuBarModelTest {
         // height the screen allows (MenuPopupBoundsFxTest).
         assertFalse(full.contains("editor.printSelection"), full.toString());
         assertFalse(full.contains("editor.exportSelectionPdf"), full.toString());
-        assertEquals(full.indexOf("editor.print") + 2, full.indexOf("preview.print"), full.toString());
-        assertEquals(full.indexOf("editor.exportPdf") + 2, full.indexOf("preview.exportPdf"), full.toString());
+        assertEquals(full.indexOf("editor.print") + 1, full.indexOf("preview.print"), full.toString());
+        // The export formats share one submenu, shown right after the print entries.
+        assertEquals(
+                full.indexOf("preview.print") + 1,
+                full.indexOf(MenuBarModel.submenu("menubar.file.export")),
+                full.toString());
+        List<String> export = MenuBarModel.menus(false).get(0).submenus().stream()
+                .filter(m -> "menubar.file.export".equals(m.titleKey()))
+                .findFirst()
+                .orElseThrow()
+                .entries();
+        assertEquals(export.indexOf("editor.exportPdf") + 2, export.indexOf("preview.exportPdf"), export.toString());
         List<String> simpleFile = MenuBarModel.menus(true).get(0).entries();
         assertFalse(
                 simpleFile.contains("editor.printSelection"), "the Simple menu keeps to the two whole-file entries");

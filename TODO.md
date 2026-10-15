@@ -1586,6 +1586,12 @@ A backlog of planned features and improvements. Unordered within each section.
       Gzip'd content-addressed blobs + a per-project index under `<configDir>/history/`, deduped, with
       configurable retention (revisions/file, age, size/project). On by default; local-only; off in Simple UI
 - [x] Detect external file changes — prompt to reload when a file changes on disk (focus-regain / tab switch)
+- [x] Save All / Revert File / Reopen Closed Tab — `file.saveAll` (every editor group, untitled skipped, one
+      summary status), `file.revert` (confirm only when dirty; reuses `reloadFromDisk`), `buffer.reopenClosed`
+      (per-window `ClosedTabs` stack of 20, recorded only on user closes, caret restored). File menu: export
+      formats moved into an inline Export submenu (`MenuBarModel.submenu`) — the menu is at the height
+      `MenuPopupBoundsFxTest` allows. *Deferred: reopening diff/preview tabs, persisting the stack across
+      restarts, Save All for diff Result panes*
 - [x] Choose a file's encoding — `Buffer: Reopen with Encoding…` (strict re-read, first unreadable line/column
       named, nothing changed on failure) and `Buffer: Save with Encoding…` (a pending change until saved;
       outranks `.editorconfig`; refuses text the encoding cannot hold), both from a click on the status-bar

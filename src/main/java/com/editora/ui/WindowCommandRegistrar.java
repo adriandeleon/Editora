@@ -288,6 +288,15 @@ final class WindowCommandRegistrar {
         /** Buffer: Reopen with Encoding… / Save with Encoding… and the status bar's encoding chooser. */
         EncodingCommands encodings();
 
+        /** File: Save All. */
+        void saveAll();
+
+        /** File: Revert File. */
+        void revertFile();
+
+        /** Buffer: Reopen Closed Tab. */
+        void reopenClosedTab();
+
         void toggleAutoSave();
 
         void onCloseTab();
@@ -433,6 +442,8 @@ final class WindowCommandRegistrar {
             }
         }));
         host.registry().register(Command.of("file.save", host::onSave));
+        host.registry().register(Command.of("file.saveAll", host::saveAll));
+        host.registry().register(Command.of("file.revert", host::revertFile));
         // Palette / keybinding Save As is keyboard-first: prompt for the path in-scene (the toolbar button's
         // FXML onAction still opens the native file chooser).
         host.registry().register(Command.of("file.saveAs", () -> host.saveAsPrompt(host.activeBuffer())));
@@ -440,6 +451,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("buffer.close", host::onCloseTab));
         host.registry().register(Command.of("buffer.closeOthers", () -> host.closeOtherTabs(host.activeTab())));
         host.registry().register(Command.of("buffer.closeAll", host::closeAllTabs));
+        host.registry().register(Command.of("buffer.reopenClosed", host::reopenClosedTab));
         host.registry().register(Command.of("buffer.closeUnmodified", host::closeUnmodifiedTabs));
         host.registry().register(Command.of("buffer.closeLeft", () -> host.closeTabsToLeft(host.activeTab())));
         host.registry().register(Command.of("buffer.closeRight", () -> host.closeTabsToRight(host.activeTab())));
