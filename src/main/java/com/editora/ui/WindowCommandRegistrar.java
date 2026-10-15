@@ -1287,6 +1287,24 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.addCaretNextOccurrence",
                         () -> host.withMultiCaret(EditorBuffer::addCaretNextOccurrence)));
+        host.registry().register(Command.of("edit.splitSelectionIntoLines", () -> splitIntoLines(false)));
+        host.registry().register(Command.of("edit.addCaretsToLineEnds", () -> splitIntoLines(true)));
+        host.registry()
+                .register(Command.of(
+                        "edit.skipOccurrence",
+                        () -> host.withMultiCaret(b -> {
+                            if (!b.skipOccurrence()) {
+                                host.setStatus(tr("status.multiCaret.noOtherOccurrence"));
+                            }
+                        })));
+        host.registry()
+                .register(Command.of(
+                        "edit.undoLastCaret",
+                        () -> host.withMultiCaret(b -> {
+                            if (!b.undoLastCaret()) {
+                                host.setStatus(tr("status.multiCaret.single"));
+                            }
+                        })));
         host.registry()
                 .register(Command.of("edit.addCaretAbove", () -> host.withMultiCaret(EditorBuffer::addCaretAbove)));
         host.registry()
@@ -3038,6 +3056,14 @@ final class WindowCommandRegistrar {
             }
             host.toolWindows().open(host.githubToolWindow(), true); // opening it loads the list
             host.setStatus(tr(answer.messageKey()));
+        });
+    }
+
+    /** Split into Lines ({@code atLineEnds} false) / Add Carets to Line Ends (true), with a status either way. */
+    private void splitIntoLines(boolean atLineEnds) {
+        host.withMultiCaret(b -> {
+            int placed = b.splitSelectionIntoLines(atLineEnds);
+            host.setStatus(placed == 0 ? tr("status.multiCaret.noSelection") : tr("status.multiCaret.placed", placed));
         });
     }
 }

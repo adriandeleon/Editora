@@ -1538,6 +1538,12 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Column select support — column/block selection (overlay + column-aware edits)
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
+- [x] Multi-caret extras — `edit.splitSelectionIntoLines` (Sublime: each line's selected part),
+      `edit.addCaretsToLineEnds` (VS Code Shift+Alt+I), `edit.skipOccurrence` (Ctrl+K Ctrl+D: the newest
+      selection moves on, wraps) and `edit.undoLastCaret` (Ctrl+U: the extra caret added last). Pure planning in
+      `editops/CaretPlans`; creation order from `MultiCarets.extras()`; no fork change.
+      *Deferred: VS Code's full cursor-state undo (Ctrl+U restores any earlier caret set, not only removes the
+      newest), case-insensitive / whole-word occurrence matching*
 - [x] Advanced Undo/Redo support — word/line-level undo coalescing (boundary + idle breaks) **and** an
       Undo History tool window (`M-g u`: in-session checkpoints, jump-to-restore). *The undo tree (branch
       recovery) was deliberately not pursued — it would mean replacing RichTextFX's linear undo engine for a

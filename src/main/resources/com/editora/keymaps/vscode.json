@@ -68,5 +68,8 @@
   "C-M-S-r": "http.runFile",
   "C-M-k": "http.cancelRequest",
   "C-k s": "file.saveAll",
-  "C-S-t": "buffer.reopenClosed"
+  "C-S-t": "buffer.reopenClosed",
+  "M-S-i": "edit.addCaretsToLineEnds",
+  "C-k C-d": "edit.skipOccurrence",
+  "C-u": "edit.undoLastCaret"
 }

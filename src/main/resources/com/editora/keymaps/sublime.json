@@ -51,8 +51,11 @@
   "M-down": "edit.moveLineDown",
   "M-S-right": "edit.expandSelection",
   "M-S-left": "edit.shrinkSelection",
-  "C-S-l": "edit.selectAllOccurrences",
+  "C-S-l": "edit.splitSelectionIntoLines",
   "C-M-r": "http.runRequest",
   "C-M-S-r": "http.runFile",
-  "C-S-t": "buffer.reopenClosed"
+  "C-S-t": "buffer.reopenClosed",
+  "M-f3": "edit.selectAllOccurrences",
+  "C-k C-d": "edit.skipOccurrence",
+  "C-u": "edit.undoLastCaret"
 }
