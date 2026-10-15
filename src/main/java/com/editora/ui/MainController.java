@@ -6813,7 +6813,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
-    /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-r", with the keymap's chords. */
+    /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-enter", with the keymap's chords. */
     static String httpRunTooltip(com.editora.command.KeymapManager keymap) {
         String run = keymap == null ? null : keymap.displayChord("http.runRequest");
         String all = keymap == null ? null : keymap.displayChord("http.runFile");

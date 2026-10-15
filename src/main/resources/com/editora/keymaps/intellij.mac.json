@@ -62,5 +62,6 @@
   "M-up": "edit.expandSelection",
   "M-down": "edit.shrinkSelection",
   "C-M-r": "http.runRequest",
-  "C-M-S-r": "http.runFile"
+  "C-M-S-enter": "http.runFile",
+  "C-M-k": "http.cancelRequest"
 }
