@@ -81,10 +81,20 @@ class HttpResponseHistoryTest {
                 "X-Api-Key",
                 "apikey",
                 "X-Client-Secret",
-                "X-Password")) {
+                "X-Password",
+                "X-Auth-Key",
+                "Ocp-Apim-Subscription-Key",
+                "X-Access-Key",
+                "X-Session-Id",
+                "X-Auth",
+                "set-cookie2",
+                "Authentication",
+                "X-Api-Signature",
+                " x-AUTH-token ")) {
             assertTrue(HttpResponseHistory.isCredentialHeader(name), name);
         }
-        for (String name : List.of("Accept", "Content-Type", "ETag", "X-Request-Id")) {
+        for (String name : List.of(
+                "Accept", "Content-Type", "ETag", "X-Request-Id", "Idempotency-Key", "Connection", "X-Auth-Email")) {
             assertFalse(HttpResponseHistory.isCredentialHeader(name), name);
         }
     }

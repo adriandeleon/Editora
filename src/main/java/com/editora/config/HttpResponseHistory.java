@@ -155,24 +155,39 @@ public final class HttpResponseHistory {
 
     /**
      * Whether {@code name} carries a credential, so its value must not be written to disk: {@code
-     * Authorization}, {@code Proxy-Authorization}, {@code Cookie}, {@code Set-Cookie}, and any header whose name
-     * mentions a token, a secret, an API key or a password ({@code X-Auth-Token}, {@code X-Api-Key}, …).
+     * Authorization}, {@code Proxy-Authorization}, {@code Authentication}, {@code Cookie}, {@code Set-Cookie(2)},
+     * {@code X-Auth}, any header whose name mentions a token, a secret, a password, a session, a credential or a
+     * signature ({@code X-Auth-Token}, {@code X-Session-Id}, …), and any whose name ends in "key" ({@code X-Api-Key},
+     * Cloudflare's {@code X-Auth-Key}, Azure's {@code Ocp-Apim-Subscription-Key}, {@code X-Access-Key}) — except
+     * an {@code Idempotency-Key}, which is a request id. Masking a harmless header costs a value in the saved
+     * history; missing a key leaks it, so the test is broad.
      */
     public static boolean isCredentialHeader(String name) {
         if (name == null) {
             return false;
         }
         String n = name.strip().toLowerCase(Locale.ROOT);
+        if (n.endsWith("idempotency-key")) {
+            return false;
+        }
         return n.equals("authorization")
                 || n.equals("proxy-authorization")
+                || n.equals("authentication")
                 || n.equals("cookie")
                 || n.equals("set-cookie")
+                || n.equals("set-cookie2")
+                || n.equals("x-auth")
                 || n.contains("token")
                 || n.contains("secret")
+                || n.contains("password")
+                || n.contains("passwd")
+                || n.contains("session")
+                || n.contains("credential")
+                || n.contains("signature")
                 || n.contains("api-key")
                 || n.contains("apikey")
                 || n.contains("api_key")
-                || n.contains("password");
+                || n.endsWith("key");
     }
 
     /** {@code headers} as stored: credential values replaced by {@link #MASK}. */
