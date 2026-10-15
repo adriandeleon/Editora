@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Choose a file's encoding.** Click the encoding in the status bar, or use `Buffer: Reopen with
-  Encoding…` and `Buffer: Save with Encoding…` (also in the File menu). Reopening reads the file again in
+  Encoding…` and `Buffer: Save with Encoding…` from the command palette. Reopening reads the file again in
   the encoding you pick — Shift_JIS, GBK, windows-1251 and about 40 other common ones are listed by script,
   then every encoding the runtime has — and remembers it for that file, including remote files. When the file
   is not valid in that encoding, nothing changes and the status line names the first line and column that
