@@ -188,6 +188,13 @@ process has actually exited (it is given a moment to shut down cleanly, and stil
 meanwhile), and a restart of the same `(server, root)` waits — bounded, on the start thread — for that
 exit before launching.
 
+Nothing deletes a workspace on its own: there is one per Java folder ever opened, each ~40 MB before the
+project's own classes (jdtls indexes the JDK into every one). `lsp.clearJavaIndexCaches` runs
+`LspManager.clearJdtlsWorkspaces` off the FX thread: it claims each directory in the same static claim set the
+session start uses (so no session can start on a half-deleted cache), skips it when the claim is taken or
+another process holds the Eclipse lock, deletes the rest with their failure markers, and reports the count and
+bytes freed. It works with LSP off, and leaves remote hosts' `jdtls-workspaces` alone.
+
 ### Diagnostics → overlay, stripe, minimap, Problems
 
 A compact Java file's diagnostics are passed through without a message-based suppression rule. The bundled

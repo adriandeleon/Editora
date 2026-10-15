@@ -2016,12 +2016,18 @@
                                          the modules. NOTE: strip-native-commands is deliberately NOT in this
                                          list — the bin/java it would remove is needed for the AOT training
                                          run; the aot_build helper deletes bin/ itself, after training,
-                                         reclaiming the same footprint. -->
+                                         reclaiming the same footprint.
+                                         vm=server: the release JDK (Liberica) carries the client and
+                                         minimal VMs as well, and jlink copies every VM by default, so the
+                                         0.21.0 .deb shipped lib/client (17 MB) and lib/minimal (5.5 MB)
+                                         beside lib/server. The launcher only ever starts the first jvm.cfg
+                                         entry, -server, and the AOT cache is trained on it. -->
                                     <jLinkOptions>
                                         <jLinkOption>--strip-debug</jLinkOption>
                                         <jLinkOption>--no-man-pages</jLinkOption>
                                         <jLinkOption>--no-header-files</jLinkOption>
                                         <jLinkOption>--compress=zip-6</jLinkOption>
+                                        <jLinkOption>--vm=server</jLinkOption>
                                     </jLinkOptions>
                                     <destination>${project.build.directory}/aot-image</destination>
                                 </configuration>
