@@ -27,7 +27,7 @@ class HttpDirectivesTest {
         HttpFile.Directives d = r.directives();
         assertTrue(d.noRedirect());
         assertTrue(d.noCookieJar());
-        assertEquals(30, d.timeoutSeconds());
+        assertEquals(30_000, d.timeoutMillis());
         assertFalse(d.noLog());
     }
 

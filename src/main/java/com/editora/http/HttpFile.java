@@ -4,34 +4,55 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Pure parser for {@code .http}/{@code .rest} request files (the JetBrains/VS Code REST format), so it is
- * unit-tested without a toolkit. A file is a sequence of <b>requests</b> separated by {@code ###} lines;
- * each request is a method+URL line, optional headers, a blank line, and an optional body. Lines starting
- * with {@code #}/{@code //} are comments and {@code @name = value} lines are variable declarations.
+ * unit-tested without a toolkit. A file is a sequence of <b>sections</b> separated by {@code ###} lines; each
+ * section holds at most one request: a method+URL line, optional headers, a blank line, and an optional body.
+ * Lines starting with {@code #}/{@code //} are comments — above the request, among the headers, and inside an
+ * inline body (the JetBrains spec: a body comment starts the line, with or without indent) — and
+ * {@code @name = value} lines above a request are variable declarations.
  *
  * <p>Beyond the basics it recognizes the IntelliJ extensions used by the executor: an external body
  * reference ({@code < ./file} raw, {@code <@ ./file} substituted), response-redirect operators
- * ({@code >> file} / {@code >>! file} force), and per-request comment directives ({@code # @no-redirect},
- * {@code # @no-cookie-jar}, {@code # @no-log}, {@code # @timeout N}, {@code # @name x}). Response-handler
- * scripts ({@code > {% … %}}) are still recognized only to end the body — they are not executed.
+ * ({@code >> file} / {@code >>! file} force), and per-request comment directives above the request line
+ * ({@code # @no-redirect}, {@code # @no-cookie-jar}, {@code # @no-log}, {@code # @no-auto-encoding},
+ * {@code # @timeout 2 m}, {@code # @connection-timeout 500 ms}, {@code # @name x}). JavaScript — response
+ * handlers ({@code > {% … %}} / {@code > file.js}) and pre-request scripts ({@code < {% … %}}) — is recognized
+ * so it never becomes part of the request, but it is not executed; the request reports that it was ignored.
  */
 public final class HttpFile {
 
+    /** The standard methods; any other letters-only first word followed by a target is a custom method. */
     private static final Set<String> METHODS =
             Set.of("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT");
 
+    /** JetBrains request kinds that are not plain HTTP and that this client cannot send. */
+    private static final Set<String> UNSUPPORTED_KINDS = Set.of("GRAPHQL", "WEBSOCKET", "GRPC");
+
+    /** A trailing {@code HTTP/1.1}, {@code HTTP/2}, {@code HTTP/2 (Prior Knowledge)} on the request target. */
+    private static final Pattern VERSION = Pattern.compile(
+            "\\s+(HTTP/(\\d+)(?:\\.(\\d+))?(\\s*\\(\\s*prior\\s+knowledge\\s*\\))?)\\s*$", Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern DURATION = Pattern.compile("(\\d{1,12})\\s*(ms|s|m)?", Pattern.CASE_INSENSITIVE);
+
     private HttpFile() {}
 
-    /** Per-request comment directives; a {@code 0} timeout means "use the default". */
+    /**
+     * Per-request comment directives, read only from the comment lines above the request line; a {@code 0}
+     * timeout means "use the default". Timeouts are in milliseconds.
+     */
     public record Directives(
             boolean noRedirect,
             boolean noCookieJar,
             boolean noLog,
             boolean noAutoEncoding,
-            int timeoutSeconds,
-            int connectionTimeoutSeconds) {
+            long timeoutMillis,
+            long connectionTimeoutMillis) {
         public static final Directives NONE = new Directives(false, false, false, false, 0, 0);
     }
 
@@ -39,8 +60,8 @@ public final class HttpFile {
      *  {@code {{vars}}} in it ({@code <@} vs {@code <}), and an optional {@code encoding}. */
     public record BodyRef(String path, boolean substitute, String encoding) {}
 
-    /** A response-redirect operator: write the response body to {@code path}; {@code force} ({@code >>!})
-     *  overwrites an existing file, plain {@code >>} skips it. */
+    /** A response-redirect operator: write the response body to {@code path} (which may contain
+     *  {@code {{vars}}}); {@code force} ({@code >>!}) overwrites an existing file, plain {@code >>} does not. */
     public record Redirect(String path, boolean force) {}
 
     /**
@@ -49,20 +70,124 @@ public final class HttpFile {
      * {@code GET} when omitted), the raw {@code url} (may contain {@code {{vars}}}), an optional
      * {@code name} (a {@code # @name x} comment, else the {@code ### name} separator label), the per-request
      * {@code directives}, and the raw {@code block} text (the request, from start to end line).
+     *
+     * <p>{@code variables} are the {@code @name = value} declarations in effect for this request — those above
+     * it, in document order, outside any request body — so a later redeclaration applies from there on.
+     * {@code sectionStart}/{@code sectionEnd} span the request's whole section (its {@code ###} line through the
+     * line before the next separator), which is what a caret maps to. {@code warnings} are problems found in
+     * the lines above the request line (an unreadable timeout, an ignored pre-request script).
      */
     public record Request(
-            int startLine, int endLine, String method, String url, String name, Directives directives, String block) {}
+            int startLine,
+            int endLine,
+            String method,
+            String url,
+            String name,
+            Directives directives,
+            String block,
+            List<String[]> variables,
+            int sectionStart,
+            int sectionEnd,
+            List<String> warnings) {
+
+        public Request {
+            variables = variables == null ? List.of() : List.copyOf(variables);
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        }
+
+        /** A request with no declarations or warnings, whose section is just its own lines. */
+        public Request(
+                int startLine,
+                int endLine,
+                String method,
+                String url,
+                String name,
+                Directives directives,
+                String block) {
+            this(startLine, endLine, method, url, name, directives, block, List.of(), startLine, endLine, List.of());
+        }
+    }
+
+    /**
+     * A single request broken into its parts for the built-in executor. {@code headers} is a list of
+     * {@code [name, value]}; {@code url}/{@code value}s/{@code body} may still contain {@code {{vars}}}. The
+     * {@code name}/{@code directives}/{@code variables} are carried from the {@link Request} (only via
+     * {@link #parseRequest(Request)}); {@code bodyRef} is non-null for an external body; {@code redirects}
+     * holds any {@code >>}/{@code >>!} targets.
+     *
+     * <p>{@code warning} is the first parse problem (kept for older callers); {@code warnings} lists them all.
+     * {@code httpVersion} is the request line's version — {@code null}, {@code HTTP/1.1}, {@code HTTP/2} or
+     * {@code HTTP/2 (Prior Knowledge)} (anything else is kept as written, e.g. {@code HTTP/1.0}); it is never
+     * part of {@code url}. A non-null {@code error} means the request cannot be sent at all (a GraphQL,
+     * WebSocket or gRPC request).
+     */
+    public record Parsed(
+            String method,
+            String url,
+            List<String[]> headers,
+            String body,
+            String name,
+            BodyRef bodyRef,
+            List<Redirect> redirects,
+            Directives directives,
+            String warning,
+            String httpVersion,
+            List<String[]> variables,
+            List<String> warnings,
+            String error) {
+
+        public Parsed {
+            variables = variables == null ? List.of() : List.copyOf(variables);
+            warnings = warnings == null ? (warning == null ? List.of() : List.of(warning)) : List.copyOf(warnings);
+        }
+
+        /** A request without a version, declarations, extra warnings or error (older callers, tests). */
+        public Parsed(
+                String method,
+                String url,
+                List<String[]> headers,
+                String body,
+                String name,
+                BodyRef bodyRef,
+                List<Redirect> redirects,
+                Directives directives,
+                String warning) {
+            this(
+                    method,
+                    url,
+                    headers,
+                    body,
+                    name,
+                    bodyRef,
+                    redirects,
+                    directives,
+                    warning,
+                    null,
+                    List.of(),
+                    null,
+                    null);
+        }
+    }
+
+    /** What one pass over a file finds: its requests and every declaration outside a body, in order. */
+    private record Scan(List<Request> requests, List<String[]> declarations) {}
 
     /** Parses {@code text} into its requests, in document order. */
     public static List<Request> parse(String text) {
+        return scan(text).requests();
+    }
+
+    private static Scan scan(String text) {
         List<Request> out = new ArrayList<>();
+        List<String[]> declared = new ArrayList<>(); // every declaration so far, in document order
         if (text == null || text.isEmpty()) {
-            return out;
+            return new Scan(out, declared);
         }
         String[] lines = text.split("\n", -1);
         int n = lines.length;
         int i = 0;
         while (i < n) {
+            int sectionStart = i;
             String name = null;
             if (isSeparator(lines[i])) {
                 name = separatorName(lines[i]);
@@ -74,6 +199,7 @@ public final class HttpFile {
             }
             String referenceName = null;
             int reqLine = -1;
+            List<String> warnings = new ArrayList<>();
             for (int k = i; k < sectionEnd; k++) {
                 String t = lines[k].strip();
                 if (t.isEmpty()) {
@@ -87,6 +213,13 @@ public final class HttpFile {
                     continue;
                 }
                 if (isVarDecl(t)) {
+                    declared.add(varPair(t));
+                    continue;
+                }
+                if (isPreRequestScript(t)) {
+                    // "< {% … %}" or "< ./script.js" above the request: JavaScript run before the request.
+                    warnings.add(tr("http.warn.preRequestScriptIgnored"));
+                    k = scriptEnd(lines, k, sectionEnd, t);
                     continue;
                 }
                 reqLine = k;
@@ -100,54 +233,55 @@ public final class HttpFile {
                 if (referenceName != null) {
                     name = referenceName; // @name is what {{name.response…}} refers to, whatever the title says
                 }
-                String[] mu = methodUrl(lines[reqLine]);
-                Directives directives = directivesOf(lines, i, sectionEnd);
-                out.add(new Request(reqLine, last, mu[0], mu[1], name, directives, join(lines, reqLine, last)));
+                RequestLine rl = requestLine(lines[reqLine]);
+                Directives directives = directivesOf(lines, i, reqLine, warnings);
+                out.add(new Request(
+                        reqLine,
+                        last,
+                        rl.method(),
+                        rl.url(),
+                        name,
+                        directives,
+                        join(lines, reqLine, last),
+                        declared,
+                        sectionStart,
+                        sectionEnd - 1,
+                        warnings));
             }
             i = sectionEnd;
         }
-        return out;
+        return new Scan(out, declared);
     }
 
-    /** The index of the request whose {@code [startLine, endLine]} span contains {@code line}, else -1. */
+    /**
+     * The index of the request whose section contains {@code line} — from its {@code ###} line (so its title,
+     * {@code # @name} and directive lines count) through the line before the next separator — else -1.
+     */
     public static int requestIndexAt(String text, int line) {
         List<Request> requests = parse(text);
         for (int idx = 0; idx < requests.size(); idx++) {
             Request r = requests.get(idx);
-            if (line >= r.startLine() && line <= r.endLine()) {
+            if (line >= r.sectionStart() && line <= r.sectionEnd()) {
                 return idx;
             }
         }
         return -1;
     }
 
-    /**
-     * A single request broken into its parts for the built-in executor. {@code headers} is a list of
-     * {@code [name, value]}; {@code url}/{@code value}s/{@code body} may still contain {@code {{vars}}}. The
-     * {@code name}/{@code directives} are carried from the {@link Request} (only via {@link #parseRequest(Request)});
-     * {@code bodyRef} is non-null for an external body; {@code redirects} holds any {@code >>}/{@code >>!} targets.
-     */
-    public record Parsed(
-            String method,
-            String url,
-            List<String[]> headers,
-            String body,
-            String name,
-            BodyRef bodyRef,
-            List<Redirect> redirects,
-            Directives directives,
-            String warning) {}
-
     /** Parses one request {@code block} (from {@link Request#block()}) into method/URL/headers/body, plus an
      *  external-body reference + redirect operators. The {@code name}/{@code directives} default; use
      *  {@link #parseRequest(Request)} to carry those from the enclosing request. */
     public static Parsed parseRequest(String block) {
         String[] lines = (block == null ? "" : block).split("\n", -1);
+        List<String> warnings = new ArrayList<>();
         int i = 0;
         while (i < lines.length) {
             String t = lines[i].strip();
             if (t.isEmpty() || isComment(t) || isVarDecl(t)) {
                 i++;
+            } else if (isPreRequestScript(t)) {
+                warnings.add(tr("http.warn.preRequestScriptIgnored"));
+                i = scriptEnd(lines, i, lines.length, t) + 1;
             } else {
                 break;
             }
@@ -155,46 +289,61 @@ public final class HttpFile {
         if (i >= lines.length) {
             return new Parsed("GET", "", List.of(), "", null, null, List.of(), Directives.NONE, null);
         }
-        String[] mu = methodUrl(lines[i]);
-        StringBuilder url = new StringBuilder(mu[1]);
+        // URL continuation lines: indented, and not shaped like a header ("  ?a=1", "  &b=2", "  /api" — IntelliJ
+        // splits long targets this way). An indented "Accept: x" right after the request line is a header.
+        StringBuilder target = new StringBuilder(lines[i].strip());
         i++;
-        // URL continuation lines (indented, typically starting with ?/& — IntelliJ splits long query strings).
-        while (i < lines.length
-                && !lines[i].isEmpty()
-                && Character.isWhitespace(lines[i].charAt(0))
-                && !lines[i].strip().isEmpty()) {
-            url.append(lines[i].strip());
+        while (i < lines.length && isUrlContinuation(lines[i])) {
+            target.append(lines[i].strip());
             i++;
         }
+        RequestLine rl = requestLine(target.toString()); // the version may sit on the last continuation line
+
         List<String[]> headers = new ArrayList<>();
-        String warning = null;
+        String malformed = null;
+        boolean trailerStarted = false;
         for (; i < lines.length && !lines[i].strip().isEmpty(); i++) {
-            if (isComment(lines[i].strip())) {
+            String t = lines[i].strip();
+            if (isComment(t)) {
                 continue; // a `# …` / `// …` line between headers is a comment, not a header named "#Authorization"
             }
+            if (isTrailerLine(t)) {
+                trailerStarted = true; // a handler/redirect right after the headers: the request has no body
+                break;
+            }
             int colon = lines[i].indexOf(':');
-            if (colon > 0 && isHeaderFieldName(lines[i].substring(0, colon).strip())) {
+            boolean headerShaped =
+                    colon > 0 && isHeaderFieldName(lines[i].substring(0, colon).strip());
+            if (!headerShaped && Character.isWhitespace(lines[i].charAt(0)) && !headers.isEmpty()) {
+                // A header continuation line: the spec lets a value go on, indented, on the next line.
+                String[] prev = headers.get(headers.size() - 1);
+                prev[1] = prev[1].isEmpty() ? t : prev[1] + " " + t;
+            } else if (headerShaped) {
                 headers.add(new String[] {
                     lines[i].substring(0, colon).strip(),
                     lines[i].substring(colon + 1).strip()
                 });
-            } else if (warning == null) {
+            } else if (malformed == null) {
                 // A non-blank line in the header block that isn't a valid `Name: value` — almost always a
                 // request body written without the required blank line before it (a common typo). Per the
                 // JetBrains .http convention we still send no body (a colon-bearing body line like `{"a": 1}`
                 // would otherwise be parsed as a bogus header); surface a warning so the empty request doesn't
                 // look like a server problem, rather than guessing where the body starts.
-                warning = "a request body must be separated from the headers by a blank line (found \""
-                        + lines[i].strip() + "\")";
+                malformed = "a request body must be separated from the headers by a blank line (found \"" + t + "\")";
             }
         }
-        while (i < lines.length && lines[i].strip().isEmpty()) {
-            i++; // skip the blank line between headers and body
+        if (malformed != null) {
+            warnings.add(0, malformed);
+        }
+        if (!trailerStarted) {
+            while (i < lines.length && lines[i].strip().isEmpty()) {
+                i++; // skip the blank line between headers and body
+            }
         }
         // An external-body reference (< ./file raw, <@ ./file substituted) replaces an inline body. A body that
         // merely STARTS with '<' — XML, HTML, a SOAP envelope — is inline text (see isBodyFileRef).
         BodyRef bodyRef = null;
-        if (i < lines.length) {
+        if (!trailerStarted && i < lines.length) {
             String t = lines[i].stripLeading();
             if (isBodyFileRef(t)) {
                 bodyRef = parseBodyRef(t);
@@ -203,20 +352,33 @@ public final class HttpFile {
         }
         StringBuilder body = new StringBuilder();
         List<Redirect> redirects = new ArrayList<>();
-        boolean bodyDone = false;
+        boolean bodyDone = trailerStarted;
+        boolean handlerWarned = false;
         for (; i < lines.length; i++) {
-            String t = lines[i].stripLeading();
-            if (t.startsWith(">>")) {
+            String t = lines[i].strip();
+            if (isRedirect(t)) {
                 bodyDone = true; // a response-redirect operator (>> file / >>! file)
                 redirects.add(parseRedirect(t));
                 continue;
             }
-            if (t.startsWith(">") || t.startsWith("<>")) {
-                bodyDone = true; // a response-handler / response-ref line ends the body (not executed)
+            if (isHandler(t)) {
+                bodyDone = true; // a response handler ends the body; it is not executed
+                if (!handlerWarned) {
+                    warnings.add(tr("http.warn.handlerIgnored"));
+                    handlerWarned = true;
+                }
+                i = scriptEnd(lines, i, lines.length, t); // a multi-line {% … %} script is skipped whole
+                continue;
+            }
+            if (isResponseRef(t)) {
+                bodyDone = true; // "<> ./previous.json": a response comparison reference
                 continue;
             }
             if (bodyDone) {
-                continue; // trailing handler-script content after the body is ignored
+                continue; // anything else after the end of the body is not part of it
+            }
+            if (isComment(t)) {
+                continue; // JetBrains spec: a body line starting with # or // (indent allowed) is a comment
             }
             if (body.length() > 0) {
                 body.append('\n');
@@ -224,20 +386,27 @@ public final class HttpFile {
             body.append(lines[i]);
         }
         return new Parsed(
-                mu[0],
-                url.toString(),
+                rl.method(),
+                rl.url(),
                 headers,
                 body.toString().strip(),
                 null,
                 bodyRef,
                 redirects,
                 Directives.NONE,
-                warning);
+                warnings.isEmpty() ? null : warnings.get(0),
+                rl.version(),
+                List.of(),
+                warnings,
+                rl.error());
     }
 
-    /** Like {@link #parseRequest(String)} but carries the request's {@code name} + {@code directives}. */
+    /** Like {@link #parseRequest(String)} but carries the request's {@code name}, {@code directives},
+     *  {@code variables} and the warnings found above its request line. */
     public static Parsed parseRequest(Request req) {
         Parsed p = parseRequest(req.block());
+        List<String> warnings = new ArrayList<>(req.warnings());
+        warnings.addAll(p.warnings());
         return new Parsed(
                 p.method(),
                 p.url(),
@@ -247,7 +416,11 @@ public final class HttpFile {
                 p.bodyRef(),
                 p.redirects(),
                 req.directives(),
-                p.warning());
+                warnings.isEmpty() ? null : warnings.get(0),
+                p.httpVersion(),
+                req.variables(),
+                warnings,
+                p.error());
     }
 
     /**
@@ -272,54 +445,46 @@ public final class HttpFile {
         return true;
     }
 
-    /** Every {@code @name = value} declaration as {@code [name, rawValue]} pairs, in order. */
+    /**
+     * The {@code @name = value} declarations outside request bodies (above a request line, or in a section
+     * without a request) as {@code [name, rawValue]} pairs, in document order. A body line that merely looks
+     * like one is body text.
+     */
     public static List<String[]> fileVariablePairs(String text) {
-        List<String[]> out = new ArrayList<>();
-        if (text == null) {
-            return out;
-        }
-        for (String line : text.split("\n", -1)) {
-            String s = line.strip();
-            if (isVarDecl(s)) {
-                int eq = s.indexOf('=');
-                out.add(new String[] {
-                    s.substring(1, eq).strip(), s.substring(eq + 1).strip()
-                });
-            }
-        }
-        return out;
+        return scan(text).declarations();
     }
 
-    /** The file's variable preamble: every {@code @name = value} line, in order, joined by newlines. */
+    /** The file's declarations outside bodies, in order, one {@code @name = value} per line. */
     public static String fileVariables(String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
         StringBuilder sb = new StringBuilder();
-        for (String line : text.split("\n", -1)) {
-            if (isVarDecl(line.strip())) {
-                if (sb.length() > 0) {
-                    sb.append('\n');
-                }
-                sb.append(line.strip());
+        for (String[] v : fileVariablePairs(text)) {
+            if (sb.length() > 0) {
+                sb.append('\n');
             }
+            sb.append('@').append(v[0]).append(" = ").append(v[1]);
         }
         return sb.toString();
     }
 
     /**
-     * The temp-file content for running request {@code index} on its own: the file's {@code @variable}
-     * preamble (so {@code {{vars}}} still resolve) followed by that request's block, or {@code null} when
-     * the index is out of range.
+     * The temp-file content for running request {@code index} on its own: the declarations in effect for it
+     * (so {@code {{vars}}} still resolve) followed by that request's block, or {@code null} when the index is
+     * out of range.
      */
     public static String extract(String text, int index) {
         List<Request> requests = parse(text);
         if (index < 0 || index >= requests.size()) {
             return null;
         }
-        String vars = fileVariables(text);
-        String block = requests.get(index).block();
-        return vars.isEmpty() ? block : vars + "\n\n" + block;
+        Request r = requests.get(index);
+        StringBuilder vars = new StringBuilder();
+        for (String[] v : r.variables()) {
+            if (vars.length() > 0) {
+                vars.append('\n');
+            }
+            vars.append('@').append(v[0]).append(" = ").append(v[1]);
+        }
+        return vars.isEmpty() ? r.block() : vars + "\n\n" + r.block();
     }
 
     // --- helpers ----------------------------------------------------------------------------------
@@ -358,14 +523,17 @@ public final class HttpFile {
         return null;
     }
 
-    /** Scans a section's comment lines {@code [from, to)} for the per-request directives. */
-    static Directives directivesOf(String[] lines, int from, int to) {
+    /**
+     * Scans the comment lines {@code [from, to)} — the lines above the request line, never its body — for the
+     * per-request directives, adding a warning to {@code warnings} for a timeout it cannot read.
+     */
+    static Directives directivesOf(String[] lines, int from, int to, List<String> warnings) {
         boolean noRedirect = false;
         boolean noCookieJar = false;
         boolean noLog = false;
         boolean noAutoEncoding = false;
-        int timeout = 0;
-        int connectionTimeout = 0;
+        long timeout = 0;
+        long connectionTimeout = 0;
         for (int k = from; k < to; k++) {
             String s = lines[k].strip();
             if (!isComment(s)) {
@@ -387,12 +555,44 @@ public final class HttpFile {
                 noAutoEncoding = true;
             } else if (low.startsWith("connection-timeout")) {
                 connectionTimeout =
-                        parseInt(tok.substring("connection-timeout".length()).strip());
+                        timeoutDirective("connection-timeout", tok.substring("connection-timeout".length()), warnings);
             } else if (low.startsWith("timeout")) {
-                timeout = parseInt(tok.substring("timeout".length()).strip());
+                timeout = timeoutDirective("timeout", tok.substring("timeout".length()), warnings);
             }
         }
         return new Directives(noRedirect, noCookieJar, noLog, noAutoEncoding, timeout, connectionTimeout);
+    }
+
+    private static long timeoutDirective(String directive, String value, List<String> warnings) {
+        long ms = parseDurationMillis(value);
+        if (ms < 0) {
+            warnings.add(tr("http.warn.badTimeout", "@" + directive, value.strip()));
+            return 0;
+        }
+        return ms;
+    }
+
+    /**
+     * A JetBrains timeout value in milliseconds: {@code 600} (seconds), {@code 100 ms}, {@code 5 s}, {@code 2 m};
+     * {@code -1} when it cannot be read (blank, zero, negative, or another unit).
+     */
+    static long parseDurationMillis(String value) {
+        if (value == null) {
+            return -1;
+        }
+        Matcher m = DURATION.matcher(value.strip());
+        if (!m.matches()) {
+            return -1;
+        }
+        long n = Long.parseLong(m.group(1));
+        String unit = m.group(2) == null ? "s" : m.group(2).toLowerCase(Locale.ROOT);
+        long ms =
+                switch (unit) {
+                    case "ms" -> n;
+                    case "m" -> n * 60_000L;
+                    default -> n * 1000L;
+                };
+        return ms > 0 ? ms : -1;
     }
 
     /**
@@ -436,17 +636,75 @@ public final class HttpFile {
         return new BodyRef(rest, substitute, encoding);
     }
 
+    /** {@code < {% … %}} or {@code < ./script.js} above a request line: a JetBrains pre-request script. */
+    static boolean isPreRequestScript(String stripped) {
+        if (!stripped.startsWith("<") || stripped.startsWith("<>") || stripped.startsWith("<@")) {
+            return false;
+        }
+        String rest = stripped.substring(1).strip();
+        return rest.startsWith("{%")
+                || (stripped.length() > 1
+                        && Character.isWhitespace(stripped.charAt(1))
+                        && rest.toLowerCase(Locale.ROOT).endsWith(".js"));
+    }
+
+    /** {@code >> file} / {@code >>! file}: a response redirect. */
+    private static boolean isRedirect(String stripped) {
+        return stripped.startsWith(">>") && stripped.length() > 2;
+    }
+
+    /** {@code > {% … %}} or {@code > ./handler.js}: a response handler ({@code >} then whitespace or {@code {%}). */
+    private static boolean isHandler(String stripped) {
+        if (!stripped.startsWith(">") || stripped.startsWith(">>")) {
+            return false;
+        }
+        String rest = stripped.substring(1);
+        return rest.startsWith("{%") || (!rest.isEmpty() && Character.isWhitespace(rest.charAt(0)));
+    }
+
+    /** {@code <> ./previous-response.json}: a response reference (comparison), not part of the request. */
+    private static boolean isResponseRef(String stripped) {
+        return stripped.startsWith("<>") && (stripped.length() == 2 || Character.isWhitespace(stripped.charAt(2)));
+    }
+
+    /** A line that ends the request's header/body part: a handler, a redirect, or a response reference. */
+    private static boolean isTrailerLine(String stripped) {
+        return isRedirect(stripped) || isHandler(stripped) || isResponseRef(stripped);
+    }
+
+    /**
+     * The last line of a script that starts on line {@code from} (stripped text {@code first}): an inline
+     * {@code {% … %}} runs to the line holding {@code %}}; a script file reference is that one line.
+     */
+    private static int scriptEnd(String[] lines, int from, int to, String first) {
+        int open = first.indexOf("{%");
+        if (open < 0 || first.indexOf("%}", open + 2) >= 0) {
+            return from;
+        }
+        for (int k = from + 1; k < to; k++) {
+            if (lines[k].contains("%}")) {
+                return k;
+            }
+        }
+        return to - 1; // unterminated: the rest of the section is the script
+    }
+
+    /** An indented line right after the request line that continues the URL rather than starting the headers. */
+    private static boolean isUrlContinuation(String line) {
+        if (line.isEmpty() || !Character.isWhitespace(line.charAt(0))) {
+            return false;
+        }
+        String t = line.strip();
+        if (t.isEmpty() || isComment(t) || isTrailerLine(t)) {
+            return false;
+        }
+        int colon = t.indexOf(':');
+        return !(colon > 0 && isHeaderFieldName(t.substring(0, colon).strip()));
+    }
+
     private static Redirect parseRedirect(String line) {
         boolean force = line.startsWith(">>!");
         return new Redirect(line.substring(force ? 3 : 2).strip(), force);
-    }
-
-    private static int parseInt(String s) {
-        try {
-            return Integer.parseInt(s.strip());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
     }
 
     private static boolean isVarDecl(String stripped) {
@@ -457,21 +715,81 @@ public final class HttpFile {
         return eq > 1; // "@x = ..." (at least one name char before '=')
     }
 
-    /** Splits a request line into {@code [method, url]}; method defaults to GET, a trailing HTTP/x is dropped. */
-    static String[] methodUrl(String line) {
-        String s = line.strip();
-        int sp = s.indexOf(' ');
-        String first = sp < 0 ? s : s.substring(0, sp);
-        if (sp > 0 && METHODS.contains(first)) {
-            String rest = s.substring(sp + 1).strip();
-            return new String[] {first, dropHttpVersion(rest)};
-        }
-        return new String[] {"GET", dropHttpVersion(s)};
+    private static String[] varPair(String stripped) {
+        int eq = stripped.indexOf('=');
+        return new String[] {
+            stripped.substring(1, eq).strip(), stripped.substring(eq + 1).strip()
+        };
     }
 
-    private static String dropHttpVersion(String url) {
-        int v = url.lastIndexOf(" HTTP/");
-        return v >= 0 ? url.substring(0, v).strip() : url;
+    /** A request line split into its method, target and version, plus a reason it cannot be sent. */
+    record RequestLine(String method, String url, String version, String error) {}
+
+    /**
+     * Splits a request line into method, target and version. The method defaults to {@code GET}; a known
+     * method is accepted in any case and upper-cased, and any other letters-only first word followed by a
+     * target is a custom method ({@code PROPFIND}, {@code QUERY}). {@code GRAPHQL}, {@code WEBSOCKET} and
+     * {@code GRPC} are recognized and reported as unsupported. Words are split on any whitespace.
+     */
+    static RequestLine requestLine(String line) {
+        String s = line.strip();
+        String version = null;
+        Matcher v = VERSION.matcher(s);
+        if (v.find() && v.start() > 0) {
+            version = normalizeVersion(v);
+            s = s.substring(0, v.start()).strip();
+        }
+        int sp = firstWhitespace(s);
+        if (sp > 0) {
+            String word = s.substring(0, sp);
+            String upper = word.toUpperCase(Locale.ROOT);
+            String rest = s.substring(sp).strip();
+            if (METHODS.contains(upper) || UNSUPPORTED_KINDS.contains(upper) || isMethodToken(word)) {
+                String error = UNSUPPORTED_KINDS.contains(upper) ? tr("http.error.unsupportedKind", upper) : null;
+                return new RequestLine(upper, rest, version, error);
+            }
+        }
+        return new RequestLine("GET", s, version, null);
+    }
+
+    /** The two-part form ({@code [method, url]}) of {@link #requestLine}. */
+    static String[] methodUrl(String line) {
+        RequestLine rl = requestLine(line);
+        return new String[] {rl.method(), rl.url()};
+    }
+
+    private static String normalizeVersion(Matcher v) {
+        String major = v.group(2);
+        String minor = v.group(3);
+        boolean prior = v.group(4) != null;
+        if ("2".equals(major) && (minor == null || "0".equals(minor))) {
+            return prior ? "HTTP/2 (Prior Knowledge)" : "HTTP/2";
+        }
+        return "HTTP/" + major + (minor == null ? "" : "." + minor);
+    }
+
+    private static int firstWhitespace(String s) {
+        for (int k = 0; k < s.length(); k++) {
+            if (Character.isWhitespace(s.charAt(k))) {
+                return k;
+            }
+        }
+        return -1;
+    }
+
+    /** A custom method: letters (and {@code -}/{@code _}) only — a URL's first word has {@code :}, {@code /},
+     *  {@code .} or braces. */
+    private static boolean isMethodToken(String word) {
+        if (word.isEmpty() || !Character.isLetter(word.charAt(0))) {
+            return false;
+        }
+        for (int k = 0; k < word.length(); k++) {
+            char c = word.charAt(k);
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_')) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String join(String[] lines, int from, int to) {

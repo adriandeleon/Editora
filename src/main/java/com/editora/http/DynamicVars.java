@@ -5,23 +5,41 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Expands {@code {{$…}}} dynamic variables to mirror the IntelliJ HTTP Client family: UUIDs, timestamps,
  * the {@code $random.*} generators, formatted {@code $datetime}/{@code $localDatetime}, and the
- * {@code $processEnv.NAME}/{@code $dotenv.NAME} lookups (the latter reads a {@code .env} beside the request
- * file). Given a fixed clock the deterministic cases are unit-tested; the random cases are tested by bound
- * and charset, the uuid by shape.
+ * {@code $processEnv NAME} / {@code $env.NAME} / {@code $dotenv NAME} lookups (the latter reads a {@code .env}
+ * beside the request file). The VS Code REST Client forms ({@code {{$randomInt 1 10}}}, Day.js date formats
+ * such as {@code "DD-MM-YYYY"}) are accepted too.
+ *
+ * <p>The clock is a {@link ZonedDateTime} — an instant plus the zone {@code $localDatetime} is shown in — so
+ * {@code $timestamp}, {@code $isoTimestamp} and {@code $datetime} are the real UTC instant whatever the
+ * user's time zone. Given a fixed clock the deterministic cases are unit-tested; the random cases are tested
+ * by bound and charset, the uuid by shape.
  */
 public final class DynamicVars {
 
     private static final String LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static final String ALNUM = LETTERS + "0123456789";
     private static final String HEX = "0123456789abcdef";
+
+    /** The longest {@code $random.alphabetic(n)} (and friends) string built; a larger {@code n} is clamped. */
+    static final int MAX_RANDOM_LENGTH = 10_000;
+
+    private static final Pattern TOKENS = Pattern.compile("\"[^\"]*\"|'[^']*'|\\S+");
 
     private DynamicVars() {}
 
@@ -30,15 +48,31 @@ public final class DynamicVars {
         return name != null && name.startsWith("$");
     }
 
+    /** {@link #value(String, ZonedDateTime, Path)} for a wall-clock {@code now} in the system time zone. */
+    public static String value(String name, LocalDateTime now, Path dir) {
+        return value(name, now == null ? null : now.atZone(ZoneId.systemDefault()), dir);
+    }
+
     /**
      * Expands a dynamic variable {@code name} (without the surrounding braces), using {@code now} as the
-     * clock and {@code dir} (the request file's directory, may be {@code null}) for {@code $dotenv}. Unknown
-     * names yield {@code ""}.
+     * clock and {@code dir} (the request file's directory, may be {@code null}) for {@code $dotenv}. A name it
+     * cannot resolve yields {@code ""} (see {@link #resolve} for the reason).
      */
-    public static String value(String name, LocalDateTime now, Path dir) {
+    public static String value(String name, ZonedDateTime now, Path dir) {
+        String v = resolve(name, now, dir, null);
+        return v == null ? "" : v;
+    }
+
+    /**
+     * Expands {@code name}, or returns {@code null} when it cannot be resolved — an unknown name, an unset
+     * environment variable, a key missing from {@code .env}, an unusable date format — after putting a short
+     * human-readable reason in {@code reason[0]} (when {@code reason} is non-null).
+     */
+    static String resolve(String name, ZonedDateTime now, Path dir, String[] reason) {
         if (name == null) {
-            return "";
+            return miss(reason, "http.unresolved.reason.dynamic");
         }
+        ZonedDateTime clock = now == null ? ZonedDateTime.now() : now;
         String n = name.trim();
         String head = n;
         String args = "";
@@ -51,10 +85,8 @@ public final class DynamicVars {
             case "$uuid", "$random.uuid", "$guid":
                 return UUID.randomUUID().toString();
             case "$isoTimestamp":
-                return now.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
-            case "$randomInt":
-                return String.valueOf(randInt(args, 0, 1000));
-            case "$random.integer":
+                return iso(clock.withZoneSameInstant(ZoneOffset.UTC));
+            case "$randomInt", "$random.integer":
                 return String.valueOf(randInt(args, 0, 1000));
             case "$random.float":
                 return randFloat(args);
@@ -69,51 +101,126 @@ public final class DynamicVars {
             default:
                 break;
         }
+        if (n.startsWith("$randomInt ")) {
+            // VS Code REST Client form: {{$randomInt min max}} (max exclusive).
+            String[] tok = tokens(n.substring("$randomInt".length()));
+            return String.valueOf(randInt(tok.length >= 2 ? tok[0] + "," + tok[1] : String.join(",", tok), 0, 1000));
+        }
         if (n.equals("$timestamp") || n.startsWith("$timestamp ")) {
             String[] tok = tokens(n.substring("$timestamp".length()));
-            LocalDateTime at = tok.length >= 2 ? applyOffset(now, parseInt(tok[0], 0), tok[1]) : now;
-            return String.valueOf(at.toEpochSecond(ZoneOffset.UTC));
+            ZonedDateTime at = tok.length >= 2 ? applyOffset(clock, parseInt(tok[0], 0), tok[1]) : clock;
+            return String.valueOf(at.toEpochSecond());
         }
-        if (n.startsWith("$localDatetime")) {
-            return datetime(n.substring("$localDatetime".length()), now, true);
+        if (n.equals("$localDatetime") || n.startsWith("$localDatetime ")) {
+            return datetime(n.substring("$localDatetime".length()), clock, true, reason);
         }
-        if (n.startsWith("$datetime")) {
-            return datetime(n.substring("$datetime".length()), now, false);
+        if (n.equals("$datetime") || n.startsWith("$datetime ")) {
+            return datetime(n.substring("$datetime".length()), clock, false, reason);
         }
-        if (n.startsWith("$processEnv")) {
-            String v = System.getenv(key(n.substring("$processEnv".length())));
-            return v == null ? "" : v;
+        if (n.startsWith("$processEnv") || n.startsWith("$env.") || n.startsWith("$env ")) {
+            String key = key(n.substring(n.startsWith("$processEnv") ? "$processEnv".length() : "$env".length()));
+            String v = key.isEmpty() ? null : System.getenv(key);
+            return v == null ? miss(reason, "http.unresolved.reason.env") : v;
         }
         if (n.startsWith("$dotenv")) {
-            return dotenv(key(n.substring("$dotenv".length())), dir);
+            String v = dotenv(key(n.substring("$dotenv".length())), dir);
+            return v == null ? miss(reason, "http.unresolved.reason.dotenv") : v;
         }
-        return "";
+        return miss(reason, "http.unresolved.reason.dynamic");
     }
 
-    private static String datetime(String suffix, LocalDateTime now, boolean local) {
+    private static String miss(String[] reason, String key) {
+        if (reason != null && reason.length > 0) {
+            reason[0] = tr(key);
+        }
+        return null;
+    }
+
+    /** ISO-8601 with millisecond precision (as IntelliJ sends it: {@code 2026-06-10T09:30:00.123Z}). */
+    private static String iso(ZonedDateTime utc) {
+        return utc.truncatedTo(ChronoUnit.MILLIS).format(DateTimeFormatter.ISO_INSTANT);
+    }
+
+    private static String datetime(String suffix, ZonedDateTime now, boolean local, String[] reason) {
         // {{$datetime <format> [<amount> <unit>]}} — format is a quoted custom pattern or rfc1123/iso8601.
         String[] tok = tokens(suffix);
         String fmt = tok.length >= 1 ? tok[0] : "";
-        LocalDateTime at = tok.length >= 3 ? applyOffset(now, parseInt(tok[1], 0), tok[2]) : now;
+        ZonedDateTime at = tok.length >= 3 ? applyOffset(now, parseInt(tok[1], 0), tok[2]) : now;
+        ZonedDateTime shown = at.withZoneSameInstant(local ? ZoneId.systemDefault() : ZoneOffset.UTC);
         try {
             if (fmt.isEmpty() || fmt.equalsIgnoreCase("iso8601")) {
                 return local
-                        ? at.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                        : at.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_INSTANT);
+                        ? shown.truncatedTo(ChronoUnit.MILLIS).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                        : iso(shown);
             }
-            DateTimeFormatter f = fmt.equalsIgnoreCase("rfc1123")
-                    ? DateTimeFormatter.RFC_1123_DATE_TIME
-                    : DateTimeFormatter.ofPattern(fmt, Locale.ROOT);
-            return local
-                    ? at.atZone(ZoneId.systemDefault()).format(f)
-                    : at.atOffset(ZoneOffset.UTC).format(f);
-        } catch (Exception e) {
-            return "";
+            if (fmt.equalsIgnoreCase("rfc1123")) {
+                return shown.format(DateTimeFormatter.RFC_1123_DATE_TIME);
+            }
+            if (fmt.equals("X")) {
+                return String.valueOf(shown.toEpochSecond()); // Day.js unix seconds
+            }
+            if (fmt.equals("x")) {
+                return String.valueOf(shown.toInstant().toEpochMilli()); // Day.js unix milliseconds
+            }
+            return shown.format(DateTimeFormatter.ofPattern(javaPattern(fmt), Locale.ROOT));
+        } catch (RuntimeException e) {
+            return miss(reason, "http.unresolved.reason.format");
         }
     }
 
+    /**
+     * The Java {@link DateTimeFormatter} pattern for {@code fmt}. A Java pattern ({@code yyyy-MM-dd}) is used
+     * as is; a Day.js/moment pattern — the VS Code REST Client's — is translated. A pattern is taken as Day.js
+     * when it uses {@code Y}, {@code D}, {@code A}, {@code ddd} or a {@code [literal]}: in Java those are the
+     * week-based year, the day of the year, the milli-of-day, a three-digit day of the month and an optional
+     * section, which a date format meant for Java practically never wants (and
+     * {@code "DD-MM-YYYY"} would silently print {@code 364-12-2027} for 30 December 2026).
+     */
+    static String javaPattern(String fmt) {
+        if (fmt.indexOf('Y') < 0
+                && fmt.indexOf('D') < 0
+                && fmt.indexOf('[') < 0
+                && fmt.indexOf('A') < 0
+                && !fmt.contains("ddd")) {
+            return fmt;
+        }
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        int n = fmt.length();
+        while (i < n) {
+            char c = fmt.charAt(i);
+            if (c == '[') {
+                int end = fmt.indexOf(']', i + 1);
+                String literal = end < 0 ? fmt.substring(i + 1) : fmt.substring(i + 1, end);
+                out.append('\'').append(literal.replace("'", "''")).append('\'');
+                i = end < 0 ? n : end + 1;
+                continue;
+            }
+            int run = 1;
+            while (i + run < n && fmt.charAt(i + run) == c) {
+                run++;
+            }
+            out.append(dayjsToken(c, run));
+            i += run;
+        }
+        return out.toString();
+    }
+
+    private static String dayjsToken(char c, int run) {
+        String token = String.valueOf(c).repeat(run);
+        return switch (c) {
+            case 'Y' -> run >= 4 ? "yyyy" : "yy";
+            case 'D' -> run >= 2 ? "dd" : "d";
+            case 'd' -> run >= 3 ? (run >= 4 ? "EEEE" : "EEE") : token; // dddd/ddd: weekday names
+            case 'A', 'a' -> "a";
+            case 'Z' -> run >= 2 ? "xx" : "xxx";
+            case '\'' -> "''";
+            default -> Character.isLetter(c) && "MHhmsS".indexOf(c) < 0 ? "'" + token + "'" : token;
+        };
+    }
+
     /** Adds a signed {@code amount} of {@code unit} (y/M/w/d/h/m/s/ms) to {@code t} for date-math vars. */
-    private static LocalDateTime applyOffset(LocalDateTime t, int amount, String unit) {
+    private static ZonedDateTime applyOffset(ZonedDateTime t, int amount, String unit) {
         return switch (unit) {
             case "y" -> t.plusYears(amount);
             case "M" -> t.plusMonths(amount);
@@ -122,7 +229,7 @@ public final class DynamicVars {
             case "h" -> t.plusHours(amount);
             case "m" -> t.plusMinutes(amount);
             case "s" -> t.plusSeconds(amount);
-            case "ms" -> t.plus(amount, java.time.temporal.ChronoUnit.MILLIS);
+            case "ms" -> t.plus(amount, ChronoUnit.MILLIS);
             default -> t;
         };
     }
@@ -132,24 +239,24 @@ public final class DynamicVars {
         if (s == null || s.isBlank()) {
             return new String[0];
         }
-        java.util.List<String> out = new java.util.ArrayList<>();
-        java.util.regex.Matcher m =
-                java.util.regex.Pattern.compile("\"[^\"]*\"|'[^']*'|\\S+").matcher(s.trim());
+        List<String> out = new ArrayList<>();
+        Matcher m = TOKENS.matcher(s.trim());
         while (m.find()) {
             out.add(stripQuotes(m.group()));
         }
         return out.toArray(new String[0]);
     }
 
+    /** The value of {@code key} in the {@code .env} beside the request file, or {@code null}. */
     private static String dotenv(String key, Path dir) {
         if (key.isEmpty() || dir == null) {
-            return "";
+            return null;
         }
         try {
             Path env = dir.resolve(".env");
-            return Files.exists(env) ? DotEnv.parse(Files.readString(env)).getOrDefault(key, "") : "";
+            return Files.exists(env) ? DotEnv.parse(Files.readString(env)).get(key) : null;
         } catch (Exception e) {
-            return "";
+            return null;
         }
     }
 
@@ -166,22 +273,23 @@ public final class DynamicVars {
         return hi > lo ? ThreadLocalRandom.current().nextInt(lo, hi) : lo;
     }
 
+    /** {@code $random.float(from, to)}: {@code from} inclusive, {@code to} exclusive, 0–1000 by default (IntelliJ). */
     private static String randFloat(String args) {
         double lo = 0;
-        double hi = 1;
+        double hi = 1000;
         String[] parts = args.isEmpty() ? new String[0] : args.split(",");
         if (parts.length >= 1 && !parts[0].isBlank()) {
             lo = parseDouble(parts[0].trim(), 0);
         }
         if (parts.length >= 2 && !parts[1].isBlank()) {
-            hi = parseDouble(parts[1].trim(), 1);
+            hi = parseDouble(parts[1].trim(), 1000);
         }
         double v = hi > lo ? ThreadLocalRandom.current().nextDouble(lo, hi) : lo;
         return String.valueOf(v);
     }
 
     private static String randString(int len, String charset) {
-        int n = Math.max(0, len);
+        int n = Math.clamp(len, 0, MAX_RANDOM_LENGTH);
         StringBuilder sb = new StringBuilder(n);
         for (int i = 0; i < n; i++) {
             sb.append(charset.charAt(ThreadLocalRandom.current().nextInt(charset.length())));

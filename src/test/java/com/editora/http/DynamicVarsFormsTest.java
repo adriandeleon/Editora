@@ -3,8 +3,9 @@ package com.editora.http;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The dynamic-variable forms and malformed arguments {@code DynamicVarsTest} does not reach. */
 class DynamicVarsFormsTest {
 
-    private static final LocalDateTime CLOCK = LocalDateTime.of(2026, 6, 10, 9, 30, 0);
+    private static final ZonedDateTime CLOCK = ZonedDateTime.of(2026, 6, 10, 9, 30, 0, 0, ZoneOffset.UTC);
 
     private static String value(String name) {
         return DynamicVars.value(name, CLOCK, null);
@@ -51,20 +52,21 @@ class DynamicVarsFormsTest {
         assertEquals("3", value("$randomInt(3,3)"));
         assertEquals("5", value("$random.integer(5, 2)"));
         assertEquals("4.0", value("$random.float(4,4)"));
-        assertEquals("9.5", value("$random.float(9.5)"));
+        assertEquals("1500.5", value("$random.float(1500.5)"), "a lower bound above the 1000 default upper one");
     }
 
     @Test
     void randomFloatHonorsItsBounds() {
         for (int i = 0; i < 200; i++) {
+            // IntelliJ's default range is 0 (inclusive) to 1000 (exclusive).
             double unit = Double.parseDouble(value("$random.float"));
-            assertTrue(unit >= 0 && unit < 1, "out of range: " + unit);
+            assertTrue(unit >= 0 && unit < 1000, "out of range: " + unit);
             double ranged = Double.parseDouble(value("$random.float(2, 3)"));
             assertTrue(ranged >= 2 && ranged < 3, "out of range: " + ranged);
             double upTo = Double.parseDouble(value("$random.float(,0.5)"));
             assertTrue(upTo >= 0 && upTo < 0.5, "out of range: " + upTo);
             double junk = Double.parseDouble(value("$random.float(x,y)"));
-            assertTrue(junk >= 0 && junk < 1, "out of range: " + junk);
+            assertTrue(junk >= 0 && junk < 1000, "out of range: " + junk);
         }
     }
 
@@ -97,12 +99,20 @@ class DynamicVarsFormsTest {
     @Test
     void localDatetimeUsesTheSystemZone() {
         ZoneId zone = ZoneId.systemDefault();
-        assertEquals(CLOCK.atZone(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), value("$localDatetime"));
         assertEquals(
-                CLOCK.atZone(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), value("$localDatetime iso8601"));
-        assertEquals(CLOCK.atZone(zone).format(DateTimeFormatter.RFC_1123_DATE_TIME), value("$localDatetime rfc1123"));
-        assertEquals("2026-06-10 09:30", value("$localDatetime \"yyyy-MM-dd HH:mm\""));
-        assertEquals("2026-06-10 11:30", value("$localDatetime \"yyyy-MM-dd HH:mm\" 2 h"));
+                CLOCK.withZoneSameInstant(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                value("$localDatetime"));
+        assertEquals(
+                CLOCK.withZoneSameInstant(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                value("$localDatetime iso8601"));
+        assertEquals(
+                CLOCK.withZoneSameInstant(zone).format(DateTimeFormatter.RFC_1123_DATE_TIME),
+                value("$localDatetime rfc1123"));
+        DateTimeFormatter minutes = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        assertEquals(CLOCK.withZoneSameInstant(zone).format(minutes), value("$localDatetime \"yyyy-MM-dd HH:mm\""));
+        assertEquals(
+                CLOCK.plusHours(2).withZoneSameInstant(zone).format(minutes),
+                value("$localDatetime \"yyyy-MM-dd HH:mm\" 2 h"));
     }
 
     @Test
