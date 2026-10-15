@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Choose a file's encoding.** Click the encoding in the status bar, or use `Buffer: Reopen with
+  Encoding…` and `Buffer: Save with Encoding…` from the command palette. Reopening reads the file again in
+  the encoding you pick — Shift_JIS, GBK, windows-1251 and about 40 other common ones are listed by script,
+  then every encoding the runtime has — and remembers it for that file, including remote files. When the file
+  is not valid in that encoding, nothing changes and the status line names the first line and column that
+  could not be read. Saving with an encoding marks the tab modified until you save, wins over
+  `.editorconfig`, and refuses a character the encoding cannot hold instead of switching to UTF-8. An
+  encoding Editora could not detect is shown in the warning colour, with a tooltip that says so. The
+  installed app now includes the JDK's extended charsets (ISO-2022-JP, the Hebrew, Arabic, Baltic and
+  Vietnamese Windows code pages, MacRoman…), so the list is the same on every OS. File Information shows the
+  file's real encoding instead of always UTF-8.
 - **The Run tool window shows a spinner while a program runs.** A long script that prints little or nothing
   no longer looks stalled: a small spinner beside the run status turns from launch (including a before-launch
   command) until the program exits, is stopped, or fails to start.
@@ -20,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   debugpy's Python, js-debug, java-debug, and any language server (`server = command`, one per line).
   Changes reach open windows at once. The global switch is in Settings → Remote and in the
   `Remote: Toggle Running Commands on the Host` command. Works with OpenSSH servers (on Linux and on macOS, where Remote Login is one) and dropbear: on a
-  dropbear host, stopping a program also stops what it started, and a lost connection ends it.
+  dropbear host, stopping a program also stops what it started, and a lost connection ends it. Removing a
+  saved site keeps that host's answer and tool commands, for when it is added back.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
@@ -260,6 +272,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   servers are installed, such a server was also tried again once for every other server it checked (up to 22
   failed starts at launch); now only its own check, a settings change, Restart Servers or a reconnect tries
   it again.
+- **Right-click menus close when you click outside them.** A click anywhere else in the tree, list, editor or
+  panel the menu was opened on used to leave it open, and right-clicking another row opened a second menu
+  beside the first. Now any click outside a right-click menu closes it, in every panel, and the click still
+  does what it would have done (selects the row, moves the caret, opens that row's menu).
 - **The window moves when you drag its title.** With the menu bar merged into the title bar, dragging the file
   name in the middle did nothing; only the empty parts of the bar moved the window.
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`

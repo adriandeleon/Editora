@@ -148,6 +148,27 @@ class MixedLineEndingsTest {
     }
 
     @Test
+    void anEncodingTheUserChoseIsReportedWithoutARule() {
+        com.editora.i18n.Messages.init("en");
+        SaveNotes notes = SaveNotes.of(
+                Decision.NORMAL,
+                null,
+                "LF",
+                "a\n",
+                "a\n",
+                rules("utf-8", null),
+                EditorConfigCharset.UTF_8,
+                "Shift_JIS",
+                true,
+                true);
+        assertTrue(notes.charsetChanged());
+        assertNull(notes.charsetRule(), "Save with Encoding, not the .editorconfig rule, changed it");
+        assertEquals(
+                "Saved a.txt " + com.editora.i18n.Messages.tr("status.save.note.charsetChosen", "UTF-8", "Shift_JIS"),
+                notes.appendTo("Saved a.txt"));
+    }
+
+    @Test
     void droppedTrailingLineBreaksAreCounted() {
         assertEquals(
                 4, notes("a\n\n\n\n", "a", rules(null, false), "utf-8", "utf-8").newlinesDropped());

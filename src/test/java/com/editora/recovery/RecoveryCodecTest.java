@@ -7,6 +7,7 @@ import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +37,19 @@ class RecoveryCodecTest {
                 "project-9",
                 "línea uno\nline two 😀\n\ttabbed\n");
         assertEquals(in, RecoveryCodec.decode(RecoveryCodec.encode(in), true));
+    }
+
+    @Test
+    void aChosenCharsetIsMarkedAndAnOlderRecordReadsAsNotChosen() throws IOException {
+        RecoveryRecord chosen =
+                new RecoveryRecord("b-2", "/f", "f", null, "Shift_JIS", false, "LF", -1, -1, null, 0, 0, "", "x", true);
+        assertTrue(RecoveryCodec.decode(RecoveryCodec.encode(chosen), true).charsetChosen());
+        byte[] old = new String(RecoveryCodec.encode(chosen), StandardCharsets.UTF_8)
+                .replace(",\"charsetChosen\":true", "")
+                .getBytes(StandardCharsets.UTF_8);
+        RecoveryRecord read = RecoveryCodec.decode(old, true);
+        assertFalse(read.charsetChosen(), "a record written before the field existed");
+        assertEquals("Shift_JIS", read.charset());
     }
 
     @Test

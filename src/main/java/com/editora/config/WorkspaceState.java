@@ -40,8 +40,11 @@ public class WorkspaceState {
      *
      * <p>v13 → v14 added {@code collapsedBranchSections} (the branch dropdown's folded sections). Additive;
      * empty means every section open, as before.
+     *
+     * <p>v15 → v16 added {@code fileEncodings} (the encoding chosen for a file with Reopen or Save with
+     * Encoding). Additive; absent means the encoding is detected, as before.
      */
-    public static final int SCHEMA_VERSION = 15;
+    public static final int SCHEMA_VERSION = 16;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -119,6 +122,11 @@ public class WorkspaceState {
     private Map<String, String> markwhenViews = new LinkedHashMap<>();
     /** Per-file spell-check dictionary override: absolute path -> language id (e.g. "en_GB"). */
     private Map<String, String> spellLanguages = new LinkedHashMap<>();
+    /**
+     * Encodings the user chose per file (absolute path -> charset name, see {@code io/TextEncodings}). Read on
+     * the file-load worker as well as the FX thread, so it is a concurrent map.
+     */
+    private Map<String, String> fileEncodings = new java.util.concurrent.ConcurrentHashMap<>();
     /** Files the user pinned read-only ("View mode"): absolute paths. */
     private List<String> readOnlyFiles = new ArrayList<>();
     /** Debugger watch expressions (the Debug window's Watches node), re-evaluated on every stop. */
@@ -402,6 +410,16 @@ public class WorkspaceState {
 
     public void setSpellLanguages(Map<String, String> spellLanguages) {
         this.spellLanguages = spellLanguages == null ? new LinkedHashMap<>() : spellLanguages;
+    }
+
+    public Map<String, String> getFileEncodings() {
+        return fileEncodings;
+    }
+
+    public void setFileEncodings(Map<String, String> fileEncodings) {
+        this.fileEncodings = fileEncodings == null
+                ? new java.util.concurrent.ConcurrentHashMap<>()
+                : new java.util.concurrent.ConcurrentHashMap<>(fileEncodings);
     }
 
     public List<String> getReadOnlyFiles() {

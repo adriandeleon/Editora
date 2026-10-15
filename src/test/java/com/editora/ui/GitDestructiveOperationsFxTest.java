@@ -221,12 +221,15 @@ class GitDestructiveOperationsFxTest {
 
             FxTestSupport.runOnFx(coordinator::gitStashPop);
             async.await(told, "stash conflict feedback");
-            async.awaitFx();
 
             assertTrue(git(repo, "status", "--porcelain=v1").out().contains("UU story.txt"));
             assertEquals(1, git(repo, "stash", "list").out().lines().count(), "a conflicted pop retains the stash");
             String conflict = Files.readString(file);
             assertTrue(conflict.contains("<<<<<<<"));
+            // The status is reported before the clean buffers are reloaded, and the reload reads the file on
+            // the load executor: wait for it rather than for the FX queue.
+            awaitBufferContent(buffer, conflict);
+            async.awaitFx();
             assertEquals(conflict, FxTestSupport.callOnFx(buffer::getContent));
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
         }
@@ -774,12 +777,15 @@ class GitDestructiveOperationsFxTest {
         throw new AssertionError("no confirmation dialog is showing");
     }
 
+    /**
+     * Waits until a clean buffer holds {@code expected}. A Git mutation reports its status before it reloads
+     * the clean buffers, and the reload stats and reads the files on the load executor before it reaches the
+     * FX thread, so draining the FX queue after the status is not enough. Generous, for a loaded full build.
+     */
     private static void awaitBufferContent(EditorBuffer buffer, String expected) throws Exception {
-        for (int i = 0; i < 100; i++) {
-            if (expected.equals(FxTestSupport.callOnFx(buffer::getContent))) {
-                return;
-            }
-            Thread.sleep(50);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (!expected.equals(FxTestSupport.callOnFx(buffer::getContent)) && System.nanoTime() < deadline) {
+            Thread.sleep(20);
         }
         assertEquals(expected, FxTestSupport.callOnFx(buffer::getContent));
     }

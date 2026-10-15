@@ -231,6 +231,22 @@ listener.
 forces work the [hot path](glossary.md#hot-path) can't afford. Defer it (e.g. read it on the next
 pulse) rather than mid-event. See [performance.md](performance.md#3-work-incrementally-and-only-on-whats-visible).
 
+## A context menu's auto-hide ignores presses inside its owner node
+
+**Symptom:** a right-click menu stays open when you click elsewhere in the tree, list, text area or panel
+it was opened on, and a right-click on another row stacks a second menu beside the first. A click in any
+other control closes it fine.
+
+**Why/fix:** `PopupWindow`'s auto-hide skips a mouse press whose target is the owner node passed to
+`ContextMenu.show(node, x, y)` or one of its descendants (`PopupEventRedirector.isOwnerNodeEvent`), so a
+drop-down's own button can toggle it. A right-click menu is anchored to the whole control, so nothing in
+that control dismisses it. `ui.ContextMenuDismissal`, installed by `App.start` and by the fx test
+bootstraps, closes any auto-hiding menu that opened during a context-menu request or secondary-button
+gesture on the next press anywhere in the app, without consuming the press. Don't add per-panel
+`MOUSE_PRESSED` filters for this; earlier ones in the editor, preview, Project Map card and toolbar blamed
+RichTextFX, the ScrollPane or the platform grab and were removed. A menu opened from a plain click
+(a drop-down) is left to the stock behaviour.
+
 ## `applyCss()` restyles everything below the node it is called on
 
 **Symptom:** a change to one node of a large scene graph (one block of a long Markdown preview) costs

@@ -1992,6 +1992,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         ws.getMarkdownViewModes().remove(key);
         ws.getMarkdownPreviewLayouts().remove(key);
         ws.getSpellLanguages().remove(key);
+        ws.getFileEncodings().remove(key);
         ws.getReadOnlyFiles().remove(key);
         if (recentFiles != null) {
             recentFiles.remove(path);

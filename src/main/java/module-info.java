@@ -43,6 +43,9 @@ module com.editora {
     requires org.commonmark.ext.heading.anchor; // heading id generation for HTML export
     requires org.commonmark.ext.ins; // ++underline++
     requires java.logging;
+    // Exports nothing: required so jlink always links the extended charsets (ISO-2022-JP, windows-1255…1258,
+    // MacRoman, …) that Reopen / Save with Encoding offer — java.base alone has a smaller set that differs per OS.
+    requires jdk.charsets;
     // Language Server Protocol client (LSP4J) + its JSON-RPC transport. Automatic modules
     // (filename-derived names) — moditect injects real descriptors for the jlink dist build.
     requires org.eclipse.lsp4j;
