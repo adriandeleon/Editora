@@ -35,7 +35,6 @@ import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.BorderPane;
@@ -540,11 +539,6 @@ final class ProjectMapPreview extends StackPane {
             }
         });
         editor.setOnContextMenuRequested(this::showEditorContextMenu);
-        editor.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
-            if (event.getButton() == MouseButton.PRIMARY && editorContextMenu.isShowing()) {
-                editorContextMenu.hide();
-            }
-        });
     }
 
     private void showEditorContextMenu(ContextMenuEvent event) {

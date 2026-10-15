@@ -1945,15 +1945,6 @@ public class EditorBuffer implements TabContent {
             contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
         });
-
-        // A left-click in the editor dismisses an open context menu. RichTextFX consumes the
-        // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
-        // not consumed, so the click still positions the caret as usual.
-        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-            if (contextMenu != null && contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
-                contextMenu.hide();
-            }
-        });
     }
 
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
@@ -4841,15 +4832,7 @@ public class EditorBuffer implements TabContent {
             // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
             // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
             previewPane.setFocusTraversable(true);
-            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
-                // A press in the preview dismisses an open preview context menu. The ScrollPane consumes
-                // the press before the popup's auto-hide can fire (same as the editor menu — see
-                // installContextMenu), so close it explicitly; the click still falls through to focus.
-                if (previewContextMenu != null && previewContextMenu.isShowing()) {
-                    previewContextMenu.hide();
-                }
-                previewPane.requestFocus();
-            });
+            previewPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> previewPane.requestFocus());
             // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
             previewPane.setOnContextMenuRequested(e -> {
                 Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();

@@ -240,6 +240,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Right-click menus close when you click outside them.** A click anywhere else in the tree, list, editor or
+  panel the menu was opened on used to leave it open, and right-clicking another row opened a second menu
+  beside the first. Now any click outside a right-click menu closes it, in every panel, and the click still
+  does what it would have done (selects the row, moves the caret, opens that row's menu).
 - **HTTP Client: timestamps are right outside UTC.** `$timestamp`, `$isoTimestamp` and `$datetime iso8601`
   were off by the local UTC offset (six hours early in Mexico City). Day.js formats (`"DD-MM-YYYY"`) no longer
   give wrong dates, and `$env.NAME` and `{{$randomInt 1 10}}` work.
