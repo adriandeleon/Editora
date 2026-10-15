@@ -6794,6 +6794,16 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
+    /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-r", with the keymap's chords. */
+    static String httpRunTooltip(com.editora.command.KeymapManager keymap) {
+        String run = keymap == null ? null : keymap.displayChord("http.runRequest");
+        String all = keymap == null ? null : keymap.displayChord("http.runFile");
+        if (run != null && !run.isEmpty() && all != null && !all.isEmpty()) {
+            return tr("editmenu.runHttpRequest.tip.chords", run, all);
+        }
+        return ChordHint.tr(keymap, "editmenu.runHttpRequest.tip", "http.runRequest");
+    }
+
     boolean isLocalBuffer(EditorBuffer b) {
         return b != null && com.editora.vfs.Vfs.isLocal(b.getPath());
     }
@@ -7613,7 +7623,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
         buffer.setHttpRunAllHandler(httpClient::runFile); // .http editor menu → Run All Requests (active buffer)
-        buffer.setHttpRunTooltip(() -> ChordHint.tr(keymap, "editmenu.runHttpRequest.tip", "http.runRequest"));
+        buffer.setHttpRunTooltip(() -> httpRunTooltip(keymap));
+        buffer.setHttpCancelHandler(() -> httpClient.cancelRun(buffer)); // the running request's ■
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
         buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
