@@ -605,6 +605,12 @@ public class EditorBuffer implements TabContent {
 
     private MermaidLintOverlay lintOverlay; // lazily attached — see lintOverlay()
     private MarkdownLintOverlay mdLintOverlay; // lazily attached when Markdown linting turns on — see mdLintOverlay()
+    /** Squiggles under unresolvable {{variables}} of a .http buffer (on the same overlay as Markdown lint). */
+    private final HttpVariableMarks httpVariableMarks = new HttpVariableMarks(
+            this::mdLintOverlay,
+            this::documentTextSnapshot,
+            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile);
+
     private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
      *  lazily attached when LSP first activates for this buffer — see {@link #diagnosticStripe()}. */
@@ -1203,10 +1209,14 @@ public class EditorBuffer implements TabContent {
                 UndoMerge.PAUSE,
                 () -> !disposed && !largeFile && area.getLength() <= UNDO_HISTORY_MAX_BYTES,
                 this::captureUndoCheckpoint);
-        settledEdits.at(Duration.ofMillis(450), () -> mermaidLintEnabled || markdownLintEnabled, () -> {
-            scheduleMermaidLint();
-            scheduleMarkdownLint();
-        });
+        settledEdits.at(
+                Duration.ofMillis(450),
+                () -> mermaidLintEnabled || markdownLintEnabled || httpVariableMarks.enabled(),
+                () -> {
+                    scheduleMermaidLint();
+                    scheduleMarkdownLint();
+                    httpVariableMarks.schedule();
+                });
         settledEdits.at(
                 Duration.ofMillis(600),
                 () -> completionActions.aiCompletionEnabled && focusedArea != null && focusedArea.isFocused(),
@@ -3493,6 +3503,29 @@ public class EditorBuffer implements TabContent {
             httpFeatureEnabled = enabled;
             recomputeRun();
         }
+        httpVariableMarks.update();
+    }
+
+    /** Injects the {@code .http} unresolved-variable check ({@code accept(text, diagnostics -> …)}); null: off. */
+    public void setHttpVariableLint(
+            java.util.function.BiConsumer<String, java.util.function.Consumer<java.util.List<MarkdownLint.Diagnostic>>>
+                    validator) {
+        httpVariableMarks.setValidator(validator);
+    }
+
+    /** Checks the {@code {{variables}}} again (the environment or the env files changed). */
+    public void refreshHttpVariableLint() {
+        httpVariableMarks.update();
+    }
+
+    /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
+    public java.util.List<MarkdownLint.Diagnostic> httpVariableDiagnostics() {
+        return httpVariableMarks.diagnostics();
+    }
+
+    /** Injects what {@code {{} completion offers in a {@code .http} buffer (the environment, the file's folder). */
+    public void setHttpVariableContext(java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> c) {
+        completionActions.setHttpVariables(c);
     }
 
     /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
@@ -6743,7 +6776,7 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        MarkdownLintHover.install(a, () -> markdownLintEnabled ? mdLintOverlay : null);
+        MarkdownLintHover.install(a, () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null);
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);
