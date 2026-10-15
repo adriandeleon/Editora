@@ -194,6 +194,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Remote commands get what the account's login profile sets.** Only `PATH` and the locale were carried over,
+  so a `JAVA_HOME`, `MAVEN_OPTS`, `GOPATH` or version-manager variable exported in `~/.bash_profile` (or
+  `~/.zprofile`, `~/.profile`) was missing from builds, runs, Git and language servers on the host. Every
+  variable the profile adds is now passed on, except the session's own (prompt, history, `SSH_*`, display).
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
   default — failed with "No more authentication methods available", and a server offering only an ed25519
   host key could not be reached at all. Editora now ships Bouncy Castle, which the SSH library needs for them.
