@@ -3,20 +3,12 @@ package com.editora.http;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -41,8 +33,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 
@@ -90,9 +80,6 @@ public final class HttpClientService {
 
     /** How long a response body may keep arriving after its headers before the run is stopped. */
     private static final Duration DEFAULT_BODY_DEADLINE = Duration.ofMinutes(5);
-
-    /** Up to this size an uploaded {@code < file} body is also shown as text in the history and cURL views. */
-    private static final long SHOWN_FILE_BODY_BYTES = 1024 * 1024;
 
     /** The JDK client's limit on the exchanges of one request (the original one plus the redirects followed). */
     private static final int REDIRECT_LIMIT = Integer.getInteger("jdk.httpclient.redirects.retrylimit", 5);
@@ -170,7 +157,7 @@ public final class HttpClientService {
         private volatile CompletableFuture<?> pending;
         private volatile InputStream stream;
         /** The request body of the exchange in flight, whose files a cancel closes (they stay open otherwise). */
-        private volatile BodyContent body;
+        private volatile RequestBodies.Content body;
 
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
@@ -179,7 +166,7 @@ public final class HttpClientService {
                     f.cancel(true);
                 }
                 closeQuietly(stream);
-                BodyContent b = body;
+                RequestBodies.Content b = body;
                 if (b != null) {
                     b.release();
                 }
@@ -495,7 +482,7 @@ public final class HttpClientService {
         List<String> warnings = p.warnings();
         String requestedVersion = request.httpVersion();
         HttpVersions.Choice version = p.version();
-        BodyContent bc = p.body();
+        RequestBodies.Content bc = p.body();
         DigestAuth.Credentials digest = p.digest();
         String label = p.label();
         HttpExchange.Details details = p.details();
@@ -662,7 +649,7 @@ public final class HttpClientService {
         }
         String contentType = headerValue(headers, "Content-Type");
 
-        BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers, warnings);
+        RequestBodies.Content bc = RequestBodies.resolve(request, baseDir, sub, contentType, headers, warnings);
         // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
         DigestAuth.Credentials digest = digestCredentials(headers);
         if (digest != null) {
@@ -703,7 +690,7 @@ public final class HttpClientService {
             List<String[]> headers,
             List<String> warnings,
             HttpVersions.Choice version,
-            BodyContent body,
+            RequestBodies.Content body,
             DigestAuth.Credentials digest,
             String label,
             HttpExchange.Details details) {}
@@ -735,66 +722,6 @@ public final class HttpClientService {
         return sb.toString();
     }
 
-    /**
-     * The request body: its publisher, a display string (for the history/cURL view), and how it went out (a file
-     * streamed as is, multipart fields) for the cURL export. A non-null {@code problem} means the body the request
-     * refers to could not be read and the request must not be sent. {@code digestFeed} feeds the body to a
-     * {@code qop=auth-int} Digest answer; a streamed body (a {@code < file}, a multipart form with file parts) is
-     * read again for it as it goes, never held in memory whole.
-     */
-    private record BodyContent(
-            HttpRequest.BodyPublisher publisher,
-            String display,
-            String problem,
-            DigestAuth.BodyFeed digestFeed,
-            Path file,
-            List<HttpExchange.FormPart> parts,
-            java.io.Closeable files) {
-
-        BodyContent(
-                HttpRequest.BodyPublisher publisher,
-                String display,
-                String problem,
-                DigestAuth.BodyFeed digestFeed,
-                Path file,
-                List<HttpExchange.FormPart> parts) {
-            this(publisher, display, problem, digestFeed, file, parts, null);
-        }
-
-        /** Closes the files the body streams from: after the exchange, and at once when the run is cancelled. */
-        void release() {
-            if (files != null) {
-                try {
-                    files.close();
-                } catch (IOException ignored) {
-                    // closing to release the file: nothing more to do
-                }
-            }
-        }
-
-        static BodyContent of(byte[] bytes, String display) {
-            return new BodyContent(
-                    HttpRequest.BodyPublishers.ofByteArray(bytes),
-                    display,
-                    null,
-                    md -> md.update(bytes),
-                    null,
-                    List.of());
-        }
-
-        static BodyContent unreadable(String problem) {
-            return new BodyContent(
-                    HttpRequest.BodyPublishers.noBody(), "(" + problem + ")", problem, md -> {}, null, List.of());
-        }
-    }
-
-    /** Feeds {@code file} to a digest in chunks. */
-    private static void feedFile(Path file, java.security.MessageDigest md) throws IOException {
-        try (InputStream in = Files.newInputStream(file)) {
-            in.transferTo(new java.security.DigestOutputStream(OutputStream.nullOutputStream(), md));
-        }
-    }
-
     /** Why a body stopped arriving before its end. */
     private enum Stop {
         DEADLINE,
@@ -813,150 +740,6 @@ public final class HttpClientService {
             HttpClient.Version version,
             URI uri,
             List<URI> redirects) {}
-
-    private static BodyContent resolveBody(
-            HttpFile.Parsed request,
-            Path baseDir,
-            Function<String, String> sub,
-            String contentType,
-            List<String[]> headers,
-            List<String> warnings) {
-        // multipart/form-data: assemble the parts (inline and <@ parts substituted, < ./file parts streamed).
-        if (Multipart.isMultipart(contentType)) {
-            String boundary = Multipart.boundaryOf(contentType);
-            if (boundary.isEmpty()) {
-                boundary = "EditoraBoundary" + Long.toHexString(System.nanoTime());
-                setHeader(headers, "Content-Type", contentType + "; boundary=" + boundary);
-            }
-            List<String> problems = new ArrayList<>();
-            List<Multipart.Part> parsed = Multipart.parse(request.body(), boundary);
-            // File parts stay files: the body is streamed from them while it is sent, its length known up front.
-            Multipart.Body form = Multipart.assemble(parsed, boundary, baseDir, sub, problems);
-            if (!problems.isEmpty()) {
-                return BodyContent.unreadable(String.join("; ", problems));
-            }
-            HttpRequest.BodyPublisher publisher;
-            try {
-                publisher = form.publisher();
-            } catch (java.io.FileNotFoundException gone) {
-                return BodyContent.unreadable("multipart file not found: " + gone.getMessage());
-            }
-            return new BodyContent(
-                    publisher,
-                    "(multipart/form-data, " + form.length() + " bytes)",
-                    null,
-                    form::feed,
-                    null,
-                    formParts(form.parts()),
-                    form);
-        }
-        Charset charset = HttpResult.charsetOf(contentType);
-        // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
-        if (request.bodyRef() != null && baseDir != null) {
-            try {
-                HttpFile.BodyRef ref = request.bodyRef();
-                Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
-                Path bodyFile = HttpPaths.contained(baseDir, ref.path());
-                if (bodyFile == null) {
-                    return BodyContent.unreadable("body file outside the request folder: " + ref.path());
-                }
-                if (!ref.substitute()) {
-                    // "< file": the file's bytes are the body, untouched and streamed — a decode/re-encode round
-                    // trip through String corrupts anything that is not valid UTF-8 (an image, a protobuf), and a
-                    // multi-gigabyte upload must not be read into memory first.
-                    long size = Files.size(bodyFile);
-                    String shown = shownFileBody(bodyFile, size, ref.path(), cs);
-                    FileBodyPublisher upload = new FileBodyPublisher(bodyFile);
-                    return new BodyContent(
-                            upload, shown, null, md -> feedFile(bodyFile, md), bodyFile, List.of(), upload);
-                }
-                String content = sub.apply(new String(Files.readAllBytes(bodyFile), cs));
-                return BodyContent.of(encode(content, charset, warnings), content);
-            } catch (Exception e) {
-                return BodyContent.unreadable(
-                        "body file not found: " + request.bodyRef().path());
-            }
-        }
-        if (request.bodyRef() != null) {
-            return BodyContent.unreadable("body file needs a saved request file to resolve against: "
-                    + request.bodyRef().path());
-        }
-        String body = sub.apply(request.body());
-        if (body == null || body.isBlank()) {
-            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "", null, md -> {}, null, List.of());
-        }
-        return BodyContent.of(encode(body, charset, warnings), body);
-    }
-
-    /** What the history shows for a {@code < file} body: its text when small and textual, else a note. */
-    private static String shownFileBody(Path file, long size, String shownPath, Charset cs) throws IOException {
-        if (size > SHOWN_FILE_BODY_BYTES) {
-            return "(body from " + shownPath + ", " + HttpResponseFormat.humanSize(size) + ")";
-        }
-        byte[] raw = Files.readAllBytes(file);
-        return HttpResult.looksBinary(raw, null)
-                ? "(binary body from " + shownPath + ", " + raw.length + " bytes)"
-                : new String(raw, cs);
-    }
-
-    /**
-     * {@code text} in {@code charset} — the one the request's {@code Content-Type} declares, else UTF-8 — with a
-     * warning when a character has no form in it (it goes out as {@code ?}).
-     */
-    static byte[] encode(String text, Charset charset, List<String> warnings) {
-        try {
-            ByteBuffer b = charset.newEncoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .encode(CharBuffer.wrap(text));
-            byte[] out = new byte[b.remaining()];
-            b.get(out);
-            return out;
-        } catch (CharacterCodingException | UnsupportedOperationException e) {
-            warnings.add(tr("status.http.warn.unmappable", charset.name()));
-            return text.getBytes(charset);
-        }
-    }
-
-    private static final Pattern DISPOSITION_PARAM =
-            Pattern.compile("(?i)(?:^|;)\\s*(name|filename)\\s*=\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[^;]*)");
-
-    /**
-     * The multipart parts as form fields for the cURL export, from the parts as they went out: names, the text sent
-     * (an inline value, or a {@code <@ ./file} part after substitution) and the files streamed.
-     */
-    private static List<HttpExchange.FormPart> formParts(List<Multipart.Resolved> parts) {
-        List<HttpExchange.FormPart> out = new ArrayList<>();
-        for (Multipart.Resolved p : parts) {
-            String name = null;
-            String filename = null;
-            String type = null;
-            for (Map.Entry<String, String> h : p.headers().entrySet()) {
-                if (h.getKey().equalsIgnoreCase("Content-Disposition")) {
-                    Matcher m = DISPOSITION_PARAM.matcher(h.getValue());
-                    while (m.find()) {
-                        String v = m.group(2).strip();
-                        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
-                            v = v.substring(1, v.length() - 1);
-                        }
-                        if (m.group(1).equalsIgnoreCase("name")) {
-                            name = v;
-                        } else {
-                            filename = v;
-                        }
-                    }
-                } else if (h.getKey().equalsIgnoreCase("Content-Type")) {
-                    type = h.getValue();
-                }
-            }
-            out.add(
-                    p.file() != null
-                            ? new HttpExchange.FormPart(
-                                    name, null, p.file().toAbsolutePath().toString(), filename, type)
-                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, null, type));
-        }
-        return out;
-    }
 
     private static String withUrl(String message, String url) {
         return url.isBlank() ? message : message + "  (" + url + ")";
@@ -1239,16 +1022,6 @@ public final class HttpClientService {
             }
         }
         return "";
-    }
-
-    private static void setHeader(List<String[]> headers, String name, String value) {
-        for (String[] h : headers) {
-            if (h[0].equalsIgnoreCase(name)) {
-                h[1] = value;
-                return;
-            }
-        }
-        headers.add(new String[] {name, value});
     }
 
     /** Stops the daemon worker (window close). Without this, each closed window leaks its http-client thread. */

@@ -5,13 +5,28 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.function.IntFunction;
 
+import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
+import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.stage.FileChooser;
@@ -21,11 +36,13 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.CapturedResponses;
 import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
+import com.editora.http.HttpClientService;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import com.editora.http.ResponseRedirects;
+import com.editora.io.StagedExport;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -95,7 +112,7 @@ final class HttpClientCoordinator {
 
     private final CoordinatorHost host;
     private final WindowOps ops;
-    private final com.editora.http.HttpClientService service = new com.editora.http.HttpClientService();
+    private final HttpClientService service = new HttpClientService();
 
     /** One response panel per open {@code .http} buffer (a Node can't be shared across tabs); dropped on
      *  close ({@link #onBufferClosed}) and when the feature is switched off. */
@@ -103,11 +120,11 @@ final class HttpClientCoordinator {
 
     /** The in-flight run of each buffer (FX thread only). A result is applied only while its handle is still
      *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
-    private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
+    private final Map<EditorBuffer, HttpClientService.Handle> running = new IdentityHashMap<>();
 
     /** The run of each buffer the user cancelled and whose results have not arrived yet: what it finished before
      *  the cancel (a Run All's earlier requests) still lands in History. Dropped when a newer run starts. */
-    private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> cancelling = new IdentityHashMap<>();
+    private final Map<EditorBuffer, HttpClientService.Handle> cancelling = new IdentityHashMap<>();
 
     /** Each buffer's request-chaining session: every run (single or Run All) records into it, so a request
      *  can use the response of one run earlier. Cleared when the environment changes or the buffer closes. */
@@ -136,9 +153,8 @@ final class HttpClientCoordinator {
      * if it cannot be had — the window is closing, the history store does not answer — the file is left alone.
      */
     private ResponseRedirects.Decision beforeRedirectOverwrite(Path target) {
-        java.util.concurrent.CompletableFuture<ResponseRedirects.Decision> decision =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
+        CompletableFuture<ResponseRedirects.Decision> decision = new CompletableFuture<>();
+        Platform.runLater(() -> {
             try {
                 decideRedirectOverwrite(target, decision::complete);
             } catch (RuntimeException failure) {
@@ -146,18 +162,17 @@ final class HttpClientCoordinator {
             }
         });
         try {
-            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException unanswered) {
+        } catch (ExecutionException | TimeoutException unanswered) {
             // fall through: not preserved
         }
         return ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED);
     }
 
     /** FX thread: refuses a target that is open with unsaved changes, else records it in Local History. */
-    private void decideRedirectOverwrite(
-            Path target, java.util.function.Consumer<ResponseRedirects.Decision> completion) {
+    private void decideRedirectOverwrite(Path target, Consumer<ResponseRedirects.Decision> completion) {
         Path wanted = target.toAbsolutePath().normalize();
         boolean[] unsaved = new boolean[1];
         host.forEachBuffer(b -> {
@@ -220,7 +235,7 @@ final class HttpClientCoordinator {
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
             HttpClientPanel gone = panels.remove(buffer);
             history.detached(buffer);
-            com.editora.http.HttpClientService.Handle run = running.remove(buffer);
+            HttpClientService.Handle run = running.remove(buffer);
             if (run != null) {
                 run.cancel(); // the feature went off mid-run: nothing is left to show the response
                 buffer.setHttpRunning(-1);
@@ -251,7 +266,7 @@ final class HttpClientCoordinator {
             captures.remove(closed);
             environments.remove(closed);
             cancelling.remove(closed); // a cancelled run's late results have no panel to land in
-            com.editora.http.HttpClientService.Handle run = running.remove(closed);
+            HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
                 run.cancel(); // nobody is left to read the response
             }
@@ -288,17 +303,14 @@ final class HttpClientCoordinator {
      * Focuses {@code node} now, or as soon as it is back in a scene: a Split's SplitPane adds the editor to the
      * scene only when its skin lays it out, so right after leaving Preview a focus request would go nowhere.
      */
-    private static void focusWhenShown(javafx.scene.Node node) {
+    private static void focusWhenShown(Node node) {
         if (node.getScene() != null) {
             node.requestFocus();
             return;
         }
-        node.sceneProperty().addListener(new javafx.beans.value.ChangeListener<>() {
+        node.sceneProperty().addListener(new ChangeListener<>() {
             @Override
-            public void changed(
-                    javafx.beans.value.ObservableValue<? extends javafx.scene.Scene> o,
-                    javafx.scene.Scene was,
-                    javafx.scene.Scene now) {
+            public void changed(ObservableValue<? extends Scene> o, Scene was, Scene now) {
                 if (now != null) {
                     o.removeListener(this);
                     node.requestFocus();
@@ -390,11 +402,11 @@ final class HttpClientCoordinator {
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
-        String label = HttpScratch.label(parsed, vars, session, baseDir, java.time.ZonedDateTime.now());
+        String label = HttpScratch.label(parsed, vars, session, baseDir, ZonedDateTime.now());
         startRun(buffer, label);
         buffer.setHttpRunning(index);
         long startedAt = System.currentTimeMillis();
-        com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
+        HttpClientService.Handle[] run = new HttpClientService.Handle[1];
         // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
         run[0] = service.run(parsed, vars, baseDir, session, HttpSecretGate.forBuffer(buffer, ops), ex -> {
             if (running.remove(buffer, run[0])) {
@@ -415,8 +427,8 @@ final class HttpClientCoordinator {
     }
 
     /** An identity set of {@code exchanges} (records compare by value; two "not sent" results may be equal). */
-    private static java.util.Set<HttpExchange> identitySet(java.util.Collection<HttpExchange> exchanges) {
-        java.util.Set<HttpExchange> set = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private static Set<HttpExchange> identitySet(Collection<HttpExchange> exchanges) {
+        Set<HttpExchange> set = Collections.newSetFromMap(new IdentityHashMap<>());
         set.addAll(exchanges);
         return set;
     }
@@ -465,8 +477,8 @@ final class HttpClientCoordinator {
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
-    private void track(EditorBuffer buffer, com.editora.http.HttpClientService.Handle run) {
-        com.editora.http.HttpClientService.Handle previous = running.put(buffer, run);
+    private void track(EditorBuffer buffer, HttpClientService.Handle run) {
+        HttpClientService.Handle previous = running.put(buffer, run);
         if (previous != null) {
             previous.cancel();
         }
@@ -480,7 +492,7 @@ final class HttpClientCoordinator {
 
     /** Cancels {@code buffer}'s in-flight run (the Cancel button and the command share this). */
     void cancelRun(EditorBuffer buffer) {
-        com.editora.http.HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
+        HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
         if (run == null) {
             host.setStatus(tr("status.http.nothingRunning"));
             return;
@@ -553,21 +565,21 @@ final class HttpClientCoordinator {
             }
             // When each request started (by file position), for its History time; the ones not sent: now.
             long[] startedAt = new long[reqs.size()];
-            java.util.Arrays.fill(startedAt, System.currentTimeMillis());
-            java.util.Set<HttpExchange> unsent = identitySet(skipped.values());
+            Arrays.fill(startedAt, System.currentTimeMillis());
+            Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
                 finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
                 return;
             }
             startRun(b, label);
             String[] startText = text.split("\n", -1); // each request's line as the run saw it, for the ■
-            java.util.function.IntFunction<String> requestLine = i -> {
+            IntFunction<String> requestLine = i -> {
                 int line = blocks.get(i).startLine();
                 return line >= 0 && line < startText.length ? startText[line] : null;
             };
             b.setHttpRunning(sent.get(0), requestLine.apply(sent.get(0)));
             List<HttpFile.Parsed> toSend = sent.stream().map(reqs::get).toList();
-            com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
+            HttpClientService.Handle[] run = new HttpClientService.Handle[1];
             run[0] = service.runAll(
                     toSend,
                     vars,
@@ -583,8 +595,7 @@ final class HttpClientCoordinator {
                             p.progress(
                                     index,
                                     reqs.size(),
-                                    HttpScratch.label(
-                                            reqs.get(index), vars, session, baseDir, java.time.ZonedDateTime.now()));
+                                    HttpScratch.label(reqs.get(index), vars, session, baseDir, ZonedDateTime.now()));
                         }
                     },
                     exchanges -> {
@@ -719,10 +730,10 @@ final class HttpClientCoordinator {
     }
 
     /** Told when a buffer's environment choice, or the env files it comes from, may have changed. */
-    private java.util.function.Consumer<EditorBuffer> environmentListener = b -> {};
+    private Consumer<EditorBuffer> environmentListener = b -> {};
 
     /** Sets who is told about environment changes (the editor's {@code {{variable}}} hints). */
-    void setEnvironmentListener(java.util.function.Consumer<EditorBuffer> listener) {
+    void setEnvironmentListener(Consumer<EditorBuffer> listener) {
         this.environmentListener = listener == null ? b -> {} : listener;
     }
 
@@ -763,7 +774,7 @@ final class HttpClientCoordinator {
             List<Integer> indexes,
             List<HttpExchange> exchanges,
             long[] startedAt,
-            java.util.Set<HttpExchange> unsent,
+            Set<HttpExchange> unsent,
             boolean all) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         long now = System.currentTimeMillis();
@@ -803,7 +814,7 @@ final class HttpClientCoordinator {
             List<Integer> indexes,
             List<HttpExchange> exchanges,
             long[] startedAt,
-            java.util.Set<HttpExchange> unsent,
+            Set<HttpExchange> unsent,
             int total) {
         List<HttpFile.Parsed> keptRequests = new ArrayList<>();
         List<Integer> keptIndexes = new ArrayList<>();
@@ -812,8 +823,7 @@ final class HttpClientCoordinator {
         for (int i = 0; i < exchanges.size(); i++) {
             HttpExchange ex = exchanges.get(i);
             if (ex.result().failed()
-                    && com.editora.http.HttpClientService.CANCELLED.equals(
-                            ex.result().error())) {
+                    && HttpClientService.CANCELLED.equals(ex.result().error())) {
                 continue;
             }
             keptRequests.add(i < requests.size() ? requests.get(i) : null);
@@ -894,12 +904,12 @@ final class HttpClientCoordinator {
         try {
             // Staged: the Save dialog may have confirmed replacing a file, which a failed write must not empty.
             if (chooser.getSelectedExtensionFilter() == report) {
-                com.editora.io.StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
+                StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
             } else {
                 byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
                         ? r.rawBody()
                         : r.body().getBytes(StandardCharsets.UTF_8);
-                com.editora.io.StagedExport.write(chosen.toPath(), bytes);
+                StagedExport.write(chosen.toPath(), bytes);
             }
             HttpHistoryEntry entry = p.getSelectedEntry();
             boolean partial = entry != null && entry.bodyCut();
