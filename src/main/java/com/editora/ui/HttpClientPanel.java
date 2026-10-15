@@ -97,15 +97,20 @@ public final class HttpClientPanel extends VBox {
     /** Up to this many notes (warnings + files written) show expanded; more start collapsed behind the badge. */
     static final int NOTES_SHOWN_EXPANDED = 2;
 
-    /** Shared worker for response formatting + highlighting; idles out, so it costs nothing when unused. */
+    /** Shared workers for response formatting + highlighting (a few, so panels do not wait on each other); idle out. */
     private static final ExecutorService FORMAT = formatExecutor();
 
     private static ExecutorService formatExecutor() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
-            Thread t = new Thread(r, "http-response-format");
-            t.setDaemon(true);
-            return t;
-        });
+        // A few threads, not one: a multi-megabyte render in one window (or tab) must not hold up another's. Within one
+        // panel a superseded render is skipped (bodyGeneration), so renders of the same panel never pile up. The
+        // threads idle out, so nothing needs shutting down when a window closes.
+        int threads = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
+        ThreadPoolExecutor pool =
+                new ThreadPoolExecutor(threads, threads, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
+                    Thread t = new Thread(r, "http-response-format");
+                    t.setDaemon(true);
+                    return t;
+                });
         pool.allowCoreThreadTimeOut(true);
         return pool;
     }
