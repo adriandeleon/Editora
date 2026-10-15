@@ -260,6 +260,11 @@ CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `mac
 advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block a merge until it has a
 track record there.
 
+Remote development is checked against real SSH servers by `RealSshdProbeFxTest`, an opt-in probe that CI
+skips. The `Remote probe` workflow runs it on `macos-15` against that runner's own sshd, by hand or on a push
+to a `probe/**` branch; on Linux, run it against a private `sshd` or dropbear on localhost
+([remote](subsystems/remote.md)).
+
 On Linux the suite runs as four shards, each on its own runner (the `tests` job in `ci.yml`), because in
 one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/shard_tests.py` deals
 the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself, and

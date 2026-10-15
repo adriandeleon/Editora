@@ -225,15 +225,23 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git).
 
 Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
-servers on localhost):
+servers on localhost), and against macOS 15.7's own OpenSSH 9.9p2 with a bash login shell and no `setsid`
+(the `Remote probe` workflow, below):
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
 a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
 argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
 outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
-dropped connection, and ed25519 keys; all pass on both. dropbear needed the group guard above: before it, Stop
+dropped connection, and ed25519 keys; all pass on all three. dropbear needed the group guard above: before it, Stop
 left a program's children running and a dropped connection left the program itself. Its `authorized_keys`
 folder (`-D`) and every folder above it must not be group- or world-writable, so not under `/tmp`. The guard
-was also checked with BusyBox's `sh` and `setsid`. Not checked: macOS's sshd.
+was also checked with BusyBox's `sh` and `setsid`.
+
+The `Remote probe` workflow (`.github/workflows/remote-probe.yml`; run it from the Actions tab, or push a
+`probe/**` branch) runs the probe on a `macos-15` runner against the runner's own `/usr/sbin/sshd`, started
+unprivileged on a high port. It installs the host's tools from the sources Editora's installer uses (the
+pinned jdtls milestone, java-debug from Open VSX, js-debug from GitHub, debugpy with pip, pyright with npm),
+and gives the account a login profile like a Mac user's: Homebrew's and npm's `bin` on `PATH`, a
+`JAVA_HOME`. It is not part of CI.
 
 **ed25519** keys and host keys work through Bouncy Castle (`bcprov-jdk18on`, see
 [dependencies](../dependencies.md)): MINA SSHD has no EdDSA of its own and turns `ssh-ed25519` on only when a
