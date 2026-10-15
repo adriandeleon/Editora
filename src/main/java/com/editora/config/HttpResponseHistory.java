@@ -293,7 +293,7 @@ public final class HttpResponseHistory {
         clean.clearedAt = stored.clearedAt;
         if (stored.responses != null) {
             stored.responses.stream()
-                    .filter(r -> r != null && (clean.clearedAt == 0 || r.at() > clean.clearedAt))
+                    .filter(r -> r != null && (clean.clearedAt == 0 || r.at() >= clean.clearedAt))
                     .limit(MAX_RESPONSES)
                     .forEach(clean.responses::add);
         }
@@ -378,7 +378,7 @@ public final class HttpResponseHistory {
             }
         }
         if (out.clearedAt > 0) {
-            all.removeIf(r -> r.at() <= out.clearedAt);
+            all.removeIf(r -> r.at() < out.clearedAt); // a run started in the Clear's own millisecond is after it
         }
         all.sort(java.util.Comparator.comparingLong(Response::at).reversed()); // stable: a Run All keeps its order
         out.responses = retain(all, MAX_RESPONSES);

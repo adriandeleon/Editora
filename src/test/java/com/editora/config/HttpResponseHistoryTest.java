@@ -154,6 +154,14 @@ class HttpResponseHistoryTest {
                 List.of("http://h/a"),
                 merged.responses.stream().map(HttpResponseHistory.Response::url).toList());
         assertEquals(10, merged.clearedAt);
+
+        // A run started in the Clear's own millisecond came after the Clear: it is kept.
+        HttpResponseHistory.Stored sameMilli = stored(at(10, "http://h/next", "n"));
+        sameMilli.clearedAt = 10;
+        merged = HttpResponseHistory.merge(base, sameMilli, java.util.Set.of());
+        assertEquals(
+                List.of("http://h/a", "http://h/next"),
+                merged.responses.stream().map(HttpResponseHistory.Response::url).toList());
     }
 
     @Test
