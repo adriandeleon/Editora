@@ -129,6 +129,29 @@ class HttpEngineIntegrationTest {
             ex.getResponseHeaders().add("Content-Encoding", "br");
             reply(ex, 200, "text/plain", new byte[] {0x0b, 0x02, (byte) 0x80});
         });
+        server.createContext("/digestint", ex -> {
+            byte[] received = ex.getRequestBody().readAllBytes();
+            String auth = ex.getRequestHeaders().getFirst("Authorization");
+            if (auth == null) {
+                ex.getResponseHeaders().add("WWW-Authenticate", "Digest realm=\"r\", nonce=\"n\", qop=\"auth-int\"");
+                reply(ex, 401, null, new byte[0]);
+                return;
+            }
+            Map<String, String> p = DigestAuth.parseChallenge(auth);
+            try {
+                MessageDigest md5 = MessageDigest.getInstance("MD5");
+                String ha1 = HexFormat.of().formatHex(md5.digest(utf8("ada:r:s3cret")));
+                String bodyHash = HexFormat.of().formatHex(md5.digest(received));
+                String ha2 = HexFormat.of().formatHex(md5.digest(utf8("POST:/digestint:" + bodyHash)));
+                String expected = HexFormat.of()
+                        .formatHex(md5.digest(
+                                utf8(ha1 + ":n:" + p.get("nc") + ":" + p.get("cnonce") + ":auth-int:" + ha2)));
+                boolean ok = "auth-int".equals(p.get("qop")) && expected.equals(p.get("response"));
+                reply(ex, ok ? 200 : 401, "text/plain", utf8(ok ? "welcome " + received.length : "bad answer"));
+            } catch (Exception e) {
+                reply(ex, 500, "text/plain", utf8(e.toString()));
+            }
+        });
         server.createContext("/digest256", ex -> {
             String auth = ex.getRequestHeaders().getFirst("Authorization");
             if (auth == null) {
@@ -415,6 +438,82 @@ class HttpEngineIntegrationTest {
                 dir.resolve("a.png").toAbsolutePath().toString(), parts.get(1).file());
         assertEquals("a.png", parts.get(1).filename());
         assertEquals("image/png", parts.get(1).contentType());
+    }
+
+    private static final String FORM = "Content-Type: multipart/form-data; boundary=XX\n\n--XX\n"
+            + "Content-Disposition: form-data; name=\"title\"\n\n{{t}}\n--XX\n"
+            + "Content-Disposition: form-data; name=\"blob\"; filename=\"{{f}}\"\n"
+            + "Content-Type: application/octet-stream\n\n< ./{{f}}\n--XX--\n";
+
+    @Test
+    void aMultipartFilePartIsStreamedWithAKnownContentLength(@TempDir Path dir) throws Exception {
+        byte[] big = new byte[2 * 1024 * 1024 + 11];
+        new java.util.Random(11).nextBytes(big);
+        Files.write(dir.resolve("big.bin"), big);
+        Map<String, String> vars = Map.of("t", "hello", "f", "big.bin");
+        HttpExchange ex = run(svc, "POST " + url("/dump") + "\n" + FORM, vars, dir);
+
+        assertEquals(200, ex.result().status(), String.valueOf(ex.result().error()));
+        byte[] expected = Multipart.build(
+                Multipart.parse(HttpFile.parseRequest("POST /x\n" + FORM).body(), "XX"),
+                "XX",
+                dir,
+                t -> HttpVars.substitute(t, vars, java.time.LocalDateTime.now()));
+        assertArrayEquals(expected, lastBody.get(), "the streamed body is byte for byte the form");
+        String saw = seen.get(0);
+        assertTrue(saw.contains("content-length: " + expected.length + "\n"), saw);
+        assertFalse(saw.contains("transfer-encoding"), saw);
+        assertEquals("(multipart/form-data, " + expected.length + " bytes)", ex.requestBody());
+        HttpExchange.FormPart blob = ex.details().formParts().get(1);
+        assertEquals(dir.resolve("big.bin").toAbsolutePath().toString(), blob.file(), "the substituted path");
+        assertEquals("big.bin", blob.filename());
+        assertTrue(
+                CurlExport.toCurl(ex)
+                        .contains("blob=@\"" + dir.resolve("big.bin").toAbsolutePath() + "\""),
+                CurlExport.toCurl(ex));
+    }
+
+    @Test
+    void anAuthIntDigestHashesTheStreamedMultipartBody(@TempDir Path dir) throws Exception {
+        byte[] data = new byte[300 * 1024];
+        new java.util.Random(5).nextBytes(data);
+        Files.write(dir.resolve("d.bin"), data);
+        HttpExchange ex = run(
+                svc,
+                "POST " + url("/digestint") + "\nAuthorization: Digest ada s3cret\n" + FORM,
+                Map.of("t", "x", "f", "d.bin"),
+                dir);
+        assertEquals(200, ex.result().status(), ex.result().body());
+        assertTrue(ex.result().body().startsWith("welcome "), ex.result().body());
+    }
+
+    @Test
+    void anAuthIntDigestHashesAStreamedFileBody(@TempDir Path dir) throws Exception {
+        byte[] data = new byte[700 * 1024];
+        new java.util.Random(9).nextBytes(data);
+        Files.write(dir.resolve("raw.bin"), data);
+        HttpExchange ex = run(
+                "POST " + url("/digestint")
+                        + "\nAuthorization: Digest ada s3cret\nContent-Type: application/octet-stream\n\n"
+                        + "< ./raw.bin\n",
+                dir);
+        assertEquals(200, ex.result().status(), ex.result().body());
+        assertEquals("welcome " + data.length, ex.result().body());
+    }
+
+    @Test
+    void aSubstitutedFilePartIsExportedAsTheTextThatWasSent(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("meta.json"), "{\"id\":\"{{id}}\"}");
+        HttpExchange ex = run(
+                svc,
+                "POST " + url("/dump") + "\nContent-Type: multipart/form-data; boundary=XX\n\n--XX\n"
+                        + "Content-Disposition: form-data; name=\"meta\"\n\n<@ ./meta.json\n--XX--\n",
+                Map.of("id", "42"),
+                dir);
+        assertEquals(
+                new HttpExchange.FormPart("meta", "{\"id\":\"42\"}", null, null, null),
+                ex.details().formParts().get(0));
+        assertTrue(new String(lastBody.get(), StandardCharsets.UTF_8).contains("{\"id\":\"42\"}"));
     }
 
     // --- B22: one client per run ----------------------------------------------------------------------------
