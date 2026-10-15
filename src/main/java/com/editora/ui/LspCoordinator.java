@@ -3588,13 +3588,15 @@ final class LspCoordinator {
                     reportEdit(false, "", tr("status.lsp.renameFailed", name));
                     return;
                 }
-                if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk())) {
-                    // Confined to this file: visible on screen and one undo away, so a confirmation step here
-                    // would be friction with nothing to confirm.
-                    applyRename(mapped, name);
-                    return;
-                }
-                previewThenApply(mapped, name);
+                withDiskView(resourcePaths(mapped), files -> {
+                    if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk(files))) {
+                        // Confined to this file: visible on screen and one undo away, so a confirmation step
+                        // here would be friction with nothing to confirm.
+                        applyRename(mapped, name);
+                        return;
+                    }
+                    previewThenApply(mapped, name, files);
+                });
             });
         });
     }
@@ -3607,11 +3609,12 @@ final class LspCoordinator {
      * generators use — rather than a bespoke preview pane; a per-file choice is what the filtering can
      * honour safely, and a per-hunk one would need the diff viewer and a much larger change.
      */
-    private void previewThenApply(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
+    private void previewThenApply(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name, WorkspaceFileOperations files) {
         java.util.List<MultiSelectPicker.Item<java.nio.file.Path>> rows = new java.util.ArrayList<>();
         java.util.Set<Path> listed = new java.util.LinkedHashSet<>();
         for (com.editora.lsp.RenamePreview.FileChange change :
-                com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk())) {
+                com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk(files))) {
             rows.add(new MultiSelectPicker.Item<>(previewLabel(change), true, change.file()));
             listed.add(change.file());
         }
@@ -3667,17 +3670,63 @@ final class LspCoordinator {
 
     /** The filesystem as the workspace-edit transaction sees it, for classifying destructive operations. */
     private com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk() {
+        return workspaceDisk(workspaceFiles);
+    }
+
+    private static com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk(WorkspaceFileOperations files) {
         return new com.editora.lsp.WorkspaceEditHazards.Disk() {
             @Override
             public boolean exists(Path path) {
-                return workspaceFiles.exists(path);
+                return files.exists(path);
             }
 
             @Override
             public boolean isDirectory(Path path) {
-                return workspaceFiles.isDirectory(path);
+                return files.isDirectory(path);
             }
         };
+    }
+
+    /**
+     * Runs {@code next} on the FX thread with a view of the disk for {@code paths}: the live disk when they are
+     * all local (a stat there is cheap, and the check stays in this FX turn), else a {@link WorkspaceFileSnapshot}
+     * taken on the workspace worker first — on a remote host every stat is a round trip, and a rename touching
+     * a few dozen files froze the window for the length of them.
+     */
+    private void withDiskView(
+            java.util.Collection<Path> paths, java.util.function.Consumer<WorkspaceFileOperations> next) {
+        if (!WorkspaceFileSnapshot.anyRemote(paths)) {
+            next.accept(workspaceFiles);
+            return;
+        }
+        workspaceExecutor.execute(() -> {
+            WorkspaceFileSnapshot snapshot = WorkspaceFileSnapshot.of(workspaceFiles, paths);
+            Platform.runLater(() -> next.accept(snapshot));
+        });
+    }
+
+    /** Every path {@code mapped}'s create, rename and delete operations name. */
+    private static List<Path> resourcePaths(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        List<Path> out = new java.util.ArrayList<>();
+        mapped.creates().forEach(c -> out.add(c.file()));
+        mapped.renames().forEach(r -> {
+            out.add(r.from());
+            out.add(r.to());
+        });
+        mapped.deletes().forEach(d -> out.add(d.file()));
+        return out;
+    }
+
+    /** Where {@link #staleDiskTargets} will look: each disk-preimage target, at the place a staged rename put it. */
+    private static List<Path> preimagePaths(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, Map<Path, Path> movedTo) {
+        List<Path> out = new java.util.ArrayList<>();
+        for (var edit : mapped.edits()) {
+            if (edit.diskPreimageAt() != null) {
+                out.add(movedTo.getOrDefault(edit.file().toAbsolutePath().normalize(), edit.file()));
+            }
+        }
+        return out;
     }
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
@@ -3751,7 +3800,10 @@ final class LspCoordinator {
      * be shown refuses the edit.
      */
     private boolean diskPreimageHolds(
-            com.editora.lsp.WorkspaceEditMapper.FileEdit edit, EditorBuffer buffer, Path onDiskAt) {
+            com.editora.lsp.WorkspaceEditMapper.FileEdit edit,
+            EditorBuffer buffer,
+            Path onDiskAt,
+            WorkspaceFileOperations files) {
         Long since = edit.diskPreimageAt();
         if (since == null) {
             return true;
@@ -3761,7 +3813,7 @@ final class LspCoordinator {
         }
         try {
             WorkspaceFileIdentity onDisk =
-                    workspaceFiles.identity(onDiskAt.toAbsolutePath().normalize());
+                    files.identity(onDiskAt.toAbsolutePath().normalize());
             EditorBuffer.DiskSnapshot loaded = buffer.diskSnapshot();
             // The content fingerprint is recorded only by a load or a save — the two moments the buffer's
             // text is known to be the file's. Answering "changed on disk" with Keep re-baselines the time
@@ -3792,7 +3844,8 @@ final class LspCoordinator {
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
             java.util.List<EditorBuffer> buffers,
             Map<Path, Path> movedTo,
-            boolean skipUnloaded) {
+            boolean skipUnloaded,
+            WorkspaceFileOperations files) {
         List<Path> stale = new java.util.ArrayList<>();
         for (int i = 0; i < mapped.edits().size() && i < buffers.size(); i++) {
             var edit = mapped.edits().get(i);
@@ -3801,7 +3854,7 @@ final class LspCoordinator {
                 continue;
             }
             Path onDiskAt = movedTo.getOrDefault(edit.file().toAbsolutePath().normalize(), edit.file());
-            if (buffer == null || !diskPreimageHolds(edit, buffer, onDiskAt)) {
+            if (buffer == null || !diskPreimageHolds(edit, buffer, onDiskAt, files)) {
                 stale.add(edit.file());
             }
         }
@@ -4016,18 +4069,20 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsConfirmed(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
-        List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                com.editora.lsp.WorkspaceEditHazards.needingConfirmation(mapped, workspaceDisk());
-        if (!hazards.isEmpty() && !destructiveEditConfirmer.test(hazards)) {
-            editRefused(
-                    hazards.stream()
-                            .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
-                            .toList(),
-                    tr("status.lsp.destructiveEditDeclined"));
-            done.accept(false);
-            return;
-        }
-        applyWorkspaceEditsAsync(mapped, done);
+        withDiskView(resourcePaths(mapped), files -> {
+            List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
+                    com.editora.lsp.WorkspaceEditHazards.needingConfirmation(mapped, workspaceDisk(files));
+            if (!hazards.isEmpty() && !destructiveEditConfirmer.test(hazards)) {
+                editRefused(
+                        hazards.stream()
+                                .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
+                                .toList(),
+                        tr("status.lsp.destructiveEditDeclined"));
+                done.accept(false);
+                return;
+            }
+            applyWorkspaceEditsAsync(mapped, done);
+        });
     }
 
     /** Most files of one deleted folder that are copied to Local History; a larger folder is not walked further. */
@@ -4041,8 +4096,15 @@ final class LspCoordinator {
      */
     private void captureBeforeDestruction(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        withDiskView(resourcePaths(mapped), disk -> captureBeforeDestruction(mapped, disk, done));
+    }
+
+    private void captureBeforeDestruction(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+            WorkspaceFileOperations disk,
+            java.util.function.Consumer<Boolean> done) {
         List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                com.editora.lsp.WorkspaceEditHazards.of(mapped, workspaceDisk());
+                com.editora.lsp.WorkspaceEditHazards.of(mapped, workspaceDisk(disk));
         if (hazards.isEmpty()) {
             done.accept(true);
             return;
@@ -4116,24 +4178,49 @@ final class LspCoordinator {
         java.util.Set<Path> createdPaths = mapped.creates().stream()
                 .map(c -> c.file().toAbsolutePath().normalize())
                 .collect(java.util.stream.Collectors.toSet());
-        collectWorkspaceBuffers(mapped, createdPaths, 0, buffers, () -> {
-            // Before anything is staged: a target the server did not have open must still be the file it
-            // read. Afterwards the same question is asked again at the place a staged rename moved it to.
-            List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), true);
-            if (!stale.isEmpty()) {
-                editBlocked(stale);
-                done.accept(false);
-                return;
-            }
-            Map<Path, OpenTarget> targets = openResourceTargets(mapped); // while the files still exist
-            captureBeforeDestruction(mapped, captured -> {
-                if (captured) {
-                    stageWorkspaceEdit(mapped, buffers, targets, done);
-                } else {
-                    done.accept(false);
-                }
-            });
+        collectWorkspaceBuffers(
+                mapped,
+                createdPaths,
+                0,
+                buffers,
+                () -> withDiskView(preimagePaths(mapped, Map.of()), files -> {
+                    // Before anything is staged: a target the server did not have open must still be the file
+                    // it read. Afterwards the same question is asked again where a staged rename moved it.
+                    List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), true, files);
+                    if (!stale.isEmpty()) {
+                        editBlocked(stale);
+                        done.accept(false);
+                        return;
+                    }
+                    Map<Path, OpenTarget> targets = openResourceTargets(mapped); // while the files still exist
+                    captureBeforeDestruction(mapped, captured -> {
+                        if (captured) {
+                            stageWorkspaceEdit(mapped, buffers, targets, done);
+                        } else {
+                            done.accept(false);
+                        }
+                    });
+                }));
+    }
+
+    /** Every path {@link #finishWorkspaceEdit}'s checks read. */
+    private List<Path> finishPaths(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+            java.util.List<StagedCreate> creates,
+            java.util.List<StagedRename> renames,
+            java.util.List<StagedDelete> deletes) {
+        List<Path> out = new java.util.ArrayList<>();
+        creates.forEach(item -> out.add(item.operation().file()));
+        renames.forEach(item -> {
+            out.add(item.rename().from());
+            out.add(item.rename().to());
         });
+        deletes.forEach(item -> {
+            out.add(item.operation().file());
+            out.add(item.stage());
+        });
+        out.addAll(preimagePaths(mapped, movedTo(renames)));
+        return out;
     }
 
     /** Stages the edit's filesystem operations off the FX thread, then finishes (or rolls back) on it. */
@@ -4162,11 +4249,18 @@ final class LspCoordinator {
                 });
                 return;
             }
+            // The finish step checks the staged files and the preimages where the renames put them, on the FX
+            // thread: for remote files those stats are taken here, on the worker (see withDiskView).
+            List<Path> checked = finishPaths(mapped, creates, renames, deletes);
+            WorkspaceFileOperations files = WorkspaceFileSnapshot.anyRemote(checked)
+                    ? WorkspaceFileSnapshot.of(workspaceFiles, checked)
+                    : workspaceFiles;
             Platform.runLater(() -> collectCreatedWorkspaceBuffers(
                     mapped,
                     buffers,
                     0,
-                    () -> finishWorkspaceEdit(mapped, buffers, creates, renames, deletes, targets, transaction, done)));
+                    () -> finishWorkspaceEdit(
+                            mapped, buffers, creates, renames, deletes, targets, transaction, files, done)));
         });
     }
 
@@ -4272,7 +4366,7 @@ final class LspCoordinator {
             }
             buffers.add(buf);
         }
-        List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), false);
+        List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), false, workspaceFiles);
         if (!stale.isEmpty()) {
             editBlocked(stale);
             rollbackCreates(creates, transaction);
@@ -4295,7 +4389,7 @@ final class LspCoordinator {
         }
         boolean safe = resourceTargetsSafe(mapped);
         List<Path> unplaceable = safe ? unplaceableTargets(mapped, buffers) : List.of();
-        if (!resourceStateCurrent(creates, staged, deletes) || !safe || !unplaceable.isEmpty()) {
+        if (!resourceStateCurrent(workspaceFiles, creates, staged, deletes) || !safe || !unplaceable.isEmpty()) {
             if (!safe) {
                 resourceTargetsBlocked(mapped);
             }
@@ -4338,10 +4432,11 @@ final class LspCoordinator {
             java.util.List<StagedDelete> deletes,
             Map<Path, OpenTarget> targets,
             WorkspaceTransactionStatus transaction,
+            WorkspaceFileOperations files,
             java.util.function.Consumer<Boolean> done) {
         // Supersede saves started while the resource transaction was staging, before UI identity changes.
         invalidateResourceWrites(mapped);
-        if (!resourceStateCurrent(creates, renames, deletes) || !openTargetsCurrent(targets)) {
+        if (!resourceStateCurrent(files, creates, renames, deletes) || !openTargetsCurrent(targets)) {
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
@@ -4354,7 +4449,7 @@ final class LspCoordinator {
             return;
         }
         Map<Path, Path> movedTo = movedTo(renames);
-        List<Path> stale = staleDiskTargets(mapped, buffers, movedTo, false);
+        List<Path> stale = staleDiskTargets(mapped, buffers, movedTo, false, files);
         if (!stale.isEmpty()) {
             editBlocked(stale);
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
@@ -4482,6 +4577,7 @@ final class LspCoordinator {
     }
 
     private boolean resourceStateCurrent(
+            WorkspaceFileOperations files,
             java.util.List<StagedCreate> creates,
             java.util.List<StagedRename> renames,
             java.util.List<StagedDelete> deletes) {
@@ -4489,8 +4585,7 @@ final class LspCoordinator {
             for (StagedCreate item : creates) {
                 Path file = item.operation().file().toAbsolutePath().normalize();
                 if (item.created()
-                        && (!workspaceFiles.exists(file)
-                                || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(file)))) {
+                        && (!files.exists(file) || !java.util.Objects.equals(item.identity(), files.identity(file)))) {
                     return false;
                 }
             }
@@ -4498,17 +4593,17 @@ final class LspCoordinator {
                 Path from = item.rename().from().toAbsolutePath().normalize();
                 Path to = item.rename().to().toAbsolutePath().normalize();
                 // After a case-only rename on a case-insensitive volume the old spelling still "exists".
-                if ((workspaceFiles.exists(from) && !sameFileInAnotherCase(from, to))
-                        || !workspaceFiles.exists(to)
-                        || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(to))) {
+                if ((files.exists(from) && !sameFileInAnotherCase(files, from, to))
+                        || !files.exists(to)
+                        || !java.util.Objects.equals(item.identity(), files.identity(to))) {
                     return false;
                 }
             }
             for (StagedDelete item : deletes) {
                 Path file = item.operation().file().toAbsolutePath().normalize();
-                if (workspaceFiles.exists(file)
-                        || !workspaceFiles.exists(item.stage())
-                        || !java.util.Objects.equals(item.identity(), workspaceFiles.identity(item.stage()))) {
+                if (files.exists(file)
+                        || !files.exists(item.stage())
+                        || !java.util.Objects.equals(item.identity(), files.identity(item.stage()))) {
                     return false;
                 }
             }
@@ -5004,12 +5099,16 @@ final class LspCoordinator {
      * such a rename needs.
      */
     private boolean sameFileInAnotherCase(Path from, Path to) {
+        return sameFileInAnotherCase(workspaceFiles, from, to);
+    }
+
+    private static boolean sameFileInAnotherCase(WorkspaceFileOperations files, Path from, Path to) {
         if (!from.toString().equalsIgnoreCase(to.toString())) {
             return false;
         }
         try {
-            Object source = workspaceFiles.identity(from).fileKey();
-            Object destination = workspaceFiles.identity(to).fileKey();
+            Object source = files.identity(from).fileKey();
+            Object destination = files.identity(to).fileKey();
             // No file keys (Windows): the names differ only in case and both resolve, which is the same file
             // on every volume but a case-sensitive directory.
             return source == null || destination == null || source.equals(destination);

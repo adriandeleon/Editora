@@ -107,6 +107,140 @@ class RemoteWorkspaceEditFxTest {
         }
     }
 
+    /** Reads the disk like the real operations, and remembers each remote path read on the FX thread. */
+    private static final class FxReadRecorder implements LspCoordinator.WorkspaceFileOperations {
+        final List<String> onFx = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final java.util.concurrent.atomic.AtomicInteger offFx = new java.util.concurrent.atomic.AtomicInteger();
+        private final LspCoordinator.WorkspaceFileOperations live = LspCoordinator.WorkspaceFileOperations.SYSTEM;
+
+        private void read(String what, Path path) {
+            if (com.editora.vfs.Vfs.isRemote(path)) {
+                if (javafx.application.Platform.isFxApplicationThread()) {
+                    onFx.add(what + " " + path);
+                } else {
+                    offFx.incrementAndGet();
+                }
+            }
+        }
+
+        @Override
+        public boolean exists(Path path) {
+            read("exists", path);
+            return live.exists(path);
+        }
+
+        @Override
+        public boolean isDirectory(Path path) {
+            read("isDirectory", path);
+            return live.isDirectory(path);
+        }
+
+        @Override
+        public boolean isRegularFile(Path path) {
+            read("isRegularFile", path);
+            return live.isRegularFile(path);
+        }
+
+        @Override
+        public long size(Path path) throws java.io.IOException {
+            read("size", path);
+            return live.size(path);
+        }
+
+        @Override
+        public LspCoordinator.WorkspaceFileIdentity identity(Path path) throws java.io.IOException {
+            read("identity", path);
+            return live.identity(path);
+        }
+
+        @Override
+        public void createDirectories(Path path) throws java.io.IOException {
+            live.createDirectories(path);
+        }
+
+        @Override
+        public void createFile(Path path) throws java.io.IOException {
+            live.createFile(path);
+        }
+
+        @Override
+        public void move(Path from, Path to, java.nio.file.CopyOption... options) throws java.io.IOException {
+            live.move(from, to, options);
+        }
+
+        @Override
+        public Path createTempFile(Path directory, String prefix, String suffix) throws java.io.IOException {
+            return live.createTempFile(directory, prefix, suffix);
+        }
+
+        @Override
+        public boolean deleteIfExists(Path path) throws java.io.IOException {
+            return live.deleteIfExists(path);
+        }
+
+        @Override
+        public List<Path> list(Path path) throws java.io.IOException {
+            read("list", path);
+            return live.list(path);
+        }
+
+        @Override
+        public List<Path> walk(Path path) throws java.io.IOException {
+            read("walk", path);
+            return live.walk(path);
+        }
+    }
+
+    /**
+     * Every disk read of a remote edit happens off the FX thread: the destructive-edit check, the Local History
+     * capture, staging, and the checks that decide in the FX turn whether the edit lands — those read a snapshot
+     * the worker took. Each read is a network round trip, and a rename touching a few dozen remote files used
+     * to freeze the window for all of them.
+     */
+    @Test
+    void aRemoteEditReadsTheDiskOnlyOffTheFxThread() throws Exception {
+        sftp = EmbeddedSftpFixture.start(base);
+        Path app = Files.createDirectories(sftp.serverPath("app"));
+        Files.writeString(app.resolve("Old.py"), "old\n");
+        Files.writeString(app.resolve("Gone.py"), "gone\n");
+        Files.createDirectories(app.resolve("build/out"));
+        Files.writeString(app.resolve("build/out/x.txt"), "x\n");
+        Path root = sftp.remotePath("app");
+        var host = new LspCoordinatorFixture.Host();
+        var ops = new LspCoordinatorFixture.Ops();
+        ops.projectRoot = root;
+        LspManager manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        FxReadRecorder disk = new FxReadRecorder();
+        java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            LspCoordinator coordinator = FxTestSupport.callOnFx(() -> {
+                LspCoordinator c = new LspCoordinator(host, manager, ops, disk, worker);
+                c.workspaceEditJournalDir = journals();
+                c.destructiveEditConfirmer = hazards -> true; // a folder delete is asked about: answer yes
+                return c;
+            });
+            var mapped = new WorkspaceEditMapper.Mapped(
+                    List.of(),
+                    List.of(new WorkspaceEditMapper.FileRename(root.resolve("Old.py"), root.resolve("New.py"), false)),
+                    List.of(new WorkspaceEditMapper.FileCreate(root.resolve("Made.py"), false, false)),
+                    List.of(
+                            new WorkspaceEditMapper.FileDelete(root.resolve("Gone.py"), false, false),
+                            new WorkspaceEditMapper.FileDelete(root.resolve("build"), true, false)));
+
+            CompletableFuture<Boolean> applied = new CompletableFuture<>();
+            FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, applied::complete));
+
+            assertTrue(applied.get(30, TimeUnit.SECONDS), "errors: " + host.errors);
+            assertTrue(Files.isRegularFile(app.resolve("New.py")));
+            assertFalse(Files.exists(app.resolve("build")));
+            assertEquals(List.of(), disk.onFx, "remote reads on the FX thread");
+            assertTrue(disk.offFx.get() > 0, "the checks did read the disk, on the worker");
+        } finally {
+            worker.shutdownNow();
+            manager.shutdownAll();
+        }
+    }
+
     @Test
     void anInterruptedRemoteEditIsFoundByItsHostAndPutBack() throws Exception {
         sftp = EmbeddedSftpFixture.start(base);
