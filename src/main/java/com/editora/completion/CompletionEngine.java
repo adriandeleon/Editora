@@ -62,6 +62,11 @@ public final class CompletionEngine {
             for (String k : MermaidKeywords.startingWith(prefix, MAX)) {
                 words.add(Completion.word(k, null));
             }
+        } else if ("http".equalsIgnoreCase(snippetLang)) {
+            // .http buffers: request methods, common header names and values.
+            for (String k : HttpKeywords.startingWith(prefix, sp, MAX)) {
+                words.add(Completion.word(k, null));
+            }
         }
         return merge(snip, words, prefix, MAX);
     }

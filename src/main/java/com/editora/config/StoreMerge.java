@@ -68,6 +68,7 @@ public final class StoreMerge {
             case RECENT -> path -> path.equals(List.of("files")) ? List.of() : null;
             case SEARCH_HISTORY -> path -> path.equals(List.of("queries")) ? List.of() : null;
             case AGENT_SESSIONS -> path -> path.equals(List.of("sessions")) ? List.of("sessionId") : null;
+            case HTTP_HISTORY -> path -> path.equals(List.of("responses")) ? List.of("at", "url") : null;
             default -> Keys.NONE;
         };
     }

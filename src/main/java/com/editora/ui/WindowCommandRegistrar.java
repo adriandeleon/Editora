@@ -1920,7 +1920,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "tool.externalTools", () -> host.toolWindows().toggle(host.externalToolToolWindow())));
-        // HTTP Client (.http via ijhttp). Gated by the "Enable HTTP Client" setting (default off).
+        // HTTP Client (.http/.rest, the built-in JDK client). Gated by the "Enable HTTP Client" setting (on by
+        // default) and Simple UI mode; the palette also needs a .http buffer (Import cURL excepted).
         host.registry().register(Command.of("http.runRequest", host.httpClient()::runRequestAtCaret));
         host.registry().register(Command.of("http.runFile", host.httpClient()::runFile));
         host.registry().register(Command.of("http.cancelRequest", host.httpClient()::cancelActiveRequest));

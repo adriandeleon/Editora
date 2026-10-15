@@ -100,6 +100,17 @@ public final class NewFileCatalog {
             """;
 
     /**
+     * A first request to edit: an empty {@code .http} file has no ▶ to click and nothing to show how a request
+     * is written. Points at nothing real ({@code localhost}), so running it by accident sends nothing anywhere.
+     */
+    private static final String HTTP = """
+            ### {cursor}
+            GET http://localhost:8080/
+            Accept: application/json
+
+            """;
+
+    /**
      * The generic entry: whatever name the user types decides the type. Not in any category — it is
      * the first item of the menu, above the type list.
      */
@@ -184,7 +195,8 @@ public final class NewFileCatalog {
                             NewFileType.named("docs.dot", "Graphviz DOT", "diagram", "dot"),
                             NewFileType.named("docs.plantuml", "PlantUML", "diagram", "puml"),
                             NewFileType.named("docs.markwhen", "Markwhen", "timeline", "mw"),
-                            NewFileType.translated("docs.http", "requests", "http"))),
+                            NewFileType.translated("docs.http", "requests", "http")
+                                    .withTemplate(HTTP))),
             new Category(
                     "build",
                     List.of(

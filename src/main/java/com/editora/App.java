@@ -342,6 +342,9 @@ public class App extends Application {
         // AppKit, so SVG rendering still works while the AWT↔JavaFX conflict disappears. Must be set
         // before any AWT class loads; main() is the first app code, so this is safe for every entry point.
         System.setProperty("java.awt.headless", "true");
+        // A .http request may set its own Host header (a virtual host tested by IP). The JDK reads this once, when
+        // its HTTP classes first load — before any window exists — so it must be set here, ahead of everything.
+        com.editora.http.HttpClientService.allowHostHeader();
         com.editora.perf.Startup.mark(com.editora.perf.Startup.MAIN);
         // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no
         // visible stderr) can show them via the Debug Log window. Cheap; safe before launch.

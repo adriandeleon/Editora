@@ -61,5 +61,6 @@
   "M-S-up": "edit.moveLineUp",
   "M-S-down": "edit.moveLineDown",
   "C-w": "edit.expandSelection",
-  "C-S-w": "edit.shrinkSelection"
+  "C-S-w": "edit.shrinkSelection",
+  "C-M-r": "http.runRequest"
 }

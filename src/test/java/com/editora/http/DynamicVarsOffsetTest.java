@@ -1,7 +1,7 @@
 package com.editora.http;
 
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** Unit tests for the $datetime/$timestamp date-math offset arguments. */
 class DynamicVarsOffsetTest {
 
-    private static final LocalDateTime CLOCK = LocalDateTime.of(2026, 6, 10, 9, 30, 0);
+    private static final ZonedDateTime CLOCK = ZonedDateTime.of(2026, 6, 10, 9, 30, 0, 0, ZoneOffset.UTC);
 
     @Test
     void datetimeAppliesSignedOffsets() {
@@ -26,7 +26,7 @@ class DynamicVarsOffsetTest {
 
     @Test
     void timestampAppliesOffset() {
-        long base = CLOCK.toEpochSecond(ZoneOffset.UTC);
+        long base = CLOCK.toEpochSecond();
         assertEquals(String.valueOf(base), DynamicVars.value("$timestamp", CLOCK, null));
         assertEquals(String.valueOf(base + 3600), DynamicVars.value("$timestamp 1 h", CLOCK, null));
         assertEquals(String.valueOf(base - 86400), DynamicVars.value("$timestamp -1 d", CLOCK, null));

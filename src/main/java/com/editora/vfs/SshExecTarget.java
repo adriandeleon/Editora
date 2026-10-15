@@ -79,7 +79,7 @@ final class SshExecTarget implements ExecTarget {
         ClientSession session = session();
         RemoteEnv known = env();
         String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
-        String line = PosixShell.commandLine(spec, cwd, known.path(), known.locale());
+        String line = PosixShell.commandLine(spec, cwd, known.path(), known.locale(), known.profile());
         Semaphore budget = acquire(spec.longLived());
         try {
             SshExecProcess process = SshExecProcess.start(session, id, line, START_TIMEOUT);

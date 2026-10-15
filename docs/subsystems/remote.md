@@ -61,7 +61,12 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
   rejects `kill -TERM -- -N`; the `-s` form works in dash and bash.
 - A long-lived child starts a watchdog that kills its process group when the server's per-connection process
   dies: an SSH server signals nobody when a connection drops.
-- `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale.
+- `vfs/RemoteEnv` asks the login shell once per connection for `PATH`, home, OS and locale, and for every
+  other variable its profile exports: the probe prints the environment a plain command gets, then the login
+  shell's, and what the profile adds or changes (`JAVA_HOME`, `MAVEN_OPTS`, `GOPATH`, a version manager's) is
+  exported to every command before `PATH`, the locale and the command's own variables, which win. Session
+  variables (`SSH_*`, prompts, history, `SHLVL`, display, D-Bus, `EDITORA_*`), multi-line values and anything
+  past 200 variables / 8 KB a value / 64 KB in all are left out.
 - Channels are budgeted against the server's `MaxSessions` (three short commands at once, five long-lived).
   Short commands queue; a long-lived one waits up to 5 s for a place (the one a program just stopped frees
   when its channel closes, a moment after the stop), then is refused with a message.

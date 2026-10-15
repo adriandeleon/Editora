@@ -113,4 +113,24 @@ class DebugLogTest {
         assertTrue(captured.get(0).contains("WARNING"), captured.get(0));
         assertTrue(captured.get(0).contains("Capture"), captured.get(0));
     }
+
+    @Test
+    void suspendedCaptureDropsHandlerRecordsButNotDirectAppends() {
+        DebugLog.install(); // idempotent
+        Logger logger = Logger.getLogger("com.editora.test.Suspend");
+        DebugLog.suspendCaptureForTest(true);
+        try {
+            DebugLog.clear();
+            logger.warning("suspended-marker");
+            DebugLog.append("appended-while-suspended");
+            assertEquals(List.of("appended-while-suspended"), DebugLog.recordsForTest());
+        } finally {
+            DebugLog.suspendCaptureForTest(false);
+        }
+        logger.warning("resumed-marker");
+        List<String> records = DebugLog.recordsForTest();
+        DebugLog.clear();
+        assertTrue(records.stream().anyMatch(r -> r.contains("resumed-marker")), records.toString());
+        assertTrue(records.stream().noneMatch(r -> r.contains("suspended-marker")), records.toString());
+    }
 }

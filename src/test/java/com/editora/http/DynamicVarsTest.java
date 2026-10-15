@@ -3,8 +3,8 @@ package com.editora.http;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,11 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Unit tests for the dynamic-variable family. */
 class DynamicVarsTest {
 
-    private static final LocalDateTime CLOCK = LocalDateTime.of(2026, 6, 10, 9, 30, 0);
+    private static final ZonedDateTime CLOCK = ZonedDateTime.of(2026, 6, 10, 9, 30, 0, 0, ZoneOffset.UTC);
 
     @Test
     void timestampAndIsoUseTheClock() {
-        assertEquals(String.valueOf(CLOCK.toEpochSecond(ZoneOffset.UTC)), DynamicVars.value("$timestamp", CLOCK, null));
+        assertEquals(String.valueOf(CLOCK.toEpochSecond()), DynamicVars.value("$timestamp", CLOCK, null));
         assertEquals("2026-06-10T09:30:00Z", DynamicVars.value("$isoTimestamp", CLOCK, null));
     }
 
