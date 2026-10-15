@@ -12,6 +12,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -169,6 +170,17 @@ public final class DebugLog {
     public static String snapshot() {
         synchronized (LOCK) {
             return String.join(System.lineSeparator(), RECORDS);
+        }
+    }
+
+    /**
+     * TEST SEAM — the retained records, oldest first, one element per record. {@link #snapshot()} cannot be
+     * split back into records (a record with a stack trace spans lines), and a test must be able to tell its
+     * own records from whatever another thread logged meanwhile.
+     */
+    static List<String> recordsForTest() {
+        synchronized (LOCK) {
+            return List.copyOf(RECORDS);
         }
     }
 
