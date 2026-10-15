@@ -340,7 +340,6 @@ class WindowAdapterSweepFxTest {
                     "localHistoryEnabled",
                     "activeArea",
                     "windowProjectRoot",
-                    "activeProjectRoot",
                     "invertBindings",
                     "selPolicy")) {
                 Method own;

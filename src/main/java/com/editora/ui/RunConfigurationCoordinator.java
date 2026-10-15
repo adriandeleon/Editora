@@ -65,8 +65,6 @@ final class RunConfigurationCoordinator {
 
         Path windowProjectRoot();
 
-        Path activeProjectRoot();
-
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
     }
 
@@ -480,7 +478,7 @@ final class RunConfigurationCoordinator {
      * committed and shared. Needs a project — there is nowhere else they would belong.
      */
     void exportRunConfigs() {
-        Path root = host.activeProjectRoot();
+        Path root = host.windowProjectRoot(); // this window's project, which these configurations belong to
         if (root == null) {
             host.setStatus(tr("status.run.configsNeedProject"));
             return;
@@ -508,7 +506,7 @@ final class RunConfigurationCoordinator {
      * name so importing twice does not duplicate and a colleague's edit updates rather than doubles.
      */
     void importRunConfigs() {
-        Path root = host.activeProjectRoot();
+        Path root = host.windowProjectRoot(); // this window's project, which these configurations belong to
         if (root == null) {
             host.setStatus(tr("status.run.configsNeedProject"));
             return;

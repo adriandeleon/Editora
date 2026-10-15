@@ -229,11 +229,6 @@ class RunConfigurationCommandsFxTest {
         }
 
         @Override
-        public Path activeProjectRoot() {
-            return projectRoot;
-        }
-
-        @Override
         public void promptText(String title, String label, String initial, Consumer<String> onAccept) {
             prompts.add(title + "|" + initial);
             onAccept.accept(promptAnswer);

@@ -71,7 +71,7 @@ class MarkdownLintProjectFxTest {
             List<?> holders = FxTestSupport.field(fx.windowManager, "windows");
             for (Object holder : holders) {
                 MainController c = (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
-                Path active = (Path) FxTestSupport.call(c, "activeProjectRoot", new Class<?>[] {});
+                Path active = (Path) FxTestSupport.call(c, "windowProjectRoot", new Class<?>[] {});
                 if (c != fx.controller && active != null && Files.isSameFile(active, root)) {
                     return c;
                 }

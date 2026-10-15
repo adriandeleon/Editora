@@ -2793,8 +2793,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public Path activeProjectRoot() {
-                Project active = projects == null ? null : projects.active();
-                return active == null ? null : active.rootPath();
+                return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
             }
 
             @Override
@@ -3498,11 +3497,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public Path activeProjectRoot() {
-                    return MainController.this.activeProjectRoot();
-                }
-
-                @Override
                 public void promptText(
                         String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
                     MainController.this.promptText(title, label, initial, onAccept);
@@ -3763,7 +3757,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public Path activeProjectRoot() {
-            return MainController.this.activeProjectRoot();
+            return MainController.this.windowProjectRoot();
         }
 
         @Override
@@ -7731,18 +7725,24 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Opens a file chosen from the recent-files list, project-aware: if the file lives under a project
-     * other than the active one, switch to that project first (so it opens in that project's session,
-     * tree, and layout) and then open it. Files that belong to no project — or to the active one — open
-     * directly in the current context.
+     * Opens a file chosen from the recent-files list, project-aware: a file under another project than this
+     * window's opens in that project's window (focused, or built), where it was last left. Files that belong
+     * to no project, or to this window's, open here.
+     *
+     * <p>It used to compare with the {@code ProjectManager}'s active project (the window opened last) and,
+     * after focusing the other project's window, open the file in this one anyway.
      */
     private void openRecent(Path file) {
         Project owner = owningProject(file);
-        if (owner != null && !owner.equals(projects.active())) {
-            if (!switchToProject(owner)) {
-                return; // user cancelled the switch (e.g. unsaved changes) — don't open elsewhere
-            }
+        if (owner != null && windowManager != null && !owner.id().equals(projectKey)) {
+            windowManager.openRecentInWindow(owner.id(), file);
+            return;
         }
+        fileWorkflows.openPath(file);
+    }
+
+    /** Opens {@code file} in this window where it was last left; {@link WindowManager#openRecentInWindow}'s landing. */
+    void openRecentHere(Path file) {
         fileWorkflows.openPath(file);
     }
 
@@ -8697,18 +8697,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     /**
      * This <em>window's</em> project root, or null when it has no project open.
      *
-     * <p>Not {@link #activeProjectRoot()}, which reads the {@code ProjectManager}'s active project — that is
-     * the last-focused window's, so an unfocused window would gate its toolbar on somebody else's project.
-     * Every coordinator's {@code Ops.projectRoot()} reads {@code windowProject} for the same reason.
+     * <p>Not the {@code ProjectManager}'s active project: that is the window opened last (focusing a window does
+     * not change it), so a window behind it would act on somebody else's project. Every coordinator's
+     * {@code projectRoot()} / {@code activeProjectRoot()} reads {@code windowProject} for that reason.
      */
     private Path windowProjectRoot() {
         return (windowProject != null && projectsEnabled()) ? windowProject.rootPath() : null;
-    }
-
-    /** This window's project root, or null when it has no project open. */
-    private Path activeProjectRoot() {
-        Project active = projects == null ? null : projects.active();
-        return active == null ? null : active.rootPath();
     }
 
     // --- Keybinding editor backend (Settings → Keymaps); pure logic in command/KeybindingEdits ---
@@ -8932,7 +8926,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * The directory passed to {@code typst compile --root} for a local {@code .typ} file: the nearest
-     * {@code typst.toml} ancestor (typst's own project marker), else the active Editora project root when the
+     * {@code typst.toml} ancestor (typst's own project marker), else this window's Editora project root when the
      * file lives inside it, else the file's own folder. Lets a multi-file Typst project resolve
      * {@code #import}/{@code #image} references above the file's folder; a single-file doc is unaffected.
      * Injected into {@link EditorBuffer#setTypstRootResolver} (preview) and {@link TypstCoordinator}
@@ -8946,9 +8940,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (marker != null) {
             return marker;
         }
-        Project active = (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-        java.nio.file.Path projectRoot = active == null ? null : active.rootPath();
-        return com.editora.lsp.RootResolver.resolve(projectRoot, file, java.util.List.of());
+        return com.editora.lsp.RootResolver.resolve(windowProjectRoot(), file, java.util.List.of());
     }
 
     private String projectMapBaseName() {
@@ -9023,7 +9015,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * by hand — an empty buffer tells nobody which keys exist.
      */
     void editProjectSettings() {
-        Path root = activeProjectRoot();
+        Path root = windowProjectRoot();
         if (root == null) {
             setError(tr("status.project.settingsNeedProject"));
             return;

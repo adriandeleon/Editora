@@ -200,6 +200,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Each project window acts on its own project.** Back in a project's window after opening another project, several
+  things used the other one: a Typst file's `#import` root, where the Markdown lint configuration is looked up,
+  **Project: Edit Settings**, the Project tree put back after **Remote: Disconnect**, and exporting or importing run
+  configurations. A recent file of another project opened in this window after focusing that project's; it now
+  opens in that project's window, where it was last left.
 - **Snippets: `$WORKSPACE_FOLDER` and `$WORKSPACE_NAME`** named the project of the window opened last, not the one the
   snippet was typed in: back in a project's window after opening another project, they expanded to the other one.
 - **ed25519 keys work for remote folders.** A login whose only key is ed25519 — what `ssh-keygen` makes by
