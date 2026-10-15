@@ -3485,6 +3485,11 @@ public class EditorBuffer implements TabContent {
         return "http".equals(language);
     }
 
+    /** Whether the HTTP Client is enabled for this buffer (its request ▶s show). */
+    public boolean isHttpEnabled() {
+        return httpFeatureEnabled;
+    }
+
     /** Enables/disables the HTTP Client Run glyphs for a {@code .http} buffer (gated by the feature, Simple UI
      *  mode and a local file). */
     public void setHttpEnabled(boolean enabled) {

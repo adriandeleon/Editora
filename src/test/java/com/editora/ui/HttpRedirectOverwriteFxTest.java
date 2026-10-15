@@ -4,7 +4,6 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import javafx.scene.control.TextArea;
 
@@ -80,8 +79,7 @@ class HttpRedirectOverwriteFxTest {
             assertEquals("hand-written notes\n", historyBody(fx, target), "the replaced content is recoverable");
             String shown = FxTestSupport.callOnFx(() -> {
                 HttpClientCoordinator http = FxTestSupport.field(fx.controller, "httpClient");
-                TextArea head =
-                        FxTestSupport.field(http.panelForTest(request), "notesArea"); // warnings + files written
+                TextArea head = http.panelForTest(request).notesAreaForTest(); // warnings + files written
                 return head.getText();
             });
             assertTrue(shown.contains("out.txt") && shown.contains("Local History"), shown);
@@ -103,8 +101,7 @@ class HttpRedirectOverwriteFxTest {
             assertEquals("saved draft", Files.readString(target), "the file under a dirty buffer is left alone");
             String shown = FxTestSupport.callOnFx(() -> {
                 HttpClientCoordinator http = FxTestSupport.field(fx.controller, "httpClient");
-                TextArea head =
-                        FxTestSupport.field(http.panelForTest(request), "notesArea"); // warnings + files written
+                TextArea head = http.panelForTest(request).notesAreaForTest(); // warnings + files written
                 return head.getText();
             });
             assertTrue(shown.contains("draft.txt") && shown.contains("unsaved changes"), shown);
@@ -122,8 +119,7 @@ class HttpRedirectOverwriteFxTest {
         return FxTestSupport.callOnFx(() -> {
             HttpClientCoordinator http = FxTestSupport.field(fx.controller, "httpClient");
             http.runRequest(request, 0);
-            Map<EditorBuffer, HttpClientService.Handle> running = FxTestSupport.field(http, "running");
-            HttpClientService.Handle handle = running.get(request);
+            HttpClientService.Handle handle = http.handleForTest(request);
             assertNotNull(handle, "the request should have started");
             return handle;
         });

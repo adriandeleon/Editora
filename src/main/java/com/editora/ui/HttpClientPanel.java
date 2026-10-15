@@ -781,6 +781,61 @@ public final class HttpClientPanel extends VBox {
         bodyArea.scrollToPixel(0, 0);
     }
 
+    // --- test accessors (compile-checked, instead of reading private fields by name) ---
+
+    ComboBox<String> environmentPickerForTest() {
+        return envCombo;
+    }
+
+    ComboBox<HttpHistoryEntry> historyPickerForTest() {
+        return historyCombo;
+    }
+
+    Button runButtonForTest() {
+        return runButton;
+    }
+
+    Button copyCurlButtonForTest() {
+        return copyCurlButton;
+    }
+
+    Button openTabButtonForTest() {
+        return openTabButton;
+    }
+
+    Button saveButtonForTest() {
+        return saveButton;
+    }
+
+    Button clearButtonForTest() {
+        return clearButton;
+    }
+
+    Label statusLabelForTest() {
+        return status;
+    }
+
+    TextArea headersAreaForTest() {
+        return headersArea;
+    }
+
+    TextArea notesAreaForTest() {
+        return notesArea;
+    }
+
+    CodeArea bodyAreaForTest() {
+        return bodyArea;
+    }
+
+    Timeline elapsedForTest() {
+        return elapsed;
+    }
+
+    /** The Clear button's action. */
+    void clearForTest() {
+        clear();
+    }
+
     /** The body text currently shown (the view, not the raw response). Test accessor. */
     String shownBodyForTest() {
         return bodyArea.getText();

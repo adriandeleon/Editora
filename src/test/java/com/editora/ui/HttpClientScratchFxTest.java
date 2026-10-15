@@ -145,7 +145,7 @@ class HttpClientScratchFxTest {
         Files.writeString(project.resolve("http-client.env.json"), "{\"dev\":{\"host\":\"" + url("") + "\"}}");
         ops.projectRoot = project;
         EditorBuffer b = untitled("GET {{host}}/json?scratch\n");
-        ComboBox<String> env = FxTestSupport.field(coordinator.panelForTest(b), "envCombo");
+        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
         assertEquals(List.of("", "dev"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));

@@ -512,6 +512,11 @@ final class HttpClientCoordinator {
         return running.containsKey(buffer);
     }
 
+    /** {@code buffer}'s in-flight run, or null. Test accessor. */
+    HttpClientService.Handle handleForTest(EditorBuffer buffer) {
+        return running.get(buffer);
+    }
+
     // --- commands ---
 
     /** {@code http.runRequest}: run the request at the caret line of the active {@code .http} buffer. */

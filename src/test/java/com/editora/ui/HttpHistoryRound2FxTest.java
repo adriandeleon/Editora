@@ -207,8 +207,7 @@ class HttpHistoryRound2FxTest {
         for (int i = 0; i < 3; i++) {
             int index = i;
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.<javafx.scene.control.ComboBox<HttpHistoryEntry>>field(p, "historyCombo")
-                        .setValue(p.history().get(index));
+                p.historyPickerForTest().setValue(p.history().get(index));
                 c.copyActiveAsCurl();
             });
             assertEquals(tr("status.http.curlCopied"), second.last);
@@ -296,7 +295,7 @@ class HttpHistoryRound2FxTest {
         run(hostA, a, inA, 1);
         assertEquals(List.of("/a", "/b", "/a"), savedUrls(file), "no window's save dropped the other's response");
 
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(a.panelForTest(inA), "clear", new Class<?>[0]));
+        FxTestSupport.runOnFx(() -> a.panelForTest(inA).clearForTest());
         HttpHistorySync.awaitIdleForTest();
         assertEquals(List.of(), savedUrls(file));
         run(hostB, b, inB, 4); // B still shows the old ones: they must not come back
@@ -360,7 +359,7 @@ class HttpHistoryRound2FxTest {
         HttpClientCoordinator c = coordinator(host);
         EditorBuffer b = open(host, c, file, "GET " + url("/big") + "\n");
         HttpClientPanel p = c.panelForTest(b);
-        CodeArea body = FxTestSupport.field(p, "bodyArea");
+        CodeArea body = p.bodyAreaForTest();
         await(() -> body.getText().contains("saved history kept only"));
         String shown = FxTestSupport.callOnFx(body::getText);
         assertFalse(shown.contains("has the full body"), shown.substring(shown.length() - 300));

@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
 
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFixtures;
@@ -125,16 +124,15 @@ class HttpClientPanelFxTest {
         assertTrue(notes.startsWith("⚠  response truncated at 50 MB"), notes);
         assertEquals(tr("httppanel.warnings", 1), FxTestSupport.callOnFx(p::warnBadgeForTest));
         assertTrue(
-                FxTestSupport.callOnFx(
-                        () -> ((org.fxmisc.richtext.CodeArea) FxTestSupport.field(p, "bodyArea")).isWrapText()),
+                FxTestSupport.callOnFx(() -> p.bodyAreaForTest().isWrapText()),
                 "a note in place of the body wraps (U7)");
-        assertTrue(FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "openTabButton")).isDisabled()));
+        assertTrue(FxTestSupport.callOnFx(() -> p.openTabButtonForTest().isDisabled()));
     }
 
     @Test
     void theRunButtonTurnsIntoCancelOnlyWhileARequestRuns() throws Exception {
         HttpClientPanel p = panel();
-        Button run = FxTestSupport.field(p, "runButton");
+        Button run = p.runButtonForTest();
         int[] cancels = {0};
         int[] runs = {0};
         FxTestSupport.runOnFx(() -> {
@@ -166,9 +164,9 @@ class HttpClientPanelFxTest {
                 404, List.<String[]>of(new String[] {"content-type", "text/plain"}), "gone", "text/plain", 12, 4, null);
         show(p, exchange("missing", r));
         assertEquals("404 Not Found  ·  12 ms  ·  4 B", FxTestSupport.callOnFx(p::statusForTest));
-        Label status = FxTestSupport.field(p, "status");
+        Label status = p.statusLabelForTest();
         assertTrue(FxTestSupport.callOnFx(() -> status.getStyleClass().contains(HttpStatusText.CLIENT_ERROR)));
-        String head = FxTestSupport.callOnFx(() -> ((TextArea) FxTestSupport.field(p, "headersArea")).getText());
+        String head = FxTestSupport.callOnFx(() -> p.headersAreaForTest().getText());
         assertEquals("HTTP 404 Not Found\ncontent-type: text/plain\n", head, "no summary line under the headers");
     }
 
@@ -215,7 +213,7 @@ class HttpClientPanelFxTest {
         assertEquals("bad", FxTestSupport.callOnFx(() -> p.getSelectedExchange().label()));
         assertEquals(tr("httppanel.requestFailed"), FxTestSupport.callOnFx(p::statusForTest));
         assertTrue(
-                FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "saveButton")).isDisabled()),
+                FxTestSupport.callOnFx(() -> p.saveButtonForTest().isDisabled()),
                 "a request that failed has nothing to save");
     }
 
@@ -259,17 +257,15 @@ class HttpClientPanelFxTest {
                 com.editora.i18n.Messages.tr("httppanel.bodyDropped", "4.9 KB"),
                 FxTestSupport.callOnFx(p::shownBodyForTest));
         assertTrue(FxTestSupport.callOnFx(p::statusForTest).startsWith("200 OK"));
-        assertTrue(
-                FxTestSupport.callOnFx(() -> ((Button) FxTestSupport.field(p, "saveButton")).isDisabled()),
-                "a dropped body cannot be saved");
+        assertTrue(FxTestSupport.callOnFx(() -> p.saveButtonForTest().isDisabled()), "a dropped body cannot be saved");
     }
 
     @Test
     void escapeGoesBackToTheEditorAndTabLeavesTheResponseBody() throws Exception {
         HttpClientPanel p = panel();
         int[] escapes = {0};
-        javafx.scene.Node body = FxTestSupport.field(p, "bodyArea");
-        Button run = FxTestSupport.field(p, "runButton");
+        javafx.scene.Node body = p.bodyAreaForTest();
+        Button run = p.runButtonForTest();
         javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
             p.setOnEscape(() -> escapes[0]++);
             javafx.stage.Stage st = new javafx.stage.Stage();

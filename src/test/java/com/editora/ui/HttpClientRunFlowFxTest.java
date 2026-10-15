@@ -154,7 +154,7 @@ class HttpClientRunFlowFxTest {
     }
 
     private String panelStatus(EditorBuffer b) throws Exception {
-        Label status = FxTestSupport.field(panel(b), "status");
+        Label status = panel(b).statusLabelForTest();
         return FxTestSupport.callOnFx(status::getText);
     }
 
@@ -187,7 +187,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.failedStatus", "GET " + url("/missing"), "404 Not Found"), host.awaitStatus());
         assertTrue(panelStatus(b).startsWith("404 Not Found"), panelStatus(b));
         // Both are in the history, newest first, named after their ### title.
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(
                 List.of(404, 200),
                 FxTestSupport.callOnFx(() -> history.getItems().stream()
@@ -287,7 +287,7 @@ class HttpClientRunFlowFxTest {
                 dir.resolve("all.http"),
                 "### one\nGET {{base}}/json\nX-Token: {{token}}\n\n### two\nGET {{base}}/missing\n");
 
-        ComboBox<String> env = FxTestSupport.field(panel(b), "envCombo");
+        ComboBox<String> env = panel(b).environmentPickerForTest();
         assertEquals(List.of("", "dev", "prod"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
         assertEquals("dev", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
         assertFalse(
@@ -298,7 +298,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.running", "all.http"), host.awaitStatus());
         assertEquals(tr("status.http.someFailed", 1, 2), host.awaitStatus(), "one of the two requests failed");
         assertEquals(List.of("json private", "missing"), hits);
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(2, FxTestSupport.callOnFx(() -> history.getItems().size()));
         assertEquals(
                 404,
@@ -337,8 +337,8 @@ class HttpClientRunFlowFxTest {
         EditorBuffer b = httpBuffer(sub.resolve("api.http"), text);
         assertEquals(
                 List.of(""),
-                FxTestSupport.callOnFx(() -> List.copyOf(FxTestSupport.<ComboBox<String>>field(panel(b), "envCombo")
-                        .getItems())),
+                FxTestSupport.callOnFx(
+                        () -> List.copyOf(panel(b).environmentPickerForTest().getItems())),
                 "no environments offered");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(1);
@@ -347,8 +347,7 @@ class HttpClientRunFlowFxTest {
         // The same layout inside one repository: the env file at its root applies.
         Files.createDirectories(dir.resolve(".git"));
         FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b));
-        FxTestSupport.runOnFx(() ->
-                FxTestSupport.<ComboBox<String>>field(panel(b), "envCombo").setValue("dev"));
+        FxTestSupport.runOnFx(() -> panel(b).environmentPickerForTest().setValue("dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(2);
         assertEquals("json parent-value", hits.get(1), "the repository root's env file is used");
@@ -374,7 +373,7 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
         assertTrue(coordinator.isRunningForTest(b));
-        Button cancel = FxTestSupport.field(panel(b), "runButton");
+        Button cancel = panel(b).runButtonForTest();
         assertEquals(tr("httppanel.cancel"), FxTestSupport.callOnFx(cancel::getText), "Run turns into Cancel");
 
         FxTestSupport.runOnFx(cancel::fire); // the panel's own Cancel
@@ -399,7 +398,7 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
         assertEquals(tr("status.http.running", "GET " + url("/json")), host.awaitStatus());
         assertEquals(tr("status.http.finished", "GET " + url("/json"), "200 OK"), host.awaitStatus());
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(
                 List.of(url("/json")),
                 FxTestSupport.callOnFx(() ->
@@ -454,8 +453,8 @@ class HttpClientRunFlowFxTest {
         assertEquals("response.json", FxTestSupport.callOnFx(tab::getTitle));
 
         // The panel's own buttons do the same for the response on show.
-        Button openInTab = FxTestSupport.field(panel(b), "openTabButton");
-        Button copyCurl = FxTestSupport.field(panel(b), "copyCurlButton");
+        Button openInTab = panel(b).openTabButtonForTest();
+        Button copyCurl = panel(b).copyCurlButtonForTest();
         FxTestSupport.runOnFx(() -> {
             openInTab.fire();
             copyCurl.fire();
@@ -475,7 +474,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(2, ops.opened.size());
 
         // Clear empties the viewer and its actions.
-        Button clear = FxTestSupport.field(panel(b), "clearButton");
+        Button clear = panel(b).clearButtonForTest();
         FxTestSupport.runOnFx(clear::fire);
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
         assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
