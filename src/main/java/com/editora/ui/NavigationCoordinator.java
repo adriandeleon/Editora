@@ -42,6 +42,9 @@ final class NavigationCoordinator {
 
         ProjectManager projects();
 
+        /** This window's project, or null (none, or Projects switched off). */
+        Project windowProject();
+
         ToolWindowManager toolWindows();
 
         StructurePanel structurePanel();
@@ -234,16 +237,16 @@ final class NavigationCoordinator {
         fileFinder = new FileFinder(this::finderStartDir, this::findFileChosen);
     }
 
-    /** Start directory for the keyboard file finder: the active file's folder, else the home dir. */
+    /** Start directory for the keyboard file finder: the active file's folder, else this window's project, else home. */
     Path finderStartDir() {
         EditorBuffer buffer = host.activeBuffer();
         Path path = buffer == null ? null : buffer.getPath();
         if (path != null && path.getParent() != null) {
             return path.getParent();
         }
-        Project active = host.projects() == null ? null : host.projects().active();
-        if (active != null) {
-            return active.rootPath();
+        Project project = host.windowProject(); // not the ProjectManager's active one: the window opened last
+        if (project != null) {
+            return project.rootPath();
         }
         return Path.of(System.getProperty("user.home", "."));
     }
