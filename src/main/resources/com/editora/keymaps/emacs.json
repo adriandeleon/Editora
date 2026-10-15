@@ -207,5 +207,6 @@
   "M-r": "nav.moveToWindowLine",
   "C-c C-c": "http.runRequest",
   "C-c C-r": "http.runFile",
-  "C-c C-k": "http.cancelRequest"
+  "C-c C-k": "http.cancelRequest",
+  "C-x s": "file.saveAll"
 }

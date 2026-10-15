@@ -468,6 +468,13 @@ Bytes are preserved verbatim via `.gitattributes` (`-text`), so don't "fix" them
 - `samples/encodings/utf16be.txt` — UTF-16 BE, with a BOM.
 - `samples/encodings/latin1.txt` — ISO-8859-1.
 - `samples/encodings/crlf.txt` — CRLF line endings (status bar should show `CRLF`).
+- `samples/encodings/shift-jis.txt` — Japanese in Shift_JIS. Detection cannot know it: it opens through a
+  lossless stand-in (status bar encoding in the warning colour). Click the encoding → Reopen with Encoding →
+  `Shift_JIS` shows the Japanese text; the choice is remembered for the file.
+- `samples/encodings/windows-1251.txt` — Russian in windows-1251 (opens as Windows-1252 mojibake until
+  reopened as `windows-1251`).
+- `samples/encodings/gbk.txt` — Chinese in GBK (reopen as `GBK`). Save with Encoding → UTF-8, then save,
+  converts it.
 
 ## perf/ — large files (generated, not committed)
 

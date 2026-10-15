@@ -9,9 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The Run tool window shows a spinner while a program runs.** A long script that prints little or nothing
-  no longer looks stalled: a small spinner beside the run status turns from launch (including a before-launch
-  command) until the program exits, is stopped, or fails to start.
+- **Save All, Revert File and Reopen Closed Tab.** `File: Save All` saves every modified file in the window,
+  across all editor groups, then reports how many it saved, how many it could not save, and how many untitled
+  buffers it skipped. `File: Revert File` reads the file again from disk, asking first when that discards
+  unsaved changes. The caret, scroll position and folds stay put, the file is read in the encoding chosen for
+  it, and Local History keeps the discarded text. `Buffer: Reopen Closed Tab` brings back the file whose tab
+  you closed last, with its caret where it was. It skips files deleted since and goes to a file that is
+  already open again. All three are in the File menu. Keys: Save All is `Ctrl+K S` (VS Code; `⌥⌘S` on macOS)
+  and `C-x s` (Emacs). Reopen Closed Tab is `Ctrl+Shift+T` in the VS Code, Sublime and CUA keymaps (`⇧⌘T` on
+  macOS). To make room, the File menu's export formats moved into an Export submenu.
+- **Choose a file's encoding.** Click the encoding in the status bar, or use `Buffer: Reopen with
+  Encoding…` and `Buffer: Save with Encoding…` from the command palette. Reopening reads the file again in
+  the encoding you pick — Shift_JIS, GBK, windows-1251 and about 40 other common ones are listed by script,
+  then every encoding the runtime has — and remembers it for that file, including remote files. When the file
+  is not valid in that encoding, nothing changes and the status line names the first line and column that
+  could not be read. Saving with an encoding marks the tab modified until you save, wins over
+  `.editorconfig`, and refuses a character the encoding cannot hold instead of switching to UTF-8. An
+  encoding Editora could not detect is shown in the warning colour, with a tooltip that says so. The
+  installed app now includes the JDK's extended charsets (ISO-2022-JP, the Hebrew, Arabic, Baltic and
+  Vietnamese Windows code pages, MacRoman…), so the list is the same on every OS. File Information shows the
+  file's real encoding instead of always UTF-8.
+- **The Run, Output, Test Results, Debug and External Tools windows show a spinner while something runs.** A long
+  script, build or test run that prints little or nothing no longer looks stalled: a small spinner beside the status turns
+  from launch (including a run configuration's before-launch command) until it exits, is stopped, or fails to
+  start. In Output, each tool's tab spins only for its own build, and a Git tab spins while a clone streams;
+  the tab's title spins too, so a build in a tab you are not looking at still shows it is running.
+  In Test Results it covers the compile step before the first test reports, when the progress bar is still empty.
+  Debug spins while the before-launch build, the session start or the program runs, and stops at a breakpoint.
+  An external tool that writes to the console now opens it at launch with the spinner, instead of only when it
+  finishes; a tool that writes into the editor spins the External Tools header too.
 - **Remote development is on, and set per host.** The tools Editora drives — Git, gh, ripgrep, builds, tests,
   language servers and debuggers — run on the host of a remote folder by default. The first time you open a
   folder on a host, Editora asks once whether it may run commands there. Settings → Remote now shows, for
@@ -256,6 +282,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A language server that fails to start no longer leaves its tabs looking served.** When a server could not be
+  started (its command cannot be run, or a remote connection broke while it was starting), its tabs stayed marked
+  as served and the status bar could keep naming it until the tab was synced again. They now go quiet at once,
+  as after a lost connection, and the server is not restarted in a loop. While Editora was finding out which
+  servers are installed, such a server was also tried again once for every other server it checked (up to 22
+  failed starts at launch); now only its own check, a settings change, Restart Servers or a reconnect tries
+  it again.
 - **Right-click menus close when you click outside them.** A click anywhere else in the tree, list, editor or
   panel the menu was opened on used to leave it open, and right-clicking another row opened a second menu
   beside the first. Now any click outside a right-click menu closes it, in every panel, and the click still

@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -158,9 +159,20 @@ final class MainMenuBar {
     private Menu menuOf(MenuBarModel.MenuSpec spec) {
         Menu menu = new Menu(tr(spec.titleKey()));
         java.util.List<Row> group = new java.util.ArrayList<>();
+        java.util.Set<String> inline = new java.util.HashSet<>();
         for (String entry : spec.entries()) {
             if (MenuBarModel.SEPARATOR.equals(entry)) {
                 menu.getItems().add(new SeparatorMenuItem());
+                continue;
+            }
+            String inlineKey = MenuBarModel.inlineSubmenu(entry);
+            if (inlineKey != null) {
+                for (MenuBarModel.MenuSpec submenu : spec.submenus()) {
+                    if (submenu.titleKey().equals(inlineKey)) {
+                        menu.getItems().add(nestedMenu(submenu));
+                        inline.add(inlineKey);
+                    }
+                }
                 continue;
             }
             Row row = newRow(entry);
@@ -170,19 +182,26 @@ final class MainMenuBar {
             menu.getItems().add(row.item());
         }
         menuGroups.add(group);
-        if (!spec.submenus().isEmpty()) {
+        List<MenuBarModel.MenuSpec> below = spec.submenus().stream()
+                .filter(submenu -> !inline.contains(submenu.titleKey()))
+                .toList();
+        if (!below.isEmpty()) {
             menu.getItems().add(new SeparatorMenuItem());
-            for (MenuBarModel.MenuSpec submenu : spec.submenus()) {
-                Menu nested = menuOf(submenu);
-                if (!systemMenu) {
-                    // An empty icon column, so the submenu's title starts where the item titles do.
-                    nested.setGraphic(iconColumn(null));
-                    nested.getStyleClass().add("menu-submenu");
-                }
-                menu.getItems().add(nested);
+            for (MenuBarModel.MenuSpec submenu : below) {
+                menu.getItems().add(nestedMenu(submenu));
             }
         }
         return menu;
+    }
+
+    private Menu nestedMenu(MenuBarModel.MenuSpec submenu) {
+        Menu nested = menuOf(submenu);
+        if (!systemMenu) {
+            // An empty icon column, so the submenu's title starts where the item titles do.
+            nested.setGraphic(iconColumn(null));
+            nested.getStyleClass().add("menu-submenu");
+        }
+        return nested;
     }
 
     /**

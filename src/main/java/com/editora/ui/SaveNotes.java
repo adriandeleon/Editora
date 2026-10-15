@@ -19,7 +19,7 @@ import static com.editora.i18n.Messages.tr;
  * @param lineEnding the line ending written on every line when {@link #mixed} normalised
  * @param charsetFrom the charset the file had on disk when the save changes it, else null
  * @param charsetTo the charset it has now
- * @param charsetRule the {@code charset} value that asked for it
+ * @param charsetRule the {@code charset} value that asked for it; null when the user chose the charset
  * @param newlinesDropped trailing line breaks that {@code insert_final_newline = false} left out
  */
 record SaveNotes(
@@ -58,6 +58,24 @@ record SaveNotes(
             String onDisk,
             String effective,
             boolean reencodes) {
+        return of(mixed, source, lineEnding, content, written, rules, onDisk, effective, reencodes, false);
+    }
+
+    /**
+     * As above; {@code chosen}: the charset is one the user picked (Save with Encoding), not an EditorConfig
+     * rule, so the note names no rule.
+     */
+    static SaveNotes of(
+            MixedLineEndings.Decision mixed,
+            MixedLineEndings.Source source,
+            String lineEnding,
+            String content,
+            String written,
+            EditorConfigProperties rules,
+            String onDisk,
+            String effective,
+            boolean reencodes,
+            boolean chosen) {
         boolean charsetChanged = reencodes && onDisk != null && effective != null && !onDisk.equals(effective);
         int dropped = Boolean.FALSE.equals(rules.insertFinalNewline())
                 ? Math.max(0, terminators(content) - terminators(written))
@@ -68,7 +86,7 @@ record SaveNotes(
                 lineEnding,
                 charsetChanged ? onDisk : null,
                 charsetChanged ? effective : null,
-                charsetChanged ? (rules.charset() == null ? effective : rules.charset()) : null,
+                charsetChanged && !chosen ? (rules.charset() == null ? effective : rules.charset()) : null,
                 dropped);
     }
 
@@ -113,7 +131,12 @@ record SaveNotes(
             java.nio.file.Path kept = source.kept().get();
             notes.add(tr("status.save.note.mixedLineEndings", lineEnding, PathDisplay.of(kept)));
         }
-        if (charsetChanged()) {
+        if (charsetChanged() && charsetRule == null) {
+            notes.add(tr(
+                    "status.save.note.charsetChosen",
+                    EditorConfigCharset.displayName(charsetFrom),
+                    EditorConfigCharset.displayName(charsetTo)));
+        } else if (charsetChanged()) {
             notes.add(tr(
                     "status.save.note.charset",
                     EditorConfigCharset.displayName(charsetFrom),

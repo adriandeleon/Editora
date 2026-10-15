@@ -410,6 +410,7 @@ final class LspCoordinator {
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
+        lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -750,6 +751,18 @@ final class LspCoordinator {
         updateStatusBar();
     }
 
+    /**
+     * A server's start failed: its command could not be run, or a remote host's connection broke while it
+     * was being started. The buffers it was opened for go inactive and the loading bar stops; the session's
+     * own error status already said why. Not a crash, so nothing is retried here — the same command would
+     * only fail again, and a remote tab comes back through {@link #remoteHostConnected}.
+     */
+    private void onStartFailed(String serverId, Path root) {
+        forEachCrashedBuffer(serverId, root, b -> b.setLspActive(false));
+        ops.setLspLoading(false);
+        updateStatusBar();
+    }
+
     /** Whether two roots identify the same LSP session boundary. Kept pure for crash-routing coverage. */
     static boolean sameLspRoot(Path bufferRoot, Path crashedRoot) {
         return bufferRoot != null
@@ -1067,16 +1080,38 @@ final class LspCoordinator {
                 lspManager.shutdownServer(serverId);
             }
             // Probe each known server independently (one may be installed and another not).
-            lspManager.detect(serverId, ok -> {
-                serverAvailable.put(serverId, ok);
-                if (ok && serverEnabled(serverId)) {
-                    // Installation is enough to seed the preference. The active-buffer managed gate still
-                    // controls current availability, so neither stripe appears on an ineligible tab.
-                    ops.enableNavigationWindowsByDefault();
-                }
-                applyGating();
-            });
+            lspManager.detect(serverId, ok -> serverDetected(serverId, ok));
         }
+    }
+
+    /**
+     * One server's probe result: recorded, then the buffers it can change are re-gated. Not every open
+     * buffer — each of the {@link #SERVER_IDS} answers on its own, so a buffer whose server had just failed to
+     * start was re-opened, and its start failed again, once for every other server's answer.
+     */
+    void serverDetected(String serverId, boolean ok) {
+        serverAvailable.put(serverId, ok);
+        if (ok && serverEnabled(serverId)) {
+            // Installation is enough to seed the preference. The active-buffer managed gate still
+            // controls current availability, so neither stripe appears on an ineligible tab.
+            ops.enableNavigationWindowsByDefault();
+        }
+        boolean pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId);
+        host.forEachBuffer(b -> {
+            // A pom.xml waits for the Maven server's answer before choosing between it and the XML server.
+            if (serverId.equals(serverIdForBuffer(b)) || (pomServer && isPomBuffer(b))) {
+                syncBufferWhenShown(b);
+            }
+        });
+        updateStatusBar();
+        ops.onDetectionSettled(); // re-evaluate the install banner now that detection has updated
+    }
+
+    private static boolean isPomBuffer(EditorBuffer b) {
+        Path p = b.getPath();
+        return p != null
+                && p.getFileName() != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(p.getFileName().toString());
     }
 
     /**

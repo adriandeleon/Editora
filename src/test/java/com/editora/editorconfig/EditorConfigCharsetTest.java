@@ -1,5 +1,7 @@
 package com.editora.editorconfig;
 
+import java.nio.charset.StandardCharsets;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -89,6 +91,32 @@ class EditorConfigCharsetTest {
         assertEquals("ISO-8859-1", EditorConfigCharset.displayName("latin1"));
         assertEquals("UTF-16 LE", EditorConfigCharset.displayName("utf-16le"));
         assertEquals("UTF-8", EditorConfigCharset.displayName(null));
+    }
+
+    @Test
+    void anyJavaCharsetTheUserChoseIsUsable() {
+        // Reopen / Save with Encoding store Java names next to the EditorConfig ones.
+        assertEquals("Shift_JIS", EditorConfigCharset.charsetFor("Shift_JIS").name());
+        assertEquals(
+                "windows-1251", EditorConfigCharset.charsetFor("windows-1251").name());
+        assertEquals("Shift_JIS", EditorConfigCharset.displayName("Shift_JIS"));
+        assertEquals(
+                "日本語",
+                new String(EditorConfigCharset.encode("日本語", "Shift_JIS"), java.nio.charset.Charset.forName("SJIS")));
+        assertFalse(EditorConfigCharset.writesBom("Shift_JIS"));
+        assertTrue(EditorConfigCharset.canEncode("Привет", "windows-1251"));
+        assertFalse(EditorConfigCharset.canEncode("日本", "windows-1251"));
+    }
+
+    @Test
+    void unknownAndIllegalNamesFallBackToUtf8() {
+        assertEquals(StandardCharsets.UTF_8, EditorConfigCharset.charsetFor("no-such-charset"));
+        assertEquals(StandardCharsets.UTF_8, EditorConfigCharset.charsetFor("bad name!"));
+        assertEquals(StandardCharsets.UTF_8, EditorConfigCharset.charsetFor(""));
+        assertEquals("UTF-8", EditorConfigCharset.displayName("no-such-charset"));
+        assertEquals("UTF-8", EditorConfigCharset.displayName("bad name!"));
+        assertFalse(EditorConfigCharset.isSupported("bad name!"));
+        assertFalse(EditorConfigCharset.isSupported(null));
     }
 
     @Test

@@ -144,6 +144,38 @@ class CrashRecoveryFxTest {
     }
 
     @Test
+    void anEncodingChosenButNotYetSavedComesBackWithTheText(@TempDir Path configDir, @TempDir Path work)
+            throws Exception {
+        Path file = Files.writeString(work.resolve("ru.txt"), "Привет\n");
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture first = launch(async, configDir);
+            EditorBuffer doc = open(async, first, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(first.controller, "fileWorkflows");
+            FxTestSupport.runOnFx(() -> workflows.encodings().saveIn(doc, "windows-1251"));
+            assertTrue(FxTestSupport.callOnFx(doc::isDirty), "the choice alone is an unsaved change");
+
+            RecoveryService service = first.windowManager.recovery();
+            assertTrue(waitFor(() -> service.store().ownRecordIds().size() == 1), "a copy of the unsaved buffer");
+            assertTrue(service.awaitIdle(10_000));
+            assertEquals(
+                    "windows-1251", records(service.store().sessionDir()).get(0).charset());
+            crash(first);
+
+            FxWindowFixture second = launch(async, configDir);
+            RecoveryCoordinator recovery = FxTestSupport.field(second.controller, "recovery");
+            assertTrue(waitFor(() ->
+                    recovery.offerForTest() != null && recovery.offerForTest().isShowing()));
+            RecoveryOfferWindow offer = FxTestSupport.callOnFx(recovery::offerForTest);
+            FxTestSupport.runOnFx(() -> offer.restoreAllForTest().fire());
+            assertTrue(waitFor(() -> bufferCount(second) == 1));
+
+            EditorBuffer restored = bufferFor(second, file);
+            assertEquals("windows-1251", FxTestSupport.callOnFx(restored::getEffectiveCharset));
+            assertEquals("windows-1251", FxTestSupport.callOnFx(restored::getUserCharset));
+        }
+    }
+
+    @Test
     void aSecondCrashBeforeTheUserDecidesLosesNothingAndDiscardIsExplicit(@TempDir Path configDir) throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture first = launch(async, configDir);

@@ -888,6 +888,8 @@ public class EditorBuffer implements TabContent {
     private String charsetOverride; // EditorConfig charset to write; null = keep detected
     /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
     private boolean charsetAssumed;
+    /** The encoding the user chose (Reopen / Save with Encoding); outranks EditorConfig. Null = none. */
+    private String userCharset;
 
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
@@ -7539,7 +7541,30 @@ public class EditorBuffer implements TabContent {
      * the override never understood.
      */
     public String getEffectiveCharset() {
+        if (userCharset != null) {
+            return userCharset;
+        }
         return charsetOverride != null && !charsetAssumed ? charsetOverride : detectedCharset;
+    }
+
+    /** The encoding the user chose for this file, or null when it follows EditorConfig and detection. */
+    public String getUserCharset() {
+        return userCharset;
+    }
+
+    /**
+     * Chooses the encoding this buffer is written in, whatever EditorConfig says; null returns it to the rules.
+     * A choice other than the encoding on disk is an unsaved change, like a line-ending conversion.
+     */
+    public void setUserCharset(String charset) {
+        this.userCharset = charset;
+        dirty.set(differsFromSaved());
+    }
+
+    /** A save wrote the file in {@code charset}: that is what is on disk now, and no longer a pending change. */
+    public void charsetSaved(String charset) {
+        setDetectedCharset(charset);
+        dirty.set(differsFromSaved());
     }
 
     public void setEditorConfigProps(com.editora.editorconfig.EditorConfigProperties props) {
@@ -9324,10 +9349,11 @@ public class EditorBuffer implements TabContent {
         dirty.set(false);
     }
 
-    /** Whether the buffer differs from what is on disk: its text, its line ending, or a forced flag. */
+    /** Whether the buffer differs from what is on disk: its text, line ending or encoding, or a forced flag. */
     private boolean differsFromSaved() {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
+                || (userCharset != null && !userCharset.equals(detectedCharset))
                 || (baseline != null && (contentLength() != baseline.length() || !baseline.matches(getContent())));
     }
 

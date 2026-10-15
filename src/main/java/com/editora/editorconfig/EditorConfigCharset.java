@@ -35,15 +35,37 @@ public final class EditorConfigCharset {
 
     private EditorConfigCharset() {}
 
-    /** The JVM charset for an EditorConfig name (defaults to UTF-8 for null/unknown). */
+    /**
+     * The JVM charset for an EditorConfig name, or for any other charset name the runtime supports (an
+     * encoding the user chose, such as {@code Shift_JIS}). Null and unknown names give UTF-8.
+     */
     public static Charset charsetFor(String name) {
         return switch (name == null ? "" : name) {
             case LATIN1 -> StandardCharsets.ISO_8859_1;
             case WINDOWS_1252 -> CP1252 != null ? CP1252 : StandardCharsets.ISO_8859_1;
             case UTF_16LE -> StandardCharsets.UTF_16LE;
             case UTF_16BE -> StandardCharsets.UTF_16BE;
-            default -> StandardCharsets.UTF_8; // utf-8 + utf-8-bom
+            case "", UTF_8, UTF_8_BOM -> StandardCharsets.UTF_8;
+            default -> other(name);
         };
+    }
+
+    /** Whether the runtime has a charset by this name; false, not an exception, for an illegal name. */
+    public static boolean isSupported(String name) {
+        try {
+            return name != null && Charset.isSupported(name);
+        } catch (IllegalArgumentException illegal) {
+            return false;
+        }
+    }
+
+    /** A charset outside the EditorConfig names, by its Java name; UTF-8 when the runtime has none by it. */
+    private static Charset other(String name) {
+        try {
+            return Charset.forName(name);
+        } catch (IllegalArgumentException unsupported) { // illegal or unsupported name
+            return StandardCharsets.UTF_8;
+        }
     }
 
     /** Whether files in this charset carry a leading BOM. */
@@ -230,7 +252,10 @@ public final class EditorConfigCharset {
         return encoder.canEncode(text);
     }
 
-    /** A human-readable label for the status bar (e.g. {@code "UTF-8 BOM"}, {@code "UTF-16 LE"}). */
+    /**
+     * A human-readable label for the status bar (e.g. {@code "UTF-8 BOM"}, {@code "UTF-16 LE"}); any other
+     * supported charset shows its Java name ({@code "Shift_JIS"}).
+     */
     public static String displayName(String name) {
         return switch (name == null ? "" : name) {
             case UTF_8_BOM -> "UTF-8 BOM";
@@ -238,7 +263,8 @@ public final class EditorConfigCharset {
             case WINDOWS_1252 -> "Windows-1252";
             case UTF_16LE -> "UTF-16 LE";
             case UTF_16BE -> "UTF-16 BE";
-            default -> "UTF-8";
+            case "", UTF_8 -> "UTF-8";
+            default -> isSupported(name) ? name : "UTF-8";
         };
     }
 

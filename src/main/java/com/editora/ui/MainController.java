@@ -1992,6 +1992,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         ws.getMarkdownViewModes().remove(key);
         ws.getMarkdownPreviewLayouts().remove(key);
         ws.getSpellLanguages().remove(key);
+        ws.getFileEncodings().remove(key);
         ws.getReadOnlyFiles().remove(key);
         if (recentFiles != null) {
             recentFiles.remove(path);
@@ -7771,6 +7772,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         tab.setOnCloseRequest(e -> {
             if (!closes.confirmClose(tab)) {
                 e.consume();
+            } else {
+                rememberClosed(tab);
             }
         });
         editorArea.add(tab);
@@ -8110,8 +8113,52 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
     void closeTab(Tab tab) {
         if (tab != null && closes.confirmClose(tab)) {
+            rememberClosed(tab);
             editorArea.remove(tab);
         }
+    }
+
+    /** Files whose tabs the user closed in this window, for Buffer: Reopen Closed Tab. */
+    final ClosedTabs closedTabs = new ClosedTabs();
+
+    /**
+     * Remembers a file tab the user is closing. Called from the close command, the batch closes and the tab's
+     * own close button only — never for a window close, a project switch or a tab swapped for another view.
+     */
+    private void rememberClosed(Tab tab) {
+        EditorBuffer buffer = bufferOf(tab);
+        RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+        if (buffer != null && buffer.getPath() != null) {
+            closedTabs.closed(buffer.getPath(), buffer.getArea().getCaretPosition());
+        } else if (placeholder != null) {
+            closedTabs.closed(placeholder.path(), placeholder.caret()); // a restored tab never shown
+        }
+    }
+
+    /** {@code buffer.reopenClosed}: opens the file whose tab was closed last, its caret where it was. */
+    void reopenClosedTab() {
+        for (ClosedTabs.Entry entry = closedTabs.pop(); entry != null; entry = closedTabs.pop()) {
+            Path path = entry.path();
+            Tab open = tabForPath(path);
+            if (open != null) {
+                editorArea.select(open); // reopened some other way since
+                return;
+            }
+            if (com.editora.vfs.Vfs.isLocal(path) && !Files.exists(path)) {
+                continue; // deleted since: the next one back
+            }
+            int caret = entry.caret();
+            fileWorkflows.openThen(path, () -> {
+                EditorBuffer buffer = activeBuffer();
+                if (buffer != null && path.equals(buffer.getPath())) {
+                    buffer.getArea()
+                            .moveTo(Math.clamp(caret, 0, buffer.getArea().getLength()));
+                    buffer.getArea().requestFollowCaret();
+                }
+            });
+            return;
+        }
+        setStatus(tr("status.reopenClosed.none"));
     }
 
     /**
@@ -8125,10 +8172,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (!closes.confirmClose(tab)) {
                     return;
                 }
+                rememberClosed(tab);
                 editorArea.remove(tab);
                 continue;
             }
             if (buffer != null && !buffer.isDirty() && !fileWorkflows.hasPendingSave(buffer)) {
+                rememberClosed(tab);
                 editorArea.remove(tab);
                 continue;
             }
@@ -8136,6 +8185,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (!closes.confirmCloseIfDirty(buffer)) {
                 return; // user cancelled — stop the batch
             }
+            rememberClosed(tab);
             editorArea.remove(tab);
         }
     }

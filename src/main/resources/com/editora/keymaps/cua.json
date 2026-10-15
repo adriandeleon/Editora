@@ -41,5 +41,6 @@
   "M-S-left": "edit.shrinkSelection",
   "C-M-r": "http.runRequest",
   "C-M-S-enter": "http.runFile",
-  "C-M-k": "http.cancelRequest"
+  "C-M-k": "http.cancelRequest",
+  "C-S-t": "buffer.reopenClosed"
 }

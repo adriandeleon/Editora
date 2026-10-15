@@ -993,6 +993,15 @@ public final class LspManager {
                     () -> initOptionsFor(serverId, startBundles, astroTsdk, onTypeFormatting, jdks));
             if (!session.start()) {
                 dropSession(key, session);
+                if (session.startFailed()) {
+                    // Disposed by start() itself, so dropSession raised no crash: say so separately, or the
+                    // buffers it was meant to serve keep looking served by a server that never came up.
+                    Platform.runLater(() -> {
+                        if (!closed) {
+                            onStartFailed.accept(serverId, root);
+                        }
+                    });
+                }
             }
         });
         return session;
@@ -1172,7 +1181,7 @@ public final class LspManager {
         // process, so a session that is dead but never disposed died on its own (process crash, failed/
         // timed-out handshake). Only that case notifies the coordinator to auto-restart — a shutdownServer/
         // shutdownAll/putCommand teardown, or a start() whose fork failed (dispose()d in its catch), must
-        // not re-fork in a loop (#666).
+        // not re-fork in a loop (#666). A failed start is reported on its own, through onStartFailed.
         if (!session.isDisposed()) {
             boolean failedJdtlsInitialization = workspaceName != null
                     && LspServerRegistry.JAVA_SERVER_ID.equals(session.serverId())
@@ -3589,6 +3598,16 @@ public final class LspManager {
 
     public void setOnStartWithheld(BiConsumer<String, Path> callback) {
         this.onStartWithheld = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /**
+     * Told (on the FX thread) that a server's start failed — its command could not be run, or a remote
+     * host's connection broke mid-start. Not a crash, so nothing restarts it. {@code accept(serverId, root)}.
+     */
+    private volatile BiConsumer<String, Path> onStartFailed = (id, root) -> {};
+
+    public void setOnStartFailed(BiConsumer<String, Path> callback) {
+        this.onStartFailed = callback == null ? (id, root) -> {} : callback;
     }
 
     /**

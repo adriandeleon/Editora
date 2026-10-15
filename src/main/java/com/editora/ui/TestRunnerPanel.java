@@ -14,6 +14,7 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
@@ -41,7 +42,8 @@ import org.fxmisc.richtext.CodeArea;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The "Test Results" tool window — an IntelliJ-style test runner. A header (status + progress bar + pass/fail/
+ * The "Test Results" tool window — an IntelliJ-style test runner. A header (spinner while running + status +
+ * progress bar + pass/fail/
  * skip counts + elapsed timer) and a small icon toolbar (rerun / rerun-failed / stop / show-passed) sit above a
  * {@link SplitPane}: a {@link TreeView} of suites → tests (status icon + name + muted duration) on the left, a
  * read-only detail console on the right showing the selected test's failure message / stack trace (with
@@ -57,6 +59,9 @@ import static com.editora.i18n.Messages.tr;
  * so a live run never drops the row the user has selected or collapses what they expanded.
  */
 final class TestRunnerPanel extends VBox implements ToolWindowContent {
+
+    /** Spins from {@link #startRun} to {@link #finishRun}: the bar sits at zero while a build compiles first. */
+    private final ProgressIndicator busy = RunPanel.busySpinner();
 
     private final Label status = new Label();
     private final ProgressBar progress = new ProgressBar(0);
@@ -113,7 +118,8 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
         HBox toolbar = new HBox(2, rerunButton, rerunFailedButton, stopButton, followToggle);
         toolbar.setAlignment(Pos.CENTER_LEFT);
-        HBox header = new HBox(10, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar);
+        HBox header =
+                new HBox(10, busy, status, progress, passedChip, failedChip, skippedChip, spacer(), elapsed, toolbar);
         header.setAlignment(Pos.CENTER_LEFT);
 
         filterField.setPromptText(tr("testrunner.filterPrompt"));
@@ -263,6 +269,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setDisable(onRerun == null);
         rerunFailedButton.setDisable(true);
         stopButton.setDisable(true);
+        RunPanel.showSpinner(busy, false);
     }
 
     /** A run started: reset the tree/detail/counts and show the running state. */
@@ -279,6 +286,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setDisable(true);
         rerunFailedButton.setDisable(true);
         stopButton.setDisable(false);
+        RunPanel.showSpinner(busy, true);
         followToggle.setSelected(true); // a fresh run tracks again, even if the last one was pinned by a click
         showRunSummary(); // the detail pane shows the run header until a test is selected
     }
@@ -360,6 +368,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         rerunButton.setDisable(onRerun == null);
         rerunFailedButton.setDisable(!counts.anyFailed() || onRerunFailed == null);
         stopButton.setDisable(true);
+        RunPanel.showSpinner(busy, false);
         refreshDetail(); // a selected node's header flips from Running to its settled status
     }
 

@@ -110,6 +110,7 @@ final class RenamedFileState {
         rekey(ws.getMarkwhenViews(), oldKey, newKey, sep);
         rekey(ws.getMarkdownPreviewLayouts(), oldKey, newKey, sep);
         rekey(ws.getSpellLanguages(), oldKey, newKey, sep);
+        rekey(ws.getFileEncodings(), oldKey, newKey, sep);
         rekey(ws.getProgramArgs(), oldKey, newKey, sep);
         rekey(ws.getReadOnlyFiles(), oldKey, newKey, sep);
     }

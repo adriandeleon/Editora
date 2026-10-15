@@ -153,10 +153,14 @@ class MenuBarFxTest {
             MenuBarModel.MenuSpec spec = MenuBarModel.menus().get(m);
             Menu menu = bar.getMenus().get(m);
             MenuItem found = itemIn(spec.entries(), menu.getItems(), commandId);
-            // Submenus follow the entries, below one separator, in the model's order.
+            // A submenu sits at its inline entry, or else after the entries, below one separator, in order.
+            int below = 0;
             for (int s = 0; found == null && s < spec.submenus().size(); s++) {
-                Menu submenu = (Menu) menu.getItems().get(spec.entries().size() + 1 + s);
-                found = itemIn(spec.submenus().get(s).entries(), submenu.getItems(), commandId);
+                MenuBarModel.MenuSpec nested = spec.submenus().get(s);
+                int inline = spec.entries().indexOf(MenuBarModel.submenu(nested.titleKey()));
+                int index = inline >= 0 ? inline : spec.entries().size() + 1 + below++;
+                Menu submenu = (Menu) menu.getItems().get(index);
+                found = itemIn(nested.entries(), submenu.getItems(), commandId);
             }
             if (found != null) {
                 return found;
