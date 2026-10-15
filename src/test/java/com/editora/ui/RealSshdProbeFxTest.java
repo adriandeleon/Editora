@@ -479,12 +479,63 @@ class RealSshdProbeFxTest {
                 await("jdtls ready", 240, () -> seen.contains("READY"));
                 Thread.sleep(3000);
                 debug(dap, main, "java", app, seen, 3, () -> dap.configure(true, javaDebug));
+                // And Run (not Debug): jdtls resolves the class path on the host; the program runs there.
+                CompletableFuture<DapManager.ResolvedLaunch> launch = new CompletableFuture<>();
+                onFx(() -> dap.resolveMainClasses(main, options -> {
+                    if (options.isEmpty()) {
+                        launch.completeExceptionally(new AssertionError("no main class"));
+                    } else {
+                        dap.resolveLaunch(main, options.get(0), launch::complete);
+                    }
+                }));
+                DapManager.ResolvedLaunch info = launch.get(120, TimeUnit.SECONDS);
+                check(info.ok(), "resolved: " + info.error());
+                String out = runOnHost(
+                        app,
+                        com.editora.run.JavaRunCommand.build(
+                                RunCoordinator.hostJava("", info.javaExec()),
+                                info.modulePaths(),
+                                info.classPaths(),
+                                "demo.Main",
+                                List.of(),
+                                List.of()));
+                check(out.contains("sum 2"), "ran on the host: " + out);
+                seen.add("ran with " + info.javaExec());
                 return String.join(" | ", seen);
             } finally {
                 onFx(dap::shutdown);
                 lsp.shutdownAll();
                 tools.remove("lsp.java");
             }
+        });
+
+        step("a Java project's main class runs on the host with Maven's classpath (no jdtls)", () -> {
+            // Beside the other test project, not inside it: a pom.xml above would make this a reactor module.
+            Path proj = Files.createDirectories(work.resolve("mvnapp/src/main/java/demo"));
+            Path root = work.resolve("mvnapp");
+            Files.writeString(
+                    root.resolve("pom.xml"),
+                    "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
+                            + "<groupId>demo</groupId><artifactId>mvnapp</artifactId><version>1</version>"
+                            + "<properties><maven.compiler.release>17</maven.compiler.release></properties></project>\n");
+            Files.writeString(
+                    proj.resolve("Hello.java"),
+                    "package demo;\npublic class Hello {\n  public static void main(String[] a) {\n    System.out.println(\"hello from maven \" + a.length);\n  }\n}\n");
+            List<String> cp = com.editora.maven.MavenClasspathResolver.resolve(root, "");
+            check(cp != null && !cp.isEmpty(), "Maven gave a classpath on the host: " + cp);
+            check(
+                    cp.get(0).startsWith("/") && cp.get(0).endsWith("/target/classes"),
+                    "named as the host names it: " + cp);
+            String out = runOnHost(
+                    root,
+                    com.editora.run.JavaRunCommand.build("java", List.of(), cp, "demo.Hello", List.of(), List.of("x")));
+            check(out.contains("hello from maven 1"), "ran: " + out);
+            try (var left = Files.list(root.resolve("target"))) {
+                check(
+                        left.noneMatch(f -> f.getFileName().toString().startsWith("editora-cp-")),
+                        "the classpath file was removed");
+            }
+            return cp.size() + " classpath entries";
         });
 
         String debugpy = System.getProperty("remote.probe.debugpy");
@@ -625,6 +676,38 @@ class RealSshdProbeFxTest {
                     conn.host(), conn.port(), conn.user(), RemoteConnection.AuthMethod.KEY, ed25519, "probe", "/"));
             return null;
         });
+    }
+
+    /** Runs {@code argv} in {@code dir} on the host through Run's service; its whole output. */
+    private static String runOnHost(Path dir, List<String> argv) throws Exception {
+        RunService run = new RunService();
+        StringBuilder out = new StringBuilder();
+        CompletableFuture<Integer> exit = new CompletableFuture<>();
+        run.runInDir(dir, argv, new RunService.Listener() {
+            @Override
+            public void onStart(String commandLine) {}
+
+            @Override
+            public void onOutput(String line, boolean stderr) {
+                synchronized (out) {
+                    out.append(line).append('\n');
+                }
+            }
+
+            @Override
+            public void onExit(int code) {
+                exit.complete(code);
+            }
+
+            @Override
+            public void onError(String message) {
+                exit.completeExceptionally(new AssertionError(message));
+            }
+        });
+        exit.get(120, TimeUnit.SECONDS);
+        synchronized (out) {
+            return out.toString();
+        }
     }
 
     /**
