@@ -20,6 +20,8 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -515,6 +517,76 @@ final class RemoteCoordinator {
         }
         syncAuth.run();
 
+        // ~/.ssh/config: its hosts to pick from, and what it says about the one typed — read as the connect
+        // will read it. Its User and Port fill the fields until you type in them yourself.
+        RemoteFileSystems engine = remoteFs();
+        MenuButton fromConfig = null;
+        List<String> configured = engine.configuredHosts();
+        if (!configured.isEmpty()) {
+            fromConfig = new MenuButton(tr("remote.sshConfig.hosts"));
+            fromConfig.setFocusTraversable(false);
+            for (String alias : configured) {
+                MenuItem item = new MenuItem(alias);
+                item.setMnemonicParsing(false);
+                item.setOnAction(e -> hostField.setText(alias));
+                fromConfig.getItems().add(item);
+            }
+        }
+        Label configHint = new Label();
+        configHint.setWrapText(true);
+        configHint.setMaxWidth(460);
+        configHint.getStyleClass().add("overlay-note"); // the overlay form's muted note
+        boolean[] filling = {false};
+        boolean[] userTyped = {prefill != null};
+        boolean[] portTyped = {prefill != null};
+        boolean[] filledFromConfig = {false};
+        userField.textProperty().addListener((o, a, b) -> userTyped[0] |= !filling[0]);
+        portField.textProperty().addListener((o, a, b) -> portTyped[0] |= !filling[0]);
+        String defaultUser = userField.getText();
+        Runnable describeHost = () -> {
+            RemoteFileSystems.ConfiguredHost c = engine.configured(hostField.getText());
+            filling[0] = true;
+            try {
+                if (c == null) {
+                    configHint.setText("");
+                    if (filledFromConfig[0]) { // the host no longer matches: back to the defaults
+                        if (!userTyped[0]) {
+                            userField.setText(defaultUser);
+                        }
+                        if (!portTyped[0]) {
+                            portField.setText("22");
+                        }
+                        filledFromConfig[0] = false;
+                    }
+                    return;
+                }
+                List<String> parts = new ArrayList<>();
+                if (!c.hostName().equals(hostField.getText().strip())) {
+                    parts.add("HostName " + c.hostName());
+                }
+                if (c.proxyJump() != null) {
+                    parts.add("ProxyJump " + c.proxyJump());
+                }
+                for (String identity : c.identities()) {
+                    parts.add("IdentityFile " + identity);
+                }
+                configHint.setText(parts.isEmpty() ? "" : tr("remote.sshConfig.hint", String.join(" · ", parts)));
+                if (!userTyped[0] && c.user() != null) {
+                    userField.setText(c.user());
+                }
+                if (!portTyped[0]) {
+                    portField.setText(String.valueOf(c.port()));
+                }
+                filledFromConfig[0] = true;
+            } finally {
+                filling[0] = false;
+            }
+        };
+        hostField.textProperty().addListener((o, a, b) -> describeHost.run());
+        describeHost.run();
+        configHint.managedProperty().bind(configHint.textProperty().isNotEmpty());
+        configHint.visibleProperty().bind(configHint.managedProperty());
+
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
@@ -531,6 +603,10 @@ final class RemoteCoordinator {
         grid.add(keyBrowse, 3, 3);
         grid.add(new Label(tr("remote.path")), 0, 4);
         grid.add(pathField, 1, 4, 3, 1);
+        grid.add(configHint, 1, 5, 3, 1);
+        if (fromConfig != null) {
+            grid.add(fromConfig, 4, 0);
+        }
         GridPane.setHgrow(hostField, Priority.ALWAYS);
 
         BooleanProperty valid = new SimpleBooleanProperty(false);

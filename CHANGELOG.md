@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A failed connect says why: the host could not be reached, did not answer, its host key has changed (with
     the `ssh-keygen -R` line to remove the old entry), or the login was refused. Cancelling only says so in the
     status bar.
+- **Remote: `~/.ssh/config`.** The connect form offers the hosts your SSH config names, and for the host you
+  type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
+  in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
+  jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
+  ones. `Include` lines are followed. `ProxyCommand` is not supported.
 
 ### Changed
 
@@ -38,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second time for the project's own window: that window takes over the session you just logged in with. A
   password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
   them. Closing the window you connected from leaves the project's window connected.
+
+### Fixed
+
+- **Remote: an SSH config with a `Match` section no longer stops every connect.** Editora skips `Match`
+  sections (it cannot evaluate them) and reads the rest of the file; before, any `Match` made every connect
+  fail with "Currently not able to process Match sections".
 
 ## [0.22.0] - 2026-10-16
 

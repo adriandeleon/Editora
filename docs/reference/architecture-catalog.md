@@ -114,10 +114,13 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   `ConfigSchema.CONNECTIONS`; `ConfigManager.getConnections`/`putConnection`/`removeConnection`/
   `saveConnections`/`loadConnections`). **`RemoteFileSystems`** (UI-owned, the `GitService` idiom: a daemon
   executor + `Platform.runLater`) holds one `SftpFileSystem` per `user@host:port`, `connect(conn, secret,
-  cb)` (auth precedence **default `~/.ssh` keys → key file → password**; the secret `char[]` is wiped after
-  use, and the password is removed from the SSH session the instant the handshake finishes —
-  `RemoteFileSystems.authenticate`'s `finally` — so MINA's String-only `addPasswordIdentity` copy isn't
-  retained on the session for the whole connection), `pathFor(SftpUri)`/`disconnect`/`shutdown`, and **registers itself in the `Vfs` provider registry** so remote URIs in
+  cb)` (one method per connection, no fall-through between them: `DEFAULT_KEYS` ("Automatic") uses
+  `~/.ssh/config`'s IdentityFile keys then the default `~/.ssh` keys, `KEY` that file, `PASSWORD` no keys;
+  passwords, passphrases and keyboard-interactive questions are asked during the login — see
+  `docs/subsystems/remote.md`, "Logging in"; the optional secret `char[]` is wiped after use, and the password
+  is removed from the SSH session the instant the handshake finishes — `RemoteFileSystems.authenticate`'s
+  `finally` — so MINA's String-only `addPasswordIdentity` copy isn't retained on the session for the whole
+  connection), `pathFor(SftpUri)`/`disconnect`/`shutdown`, and **registers itself in the `Vfs` provider registry** so remote URIs in
   recent-files reconstruct to live Paths. **Multi-window (#436):** `RemoteFileSystems` is per-window but `Vfs`'s remote hooks are `static`, so they're a **registry of `Vfs.RemoteProvider`s (one per window)**, not a single slot — `Vfs.registerRemoteProvider(this)` in the ctor, `unregisterRemoteProvider(this)` in `shutdown`. `RemoteFileSystems implements Vfs.RemoteProvider`: `resolve(uri)` returns a live Path only for an authority it has connected (`pathFor` → `byAuthority.get(authority)`, else null), and `storable(path)` returns an `sftp://` string only for a Path whose `FileSystem` it owns (else null). `Vfs.parseStorable` tries each provider until one resolves (first non-null wins); `Vfs.toStorableString` dispatches to the provider owning the path's `FileSystem`. So a second window connecting to another host no longer clobbers the first's resolution, and closing one window only removes *its* provider — the others' remote paths keep resolving. **Local-only gating** (all inert for local files, so zero
   behavior change): `MainController.isLocalBuffer` + `Vfs.isLocal` guards on LSP (`syncBufferLsp`
   eligibility), DAP/breakpoints (`isDebuggableBuffer`), run/shell-run/HTTP (`addBuffer`), git
