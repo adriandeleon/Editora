@@ -195,7 +195,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tools in WSL (Windows).** A project inside a WSL distribution, opened as `\\wsl.localhost\Ubuntu\…`, can
   have its git, builds, tests, language servers and debuggers run inside that distribution with its own Linux
   tools, instead of Windows ones reading the files across the share. Editora asks once per distribution;
-  Containers: Run This Project's Tools Here goes back.
+  Containers: Run This Project's Tools Here goes back. Changes made outside Editora (a `git pull` or a build
+  in the distribution) now reach the Project tree, Git and the language servers: Windows cannot watch the
+  share, so Editora watches the folder inside the distribution (with `inotifywait` when `inotify-tools` is
+  installed, else by checking every few seconds).
 - **Programs left in a container by a crash are stopped.** A language server, debugger, build or run that
   Editora started in a container kept running there if Editora was killed, since ending Editora's side of the
   connection does not end it. The next launch now stops it, after checking it is still the same process. WSL

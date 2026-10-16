@@ -131,8 +131,13 @@ prefix without I/O and keeps one target per distribution. `ContainerCoordinator`
 (`wsl:<distro>`, kept with the hosts' answers) when such a project opens; Containers: Run This Project's Tools
 Here withdraws the answer. The cache folder and the home are the distribution's (`~/.cache/editora`).
 The `Remote probe` workflow's `wsl` job runs `WslProbeTest` on `windows-latest` against a WSL 1 Ubuntu
-(`-Dwsl.probe=<distro>`; hosted runners cannot run WSL 2). Not yet: watching a `\\wsl$` folder for outside
-changes is this machine's watcher, untested there.
+(`-Dwsl.probe=<distro>`; hosted runners cannot run WSL 2). Outside changes: Windows cannot watch the share
+at all (registering a watch on `\\wsl.localhost` fails with "Incorrect function", which the panel used to
+swallow, so a WSL project saw no outside change), so a WSL target says `localWatchSeesChanges()` false and a
+WSL project whose tools run in the distribution is watched there, as an SSH host's folder is
+(`ProjectPanel.watchedOnTarget`, `RemoteWatcher`); with its tools here again it goes back to this machine's
+watcher. `WslWatchProbeTest` shows a change made inside and a file written from Windows through the share both
+reported, with `inotifywait` and with the poll.
 
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
@@ -273,7 +278,11 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   what changed, language servers get `didChangeWatchedFiles`, Git and build markers refresh, and the active
   tab, if it is a reported remote file, gets the "changed on disk" check it does not get on every focus. The
   watch starts and stops with the root and with what the host may run (`ProjectPanel.refreshRemoteWatch`).
-  Only the polling fallback is covered by tests here (no `inotifywait` on the build machine).
+  The same watch serves a local folder whose target says this machine's watcher is not told of its changes
+  (`ExecTarget.localWatchSeesChanges`: a WSL distribution's), with the target's names mapped back
+  (`ExecTarget.toPath`). The poll's `find` takes `-H`, so a root that is a symlink is walked. Only the
+  polling fallback is covered by tests here (no `inotifywait` on the build machine); `inotifywait` is covered
+  by the WSL probe.
 - **Language servers:** a remote file is served by a language server on its host
   (`LanguageServerSession.start`: long-lived, the host's PATH and locale, no `processId`, since this machine's
   pid means nothing there). Documents are keyed by their `sftp://` URI inside `LspManager` and sent as the
