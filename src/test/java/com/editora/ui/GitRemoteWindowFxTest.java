@@ -130,4 +130,64 @@ class GitRemoteWindowFxTest {
             assertEquals(before, sftp.commands().size(), "nothing was run on the host");
         }
     }
+
+    /**
+     * "Fetch automatically" in a window on a remote repository: the timer fetches it on the host, once the
+     * folder is trusted, and origin/main moves there.
+     */
+    @Test
+    void fetchAutomaticallyFetchesARemoteRepositoryOnItsHost(@TempDir Path dir) throws Exception {
+        ExecTargets.setRemoteEnabled(() -> true);
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.startWithShell(dir));
+            Path repo = repository(sftp);
+            Path bare = sftp.serverPath("origin.git");
+            git(sftp.serverPath(""), "clone", "-q", "--bare", repo.toString(), bare.toString());
+            git(repo, "remote", "add", "origin", bare.toString());
+            git(repo, "fetch", "-q", "origin");
+            Path other = sftp.serverPath("elsewhere");
+            git(sftp.serverPath(""), "clone", "-q", bare.toString(), other.toString());
+            git(other, "config", "user.email", "bo@example.com");
+            git(other, "config", "user.name", "Bo");
+            git(other, "config", "commit.gpgsign", "false");
+            git(other, "commit", "-q", "--allow-empty", "-m", "second");
+            git(other, "push", "-q", "origin", "main");
+            String second = ProcessRunner.run(other, Duration.ofSeconds(30), List.of("git", "rev-parse", "HEAD"))
+                    .out()
+                    .strip();
+
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            fx.shared.getSettings().setGitSupport(true);
+            open(async, fx, sftp.remotePath("app/a.txt"));
+            GitFeatureFx w = GitFeatureFx.attach(fx);
+            Path remoteRoot = sftp.remotePath("app");
+            Path root = null;
+            for (int i = 0; i < 400 && root == null; i++) {
+                if (i % 100 == 0) {
+                    FxTestSupport.runOnFx(w.git::refresh); // a newer request drops the answer of the one before
+                }
+                Thread.sleep(50);
+                root = FxTestSupport.callOnFx(w.git::repoRoot);
+            }
+            assertEquals(remoteRoot, root, "the remote repository");
+            GitAutoFetch autoFetch = w.git.autoFetch();
+            FxTestSupport.runOnFx(() -> {
+                autoFetch.setTrust(remoteRoot::equals);
+                autoFetch.setRecentlyActiveForTest(() -> true);
+                fx.shared.getSettings().setGitAutoFetch(true);
+                autoFetch.setPeriodForTest(javafx.util.Duration.millis(200));
+            });
+
+            String fetched = "";
+            for (int i = 0; i < 300 && !second.equals(fetched); i++) {
+                Thread.sleep(100);
+                fetched = ProcessRunner.run(repo, Duration.ofSeconds(30), List.of("git", "rev-parse", "origin/main"))
+                        .out()
+                        .strip();
+            }
+            FxTestSupport.runOnFx(autoFetch::stop);
+            assertEquals(second, fetched, "origin/main fetched on the host");
+            assertTrue(FxTestSupport.callOnFx(autoFetch::runsForTest) > 0);
+        }
+    }
 }

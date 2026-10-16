@@ -361,6 +361,33 @@ class RealSshdProbeFxTest {
             return null;
         });
 
+        step("fetch automatically on the host (a new commit reaches the clone's origin/main)", () -> {
+            Path clone = work.resolve("cloned app");
+            if (!Files.isDirectory(clone)) {
+                return "SKIP — no clone from the step before";
+            }
+            ProcessRunner.Result commit = ProcessRunner.run(
+                    app,
+                    Duration.ofSeconds(30),
+                    List.of(
+                            "sh",
+                            "-c",
+                            "git -c user.name=p -c user.email=p@x commit -q --allow-empty -m second"
+                                    + " && git rev-parse HEAD"));
+            check(commit.ok(), "a second commit: " + commit.err());
+            com.editora.git.GitService git = new com.editora.git.GitService();
+            CompletableFuture<ProcessRunner.Result> fetched = new CompletableFuture<>();
+            onFx(() -> git.autoFetch(clone, fetched::complete));
+            ProcessRunner.Result r = fetched.get(120, TimeUnit.SECONDS);
+            check(r != null && r.ok(), "fetched: " + (r == null ? "not run" : r.message()));
+            ProcessRunner.Result origin =
+                    ProcessRunner.run(clone, Duration.ofSeconds(30), List.of("git", "rev-parse", "origin/HEAD"));
+            check(
+                    origin.out().strip().equals(commit.out().strip()),
+                    "origin moved to " + commit.out().strip() + ": " + origin.out() + origin.err());
+            return null;
+        });
+
         step("ripgrep lists and searches on the host", () -> {
             Files.writeString(app.resolve("needle.txt"), "a needle here\n");
             if (!RemoteFiles.hasRipgrep(app)) {

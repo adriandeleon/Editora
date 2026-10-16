@@ -2362,6 +2362,10 @@ public final class GitService {
      * mode ({@link GitSafety#autoFetchEnv}) — and stopped the moment the user starts a network command of
      * their own. It does not run at all while one is running or queued.
      *
+     * <p>A repository on a remote host is fetched by the host's git, from the host, as the user's own fetch
+     * is: the same batch-mode environment, and an ssh command the host's login profile exports is left alone
+     * as a local one is ({@link #hostExportsSsh}).
+     *
      * <p>{@code onResult} gets the result on the FX thread, or {@code null} when nothing was run (git missing,
      * the lane busy, the window closing).
      */
@@ -2375,17 +2379,20 @@ public final class GitService {
         boolean queued = submit(networkExec, () -> {
             ProcessRunner.Result result = null;
             try {
-                if (gitAvailable() && isLocal(root) && pendingNetwork.get() == 0 && !cancel.cancelled()) {
+                if (gitAvailable(root) && pendingNetwork.get() == 0 && !cancel.cancelled()) {
                     // The user's own ssh command — configured or exported — is left alone; only when there is
                     // none does Editora name one, to put ssh in batch mode.
                     boolean ownSsh = git(root, QUICK, "config", "--get", "core.sshCommand")
                             .ok();
-                    List<String> argv = new ArrayList<>(GIT_CMD);
+                    Map<String, String> inherited = isLocal(root)
+                            ? System.getenv()
+                            : (hostExportsSsh(root) ? Map.of("GIT_SSH_COMMAND", "(the host's)") : Map.of());
+                    List<String> argv = new ArrayList<>(commandFor(root));
                     argv.addAll(GitSafety.BACKGROUND_CONFIG);
                     argv.addAll(GitSafety.AUTO_FETCH_CONFIG);
                     argv.addAll(List.of("fetch", "--prune", "--quiet"));
                     result = ProcessRunner.run(
-                            root, AUTO_FETCH, argv, GitSafety.autoFetchEnv(System.getenv(), ownSsh), cancel);
+                            root, AUTO_FETCH, argv, GitSafety.autoFetchEnv(inherited, ownSsh), cancel);
                 }
             } finally {
                 autoFetchCommand = null;
@@ -2396,6 +2403,17 @@ public final class GitService {
         if (!queued) {
             autoFetchCommand = null;
         }
+    }
+
+    /**
+     * Whether a command on {@code root}'s host sees an exported {@code GIT_SSH_COMMAND} or {@code GIT_SSH}:
+     * what the host's login profile sets reaches every command there, and must not be replaced by Editora's
+     * batch-mode one. Asked of the host, off the FX thread.
+     */
+    private static boolean hostExportsSsh(Path root) {
+        return ProcessRunner.run(
+                        root, QUICK, List.of("sh", "-c", "[ -n \"${GIT_SSH_COMMAND:-}${GIT_SSH:-}\" ]"), READ_ENV)
+                .ok();
     }
 
     // --- the Commit window's reads ---------------------------------------------------------------------
