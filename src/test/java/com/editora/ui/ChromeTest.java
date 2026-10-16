@@ -719,4 +719,12 @@ class ChromeTest {
         assertTrue(Chrome.paletteVisible("localHistory.purgeFile", off));
         assertTrue(Chrome.paletteVisible("view.toggleLocalHistory", off));
     }
+
+    @Test
+    void indentGuidesFollowTheSettingAndHideInZenAndSimpleButNotExpert() {
+        assertTrue(Chrome.indentGuides(true, false, false));
+        assertFalse(Chrome.indentGuides(false, false, false));
+        assertFalse(Chrome.indentGuides(true, true, false), "Zen");
+        assertFalse(Chrome.indentGuides(true, false, true), "Simple");
+    }
 }

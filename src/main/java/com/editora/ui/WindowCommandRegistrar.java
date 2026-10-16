@@ -809,6 +809,19 @@ final class WindowCommandRegistrar {
                         "install.typstCli", () -> host.installCoordinator().installTypstCli()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
+        host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));
+        host.registry().register(Command.of("editor.setLanguageRulers", host.editorSettings()::promptLanguageRulers));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleIndentGuides",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "view.toggleIndentGuides",
+                                        () -> host.config().getSettings().isShowIndentGuides(),
+                                        host.config().getSettings()::setShowIndentGuides,
+                                        () -> host.editorSettings()
+                                                .applyViewSettingsToAllBuffers(
+                                                        host.config().getSettings()))));
         host.registry().register(Command.of("view.toggleToolStripe", host::toggleToolStripe));
         host.registry().register(Command.of("view.maximizeToolWindow", host::toggleMaximizedToolWindow));
         host.registry().register(Command.of("view.closeFocusedToolWindow", () -> {

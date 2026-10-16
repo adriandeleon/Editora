@@ -37,7 +37,6 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -2099,8 +2098,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             recentButton.getItems().add(empty);
             return;
         }
+        RecentFileRow.Columns columns = new RecentFileRow.Columns(); // lines the project pills up
         for (Path path : shown) {
-            recentButton.getItems().add(recentMenuItem(path));
+            recentButton.getItems().add(recentMenuItem(path, columns));
         }
         // "Clear recent files" lives here rather than as its own toolbar icon: as a bare trash can beside
         // the file group it read as "delete this file" and sat a slot away from Save. Inside the dropdown it
@@ -2112,8 +2112,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         recentButton.getItems().add(clear);
     }
 
-    /** A recent-file menu entry: filename label that opens the file, plus an inline ✕ icon to remove it. */
-    private CustomMenuItem recentMenuItem(Path path) {
+    /** A recent-file menu entry: filename label that opens the file, project pill, and an inline remove icon. */
+    private CustomMenuItem recentMenuItem(Path path, RecentFileRow.Columns columns) {
         Label name = new Label(path.getFileName().toString());
         Label projectName = RecentProject.containing(path, config.projects().list())
                 .map(project -> {
@@ -2127,25 +2127,38 @@ public class MainController implements com.editora.mcp.McpBridge {
         removeBtn.getStyleClass().addAll("button-icon", "flat", "recent-remove");
         removeBtn.setFocusTraversable(false);
         removeBtn.setTooltip(new Tooltip(tr("tooltip.removeRecent")));
-        // Remove just this entry (no confirmation) without opening it or closing the menu.
+        // Remove just this entry, after a confirmation, without opening it. The dropdown closes first: a
+        // modal dialog over an open popup would leave the popup stacked above it. Deferred so the dialog's
+        // nested event loop doesn't run inside this mouse press.
         removeBtn.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
-            recentFiles.remove(path);
             e.consume();
+            recentButton.hide();
+            Platform.runLater(() -> confirmRemoveRecent(path));
         });
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox box = new HBox(8, name);
-        if (projectName != null) {
-            box.getChildren().add(projectName);
-        }
-        box.getChildren().addAll(spacer, removeBtn);
-        box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        box.setPrefWidth(220);
+        RecentFileRow row = new RecentFileRow(columns, name, projectName, removeBtn);
 
-        CustomMenuItem item = new CustomMenuItem(box);
+        CustomMenuItem item = new CustomMenuItem(row);
         item.setOnAction(e -> openRecent(path));
-        Tooltip.install(box, new Tooltip(path.toString()));
+        Tooltip.install(row, new Tooltip(path.toString()));
         return item;
+    }
+
+    /** Asks before dropping {@code path} from the recent files; the full path tells same-named files apart. */
+    private void confirmRemoveRecent(Path path) {
+        if (recentFiles == null) {
+            return;
+        }
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION));
+        alert.initOwner(stage);
+        alert.setTitle(tr("dialog.removeRecent.title"));
+        alert.setHeaderText(tr("dialog.removeRecent.header", path.getFileName().toString()));
+        alert.setContentText(path.toString());
+        ButtonType remove = new ButtonType(tr("dialog.removeRecent.remove"));
+        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(remove, cancel);
+        if (alert.showAndWait().filter(b -> b == remove).isPresent()) {
+            recentFiles.remove(path);
+        }
     }
 
     private void setupMruTracking() {

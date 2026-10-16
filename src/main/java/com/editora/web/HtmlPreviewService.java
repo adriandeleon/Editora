@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
 import com.editora.web.Browsers.Browser;
 
@@ -157,7 +158,7 @@ public final class HtmlPreviewService {
 
     /** Launches the browser without waiting (fire-and-forget) so a foreground process can't stall us. */
     private static void launchDetached(List<String> argv) throws IOException {
-        browserProcess(argv).start();
+        BusyExecutable.start(browserProcess(argv));
     }
 
     /** The browser process, before it is started: the user's own locale (a browser forced into {@code

@@ -2492,6 +2492,42 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.editor"));
         Card display = card(p, tr("settings.section.display"));
         checkRow(display, Category.EDITOR, columnRulerCheck, null, "80 column ruler guide margin");
+        // A value that does not read as columns keeps the current ones (textRow shows what was kept).
+        textRow(
+                display,
+                Category.EDITOR,
+                "rulers",
+                "80, 120",
+                st -> com.editora.editor.RulerColumns.format(st.getRulers()),
+                (st, v) -> {
+                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
+                    if (columns != null) {
+                        st.setRulers(columns);
+                    }
+                },
+                "rulers ruler columns column margin line length 80 100 120");
+        textRow(
+                display,
+                Category.EDITOR,
+                "languageRulers",
+                "java: 100; python: 79, 88",
+                st -> com.editora.editor.RulerColumns.formatByLanguage(st.getLanguageRulers()),
+                (st, v) -> {
+                    java.util.Map<String, java.util.List<Integer>> perLanguage =
+                            com.editora.editor.RulerColumns.parseByLanguage(v);
+                    if (perLanguage != null) {
+                        st.setLanguageRulers(perLanguage);
+                    }
+                },
+                "rulers per language ruler columns margin line length");
+        switchRow(
+                display,
+                Category.EDITOR,
+                "showIndentGuides",
+                true,
+                Settings::isShowIndentGuides,
+                Settings::setShowIndentGuides,
+                "indent guides indentation lines vertical levels");
         checkRow(display, Category.EDITOR, lineHighlightCheck, null, "highlight current line caret");
         checkRow(display, Category.EDITOR, lineNumbersCheck, null, "line numbers gutter");
         checkRow(display, Category.EDITOR, minimapCheck, null, "minimap overview");

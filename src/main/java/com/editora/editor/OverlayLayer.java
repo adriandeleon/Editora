@@ -10,6 +10,7 @@ import javafx.scene.Node;
  */
 final class OverlayLayer {
     static final int TEXT = 0;
+    static final int INDENT_GUIDE = 5;
     static final int NOTE = 10;
     static final int SNIPPET = 20;
     static final int SEARCH = 30;

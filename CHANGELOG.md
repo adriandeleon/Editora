@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Each command takes the register's name as the next key; Escape cancels. A saved position follows edits
   to its file while the file is open. `Edit: List Registers` shows them all. Registers last for the
   session, one set per window, and every command is also in the palette.
+- **Several rulers, rulers per language, and indent guides.** Settings → Editor now takes a list of ruler
+  columns (`80, 120`) and, per language, lists that replace it (`java: 100; python: 79, 88`; a language with
+  nothing after its colon has no rulers). The palette has `Editor: Set Rulers…` and `Editor: Set Rulers for
+  This Language…`. An `.editorconfig` `max_line_length` still sets the first ruler, and `off` still hides them.
+  **Indent guides** — faint vertical lines at each indentation level, carried through blank lines — are on by
+  default. Turn them off with `View: Toggle Indent Guides` or in Settings → Editor. They are hidden in Zen and
+  Simple UI and in large-file mode, follow the theme, and skip folded lines. The ruler toggle is now
+  `View: Toggle Rulers`.
 - **Line commands, at every cursor.**
   - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
     the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
@@ -234,6 +242,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Recent Files dropdown fits its names and asks before removing one.** The dropdown is as wide as the
+  longest file name, up to a limit, so names are no longer cut short. The project labels line up in one
+  column. Clicking a row's trash icon now asks before removing that file from the list, and the question
+  shows the full path, so two files with the same name are easy to tell apart.
 - **HTTP Client: what a request sends is closer to the JetBrains format.** Lines starting with `#` or `//`
   inside a request body are comments and are no longer sent (shell or Markdown bodies that need such lines can
   go in a `< ./file`). Directives (`# @no-redirect`, `# @timeout`) count only above the request line, and
@@ -334,6 +346,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
   long method signatures such as `Files.find(…)` or `Map.merge(…)` are no longer cut off. It still sizes itself to
   the widest row, so short lists stay narrow.
+- **A program written a moment ago no longer fails to start with "Text file busy".** On Linux, running a script
+  you had just saved could fail when Editora happened to be starting another process while the file was being
+  written. The Run tool window then showed `error: 26 (Text file busy)`, and the Doctor and the tool checks
+  reported such a program as not installed. The same could stop a build through a wrapper script that had just
+  changed (`./gradlew`, `./mvnw`), or a language server, debug adapter or AI agent that had just been installed.
+  Editora now waits briefly and tries again.
 - **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
   whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
   to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and

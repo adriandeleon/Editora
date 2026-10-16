@@ -76,6 +76,14 @@ final class Chrome {
         return on && !zen;
     }
 
+    /**
+     * Indent guides belong to the editor view, so Expert keeps them like the ruler; Zen hides them, and so does
+     * Simple UI mode, which strips the editor down to the text.
+     */
+    static boolean indentGuides(boolean show, boolean zen, boolean simple) {
+        return show && !zen && !simple;
+    }
+
     static boolean whitespace(boolean show, boolean focusMode) {
         return show && !focusMode;
     }

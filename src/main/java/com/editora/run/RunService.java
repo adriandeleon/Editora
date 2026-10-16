@@ -280,7 +280,7 @@ public final class RunService {
         try {
             process = remote
                     ? startRemote(workingDir, command, env)
-                    : processBuilder(workingDir, command, env).start();
+                    : com.editora.process.BusyExecutable.start(processBuilder(workingDir, command, env));
             // Track it: the JVM shutdown hook + the orphan reaper only know about tracked processes, so an
             // untracked long-lived program (a dev server) outlived the app and wasn't reaped on the next launch.
             com.editora.process.ProcessRegistry.track(process);

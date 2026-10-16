@@ -47,8 +47,8 @@ class ColumnRulerPlacementFxTest {
 
     private double rulerX(EditorBuffer b) throws Exception {
         e.pulses(30);
-        Line ruler = FxTestSupport.field(b, "columnRuler");
-        return FxTestSupport.callOnFx(() -> ruler.isVisible() ? ruler.getStartX() : -1);
+        javafx.scene.Group ruler = FxTestSupport.field(b, "columnRuler");
+        return FxTestSupport.callOnFx(() -> firstShownX(ruler));
     }
 
     /** Root-local left edge of the character at {@code column} of {@code line}. */
@@ -110,5 +110,18 @@ class ColumnRulerPlacementFxTest {
         EditorBuffer b = e.open("cjk.txt", "日本語のテキストがここにあります。これは長い行です。\n" + EIGHTY);
         assertEquals(charX(b, 1, 80), rulerX(b), 1.5);
         shot("ruler-cjk");
+    }
+
+    /** The x of the first ruler line shown, or -1 when none is. */
+    private static double firstShownX(javafx.scene.Group ruler) {
+        if (!ruler.isVisible()) {
+            return -1;
+        }
+        for (javafx.scene.Node n : ruler.getChildren()) {
+            if (n instanceof Line line && line.isVisible()) {
+                return line.getStartX();
+            }
+        }
+        return -1;
     }
 }
