@@ -19,6 +19,7 @@ import org.junit.jupiter.api.TestInstance;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Search Everywhere end to end through the real window: the command opens it, typing produces results
@@ -47,6 +48,34 @@ class SearchEverywhereFxTest {
     // Runnable lambdas runOnFx takes — which cannot throw a checked exception.
     private SearchEverywherePopup popup() {
         return FxTestSupport.field(FxTestSupport.field(fx.controller, "chrome"), "searchEverywherePopup");
+    }
+
+    private javafx.scene.control.TextField queryField() {
+        return FxTestSupport.field(popup(), "input");
+    }
+
+    /**
+     * Polls {@code condition} on the FX thread until it holds. After ten seconds it fails, naming {@code what}
+     * and adding {@code detail} (read on the FX thread then) so a failure on a CI runner says what it found.
+     */
+    private static void awaitFx(
+            String what, java.util.function.BooleanSupplier condition, java.util.function.Supplier<String> detail)
+            throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!FxTestSupport.callOnFx(condition::getAsBoolean)) {
+            if (System.nanoTime() >= deadline) {
+                fail("timed out waiting for " + what + " (" + FxTestSupport.callOnFx(detail::get) + ")");
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    /** The node with the keyboard focus in the window's scene, for a failure message. */
+    private String focusOwner() {
+        javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
+        javafx.scene.Node owner = stage.getScene().getFocusOwner();
+        return "window focused: " + stage.isFocused() + ", focus owner: "
+                + (owner == null ? "none" : owner.getClass().getSimpleName() + owner.getStyleClass());
     }
 
     private void hide() {
@@ -123,18 +152,25 @@ class SearchEverywhereFxTest {
                 robot.keyRelease(KeyCode.SHIFT);
                 robot.keyRelease(KeyCode.COMMAND);
             });
-            FxTestSupport.runOnFx(() -> {});
-            assertTrue(popup().isShown(), "Cmd-Shift-E must reach Search Everywhere with the Emacs keymap on macOS");
+            // The popup focuses its field in a later FX task (OverlayHost runs onShown through runLater), and on
+            // macOS the robot's events may land after one round trip too. Wait for each step, as a user sees the
+            // popup before typing, instead of assuming a single round trip is enough.
+            awaitFx(
+                    "Cmd-Shift-E to open Search Everywhere with the Emacs keymap on macOS",
+                    () -> popup().isShown(),
+                    this::focusOwner);
+            awaitFx("the query field to have the focus", () -> queryField().isFocused(), this::focusOwner);
             FxTestSupport.runOnFxUnchecked(() -> {
                 Robot robot = new Robot();
                 robot.keyPress(KeyCode.U);
                 robot.keyRelease(KeyCode.U);
             });
-            FxTestSupport.runOnFx(() -> {});
-            String query = FxTestSupport.callOnFx(() -> {
-                javafx.scene.control.TextField input = FxTestSupport.field(popup(), "input");
-                return input.getText();
-            });
+            // A swallowed character never arrives, so this still fails then; it only stops racing the delivery.
+            awaitFx(
+                    "the first query character to arrive",
+                    () -> !queryField().getText().isEmpty(),
+                    () -> focusOwner() + ", query: '" + queryField().getText() + "'");
+            String query = FxTestSupport.callOnFx(() -> queryField().getText());
             assertEquals("u", query, "the opening Command chord must not swallow the first query character");
             hide();
         } finally {
