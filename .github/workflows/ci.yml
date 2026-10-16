@@ -8,6 +8,11 @@ on:
   # The release workflow's `bump` job dispatches this on its `chore/reopen-X.Y.Z` branch: a pull request
   # opened with the default GITHUB_TOKEN triggers no `pull_request` run, and master requires these checks.
   workflow_dispatch: {}
+  # The weekly full run on master, the only one with the macOS jobs outside a pull request (see `fx-tests`).
+  # It tests master as merged, which no pull request does: two that each pass on macOS can still break it
+  # together. Monday 05:23 UTC, off the hour, when GitHub's scheduled runs crowd in and are delayed.
+  schedule:
+    - cron: '23 5 * * 1'
 
 # Nothing here writes to the repository. Every action is pinned to a full commit SHA with its version in a
 # trailing comment (Dependabot keeps both current, see .github/dependabot.yml), and no checkout leaves the
@@ -23,8 +28,11 @@ permissions:
 # 15 October 2026: GitHub keeps at most one run *waiting* in a group, so with cancel-in-progress off a merge
 # landing behind another cancelled the run still waiting before it, and 13 of 60 merge commits had no CI run.
 # The release preflight requires the checks to have passed on the tagged commit.
+#
+# The weekly run has a group of its own too: in its commit's group, it could arrive while that merge's own run
+# was still waiting there, and cancel it.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}${{ github.event_name == 'schedule' && '-weekly' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -248,12 +256,12 @@ jobs:
     # (12-13 October 2026). It stays visible without failing the run until it holds green; delete this line
     # then. A macOS failure fails the run.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
-    # macOS on pull requests only (see `fx-tests` below for why); Windows on every run. A job's `if` cannot see
-    # its matrix, so the list itself depends on the event.
+    # macOS on pull requests and the weekly run only (see `fx-tests` below for why); Windows on every run. A
+    # job's `if` cannot see its matrix, so the list itself depends on the event.
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest", "macos-15"]') || fromJSON('["windows-latest"]') }}
+        os: ${{ (github.event_name == 'pull_request' || github.event_name == 'schedule') && fromJSON('["windows-latest", "macos-15"]') || fromJSON('["windows-latest"]') }}
 
     steps:
       - name: Check out repository
@@ -321,13 +329,15 @@ jobs:
   # The macOS jobs run on pull requests only, not again on master after the merge: the change was tested on
   # macOS in its pull request. Running them twice, with several merges an hour, kept 29 macOS jobs waiting
   # for the five runners on 16 October 2026, and the account's 20 concurrent jobs then held back the Linux
-  # shards behind the required check too.
+  # shards behind the required check too. The weekly scheduled run covers master as merged instead. There the
+  # job is not advisory: a failure turns the run red, or nobody would see it, and GitHub mails it to whoever
+  # last changed the cron line.
   fx-tests:
     name: FX tests (macos-15, shard ${{ matrix.shard }} of 3)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: macos-15
     timeout-minutes: 30
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name != 'schedule' }}
     strategy:
       fail-fast: false
       matrix:
