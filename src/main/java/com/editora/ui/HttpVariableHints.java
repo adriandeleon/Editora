@@ -92,7 +92,7 @@ final class HttpVariableHints {
             try {
                 ctx = context(env, envDir, dir);
                 marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
-            } catch (RuntimeException unexpected) {
+            } catch (Throwable unexpected) { // also an Error (a StackOverflowError on a pathological file)
                 // Never leave the previous marks standing as if they were current: clear them instead (the
                 // completion keeps the context, if that much was read).
                 java.util.logging.Logger.getLogger(HttpVariableHints.class.getName())

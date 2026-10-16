@@ -100,4 +100,26 @@ class HttpCompletionsTest {
         List<String> rows = inserts(HttpCompletions.offer("GET {{\n", 0, "GET {{$dot", "", ctx));
         assertEquals(List.of("$dotenv API_KEY}}"), rows);
     }
+
+    @Test
+    void anEscapedBraceOffersNothing() {
+        assertNull(HttpCompletions.offer("GET \\{{\n", 0, "GET \\{{", "", ENV), "\\{{ is a literal {{");
+        assertNull(HttpCompletions.offer("GET \\{{ho\n", 0, "GET \\{{ho", "", ENV));
+    }
+
+    @Test
+    void aDotenvLinkedOutOfTheFolderListsNoKeys(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp)
+            throws Exception {
+        java.nio.file.Path outside = java.nio.file.Files.createDirectories(tmp.resolve("home"));
+        java.nio.file.Files.writeString(outside.resolve("credentials"), "AWS_SECRET_ACCESS_KEY=fake\n");
+        java.nio.file.Path repo = java.nio.file.Files.createDirectories(tmp.resolve("repo"));
+        try {
+            java.nio.file.Files.createSymbolicLink(repo.resolve(".env"), outside.resolve("credentials"));
+        } catch (UnsupportedOperationException | java.io.IOException noLinks) {
+            org.junit.jupiter.api.Assumptions.abort("no symbolic links here");
+        }
+        HttpVariableIndex.Context ctx = new HttpVariableIndex.Context(Map.of(), repo);
+        assertEquals(java.util.Set.of(), ctx.dotenvKeys());
+        assertNull(HttpCompletions.offer("GET {{\n", 0, "GET {{$dotenv", "", ctx));
+    }
 }

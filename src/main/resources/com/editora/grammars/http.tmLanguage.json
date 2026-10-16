@@ -41,12 +41,21 @@
       }
     },
     "variable": {
-      "match": "(\\{\\{)([^{}]*)(\\}\\})",
-      "name": "constant.other.placeholder.http",
-      "captures": {
-        "1": { "name": "punctuation.definition.variable.begin.http" },
-        "3": { "name": "punctuation.definition.variable.end.http" }
-      }
+      "comment": "\\{{ is the escape for a literal {{ (sent as {{, never resolved): it is not a variable, so it comes first.",
+      "patterns": [
+        {
+          "match": "(\\\\)\\{\\{",
+          "captures": { "1": { "name": "keyword.operator.escape.http" } }
+        },
+        {
+          "match": "(\\{\\{)([^{}]*)(\\}\\})",
+          "name": "constant.other.placeholder.http",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.begin.http" },
+            "3": { "name": "punctuation.definition.variable.end.http" }
+          }
+        }
+      ]
     },
     "pre-request-script": {
       "patterns": [

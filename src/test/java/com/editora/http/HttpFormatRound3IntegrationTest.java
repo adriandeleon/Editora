@@ -142,6 +142,13 @@ class HttpFormatRound3IntegrationTest {
     }
 
     @Test
+    void anEscapedBraceInABodyFilePathIsALiteralBrace(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("lit-{{x}}.json"), "{\"literal\":true}");
+        run("POST " + host() + "/lit\nContent-Type: application/json\n\n< ./lit-\\{{x}}.json\n", Map.of(), dir);
+        assertEquals(List.of("POST /lit type=application/json body={\"literal\":true}"), seen);
+    }
+
+    @Test
     void aBodyFilePathThatResolvesOutsideTheFolderIsRefused(@TempDir Path dir) throws Exception {
         HttpExchange ex = run("@up = ..\nPOST " + host() + "/x\n\n< ./{{up}}/secret.txt\n", Map.of(), dir);
         assertEquals(List.of(), seen);

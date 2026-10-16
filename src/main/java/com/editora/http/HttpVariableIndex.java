@@ -1,6 +1,5 @@
 package com.editora.http;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -56,19 +55,14 @@ public final class HttpVariableIndex {
             this(environment, dotenvDir, readDotenvKeys(dotenvDir), Map.of(), List.of());
         }
 
-        /** The keys of the {@code .env} file in {@code dir} (for {@code $dotenv} completion), or none. */
+        /**
+         * The keys of the {@code .env} file in {@code dir} (for {@code $dotenv} completion), or none — read through
+         * {@link DynamicVars#dotenvValues}, the run's own reader, so a {@code .env} the run refuses (a link out of the
+         * folder, not a regular file, too large) lists no keys either.
+         */
         public static Set<String> readDotenvKeys(Path dir) {
-            if (dir == null) {
-                return Set.of();
-            }
-            try {
-                Path env = dir.resolve(".env");
-                return Files.isRegularFile(env) && Files.size(env) <= 1_000_000
-                        ? new TreeSet<>(DotEnv.parse(Files.readString(env)).keySet())
-                        : Set.of();
-            } catch (Exception e) {
-                return Set.of();
-            }
+            Map<String, String> values = dir == null ? null : DynamicVars.dotenvValues(dir);
+            return values == null ? Set.of() : new TreeSet<>(values.keySet());
         }
     }
 

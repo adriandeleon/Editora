@@ -38,6 +38,9 @@ final class HttpCompletions {
         if (open < 0 || before.indexOf("}}", open) >= 0) {
             return null;
         }
+        if (open > 0 && before.charAt(open - 1) == '\\') {
+            return null; // "\{{" is the escape for a literal {{: no variable is being typed
+        }
         int start = open + 2;
         while (start < before.length() && before.charAt(start) == ' ') {
             start++;
