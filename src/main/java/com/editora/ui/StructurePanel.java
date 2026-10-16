@@ -1138,6 +1138,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             stack.push(node);
         }
+        if (rootNodes.isEmpty() && haveSymbols) {
+            // Regions, but none headed by a symbol — say only `# region` markers in a language whose blocks
+            // do not fold: the symbols are still the structure (one marker used to empty the outline).
+            return symbolNodes(area, symbolByLine, paras);
+        }
         return rootNodes;
     }
 

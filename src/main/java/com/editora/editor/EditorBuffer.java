@@ -294,17 +294,14 @@ public class EditorBuffer implements TabContent {
     private Boolean writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
 
     /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
-     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
-     *  so {@code editor} stays decoupled from {@code install}/{@code ui}. */
-    private HBox installBar;
+     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. */
+    private NoticeBar installBar;
 
-    private Label installMessageLabel;
-    private Button installActionButton;
-    private Button installDismissButton;
-    private javafx.scene.control.ProgressIndicator installProgress;
-    private Runnable onInstallAction;
-    private Runnable onInstallDismiss;
     private boolean installBarShown;
+    /** A notice about the file itself (a shell script's CRLF/BOM), above the install banner; null until used. */
+    private NoticeBar fileNotice;
+
+    private boolean fileNoticeShown;
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
@@ -7987,8 +7984,11 @@ public class EditorBuffer implements TabContent {
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
     private void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
+        if (fileNoticeShown && fileNotice != null) {
+            bars.add(fileNotice.node());
+        }
         if (installBarShown && installBar != null) {
-            bars.add(installBar);
+            bars.add(installBar.node());
         }
         if (viewModeBarVisible && viewModeBar != null) {
             bars.add(viewModeBar);
@@ -8011,12 +8011,9 @@ public class EditorBuffer implements TabContent {
      */
     public void setInstallPrompt(String message, String actionLabel, Runnable onInstall, Runnable onDismiss) {
         if (installBar == null) {
-            buildInstallBar();
+            installBar = new NoticeBar(tr("install.banner.dismiss"), "lsp-install-bar");
         }
-        installMessageLabel.setText(message);
-        installActionButton.setText(actionLabel);
-        this.onInstallAction = onInstall;
-        this.onInstallDismiss = onDismiss;
+        installBar.set(message, actionLabel, onInstall, onDismiss);
     }
 
     /** Shows or hides the install banner (no-op visual until {@link #setInstallPrompt} has set content). */
@@ -8031,44 +8028,27 @@ public class EditorBuffer implements TabContent {
 
     /** Reflects an in-progress install: spins the indicator + disables the buttons. */
     public void setInstallBarBusy(boolean busy) {
-        if (installBar == null) {
-            return;
+        if (installBar != null) {
+            installBar.setBusy(busy);
         }
-        installActionButton.setDisable(busy);
-        installDismissButton.setDisable(busy);
-        installProgress.setVisible(busy);
-        installProgress.setManaged(busy);
     }
 
-    private void buildInstallBar() {
-        installMessageLabel = new Label();
-        installMessageLabel.getStyleClass().add("lsp-install-title");
-        installMessageLabel.setWrapText(true);
-        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        installProgress = new javafx.scene.control.ProgressIndicator();
-        installProgress.setPrefSize(16, 16);
-        installProgress.setVisible(false);
-        installProgress.setManaged(false);
-        installActionButton = new Button();
-        installActionButton.getStyleClass().add("accent");
-        installActionButton.setOnAction(e -> {
-            if (onInstallAction != null) {
-                onInstallAction.run();
-            }
-        });
-        installDismissButton = new Button(tr("install.banner.dismiss"));
-        installDismissButton.getStyleClass().add("lsp-install-dismiss");
-        installDismissButton.setOnAction(e -> {
-            if (onInstallDismiss != null) {
-                onInstallDismiss.run();
-            }
-        });
-        HBox bar =
-                new HBox(10, installMessageLabel, spacer, installProgress, installActionButton, installDismissButton);
-        bar.getStyleClass().add("lsp-install-bar");
-        bar.setAlignment(Pos.CENTER_LEFT);
-        installBar = bar;
+    /** Shows a notice about the file above the editor, with one action; dismissing it only hides it. */
+    public void showFileNotice(String message, String actionLabel, String dismissLabel, Runnable onAction) {
+        fileNotice = new NoticeBar(dismissLabel, "lsp-install-bar", "file-notice-bar");
+        fileNotice.set(message, actionLabel, onAction, this::hideFileNotice);
+        fileNoticeShown = true;
+        refreshTopBars();
+    }
+
+    public void hideFileNotice() {
+        fileNoticeShown = false;
+        refreshTopBars();
+    }
+
+    /** The file notice's message while it is shown, else null. */
+    public String fileNoticeText() {
+        return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
     }
 
     private HBox buildViewModeBar() {
@@ -8670,7 +8650,8 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = IndentWindow.closerAlignIndent(style, IndentKeys.doc(a), caret, tabSize, currentIndent, c);
+        String aligned = IndentWindow.closerAlignIndent(
+                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit());
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent

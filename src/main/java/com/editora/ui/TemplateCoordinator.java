@@ -187,7 +187,7 @@ final class TemplateCoordinator {
         }
         NewFileContent.Rendered rendered = NewFileContent.render(type, plan.baseName(), plan.packageName());
         try {
-            TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), editorConfigFor(target)));
+            TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), editorConfigFor(target), target));
         } catch (IOException e) {
             host.setError(tr("status.newfile.failed", e.getMessage()));
             return;

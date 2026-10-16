@@ -1088,8 +1088,10 @@ final class EditorSettingsCoordinator {
 
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
     void applyResolvedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
-        com.editora.editorconfig.EditorConfigProperties p =
-                properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties;
+        // A shell script keeps LF and no BOM whatever a broad [*] section says: bash cannot run it otherwise.
+        com.editora.editorconfig.EditorConfigProperties p = com.editora.editor.ShellScripts.honoured(
+                buffer.getLanguage(),
+                properties == null ? com.editora.editorconfig.EditorConfigProperties.EMPTY : properties);
         buffer.setEditorConfigProps(p);
         applyEffectiveIndent(buffer, p);
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {

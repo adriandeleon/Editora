@@ -281,6 +281,26 @@ class TemplateOutputTest {
     }
 
     @Test
+    void aShellScriptIsWrittenWithLfWhateverEditorConfigSays(@TempDir Path tmp) throws Exception {
+        // B6 (adl's call): with `[*] end_of_line = crlf` the Shell template wrote a script bash cannot run
+        // (`set: pipefail\r: invalid option name`).
+        EditorConfigProperties crlf = new EditorConfigProperties(null, null, null, "crlf", null, null, null, null);
+        String script = "#!/usr/bin/env bash\nset -euo pipefail\n";
+        assertEquals(script, TemplateOutput.finish(script, crlf, tmp.resolve("tool.sh")));
+        assertEquals(script, TemplateOutput.finish(script, crlf, tmp.resolve("bin/release")), "by its #! line");
+        assertEquals("x\r\ny\r\n", TemplateOutput.finish("x\ny", crlf, tmp.resolve("notes.txt")), "others obey");
+        assertEquals(
+                "#!/usr/bin/env python3\r\n",
+                TemplateOutput.finish("#!/usr/bin/env python3\n", crlf, tmp.resolve("tool")),
+                "a non-shell #! obeys too");
+
+        Template sh = new Template("sh", "Sh", "", "", "deploy.sh", "#!/bin/bash\necho hi\n${cursor}", null);
+        Path dir = Files.createDirectories(tmp.resolve("ec"));
+        TemplateOutput.write(TemplateOutput.plan(request(sh, dir, Map.of(), null, path -> crlf)));
+        assertEquals("#!/bin/bash\necho hi\n", Files.readString(dir.resolve("deploy.sh")));
+    }
+
+    @Test
     void theProjectsEditorConfigDecidesLineEndingsAndTheFinalNewline() {
         EditorConfigProperties crlf = new EditorConfigProperties(null, null, null, "crlf", null, true, null, null);
         assertEquals("a\r\n    \r\nb\r\n", TemplateOutput.finish("a\n    \nb", crlf));

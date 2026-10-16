@@ -772,7 +772,7 @@ class EditorInteractionFxTest {
             buffer.setInstallBarBusy(true);
             assertTrue(install.isDisable());
             assertTrue(dismiss.isDisable());
-            ProgressIndicator progress = EditorFx.field(buffer, "installProgress");
+            ProgressIndicator progress = find(bar, ProgressIndicator.class, "progress-indicator");
             assertTrue(progress.isVisible());
             buffer.setInstallBarBusy(false);
             assertFalse(install.isDisable());
