@@ -474,6 +474,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             case VARIABLE, WATCH -> {
                 Text name = new Text(row.name());
                 name.getStyleClass().add("debug-var-name");
+                if (row.kind() == Kind.VARIABLE
+                        && row.value().isEmpty()
+                        && row.ref() > 0
+                        && (row.type() == null || row.type().isBlank())) {
+                    flow.getChildren().add(name); // a group (debugpy's "special variables"), not "name = "
+                    return flow;
+                }
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
                 Text value = new Text(row.value());
