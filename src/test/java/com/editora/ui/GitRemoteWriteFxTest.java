@@ -159,15 +159,67 @@ class GitRemoteWriteFxTest {
         assertEquals("first\n", git(bare, "log", "--format=%s", "main"));
     }
 
+    /**
+     * A clone into a folder on the host is made by the host's git, from the host: the URL is one the host can
+     * reach (here a bare repository on it), and the destination is named as the host names it.
+     */
     @Test
-    void cloningOntoARemoteHostIsNotOfferedYet() throws Exception {
-        Path destination = sftp.remotePath("copy");
-        int before = sftp.commands().size();
+    void cloningOntoARemoteHostIsDoneByTheHostsGit() throws Exception {
+        Path bare = sftp.serverPath("origin.git");
+        git(sftp.serverPath(""), "clone", "-q", "--bare", repo.toString(), bare.toString());
+        // What the clone form does first: resolve the typed folder on the host and create what is above it.
+        CloneDestination target = CloneDestination.prepare(
+                "clones/copy", sftp.remotePath(""), sftp.home().toString());
+        assertTrue(target.ok(), target.errorKey());
 
-        ProcessRunner.Result r = await(cb -> service.clone("https://example.invalid/repo.git", destination, cb));
+        ProcessRunner.Result r = await(cb -> service.clone(bare.toString(), target.path(), cb));
 
-        assertFalse(r.ok());
-        assertEquals("Cloning or creating a repository on a remote host is not available yet", r.err());
-        assertEquals(before, sftp.commands().size(), "nothing was run on the host");
+        assertTrue(r.ok(), r.message());
+        assertEquals("one\ntwo\n", Files.readString(sftp.serverPath("clones/copy/a.txt")));
+        String line = sftp.commands().stream()
+                .filter(c -> c.contains("'clone'"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(line.contains("'" + sftp.serverPath("clones/copy") + "'"), "the host's own path: " + line);
+        assertFalse(line.contains("sftp:"), line);
+    }
+
+    /** {@code ~} in the clone form is the account's home on the host. */
+    @Test
+    void aClonesTildeIsTheHostsHome() throws Exception {
+        CloneDestination target = CloneDestination.resolve("~/src/x", sftp.remotePath("app"), "/home/ana");
+
+        assertTrue(target.ok());
+        assertTrue(com.editora.vfs.Vfs.isRemote(target.path()), "a path on the host: " + target.path());
+        assertEquals("/home/ana/src/x", target.path().toString());
+    }
+
+    @Test
+    void aRepositoryIsCreatedOnTheHost() throws Exception {
+        Files.createDirectories(sftp.serverPath("fresh"));
+        AtomicReference<Path> existing = new AtomicReference<>();
+
+        ProcessRunner.Result r = await(cb -> service.init(sftp.remotePath("fresh"), (result, inside) -> {
+            existing.set(inside);
+            cb.accept(result);
+        }));
+
+        assertTrue(r.ok(), r.message());
+        assertEquals(null, existing.get());
+        assertTrue(Files.isDirectory(sftp.serverPath("fresh/.git")));
+    }
+
+    @Test
+    void aRepositoryInsideAnotherOnTheHostIsRefused() throws Exception {
+        Files.createDirectories(sftp.serverPath("app/sub"));
+        AtomicReference<Path> existing = new AtomicReference<>();
+
+        await(cb -> service.init(sftp.remotePath("app/sub"), (result, inside) -> {
+            existing.set(inside);
+            cb.accept(result);
+        }));
+
+        assertEquals(root, existing.get(), "the enclosing repository on the host");
+        assertFalse(Files.exists(sftp.serverPath("app/sub/.git")));
     }
 }

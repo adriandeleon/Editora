@@ -399,15 +399,13 @@ public final class GitService {
         return known != null && known.endOfOptions();
     }
 
-    /**
-     * Cloning or creating a repository is still only done on this machine: the destination is chosen with a
-     * local folder dialog, and a remote one would need its own. Null for a local {@code dir}.
-     */
-    private static ProcessRunner.Result refusedOnRemote(Path dir) {
-        return isLocal(dir) ? null : new ProcessRunner.Result(-1, "", REMOTE_NOT_YET);
+    /** {@code path} as the git that serves it names it: this machine's absolute path, or the host's. */
+    private static String gitPath(Path path) {
+        Path absolute = path.toAbsolutePath();
+        return isLocal(absolute)
+                ? absolute.toString()
+                : ExecTargets.forPath(absolute).toTargetPath(absolute);
     }
-
-    static final String REMOTE_NOT_YET = "Cloning or creating a repository on a remote host is not available yet";
 
     /**
      * Environment of every background read: lock-free, never prompting, never paging, and never fetching a
@@ -2214,6 +2212,9 @@ public final class GitService {
      * Clones {@code url} into {@code destination} (an absolute target path that must not yet exist; its
      * parent must). Runs off the FX thread with the network timeout — the user's git handles
      * credentials/SSH. Posts the {@link ProcessRunner.Result} on the FX thread.
+     *
+     * <p>A destination on a remote host is cloned by that host's git, from the host: its network, its SSH
+     * keys and credential helpers. Nothing passes through this machine.
      */
     public void clone(String url, Path destination, Consumer<ProcessRunner.Result> onResult) {
         clone(url, destination, CloneOptions.NONE, onResult);
@@ -2223,19 +2224,13 @@ public final class GitService {
     public void clone(String url, Path destination, CloneOptions options, Consumer<ProcessRunner.Result> onResult) {
         submit(networkExec, () -> {
             ProcessRunner.Result r;
-            ProcessRunner.Result remote = refusedOnRemote(destination);
-            if (remote != null) {
-                r = remote;
-            } else if (!gitAvailable()) {
+            Path parent = destination.toAbsolutePath().getParent();
+            if (!gitAvailable(parent)) {
                 r = NOT_INSTALLED;
             } else {
-                Path parent = destination.toAbsolutePath().getParent();
                 r = userCommand(
                         networkCommands,
-                        () -> gitStreamed(
-                                parent,
-                                NETWORK,
-                                cloneArgs(url, destination.toAbsolutePath().toString(), options)));
+                        () -> gitStreamed(parent, NETWORK, cloneArgs(url, gitPath(destination), options)));
             }
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -2257,12 +2252,7 @@ public final class GitService {
     public void init(Path dir, java.util.function.BiConsumer<ProcessRunner.Result, Path> onResult) {
         submit(exec, () -> {
             Path abs = dir.toAbsolutePath();
-            ProcessRunner.Result remote = refusedOnRemote(abs);
-            if (remote != null) {
-                Platform.runLater(() -> onResult.accept(remote, null));
-                return;
-            }
-            if (!gitAvailable()) {
+            if (!gitAvailable(abs)) {
                 Platform.runLater(() -> onResult.accept(NOT_INSTALLED, null));
                 return;
             }

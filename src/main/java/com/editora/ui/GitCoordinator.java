@@ -1894,28 +1894,52 @@ final class GitCoordinator {
                     if (text == null || text.isBlank()) {
                         return;
                     }
-                    Path dir = com.editora.config.PathKeys.resolveUserInput(
-                            text.strip(), suggested, System.getProperty("user.home"));
-                    if (dir == null || !java.nio.file.Files.isDirectory(dir)) {
-                        host.setError(tr("status.gitInit.notAFolder", text.strip()));
+                    if (suggested != null && com.editora.vfs.Vfs.isRemote(suggested)) {
+                        // A folder on the window's host: named as the host names it, ~ its home there, and
+                        // checked over SFTP, off the FX thread.
+                        Thread.ofVirtual().name("git-init-folder").start(() -> {
+                            Path dir;
+                            try {
+                                Path home = com.editora.process.ExecTargets.forPath(suggested)
+                                        .homeDir();
+                                dir = com.editora.config.PathKeys.resolveUserInputOn(
+                                        text.strip(), suggested, home == null ? null : home.toString());
+                                dir = dir != null && java.nio.file.Files.isDirectory(dir) ? dir : null;
+                            } catch (java.io.IOException | RuntimeException e) {
+                                dir = null;
+                            }
+                            Path found = dir;
+                            javafx.application.Platform.runLater(() -> initIn(found, text.strip()));
+                        });
                         return;
                     }
-                    host.setStatus(tr("status.gitInit.initializing", dir.toString()));
-                    // The already-a-repo check lives in the service: answering it runs git rev-parse, which
-                    // must not happen on the FX thread.
-                    service.init(dir, (r, existing) -> {
-                        if (existing != null) {
-                            host.setError(tr("status.gitInit.alreadyRepo", existing.toString()));
-                            return;
-                        }
-                        if (!r.ok()) {
-                            gitError(tr("status.gitInit.failed"), r.message());
-                            return;
-                        }
-                        host.setStatus(tr("status.gitInit.done", dir.toString()));
-                        afterMutation(); // status bar, Commit window, gutter bars all light up
-                    });
+                    Path dir = com.editora.config.PathKeys.resolveUserInput(
+                            text.strip(), suggested, System.getProperty("user.home"));
+                    initIn(dir != null && java.nio.file.Files.isDirectory(dir) ? dir : null, text.strip());
                 });
+    }
+
+    /** Runs {@code git init} in {@code dir}, a folder; null when what was typed ({@code typed}) is not one. */
+    private void initIn(Path dir, String typed) {
+        if (dir == null) {
+            host.setError(tr("status.gitInit.notAFolder", typed));
+            return;
+        }
+        host.setStatus(tr("status.gitInit.initializing", dir.toString()));
+        // The already-a-repo check lives in the service: answering it runs git rev-parse, which must not
+        // happen on the FX thread.
+        service.init(dir, (r, existing) -> {
+            if (existing != null) {
+                host.setError(tr("status.gitInit.alreadyRepo", existing.toString()));
+                return;
+            }
+            if (!r.ok()) {
+                gitError(tr("status.gitInit.failed"), r.message());
+                return;
+            }
+            host.setStatus(tr("status.gitInit.done", dir.toString()));
+            afterMutation(); // status bar, Commit window, gutter bars all light up
+        });
     }
 
     void cloneRepo() {
@@ -1945,14 +1969,34 @@ final class GitCoordinator {
         depthField.setId("clone-depth");
         submodules.setId("clone-submodules");
 
-        String defaultParent = System.getProperty("user.home", "");
+        // In a window on a remote folder the repository is cloned on that host, by its git, next to the open
+        // project: the folder is a path there, and the local folder dialog has nothing to offer.
+        Path project = ops.projectRoot();
+        Path remoteBase = project != null && com.editora.vfs.Vfs.isRemote(project)
+                ? (project.getParent() != null ? project.getParent() : project)
+                : null;
+        String defaultParent = remoteBase != null ? remoteBase.toString() : System.getProperty("user.home", "");
+        Label onHost = new Label(
+                remoteBase == null
+                        ? ""
+                        : tr(
+                                "dialog.clone.onHost",
+                                com.editora.process.ExecTargets.forPath(remoteBase)
+                                        .id()));
+        onHost.getStyleClass().add("dim");
+        onHost.setId("clone-on-host");
+        browse.setVisible(remoteBase == null);
+        browse.setManaged(remoteBase == null);
         boolean[] dirEdited = {false};
         boolean[] autoFilling = {false};
         urlField.textProperty().addListener((o, a, b) -> {
             if (!dirEdited[0]) {
                 String name = repoNameFromUrl(b);
                 autoFilling[0] = true;
-                dirField.setText(suggestedCloneDir(defaultParent, name));
+                dirField.setText(
+                        remoteBase != null
+                                ? suggestedCloneDir(remoteBase, name)
+                                : suggestedCloneDir(defaultParent, name));
                 autoFilling[0] = false;
             }
         });
@@ -1985,6 +2029,9 @@ final class GitCoordinator {
         grid.add(new Label(tr("dialog.clone.depth")), 0, 3);
         grid.add(depthField, 1, 3);
         grid.add(submodules, 1, 4, 2, 1);
+        if (remoteBase != null) {
+            grid.add(onHost, 1, 5, 2, 1);
+        }
         GridPane.setHgrow(urlField, Priority.ALWAYS);
         GridPane.setHgrow(dirField, Priority.ALWAYS);
 
@@ -2008,31 +2055,55 @@ final class GitCoordinator {
                 valid,
                 () -> {
                     String url = urlField.getText().strip();
-                    // Resolved like the folder typed for git.init (~ and relative paths), validated, and
-                    // its missing parent folders created — git creates the target, not what is above it.
-                    CloneDestination target = CloneDestination.prepare(
-                            dirField.getText(), defaultParent.isBlank() ? null : Path.of(defaultParent), defaultParent);
-                    if (!target.ok()) {
-                        host.setError(tr(target.errorKey(), target.shown()));
-                        return;
-                    }
-                    Path destination = target.path();
+                    String typed = dirField.getText();
                     GitService.CloneOptions options = new GitService.CloneOptions(
                             Math.max(0, cloneDepth(depthField.getText())),
                             branchField.getText(),
                             submodules.isSelected());
+                    if (remoteBase == null) {
+                        // Resolved like the folder typed for git.init (~ and relative paths), validated, and
+                        // its missing parent folders created — git creates the target, not what is above it.
+                        startClone(
+                                url,
+                                CloneDestination.prepare(
+                                        typed, defaultParent.isBlank() ? null : Path.of(defaultParent), defaultParent),
+                                options);
+                        return;
+                    }
+                    // On the host the same checks are SFTP round trips, and ~ is the home folder there.
                     host.setStatus(tr("status.cloning", url));
-                    service.clone(url, destination, options, running(new String[] {"clone"}, r -> {
-                        if (r.ok()) {
-                            host.setStatus(tr("status.clonedInto", destination));
-                            openClonedEntry(destination);
-                        } else {
-                            gitError(tr("status.git.cloneFailed"), r.message());
+                    Thread.ofVirtual().name("clone-destination").start(() -> {
+                        CloneDestination target;
+                        try {
+                            Path home = com.editora.process.ExecTargets.forPath(remoteBase)
+                                    .homeDir();
+                            target = CloneDestination.prepare(typed, remoteBase, home == null ? null : home.toString());
+                        } catch (java.io.IOException | RuntimeException e) {
+                            target = new CloneDestination(null, "status.clone.invalidDest", typed.strip());
                         }
-                    }));
+                        CloneDestination prepared = target;
+                        javafx.application.Platform.runLater(() -> startClone(url, prepared, options));
+                    });
                 },
                 null,
                 false);
+    }
+
+    private void startClone(String url, CloneDestination target, GitService.CloneOptions options) {
+        if (!target.ok()) {
+            host.setError(tr(target.errorKey(), target.shown()));
+            return;
+        }
+        Path destination = target.path();
+        host.setStatus(tr("status.cloning", url));
+        service.clone(url, destination, options, running(new String[] {"clone"}, r -> {
+            if (r.ok()) {
+                host.setStatus(tr("status.clonedInto", destination));
+                openClonedEntry(destination);
+            } else {
+                gitError(tr("status.git.cloneFailed"), r.message());
+            }
+        }));
     }
 
     /**
@@ -2068,20 +2139,52 @@ final class GitCoordinator {
         }
     }
 
+    /** {@link #suggestedCloneDir(String, String)} on a folder of a remote host, named as the host names it. */
+    static String suggestedCloneDir(Path parent, String name) {
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        try {
+            return parent.resolve(name).toString();
+        } catch (java.nio.file.InvalidPathException e) {
+            return "";
+        }
+    }
+
     /**
      * Opens a representative file from a freshly cloned repo (its README if present) so Git activates for it —
      * no project involved. If there's no obvious entry file, the clone is just reported and the user can open
      * files from it (File: Open / Find File).
      */
     private void openClonedEntry(Path dir) {
+        if (com.editora.vfs.Vfs.isRemote(dir)) {
+            // Each look is an SFTP round trip: made off the FX thread.
+            Thread.ofVirtual().name("clone-entry").start(() -> {
+                Path entry = clonedEntry(dir);
+                javafx.application.Platform.runLater(() -> openClonedEntry(dir, entry));
+            });
+            return;
+        }
+        openClonedEntry(dir, clonedEntry(dir));
+    }
+
+    private void openClonedEntry(Path dir, Path entry) {
+        if (entry != null) {
+            ops.openPath(entry);
+        } else {
+            host.setStatus(tr("status.clonedOpen", dir));
+        }
+    }
+
+    /** The clone's README, the file it is opened at, or null. */
+    private static Path clonedEntry(Path dir) {
         for (String candidate : new String[] {"README.md", "README.markdown", "README.rst", "README.txt", "README"}) {
             Path file = dir.resolve(candidate);
             if (Files.isRegularFile(file)) {
-                ops.openPath(file);
-                return;
+                return file;
             }
         }
-        host.setStatus(tr("status.clonedOpen", dir));
+        return null;
     }
 
     /**
