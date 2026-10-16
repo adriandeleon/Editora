@@ -599,7 +599,7 @@ public final class ProcessRunner {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-            p = pb.start();
+            p = BusyExecutable.start(pb);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             Process proc = p;
             Thread reader = new Thread(

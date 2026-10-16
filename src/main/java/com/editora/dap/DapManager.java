@@ -23,6 +23,7 @@ import java.util.logging.Logger;
 import javafx.application.Platform;
 
 import com.editora.lsp.LspManager;
+import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
 import com.editora.run.JdkToolchain;
 import com.google.gson.JsonArray;
@@ -404,7 +405,7 @@ public final class DapManager implements DapClient.Host {
             }
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-            Process p = pb.start();
+            Process p = BusyExecutable.start(pb);
             if (!p.waitFor(5, TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 return false;
@@ -1304,7 +1305,7 @@ public final class DapManager implements DapClient.Host {
             prependPythonPath(pb, debugpyDir);
         }
         pb.redirectError(ProcessBuilder.Redirect.DISCARD); // DAP is on stdin/stdout; an undrained PIPE deadlocks
-        Process proc = pb.start();
+        Process proc = BusyExecutable.start(pb);
         String interpExe = cmd.isEmpty() ? null : cmd.get(0);
         attachStdio(
                 proc,
@@ -1400,7 +1401,7 @@ public final class DapManager implements DapClient.Host {
         ProcessRunner.applyUserEnv(pb);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD); // DAP is on the socket; stdout/stderr are logs
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-        Process proc = pb.start();
+        Process proc = BusyExecutable.start(pb);
         String nodeExe = cmd.isEmpty() ? null : cmd.get(0);
         attachSocket(
                 proc, null, port, spec, bps, filters, epoch, DapPaths.LOCAL, file.toString(), cwdOf(file), nodeExe);

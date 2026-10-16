@@ -16,7 +16,7 @@ Treat these as sacred — they run on every keystroke or scroll pulse:
 - typing / editing
 - scrolling
 - syntax highlighting
-- the document overlays (whitespace, minimap, the 80-column ruler, spell-check, search,
+- the document overlays (whitespace, indent guides, minimap, the column rulers, spell-check, search,
   TODO, lint, diagnostics)
 - the line-number gutter
 
@@ -281,7 +281,11 @@ let GPU-backed resources grow with the number of open files:
   A jump in progress ends when its tab is hidden (its labels are drawn for one viewport and its keys must
   not stay owned on a tab the user cannot see).
 - A plain buffer builds only what every buffer uses: the note and spell overlays (both on by default), the
-  minimap and the column ruler (one `Line`). Every other overlay and stripe — whitespace, TODO (overlay and
+  minimap and the column rulers (a `Group` with one `Line` per ruler column, all placed from a single
+  column-0 measure). The indent guides are on by default but still attached lazily, when the settings apply
+  turns them on; their redraw skips every frame whose picture would not change (a frame key of the visible
+  lines' indentation, scroll, document height, size, colour and folds), so typing inside a line costs no
+  layout query. Every other overlay and stripe — whitespace, TODO (overlay and
   stripe, attached with the first non-empty scan result), Markdown lint (overlay and stripe), inline values,
   the LSP diagnostic stripe, search, occurrences, log, Mermaid lint, LSP squiggles, snippets, AceJump — is
   attached on first activation through `attachLazyOverlay` / `attachLazyStripe` at its `EditorBuffer.Layer`,
