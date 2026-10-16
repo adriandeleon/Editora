@@ -148,6 +148,7 @@ class HttpHistoryRound3FxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }

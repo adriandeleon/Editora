@@ -161,6 +161,7 @@ class HttpResponseViewRound3FxTest {
             c.applySupport(); // the ▶ glyphs and the request lines the running ■ is drawn on
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }

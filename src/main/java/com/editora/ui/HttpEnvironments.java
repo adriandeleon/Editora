@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 import com.editora.http.HttpEnv;
-import com.editora.http.HttpFile;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -138,31 +137,6 @@ final class HttpEnvironments {
             }
         }
         return null;
-    }
-
-    /**
-     * {@code request} with {@code problems} (from {@link EnvFiles#problems()}) put first among its warnings, so a run
-     * whose env file could not be read says so above the "was sent as empty text" lines it causes.
-     */
-    static HttpFile.Parsed withProblems(HttpFile.Parsed request, List<String> problems) {
-        if (request == null || problems == null || problems.isEmpty()) {
-            return request;
-        }
-        List<String> warnings = new java.util.ArrayList<>(problems);
-        warnings.addAll(request.warnings());
-        return new HttpFile.Parsed(
-                request.method(),
-                request.url(),
-                request.headers(),
-                request.body(),
-                request.name(),
-                request.bodyRef(),
-                request.redirects(),
-                request.directives(),
-                request.httpVersion(),
-                request.variables(),
-                warnings,
-                request.error());
     }
 
     /** The name to select for a file whose remembered choice is {@code remembered}: it, if still offered; else none. */

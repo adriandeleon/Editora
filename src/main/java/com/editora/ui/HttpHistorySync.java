@@ -13,6 +13,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -73,26 +74,31 @@ final class HttpHistorySync {
     private final CoordinatorHost host;
     private final Supplier<HttpResponseHistory> store;
     private final Function<EditorBuffer, HttpClientPanel> panels;
-    private final Map<EditorBuffer, String> environments;
+    private final Function<EditorBuffer, String> chosenEnvironment;
+    private final BiConsumer<EditorBuffer, String> environmentRestored;
     private final Consumer<EditorBuffer> refreshEnvironments;
     private final Map<EditorBuffer, Tracked> tracked = new IdentityHashMap<>();
 
     /**
      * @param store the window's history store (may answer null: keep nothing)
      * @param panels each buffer's response panel (null when it has none)
-     * @param environments the environment chosen per buffer, which a saved history fills in when there is none
+     * @param chosenEnvironment the environment chosen for a buffer's file, or null when none is known yet
+     * @param environmentRestored told the environment a saved history remembers for a buffer's file (it applies only
+     *     when the file has no choice yet)
      * @param refreshEnvironments re-reads a buffer's environment list after its history (and choice) arrived
      */
     HttpHistorySync(
             CoordinatorHost host,
             Supplier<HttpResponseHistory> store,
             Function<EditorBuffer, HttpClientPanel> panels,
-            Map<EditorBuffer, String> environments,
+            Function<EditorBuffer, String> chosenEnvironment,
+            BiConsumer<EditorBuffer, String> environmentRestored,
             Consumer<EditorBuffer> refreshEnvironments) {
         this.host = host;
         this.store = store;
         this.panels = panels;
-        this.environments = environments;
+        this.chosenEnvironment = chosenEnvironment;
+        this.environmentRestored = environmentRestored;
         this.refreshEnvironments = refreshEnvironments;
     }
 
@@ -127,7 +133,7 @@ final class HttpHistorySync {
                 report(file, stored);
                 t.clearedAt = Math.max(t.clearedAt, stored.clearedAt);
                 if (!stored.file.isEmpty()) {
-                    environments.putIfAbsent(buffer, stored.environment); // a file never saved keeps the old choice
+                    environmentRestored.accept(buffer, stored.environment); // a file never saved keeps the old choice
                 }
                 refreshEnvironments.accept(buffer);
                 take(panel, t, entries);
@@ -203,7 +209,7 @@ final class HttpHistorySync {
                 report(now, found);
                 t.clearedAt = Math.max(t.clearedAt, found.clearedAt);
                 if (!found.file.isEmpty()) {
-                    environments.putIfAbsent(buffer, found.environment);
+                    environmentRestored.accept(buffer, found.environment);
                 }
                 take(panel, t, older);
                 refreshEnvironments.accept(buffer);
@@ -286,7 +292,7 @@ final class HttpHistorySync {
             return;
         }
         HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
-        String env = environments.get(buffer);
+        String env = chosenEnvironment.apply(buffer);
         state.environment = env == null ? p.getSelectedEnvironment() : env;
         state.clearedAt = t.clearedAt;
         for (HttpHistoryEntry e : p.history()) {

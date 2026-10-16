@@ -42,6 +42,7 @@ import com.editora.http.HttpFile;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import com.editora.http.ResponseRedirects;
+import com.editora.http.RunEnvironment;
 import com.editora.io.StagedExport;
 
 import static com.editora.i18n.Messages.tr;
@@ -136,11 +137,19 @@ final class HttpClientCoordinator {
     /** Each panel's saved history: read, saved, merged across windows, and moved with its file. */
     private final HttpHistorySync history;
 
+    /** Each file's env files as last read, so the FX thread never reads them (a run reads them on its worker). */
+    private final HttpEnvCache envCache = new HttpEnvCache();
+
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
-        this.history =
-                new HttpHistorySync(host, ops::historyStore, this::panelFor, environments, this::refreshEnvironments);
+        this.history = new HttpHistorySync(
+                host,
+                ops::historyStore,
+                this::panelFor,
+                environments::get,
+                environments::putIfAbsent, // a remembered environment never replaces this file's own choice
+                this::refreshEnvironments);
         service.setRedirectGuard(this::beforeRedirectOverwrite);
     }
 
@@ -305,6 +314,7 @@ final class HttpClientCoordinator {
             history.closed(closed);
             captures.remove(closed);
             environments.remove(closed);
+            envCache.forget(closed.getPath(), ops.projectRoot());
             cancelling.remove(closed); // a cancelled run's late results have no panel to land in
             HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
@@ -426,9 +436,8 @@ final class HttpClientCoordinator {
             return;
         }
         HttpFile.Request req = requests.get(index);
-        // An env file that cannot be read is named first among the warnings (not only as "{{x}} sent as empty").
-        HttpFile.Parsed parsed = HttpEnvironments.withProblems(HttpFile.parseRequest(req), envProblems(buffer));
-        Map<String, String> vars = variables(buffer, text);
+        HttpFile.Parsed parsed = HttpFile.parseRequest(req);
+        Map<String, String> vars = shownVariables(buffer); // for the label and the save-first check only
         Path baseDir = folderOf(buffer); // null: an untitled scratch buffer
         CapturedResponses session = capturesFor(buffer);
         if (baseDir == null) {
@@ -453,15 +462,28 @@ final class HttpClientCoordinator {
         long startedAt = System.currentTimeMillis();
         HttpClientService.Handle[] run = new HttpClientService.Handle[1];
         // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
-        run[0] = service.run(parsed, vars, baseDir, session, HttpSecretGate.forBuffer(buffer, ops), ex -> {
-            if (running.remove(buffer, run[0])) {
-                finishRun(
-                        buffer, List.of(parsed), List.of(index), List.of(ex), new long[] {startedAt}, Set.of(), false);
-            } else if (cancelling.remove(buffer, run[0])) {
-                landCancelled(
-                        buffer, List.of(parsed), List.of(index), List.of(ex), new long[] {startedAt}, Set.of(), 1);
-            }
-        });
+        run[0] = service.run(
+                parsed, environmentFor(buffer), baseDir, session, HttpSecretGate.forBuffer(buffer, ops), ex -> {
+                    if (running.remove(buffer, run[0])) {
+                        finishRun(
+                                buffer,
+                                List.of(parsed),
+                                List.of(index),
+                                List.of(ex),
+                                new long[] {startedAt},
+                                Set.of(),
+                                false);
+                    } else if (cancelling.remove(buffer, run[0])) {
+                        landCancelled(
+                                buffer,
+                                List.of(parsed),
+                                List.of(index),
+                                List.of(ex),
+                                new long[] {startedAt},
+                                Set.of(),
+                                1);
+                    }
+                });
         track(buffer, run[0]);
     }
 
@@ -600,15 +622,13 @@ final class HttpClientCoordinator {
             }
             String text = b.getContent();
             List<HttpFile.Request> blocks = HttpFile.parse(text);
-            List<String> envProblems = envProblems(b);
-            List<HttpFile.Parsed> reqs = blocks.stream()
-                    .map(r -> HttpEnvironments.withProblems(HttpFile.parseRequest(r), envProblems))
-                    .toList();
+            List<HttpFile.Parsed> reqs =
+                    blocks.stream().map(HttpFile::parseRequest).toList();
             if (reqs.isEmpty()) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
             }
-            Map<String, String> vars = variables(b, text);
+            Map<String, String> vars = shownVariables(b); // for the labels and the save-first check only
             String label = b.getPath() == null
                     ? b.getDisplayName()
                     : b.getPath().getFileName().toString();
@@ -649,7 +669,7 @@ final class HttpClientCoordinator {
             HttpClientService.Handle[] run = new HttpClientService.Handle[1];
             run[0] = service.runAll(
                     toSend,
-                    vars,
+                    environmentFor(b),
                     baseDir,
                     session,
                     HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
@@ -802,12 +822,18 @@ final class HttpClientCoordinator {
      */
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
-        if (p != null) {
-            List<String> names = HttpEnvironments.read(envDir(buffer)).names();
-            String chosen = environments.get(buffer);
-            p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
-            environmentListener.accept(buffer); // the list (or the env files) may have changed
+        if (p == null) {
+            return;
         }
+        Path file = buffer.getPath();
+        envCache.refresh(file, ops.projectRoot(), read -> {
+            if (panelFor(buffer) != p || !java.util.Objects.equals(file, buffer.getPath())) {
+                return; // closed, switched off or saved elsewhere meanwhile (a newer refresh follows a Save As)
+            }
+            String chosen = environments.get(buffer);
+            p.setEnvironments(read.files().names(), chosen != null ? chosen : ops.savedEnvironment());
+            environmentListener.accept(buffer); // the list (or the env files) may have changed
+        });
     }
 
     /**
@@ -839,9 +865,14 @@ final class HttpClientCoordinator {
         return p == null ? "" : p.getSelectedEnvironment();
     }
 
-    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvironments}), or null. */
+    /**
+     * The folder whose env files apply to {@code buffer} (see {@link HttpEnvironments}) as last read, or null before
+     * the first read (which tells the {@link #setEnvironmentListener listener} when it lands). No file access.
+     */
     Path envDirFor(EditorBuffer buffer) {
-        return buffer == null ? null : envDir(buffer);
+        return buffer == null
+                ? null
+                : envCache.last(buffer.getPath(), ops.projectRoot()).dir();
     }
 
     // --- internals ---
@@ -1008,24 +1039,30 @@ final class HttpClientCoordinator {
         if (chosen == null) {
             return;
         }
-        try {
-            // Staged: the Save dialog may have confirmed replacing a file, which a failed write must not empty.
-            if (chooser.getSelectedExtensionFilter() == report) {
-                StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
-            } else {
-                byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
-                        ? r.rawBody()
-                        : r.body().getBytes(StandardCharsets.UTF_8);
-                StagedExport.write(chosen.toPath(), bytes);
+        // Written off the FX thread (a response may be 50 MB). Staged: the Save dialog may have confirmed replacing a
+        // file, which a failed write must not empty.
+        Path target = chosen.toPath();
+        boolean asReport = chooser.getSelectedExtensionFilter() == report;
+        HttpHistoryEntry entry = p.getSelectedEntry();
+        boolean partial = entry != null && entry.bodyCut();
+        HttpEnvCache.IO.execute(() -> {
+            String status;
+            try {
+                if (asReport) {
+                    StagedExport.writeString(target, HttpResponseFormat.render(r));
+                } else {
+                    byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
+                            ? r.rawBody()
+                            : r.body().getBytes(StandardCharsets.UTF_8);
+                    StagedExport.write(target, bytes);
+                }
+                status = tr(partial ? "status.http.savedPartial" : "status.http.saved", target.getFileName());
+            } catch (IOException | RuntimeException e) {
+                status = tr("status.http.saveFailed", e.getMessage());
             }
-            HttpHistoryEntry entry = p.getSelectedEntry();
-            boolean partial = entry != null && entry.bodyCut();
-            host.setStatus(tr(
-                    partial ? "status.http.savedPartial" : "status.http.saved",
-                    chosen.toPath().getFileName()));
-        } catch (IOException e) {
-            host.setStatus(tr("status.http.saveFailed", e.getMessage()));
-        }
+            String done = status;
+            Platform.runLater(() -> host.setStatus(done));
+        });
     }
 
     /**
@@ -1052,22 +1089,30 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * The environment variables for a {@code .http} buffer: the selected environment of both env files, merged
-     * as JetBrains does (public {@code $shared} < private {@code $shared} < public env < private env). They are
-     * not resolved here: the run resolves them, with the {@code @var} lines above each request, the file's
-     * folder for {@code $dotenv}, and the buffer's captured responses — and reports what does not resolve.
+     * The environment variables of {@code buffer}'s selected environment as last read — for what the FX thread shows
+     * before a run (the "Running …" label) and the untitled save-first check. No file access; may be a moment old.
      */
-    private Map<String, String> variables(EditorBuffer buffer, String text) {
-        // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
-        // against the environment selected for the file being run.
-        HttpClientPanel p = panelFor(buffer);
-        String env = p == null ? "" : p.getSelectedEnvironment();
-        return HttpEnvironments.read(envDir(buffer)).variables(env);
+    private Map<String, String> shownVariables(EditorBuffer buffer) {
+        return envCache.last(buffer.getPath(), ops.projectRoot()).files().variables(selectedEnvironment(buffer));
     }
 
-    /** Why the env files that apply to {@code buffer} contribute nothing, one line per unreadable file. */
-    private List<String> envProblems(EditorBuffer buffer) {
-        return HttpEnvironments.read(envDir(buffer)).problems();
+    /**
+     * The environment a run of {@code buffer} resolves against: the selected environment of both env files, merged as
+     * JetBrains does (public {@code $shared} < private {@code $shared} < public env < private env), read on the run's
+     * worker as it starts. They are not resolved here: the run resolves them, with the {@code @var} lines above each
+     * request, the file's folder for {@code $dotenv}, and the buffer's captured responses. An env file that cannot be
+     * read is named first among the warnings (not only as "{{x}} sent as empty").
+     */
+    private RunEnvironment environmentFor(EditorBuffer buffer) {
+        // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
+        // against the environment selected for the file being run.
+        String env = selectedEnvironment(buffer);
+        Path file = buffer.getPath();
+        Path project = ops.projectRoot();
+        return () -> {
+            HttpEnvironments.EnvFiles files = envCache.readNow(file, project).files();
+            return new RunEnvironment.Snapshot(files.variables(env), files.problems());
+        };
     }
 
     /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */
@@ -1076,11 +1121,6 @@ final class HttpClientCoordinator {
         HttpClientPanel p = panelFor(buffer);
         session.resetUnlessEnvironment(p == null ? "" : p.getSelectedEnvironment());
         return session;
-    }
-
-    /** The folder whose env files apply to {@code buffer}'s file (see {@link HttpEnvironments}), or null. */
-    private Path envDir(EditorBuffer buffer) {
-        return HttpEnvironments.forFile(buffer == null ? null : buffer.getPath(), ops.projectRoot());
     }
 
     private void ifHttp(Runnable action) {

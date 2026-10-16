@@ -128,6 +128,7 @@ class HttpClientScratchFxTest {
             coordinator.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -197,6 +198,7 @@ class HttpClientScratchFxTest {
             b.setPath(file);
             coordinator.ensureHttpPreview(b); // what Save As does through ensurePreviewControls
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         await(() -> Files.exists(ops.store.fileFor(file)));
         assertEquals(1, ops.store.load(file).responses.size());
     }

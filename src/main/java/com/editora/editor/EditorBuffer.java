@@ -3513,8 +3513,9 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpHooks(HttpHooks hooks) {
         httpGutter.setHooks(hooks);
-        httpVariableMarks.setValidator(httpGutter.hooks().variableLint());
-        completionActions.setHttpVariables(httpGutter.hooks().variableContext());
+        HttpHooks set = httpGutter.hooks();
+        httpVariableMarks.setValidator(set.checksVariables() ? set.variableLint() : null);
+        completionActions.setHttpVariables(set.variableContext());
     }
 
     /** The hooks injected by {@link #setHttpHooks} ({@link HttpHooks#NONE} until then). */

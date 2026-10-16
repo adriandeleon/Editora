@@ -144,6 +144,7 @@ class HttpResponseViewFixesFxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -310,6 +311,7 @@ class HttpResponseViewFixesFxTest {
             b.setPath(file);
             c.ensureHttpPreview(b); // what Save As does through ensurePreviewControls
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         String saved = awaitSaved(ops, file, s -> s.contains("/fine"));
         assertFalse(saved.contains("Needs file"), "a \"save the file first\" result is not history: " + saved);
     }

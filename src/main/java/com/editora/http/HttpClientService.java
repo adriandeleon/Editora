@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
 
 import javafx.application.Platform;
 
@@ -245,12 +246,29 @@ public final class HttpClientService {
             CapturedResponses captured,
             SecretGate gate,
             Consumer<HttpExchange> onResult) {
+        return run(request, RunEnvironment.of(vars), baseDir, captured, gate, onResult);
+    }
+
+    /**
+     * As {@link #run(HttpFile.Parsed, Map, Path, CapturedResponses, SecretGate, Consumer)}, with the environment read
+     * on the worker as the run starts ({@code environment}'s problems put first among the request's warnings).
+     */
+    public Handle run(
+            HttpFile.Parsed parsed,
+            RunEnvironment environment,
+            Path baseDir,
+            CapturedResponses captured,
+            SecretGate gate,
+            Consumer<HttpExchange> onResult) {
         Handle handle = new Handle();
         active.add(handle);
         CapturedResponses responses = captured == null ? new CapturedResponses() : captured;
         exec.submit(() -> {
             HttpExchange ex;
             try (Session session = new Session(new CookieManager())) {
+                RunEnvironment.Snapshot env = read(environment);
+                HttpFile.Parsed request = parsed.withWarningsFirst(env.problems());
+                Map<String, String> vars = env.variables();
                 SecretApproval.Grant approval =
                         SecretApproval.ask(gate, handle::isCancelled, List.of(request), vars, baseDir, responses);
                 ex = executeSafely(handle, request, vars, baseDir, responses, session, approval);
@@ -276,7 +294,22 @@ public final class HttpClientService {
             Path baseDir,
             CapturedResponses responses,
             SecretGate gate,
-            java.util.function.IntConsumer onStart,
+            IntConsumer onStart,
+            Consumer<List<HttpExchange>> onResult) {
+        return runAll(requests, RunEnvironment.of(vars), baseDir, responses, gate, onStart, onResult);
+    }
+
+    /**
+     * As {@link #runAll(List, Map, Path, CapturedResponses, SecretGate, IntConsumer, Consumer)}, with the environment
+     * read on the worker as the run starts ({@code environment}'s problems put first among each request's warnings).
+     */
+    public Handle runAll(
+            List<HttpFile.Parsed> parsed,
+            RunEnvironment environment,
+            Path baseDir,
+            CapturedResponses responses,
+            SecretGate gate,
+            IntConsumer onStart,
             Consumer<List<HttpExchange>> onResult) {
         Handle handle = new Handle();
         active.add(handle);
@@ -284,6 +317,11 @@ public final class HttpClientService {
         exec.submit(() -> {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
+                RunEnvironment.Snapshot env = read(environment);
+                List<HttpFile.Parsed> requests = parsed.stream()
+                        .map(r -> r.withWarningsFirst(env.problems()))
+                        .toList();
+                Map<String, String> vars = env.variables();
                 SecretApproval.Grant approval =
                         SecretApproval.ask(gate, handle::isCancelled, requests, vars, baseDir, captured);
                 for (HttpFile.Parsed req : requests) {
@@ -304,6 +342,16 @@ public final class HttpClientService {
             handle.deliver(() -> onResult.accept(out));
         });
         return handle;
+    }
+
+    /** {@code environment} read now; one that fails to read gives no variables (the run still reports each one). */
+    private static RunEnvironment.Snapshot read(RunEnvironment environment) {
+        try {
+            RunEnvironment.Snapshot s = environment == null ? null : environment.read();
+            return s == null ? new RunEnvironment.Snapshot(Map.of(), List.of()) : s;
+        } catch (RuntimeException unreadable) {
+            return new RunEnvironment.Snapshot(Map.of(), List.of());
+        }
     }
 
     /**

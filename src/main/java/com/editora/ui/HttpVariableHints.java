@@ -32,7 +32,7 @@ final class HttpVariableHints {
         /** The environment selected for the buffer's file ({@code ""}: none). */
         String environment(EditorBuffer buffer);
 
-        /** The folder whose env files apply to the buffer, or null. */
+        /** The folder whose env files apply to the buffer as last read, or null; FX thread, no file access. */
         Path envDir(EditorBuffer buffer);
     }
 
@@ -62,11 +62,25 @@ final class HttpVariableHints {
                         () -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY)));
     }
 
-    /** Checks {@code buffer} again if its environment, env files or {@code .env} changed since the last check. */
+    /**
+     * Checks {@code buffer} again if its environment, env files or {@code .env} changed since the last check. The
+     * files are looked at on the worker (after any check already queued), the answer acted on on the FX thread.
+     */
     void refresh(EditorBuffer buffer) {
-        if (buffer != null && buffer.isHttpFile() && !fingerprint(buffer).equals(fingerprints.get(buffer))) {
-            buffer.refreshHttpVariableLint();
+        if (buffer == null || !buffer.isHttpFile()) {
+            return;
         }
+        String env = source.environment(buffer);
+        Path envDir = source.envDir(buffer);
+        Path dir = folderOf(buffer);
+        worker.execute(() -> {
+            String now = fingerprint(env, envDir, dir);
+            Platform.runLater(() -> {
+                if (!now.equals(fingerprints.get(buffer))) {
+                    buffer.refreshHttpVariableLint();
+                }
+            });
+        });
     }
 
     void forget(EditorBuffer buffer) {
@@ -81,12 +95,10 @@ final class HttpVariableHints {
     private void check(
             EditorBuffer buffer, String text, java.util.function.Consumer<List<MarkdownLint.Diagnostic>> done) {
         String env = source.environment(buffer);
-        Path envDir = source.envDir(buffer);
-        Path dir = buffer.getPath() == null
-                ? null
-                : buffer.getPath().toAbsolutePath().getParent();
-        fingerprints.put(buffer, fingerprint(buffer));
+        Path envDir = source.envDir(buffer); // as last read: no file access here
+        Path dir = folderOf(buffer);
         worker.execute(() -> {
+            String checkedAgainst = fingerprint(env, envDir, dir); // what this check reads, before it reads it
             HttpVariableIndex.Context ctx = HttpVariableIndex.Context.EMPTY;
             List<MarkdownLint.Diagnostic> marks;
             try {
@@ -102,6 +114,7 @@ final class HttpVariableHints {
             HttpVariableIndex.Context checked = ctx;
             List<MarkdownLint.Diagnostic> result = marks;
             Platform.runLater(() -> {
+                fingerprints.put(buffer, checkedAgainst);
                 contexts.put(buffer, checked);
                 done.accept(result);
             });
@@ -141,13 +154,15 @@ final class HttpVariableHints {
         return out;
     }
 
-    /** The environment name and the modification times of the files the check reads. */
-    private String fingerprint(EditorBuffer buffer) {
-        Path envDir = source.envDir(buffer);
-        Path dir = buffer.getPath() == null
+    private static Path folderOf(EditorBuffer buffer) {
+        return buffer.getPath() == null
                 ? null
                 : buffer.getPath().toAbsolutePath().getParent();
-        return source.environment(buffer)
+    }
+
+    /** The environment name and the modification times of the files a check reads. Stats files: on the worker. */
+    private static String fingerprint(String env, Path envDir, Path dir) {
+        return env
                 + "|" + envDir
                 + "|" + stamp(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE))
                 + "|" + stamp(envDir == null ? null : envDir.resolve(HttpEnv.PRIVATE_FILE))

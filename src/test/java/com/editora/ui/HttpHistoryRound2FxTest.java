@@ -145,6 +145,7 @@ class HttpHistoryRound2FxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
@@ -381,6 +382,7 @@ class HttpHistoryRound2FxTest {
             b.setPath(renamed);
             c.ensureHttpPreview(b);
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
         HttpHistorySync.awaitIdleForTest();
@@ -394,6 +396,7 @@ class HttpHistoryRound2FxTest {
             b.setPath(copy);
             c.ensureHttpPreview(b);
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
         HttpHistorySync.awaitIdleForTest();
