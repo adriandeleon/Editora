@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 123;
+    public static final int SCHEMA_VERSION = 124;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -675,6 +675,31 @@ public class Settings {
     /** The Maven-aware pom.xml server (JVM lemminx + lemminx-maven). Blank until the install recipe writes the
      *  {@code java -cp "<dir>/*" org.eclipse.lemminx.XMLServerLauncher} command; blank ⇒ not installed. */
     private String mavenPomLspCommand = "";
+
+    // --- bash-language-server's own settings (its "bashIde" configuration section) ------------------------
+    /** ShellCheck executable; blank = the one Editora installed (plugins/tools/shellcheck), else "shellcheck". */
+    private String bashShellcheckPath = "";
+    /** Extra ShellCheck arguments (e.g. {@code -x --severity=warning}); the server adds --shell/--format. */
+    private String bashShellcheckArguments = "";
+    /** shfmt executable; blank = the one Editora installed (plugins/tools/shfmt), else "shfmt". */
+    private String bashShfmtPath = "";
+    /** shfmt's dialect: auto, bash, posix, mksh or bats. */
+    private String bashShfmtDialect = "auto";
+
+    private boolean bashShfmtSimplify;
+    private boolean bashShfmtBinaryNextLine;
+    private boolean bashShfmtCaseIndent;
+    private boolean bashShfmtFuncNextLine;
+    private boolean bashShfmtSpaceRedirects;
+    private boolean bashShfmtKeepPadding;
+    /** Use only these options, even when an .editorconfig carries shfmt properties. */
+    private boolean bashShfmtIgnoreEditorconfig;
+    /** Most workspace scripts the server reads in the background; 0 turns background analysis off. */
+    private int bashBackgroundAnalysisMaxFiles = BASH_BACKGROUND_ANALYSIS_DEFAULT;
+    /** Symbols from every workspace script, not only from sourced files (completion, rename, …). */
+    private boolean bashIncludeAllWorkspaceSymbols;
+    /** explainshell server for hover help on flags; blank = off (it receives the command under the caret). */
+    private String bashExplainshellEndpoint = "";
 
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
@@ -2836,6 +2861,128 @@ public class Settings {
 
     public void setBashLspEnabled(boolean bashLspEnabled) {
         this.bashLspEnabled = bashLspEnabled;
+    }
+
+    /** bash-language-server's own default for its background-analysis file cap. */
+    public static final int BASH_BACKGROUND_ANALYSIS_DEFAULT = 500;
+
+    /** The largest background-analysis cap accepted. */
+    public static final int BASH_BACKGROUND_ANALYSIS_MAX = 100_000;
+
+    /** The shfmt dialects bash-language-server accepts. */
+    public static final java.util.List<String> BASH_SHFMT_DIALECTS =
+            java.util.List.of("auto", "bash", "posix", "mksh", "bats");
+
+    public String getBashShellcheckPath() {
+        return bashShellcheckPath == null ? "" : bashShellcheckPath;
+    }
+
+    public void setBashShellcheckPath(String path) {
+        this.bashShellcheckPath = path == null ? "" : path.strip();
+    }
+
+    public String getBashShellcheckArguments() {
+        return bashShellcheckArguments == null ? "" : bashShellcheckArguments;
+    }
+
+    public void setBashShellcheckArguments(String arguments) {
+        this.bashShellcheckArguments = arguments == null ? "" : arguments.strip();
+    }
+
+    public String getBashShfmtPath() {
+        return bashShfmtPath == null ? "" : bashShfmtPath;
+    }
+
+    public void setBashShfmtPath(String path) {
+        this.bashShfmtPath = path == null ? "" : path.strip();
+    }
+
+    public String getBashShfmtDialect() {
+        return bashShfmtDialect != null && BASH_SHFMT_DIALECTS.contains(bashShfmtDialect) ? bashShfmtDialect : "auto";
+    }
+
+    public void setBashShfmtDialect(String dialect) {
+        this.bashShfmtDialect = dialect != null && BASH_SHFMT_DIALECTS.contains(dialect) ? dialect : "auto";
+    }
+
+    public boolean isBashShfmtSimplify() {
+        return bashShfmtSimplify;
+    }
+
+    public void setBashShfmtSimplify(boolean on) {
+        this.bashShfmtSimplify = on;
+    }
+
+    public boolean isBashShfmtBinaryNextLine() {
+        return bashShfmtBinaryNextLine;
+    }
+
+    public void setBashShfmtBinaryNextLine(boolean on) {
+        this.bashShfmtBinaryNextLine = on;
+    }
+
+    public boolean isBashShfmtCaseIndent() {
+        return bashShfmtCaseIndent;
+    }
+
+    public void setBashShfmtCaseIndent(boolean on) {
+        this.bashShfmtCaseIndent = on;
+    }
+
+    public boolean isBashShfmtFuncNextLine() {
+        return bashShfmtFuncNextLine;
+    }
+
+    public void setBashShfmtFuncNextLine(boolean on) {
+        this.bashShfmtFuncNextLine = on;
+    }
+
+    public boolean isBashShfmtSpaceRedirects() {
+        return bashShfmtSpaceRedirects;
+    }
+
+    public void setBashShfmtSpaceRedirects(boolean on) {
+        this.bashShfmtSpaceRedirects = on;
+    }
+
+    public boolean isBashShfmtKeepPadding() {
+        return bashShfmtKeepPadding;
+    }
+
+    public void setBashShfmtKeepPadding(boolean on) {
+        this.bashShfmtKeepPadding = on;
+    }
+
+    public boolean isBashShfmtIgnoreEditorconfig() {
+        return bashShfmtIgnoreEditorconfig;
+    }
+
+    public void setBashShfmtIgnoreEditorconfig(boolean on) {
+        this.bashShfmtIgnoreEditorconfig = on;
+    }
+
+    public int getBashBackgroundAnalysisMaxFiles() {
+        return Math.clamp(bashBackgroundAnalysisMaxFiles, 0, BASH_BACKGROUND_ANALYSIS_MAX);
+    }
+
+    public void setBashBackgroundAnalysisMaxFiles(int max) {
+        this.bashBackgroundAnalysisMaxFiles = Math.clamp(max, 0, BASH_BACKGROUND_ANALYSIS_MAX);
+    }
+
+    public boolean isBashIncludeAllWorkspaceSymbols() {
+        return bashIncludeAllWorkspaceSymbols;
+    }
+
+    public void setBashIncludeAllWorkspaceSymbols(boolean on) {
+        this.bashIncludeAllWorkspaceSymbols = on;
+    }
+
+    public String getBashExplainshellEndpoint() {
+        return bashExplainshellEndpoint == null ? "" : bashExplainshellEndpoint;
+    }
+
+    public void setBashExplainshellEndpoint(String endpoint) {
+        this.bashExplainshellEndpoint = endpoint == null ? "" : endpoint.strip();
     }
 
     public String getYamlLspCommand() {

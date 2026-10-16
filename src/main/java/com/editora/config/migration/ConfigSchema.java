@@ -242,7 +242,11 @@ public enum ConfigSchema {
                     Map.entry(121, (Migration) ConfigMigrations::remoteExecutionOn),
                     // v122→123: + rulers / languageRulers / showIndentGuides (additive). A missing rulers list
                     // is the old single ruler at 80; indent guides are new and on.
-                    Map.entry(122, (Migration) ConfigMigrations::identity)),
+                    Map.entry(122, (Migration) ConfigMigrations::identity),
+                    // v123→124: + bash-language-server settings (bashShellcheckPath/Arguments, bashShfmt*,
+                    // bashBackgroundAnalysisMaxFiles, bashIncludeAllWorkspaceSymbols, bashExplainshellEndpoint),
+                    // additive: every default is the server's own default, so nothing changes until set.
+                    Map.entry(123, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

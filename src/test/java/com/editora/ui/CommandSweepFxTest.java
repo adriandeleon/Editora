@@ -129,6 +129,7 @@ class CommandSweepFxTest {
         m.put("install.jsSupport", installs);
         m.put("install.mermaidSupport", installs);
         m.put("install.typstCli", installs);
+        m.put("install.shellTools", installs);
         return Collections.unmodifiableMap(m);
     }
 

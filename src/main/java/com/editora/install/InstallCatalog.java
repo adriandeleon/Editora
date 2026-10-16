@@ -53,7 +53,11 @@ public final class InstallCatalog {
         /** Download a self-contained JVM LSP "zip with dependencies" ({@code directUrl}), extract it into the
          *  config dir, and set the server command to {@code java -cp "<dir>/*" <mainClass>}. Used for the
          *  Maven-aware pom.xml server (JVM lemminx + lemminx-maven), whose bundle is cross-platform. */
-        JVM_LSP_ZIP
+        JVM_LSP_ZIP,
+        /** A command-line tool from a pinned release (ShellCheck, shfmt): the per-platform asset is downloaded,
+         *  its SHA-256 checked against the hash in {@link #pinnedTool}, and the binary put at
+         *  {@code <config>/plugins/tools/<id>/<binary>} — see {@link #installedToolPath}. */
+        PINNED_TOOL
     }
 
     /** The host OS/arch buckets used to pick a per-platform release asset. */
@@ -484,6 +488,184 @@ public final class InstallCatalog {
                         ""));
             default -> java.util.Optional.empty();
         };
+    }
+
+    // --- pinned command-line tools (ShellCheck, shfmt) -------------------------------------------------
+
+    /** The ShellCheck release Editora installs. Bump with every hash in {@link #pinnedTool}. */
+    public static final String SHELLCHECK_VERSION = "0.11.0";
+
+    /** The shfmt release Editora installs. Bump with every hash in {@link #pinnedTool}. */
+    public static final String SHFMT_VERSION = "3.14.1";
+
+    /** The tools {@link #pinnedTool} knows, in display order. */
+    public static final List<String> PINNED_TOOL_IDS = List.of("shellcheck", "shfmt");
+
+    /** How a pinned asset is packed. */
+    public enum Packing {
+        /** The file is the program itself (shfmt). */
+        RAW,
+        /** A {@code .tar.gz} holding the program somewhere inside (extracted with the system tar). */
+        TAR_GZ,
+        /** A {@code .zip} holding the program somewhere inside. */
+        ZIP
+    }
+
+    /** One platform's download: where it is, its SHA-256 (lower-case hex), and how it is packed. */
+    public record PinnedAsset(String url, String sha256, Packing packing) {}
+
+    /**
+     * A tool installed from a pinned upstream release.
+     *
+     * @param binaryName the program's file name without a Windows {@code .exe}
+     */
+    public record PinnedTool(
+            String id, String version, java.util.Map<Platform, PinnedAsset> assets, String binaryName) {
+
+        /** This platform's asset, or null when upstream publishes none for it. */
+        public PinnedAsset assetFor(Platform platform) {
+            return assets.get(platform);
+        }
+    }
+
+    private static final String SHELLCHECK_BASE = "https://github.com/koalaman/shellcheck/releases/download/v"
+            + SHELLCHECK_VERSION + "/shellcheck-v" + SHELLCHECK_VERSION;
+
+    private static final String SHFMT_BASE =
+            "https://github.com/mvdan/sh/releases/download/v" + SHFMT_VERSION + "/shfmt_v" + SHFMT_VERSION;
+
+    /**
+     * The pinned release of a command-line tool, or empty. The hashes are the release assets' SHA-256 as
+     * published by GitHub for these tags (and checked against downloaded copies); an asset that does not match
+     * is refused, so a replaced or tampered upload is never run. ShellCheck and shfmt are what
+     * bash-language-server lints and formats with — without them a shell script gets no diagnostics and Format
+     * Document does nothing. Upstream publishes no Windows-on-ARM or macOS-universal builds beyond these.
+     */
+    public static Optional<PinnedTool> pinnedTool(String id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return switch (id) {
+            case "shellcheck" ->
+                Optional.of(new PinnedTool(
+                        "shellcheck",
+                        SHELLCHECK_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        SHELLCHECK_BASE + ".linux.x86_64.tar.gz",
+                                        "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6",
+                                        Packing.TAR_GZ),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        SHELLCHECK_BASE + ".linux.aarch64.tar.gz",
+                                        "68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc",
+                                        Packing.TAR_GZ),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        SHELLCHECK_BASE + ".darwin.x86_64.tar.gz",
+                                        "c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51",
+                                        Packing.TAR_GZ),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        SHELLCHECK_BASE + ".darwin.aarch64.tar.gz",
+                                        "339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f",
+                                        Packing.TAR_GZ),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        SHELLCHECK_BASE + ".zip",
+                                        "8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e",
+                                        Packing.ZIP)),
+                        "shellcheck"));
+            case "shfmt" ->
+                Optional.of(new PinnedTool(
+                        "shfmt",
+                        SHFMT_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        SHFMT_BASE + "_linux_amd64",
+                                        "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf",
+                                        Packing.RAW),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        SHFMT_BASE + "_linux_arm64",
+                                        "5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489",
+                                        Packing.RAW),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        SHFMT_BASE + "_darwin_amd64",
+                                        "d33eee0da0f92835b3562e9767a05cee7e4eaeef47daa03bfd09da17b4b590a6",
+                                        Packing.RAW),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        SHFMT_BASE + "_darwin_arm64",
+                                        "b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5",
+                                        Packing.RAW),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        SHFMT_BASE + "_windows_amd64.exe",
+                                        "13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df",
+                                        Packing.RAW)),
+                        "shfmt"));
+            default -> Optional.empty();
+        };
+    }
+
+    /** The install step for a pinned tool (empty for an unknown id). Pure. */
+    public static Optional<List<Step>> toolInstall(String id) {
+        return pinnedTool(id).map(tool -> {
+            PinnedAsset asset = tool.assetFor(currentPlatform());
+            Set<Prereq> prereqs = asset != null && asset.packing() == Packing.TAR_GZ ? Set.of(Prereq.TAR) : Set.of();
+            return List.of(new Step(
+                    tool.id(),
+                    Kind.PINNED_TOOL,
+                    prereqs,
+                    List.of(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    toolDir(tool.id()),
+                    null));
+        });
+    }
+
+    /** Where a pinned tool is installed, relative to the config dir. */
+    static String toolDir(String id) {
+        return "plugins/tools/" + id;
+    }
+
+    /** The program file name of tool {@code id} on {@code platform} ({@code shfmt.exe} on Windows). Pure. */
+    static String toolFileName(String id, Platform platform) {
+        String name = pinnedTool(id).map(PinnedTool::binaryName).orElse(id);
+        return platform == Platform.WIN_X64 ? name + ".exe" : name;
+    }
+
+    /** Where Editora's own copy of tool {@code id} is (whether or not it has been installed). Pure. */
+    public static Path installedToolPath(Path configDir, String id) {
+        return configDir.resolve(toolDir(id)).resolve(toolFileName(id, currentPlatform()));
+    }
+
+    /** Editora's own copy of tool {@code id} when it is installed, else null ({@code configDir} may be null). */
+    public static String installedToolIfPresent(Path configDir, String id) {
+        if (configDir == null) {
+            return null;
+        }
+        Path p = installedToolPath(configDir, id);
+        return java.nio.file.Files.isRegularFile(p) ? p.toString() : null;
+    }
+
+    /** Lower-case hex SHA-256 of {@code data}. Pure. */
+    public static String sha256Hex(byte[] data) {
+        try {
+            return java.util.HexFormat.of()
+                    .formatHex(
+                            java.security.MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
     }
 
     /** A per-OS binary-archive recipe. */
