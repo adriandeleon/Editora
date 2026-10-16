@@ -87,16 +87,16 @@ final class HttpVariableHints {
                 : buffer.getPath().toAbsolutePath().getParent();
         fingerprints.put(buffer, fingerprint(buffer));
         worker.execute(() -> {
-            HttpVariableIndex.Context ctx;
+            HttpVariableIndex.Context ctx = HttpVariableIndex.Context.EMPTY;
             List<MarkdownLint.Diagnostic> marks;
             try {
                 ctx = context(env, envDir, dir);
                 marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
             } catch (RuntimeException unexpected) {
-                // Never leave the previous marks standing as if they were current: clear them instead.
+                // Never leave the previous marks standing as if they were current: clear them instead (the
+                // completion keeps the context, if that much was read).
                 java.util.logging.Logger.getLogger(HttpVariableHints.class.getName())
                         .log(java.util.logging.Level.WARNING, "{{variable}} check failed", unexpected);
-                ctx = HttpVariableIndex.Context.EMPTY;
                 marks = List.of();
             }
             HttpVariableIndex.Context checked = ctx;
@@ -110,10 +110,25 @@ final class HttpVariableHints {
 
     /** The context for environment {@code env} of the env files in {@code envDir}, with {@code $dotenv} in {@code dir}. */
     static HttpVariableIndex.Context context(String env, Path envDir, Path dir) {
-        if (envDir == null || env == null || env.isEmpty()) {
-            return new HttpVariableIndex.Context(Map.of(), dir);
+        HttpEnvironments.EnvFiles files = HttpEnvironments.read(envDir);
+        boolean selected = env != null && !env.isEmpty();
+        return new HttpVariableIndex.Context(
+                selected ? files.variables(env) : Map.of(),
+                dir,
+                HttpVariableIndex.Context.readDotenvKeys(dir),
+                selected ? Map.of() : definedIn(files),
+                files.problems());
+    }
+
+    /** Which environments of {@code files} define each variable name (for "no environment selected" marks). */
+    static Map<String, List<String>> definedIn(HttpEnvironments.EnvFiles files) {
+        Map<String, List<String>> out = new java.util.HashMap<>();
+        for (String name : files.names()) {
+            for (String key : files.variables(name).keySet()) {
+                out.computeIfAbsent(key, k -> new ArrayList<>()).add(name);
+            }
         }
-        return new HttpVariableIndex.Context(HttpEnvironments.read(envDir).variables(env), dir);
+        return out;
     }
 
     /** One amber squiggle per problem (lint diagnostics are 1-based); the tooltip reads {@code {{name}}: reason}. */

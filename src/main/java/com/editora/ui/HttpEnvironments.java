@@ -9,6 +9,9 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 import com.editora.http.HttpEnv;
+import com.editora.http.HttpFile;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * The one place that finds, reads and merges a {@code .http} file's environment files ({@code http-client.env.json}
@@ -45,6 +48,24 @@ final class HttpEnvironments {
         /** The environment names of both files, public first, then private-only ones. */
         List<String> names() {
             return HttpEnv.environmentNames(publicJson, privateJson);
+        }
+
+        /**
+         * One line per env file that exists but contributes nothing because it cannot be read as JSON ("{@code
+         * http-client.private.env.json} could not be read: line 3, column 5: …"), so the user hears about the file
+         * instead of every variable in it being reported as undefined. Empty when both files are usable.
+         */
+        List<String> problems() {
+            List<String> out = new java.util.ArrayList<>();
+            String pub = HttpEnv.problem(publicJson);
+            if (pub != null) {
+                out.add(tr("http.env.unreadable", HttpEnv.PUBLIC_FILE, pub));
+            }
+            String priv = HttpEnv.problem(privateJson);
+            if (priv != null) {
+                out.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, priv));
+            }
+            return out;
         }
 
         /**
@@ -132,6 +153,31 @@ final class HttpEnvironments {
             }
         }
         return null;
+    }
+
+    /**
+     * {@code request} with {@code problems} (from {@link EnvFiles#problems()}) put first among its warnings, so a run
+     * whose env file could not be read says so above the "was sent as empty text" lines it causes.
+     */
+    static HttpFile.Parsed withProblems(HttpFile.Parsed request, List<String> problems) {
+        if (request == null || problems == null || problems.isEmpty()) {
+            return request;
+        }
+        List<String> warnings = new java.util.ArrayList<>(problems);
+        warnings.addAll(request.warnings());
+        return new HttpFile.Parsed(
+                request.method(),
+                request.url(),
+                request.headers(),
+                request.body(),
+                request.name(),
+                request.bodyRef(),
+                request.redirects(),
+                request.directives(),
+                request.httpVersion(),
+                request.variables(),
+                warnings,
+                request.error());
     }
 
     /** The name to select for a file whose remembered choice is {@code remembered}: it, if still offered; else none. */

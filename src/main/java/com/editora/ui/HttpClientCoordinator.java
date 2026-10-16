@@ -383,7 +383,8 @@ final class HttpClientCoordinator {
             return;
         }
         HttpFile.Request req = requests.get(index);
-        HttpFile.Parsed parsed = HttpFile.parseRequest(req);
+        // An env file that cannot be read is named first among the warnings (not only as "{{x}} sent as empty").
+        HttpFile.Parsed parsed = HttpEnvironments.withProblems(HttpFile.parseRequest(req), envProblems(buffer));
         Map<String, String> vars = variables(buffer, text);
         Path baseDir = folderOf(buffer); // null: an untitled scratch buffer
         CapturedResponses session = capturesFor(buffer);
@@ -541,8 +542,10 @@ final class HttpClientCoordinator {
             }
             String text = b.getContent();
             List<HttpFile.Request> blocks = HttpFile.parse(text);
-            List<HttpFile.Parsed> reqs =
-                    blocks.stream().map(HttpFile::parseRequest).toList();
+            List<String> envProblems = envProblems(b);
+            List<HttpFile.Parsed> reqs = blocks.stream()
+                    .map(r -> HttpEnvironments.withProblems(HttpFile.parseRequest(r), envProblems))
+                    .toList();
             if (reqs.isEmpty()) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
@@ -724,7 +727,7 @@ final class HttpClientCoordinator {
     /**
      * Updates this buffer's environment picker from the env files that apply to it — the nearest folder, from
      * the file's own up to the project root, holding {@code http-client.env.json} or its private twin — with
-     * the names of both files. Called when the preview is attached and from the focus/tab-switch pass.
+     * the names of both files. Called when the preview is attached, on a tab switch and when the window regains focus.
      */
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
@@ -733,6 +736,21 @@ final class HttpClientCoordinator {
             String chosen = environments.get(buffer);
             p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
             environmentListener.accept(buffer); // the list (or the env files) may have changed
+        }
+    }
+
+    /**
+     * {@link #refreshEnvironments} for every open {@code .http} buffer: the window regained focus, so an env file may
+     * have been edited in another program (the run re-reads them; the pickers and marks would otherwise wait for a
+     * tab switch).
+     */
+    void refreshAllEnvironments() {
+        if (isEnabled()) {
+            host.forEachBuffer(b -> {
+                if (b.isHttpFile()) {
+                    refreshEnvironments(b);
+                }
+            });
         }
     }
 
@@ -963,6 +981,11 @@ final class HttpClientCoordinator {
         HttpClientPanel p = panelFor(buffer);
         String env = p == null ? "" : p.getSelectedEnvironment();
         return HttpEnvironments.read(envDir(buffer)).variables(env);
+    }
+
+    /** Why the env files that apply to {@code buffer} contribute nothing, one line per unreadable file. */
+    private List<String> envProblems(EditorBuffer buffer) {
+        return HttpEnvironments.read(envDir(buffer)).problems();
     }
 
     /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */

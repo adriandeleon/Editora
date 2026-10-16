@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,21 +30,39 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class HttpVariableIndex {
 
-    /** The environment the document is analysed against. */
-    public record Context(Map<String, String> environment, Path dotenvDir) {
-        public static final Context EMPTY = new Context(Map.of(), null);
+    /**
+     * The environment the document is analysed against: the selected environment's variables, the folder of the
+     * {@code .env} file and its keys (read once, when the context is built off the FX thread, so the completion
+     * popup never reads a file), and — for better reasons — which environments define each name when none is
+     * selected ({@code definedIn}), and why an env file could not be read ({@code envProblems}).
+     */
+    public record Context(
+            Map<String, String> environment,
+            Path dotenvDir,
+            Set<String> dotenvKeys,
+            Map<String, List<String>> definedIn,
+            List<String> envProblems) {
+        public static final Context EMPTY = new Context(Map.of(), null, Set.of(), Map.of(), List.of());
 
         public Context {
             environment = environment == null ? Map.of() : Map.copyOf(environment);
+            dotenvKeys = dotenvKeys == null ? Set.of() : Collections.unmodifiableSet(new TreeSet<>(dotenvKeys));
+            definedIn = definedIn == null ? Map.of() : Map.copyOf(definedIn);
+            envProblems = envProblems == null ? List.of() : List.copyOf(envProblems);
         }
 
-        /** The keys of the {@code .env} beside the file (for {@code $dotenv} completion), or none. */
-        public Set<String> dotenvKeys() {
-            if (dotenvDir == null) {
+        /** The selected environment and the {@code .env} beside the file in {@code dotenvDir} (read now). */
+        public Context(Map<String, String> environment, Path dotenvDir) {
+            this(environment, dotenvDir, readDotenvKeys(dotenvDir), Map.of(), List.of());
+        }
+
+        /** The keys of the {@code .env} file in {@code dir} (for {@code $dotenv} completion), or none. */
+        public static Set<String> readDotenvKeys(Path dir) {
+            if (dir == null) {
                 return Set.of();
             }
             try {
-                Path env = dotenvDir.resolve(".env");
+                Path env = dir.resolve(".env");
                 return Files.isRegularFile(env) && Files.size(env) <= 1_000_000
                         ? new TreeSet<>(DotEnv.parse(Files.readString(env)).keySet())
                         : Set.of();
@@ -198,18 +217,35 @@ public final class HttpVariableIndex {
         if (scope.has(name)) {
             HttpVars.Unresolved inner = new HttpVars.Unresolved();
             scope.value(name, inner);
+            String undefined = tr("http.unresolved.reason.undefined");
             for (Map.Entry<String, String> e : inner.entries().entrySet()) {
                 String innerName = e.getKey().substring(2, e.getKey().length() - 2);
                 if (CapturedResponses.isResponseRef(innerName) && requests.contains(requestOf(innerName))) {
                     continue; // a response of a request in this file: resolved when that request has run
                 }
-                return tr("http.lint.uses", e.getKey(), e.getValue());
+                String innerWhy = undefined.equals(e.getValue()) ? undefined(innerName.strip(), ctx) : e.getValue();
+                return tr("http.lint.uses", e.getKey(), innerWhy);
             }
             return null;
         }
         if (CapturedResponses.isResponseRef(name)) {
             String request = requestOf(name);
             return requests.contains(request) ? null : tr("http.unresolved.reason.noRequest", request);
+        }
+        return undefined(name, ctx);
+    }
+
+    /**
+     * Why {@code name} is not defined, as helpfully as the context allows: the environments that would define it
+     * when none is selected, else the env files that could not be read, else plainly "not defined".
+     */
+    private static String undefined(String name, Context ctx) {
+        List<String> envs = ctx.definedIn().get(name);
+        if (envs != null && !envs.isEmpty()) {
+            return tr("http.unresolved.reason.noEnvironment", String.join(", ", envs));
+        }
+        if (!ctx.envProblems().isEmpty()) {
+            return tr("http.unresolved.reason.envUnreadable", String.join("; ", ctx.envProblems()));
         }
         return tr("http.unresolved.reason.undefined");
     }
