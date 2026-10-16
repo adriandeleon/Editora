@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **More text tools, in the String Manipulation picker and the command palette.**
+  - **Encode and decode the selected text:** Base64, URL encoding, JSON string escapes, HTML entities, and
+    `\uXXXX` escapes. They work on every selection at once. A decode that cannot read one selection changes
+    nothing.
+  - **`Edit: Increment Number` / `Edit: Decrement Number`:** change the number at each cursor, or the next
+    one on its line. They handle negatives, zero padding (`007` → `008`) and hexadecimal (`0x0f` → `0x10`);
+    `C-u N` steps by N. In Emacs they are bound to `C-c =` and `C-c -`.
+  - **`Edit: Keep Lines Matching…` / `Edit: Remove Lines Matching…`:** filter lines with a regular
+    expression.
+  - **Two more sorts:** case-sensitive, and natural order with duplicates removed.
 - **Several rulers, rulers per language, and indent guides.** Settings → Editor now takes a list of ruler
   columns (`80, 120`) and, per language, lists that replace it (`java: 100; python: 79, 88`; a language with
   nothing after its colon has no rulers). The palette has `Editor: Set Rulers…` and `Editor: Set Rulers for

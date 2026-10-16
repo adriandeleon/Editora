@@ -71,6 +71,9 @@ class ReadOnlyEditingFxTest {
             strings = {
                 "edit.cut",
                 "edit.paste",
+                "edit.sortLinesUnique",
+                "edit.encode.base64",
+                "edit.incrementNumber",
                 "edit.insertLineBelow",
                 "edit.insertLineAbove",
                 "edit.deleteLine",
