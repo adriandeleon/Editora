@@ -142,6 +142,10 @@ final class RunCoordinator {
     private java.util.Map<String, String> lastRunEnv = java.util.Map.of();
     private String lastRunLabel;
     private List<String> lastRunCommand;
+    /** The script the last run ran (a file, or a script configuration's target); null for a Java launch. */
+    private Path lastRunScript;
+    /** Stop was pressed for the running program, so its exit is reported as stopped, not as an exit code. */
+    private boolean stopRequested;
 
     RunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -187,12 +191,21 @@ final class RunCoordinator {
     }
 
     void runActiveFile() {
-        runActiveFile(false);
+        runActiveFile(false, false);
     }
 
     /** Prompts for program arguments (pre-filled with the file's remembered ones), then runs. */
     void runActiveFileWithArgs() {
-        runActiveFile(true);
+        runActiveFile(true, false);
+    }
+
+    /**
+     * {@code run.trace}: runs the active shell script with {@code -x} and a trace prompt that names each
+     * command's file and line ({@link ShellCommand#TRACE_PROMPT}), so every traced line in the console links
+     * to its source — the cheap first step towards debugging a script.
+     */
+    void runActiveFileWithTrace() {
+        runActiveFile(false, true);
     }
 
     /** Re-runs the most recent run (same file + argv) without touching the active tab. */
@@ -201,10 +214,12 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
-        if (!beginRunRequest() || !saveActiveBuffer()) {
+        // Save the script being rerun, wherever its tab is; the active tab may be something else entirely (a
+        // README), and saving that instead let the edited script run as it was on disk.
+        if (!beginRunRequest() || !(lastRunScript != null ? saveOpenBuffer(lastRunScript) : saveActiveBuffer())) {
             return;
         }
-        streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv);
+        streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
     }
 
     /**
@@ -298,7 +313,7 @@ final class RunCoordinator {
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
-            streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args), env);
+            streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args), env, script);
             return;
         }
         // A shell script runs under what its shebang asks for, unless the configuration names an interpreter.
@@ -313,12 +328,16 @@ final class RunCoordinator {
                 ops.editConfiguration(cfg.name());
                 return;
             }
-            java.util.Map<String, String> all = new java.util.LinkedHashMap<>(shell.env());
-            all.putAll(env); // the configuration's own variables win over a shebang's env assignments
-            if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
-                ReadPromptShim.environment(System.getenv()).forEach(all::putIfAbsent);
+            Path dir = shebangDir(shell, cwd, remote);
+            if (dir == null) {
+                return;
             }
-            streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args, shell), all);
+            streamRun(
+                    cfg.name(),
+                    dir,
+                    ScriptRunCommand.build(cfg.type(), cwd.equals(dir) ? cfg.target() : script.toString(), args, shell),
+                    shellEnvironment(shell, env, remote),
+                    script);
         };
         if (!remote) {
             launch.accept(firstLine(script));
@@ -420,7 +439,8 @@ final class RunCoordinator {
         // Save first, as Debug and the gutter marker do. The save used to sit inside the Java launch, after
         // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
         // without the edit on screen; a script configuration never saved at all.
-        if (!saveActiveBuffer()) {
+        Path script = cfg.isJava() ? null : configScript(cfg);
+        if (!(script != null ? saveOpenBuffer(script) : saveActiveBuffer())) {
             return;
         }
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
@@ -433,6 +453,73 @@ final class RunCoordinator {
             }
         });
     }
+
+    /** A script configuration's script file, resolved as its run will resolve it; null when it has none. */
+    private Path configScript(RunConfiguration cfg) {
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
+        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, cwd);
+    }
+
+    /**
+     * Saves the open tab of {@code file} if it has unsaved edits, whichever tab is in front; false when that
+     * save was refused or failed. A file with no open tab, or none edited, needs nothing.
+     */
+    private boolean saveOpenBuffer(Path file) {
+        EditorBuffer[] found = new EditorBuffer[1];
+        host.forEachBuffer(b -> {
+            if (found[0] == null && b.getPath() != null && com.editora.config.PathKeys.samePath(b.getPath(), file)) {
+                found[0] = b;
+            }
+        });
+        EditorBuffer b = found[0];
+        return b == null || !b.isDirty() || ops.saveBuffer(b);
+    }
+
+    /**
+     * The environment of a shell run: the shebang's {@code env} assignments, then {@code own} (a
+     * configuration's variables, which win), then defaults nothing above set — {@code TERM} (the console draws
+     * colours, so a colour terminal type; inherited it was whatever launched Editora, often unset or
+     * {@code dumb}), the {@code read -p} prompt shim for a local bash, and the trace prompt when the
+     * interpreter traces.
+     */
+    private static java.util.Map<String, String> shellEnvironment(
+            ShellCommand.Launch shell, java.util.Map<String, String> own, boolean remote) {
+        // A null value unsets the variable (the shebang's `env -u NAME`), so "absent" is containsKey, not get.
+        java.util.Map<String, String> all = new java.util.LinkedHashMap<>(shell.env());
+        all.putAll(own);
+        java.util.function.BiConsumer<String, String> byDefault = (k, v) -> {
+            if (!all.containsKey(k)) {
+                all.put(k, v);
+            }
+        };
+        byDefault.accept("TERM", SHELL_TERM);
+        if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
+            ReadPromptShim.environment(System.getenv()).forEach(byDefault);
+        }
+        if (ShellCommand.traces(shell)) {
+            byDefault.accept("PS4", ShellCommand.TRACE_PROMPT);
+        }
+        return all;
+    }
+
+    /**
+     * Where a shell run starts: {@code cwd}, or the folder the shebang's {@code env -C DIR} names (relative to
+     * {@code cwd}). Null, after saying so, when that folder does not exist here.
+     */
+    private Path shebangDir(ShellCommand.Launch shell, Path cwd, boolean remote) {
+        if (shell.chdir() == null || shell.chdir().isBlank()) {
+            return cwd;
+        }
+        Path dir = cwd.resolve(shell.chdir()).normalize();
+        if (!remote && !java.nio.file.Files.isDirectory(dir)) {
+            host.setStatus(tr("status.run.shebangDirMissing", dir.toString()));
+            return null;
+        }
+        return dir;
+    }
+
+    /** The terminal type a shell run gets: the Run console renders colour codes but not cursor movement. */
+    static final String SHELL_TERM = "xterm-256color";
 
     /** Saves the active buffer if it is a dirty local file; false when that save was refused or failed. */
     private boolean saveActiveBuffer() {
@@ -939,7 +1026,7 @@ final class RunCoordinator {
         launchRun(path, command);
     }
 
-    private void runActiveFile(boolean promptArgs) {
+    private void runActiveFile(boolean promptArgs, boolean trace) {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null) {
             buffer.settleRunScan(); // the load's scan runs off FX; the answer is needed now
@@ -951,8 +1038,15 @@ final class RunCoordinator {
             }
             return;
         }
+        if (trace && buffer != null && !buffer.isShell()) {
+            host.setStatus(tr("status.run.traceNotShell"));
+            return;
+        }
         if (buffer == null || !buffer.isRunnable()) {
             host.setStatus(tr("status.run.notCompact"));
+            return;
+        }
+        if (trace && !traceable(buffer)) {
             return;
         }
         if (buffer.isMakefile()) {
@@ -965,15 +1059,40 @@ final class RunCoordinator {
             java.util.Set<ShellRunWarning.Hazard> hazards =
                     ShellRunWarning.hazards(buffer.getLineEnding(), buffer.getEffectiveCharset());
             if (!hazards.isEmpty()) {
-                ShellRunWarning.ask(host.window(), buffer, hazards, () -> startFileRun(buffer, promptArgs));
+                ShellRunWarning.ask(host.window(), buffer, hazards, () -> startFileRun(buffer, promptArgs, trace));
                 return;
             }
         }
-        startFileRun(buffer, promptArgs);
+        startFileRun(buffer, promptArgs, trace);
+    }
+
+    /** The editor right-click items Run adds for {@code buffer}: Run with Trace on a runnable shell script. */
+    List<javafx.scene.control.MenuItem> editorMenuItems(EditorBuffer buffer) {
+        if (buffer == null || !buffer.isShell() || !buffer.isRunnable()) {
+            return List.of();
+        }
+        javafx.scene.control.MenuItem trace = new javafx.scene.control.MenuItem(tr("editmenu.runWithTrace"));
+        trace.setOnAction(e -> runActiveFileWithTrace());
+        return List.of(trace);
+    }
+
+    /** Whether Run with Trace can trace {@code buffer}; says why not when it cannot. */
+    private boolean traceable(EditorBuffer buffer) {
+        if (!buffer.isShell()) {
+            host.setStatus(tr("status.run.traceNotShell"));
+            return false;
+        }
+        String name = buffer.getPath() != null ? buffer.getPath().getFileName().toString() : buffer.getTitle();
+        ShellCommand.Launch shell = ShellCommand.launch(firstLine(buffer), name, "", "", null);
+        if (!ShellCommand.canTrace(shell)) {
+            host.setStatus(tr("status.run.traceUnsupported", name, ShellCommand.interpreterName(shell)));
+            return false;
+        }
+        return true;
     }
 
     /** Runs {@code buffer} (already known to be runnable): save, pick the launcher, maybe ask for arguments. */
-    private void startFileRun(EditorBuffer buffer, boolean promptArgs) {
+    private void startFileRun(EditorBuffer buffer, boolean promptArgs, boolean trace) {
         if (!beginRunRequest()) {
             return;
         }
@@ -1001,10 +1120,10 @@ final class RunCoordinator {
             if (promptArgs) {
                 host.promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
                     ops.setProgramArgs(path, args == null ? "" : args.strip());
-                    launchFile(buffer, path, javaExecutable, launchEnv);
+                    launchFile(buffer, path, javaExecutable, launchEnv, trace);
                 });
             } else {
-                launchFile(buffer, path, javaExecutable, launchEnv);
+                launchFile(buffer, path, javaExecutable, launchEnv, trace);
             }
         };
         if (javaSource) {
@@ -1037,7 +1156,11 @@ final class RunCoordinator {
 
     /** Builds and launches the file's command with its remembered arguments. */
     private void launchFile(
-            EditorBuffer buffer, Path path, String javaExecutable, java.util.Map<String, String> launchEnv) {
+            EditorBuffer buffer,
+            Path path,
+            String javaExecutable,
+            java.util.Map<String, String> launchEnv,
+            boolean trace) {
         List<String> args = programArgs(ops.programArgs(path), null);
         if (args == null) {
             return;
@@ -1048,13 +1171,23 @@ final class RunCoordinator {
             boolean remote = com.editora.vfs.Vfs.isRemote(path);
             // The shebang decides the interpreter and its flags, as running ./script would.
             shell = ShellCommand.launch(firstLine(buffer), path.getFileName().toString(), "", "", existsHere(remote));
-            java.util.Map<String, String> shellEnv = new java.util.LinkedHashMap<>(shell.env());
-            if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
-                ReadPromptShim.environment(System.getenv()).forEach(shellEnv::putIfAbsent);
+            if (trace) {
+                shell = ShellCommand.withTrace(shell);
             }
-            env = shellEnv;
+            env = shellEnvironment(shell, java.util.Map.of(), remote);
         }
-        launchRun(path, buildRunCommand(buffer, path, javaExecutable, args, shell), env);
+        Path dir = shell == null
+                ? path.getParent()
+                : shebangDir(shell, path.getParent(), com.editora.vfs.Vfs.isRemote(path));
+        if (dir == null) {
+            return;
+        }
+        streamRun(
+                path.getFileName().toString(),
+                dir,
+                buildRunCommand(buffer, path, javaExecutable, args, shell),
+                env,
+                path);
     }
 
     /** The buffer's first line (at most 512 characters), where a shebang would be. */
@@ -1101,7 +1234,7 @@ final class RunCoordinator {
     }
 
     private void launchRun(Path path, List<String> command, java.util.Map<String, String> env) {
-        streamRun(path.getFileName().toString(), path.getParent(), command, env);
+        streamRun(path.getFileName().toString(), path.getParent(), command, env, path);
     }
 
     private void launchRun(Path path, List<String> command) {
@@ -1130,6 +1263,14 @@ final class RunCoordinator {
 
     /** As above, plus {@code env} — a saved run configuration's environment variables. */
     private void streamRun(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
+        streamRun(label, workingDir, command, env, null);
+    }
+
+    /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
+    private void streamRun(
+            String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
+        lastRunScript = script;
+        stopRequested = false;
         lastRunDir = workingDir;
         consoleDir = workingDir;
         lastRunLabel = label;
@@ -1157,8 +1298,15 @@ final class RunCoordinator {
 
             @Override
             public void onExit(int code) {
-                panel().finished(code);
-                host.setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
+                if (stopRequested) {
+                    // A stopped run's exit code is the signal's (143 for TERM): report the Stop, not a "finish".
+                    stopRequested = false;
+                    panel().stopped();
+                    host.setStatus(tr("status.run.stopped"));
+                } else {
+                    panel().finished(code);
+                    host.setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
+                }
                 ops.onRunStateChanged();
             }
 
@@ -1181,6 +1329,7 @@ final class RunCoordinator {
             return;
         }
         if (service.isRunning()) {
+            stopRequested = true;
             service.stop();
             host.setStatus(tr("status.run.stopped"));
         }

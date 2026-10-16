@@ -7716,7 +7716,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         // project tree's cannot disagree about when it appears.
         buffer.setBuildMenuContributor(() -> {
             javafx.scene.control.Menu maven = mavenProjectCoordinator.mavenMenu(buffer.getPath());
-            return maven == null ? previews.lint().editorMenu(buffer) : List.of(maven);
+            if (maven != null) {
+                return List.of(maven);
+            }
+            List<javafx.scene.control.MenuItem> items =
+                    new ArrayList<>(previews.lint().editorMenu(buffer));
+            items.addAll(runCoordinator.editorMenuItems(buffer)); // Run with Trace on a runnable shell script
+            return items;
         });
         buffer.setMenuContributor(
                 () -> { // External Tools submenu + plugin-contributed right-click items

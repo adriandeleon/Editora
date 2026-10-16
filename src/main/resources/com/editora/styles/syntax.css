@@ -68,6 +68,25 @@
 .text.run-stderr,
 .editor-area .text.run-stderr { -fx-fill: -color-danger-fg; }
 
+/* Run console: the colours a program prints with SGR escape codes (com.editora.run.AnsiText). After the
+   stderr rule and with the same `.editor-area` prefix, so a program's own colour wins over the stderr tint.
+   Theme colours where a theme has one; mid-tones that read on light and dark backgrounds otherwise. */
+/* Run with Trace: bash's `+file:line: command` lines arrive on stderr but are not errors. */
+.text.run-trace,
+.editor-area .text.run-trace { -fx-fill: -color-fg-muted; }
+.text.ansi-black,   .editor-area .text.ansi-black   { -fx-fill: -color-fg-muted; }
+.text.ansi-red,     .editor-area .text.ansi-red     { -fx-fill: -color-danger-fg; }
+.text.ansi-green,   .editor-area .text.ansi-green   { -fx-fill: -color-success-fg; }
+.text.ansi-yellow,  .editor-area .text.ansi-yellow  { -fx-fill: -color-warning-fg; }
+.text.ansi-blue,    .editor-area .text.ansi-blue    { -fx-fill: -color-accent-fg; }
+.text.ansi-magenta, .editor-area .text.ansi-magenta { -fx-fill: #b05cc8; }
+.text.ansi-cyan,    .editor-area .text.ansi-cyan    { -fx-fill: #2b9fb0; }
+.text.ansi-white,   .editor-area .text.ansi-white   { -fx-fill: -color-fg-default; }
+.text.ansi-bold,    .editor-area .text.ansi-bold    { -fx-font-weight: bold; }
+.text.ansi-dim,     .editor-area .text.ansi-dim     { -fx-opacity: 0.65; }
+.text.ansi-italic,  .editor-area .text.ansi-italic  { -fx-font-style: italic; }
+.text.ansi-underline, .editor-area .text.ansi-underline { -fx-underline: true; }
+
 /* Git/GitHub CLI transcript (com.editora.process.CommandLogFormat, shown in the Build Output
    console's Git / GitHub tabs): the echoed "$ git push …" line and the "exit 0 · 120 ms" footer that
    bracket each entry's output. A failed command's footer + stderr reuse .text.log-error above. */

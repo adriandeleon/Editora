@@ -1940,6 +1940,7 @@ final class WindowCommandRegistrar {
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).
         host.registry().register(Command.of("file.run", host.runCoordinator()::runActiveFile));
         host.registry().register(Command.of("file.runWithArgs", host.runCoordinator()::runActiveFileWithArgs));
+        host.registry().register(Command.of("run.trace", host.runCoordinator()::runActiveFileWithTrace));
         host.registry().register(Command.of("run.mainClass", host.runCoordinator()::runMainClass));
         host.registry().register(Command.of("run.config", host.runConfigurations()::runSavedConfig));
         // Under `debug.` so Chrome's feature rule gates it with the rest of debugging, exactly like the
