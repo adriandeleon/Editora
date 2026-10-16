@@ -782,6 +782,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     public void refreshTree() {
         treeRefreshCountForTest++;
+        GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
         if (mapMode) {
             mapView.refresh();
             return;
@@ -964,6 +965,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         loading = false;
         ensureWatchOrStop(); // start a watcher for a local root (or stop it for remote/none)
         rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
+        GitPathScope.learnRemote(root, true); // a remote project: where its repositories are, for the menus
     }
 
     /**

@@ -124,6 +124,13 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   configured tool), and never probes a host from the JavaFX thread. User commands get a host-neutral
   environment (`REMOTE_USER_ENV`: nothing from this machine's locale). Credentials for fetch and push are the
   host's own; nothing prompts (`GIT_TERMINAL_PROMPT=0`).
+- **Repositories inside a remote project** (a nested repository, a submodule, another worktree): the Project
+  tree's and the tab menu's Git actions on their files go to that repository, as locally (`GitPathScope`).
+  Locally the nearest `.git` is found with a few `stat` calls as the menu opens; on a host each would be an
+  SFTP round trip on the FX thread, so the host is asked once, off it, where the project's `.git` entries are
+  (`GitPathScope.learnRemote`: one `find`, eight levels deep, skipping `node_modules` and the like) when the
+  project is shown, after a clone or init, and on a tree refresh at most once a minute. Until it has answered,
+  a remote path is in the active repository when under its root, as before.
 - **Fetch automatically** (`GitAutoFetch`, `GitService.autoFetch`) fetches a remote repository on its host,
   by the host's git (`commandFor`), with the same batch-mode environment as a local one (`GitSafety.autoFetchEnv`)
   and under the same trust rule. A `GIT_SSH_COMMAND` or `GIT_SSH` the host's login profile exports is the
@@ -241,8 +248,7 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   compiled for the debugger on its host, with the host's `javac` (beside its `jdk.home`, else on its `PATH`),
   into `<cache>/debug-classes/<id>` (removed when the session ends), and launched from there
   (`DapManager.compileOnHost`).
-- **Not yet:** the Project tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left
-  to the host's git).
+- **Not yet:** `blame.ignoreRevsFile` handling (left to the host's git).
 
 Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
 servers on localhost), and, in the `Remote probe` workflow below, against macOS 15.7's own OpenSSH 9.9p2 with

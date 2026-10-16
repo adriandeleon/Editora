@@ -63,7 +63,8 @@ class ChildLocalePolicyTest {
             "search/SearchService.java", // rg matches
             "typst/TypstRenderer.java", // detect()
             "io/Trash.java", // `gio trash` (exit code)
-            "ui/FileWorkflowCoordinator.java"); // pkexec probe + elevated save (exit code)
+            "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
+            "ui/GitPathScope.java"); // `find` on a remote host: where a project's .git entries are
 
     /**
      * Long-lived, shown to the user, or a JVM tool on the user's paths: the inherited locale. The number is

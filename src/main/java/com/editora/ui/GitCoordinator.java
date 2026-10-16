@@ -1645,10 +1645,10 @@ final class GitCoordinator {
                     if (state.isRepo()) {
                         action.accept(state.root(), state.status());
                     } else {
-                        host.setStatus(tr(service.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+                        host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
                     }
                 });
-            case NONE -> host.setStatus(tr(service.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+            case NONE -> host.setStatus(tr(service.gitAvailable(file) ? "status.notARepo" : "status.gitNotInstalled"));
         }
     }
 
@@ -1680,7 +1680,10 @@ final class GitCoordinator {
      */
     void activatingRepositoryOf(Path file, Runnable action) {
         ifEnabled(() -> {
-            if (GitPathScope.of(file, repoRoot) != GitPathScope.OTHER || Files.isDirectory(file)) {
+            // A path the tree offers history for is a file; a folder here would be opened as one. (On a
+            // remote host the check would be an SFTP round trip, so it is left to the tree.)
+            if (GitPathScope.of(file, repoRoot) != GitPathScope.OTHER
+                    || (com.editora.vfs.Vfs.isLocal(file) && Files.isDirectory(file))) {
                 action.run();
                 return;
             }
@@ -1938,6 +1941,7 @@ final class GitCoordinator {
                 return;
             }
             host.setStatus(tr("status.gitInit.done", dir.toString()));
+            GitPathScope.learnRemote(ops.projectRoot(), true); // a new repository in a remote project
             afterMutation(); // status bar, Commit window, gutter bars all light up
         });
     }
@@ -2099,6 +2103,7 @@ final class GitCoordinator {
         service.clone(url, destination, options, running(new String[] {"clone"}, r -> {
             if (r.ok()) {
                 host.setStatus(tr("status.clonedInto", destination));
+                GitPathScope.learnRemote(ops.projectRoot(), true); // a clone into a remote project's folder
                 openClonedEntry(destination);
             } else {
                 gitError(tr("status.git.cloneFailed"), r.message());
