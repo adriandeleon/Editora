@@ -2857,6 +2857,30 @@ public class SettingsWindow {
                 tr("settings.markdownAssetsFolder.desc"),
                 markdownAssetsField,
                 "markdown image paste drop assets folder directory screenshots pictures");
+        textRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownImageName",
+                Settings.DEFAULT_MARKDOWN_IMAGE_NAME,
+                Settings::getMarkdownImageNamePattern,
+                Settings::setMarkdownImageNamePattern,
+                "markdown image paste drop file name pattern screenshot");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownImageAltPrompt",
+                false,
+                Settings::isMarkdownImageAltPrompt,
+                Settings::setMarkdownImageAltPrompt,
+                "markdown image paste alt text description accessibility ask prompt");
+        switchRow(
+                editing,
+                Category.MARKDOWN,
+                "markdownTrashUnusedPastedImages",
+                true,
+                Settings::isMarkdownTrashUnusedPastedImages,
+                Settings::setMarkdownTrashUnusedPastedImages,
+                "markdown pasted dropped image unused orphan trash delete clean up save");
         HBox tocLevels = new HBox(6, markdownTocMinSpinner, new Label("–"), markdownTocMaxSpinner);
         tocLevels.setAlignment(Pos.CENTER_LEFT);
         controlRow(
@@ -2890,22 +2914,6 @@ public class SettingsWindow {
                 Settings::isMarkdownTocUpdateOnSave,
                 Settings::setMarkdownTocUpdateOnSave,
                 "markdown table of contents toc update regenerate on save automatic");
-        textRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownImageName",
-                Settings.DEFAULT_MARKDOWN_IMAGE_NAME,
-                Settings::getMarkdownImageNamePattern,
-                Settings::setMarkdownImageNamePattern,
-                "markdown image paste drop file name pattern screenshot");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownImageAltPrompt",
-                false,
-                Settings::isMarkdownImageAltPrompt,
-                Settings::setMarkdownImageAltPrompt,
-                "markdown image paste alt text description accessibility ask prompt");
         switchRow(
                 editing,
                 Category.MARKDOWN,
@@ -2922,14 +2930,6 @@ public class SettingsWindow {
                 Settings::isMarkdownWikiLinks,
                 Settings::setMarkdownWikiLinks,
                 "markdown wiki links double brackets note backlinks obsidian zettelkasten");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownTrashUnusedPastedImages",
-                true,
-                Settings::isMarkdownTrashUnusedPastedImages,
-                Settings::setMarkdownTrashUnusedPastedImages,
-                "markdown pasted dropped image unused orphan trash delete clean up save");
         choiceRow(
                 editing,
                 Category.MARKDOWN,
@@ -3042,6 +3042,10 @@ public class SettingsWindow {
                 Category.MARKDOWN,
                 markdownLintConfigNoteLabel,
                 "markdown lint project config markdownlint rules");
+        // Its card row takes no room either while there is no project config to mention (a blank gap).
+        Node noteRow = markdownLintConfigNoteLabel.getParent();
+        noteRow.visibleProperty().bind(markdownLintConfigNoteLabel.visibleProperty());
+        noteRow.managedProperty().bind(noteRow.visibleProperty());
         cardRow(
                 lint,
                 Category.MARKDOWN,
@@ -3262,14 +3266,9 @@ public class SettingsWindow {
     private javafx.scene.Node markdownLintRulesEditor() {
         markdownLintRulesBox = new VBox(4);
         rebuildMarkdownLintRules();
-        // Forty-odd rules: a window onto the list, so the card does not push the rest of the page away.
-        ScrollPane scroll = new ScrollPane(markdownLintRulesBox);
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setPrefViewportHeight(300);
-        scroll.setMaxHeight(320);
-        scroll.getStyleClass().add("settings-lint-rules-scroll");
-        return scroll;
+        // The last card on the page, so the rules list in full: a scroller of its own inside the page's
+        // scroller caught the wheel and showed two scrollbars.
+        return markdownLintRulesBox;
     }
 
     private void rebuildMarkdownLintRules() {

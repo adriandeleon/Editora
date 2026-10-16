@@ -140,6 +140,31 @@ class SettingsLangsPagesFxTest {
         });
     }
 
+    /**
+     * The Markdown page keeps the pasted-image rows together, has no scroller inside its own scroller, and
+     * leaves no blank gap where the project-config note would go.
+     */
+    @Test
+    void theMarkdownPageReadsInOneScrollWithTheImageRowsTogether() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            Region page = rig.page("MARKDOWN");
+            assertTrue(
+                    SettingsRig.all(page, javafx.scene.control.ScrollPane.class).isEmpty(), "no nested scroller");
+            java.util.List<String> titles = SettingsRig.all(page, Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("settings-row-title"))
+                    .map(Label::getText)
+                    .toList();
+            int folder = titles.indexOf(tr("settings.markdownAssetsFolder"));
+            int name = titles.indexOf(tr("settings.markdownImageName"));
+            int alt = titles.indexOf(tr("settings.markdownImageAltPrompt"));
+            int toc = titles.indexOf(tr("settings.markdownTocLevels"));
+            assertTrue(folder < name && name < alt && alt < toc, "image rows together, then the TOC: " + titles);
+            Label note = rig.control("markdownLintConfigNoteLabel");
+            assertFalse(note.getParent().isManaged(), "no blank row while there is no project config");
+        });
+    }
+
     private static javafx.scene.Node cardOf(javafx.scene.Node n) {
         javafx.scene.Node c = n;
         while (c != null && !c.getStyleClass().contains("settings-card")) {
