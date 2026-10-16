@@ -106,6 +106,65 @@ public final class ShellFiles {
     }
 
     /**
+     * Shell files that a shell or a session manager <em>sources</em> — rc, profile, login/logout, alias and X
+     * session files, direnv's {@code .envrc} — and that are never run as a program. Run offers no ▶ for them: a
+     * stray click on the gutter of {@code .xinitrc} started a window manager, {@code .bash_logout} ran log-out
+     * steps, and {@code .zshrc} was run by bash.
+     */
+    private static final Set<String> STARTUP = Set.of(
+            ".profile",
+            ".bashrc",
+            ".bash_profile",
+            ".bash_login",
+            ".bash_logout",
+            ".bash_aliases",
+            ".bash_functions",
+            ".zshrc",
+            ".zshenv",
+            ".zprofile",
+            ".zlogin",
+            ".zlogout",
+            ".zsh_aliases",
+            ".zsh_functions",
+            ".aliases",
+            ".shrc",
+            ".kshrc",
+            ".mkshrc",
+            ".profile.local",
+            ".bashrc.local",
+            ".zshrc.local",
+            ".xprofile",
+            ".xinitrc",
+            ".xsession",
+            ".xsessionrc",
+            ".envrc",
+            "profile",
+            "bashrc",
+            "bash.bashrc",
+            "bash_logout",
+            "zshrc",
+            "zshenv",
+            "zprofile",
+            "zlogin",
+            "zlogout");
+
+    /**
+     * Whether {@code fileName} (a name or a path) is a startup file that is sourced rather than run — so it gets
+     * no Run ▶ (see {@link #STARTUP}). A {@code *.bashrc}, {@code *.zshrc} or {@code *.profile} counts too.
+     */
+    public static boolean isStartupFile(String fileName) {
+        if (fileName == null) {
+            return false;
+        }
+        String norm = fileName.replace('\\', '/');
+        String lower = norm.substring(norm.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
+        return STARTUP.contains(lower)
+                || lower.endsWith(".bashrc")
+                || lower.endsWith(".zshrc")
+                || lower.endsWith(".profile");
+    }
+
+    /**
      * Whether {@code fileName} (a name or a path) is a zsh startup file: one the Bash language server must not
      * be given (see {@link #ZSH_STARTUP}). A {@code *.zsh} script is not one of them — the server sees its
      * extension and leaves its linting alone itself.
