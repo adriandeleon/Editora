@@ -58,13 +58,13 @@ class RunConfigToolbarTest {
     }
 
     /**
-     * With no project, any detected build counts. Projects are off by default, so requiring one would hide
-     * the group permanently for everyone who never turned the feature on — Maven checkouts included.
+     * Run configurations belong to projects: the No Project window launches from the gutter only, so a build
+     * file above a loose file no longer brings the group in.
      */
     @Test
-    void withNoProjectADetectedBuildIsEnough() {
-        assertTrue(RunConfigToolbar.launchable(null, Path.of("/src/work"), false));
-        assertFalse(RunConfigToolbar.launchable(null, null, false), "and nothing detected is not");
+    void withNoProjectNothingIsLaunchable() {
+        assertFalse(RunConfigToolbar.launchable(null, Path.of("/src/work"), false), "not even a detected build");
+        assertFalse(RunConfigToolbar.launchable(null, null, false));
     }
 
     @Test

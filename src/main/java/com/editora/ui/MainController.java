@@ -1223,9 +1223,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             // After whoever opened this window has had the chance to hand it credentials of its own.
             Platform.runLater(() -> remoteCoordinator.promptReconnectIfNeeded());
         }
-        // This window now knows its project, which is half of what gates the run-config group; the other
-        // half (marker detection) re-runs on the tab-selection and focus-regain paths.
-        runConfigurations.refreshRunConfigToolbar();
+        // This window now knows its project, which decides whether it has run configurations at all (the
+        // selector, its per-configuration commands) and half of what gates the toolbar group; the other half
+        // (marker detection) re-runs on the tab-selection and focus-regain paths.
+        runConfigurations.refreshRunConfigs();
     }
 
     /**
@@ -5989,7 +5990,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public List<com.editora.config.RunConfiguration> runConfigurations() {
-            return List.copyOf(config.getWorkspaceState().getRunConfigurations());
+            return runConfigurations.savedConfigs(); // none in the No Project window: the gutter ▶ runs plain
         }
 
         @Override

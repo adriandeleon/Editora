@@ -8,6 +8,7 @@ import com.editora.command.CommandRegistry;
 import com.editora.config.RunConfiguration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -38,6 +39,12 @@ class RunConfigToolbarFxTest {
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
         registry = FxTestSupport.field(fx.controller, "registry");
+    }
+
+    /** Run configurations are a project window's; a test that leaves its own project (or none) is undone here. */
+    @BeforeEach
+    void inAPlainProject() throws Exception {
+        fx.useProject();
     }
 
     @AfterAll
@@ -166,14 +173,14 @@ class RunConfigToolbarFxTest {
     }
 
     /**
-     * The reported case: a window with no project and nothing saved shows no run-configuration group at all,
-     * rather than a dropdown that can never fill (#792).
+     * The reported case: a plain folder with nothing saved shows no run-configuration group at all, rather
+     * than a dropdown that can never fill (#792).
      *
      * <p>Asserted on {@code managed} as well as {@code visible} — an invisible but managed control still
      * holds its slot, which would leave the gap and the orphaned separators this is meant to remove.
      */
     @Test
-    void theGroupIsHiddenWithNoProjectAndNoConfigurations() throws Exception {
+    void theGroupIsHiddenInAPlainProjectWithNoConfigurations() throws Exception {
         setConfigs(List.of());
 
         ComboBox<RunConfiguration> combo = combo();
@@ -185,8 +192,8 @@ class RunConfigToolbarFxTest {
     }
 
     /**
-     * Saving a configuration brings the group back even in a plain folder — otherwise the gate would strand
-     * it, with no UI left that reaches it.
+     * Saving a configuration brings the group back even in a plain project folder — otherwise the gate would
+     * strand it, with no UI left that reaches it.
      */
     @Test
     void aSavedConfigurationBringsTheGroupBack() throws Exception {
@@ -201,6 +208,43 @@ class RunConfigToolbarFxTest {
 
         setConfigs(List.of());
         assertFalse(FxTestSupport.callOnFx(combo::isVisible), "and goes away again when the last one is deleted");
+    }
+
+    /**
+     * Run configurations belong to projects. The No Project window launches only from the gutter, so even with
+     * configurations in its saved state (the global session kept a list before this rule) it shows no group,
+     * lists nothing and registers no per-configuration command — and the list is left as it was, not deleted.
+     */
+    @Test
+    void theNoProjectWindowHasNoRunConfigurations() throws Exception {
+        String runId = RunConfiguration.commandIdFor("Server");
+        setConfigs(List.of(java("Server")));
+        assertTrue(FxTestSupport.callOnFx(() -> registry.get(runId).isPresent()), "registered in a project");
+        try {
+            setProject(null);
+            setConfigs(List.of(java("Server")));
+
+            ComboBox<RunConfiguration> combo = combo();
+            assertFalse(FxTestSupport.callOnFx(combo::isVisible), "selector hidden");
+            assertFalse(FxTestSupport.callOnFx(combo::isManaged), "and takes no layout space");
+            assertEquals(
+                    List.of(RunConfigurationCoordinator.EDIT_CONFIGS_ROW),
+                    FxTestSupport.callOnFx(() -> List.copyOf(combo.getItems())),
+                    "nothing listed");
+            assertFalse(FxTestSupport.callOnFx(() -> registry.get(runId).isPresent()), "no run command");
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> registry.get(RunConfiguration.debugCommandIdFor("Server"))
+                            .isPresent()),
+                    "no debug command");
+            com.editora.config.ConfigManager cfg = FxTestSupport.field(fx.controller, "config");
+            assertEquals(
+                    1,
+                    FxTestSupport.callOnFx(
+                            () -> cfg.getWorkspaceState().getRunConfigurations().size()),
+                    "the saved list itself is kept");
+        } finally {
+            setConfigs(List.of());
+        }
     }
 
     /**

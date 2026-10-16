@@ -359,6 +359,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Run configurations belong to projects.** The No Project window has no run-configuration selector, Run or
+  Debug buttons, and its Save, Edit, Delete and Run/Debug Configuration commands say to open a project. There
+  you run a script or a compact Java file from its gutter ▶ or with Run File. A Maven or Gradle checkout opened
+  as loose files no longer shows the toolbar group either. Configurations the global session saved before are
+  kept in its state, not deleted; they are just not offered.
 - **Without a project, the TODO window lists only the current tab.** It is hidden, stripe button included,
   while that tab has no TODOs, and comes back by itself on a tab or edit that has some if it was open when it
   was hidden. It follows edits as you type. Project windows still scan the whole project.

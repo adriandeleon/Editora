@@ -142,6 +142,21 @@ final class FxWindowFixture implements AutoCloseable {
         });
     }
 
+    /**
+     * Makes this a project window on a plain folder of its own (under {@link #configDir}, so {@link #dispose()}
+     * removes it), the way {@code WindowManager} builds one, and returns that folder. Run configurations exist
+     * only in a project window. Idempotent: the same folder and project every time.
+     */
+    Path useProject() throws Exception {
+        Path root = Files.createDirectories(configDir.resolve("project"));
+        FxTestSupport.runOnFx(() -> {
+            shared.getSettings().setProjectSupport(true); // a window has a project only while the feature is on
+            controller.setWindowContext(
+                    windowManager, new com.editora.config.Project("fx-test", "fx-test", root.toString()));
+        });
+        return root;
+    }
+
     /** Boots the production {@code --diff-ui LEFT RIGHT} path against an isolated config directory. */
     static FxWindowFixture createDiff(Path dir, Path left, Path right, Consumer<MainController> onBuilt)
             throws Exception {
