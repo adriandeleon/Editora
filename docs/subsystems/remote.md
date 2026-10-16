@@ -98,9 +98,14 @@ Run This Project's Tools Here forgets the pick and withdraws it. Until then, or 
 folder's tools run here. When where a folder's tools run changes, a language server started on the other
 side is stopped and its tabs reopen on the right one (`LspManager.shutdownSessionsOnAnotherTarget`: a
 session remembers the target it started on). The engine's command is `Settings.containerEngine` (Settings →
-Remote; blank is `docker`). Not yet: a cache folder in the container (jdtls keeps its own default; the
-java-debug plugin is the container's own `dap.java`), forwarded ports (debuggers that listen on a port), and
-stopping a container's programs after Editora itself crashed. `ContainerProbeFxTest` is the opt-in check against a real engine
+Remote; blank is `docker`). A port only the container has — a debugger's — is reached through a loopback port
+here (`ContainerExecTarget.forwardLocal`, `ContainerPortForward`): each connection starts one `exec` running a
+relay the container has, found once (`nc`, else `bash`'s `/dev/tcp`, else `python3`), joined to the port
+inside. It works for every engine and network, including rootless Podman and Docker Desktop, whose containers
+this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. Not
+yet: a cache folder in the container (jdtls keeps its own default; the java-debug plugin is the container's own
+`dap.java`), and stopping a container's programs after Editora itself crashed. The `Remote probe` workflow's
+container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
 
 - A command is one string built by `process/PosixShell`:

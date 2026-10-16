@@ -232,4 +232,41 @@ class ContainerProbeFxTest {
             engine("rm", "-f", dev);
         }
     }
+
+    /** A port only the container has is reached through a relay run with exec (here bash's /dev/tcp). */
+    @Test
+    void aPortInTheContainerIsReachedFromHere() throws Exception {
+        Files.writeString(folder.resolve("Hello.java"), """
+                public class Hello {
+                    public static void main(String[] a) throws Exception {
+                        try (var server = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+                            System.out.println(server.getLocalPort());
+                            System.out.flush();
+                            try (var s = server.accept()) {
+                                String line = new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream())).readLine();
+                                s.getOutputStream().write(("hello from the container, " + line + "\\n").getBytes());
+                            }
+                        }
+                    }
+                }
+                """);
+        Process server =
+                target.start(ExecSpec.of(List.of("java", "Hello.java"), folder, Map.of(), ExecSpec.Locale.PARSE_STABLE)
+                        .withLongLived(true));
+        try {
+            String portLine =
+                    new java.io.BufferedReader(new java.io.InputStreamReader(server.getInputStream())).readLine();
+            int port = Integer.parseInt(portLine.strip());
+            try (var forward = target.forwardLocal("127.0.0.1", port);
+                    var socket = new java.net.Socket(java.net.InetAddress.getLoopbackAddress(), forward.localPort())) {
+                socket.getOutputStream().write("Ana\n".getBytes());
+                socket.getOutputStream().flush();
+                String reply =
+                        new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream())).readLine();
+                assertEquals("hello from the container, Ana", reply);
+            }
+        } finally {
+            ProcessRegistry.killTree(server);
+        }
+    }
 }
