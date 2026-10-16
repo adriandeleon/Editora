@@ -294,6 +294,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
+  long method signatures such as `Files.find(…)` or `Map.merge(…)` are no longer cut off. It still sizes itself to
+  the widest row, so short lists stay narrow.
 - **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
   whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
   to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and
