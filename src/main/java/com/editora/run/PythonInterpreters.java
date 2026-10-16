@@ -135,6 +135,23 @@ public final class PythonInterpreters {
         }
     }
 
+    /**
+     * The absolute path of {@code name} on Editora's augmented PATH (login shell PATH, inherited PATH, the
+     * usual install folders), or empty — the {@link Inputs#onPath} for a local resolution.
+     */
+    public static Optional<String> onAugmentedPath(String name) {
+        List<String> resolved = com.editora.process.ProcessRunner.resolveExecutable(List.of(name));
+        String exe = resolved.isEmpty() ? name : resolved.get(0);
+        return exe.equals(name) ? Optional.empty() : Optional.of(exe);
+    }
+
+    /** Resolves for a local file with the real file system, environment, OS and augmented PATH. */
+    public static PythonInterpreter resolveLocal(
+            Path file, Path projectRoot, String configured, String projectChoice, String setting) {
+        return resolve(Inputs.local(
+                file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath));
+    }
+
     /** Whether this JVM runs on Windows. */
     public static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
