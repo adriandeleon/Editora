@@ -260,6 +260,23 @@ public final class HttpClientService {
             CapturedResponses captured,
             SecretGate gate,
             Consumer<HttpExchange> onResult) {
+        return run(parsed, environment, baseDir, captured, gate, ResponseScripts.OFF, onResult);
+    }
+
+    /**
+     * As {@link #run(HttpFile.Parsed, RunEnvironment, Path, CapturedResponses, SecretGate, Consumer)}, running the
+     * request's {@code @assert}/{@code @capture} checks and its response handlers through {@code scripts} once the
+     * response has arrived (see {@link #afterResponse}).
+     */
+    public Handle run(
+            HttpFile.Parsed parsed,
+            RunEnvironment environment,
+            Path baseDir,
+            CapturedResponses captured,
+            SecretGate gate,
+            ResponseScripts scripts,
+            Consumer<HttpExchange> onResult) {
+        ResponseScripts handlers = scripts == null ? ResponseScripts.OFF : scripts;
         Handle handle = new Handle();
         active.add(handle);
         CapturedResponses responses = captured == null ? new CapturedResponses() : captured;
@@ -271,7 +288,9 @@ public final class HttpClientService {
                 Map<String, String> vars = env.variables();
                 SecretApproval.Grant approval =
                         SecretApproval.ask(gate, handle::isCancelled, List.of(request), vars, baseDir, responses);
-                ex = executeSafely(handle, request, vars, baseDir, responses, session, approval);
+                beforeRun(handlers, List.of(request), handle);
+                HttpExchange sent = executeSafely(handle, request, vars, baseDir, responses, session, approval);
+                ex = afterResponse(handle, request, sent, vars, responses, handlers);
                 responses.put(request.name(), ex.result());
             } finally {
                 active.remove(handle);
@@ -311,6 +330,24 @@ public final class HttpClientService {
             SecretGate gate,
             IntConsumer onStart,
             Consumer<List<HttpExchange>> onResult) {
+        return runAll(parsed, environment, baseDir, responses, gate, ResponseScripts.OFF, onStart, onResult);
+    }
+
+    /**
+     * As {@link #runAll(List, RunEnvironment, Path, CapturedResponses, SecretGate, IntConsumer, Consumer)}, running
+     * each request's checks and response handlers through {@code scripts} before the next request starts, so what a
+     * handler stores is what the next request sends.
+     */
+    public Handle runAll(
+            List<HttpFile.Parsed> parsed,
+            RunEnvironment environment,
+            Path baseDir,
+            CapturedResponses responses,
+            SecretGate gate,
+            ResponseScripts scripts,
+            IntConsumer onStart,
+            Consumer<List<HttpExchange>> onResult) {
+        ResponseScripts handlers = scripts == null ? ResponseScripts.OFF : scripts;
         Handle handle = new Handle();
         active.add(handle);
         CapturedResponses captured = responses == null ? new CapturedResponses() : responses;
@@ -324,12 +361,14 @@ public final class HttpClientService {
                 Map<String, String> vars = env.variables();
                 SecretApproval.Grant approval =
                         SecretApproval.ask(gate, handle::isCancelled, requests, vars, baseDir, captured);
+                beforeRun(handlers, requests, handle);
                 for (HttpFile.Parsed req : requests) {
                     if (onStart != null) {
                         int index = out.size();
                         Platform.runLater(() -> onStart.accept(index));
                     }
                     HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session, approval);
+                    ex = afterResponse(handle, req, ex, vars, captured, handlers);
                     captured.put(req.name(), ex.result());
                     out.add(ex);
                     if (handle.isCancelled()) {
@@ -342,6 +381,54 @@ public final class HttpClientService {
             handle.deliver(() -> onResult.accept(out));
         });
         return handle;
+    }
+
+    /** Lets {@code scripts} ask its question once, before the run's first request; a failure asks nothing. */
+    private static void beforeRun(ResponseScripts scripts, List<HttpFile.Parsed> requests, Handle handle) {
+        try {
+            scripts.beforeRun(requests, handle::isCancelled);
+        } catch (RuntimeException ignored) {
+            // the handlers then report what they report on their own
+        }
+    }
+
+    /**
+     * The exchange with what its request's checks found: the {@code @assert} lines and {@code @capture} lines
+     * ({@link HttpChecks}, which also store their values in {@code captured}), then the response handlers run by
+     * {@code scripts} (whose {@code client.global} changes are applied to {@code captured} too). A request that got no
+     * response — not sent, failed, cancelled — runs none of them. Never throws: whatever goes wrong becomes a warning.
+     */
+    static HttpExchange afterResponse(
+            Handle handle,
+            HttpFile.Parsed request,
+            HttpExchange ex,
+            Map<String, String> vars,
+            CapturedResponses captured,
+            ResponseScripts scripts) {
+        if (ex == null || ex.result() == null || ex.result().failed() || handle.isCancelled()) {
+            return ex;
+        }
+        if (request.checks().isEmpty() && request.handlers().isEmpty()) {
+            return ex;
+        }
+        List<String> warnings = new ArrayList<>();
+        HttpTests tests = HttpTests.NONE;
+        try {
+            HttpChecks.Outcome checks = HttpChecks.evaluate(request.checks(), ex.result());
+            checks.captures().forEach(captured::setGlobal);
+            warnings.addAll(checks.warnings());
+            tests = new HttpTests(checks.tests(), List.of(), null);
+            if (!request.handlers().isEmpty()) {
+                ResponseScripts.Result r = scripts.run(
+                        request, ex, new ResponseScripts.Input(vars, captured.globals(), handle::isCancelled));
+                r.changes().forEach(c -> c.applyTo(captured));
+                tests = tests.plus(r.tests());
+                warnings.addAll(r.warnings());
+            }
+        } catch (RuntimeException | OutOfMemoryError failed) {
+            warnings.add(tr("http.warn.handlerFailed", String.valueOf(failed)));
+        }
+        return ex.withResult(ex.result().withTests(tests, warnings));
     }
 
     /** {@code environment} read now; one that fails to read gives no variables (the run still reports each one). */

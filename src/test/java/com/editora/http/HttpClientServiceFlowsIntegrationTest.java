@@ -392,7 +392,8 @@ class HttpClientServiceFlowsIntegrationTest {
                                 null,
                                 List.of(),
                                 List.of(),
-                                null),
+                                null,
+                                List.of()),
                         Map.of(),
                         null)
                 .result();
@@ -416,7 +417,8 @@ class HttpClientServiceFlowsIntegrationTest {
                         null,
                         List.of(),
                         List.of(),
-                        null),
+                        null,
+                        List.of()),
                 Map.of(),
                 null);
         assertEquals("GET", ex.method());

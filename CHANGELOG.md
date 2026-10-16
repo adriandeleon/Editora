@@ -30,6 +30,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   item, multi-line `( )` and `$( )`, and here-docs. Sticky scroll now pins shell functions and blocks too.
 - **A notice for shell scripts with Windows line endings or a byte-order mark**, which bash cannot run, with
   a Convert to LF (or Remove BOM) action. Running such a script first asks whether to convert it.
+- **HTTP Client: response handlers, tests and checks.**
+  - **JavaScript response handlers** — `> {% … %}` after a request, or `> ./check.js` — now run, on your own
+    Node.js, once the response arrives. They use the JetBrains API: `client.test`, `client.assert`,
+    `client.log`, `client.global`, `client.exit`, `response.body` (parsed JSON), `response.status`,
+    `response.headers.valueOf`, `response.contentType`, `response.cookies()`, the request as sent
+    (`request.url`, `request.headers`, `request.body`), `request.environment.get` and `jsonPath(…)`.
+  - **A Tests block** in the response view lists each test with ✓ or ✗ and why it failed, then the handler's log
+    and any error, with its line in the `.http` file. A `✓ 3 passed · ✗ 1 failed` badge sits beside the status
+    line, Run All's summary counts the requests whose tests failed, and History rows carry a ✓ or ✗. Test
+    results are kept in the saved history.
+  - **Checks without JavaScript:** `# @assert status == 200`, `# @assert $.items[0].id == 7`,
+    `# @assert header Content-Type contains json`, `# @assert $.token exists` (also `!=`, `<`, `<=`, `>`, `>=`,
+    `matches`, `!exists`, and `time`/`body` subjects), and `# @capture token = $.token`. They need neither
+    Node.js nor a trusted folder.
+  - **Session variables:** what `client.global.set` or `@capture` stores is used by later requests as
+    `{{name}}` — after a Run All's earlier request, or a single run of it. It wins over the environment and loses
+    to the file's own `@name = value`, is inserted as is (never resolved), and is cleared when the environment
+    changes. The editor no longer marks `{{name}}` unresolved when the file sets it this way.
+  - **Safety:** a handler is code from the folder, so it runs only from a trusted folder (the same trust as build
+    scripts and secrets), asked once per run with Cancel as the default button. Node.js is started without your
+    environment variables (so `process.env` cannot read a token around the secrets prompt) and, on Node.js 20 or
+    later, under its permission model: no file writes, no child processes, no workers. It is stopped after 10
+    seconds. A secret the request read reaches the handler masked. Handlers may make network requests. Remote
+    `.http` files still do not run. Import cURL writes body lines the format would not send (from a `>`, `<>` or
+    `###` line on) as comments, so a pasted command can never add a handler.
+  - **Settings → Web:** turn handlers off, choose the Node.js to use, and set the timeout. The Doctor has a row
+    for it. Pre-request scripts (`< {% %}`) are still skipped with a warning.
 - **Emacs registers.** In the Emacs keymap:
   - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
   - `C-x r i` inserts a register's text, leaving the cursor before it.
@@ -163,7 +190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there. Fetch automatically fetches a remote repository on its host too, by the host's git, under the same
   rules as a local one (a trusted folder, or one you have fetched in yourself), leaving an ssh command the
   host's login profile exports alone. In a remote project that holds another repository (nested, a submodule,
-  a worktree), the Project tree's Git actions on its files act on that repository, as they do locally.
+  a worktree), the Project tree's Git actions on its files act on that repository, as they do locally. Blame
+  of a remote file uses the repository's `.git-blame-ignore-revs`, and a `blame.ignoreRevsFile` in the host's
+  global config that the repository lacks no longer stops blame there.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers
@@ -207,7 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkboxes can be clicked to tick the source, a double-click on a block puts the caret on its source line, the
   block holding the caret is marked in Split, code blocks show their language, an image or diagram enlarges on
   click, front matter is a table (and can be hidden), and an empty document says so.
-- **Markdown preview to the side or in its own tab** (`View: Markdown Preview to the Side`, `View: Markdown Preview
+- **Markdown preview to the side or in its own tab** (`Markdown: Open Preview to the Side`, `Markdown: Open Preview
   in a Tab`), following the active Markdown file or locked to one.
 - **Markdown completion:** relative paths after `](`, heading anchors after `#` (this file and `file.md#`),
   reference labels, emoji after `:`, languages after a fence, and Mermaid keywords inside a Mermaid fence.
@@ -255,7 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Markdown preview:** Find searches the rendered preview when only the preview is showing. A safe subset of HTML
   is rendered (`<br>`, `<kbd>`, `<sub>`/`<sup>`, `<b>`/`<i>`/`<em>`/`<strong>`/`<code>`, `<a>`, `<img>`,
   `<details>`/`<summary>`, `align="center"`). Footnotes are numbered and linked both ways, inline footnotes
-  (`^[…]`) are recognised, a code block has Copy, a link has Copy Link Address, and links can be reached with Tab.
+  (`^[…]`) are recognised, the right-click menu has Copy Code Block on a code block and Copy Link Address on a link, and links can be reached with Tab.
   The light/dark toggle can return to "follow the app theme"; zoom and the Split divider are remembered per file.
 - **Markdown settings:** load remote images (on by default), preview theme (Follows the app theme / Light / Dark),
   folder for pasted images, and the heading levels listed by the table of contents.
@@ -364,7 +393,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the URL, in the request's folder. The status-and-headers text report is the second choice in the dialog.
 - **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
   JVMs beside the server one.
-- **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
+- **Snippet words no longer expand in the middle of a sentence.** In a Markdown or plain-text document, Tab after a word such
   as `code`, `link` or `bold` expands the snippet only when the word is alone on its line or is chosen from the
   completion popup.
 - **A double-click in the Markdown preview selects the word** instead of jumping to the source line (see the
@@ -375,14 +404,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   apart, `~struck~` is still strikethrough, as is `~~struck~~`. An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
   Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
 - **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
-  keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word
+  keeps the old setting; a new "Wrap long lines in Markdown and plain text" governs them. If you had switched word
   wrap on, everything still wraps. Toggle Word Wrap flips the preference that governs the file in front. A buffer
   with a very long unbroken run of characters opens unwrapped until toggled.
 - **A buffer showing only the Markdown preview refuses editing commands** (with a status message) instead of
   editing the hidden source; switch to Editor or Split to edit.
 - **Markdown preview:** entering Preview opens at the editor's position, and Split keeps the two panes on the same
   block instead of the same scroll fraction. Code blocks and wide tables scroll sideways instead of wrapping or
-  being squeezed. The preview menu's "Select All" (which copied the document) is gone and "Copy" is "Copy All".
+  being squeezed. The preview menu's "Select All" selects the preview's text instead of copying the document, "Copy" copies
+  the selection, and the old "Copy" (the whole document) is "Copy All".
 - **Markdown lint:** a front-matter `title:` counts as the document's top-level heading (as in markdownlint); the
   search for `.markdownlint.*` stops at the project or Git root; with the minimap visible the scrollbar lint stripe
   is hidden, since the minimap shows the same marks.

@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
@@ -430,6 +431,19 @@ class CommandSweepFxTest {
             }
             for (Throwable late; (late = offThread.poll()) != null; ) {
                 problems.add("uncaught on a worker thread after the sweep: " + describe(late));
+            }
+            leftInTheHomeDirectory();
+        }
+
+        /** config.export ran: its zip belongs in the window's own folder, never in the developer's home. */
+        private void leftInTheHomeDirectory() throws IOException {
+            if (fx == null) {
+                return; // the window never came up; that failure is the one reported
+            }
+            String prefix = fx.configDir.getFileName() + "-config-";
+            try (Stream<Path> files = Files.list(Path.of(System.getProperty("user.home")))) {
+                files.filter(f -> f.getFileName().toString().startsWith(prefix))
+                        .forEach(f -> problems.add("config.export wrote into the home directory: " + f));
             }
         }
 

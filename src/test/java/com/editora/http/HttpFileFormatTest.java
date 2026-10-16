@@ -177,9 +177,11 @@ class HttpFileFormatTest {
         Parsed p = only("GET http://h/a\n> {%\n  client.global.set(\"t\", response.body.token);\n%}\n>> ./out.json\n");
         assertEquals("", p.body());
         assertEquals(1, p.redirects().size(), "a redirect after a multi-line handler is still read");
-        assertEquals(1, p.warnings().size(), p.warnings().toString());
-        assertTrue(
-                p.warnings().get(0).contains("response handler"), p.warnings().toString());
+        assertTrue(p.warnings().isEmpty(), "the handler is read, not ignored: " + p.warnings());
+        assertEquals(1, p.handlers().size());
+        assertEquals(
+                "\n  client.global.set(\"t\", response.body.token);\n",
+                p.handlers().get(0).source());
     }
 
     @Test

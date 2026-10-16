@@ -3691,8 +3691,20 @@
 .http-panel .http-warn-badge { -fx-text-fill: -state-amber; -fx-font-weight: bold; -fx-cursor: hand; }
 .http-panel .http-run-summary { -fx-text-fill: -color-fg-muted; }
 .http-panel .http-warn-badge:focused { -fx-underline: true; }
+.http-panel .http-tests-badge { -fx-cursor: hand; }
+.http-panel .http-tests-part { -fx-font-weight: bold; }
+.http-panel .http-tests-part.http-tests-passed { -fx-text-fill: -state-green; }
+.http-panel .http-tests-part.http-tests-failed { -fx-text-fill: -state-red; }
+.http-panel .http-tests-part.http-tests-sep { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-tests-badge:focused .http-tests-part { -fx-underline: true; }
+.http-panel .http-test { -fx-padding: 0 4 0 4; }
+.http-panel .http-test-passed { -fx-text-fill: -state-green; }
+.http-panel .http-test-failed { -fx-text-fill: -state-red; }
 .http-panel .http-body-note { -fx-text-fill: -state-amber; -fx-padding: 2 4 2 4; }
 .http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
+.http-history-tests { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
+.http-history-tests.http-test-passed { -fx-text-fill: -state-green; }
+.http-history-tests.http-test-failed { -fx-text-fill: -state-red; }
 .http-history-code.http-status-ok { -fx-text-fill: -state-green; }
 .http-history-code.http-status-redirect { -fx-text-fill: -state-accent; }
 .http-history-code.http-status-client-error { -fx-text-fill: -state-amber; }

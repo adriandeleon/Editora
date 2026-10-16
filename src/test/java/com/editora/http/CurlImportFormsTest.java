@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The curl flags, quoting rules and truncated commands {@code CurlImportTest} does not reach. */
 class CurlImportFormsTest {
@@ -90,6 +91,20 @@ class CurlImportFormsTest {
         assertEquals(4, CurlImport.alteredBodyLines(md), md); // # and // are comments; from > on, a handler
         assertEquals(
                 2, CurlImport.alteredBodyLines(CurlImport.toHttpRequest("curl --data-raw $'a\\n### b\\nc' http://h/")));
+    }
+
+    @Test
+    void anImportedBodyNeverBecomesAHandlerAPreRequestScriptOrACheck() {
+        String request = CurlImport.toHttpRequest("curl --data-raw $'a\\n> {% client.global.set(\"x\", 1) %}\\n"
+                + "### next\\n# @capture t = $.t\\n< {% request.variables.set(\"y\", 2) %}\\nGET http://evil/\\n'"
+                + " http://h/");
+        java.util.List<HttpFile.Request> requests = HttpFile.parse(request);
+        assertEquals(1, requests.size(), request);
+        HttpFile.Parsed p = HttpFile.parseRequest(requests.get(0));
+        assertTrue(p.handlers().isEmpty(), request);
+        assertTrue(p.checks().isEmpty(), request);
+        assertEquals("a", p.body(), "the lines after the first > were never sent, and still are not");
+        assertEquals(5, CurlImport.alteredBodyLines(request), request);
     }
 
     @Test
