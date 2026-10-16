@@ -21,9 +21,11 @@ import com.editora.container.ContainerExecTarget;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * One window's project and the container its tools run in. A project folder bind-mounted into a running
- * container — the dev container started for it, or the container the user named — has its git, builds,
- * tests, language servers and debuggers run there, once the user has agreed for that container.
+ * One window's project and where its tools run when that is not this machine though its files are: a
+ * container, or a WSL distribution. A project folder bind-mounted into a running container — the dev
+ * container started for it, or the container the user named — or inside a WSL distribution
+ * ({@code \\wsl.localhost\…}) has its git, builds, tests, language servers and debuggers run there, once the
+ * user has agreed for that container or distribution.
  *
  * <p>Asking the engine is off the FX thread; the question and the switch-over are on it. The project is
  * looked at again when it changes and when the window comes back to the front (a dev container started or
@@ -51,7 +53,7 @@ final class ContainerCoordinator {
     /** How the engine is asked, from its configured command (replaceable in tests). */
     Function<ContainerEngine, ContainerBindings.Lookup> lookups = ContainerBindings::lookup;
     /** The one-time question; replaceable in tests. */
-    Predicate<ContainerExecTarget> consent = this::askToRunInContainer;
+    Predicate<com.editora.process.ExecTarget> consent = this::askToRunThere;
 
     /** Containers the user said "not now" to this session. */
     private final Set<String> declined = new HashSet<>();
@@ -77,6 +79,13 @@ final class ContainerCoordinator {
                 || !com.editora.vfs.Vfs.isLocal(root)
                 || !host.settings().isRemoteExecution()) {
             settle(root, null);
+            return;
+        }
+        if (com.editora.wsl.WslTargets.isWslPath(root)) {
+            // Inside a WSL distribution: where its tools run follows from the path itself, no engine to ask.
+            checkedRoot = root;
+            checkedAt = System.currentTimeMillis();
+            settle(root, com.editora.wsl.WslTargets.shared().forPath(root));
             return;
         }
         long now = System.currentTimeMillis();
@@ -119,7 +128,7 @@ final class ContainerCoordinator {
     }
 
     /** Where the project's tools run now that {@code target} (or none) was found for {@code root}. */
-    private void settle(Path root, ContainerExecTarget target) {
+    private void settle(Path root, com.editora.process.ExecTarget target) {
         String id = target == null ? null : target.id();
         if (target != null && !ops.execAllowed(id)) {
             if (declined.contains(id) || !consent.test(target)) {
@@ -133,7 +142,10 @@ final class ContainerCoordinator {
             boolean wasBound = boundId != null;
             boundId = id;
             if (id != null) {
-                host.setStatus(tr("status.container.bound", target.info().name()));
+                host.setStatus(
+                        target instanceof com.editora.wsl.WslExecTarget wsl
+                                ? tr("status.wsl.bound", wsl.distro())
+                                : tr("status.container.bound", nameOf(target)));
             } else if (wasBound) {
                 host.setStatus(tr("status.container.unbound"));
             }
@@ -141,22 +153,30 @@ final class ContainerCoordinator {
         }
     }
 
-    private boolean askToRunInContainer(ContainerExecTarget target) {
+    /** The container's name, or the target's id for anything else. */
+    private static String nameOf(com.editora.process.ExecTarget target) {
+        return target instanceof ContainerExecTarget c ? c.info().name() : target.id();
+    }
+
+    private boolean askToRunThere(com.editora.process.ExecTarget target) {
         ButtonType allow = new ButtonType(tr("dialog.remoteExec.allow"), ButtonBar.ButtonData.OK_DONE);
         ButtonType notNow = new ButtonType(tr("dialog.remoteExec.notNow"), ButtonBar.ButtonData.CANCEL_CLOSE);
         Path root = ops.projectRoot();
+        String folder = root == null || root.getFileName() == null
+                ? ""
+                : root.getFileName().toString();
+        boolean wsl = target instanceof com.editora.wsl.WslExecTarget;
+        String name = wsl ? ((com.editora.wsl.WslExecTarget) target).distro() : nameOf(target);
         Alert alert = new Alert(
                 Alert.AlertType.CONFIRMATION,
-                tr(
-                        "dialog.container.content",
-                        target.info().name(),
-                        root == null ? "" : root.getFileName().toString(),
-                        String.join(" ", engine().command())),
+                wsl
+                        ? tr("dialog.wsl.content", name, folder)
+                        : tr("dialog.container.content", name, folder, String.join(" ", engine().command())),
                 allow,
                 notNow);
         alert.initOwner(host.window());
-        alert.setTitle(tr("dialog.container.title"));
-        alert.setHeaderText(tr("dialog.container.header", target.info().name()));
+        alert.setTitle(tr(wsl ? "dialog.wsl.title" : "dialog.container.title"));
+        alert.setHeaderText(tr(wsl ? "dialog.wsl.header" : "dialog.container.header", name));
         return Dialogs.styled(alert).showAndWait().orElse(notNow) == allow;
     }
 
@@ -224,6 +244,13 @@ final class ContainerCoordinator {
         if (bindings.remove(root.toAbsolutePath().normalize().toString()) != null) {
             host.settings().setContainerBindings(bindings);
             host.requestSave();
+        }
+        if (com.editora.wsl.WslTargets.isWslPath(root)) {
+            String id = com.editora.wsl.WslTargets.shared().forPath(root).id();
+            ops.setExecAllowed(id, false);
+            declined.add(id); // not asked about its distribution again this session
+            settle(root, null);
+            return;
         }
         ContainerExecTarget target = ContainerBindings.shared().boundTo(root);
         if (target != null) {

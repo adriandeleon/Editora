@@ -78,13 +78,14 @@ class ContainerInfoTest {
 
     @Test
     void aPortIsReachedWithTheRelayTheContainerHas() {
-        assertEquals(List.of("nc", "127.0.0.1", "5005"), ContainerExecTarget.relayArgv("nc", "127.0.0.1", 5005));
-        List<String> bash = ContainerExecTarget.relayArgv("bash", "127.0.0.1", 5005);
+        assertEquals(List.of("nc", "127.0.0.1", "5005"), com.editora.process.PortRelays.argv("nc", "127.0.0.1", 5005));
+        List<String> bash = com.editora.process.PortRelays.argv("bash", "127.0.0.1", 5005);
         assertEquals(List.of("bash", "-c"), bash.subList(0, 2));
         assertEquals(List.of("127.0.0.1", "5005"), bash.subList(3, 5), "host and port are arguments, not text");
         assertEquals(
                 "python3",
-                ContainerExecTarget.relayArgv("python3", "localhost", 9229).get(0));
-        assertEquals(null, ContainerExecTarget.relayArgv("", "127.0.0.1", 1), "none: the port cannot be reached");
+                com.editora.process.PortRelays.argv("python3", "localhost", 9229)
+                        .get(0));
+        assertEquals(null, com.editora.process.PortRelays.argv("", "127.0.0.1", 1), "none: the port cannot be reached");
     }
 }

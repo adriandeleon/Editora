@@ -85,7 +85,8 @@ the leader of its own process group, so Stop signals the group with a second `ex
 Paths cross through the bind mounts read from `inspect` (`ContainerMounts`, deepest mount first; `ContainerInfo`
 also reads a dev container's `remoteUser` from its `devcontainer.metadata` label). Unlike an SSH session,
 killing the local `exec` client leaves the program running in the container: Editora stops what it started
-(`ProcessRegistry`).
+(`ProcessRegistry`, through `process/LauncherProcess`, which reads the pid line and signals with a second
+command).
 
 A folder is bound to its container by `ContainerBindings` (one per app, the mapped resolver `App` registers):
 the container the user picked for the folder (`Settings.containerBindings`, folder path → container), else
@@ -99,14 +100,32 @@ folder's tools run here. When where a folder's tools run changes, a language ser
 side is stopped and its tabs reopen on the right one (`LspManager.shutdownSessionsOnAnotherTarget`: a
 session remembers the target it started on). The engine's command is `Settings.containerEngine` (Settings →
 Remote; blank is `docker`). A port only the container has — a debugger's — is reached through a loopback port
-here (`ContainerExecTarget.forwardLocal`, `ContainerPortForward`): each connection starts one `exec` running a
-relay the container has, found once (`nc`, else `bash`'s `/dev/tcp`, else `python3`), joined to the port
+here (`ContainerExecTarget.forwardLocal`, `process/RelayPortForward`): each connection starts one `exec` running a
+relay the container has, found once (`process/PortRelays`: `nc`, else `bash`'s `/dev/tcp`, else `python3`), joined to the port
 inside. It works for every engine and network, including rootless Podman and Docker Desktop, whose containers
 this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. Not
 yet: a cache folder in the container (jdtls keeps its own default; the java-debug plugin is the container's own
 `dap.java`), and stopping a container's programs after Editora itself crashed. The `Remote probe` workflow's
 container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
+
+**WSL** (`wsl/`, Windows only). A folder inside a WSL distribution, opened from Windows as
+`\\wsl.localhost\<distro>\…` (or `\\wsl$\<distro>\…`), has its tools run inside that distribution:
+`WslExecTarget` runs `wsl.exe -d <distro> --exec /bin/sh -c <guard> editora <script> <argv>…`, the same script
+as a container's. That argv does not reach `wsl.exe` as given: Windows joins it into one command line, Java
+does not escape an embedded `"`, and `wsl.exe` splits it again, so the whole command goes as one shell command
+line encoded for `printf %b` (letters and digits as they are, other bytes as `\0ooo`), which a fixed
+`set -f; IFS=; eval $(printf %b $1)` decodes inside (`WslExecTarget.windowsSafe`, `WslArgvTest` runs it
+through dash and bash). So the pid line, Stop (a second `wsl.exe` running `kill`, `LauncherProcess`), the login
+environment (`RemoteEnv`) and port relays (`PortRelays`, `RelayPortForward`) are shared. Paths are mapped by
+`WslPaths`: `\\wsl.localhost\<distro>\x` ↔ `/x`, and a Windows drive `C:\x` ↔ `/mnt/c/x` (a path elsewhere
+passes as it is). `WslTargets` is the mapped resolver `App` registers on Windows only; it recognises the share
+prefix without I/O and keeps one target per distribution. `ContainerCoordinator` asks once per distribution
+(`wsl:<distro>`, kept with the hosts' answers) when such a project opens; Containers: Run This Project's Tools
+Here withdraws the answer. The cache folder and the home are the distribution's (`~/.cache/editora`).
+The `Remote probe` workflow's `wsl` job runs `WslProbeTest` on `windows-latest` against a WSL 1 Ubuntu
+(`-Dwsl.probe=<distro>`; hosted runners cannot run WSL 2). Not yet: watching a `\\wsl$` folder for outside
+changes is this machine's watcher, untested there.
 
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a

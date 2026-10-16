@@ -1,4 +1,4 @@
-package com.editora.container;
+package com.editora.process;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -6,38 +6,40 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.editora.process.PortForward;
-
 /**
- * A loopback port on this machine that reaches {@code host:port} as the container sees it: each connection
- * accepted here starts one {@code exec} in the container whose stdin and stdout are joined to that port by a
- * relay the container has ({@code nc}, else {@code bash}'s {@code /dev/tcp}, else {@code python3}). It works
- * for every engine and network, including rootless Podman and Docker Desktop, whose containers this machine
- * cannot reach by address.
+ * A loopback port on this machine that reaches a port where a program runs elsewhere: each connection
+ * accepted here starts one relay process ({@link Relay}: a launcher running {@link PortRelays#argv} there)
+ * whose stdin and stdout are joined to that port. It needs no network path from here to there — a rootless
+ * container, Docker Desktop, a WSL distribution.
  */
-final class ContainerPortForward implements PortForward {
+public final class RelayPortForward implements PortForward {
+
+    /** Starts one relay: a process whose stdin and stdout are the connection to the port. */
+    @FunctionalInterface
+    public interface Relay {
+        Process start() throws IOException;
+    }
 
     private final ServerSocket server;
     private final Set<AutoCloseable> open = ConcurrentHashMap.newKeySet();
     private volatile boolean closed;
 
-    private ContainerPortForward(ServerSocket server) {
+    private RelayPortForward(ServerSocket server) {
         this.server = server;
     }
 
-    /** Opens the local port; {@code relay} is the inner command that joins its stdio to the container's port. */
-    static ContainerPortForward open(ContainerExecTarget target, List<String> relay) throws IOException {
+    /** Opens the local port; each connection to it gets a relay from {@code relay}. */
+    public static RelayPortForward open(Relay relay) throws IOException {
         ServerSocket server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
-        ContainerPortForward forward = new ContainerPortForward(server);
-        Thread.ofVirtual().name("container-forward-accept").start(() -> {
+        RelayPortForward forward = new RelayPortForward(server);
+        Thread.ofVirtual().name("relay-forward-accept").start(() -> {
             while (!forward.closed) {
                 try {
                     Socket socket = server.accept();
-                    forward.relay(target, relay, socket);
+                    forward.relay(relay, socket);
                 } catch (IOException e) {
                     if (!forward.closed) {
                         forward.close();
@@ -49,10 +51,10 @@ final class ContainerPortForward implements PortForward {
         return forward;
     }
 
-    private void relay(ContainerExecTarget target, List<String> relay, Socket socket) {
+    private void relay(Relay relay, Socket socket) {
         Process exec;
         try {
-            exec = target.relayProcess(relay);
+            exec = relay.start();
         } catch (IOException e) {
             closeQuietly(socket);
             return;
@@ -70,11 +72,11 @@ final class ContainerPortForward implements PortForward {
                 // already closed
             }
         };
-        Thread.ofVirtual().name("container-forward-out").start(() -> {
+        Thread.ofVirtual().name("relay-forward-out").start(() -> {
             pump(socket, exec.getOutputStream(), true);
             // this side finished sending: the relay's stdin ends, and it ends the container side's write half
         });
-        Thread.ofVirtual().name("container-forward-in").start(() -> {
+        Thread.ofVirtual().name("relay-forward-in").start(() -> {
             pump(exec.getInputStream(), socket);
             done.run(); // the container side closed, or the relay ended: so does this connection
         });

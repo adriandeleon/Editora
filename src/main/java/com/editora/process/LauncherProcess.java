@@ -1,4 +1,4 @@
-package com.editora.container;
+package com.editora.process;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -10,32 +10,39 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.editora.process.PosixShell;
-import com.editora.process.RemoteProcess;
-
 /**
- * A command running in a container: the local {@code exec} client's streams are the program's, its exit is
- * the program's exit. Stopping it runs {@code kill} in the container: ending the client alone would leave the
- * program running there.
+ * A command started elsewhere through a local launcher ({@code docker exec}, {@code wsl.exe}): the
+ * launcher's streams are the program's, its exit is the program's exit. The command is a
+ * {@link PosixShell} script, so its pid line comes first on stderr. Stopping it signals the program's group
+ * where it runs ({@link Signaller}): ending the launcher alone would leave the program running there.
  */
-final class ContainerExecProcess extends RemoteProcess {
+public final class LauncherProcess extends RemoteProcess {
+
+    /** Signals the process group {@code pid} leads where the program runs; false when that failed. */
+    @FunctionalInterface
+    public interface Signaller {
+        boolean signal(long pid, boolean force);
+    }
 
     private static final int MAX_NOISE = 64 * 1024;
 
-    private final ContainerExecTarget target;
+    private final String targetId;
     private final Process client;
     private final long pid;
+    private final Signaller signaller;
 
-    private ContainerExecProcess(ContainerExecTarget target, Process client, long pid) {
-        this.target = target;
+    private LauncherProcess(String targetId, Process client, long pid, Signaller signaller) {
+        this.targetId = targetId;
         this.client = client;
         this.pid = pid;
+        this.signaller = signaller;
     }
 
     /** Waits for the command's pid line, so a command that cannot even begin fails here, saying why. */
-    static ContainerExecProcess start(ContainerExecTarget target, Process client, Duration timeout) throws IOException {
+    public static LauncherProcess start(String targetId, Process client, Duration timeout, Signaller signaller)
+            throws IOException {
         AtomicBoolean started = new AtomicBoolean();
-        Thread.ofVirtual().name("container-exec-start-timeout").start(() -> {
+        Thread.ofVirtual().name("launcher-start-timeout").start(() -> {
             try {
                 Thread.sleep(timeout);
             } catch (InterruptedException e) {
@@ -48,7 +55,7 @@ final class ContainerExecProcess extends RemoteProcess {
         try {
             long pid = readPidLine(client.getErrorStream());
             started.set(true);
-            return new ContainerExecProcess(target, client, pid);
+            return new LauncherProcess(targetId, client, pid, signaller);
         } catch (IOException | RuntimeException e) {
             started.set(true);
             client.destroyForcibly();
@@ -72,18 +79,18 @@ final class ContainerExecProcess extends RemoteProcess {
         String text = (char) mark + line.toString(StandardCharsets.UTF_8);
         if (b == -1 || !text.startsWith(PosixShell.PID_MARK)) {
             String said = noise.toString(StandardCharsets.UTF_8).strip();
-            throw new IOException(said.isEmpty() ? "the container did not start the command" : said);
+            throw new IOException(said.isEmpty() ? "the command did not start" : said);
         }
         try {
             return Long.parseLong(text.substring(PosixShell.PID_MARK.length()).strip());
         } catch (NumberFormatException e) {
-            throw new IOException("the container did not report a process id");
+            throw new IOException("the command did not report a process id");
         }
     }
 
     @Override
     public String targetId() {
-        return target.id();
+        return targetId;
     }
 
     @Override
@@ -96,8 +103,8 @@ final class ContainerExecProcess extends RemoteProcess {
         if (!client.isAlive()) {
             return;
         }
-        Thread.ofVirtual().name("container-exec-kill").start(() -> {
-            if (!target.signal(pid, force) && force) {
+        Thread.ofVirtual().name("launcher-kill").start(() -> {
+            if (!signaller.signal(pid, force) && force) {
                 client.destroyForcibly(); // could not reach it: at least stop waiting on it
             }
         });

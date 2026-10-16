@@ -233,4 +233,29 @@ class ContainerCoordinatorFxTest {
         assertNull(FxTestSupport.callOnFx(coordinator::boundId));
         assertEquals(0, asked.get());
     }
+
+    /** A project inside a WSL distribution: asked once for the distribution, its tools then run there. */
+    @Test
+    void aProjectInsideAWslDistributionIsAskedAboutOnceAndRunsThere() throws Exception {
+        root = Path.of("\\\\wsl.localhost\\Ubuntu\\home\\ana\\app");
+        ExecTargets.registerMapped(com.editora.wsl.WslTargets.shared());
+        try {
+            answer = true;
+
+            settle(() -> coordinator.projectChanged(true));
+
+            assertEquals(1, asked.get());
+            assertEquals("wsl:Ubuntu", FxTestSupport.callOnFx(coordinator::boundId));
+            assertEquals("/home/ana/app", ExecTargets.forPath(root).toTargetPath(root));
+            assertFalse(ExecTargets.runsHere(root));
+
+            settle(coordinator::detach);
+
+            assertNull(FxTestSupport.callOnFx(coordinator::boundId));
+            assertFalse(allowed.get("wsl:Ubuntu"), "withdrawn");
+            assertTrue(ExecTargets.runsHere(root), "Windows's tools again");
+        } finally {
+            ExecTargets.unregisterMapped(com.editora.wsl.WslTargets.shared());
+        }
+    }
 }
