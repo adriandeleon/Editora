@@ -531,6 +531,26 @@ jobs:
           if url="$(gh pr create --base master --head "$branch" --title "$title" --body "$body")"; then
             echo "Opened $url"
             echo "Merge [the pull request]($url) to reopen master at \`${next}\`." >> "$GITHUB_STEP_SUMMARY"
+
+            # Opening the PR also queues a pull_request CI run, which GitHub holds ("action_required") because
+            # the Actions bot opened it. The PR counts that held run as its CI and so sees none of the
+            # dispatched checks above: it stays blocked until the run is approved (seen on v0.22.0, #1223).
+            sha="$(git rev-parse HEAD)"
+            held=""
+            for _ in $(seq 1 12); do
+              held="$(gh run list --branch "$branch" --event pull_request --json databaseId,headSha,conclusion \
+                --jq "map(select(.headSha == \"$sha\" and .conclusion == \"action_required\"))[0].databaseId // empty")"
+              [ -n "$held" ] && break
+              sleep 5
+            done
+            if [ -z "$held" ]; then
+              echo "No held pull_request run on $sha — the dispatched checks stand."
+            elif gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${held}/approve" >/dev/null; then
+              echo "Approved the held pull_request run ${held}."
+            else
+              echo "::warning::Could not approve the held pull_request run ${held}; the PR stays blocked until it is approved."
+              echo "Approve its CI run first: \`gh api -X POST repos/${GITHUB_REPOSITORY}/actions/runs/${held}/approve\`." >> "$GITHUB_STEP_SUMMARY"
+            fi
           else
             compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${branch}?expand=1"
             echo "::warning::Could not open the pull request (is \"Allow GitHub Actions to create and approve pull requests\" off?). Branch ${branch} is pushed; open it at ${compare}"

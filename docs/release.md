@@ -80,10 +80,14 @@ version.
 - It is **idempotent**: it bumps only when `master`'s pom still reads exactly the version just
   released, and does nothing when the branch already exists. If a human already moved the pom, the
   job logs and exits cleanly.
-- **The required checks are dispatched, not triggered.** A pull request opened with the default
-  `GITHUB_TOKEN` starts no `pull_request` workflow, so the job runs `gh workflow run ci.yml` on the
-  branch (`ci.yml` has a `workflow_dispatch` trigger for this). Those runs report the same check
-  names on the same commit, which is what the ruleset looks at.
+- **Its CI is held until approved, and the job approves it.** Opening the pull request queues a
+  `pull_request` CI run, but GitHub holds it ("action_required") because the Actions bot opened the
+  pull request. The pull request counts that held run as its CI, so it stays blocked, even though the
+  job also dispatches `ci.yml` on the branch and those checks pass on the same commit (v0.22.0, #1223).
+  The job therefore finds the held run and approves it. If the approval is refused, it warns and its
+  summary gives the command to run:
+  `gh api -X POST repos/<owner>/<repo>/actions/runs/<id>/approve`. The dispatched run is kept for the
+  case where no `pull_request` run is queued.
 - **Opening the pull request needs a repository setting**: *Settings → Actions → General → Allow
   GitHub Actions to create and approve pull requests*. With it off, the branch is still pushed and
   the checks still run; the job warns and its summary links to the page that opens the pull request
