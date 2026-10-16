@@ -106,7 +106,7 @@ class RulersAndIndentGuidesFxTest {
                 b.setTabSize(b.getTabSize()); // … so ask for a frame to record
             });
             e.pulses(30);
-            List<double[]> last = lastFrame(painted);
+            List<double[]> last = List.copyOf(painted); // the seam keeps the last frame only
             TreeSet<Long> columns = new TreeSet<>();
             for (double[] guide : last) {
                 columns.add(Math.round(guide[0]));
@@ -114,8 +114,9 @@ class RulersAndIndentGuidesFxTest {
             assertEquals(2, columns.size(), "guides at two levels: " + columns);
             assertEquals(charX(b, 1, 0), columns.first(), 1.5, "the first at column 0");
             assertEquals(charX(b, 2, 4), columns.last(), 1.5, "the second at column 4");
-            // Lines 1-4 have a column-0 guide (the blank line 3 included); line 2 also has the column-4 one.
-            assertEquals(5, last.size(), "one guide per level per indented line");
+            // Lines 1-4 have a column-0 guide (the blank line 3 included); line 2 also has the column-4 one. Each
+            // is stroked once for its run of lines.
+            assertEquals(2, last.size(), "one stroke per guide per run of lines");
             assertTrue(lineTop(b, 3) >= minTop(last) && lineTop(b, 3) <= maxBottom(last), "the blank line has one");
 
             FxTestSupport.runOnFx(() -> b.setIndentGuidesVisible(false));
@@ -170,17 +171,6 @@ class RulersAndIndentGuidesFxTest {
         return FxTestSupport.callOnFx(() -> overlay.screenToLocal(
                         b.getArea().getParagraphBoundsOnScreen(line).orElseThrow())
                 .getCenterY());
-    }
-
-    /** The guides of the last redraw: those after the last one that starts a frame again at a smaller y. */
-    private static List<double[]> lastFrame(List<double[]> painted) {
-        int start = 0;
-        for (int i = 1; i < painted.size(); i++) {
-            if (painted.get(i)[1] < painted.get(i - 1)[1]) {
-                start = i;
-            }
-        }
-        return painted.subList(start, painted.size());
     }
 
     private static double minTop(List<double[]> guides) {

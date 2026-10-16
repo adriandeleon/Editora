@@ -1,0 +1,30 @@
+# Variables from http-client.env.json and http-client.private.env.json beside this file. Pick "dev" in the
+# response view's environment dropdown first (http.selectEnvironment); try "prod" too, and "local", which
+# only the private file defines. Requests go to httpbin.org's /anything, which echoes back what it got, so
+# the response shows what each {{variable}} became.
+
+@who = {{users[0].name}}
+
+### Values from the selected environment, the private file, and $shared
+# "token" comes from the private file, which wins over the public one.
+GET {{host}}/anything?title={{title}}&who={{who}}
+Authorization: Bearer {{token}}
+X-Api-Version: {{api.version}}
+X-Greeting: {{greeting}}
+
+### Nested objects with dots, arrays with indexes
+POST {{host}}{{api.paths.echo}}
+Content-Type: application/json
+
+{
+  "first": "{{users[0].name}} ({{users[0].role}})",
+  "second": "{{users[1].name}} ({{users[1].role}})"
+}
+
+### A later @who line takes over for the requests below it
+# An @name = value line goes at the top of a request's section: after a body, it would be part of the body.
+@who = {{users[1].name}}
+GET {{host}}/anything?who={{who}}
+
+### A typo is underlined as you type; sent anyway, it goes out empty and is listed in the warnings
+GET {{host}}/anything?title={{tittle}}

@@ -101,9 +101,15 @@ side is stopped and its tabs reopen on the right one (`LspManager.shutdownSessio
 session remembers the target it started on). The engine's command is `Settings.containerEngine` (Settings →
 Remote; blank is `docker`). A port only the container has — a debugger's — is reached through a loopback port
 here (`ContainerExecTarget.forwardLocal`, `process/RelayPortForward`): each connection starts one `exec` running a
-relay the container has, found once (`process/PortRelays`: `nc`, else `bash`'s `/dev/tcp`, else `python3`), joined to the port
+relay the container has, found once (`process/PortRelays`: `nc`, else `bash`'s `/dev/tcp` with `dd` copying
+each way, else `python3`), joined to the port
 inside. It works for every engine and network, including rootless Podman and Docker Desktop, whose containers
-this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. Editora's
+this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. The
+`bash` relay copies with `dd`, not `cat`: uutils' `cat` (Ubuntu 26.04's coreutils, so `eclipse-temurin:25`'s)
+holds what it reads from a socket until the socket closes, so a reply on a connection that stays open — every
+debug adapter's — never arrived. `ContainerProbeFxTest.aJavaProgramIsDebuggedInTheContainerByItsJdtls` runs jdtls
+in the container (mounted read-only, `-Dcontainer.probe.jdtls`) with the java-debug plugin copied into its cache
+(`-Dcontainer.probe.javaDebug`), and debugs a Maven project's main class and a loose file to a breakpoint. Editora's
 working folder in a container is `~/.cache/editora` in the container's home (`ContainerExecTarget.cache`), which
 this machine cannot see: its files are written by commands in the container (`process/ShellTargetCache`:
 `mkdir -p`, a file streamed through `cat` into a `.part` and moved in, `rm -rf`, the folder and name always

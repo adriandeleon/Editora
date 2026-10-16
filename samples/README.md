@@ -411,15 +411,68 @@ beside the source it tests under a conventional name, so **Go: Related File** ju
 
 ## http/ — HTTP client
 
-- `samples/http/requests.http` — run the per-request ▶; uses `{{title}}`/`{{token}}` variables.
-- `samples/http/advanced.rest` — the `.rest` extension, and the rest of the format: in-file `@variables`,
-  a **named request** and a later one **chained** to its response (`{{create.response.body.$.json.item}}`),
-  dynamic variables (`{{$uuid}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`), the **Basic auth** shorthand, an
-  **external body** (`< ./body.json`, from `samples/http/body.json`), a **multipart** form, the
-  `@no-redirect` / `@timeout` directives, and a request with no method. Run the first two in order to
-  see chaining. All requests go to httpbin.org, so they need a network connection.
-- `samples/http/http-client.env.json` — `dev`/`prod` environments with **fake** tokens (never real
-  secrets).
+Every request goes to a public echo service (httpbin.org, plus jsonplaceholder.typicode.com in
+`requests.http`), so these samples need a network connection; the few that go elsewhere fail on purpose and
+say so. Pick the **dev** environment in the response view first. Scripts (`handlers.http`,
+`pre-request.http`, `debug.http`) need Node.js and ask to trust the folder; `dynamic-variables.http` asks
+before reading `$env` / `$dotenv`. **Run All** (`http.runFile`) runs a file in order, which chaining,
+captures, session variables and cookies need. Values that look like secrets are fake.
+
+- `samples/http/requests.http` — the basics: run the per-request ▶; uses `{{title}}`/`{{token}}` from the
+  environment files.
+- `samples/http/request-line.http` — the request line and format: a lower-case and a custom method, a URL
+  without a scheme, a path with a `Host` header, a query continued on `?`/`&` lines, `HTTP/1.1` / `HTTP/2`,
+  a continued header, non-ASCII and emoji in the URL, `@no-auto-encoding`, comment lines in a body, `\{{`
+  for a literal `{{`, and the unsupported `GRAPHQL` / `WEBSOCKET` / `GRPC` (not sent).
+- `samples/http/directives.http` — cookies shared by Run All and `@no-cookie-jar`, `@no-redirect`,
+  `@no-log`, a `// @name`, `@timeout` (times out on purpose) and `@connection-timeout` (an unreachable
+  address, on purpose).
+- `samples/http/advanced.rest` — the `.rest` extension, in-file `@variables`, a **named request** and one
+  **chained** to it (`{{create.response.body.$.json.item}}`), a request named by its `### Fetch` title and
+  chained to a response header, dynamic variables, **Basic** and **Digest** auth shorthand, an **external
+  body** (`< ./body.json`, from `samples/http/body.json`), a **multipart** form, `@no-redirect` /
+  `@timeout`, and a request with no method.
+- `samples/http/environments.http` — values from `samples/http/http-client.env.json` (`dev`/`prod`, a
+  `$shared` section, nested objects `{{api.version}}`, arrays `{{users[0].name}}`, a value built from other
+  values) and `samples/http/http-client.private.env.json` (wins over the public file, holds the signing
+  key, defines a private-only `local` environment, and has comments and trailing commas); a later `@who`
+  line taking over; and a typo (`{{tittle}}`) that is underlined and sent empty with a warning.
+- `samples/http/dynamic-variables.http` — every dynamic variable: `$uuid`, `$randomInt` (with a range),
+  `$random.*`, `$timestamp`, `$isoTimestamp`, `$datetime` / `$localDatetime` with `iso8601`, `rfc1123`,
+  Day.js and Java patterns and offsets; and `$env`, `$processEnv` and `$dotenv`, reading
+  `samples/http/.env` (fake keys).
+- `samples/http/bodies.http` — `< file` sent as is vs `<@ file` filled in (`samples/http/bodies/template.json`),
+  `<@latin1` (`samples/http/bodies/latin1.txt`, ISO-8859-1 bytes), a body path with a variable
+  (`samples/http/bodies/small.json`), an inline body in the `Content-Type` charset, a URL-encoded form,
+  and multipart with variables in part headers and paths and a `<@` part.
+- `samples/http/save-response.http` — `>>` (never overwrites: `uuid.json`, then `uuid-1.json`), `>>!`
+  (replaces), a path with a variable, and an error status that leaves the file alone. Writes to
+  `samples/http/responses/`, which is git-ignored.
+- `samples/http/checks.http` — `# @assert` with every subject (`status`, `time`, `header`, `body`,
+  JSONPath with indexes and `["a b"]`) and operator (`==` … `>=`, `contains`, `matches`, `exists`,
+  `!exists`); `# @capture` of a JSONPath value, a header, the status, the body, and one that finds
+  nothing (a warning); a request using the captures; and one that fails on purpose, where Run All ends.
+- `samples/http/handlers.http` — JavaScript response handlers: `client.test` / `assert` / `log`,
+  `console.log`, `jsonPath`, the `response` object (body, status, headers, content type, cookies), the
+  `request` object (`tryGetSubstituted()` / `getRaw()`), `client.global` (set, get, isEmpty, clear,
+  clearAll) winning over the environment, `client.global.headers`, an `async` test that calls `fetch`,
+  `client.exit()`, and an error reported with its line. One handler is a file:
+  `samples/http/scripts/check-auth.js`.
+- `samples/http/pre-request.http` — pre-request scripts: `request.variables.set`, an HMAC and a JWT
+  (`jwt.sign` / `verify` / `decode`) with the private file's signing key, every hash and HMAC input and
+  output form (checked against known values), a script file (`samples/http/scripts/request-id.js`) setting
+  a global header, a request's own header winning over it, `client.exit()` still sending, and a failing
+  script whose request is not sent.
+- `samples/http/debug.http` — **HTTP: Debug Request at Caret**: breakpoints on the lines of a `{% %}`
+  pre-request script and handler, and in `samples/http/scripts/check-auth.js`. Needs JavaScript debugging
+  on and vscode-js-debug installed.
+- `samples/http/responses.http` — what the response view does with JSON, XML, HTML (long lines for
+  **Wrap**), an image, other binary bodies, gzip and deflate, a redirect (where it ended), a redirect to
+  another host that carried a custom header (a warning), error statuses, and a refused connection and an
+  unknown host (errors as sentences).
+- `samples/http/curl-commands.txt` — commands to copy for **Import cURL**: a browser's "Copy as cURL" with
+  a `{{` in its body, Windows `curl.exe` with `^`, a `$ curl` README line with `--digest`, a `-F` form with
+  a file, and a body with `###` and `>` lines that become comments.
 
 ## log/ — log viewer
 

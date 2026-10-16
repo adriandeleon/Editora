@@ -111,6 +111,8 @@ public final class HttpClientPanel extends VBox {
     private String testsBadgeText = "";
     /** The tests shown, so the badge can be shortened with the warnings badge. */
     private HttpTests shownTests = HttpTests.NONE;
+    /** Whether {@link #shownTests}' error is a pre-request script's ({@link HttpStatusText#preRequestFailed}). */
+    private boolean shownPreRequest;
     /** "Run All: 3 of 13 failed" under the status line after a Run All, until the next run. */
     private final Label runSummary = new Label();
     /** The Run All summary, and a note about the last run (Run sent the caret's request instead), until the next run. */
@@ -354,7 +356,7 @@ public final class HttpClientPanel extends VBox {
         testsPane.setAnimated(false);
         testsPane.getStyleClass().add("http-tests-pane");
         testsPane.expandedProperty().addListener((o, a, b) -> fitHead());
-        showTests(HttpTests.NONE);
+        showTests(HttpTests.NONE, false);
 
         headersArea.setEditable(false);
         headersArea.setWrapText(true);
@@ -699,7 +701,7 @@ public final class HttpClientPanel extends VBox {
         requestArea.setText(requestText(ex));
         requestArea.positionCaret(0);
         showNotes(r.warnings(), r.written()); // an unsent header, a truncated body…; the files a ">>" wrote
-        showTests(r.tests());
+        showTests(r.tests(), HttpStatusText.preRequestFailed(r));
         StringBuilder head = new StringBuilder();
         if (r.failed()) {
             head.append("⚠  ").append(r.shownError());
@@ -767,7 +769,7 @@ public final class HttpClientPanel extends VBox {
         headersArea.clear();
         requestArea.clear();
         showNotes(List.of(), List.of());
-        showTests(HttpTests.NONE);
+        showTests(HttpTests.NONE, false);
         showBodyNote(null);
         bodyArea.clear();
         imageView.setImage(null);
@@ -1159,13 +1161,15 @@ public final class HttpClientPanel extends VBox {
     }
 
     /**
-     * Shows what the request's {@code @assert} checks and response handlers found in the Tests block: a ✓ or ✗ row
-     * per test with why it failed, then the handlers' {@code client.log} lines and the error a handler stopped with.
-     * Open when something failed (or there is little to show), closed when a long list all passed.
+     * Shows what the request's {@code @assert} checks and scripts found in the Tests block: a ✓ or ✗ row per test
+     * with why it failed, then the scripts' {@code client.log} lines and the error a script stopped with, named as a
+     * pre-request script's when {@code preRequest}. Open when something failed (or there is little to show), closed
+     * when a long list all passed.
      */
-    private void showTests(HttpTests tests) {
+    private void showTests(HttpTests tests, boolean preRequest) {
         HttpTests t = tests == null ? HttpTests.NONE : tests;
         shownTests = t;
+        shownPreRequest = preRequest;
         testRows.getChildren().clear();
         for (HttpTests.Test test : t.tests()) {
             String text = (test.passed() ? "✓  " : "✗  ")
@@ -1193,11 +1197,11 @@ public final class HttpClientPanel extends VBox {
         testsLog.setVisible(logged);
         testsLog.setManaged(logged);
         boolean any = !t.isEmpty();
-        testsPane.setText(any ? HttpStatusText.testsTitle(t) : "");
+        testsPane.setText(any ? HttpStatusText.testsTitle(t, preRequest) : "");
         testsPane.setExpanded(t.hasFailures() || t.tests().size() + lines.size() <= 4);
         testsPane.setVisible(any);
         testsPane.setManaged(any);
-        setTestsBadge(HttpStatusText.testsBadgeParts(t, compactBadge), compactBadge);
+        setTestsBadge(HttpStatusText.testsBadgeParts(t, compactBadge, preRequest), compactBadge);
         fitBadge();
     }
 
@@ -1265,7 +1269,7 @@ public final class HttpClientPanel extends VBox {
      * Shortens the badges to "⚠ 11" and "✓3 ✗1" when the full ones would squeeze the status line itself.
      */
     private void fitBadge() {
-        String testsFull = HttpStatusText.testsBadge(shownTests, false);
+        String testsFull = HttpStatusText.testsBadge(shownTests, false, shownPreRequest);
         if ((warnCount <= 0 && testsFull == null) || getWidth() <= 0) {
             return;
         }
@@ -1289,9 +1293,9 @@ public final class HttpClientPanel extends VBox {
             warnBadge.setText(HttpStatusText.warningBadge(warnCount, compact));
         }
         if (testsFull != null) {
-            String t = HttpStatusText.testsBadge(shownTests, compact);
+            String t = HttpStatusText.testsBadge(shownTests, compact, shownPreRequest);
             if (!testsBadgeText.equals(t)) {
-                setTestsBadge(HttpStatusText.testsBadgeParts(shownTests, compact), compact);
+                setTestsBadge(HttpStatusText.testsBadgeParts(shownTests, compact, shownPreRequest), compact);
             }
         }
         compactBadge = compact;

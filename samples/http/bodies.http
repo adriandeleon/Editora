@@ -1,0 +1,62 @@
+# Request bodies: inline, from a file, as a form, and multipart. Requests go to httpbin.org's /anything,
+# which echoes back the body it received ("data", "form" and "files" in the response).
+
+@host = https://httpbin.org
+@item = hammer
+@fixture = small
+
+### < sends a body file as it is: its {{variables}} are not filled in
+POST {{host}}/anything
+Content-Type: application/json
+
+< ./bodies/template.json
+
+### <@ fills in the file's {{variables}} first
+POST {{host}}/anything
+Content-Type: application/json
+
+<@ ./bodies/template.json
+
+### <@latin1 reads the file as ISO-8859-1; Content-Type's charset encodes what is sent
+POST {{host}}/anything
+Content-Type: text/plain; charset=ISO-8859-1
+
+<@latin1 ./bodies/latin1.txt
+
+### The path can use variables
+POST {{host}}/anything
+Content-Type: application/json
+
+< ./bodies/{{fixture}}.json
+
+### An inline body is encoded in the charset Content-Type names (UTF-8 if none)
+POST {{host}}/anything
+Content-Type: text/plain; charset=ISO-8859-1
+
+Crème brûlée for {{item}}, s'il vous plaît.
+
+### A URL-encoded form
+POST {{host}}/anything
+Content-Type: application/x-www-form-urlencoded
+
+item={{item}}&quantity=3&note=fill%20in
+
+### Multipart: variables in part headers and file paths; file parts are streamed from disk
+POST {{host}}/anything
+Content-Type: multipart/form-data; boundary=sample-boundary
+
+--sample-boundary
+Content-Disposition: form-data; name="item"
+
+{{item}}
+--sample-boundary
+Content-Disposition: form-data; name="fixture"; filename="{{fixture}}.json"
+Content-Type: application/json
+
+< ./bodies/{{fixture}}.json
+--sample-boundary
+Content-Disposition: form-data; name="template"; filename="template.json"
+Content-Type: application/json
+
+<@ ./bodies/template.json
+--sample-boundary--

@@ -1,0 +1,25 @@
+# Saving a response body with >> lines. Files land in responses/ beside this file (git-ignored); the
+# response view lists what was written, replaced, or left alone and why. Requests go to httpbin.org.
+
+@host = https://httpbin.org
+@format = xml
+
+### >> never touches an existing file: run it twice for responses/uuid.json, then responses/uuid-1.json
+GET {{host}}/uuid
+
+>> responses/uuid.json
+
+### >>! replaces the file (Local History keeps what it held)
+GET {{host}}/uuid
+
+>>! responses/latest-uuid.json
+
+### The path can use variables
+GET {{host}}/{{format}}
+
+>>! responses/sample.{{format}}
+
+### An error status never replaces: responses/latest-uuid.json stays as it was
+GET {{host}}/status/500
+
+>>! responses/latest-uuid.json

@@ -5,6 +5,7 @@ import java.util.List;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpTests;
 import org.junit.jupiter.api.Test;
 
 import static com.editora.i18n.Messages.tr;
@@ -134,6 +135,40 @@ class HttpStatusTextTest {
                 tr("status.http.notSentError", "GET http://x.test/a", HttpStatusText.notSentReason(refused.error())),
                 bar);
         assertFalse(bar.contains(tr("http.notSent.prefix")), "said once: " + bar);
+    }
+
+    @Test
+    void aScriptErrorIsNamedByTheScriptThatStopped() {
+        // A pre-request script that stops keeps its request unsent; its error used to read "Response handler error".
+        HttpTests stopped = new HttpTests(List.of(), List.of("signing"), "Error: no key\n    at /p/api.http:3:9");
+        HttpResult pre = HttpResult.failure(
+                        tr("status.http.preScriptNotRun", tr("http.preScript.why.error")), List.of())
+                .withTests(stopped, List.of());
+        HttpResult handler = status(200).withTests(stopped, List.of());
+        assertTrue(HttpStatusText.preRequestFailed(pre));
+        assertFalse(HttpStatusText.preRequestFailed(handler), "a handler runs only after a response");
+        assertFalse(
+                HttpStatusText.preRequestFailed(
+                        HttpResult.failure(tr("status.http.secretsRefused", "$env.X"), List.of())),
+                "not sent, but no script stopped");
+
+        assertEquals("Pre-request script error", HttpStatusText.testsTitle(stopped, true));
+        assertEquals("Response handler error", HttpStatusText.testsTitle(stopped, false));
+        assertEquals(
+                List.of("✗ pre-request error"),
+                HttpStatusText.testsBadgeParts(stopped, false, true).stream()
+                        .map(HttpStatusText.BadgePart::text)
+                        .toList());
+        assertEquals("✗ handler error", HttpStatusText.testsBadge(stopped, false, false));
+        assertEquals("✗1", HttpStatusText.testsBadge(stopped, true, true), "the compact badge only counts");
+
+        // Log lines alone may come from either kind of script.
+        HttpTests logged = new HttpTests(List.of(), List.of("signed"), null);
+        assertEquals("Script output", HttpStatusText.testsTitle(logged, false));
+        assertEquals("Script output", HttpStatusText.testsTitle(logged, true));
+        // Tests keep their count title whichever script ran them.
+        HttpTests counted = new HttpTests(List.of(new HttpTests.Test("ok", true, "")), List.of(), "Error: x");
+        assertEquals("Tests: 1 passed, 0 failed", HttpStatusText.testsTitle(counted, true));
     }
 
     @Test

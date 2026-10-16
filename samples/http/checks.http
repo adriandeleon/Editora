@@ -1,0 +1,64 @@
+# Checks without JavaScript: @assert tests a response and @capture keeps a value of it as {{name}}. They
+# need neither Node.js nor a trusted folder. Run All (http.runFile): results show in the response view's
+# Tests block, and the run ends on the request whose tests failed (the last one, on purpose).
+# Requests go to httpbin.org's /anything, which echoes the JSON body back under "json".
+
+@host = https://httpbin.org
+
+### Every kind of @assert
+# @assert status == 200
+# @assert status < 300
+# @assert time < 30000
+# @assert header Content-Type == application/json
+# @assert header content-type contains json
+# @assert body contains "Ada Lovelace"
+# @assert body matches "id": ?7
+# @assert $.json.user.id == 7
+# @assert $.json.user.id >= 7
+# @assert $.json.user.name != "Grace Hopper"
+# @assert $.json.user.admin == true
+# @assert $.json.user.manager == null
+# @assert $.json.tags contains math
+# @assert $.json.tags[0] == pioneer
+# @assert $.json["first name"] == Ada
+# @assert $.json.user.email matches ^[a-z]+@example\.com$
+# @assert $.json.token exists
+# @assert $.json.password !exists
+POST {{host}}/anything
+Content-Type: application/json
+
+{
+  "user": { "id": 7, "name": "Ada Lovelace", "admin": true, "manager": null, "email": "ada@example.com" },
+  "first name": "Ada",
+  "tags": ["pioneer", "math"],
+  "token": "FAKE-TOKEN-1234"
+}
+
+### @capture keeps a JSONPath value, a header, the status, or the whole body
+# @capture token = $.json.token
+# @capture userId = $.json.user.id
+# @capture server = header Server
+# @capture code = status
+# @capture missing = $.json.nothing
+POST {{host}}/anything
+Content-Type: application/json
+
+{ "user": { "id": 7 }, "token": "FAKE-TOKEN-1234" }
+
+### A capture of the whole body (plain text here)
+# @capture greeting = body
+GET {{host}}/base64/SGVsbG8gZnJvbSBodHRwYmlu
+
+### Uses the captured values (a capture that found nothing is in the warnings above)
+# @assert $.headers.Authorization == "Bearer FAKE-TOKEN-1234"
+# @assert $.args.user == 7
+GET {{host}}/anything?user={{userId}}&code={{code}}&server={{server}}&greeting={{greeting}}
+Authorization: Bearer {{token}}
+
+### Fails on purpose: each ✗ says what it got
+# @assert status == 201
+# @assert $.json.count > 10
+POST {{host}}/anything
+Content-Type: application/json
+
+{ "count": 3 }

@@ -181,7 +181,7 @@ final class HttpStatusText {
      * coloured on its own; empty when the response ran no tests and its handler stopped with no error. {@code compact}
      * shortens them to "✓3", "✗1".
      */
-    static List<BadgePart> testsBadgeParts(HttpTests t, boolean compact) {
+    static List<BadgePart> testsBadgeParts(HttpTests t, boolean compact, boolean preRequest) {
         List<BadgePart> parts = new java.util.ArrayList<>();
         if (t == null || (t.tests().isEmpty() && t.error() == null)) {
             return parts;
@@ -204,14 +204,14 @@ final class HttpStatusText {
             parts.add(new BadgePart(tr("httppanel.testsFailed", failed), true));
         }
         if (t.error() != null) {
-            parts.add(new BadgePart(tr("httppanel.testsError"), true));
+            parts.add(new BadgePart(tr(preRequest ? "httppanel.testsPreError" : "httppanel.testsError"), true));
         }
         return parts;
     }
 
     /** The tests badge as one text ("✓ 3 passed · ✗ 1 failed", or "✓3 ✗1" compact), or null when there is none. */
-    static String testsBadge(HttpTests t, boolean compact) {
-        List<BadgePart> parts = testsBadgeParts(t, compact);
+    static String testsBadge(HttpTests t, boolean compact, boolean preRequest) {
+        List<BadgePart> parts = testsBadgeParts(t, compact, preRequest);
         if (parts.isEmpty()) {
             return null;
         }
@@ -223,10 +223,16 @@ final class HttpStatusText {
     /** What separates the full badge's parts. */
     static final String BADGE_SEPARATOR = " · ";
 
-    /** The Tests block's title: "Tests: 3 passed, 1 failed", or "Handler output" when it ran no test. */
-    static String testsTitle(HttpTests t) {
+    /**
+     * The Tests block's title: "Tests: 3 passed, 1 failed"; when it ran no test, "Script output", or the error's
+     * script ({@code preRequest}: see {@link #preRequestFailed}).
+     */
+    static String testsTitle(HttpTests t, boolean preRequest) {
         if (t.tests().isEmpty()) {
-            return t.error() != null ? tr("httppanel.testsTitleError") : tr("httppanel.testsTitleLog");
+            if (t.error() == null) {
+                return tr("httppanel.testsTitleLog"); // the log lines may come from either kind of script
+            }
+            return tr(preRequest ? "httppanel.testsTitlePreError" : "httppanel.testsTitleError");
         }
         return tr("httppanel.testsTitle", t.passed(), t.failed());
     }
@@ -286,6 +292,15 @@ final class HttpStatusText {
      * read, an untitled buffer's "save first": its error starts with the UI language's "Not sent:" prefix
      * ({@code http.notSent.prefix}), which every such message in the six catalogs shares. Pure.
      */
+    /**
+     * Whether {@code r}'s script error is a pre-request script's. A pre-request script that stops with an error keeps
+     * its request unsent, and a response handler only runs once a response has arrived, so an error on a request that
+     * was not sent is always the pre-request script's. Pure.
+     */
+    static boolean preRequestFailed(HttpResult r) {
+        return r != null && r.tests().error() != null && notSent(r);
+    }
+
     static boolean notSent(HttpResult r) {
         return r != null && r.failed() && notSentReason(r.error()) != null;
     }

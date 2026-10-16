@@ -127,8 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This Language…`. An `.editorconfig` `max_line_length` still sets the first ruler, and `off` still hides them.
   **Indent guides** — faint vertical lines at each indentation level, carried through blank lines — are on by
   default. Turn them off with `View: Toggle Indent Guides` or in Settings → Editor. They are hidden in Zen and
-  Simple UI and in large-file mode, follow the theme, and skip folded lines. The ruler toggle is now
-  `View: Toggle Rulers`.
+  Simple UI and in large-file mode, follow the theme, and skip folded lines. They are placed from the text as
+  it is laid out, so they stay on their columns when the line numbers gain a digit or are toggled, when the
+  font changes, in a proportional font, and in a tab-indented file; scrolled sideways, they are not drawn over
+  the line numbers. The ruler toggle is now `View: Toggle Rulers`.
 - **Line commands, at every cursor.**
   - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
     the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
@@ -212,6 +214,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the distribution) now reach the Project tree, Git and the language servers: Windows cannot watch the
   share, so Editora watches the folder inside the distribution (with `inotifywait` when `inotify-tools` is
   installed, else by checking every few seconds).
+- **Debugging in a container or WSL distribution built on Ubuntu 26.04 no longer hangs at "Connecting".** Such
+  images (`eclipse-temurin:25` among them) ship the Rust coreutils, whose `cat` held the debug adapter's replies
+  until the connection closed; Editora's relay to a port inside now copies with `dd`. Java debugging in a
+  container is now tested end to end: jdtls and java-debug in the container, a breakpoint hit in a project's main
+  class and in a loose Java file.
 - **Programs left in a container by a crash are stopped.** A language server, debugger, build or run that
   Editora started in a container kept running there if Editora was killed, since ending Editora's side of the
   connection does not end it. The next launch now stops it, after checking it is still the same process. WSL
@@ -553,6 +560,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     look for a renamed file's notes; it is hashed only when a note's file is gone and had the same size.
   - Moving the pointer over a buffer without notes no longer hit-tests it, and a click checks only the markers on
     screen.
+- **HTTP Client: a failing pre-request script is named as one.** Its Tests block read "Response handler error"
+  and its badge "✗ handler error"; they now say "Pre-request script error" and "✗ pre-request error". A Tests
+  block with only log lines is titled "Script output", since either kind of script may have written them, and a
+  script that runs out of time "did not finish", not "the handler did not finish".
+- **HTTP Client: a `{{name}}` set by a script file is not underlined.** A name a `< ./pre.js` or `> ./check.js`
+  file sets with `request.variables.set` or `client.global.set` was marked as unresolved, because only inline
+  scripts were read. The check now reads the script files a `.http` file names (as a run finds them, up to
+  1 MB; reading one to find names runs nothing). An edit to a script file shows on the next check of the
+  `.http` file.
 - **Export Configuration leaves out the installed ShellCheck and shfmt** (`plugins/tools/`) and the Typst CLI
   (`plugins/typst/`), as it already did language servers and debug adapters. The zip no longer carries about
   20 MB of executables built for this machine's OS. A plugin can no longer take the id `tools`, so installing or

@@ -82,6 +82,9 @@ class ContainerInfoTest {
         List<String> bash = com.editora.process.PortRelays.argv("bash", "127.0.0.1", 5005);
         assertEquals(List.of("bash", "-c"), bash.subList(0, 2));
         assertEquals(List.of("127.0.0.1", "5005"), bash.subList(3, 5), "host and port are arguments, not text");
+        // uutils' cat (Ubuntu 26.04's) holds what it reads from a socket until it closes: an adapter's replies never
+        // came. dd writes each read as it comes, whichever coreutils the container has.
+        assertTrue(bash.get(2).contains("dd bs=") && !bash.get(2).contains("cat "), bash.get(2));
         assertEquals(
                 "python3",
                 com.editora.process.PortRelays.argv("python3", "localhost", 9229)

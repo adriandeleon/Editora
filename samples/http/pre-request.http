@@ -1,0 +1,104 @@
+# Pre-request scripts run before their request is resolved and sent, on your own Node.js, from a trusted
+# folder only. Pick the "dev" environment first: the signing key comes from http-client.private.env.json.
+# Requests go to httpbin.org's /anything, which echoes back what it got. crypto and jwt work in response
+# handlers too; jwt.sign also takes a PEM key for the RS, PS and ES algorithms.
+
+@host = https://httpbin.org
+@size = 42
+
+### Signs the body with an HMAC and a JWT; the handler verifies the JWT that came back
+< {%
+  client.log("body as written:", request.body.getRaw());
+  const body = request.body.tryGetSubstituted();
+  const key = request.environment.get("signingKey");
+  const signature = crypto.hmac.sha256().withTextSecret(key).updateWithText(body).digest().toHex();
+  request.variables.set("signature", signature);
+  request.variables.set("jwt", jwt.sign({ sub: "ada", role: "admin" }, key, { expiresIn: 300, issuer: "samples" }));
+  client.log("signed", body.length, "characters");
+%}
+POST {{host}}/anything
+Content-Type: application/json
+X-Signature: {{signature}}
+Authorization: Bearer {{jwt}}
+
+{ "name": "report", "size": {{size}} }
+
+> {%
+  const token = response.body.headers.Authorization.substring("Bearer ".length);
+  client.test("the JWT verifies", () => {
+    const claims = jwt.verify(token, request.environment.get("signingKey"), { issuer: "samples" });
+    client.assert(claims.sub === "ada", JSON.stringify(claims));
+  });
+  client.log("decoded:", JSON.stringify(jwt.decode(token)));
+%}
+
+### Hashes and HMACs, from text, hex or Base64, to hex, Base64 or URL-safe Base64
+< {%
+  request.variables.set("md5", crypto.md5().updateWithText("editora").digest().toHex());
+  request.variables.set("sha1", crypto.sha1().updateWithHex("656469746f7261").digest().toHex());
+  request.variables.set("sha256", crypto.sha256().updateWithBase64("ZWRpdG9yYQ==").digest().toBase64());
+  request.variables.set("sha384", crypto.sha384().updateWithText("editora").digest().toHex());
+  request.variables.set("sha512", crypto.sha512().updateWithText("editora").digest().toBase64(true));
+  request.variables.set("sha3", crypto.sha3("256").updateWithText("editora").digest().toHex());
+  request.variables.set("hmacHex", crypto.hmac.sha512().withHexSecret("00ff").updateWithText("editora").digest().toHex());
+  request.variables.set("hmacB64", crypto.hmac.sha1().withBase64Secret("c2VjcmV0").updateWithText("editora").digest().toBase64());
+%}
+POST {{host}}/anything
+Content-Type: application/json
+
+{
+  "md5": "{{md5}}",
+  "sha1": "{{sha1}}",
+  "sha256": "{{sha256}}",
+  "sha384": "{{sha384}}",
+  "sha512": "{{sha512}}",
+  "sha3": "{{sha3}}",
+  "hmacHex": "{{hmacHex}}",
+  "hmacB64": "{{hmacB64}}"
+}
+
+> {%
+  client.test("the hashes of \"editora\"", () => {
+    const sent = response.body.json;
+    client.assert(sent.md5 === "7768391ed415974386699ae31c3b3b83", "md5 " + sent.md5);
+    client.assert(sent.sha1 === "c6dc1b07aa5e61f2ec00bd31ec8cc4c388c6b43c", "sha1 " + sent.sha1);
+    client.assert(sent.sha256 === "XFOYEW52uAjT3otKZb6vzVZp4aV1ukJQbMkDhT9uoiI=", "sha256 " + sent.sha256);
+    client.assert(sent.sha3 === "b163a0eecc638a0755bb3d1f9b1e5ec9b67541cf924c8767dcdb765acc9e9ee1", "sha3 " + sent.sha3);
+  });
+%}
+
+### A script file, and a global header it sets for this request and the ones after
+# {{requestId}} is set by the script file; the editor reads it, so the name is not underlined.
+< ./scripts/request-id.js
+GET {{host}}/anything?id={{requestId}}
+
+> {%
+  client.test("the header and the variable agree", () => {
+    client.assert(response.body.headers["X-Sample-Id"] === response.body.args.id, JSON.stringify(response.body));
+  });
+%}
+
+### A request's own header wins over a global one
+GET {{host}}/headers
+X-Sample-Id: my-own
+
+> {%
+  client.test("the request's own header was sent", () => {
+    client.assert(response.body.headers["X-Sample-Id"] === "my-own", JSON.stringify(response.body.headers));
+  });
+  client.global.headers.clear("X-Sample-Id");
+%}
+
+### client.exit() ends the script, and the request is still sent
+< {%
+  request.variables.set("early", "yes");
+  client.exit();
+  request.variables.set("early", "no");
+%}
+GET {{host}}/anything?early={{early}}
+
+### A pre-request script that fails: its request is not sent (the response view says why)
+< {%
+  throw new Error("refusing to sign: no key");
+%}
+GET {{host}}/anything?never=sent
