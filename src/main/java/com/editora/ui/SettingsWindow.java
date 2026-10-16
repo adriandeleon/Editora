@@ -664,25 +664,21 @@ public class SettingsWindow {
 
     /** Opens Settings focused on the Snippets page (the {@code snippets.manage} command). */
     public void showSnippets(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.SNIPPETS);
+        showAt(Category.SNIPPETS, owner);
     }
 
     /** Opens Settings on the Sync page (the {@code sync.setup} command and the status-bar marker). */
     public void showSync(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.SYNC);
+        showAt(Category.SYNC, owner);
     }
 
     public void showAbbreviations(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.ABBREVIATIONS);
+        showAt(Category.ABBREVIATIONS, owner);
     }
 
     /** Opens Settings focused on the Toolbar customization page (the {@code view.customizeToolbar} command). */
     public void showToolbar(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.TOOLBAR);
+        showAt(Category.TOOLBAR, owner);
     }
 
     /** Layout read/write the Toolbar page drives, backed by {@code ToolbarCoordinator} in the controller. */
@@ -709,8 +705,7 @@ public class SettingsWindow {
 
     /** Opens Settings focused on the Templates page (the {@code template.manage} command). */
     public void showTemplates(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.TEMPLATES);
+        showAt(Category.TEMPLATES, owner);
     }
 
     /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
@@ -727,8 +722,7 @@ public class SettingsWindow {
 
     /** Opens Settings focused on the Workspace page (the {@code workspace.manageTrust} command). */
     public void showWorkspace(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.WORKSPACE);
+        showAt(Category.WORKSPACE, owner);
     }
 
     /** Opens the project/session-scoped Run Configurations window. */
@@ -766,7 +760,6 @@ public class SettingsWindow {
      * {@link Category} enum never leaks; an unknown key just opens Settings unfocused.
      */
     public void showDoctorTarget(String key, Window owner) {
-        show(owner);
         Category target =
                 switch (key == null ? "" : key) {
                     case "git" -> Category.GIT;
@@ -783,9 +776,7 @@ public class SettingsWindow {
                     case "editor" -> Category.EDITOR;
                     default -> null;
                 };
-        if (target != null) {
-            sidebar.getSelectionModel().select(target);
-        }
+        showAt(target, owner);
     }
 
     /** Reads/mutates the trusted-workspace-root store for the Workspace page's Trusted Folders list. */
@@ -907,6 +898,21 @@ public class SettingsWindow {
         } else {
             centerOnOwner(owner);
             stage.show();
+        }
+        // A search left in the box is kept, but selected: typing replaces it rather than appending to it.
+        searchField.requestFocus();
+        searchField.selectAll();
+    }
+
+    /**
+     * Opens Settings on {@code target} (null: wherever it was). A search left in the box from an earlier visit
+     * is cleared first — it would hide every row of the page this command asked for.
+     */
+    private void showAt(Category target, Window owner) {
+        show(owner);
+        searchField.clear();
+        if (target != null) {
+            sidebar.getSelectionModel().select(target);
         }
     }
 
@@ -3632,8 +3638,7 @@ public class SettingsWindow {
 
     /** Opens Settings focused on the Spell Check page (the {@code spell.manageDictionary} command). */
     public void showSpellCheck(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.SPELL_CHECK);
+        showAt(Category.SPELL_CHECK, owner);
         refreshDictionaryList();
     }
 
@@ -5405,8 +5410,7 @@ public class SettingsWindow {
 
     /** Opens Settings focused on the Remote page (the {@code remote.settings} command). */
     public void showRemote(Window owner) {
-        show(owner);
-        sidebar.getSelectionModel().select(Category.REMOTE);
+        showAt(Category.REMOTE, owner);
     }
 
     private VBox externalToolsPage() {
