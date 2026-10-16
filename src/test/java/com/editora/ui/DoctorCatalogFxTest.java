@@ -52,7 +52,7 @@ class DoctorCatalogFxTest {
         }
     }
 
-    private static final class Ops implements DoctorCoordinator.Ops {
+    private static class Ops implements DoctorCoordinator.Ops {
         final com.editora.mermaid.MermaidService mermaid = new com.editora.mermaid.MermaidService();
         final com.editora.diagram.DiagramService diagram = new com.editora.diagram.DiagramService();
         final com.editora.typst.TypstService typst = new com.editora.typst.TypstService();
@@ -130,6 +130,42 @@ class DoctorCatalogFxTest {
         public void openSettingsFor(String settingsKey) {
             openedSettings = settingsKey;
         }
+    }
+
+    /**
+     * The Bash server lints with ShellCheck and formats with shfmt, and says nothing when they are missing:
+     * the Doctor shows both, by the command the server is told to run, with an Install action (C2).
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // runs a sh script
+    void shellCheckAndShfmtAreCheckedWhileTheBashServerIsOn(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Path shellcheck = executable(dir.resolve("bin/shellcheck"), "#!/bin/sh\necho 'version: 0.11.0'\n");
+        String noShfmt = dir.resolve("none/shfmt").toString();
+        Ops ops = new Ops() {
+            @Override
+            public String bashTool(String toolId) {
+                return "shfmt".equals(toolId) ? noShfmt : shellcheck.toString();
+            }
+        };
+        ops.servers = List.of("bash");
+
+        List<DoctorService.CheckSpec> specs = specs(host, ops);
+
+        DoctorCheck sc = spec(specs, "lsp.bash.shellcheck").placeholder();
+        assertEquals(shellcheck.toString(), sc.command());
+        assertEquals(DoctorCheck.Install.TOOL, sc.install());
+        assertEquals("shellcheck", sc.installArg());
+        assertEquals(
+                DoctorStatus.OK,
+                spec(specs, "lsp.bash.shellcheck").probe().get().status());
+        DoctorCheck shfmt = spec(specs, "lsp.bash.shfmt").probe().get();
+        assertEquals(DoctorStatus.MISSING, shfmt.status());
+        assertEquals("doctor.tip.bashTool", shfmt.tipKey());
+        assertEquals(List.of(noShfmt), shfmt.tipArgs());
+
+        ops.serversOff = Set.of("bash");
+        assertFalse(has(specs(host, ops), "lsp.bash.shellcheck"), "not while the Bash server is off");
     }
 
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {

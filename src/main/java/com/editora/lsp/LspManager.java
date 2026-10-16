@@ -95,6 +95,8 @@ public final class LspManager {
     private volatile boolean closed;
     /** Mirrors {@code Settings.lspOnTypeFormatting} into jdtls's {@code java.format.onType.enabled}. */
     private volatile boolean javaOnTypeFormatting;
+    /** bash-language-server's {@code bashIde} settings (null = its defaults until the coordinator sets them). */
+    private volatile BashIdeConfig bashIde;
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
      *  Applied only to the java server, at {@code initialize}; empty = no debug bundle. */
     private volatile List<String> debugBundles = List.of();
@@ -186,6 +188,25 @@ public final class LspManager {
                 session.setJavaOnTypeFormatting(enabled);
             }
         });
+    }
+
+    /**
+     * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
+     * pushed to the running ones when it changed (they re-read it and re-lint).
+     */
+    public void setBashIde(BashIdeConfig config) {
+        bashIde = config;
+        String prefix = sessionKeyPrefix("bash");
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setBashIde(config);
+            }
+        });
+    }
+
+    /** The {@code bashIde} configuration last set (null = never). */
+    public BashIdeConfig bashIde() {
+        return bashIde;
     }
 
     private void putCommand(String serverId, String command) {
@@ -879,6 +900,7 @@ public final class LspManager {
                 }));
         diagnosticSource[0] = session;
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
+        session.setBashIde(bashIde);
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
         // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently

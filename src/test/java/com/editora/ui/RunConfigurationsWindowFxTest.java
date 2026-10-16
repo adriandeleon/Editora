@@ -185,6 +185,41 @@ class RunConfigurationsWindowFxTest {
         FxTestSupport.runOnFx(stage::close);
     }
 
+    @Test
+    void aShellConfigurationHasInterpreterFieldsThatPersist(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("Deploy", "shell", "deploy.sh", "", "", "", "", "", "", ""),
+                        new RunConfiguration("Tool", "python", "tool.py", "", "", "", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Deploy", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        javafx.scene.control.TextField interpreter =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-interpreter");
+        javafx.scene.control.TextField options =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-interpreter-options");
+
+        assertFalse(FxTestSupport.callOnFx(interpreter::isDisabled), "a shell script's interpreter can be set");
+        FxTestSupport.runOnFx(() -> {
+            interpreter.setText("/opt/homebrew/bin/bash");
+            options.setText("-eu");
+            options.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+        assertEquals("/opt/homebrew/bin/bash", persisted(config, "Deploy").interpreter());
+        assertEquals("-eu", persisted(config, "Deploy").interpreterOptions());
+
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(1));
+        assertTrue(FxTestSupport.callOnFx(interpreter::isDisabled), "a Python script has no shell interpreter");
+        assertTrue(FxTestSupport.callOnFx(options::isDisabled));
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+        assertEquals("/opt/homebrew/bin/bash", FxTestSupport.callOnFx(interpreter::getText));
+        FxTestSupport.runOnFx(stage::close);
+    }
+
     /** Disabled state of: target, main class, module, VM arguments, JDK, program arguments. */
     private static java.util.List<Boolean> disabled(Stage stage) {
         return java.util.stream.Stream.of(

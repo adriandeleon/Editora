@@ -807,6 +807,9 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "install.typstCli", () -> host.installCoordinator().installTypstCli()));
+        host.registry()
+                .register(Command.of(
+                        "install.shellTools", () -> host.installCoordinator().installShellTools()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
         host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));
@@ -1950,6 +1953,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("run.rerun", host.runCoordinator()::rerunLast));
         host.registry().register(Command.of("run.stop", host.runCoordinator()::stopRun));
         host.registry().register(Command.of("run.clear", host.runCoordinator()::clearConsole));
+        host.registry().register(Command.of("run.endInput", host.runCoordinator()::endInput));
         host.registry().register(Command.of("tool.run", () -> host.toolWindows().toggle(host.runToolWindow())));
         // Test Results (IntelliJ-style test runner): intercepts a build tool's `test` run. Gated by the
         // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.

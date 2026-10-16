@@ -123,44 +123,11 @@ public final class ConfigFileType {
         if (lower.startsWith(".") && lower.endsWith("ignore")) {
             return "ignore";
         }
-        // Maven/Gradle wrapper launchers are POSIX shell scripts (the .cmd/.bat siblings map to batchfile
-        // via their extension).
-        if (lower.equals("mvnw") || lower.equals("gradlew")) {
+        // Shell scripts known by name or place: startup and alias dotfiles, the system-wide /etc copies, direnv's
+        // .envrc, the build wrappers, package recipes (see ShellFiles — the one list the registries share). Before
+        // the generic "rc" rule below, which would read .envrc or /etc/zshrc as INI.
+        if (ShellFiles.isShellName(lower, norm)) {
             return "shell";
-        }
-        // Shell startup / alias dotfiles — bash, zsh, ksh and POSIX sh all share sh syntax. These are
-        // extension-less, so the extension map never sees them. (.bash_aliases is a real convention —
-        // Debian/Ubuntu's default .bashrc sources it; .zsh_aliases isn't auto-sourced by zsh but is a
-        // common user-chosen name people source from .zshrc.) Also covers ".<rc>.local" overrides.
-        switch (lower) {
-            case ".profile":
-            case ".bashrc":
-            case ".bash_profile":
-            case ".bash_login":
-            case ".bash_logout":
-            case ".bash_aliases":
-            case ".bash_functions":
-            case ".zshrc":
-            case ".zshenv":
-            case ".zprofile":
-            case ".zlogin":
-            case ".zlogout":
-            case ".zsh_aliases":
-            case ".zsh_functions":
-            case ".aliases":
-            case ".shrc":
-            case ".kshrc":
-            case ".profile.local":
-            case ".bashrc.local":
-            case ".zshrc.local":
-            // X session startup scripts are sourced as POSIX/sh too.
-            case ".xprofile":
-            case ".xinitrc":
-            case ".xsession":
-            case ".xsessionrc":
-                return "shell";
-            default:
-                break;
         }
         // Ruby DSL build/config files — no extension, but pure Ruby. (Gemfile.lock / Podfile.lock are
         // their own formats and intentionally not matched here.)
@@ -236,7 +203,7 @@ public final class ConfigFileType {
         // files are INI-style key/value, so default them to INI. Restricted to an extension-less name
         // (or a single-dot dotfile) ending in "rc" so it can't hijack ordinary files that merely contain
         // "rc" (e.g. march.txt → text via the extension map). Specific rc formats handled above win
-        // (.bashrc=shell, .npmrc=ini, .babelrc=json, .condarc=yaml, ...).
+        // (.bashrc/.envrc=shell, .npmrc=ini, .babelrc=json, .condarc=yaml, ...).
         boolean dotfileNoExt = base.startsWith(".") && base.indexOf('.', 1) < 0;
         boolean noExtension = base.indexOf('.') < 0;
         if (lower.length() > 2 && lower.endsWith("rc") && (noExtension || dotfileNoExt)) {

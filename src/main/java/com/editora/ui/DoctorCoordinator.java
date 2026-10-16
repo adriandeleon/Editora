@@ -74,6 +74,19 @@ final class DoctorCoordinator {
 
         void installTypstCli(Consumer<Boolean> onDone);
 
+        /** Installs a pinned command-line tool ({@code shellcheck}/{@code shfmt}). */
+        default void installTool(String toolId, Consumer<Boolean> onDone) {
+            onDone.accept(false);
+        }
+
+        /**
+         * The command bash-language-server is told to run for {@code toolId} ({@code shellcheck}/{@code shfmt}):
+         * the configured path, else Editora's installed copy, else the bare name.
+         */
+        default String bashTool(String toolId) {
+            return toolId;
+        }
+
         /** Opens Settings focused on the page for a Doctor settings key ({@code git}/{@code lsp}/…). */
         void openSettingsFor(String settingsKey);
     }
@@ -127,12 +140,27 @@ final class DoctorCoordinator {
         service.run(specs, pane::updateCheck, () -> {});
     }
 
+    /** A row for one of bash-language-server's tools: its version when it runs, else Install…. */
+    private DoctorService.CheckSpec bashToolRow(String toolId) {
+        String command = ops.bashTool(toolId);
+        String label = "shellcheck".equals(toolId) ? "ShellCheck" : toolId;
+        DoctorCheck row = DoctorCheck.checking("lsp.bash." + toolId, "lsp", label, command)
+                .withSettings("lsp")
+                .withInstall(DoctorCheck.Install.TOOL, toolId);
+        List<String> argv = List.of(command);
+        return probe(row, base -> {
+            DoctorProbes.Presence p = DoctorProbes.version(argv);
+            return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.bashTool", command);
+        });
+    }
+
     private void install(DoctorCheck check) {
         Consumer<Boolean> done = ok -> runChecks(); // re-probe either way so the row reflects the outcome
         switch (check.install()) {
             case SERVER -> ops.installServer(check.installArg(), done);
             case LANG -> ops.installLang(InstallCatalog.Lang.valueOf(check.installArg()), done);
             case TYPST_CLI -> ops.installTypstCli(done);
+            case TOOL -> ops.installTool(check.installArg(), done);
             case NONE -> {
                 /* no action */
             }
@@ -240,6 +268,13 @@ final class DoctorCoordinator {
                             ? base.missing("doctor.tip.missing", argv.isEmpty() ? base.label() : argv.get(0))
                             : base.ok(path);
                 }));
+                if ("bash".equals(serverId)) {
+                    // What bash-language-server lints and formats with. Without them a shell script silently
+                    // gets no diagnostics and Format Document changes nothing.
+                    for (String toolId : InstallCatalog.PINNED_TOOL_IDS) {
+                        specs.add(bashToolRow(toolId));
+                    }
+                }
             }
         } else {
             specs.add(terminal(DoctorCheck.checking("lsp", "lsp", tr("settings.cat.lsp"), "")
@@ -347,9 +382,8 @@ final class DoctorCoordinator {
         }));
         specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
-        if (ops.lspFeatureEnabled()) {
-            specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
-        }
+        // Shell Run no longer depends on LSP, so neither does the row that says whether it can work.
+        specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
 
         // Build tools (informational; the tool windows self-gate on project markers) --------------
         if (!simple) {

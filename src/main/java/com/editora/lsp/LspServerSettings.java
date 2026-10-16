@@ -29,6 +29,11 @@ final class LspServerSettings {
     private static final String PYTHON_SERVER_ID = "python";
     private static final String CSS_SERVER_ID = "css";
     private static final String HTML_SERVER_ID = "html";
+    private static final String BASH_SERVER_ID = "bash";
+
+    private static Map<String, Object> bashSection(BashIdeConfig bashIde) {
+        return (bashIde == null ? BashIdeConfig.defaults() : bashIde).toSection();
+    }
 
     private LspServerSettings() {}
 
@@ -37,6 +42,19 @@ final class LspServerSettings {
      * server must not be pushed anything.
      */
     static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting) {
+        return push(serverId, javaOnTypeFormatting, null);
+    }
+
+    /**
+     * As {@link #push(String, boolean)}, with bash-language-server's {@code bashIde} section ({@code null} = its
+     * defaults) for the Bash server.
+     */
+    static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde) {
+        if (BASH_SERVER_ID.equals(serverId)) {
+            Map<String, Object> settings = new HashMap<>();
+            settings.put(BashIdeConfig.SECTION, bashSection(bashIde));
+            return settings;
+        }
         if (PYTHON_SERVER_ID.equals(serverId)) {
             Map<String, Object> python = new HashMap<>();
             python.put("analysis", pythonAnalysis());
@@ -57,7 +75,19 @@ final class LspServerSettings {
      * (the server keeps its own default) for every section that is not that server's own.
      */
     static Object answer(String serverId, String section) {
+        return answer(serverId, section, null);
+    }
+
+    /**
+     * As {@link #answer(String, String)}, with the Bash server's {@code bashIde} section ({@code null} = its
+     * defaults). bash-language-server asks for {@code bashIde} once it is initialized; answering {@code null}
+     * left every one of its settings at the built-in default with no way to change them.
+     */
+    static Object answer(String serverId, String section, BashIdeConfig bashIde) {
         String s = section == null ? "" : section;
+        if (BASH_SERVER_ID.equals(serverId)) {
+            return s.equals(BashIdeConfig.SECTION) ? bashSection(bashIde) : null;
+        }
         if (PYTHON_SERVER_ID.equals(serverId)) {
             // However the server phrases it: the leaf key, the analysis object (python.analysis,
             // basedpyright.analysis), or the whole python object.

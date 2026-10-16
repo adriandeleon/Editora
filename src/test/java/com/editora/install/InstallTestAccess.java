@@ -11,4 +11,11 @@ public final class InstallTestAccess {
     public static InstallService service(LazyHttpClient client, long maxDownloadBytes) {
         return new InstallService(client, maxDownloadBytes);
     }
+
+    /** Makes {@code service} install pinned tools from {@code recipes} (hashes matching a test's own files). */
+    public static void pinnedTools(
+            InstallService service,
+            java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedTool>> recipes) {
+        service.setPinnedToolsForTest(recipes);
+    }
 }

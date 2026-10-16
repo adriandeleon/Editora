@@ -270,6 +270,24 @@ class SpellFxTest {
         }
     }
 
+    /**
+     * In a shell script the grammar scopes every bare argument as a string, so `pipefail`, `xzf` and package names
+     * were underlined in almost every script. Arguments are not checked; comments, quoted strings and here-doc
+     * text still are.
+     */
+    @Test
+    void shellArgumentsAreNotCheckedButCommentsStringsAndHereDocsAre() throws Exception {
+        EditorBuffer sh = open(
+                "install.sh",
+                "#!/usr/bin/env bash\nset -euo pipefail\nsudo apt-get install -y libsslq jqq # a coment\n"
+                        + "tar xzf relese.tgz\necho \"a mispeled string\"\ncat <<EOF\nheredok usage text\nEOF\n");
+        List<String> flagged = squiggled(sh);
+        assertTrue(flagged.containsAll(List.of("coment", "mispeled", "heredok")), flagged.toString());
+        for (String argument : List.of("pipefail", "libsslq", "jqq", "xzf", "relese")) {
+            assertFalse(flagged.contains(argument), argument + " is a command argument: " + flagged);
+        }
+    }
+
     // ----------------------------------------------------------------- S6 / S3 / S7 through a document
 
     @Test

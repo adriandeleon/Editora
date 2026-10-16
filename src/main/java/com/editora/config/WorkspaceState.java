@@ -43,8 +43,11 @@ public class WorkspaceState {
      *
      * <p>v15 → v16 added {@code fileEncodings} (the encoding chosen for a file with Reopen or Save with
      * Encoding). Additive; absent means the encoding is detected, as before.
+     *
+     * <p>v16 → v17 added {@code interpreter} / {@code interpreterOptions} to {@link RunConfiguration} (a shell
+     * configuration's override of the script's shebang). Additive; blank keeps the shebang, as before.
      */
-    public static final int SCHEMA_VERSION = 16;
+    public static final int SCHEMA_VERSION = 17;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";

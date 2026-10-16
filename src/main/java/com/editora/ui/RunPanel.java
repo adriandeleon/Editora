@@ -56,8 +56,12 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private final TextField input = new TextField();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
+    /** Closes the program's standard input (end of file), as Ctrl+D does in a terminal. */
+    private final Button endInputButton = new Button();
     /** Receives a line typed into the stdin field (controller → process stdin). */
     private Consumer<String> onInput;
+    /** Ends the program's input (controller → close the process's stdin). */
+    private Runnable onEndInput;
     /** Receives a double-clicked stack-trace location (controller resolves + jumps). */
     private Consumer<StackTraceLinks.Link> onLink;
     /** Receives a clicked HTTP(S) URL (controller opens it in the system browser). */
@@ -86,7 +90,13 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         clearButton.setMinWidth(Region.USE_PREF_SIZE);
         clearButton.setOnAction(e -> clearConsole());
 
-        HBox header = new HBox(8, busy, status, spacer(), clearButton, stopButton);
+        endInputButton.setText(tr("run.endInput"));
+        endInputButton.setMinWidth(Region.USE_PREF_SIZE);
+        endInputButton.getStyleClass().add("run-end-input");
+        endInputButton.setDisable(true);
+        endInputButton.setOnAction(e -> endInput());
+
+        HBox header = new HBox(8, busy, status, spacer(), clearButton, endInputButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -128,6 +138,20 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             onInput.accept(line);
             input.clear();
         });
+        // Ctrl+D on an empty line ends the input, as in a terminal: `while read` loops and `cat` otherwise
+        // wait for text nobody can type, and Stop was the only way out. With text in the field it stays the
+        // field's own key (delete forward, in an Emacs keymap).
+        input.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.D
+                    && e.isControlDown()
+                    && !e.isAltDown()
+                    && !e.isShiftDown()
+                    && !e.isMetaDown()
+                    && input.getText().isEmpty()) {
+                endInput();
+                e.consume();
+            }
+        });
 
         VirtualizedScrollPane<CodeArea> scroll = new VirtualizedScrollPane<>(output);
         VBox.setVgrow(scroll, Priority.ALWAYS);
@@ -137,6 +161,21 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     public void setOnInput(Consumer<String> onInput) {
         this.onInput = onInput;
+    }
+
+    public void setOnEndInput(Runnable onEndInput) {
+        this.onEndInput = onEndInput;
+    }
+
+    /** Ends the program's input: no more lines can be sent until the next run. */
+    public void endInput() {
+        if (input.isDisabled() || onEndInput == null) {
+            return;
+        }
+        onEndInput.run();
+        input.setDisable(true);
+        endInputButton.setDisable(true);
+        input.setPromptText(tr("run.inputEnded"));
     }
 
     public void setOnLink(Consumer<StackTraceLinks.Link> onLink) {
@@ -286,6 +325,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private void setRunning(boolean running) {
         stopButton.setDisable(!running);
         input.setDisable(!running);
+        endInputButton.setDisable(!running);
+        input.setPromptText(tr("run.stdinPrompt"));
         showSpinner(busy, running);
         this.running.set(running);
     }

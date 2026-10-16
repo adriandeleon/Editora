@@ -37,7 +37,7 @@ import static com.editora.i18n.Messages.tr;
 public final class RunConfigurationsWindow {
 
     private static final double WIDTH = 760;
-    private static final double HEIGHT = 560;
+    private static final double HEIGHT = 640;
 
     private final ConfigManager config;
     private final Stage stage = new Stage();
@@ -108,6 +108,8 @@ public final class RunConfigurationsWindow {
             }
         });
         TextField target = field("settings.runConfig.targetPrompt");
+        TextField interpreter = field("settings.runConfig.interpreterPrompt");
+        TextField interpreterOptions = field("settings.runConfig.interpreterOptionsPrompt");
         TextField mainClass = new TextField();
         TextField projectName = field("settings.runConfig.projectNamePrompt");
         TextField args = new TextField();
@@ -125,18 +127,22 @@ public final class RunConfigurationsWindow {
         formRow(form, 0, "settings.runConfig.name", name);
         formRow(form, 1, "settings.runConfig.type", type);
         formRow(form, 2, "settings.runConfig.target", target);
-        formRow(form, 3, "settings.runConfig.mainClass", mainClass);
-        formRow(form, 4, "settings.runConfig.projectName", projectName);
-        formRow(form, 5, "settings.runConfig.args", args);
-        formRow(form, 6, "settings.runConfig.vmArgs", vmArgs);
-        formRow(form, 7, "settings.runConfig.workingDir", workingDir);
-        formRow(form, 8, "settings.runConfig.env", env);
-        formRow(form, 9, "settings.runConfig.beforeLaunch", beforeLaunch);
-        formRow(form, 10, "settings.runConfig.jdk", jdk);
+        formRow(form, 3, "settings.runConfig.interpreter", interpreter);
+        formRow(form, 4, "settings.runConfig.interpreterOptions", interpreterOptions);
+        formRow(form, 5, "settings.runConfig.mainClass", mainClass);
+        formRow(form, 6, "settings.runConfig.projectName", projectName);
+        formRow(form, 7, "settings.runConfig.args", args);
+        formRow(form, 8, "settings.runConfig.vmArgs", vmArgs);
+        formRow(form, 9, "settings.runConfig.workingDir", workingDir);
+        formRow(form, 10, "settings.runConfig.env", env);
+        formRow(form, 11, "settings.runConfig.beforeLaunch", beforeLaunch);
+        formRow(form, 12, "settings.runConfig.jdk", jdk);
         form.setDisable(true);
 
         type.setId("run-config-type");
         target.setId("run-config-target");
+        interpreter.setId("run-config-interpreter");
+        interpreterOptions.setId("run-config-interpreter-options");
         mainClass.setId("run-config-main-class");
         projectName.setId("run-config-module");
         vmArgs.setId("run-config-vm-args");
@@ -147,6 +153,7 @@ public final class RunConfigurationsWindow {
         Runnable applyType = () -> {
             String value = type.getValue();
             setRowDisabled(form, !RunConfigFields.usesTarget(value), target);
+            setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
             setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClass, projectName, vmArgs, jdk);
         };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
@@ -160,7 +167,9 @@ public final class RunConfigurationsWindow {
                 workingDir.getText(),
                 env.getText(),
                 beforeLaunch.getText(),
-                jdk.getValue() == null ? "" : jdk.getValue().home());
+                jdk.getValue() == null ? "" : jdk.getValue().home(),
+                interpreter.getText(),
+                interpreterOptions.getText());
         Runnable commit = () -> {
             int index = list.getSelectionModel().getSelectedIndex();
             if (index < 0 || loading) {
@@ -175,8 +184,18 @@ public final class RunConfigurationsWindow {
             commit.run();
         });
         jdk.valueProperty().addListener((o, was, now) -> commit.run());
-        for (TextField value :
-                List.of(name, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch)) {
+        for (TextField value : List.of(
+                name,
+                target,
+                interpreter,
+                interpreterOptions,
+                mainClass,
+                projectName,
+                args,
+                vmArgs,
+                workingDir,
+                env,
+                beforeLaunch)) {
             value.setOnAction(e -> commit.run());
             value.focusedProperty().addListener((o, was, now) -> {
                 if (!now) {
@@ -207,6 +226,8 @@ public final class RunConfigurationsWindow {
                 name.setText(now == null ? "" : now.name());
                 type.setValue(now == null ? "java" : now.type());
                 target.setText(now == null ? "" : now.target());
+                interpreter.setText(now == null ? "" : now.interpreter());
+                interpreterOptions.setText(now == null ? "" : now.interpreterOptions());
                 mainClass.setText(now == null ? "" : now.mainClass());
                 projectName.setText(now == null ? "" : now.projectName());
                 args.setText(now == null ? "" : now.args());
@@ -269,7 +290,7 @@ public final class RunConfigurationsWindow {
                         .toExternalForm());
         stage.setScene(scene);
         stage.setMinWidth(640);
-        stage.setMinHeight(460);
+        stage.setMinHeight(540);
     }
 
     private static TextField field(String promptKey) {

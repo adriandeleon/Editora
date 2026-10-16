@@ -297,4 +297,38 @@ class BracketColorsFxTest {
         }
         assertEquals(3, depthAt(b, outerParen), "the added level pushed everything below it one deeper");
     }
+    /**
+     * A shell {@code case} pattern ends in a lone {@code )} that pairs with nothing. Counted as a bracket it
+     * closed the function's {@code {}, so the pattern took the brace's colour, the next pattern and the closing
+     * brace were "unmatched" (the danger colour), and the {@code [[ ]]} after the case read one level too shallow.
+     */
+    @Test
+    void shellCasePatternParensAreNotBrackets() throws Exception {
+        String sh = "deploy() {\n"
+                + "  case \"$1\" in\n"
+                + "    web|api) echo w ;;\n"
+                + "    *) echo other ;;\n"
+                + "  esac\n"
+                + "  if [[ -n $x ]]; then :; fi\n"
+                + "}\n";
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer x = new EditorBuffer();
+            x.setLanguageOverride("shell");
+            x.getNode();
+            x.setContent(sh);
+            x.setBracketColorsEnabled(true);
+            return x;
+        });
+        int brace = sh.indexOf('{');
+        awaitColored(b, brace);
+
+        assertEquals(0, depthAt(b, brace), "the function brace is the outermost");
+        assertEquals(1, depthAt(b, sh.indexOf("[[")), "[[ inside the function is one level in");
+        assertEquals(0, depthAt(b, sh.lastIndexOf('}')), "the closing brace pairs with the opening one");
+        for (String pattern : new String[] {"api)", "*)"}) {
+            int paren = sh.indexOf(pattern) + pattern.length() - 1;
+            assertEquals(-1, depthAt(b, paren), pattern + " is not a bracket");
+            assertTrue(!styleAt(b, paren).contains("bracket-unmatched"), pattern + " is not an unmatched bracket");
+        }
+    }
 }

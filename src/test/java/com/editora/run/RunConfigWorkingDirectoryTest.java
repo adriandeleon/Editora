@@ -43,4 +43,34 @@ class RunConfigWorkingDirectoryTest {
         assertEquals(
                 script.getParent(), RunConfigWorkingDirectory.resolve(config("shell", script.toString(), ""), null));
     }
+
+    @Test
+    void aRelativeDirectoryIsRelativeToTheProjectNotToWhereEditoraStarted() {
+        // It was Path.of("sub"): resolved against the Editora process's own working directory.
+        Path root = Path.of("/work/site").toAbsolutePath();
+        assertEquals(root.resolve("sub"), RunConfigWorkingDirectory.resolve(config("shell", "x.sh", "sub"), root));
+        assertEquals(root.resolve("tools"), RunConfigWorkingDirectory.resolve(config("make", "", "./tools"), root));
+    }
+
+    @Test
+    void withNoProjectARelativeDirectoryIsRelativeToAnAbsoluteScript() {
+        Path script = Path.of("/work/tools/deploy.sh").toAbsolutePath();
+        assertEquals(
+                script.getParent().resolve("out"),
+                RunConfigWorkingDirectory.resolve(config("shell", script.toString(), "out"), null));
+    }
+
+    @Test
+    void withNoProjectARelativeScriptHasNoDirectoryToRunIn() {
+        // It ran in <Editora's cwd>/scripts and then asked bash for scripts/x.sh there: the path twice over.
+        assertNull(RunConfigWorkingDirectory.resolve(config("shell", "scripts/x.sh", ""), null));
+        assertNull(RunConfigWorkingDirectory.resolve(config("shell", "scripts/x.sh", "sub"), null));
+    }
+
+    @Test
+    void theScriptIsResolvedWhereTheInterpreterWillLookForIt() {
+        Path dir = Path.of("/work/site/sub").toAbsolutePath();
+        assertEquals(dir.resolve("run.sh"), RunConfigWorkingDirectory.script(config("shell", "run.sh", ""), dir));
+        assertNull(RunConfigWorkingDirectory.script(config("make", "all", ""), dir));
+    }
 }

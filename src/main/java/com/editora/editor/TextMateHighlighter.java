@@ -80,6 +80,15 @@ public final class TextMateHighlighter {
         void run(String style, int length);
 
         /**
+         * As {@link #run}, for characters that look like brackets but do not pair: the {@code )} that ends a shell
+         * {@code case} pattern ({@code start|stop)}, {@code *)}). Counted as a bracket it closed whatever was
+         * open — a function's {@code {}} — and every later bracket in that block read one level too shallow.
+         */
+        default void runNotBrackets(String style, int length) {
+            run(style, length);
+        }
+
+        /**
          * Line {@code lineIndex}, occupying {@code [lineStart, lineEnd)} of the text, has been tokenized and
          * ended in {@code endState}. Returning {@code true} stops the pass after this line; the analysis then
          * covers up to {@code lineEnd}, without the line's terminator.
@@ -488,6 +497,9 @@ public final class TextMateHighlighter {
                 || kind.startsWith("macro.rules.");
     }
 
+    /** Scope of a shell {@code case} pattern's parentheses ({@code (a|b)}, {@code *)}); see {@link LineHook#runNotBrackets}. */
+    private static final String CASE_PATTERN_PAREN = "keyword.operator.pattern.case";
+
     private static void addLineSpans(SpanMerger spans, int lineLength, IToken[] tokens, int count) {
         int last = 0;
         for (int i = 0; i < count; i++) {
@@ -500,7 +512,13 @@ public final class TextMateHighlighter {
             if (start > last) {
                 spans.add(null, start - last);
             }
-            spans.add(styleForScopes(token.getScopes()), end - start);
+            List<String> scopes = token.getScopes();
+            String style = styleForScopes(scopes);
+            if (scopes.get(scopes.size() - 1).startsWith(CASE_PATTERN_PAREN)) {
+                spans.addNotBrackets(style, end - start);
+            } else {
+                spans.add(style, end - start);
+            }
             last = end;
         }
         if (lineLength > last) {
@@ -535,12 +553,25 @@ public final class TextMateHighlighter {
 
         /** Append {@code len} characters styled with {@code style} (null = unstyled). */
         void add(String style, int len) {
+            add(style, len, false);
+        }
+
+        /** As {@link #add}, for characters that are not brackets whatever they look like. */
+        void addNotBrackets(String style, int len) {
+            add(style, len, true);
+        }
+
+        private void add(String style, int len, boolean notBrackets) {
             if (len <= 0) {
                 return;
             }
             lineChars += len;
             if (hook != null) {
-                hook.run(style, len);
+                if (notBrackets) {
+                    hook.runNotBrackets(style, len);
+                } else {
+                    hook.run(style, len);
+                }
             }
             if (length == 0) {
                 current = style;
@@ -639,6 +670,14 @@ public final class TextMateHighlighter {
         }
         if (scope.startsWith("string.regexp")) {
             return "regexp";
+        }
+        // A shell command's bare words and options are its arguments, not string literals (the grammar scopes
+        // `pipefail`, `-y` and `libssl-dev` as strings): plain text, which also keeps spell check off them.
+        // Quoted strings, here-doc and here-string bodies stay strings.
+        if (scope.startsWith("string.unquoted.argument.shell")
+                || scope.equals("string.unquoted.shell")
+                || scope.startsWith("constant.other.option")) {
+            return PLAIN;
         }
         if (scope.startsWith("string")) {
             return "string";

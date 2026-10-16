@@ -12,10 +12,12 @@ import com.editora.run.JavaMainClass;
 import com.editora.run.JavaRunCommand;
 import com.editora.run.JdkToolchain;
 import com.editora.run.ProgramArgs;
+import com.editora.run.ReadPromptShim;
 import com.editora.run.RunConfigRouting;
 import com.editora.run.RunConfigWorkingDirectory;
 import com.editora.run.RunService;
 import com.editora.run.ScriptRunCommand;
+import com.editora.run.ShellCommand;
 import com.editora.run.StackTraceLinks;
 
 import static com.editora.i18n.Messages.tr;
@@ -160,6 +162,7 @@ final class RunCoordinator {
             panel = new RunPanel(this::stopRun);
             running.bind(panel.runningProperty());
             panel.setOnInput(service::sendInput); // stdin field → the running process
+            panel.setOnEndInput(service::closeInput); // End Input / Ctrl+D → end of file for the process
             panel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             panel.setOnUrl(ops::openUrl); // single-clicked HTTP(S) URL → browser
             if (outputFontFamily != null) {
@@ -252,8 +255,11 @@ final class RunCoordinator {
      * still fall back to its target's folder; build-tool targets cannot because their targets are names.
      */
     private void runScriptConfig(RunConfiguration cfg) {
-        List<String> argv = ScriptRunCommand.build(cfg.type(), cfg.target(), ProgramArgs.tokenize(cfg.args()));
-        if (argv.isEmpty()) {
+        List<String> args = programArgs(cfg.args(), cfg);
+        if (args == null) {
+            return;
+        }
+        if (ScriptRunCommand.build(cfg.type(), cfg.target(), args).isEmpty()) {
             if (ScriptRunCommand.needsTarget(cfg.type())) {
                 reportIncomplete(cfg, "status.run.configNeedsTarget");
             } else {
@@ -264,10 +270,113 @@ final class RunCoordinator {
         }
         Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
         if (cwd == null) {
-            host.setStatus(tr("status.run.configNeedsWorkingDir", cfg.name()));
+            reportIncomplete(cfg, "status.run.configNeedsWorkingDir");
             return;
         }
-        streamRun(cfg.name(), cwd, argv, com.editora.run.EnvVars.parse(cfg.env()));
+        boolean remote = com.editora.vfs.Vfs.isRemote(cwd);
+        Path script = RunConfigWorkingDirectory.script(cfg, cwd);
+        if (!remote) {
+            // Checked here, so the message names what is missing: a missing directory used to surface as
+            // "Cannot run program /usr/bin/bash … No such file or directory", blaming bash.
+            if (!java.nio.file.Files.isDirectory(cwd)) {
+                host.setStatus(tr("status.run.workingDirMissing", cfg.name(), cwd.toString()));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
+            if (script != null && !java.nio.file.Files.isRegularFile(script)) {
+                host.setStatus(tr("status.run.scriptMissing", cfg.name(), script.toString()));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
+        }
+        java.util.Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(remote));
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
+            streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args), env);
+            return;
+        }
+        // A shell script runs under what its shebang asks for, unless the configuration names an interpreter.
+        // Reading the first line of a file on a remote host is a network round trip, so that one is off FX.
+        java.util.function.Consumer<String> launch = firstLine -> {
+            ShellCommand.Launch shell;
+            try {
+                shell = ShellCommand.launch(
+                        firstLine, cfg.target(), cfg.interpreter(), cfg.interpreterOptions(), existsHere(remote));
+            } catch (ProgramArgs.UnclosedQuoteException e) {
+                host.setStatus(tr("status.run.optionsUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
+            java.util.Map<String, String> all = new java.util.LinkedHashMap<>(shell.env());
+            all.putAll(env); // the configuration's own variables win over a shebang's env assignments
+            if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
+                ReadPromptShim.environment(System.getenv()).forEach(all::putIfAbsent);
+            }
+            streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args, shell), all);
+        };
+        if (!remote) {
+            launch.accept(firstLine(script));
+            return;
+        }
+        Thread.ofVirtual().name("run-shebang").start(() -> {
+            String line = firstLine(script);
+            javafx.application.Platform.runLater(() -> launch.accept(line));
+        });
+    }
+
+    /** The first line of {@code script} (at most 512 bytes), or null when it cannot be read. */
+    static String firstLine(Path script) {
+        if (script == null) {
+            return null;
+        }
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(script)) {
+            String head = new String(in.readNBytes(512), java.nio.charset.StandardCharsets.UTF_8);
+            int nl = head.indexOf('\n');
+            return nl >= 0 ? head.substring(0, nl) : head;
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** For a run on this machine, whether an absolute interpreter path exists; null (as written) on a host. */
+    private static java.util.function.Predicate<String> existsHere(boolean remote) {
+        return remote ? null : p -> java.nio.file.Files.isExecutable(Path.of(p));
+    }
+
+    /**
+     * What {@code $NAME} in a configuration's environment expands to: this machine's environment, with the
+     * PATH a run actually gets (the augmented one). A remote host's environment is not known here, so there a
+     * reference is left as written.
+     */
+    static java.util.function.Function<String, String> inheritedVariables(boolean remote) {
+        if (remote) {
+            return name -> "$" + name;
+        }
+        return name ->
+                "PATH".equalsIgnoreCase(name) ? com.editora.process.ProcessRunner.augmentedPath() : System.getenv(name);
+    }
+
+    /**
+     * Program arguments as typed, read like a shell reads them; null after saying why when a quote is never
+     * closed (which used to swallow the rest of the line into one argument). {@code cfg} names the
+     * configuration whose field it was, so its form can be opened; null for a file's own arguments.
+     */
+    private List<String> programArgs(String text, RunConfiguration cfg) {
+        try {
+            return ProgramArgs.parse(text);
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.argsUnclosedQuote", String.valueOf(e.quote())));
+            if (cfg != null) {
+                ops.editConfiguration(cfg.name());
+            }
+            return null;
+        }
     }
 
     /**
@@ -421,9 +530,19 @@ final class RunCoordinator {
         }
         Path configuredDir = RunConfigWorkingDirectory.resolve(cfg, root);
         Path cwd = configuredDir != null ? configuredDir : root;
-        List<String> vm = ProgramArgs.tokenize(cfg.vmArgs());
-        List<String> args = ProgramArgs.tokenize(cfg.args());
-        java.util.Map<String, String> env = com.editora.run.EnvVars.parse(cfg.env());
+        List<String> vm = programArgs(cfg.vmArgs(), cfg);
+        List<String> args = vm == null ? null : programArgs(cfg.args(), cfg);
+        if (args == null) {
+            return;
+        }
+        java.util.Map<String, String> env;
+        try {
+            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(com.editora.vfs.Vfs.isRemote(root)));
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
         String jdkHome = jdkHomeFor(root, cfg);
         java.util.Map<String, String> launchEnv = javaEnvironment(root, jdkHome, env);
         boolean onHost = com.editora.vfs.Vfs.isRemote(root);
@@ -642,7 +761,10 @@ final class RunCoordinator {
                 host.setStatus(tr("status.run.resolveFailed"));
                 return;
             }
-            List<String> args = ProgramArgs.tokenize(ops.programArgs(b.getPath()));
+            List<String> args = programArgs(ops.programArgs(b.getPath()), null);
+            if (args == null) {
+                return;
+            }
             String java =
                     com.editora.vfs.Vfs.isRemote(root) ? hostJava(jdkHome, null) : JdkToolchain.javaExecutable(jdkHome);
             List<String> command = JavaRunCommand.build(java, List.of(), cp, m.fqn(), List.of(), args);
@@ -673,7 +795,10 @@ final class RunCoordinator {
                 host.setStatus(info == null ? tr("status.run.resolveFailed") : info.error());
                 return;
             }
-            List<String> args = ProgramArgs.tokenize(programArgsForMain(mc));
+            List<String> args = programArgs(programArgsForMain(mc), null);
+            if (args == null) {
+                return;
+            }
             List<String> command = JavaRunCommand.build(
                     javaExecutableFor(root, info.javaExec()),
                     info.modulePaths(),
@@ -834,6 +959,21 @@ final class RunCoordinator {
             runMakeTarget(buffer, null); // "Run File" on a Makefile ⇒ the default goal
             return;
         }
+        if (buffer.isShell()) {
+            // Windows line endings or a byte-order mark break a script in ways bash reports confusingly
+            // ("$'\r': command not found", "unexpected end of file"), so say so before running it.
+            java.util.Set<ShellRunWarning.Hazard> hazards =
+                    ShellRunWarning.hazards(buffer.getLineEnding(), buffer.getEffectiveCharset());
+            if (!hazards.isEmpty()) {
+                ShellRunWarning.ask(host.window(), buffer, hazards, () -> startFileRun(buffer, promptArgs));
+                return;
+            }
+        }
+        startFileRun(buffer, promptArgs);
+    }
+
+    /** Runs {@code buffer} (already known to be runnable): save, pick the launcher, maybe ask for arguments. */
+    private void startFileRun(EditorBuffer buffer, boolean promptArgs) {
         if (!beginRunRequest()) {
             return;
         }
@@ -856,16 +996,15 @@ final class RunCoordinator {
         java.util.Map<String, String> launchEnv = !javaSource
                 ? java.util.Map.of()
                 : remote ? remoteJdkEnvironment(jdkHome) : JdkToolchain.environment(jdkHome, processPath());
-        List<String> command = buildRunCommand(buffer, path, javaExecutable);
         Runnable proceed = () -> {
             String stored = ops.programArgs(path);
             if (promptArgs) {
                 host.promptText(tr("dialog.runArgs.title"), tr("dialog.runArgs.label"), stored, args -> {
                     ops.setProgramArgs(path, args == null ? "" : args.strip());
-                    launchRun(path, buildRunCommand(buffer, path, javaExecutable), launchEnv);
+                    launchFile(buffer, path, javaExecutable, launchEnv);
                 });
             } else {
-                launchRun(path, command, launchEnv);
+                launchFile(buffer, path, javaExecutable, launchEnv);
             }
         };
         if (javaSource) {
@@ -896,13 +1035,45 @@ final class RunCoordinator {
         }
     }
 
-    /** The launcher argv for the buffer's language: interpreter + file + the remembered args. */
-    private List<String> buildRunCommand(EditorBuffer buffer, Path path, String javaExecutable) {
+    /** Builds and launches the file's command with its remembered arguments. */
+    private void launchFile(
+            EditorBuffer buffer, Path path, String javaExecutable, java.util.Map<String, String> launchEnv) {
+        List<String> args = programArgs(ops.programArgs(path), null);
+        if (args == null) {
+            return;
+        }
+        java.util.Map<String, String> env = launchEnv;
+        ShellCommand.Launch shell = null;
+        if (buffer.isShell()) {
+            boolean remote = com.editora.vfs.Vfs.isRemote(path);
+            // The shebang decides the interpreter and its flags, as running ./script would.
+            shell = ShellCommand.launch(firstLine(buffer), path.getFileName().toString(), "", "", existsHere(remote));
+            java.util.Map<String, String> shellEnv = new java.util.LinkedHashMap<>(shell.env());
+            if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
+                ReadPromptShim.environment(System.getenv()).forEach(shellEnv::putIfAbsent);
+            }
+            env = shellEnv;
+        }
+        launchRun(path, buildRunCommand(buffer, path, javaExecutable, args, shell), env);
+    }
+
+    /** The buffer's first line (at most 512 characters), where a shebang would be. */
+    private static String firstLine(EditorBuffer buffer) {
+        var area = buffer.getArea();
+        String head = area.getText(0, Math.min(area.getLength(), 512));
+        int nl = head.indexOf('\n');
+        return nl >= 0 ? head.substring(0, nl) : head;
+    }
+
+    /** The launcher argv for the buffer's language: interpreter + file + {@code args}. */
+    private List<String> buildRunCommand(
+            EditorBuffer buffer, Path path, String javaExecutable, List<String> args, ShellCommand.Launch shell) {
+        if (shell != null) {
+            return ShellCommand.argv(shell, path.toString(), args);
+        }
         List<String> command = new ArrayList<>();
         if (buffer.isPython()) {
             command.add("python3");
-        } else if (buffer.isShell()) {
-            command.add("bash");
         } else {
             command.add(javaExecutable);
             Integer javaSource = buffer.getShebangJavaSource();
@@ -914,7 +1085,7 @@ final class RunCoordinator {
             }
         }
         command.add(path.toString());
-        command.addAll(ProgramArgs.tokenize(ops.programArgs(path)));
+        command.addAll(args);
         return command;
     }
 
@@ -1012,6 +1183,15 @@ final class RunCoordinator {
         if (service.isRunning()) {
             service.stop();
             host.setStatus(tr("status.run.stopped"));
+        }
+    }
+
+    /** {@code run.endInput}: ends the running program's standard input (end of file). */
+    void endInput() {
+        if (service.isRunning()) {
+            panel().endInput();
+        } else {
+            host.setStatus(tr("status.run.noInputToEnd"));
         }
     }
 

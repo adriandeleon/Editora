@@ -89,10 +89,13 @@ JavaScript (vscode-js-debug) is a socket. Adapters are never bundled — they're
    from a permissive source; attribute it in `NOTICE`).
 2. Register it in `GrammarRegistry`: a `scopeToResource` entry (scope → resource base name) and
    a `mapExtensions(...)` entry (file extension → scope). Filename-only matches (like
-   `Dockerfile`) get a special case in `scopeForFileName`.
+   `Dockerfile`) go in `ConfigFileType`, which both registries read.
 3. Add the extension to `LanguageRegistry` (language-name resolver used by folding + File
    Information), and to `FoldRegions`/`Indenter`/`Commenter` if it needs folding/indent/comment
-   support.
+   support. `LanguageTablesAgreeTest` fails when an extension has a grammar but no language, or the
+   reverse. Shell extensions and names live in one table, `ShellFiles`, that all three read.
+4. A grammar that `include`s a `#rule` it never defines loses that construct silently (tm4e skips
+   it, and `App` silences tm4e's warnings); `BundledGrammarIncludesTest` catches it.
 
 > **JPMS gotcha:** grammar resources live in the `com.editora.grammars` package, which
 > `module-info.java` must `opens ... to org.eclipse.tm4e.core`. Without that, tm4e's
