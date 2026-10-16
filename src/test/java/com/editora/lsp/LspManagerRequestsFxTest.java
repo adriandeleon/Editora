@@ -441,6 +441,24 @@ class LspManagerRequestsFxTest {
         assertNull(answer, "a failed command must not read as 'not a test'");
     }
 
+    /**
+     * An extensionless {@code java --source N} shebang script is held by jdtls but has no compilation unit
+     * there, so the question would only come back as an error with a stack trace in the Debug Log.
+     */
+    @Test
+    void isTestFileIsNotAskedAboutAShebangScript() throws Exception {
+        Path script = root.resolve("launcher");
+        Files.writeString(script, "#!/usr/bin/env -S java --source 25\nvoid main() {}\n");
+        manager.openDocument(script, root, "java", Files.readString(script));
+        var fake = fakes.get(0);
+        fake.executeCommandResponse = Boolean.FALSE;
+
+        Boolean answer = this.<Boolean>await(cb -> manager.isTestFile(script, cb));
+
+        assertNull(answer, "unknown, so the scanner's answer stands");
+        assertTrue(fake.executedCommands.isEmpty(), "nothing sent: " + fake.executedCommands);
+    }
+
     @Test
     void isTestFileSendsTheFileUriAndReadsTheBoolean() throws Exception {
         var fake = open();
