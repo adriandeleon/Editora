@@ -347,4 +347,4 @@ inherited the write descriptor and holds it until it closes its descriptors and 
 before running it does not help. Start freshly written programs through
 `BusyExecutable.start(pb)` ([`BusyExecutable.java`](../src/main/java/com/editora/process/BusyExecutable.java)),
 which retries for about 0.6 s while the exec fails with `ETXTBSY`. `LocalExecTarget` (so every
-`ProcessRunner` call) and the Run tool window already do.
+`ProcessRunner` call), the Run tool window, local language servers and the debug adapters already do.
