@@ -197,7 +197,7 @@
     },
     "multipart": {
       "patterns": [
-        { "match": "^\\s*--[^\\s-][^\\s]*$", "name": "entity.name.section.boundary.http" },
+        { "match": "^\\s*--(?!-*$)\\S+$", "name": "entity.name.section.boundary.http" },
         {
           "match": "^\\s*(Content-[A-Za-z-]+)\\s*(:)\\s*(.*)$",
           "captures": {

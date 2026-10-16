@@ -442,7 +442,8 @@ public final class FoldRegions {
      */
     /**
      * A {@code .http} file folds per request: from its {@code ###} separator (or, for the first request, its
-     * request line) to the last non-blank line before the next one — the block JetBrains folds.
+     * request line) to the last non-blank line before the next one — the block JetBrains folds. Comments, directives
+     * and {@code @var} lines between the separator and the request line fold with it.
      */
     static List<Region> http(String text) {
         List<Region> out = new ArrayList<>();
@@ -458,7 +459,8 @@ public final class FoldRegions {
                         start = k; // comments/directives sit between the separator and the request line
                         break;
                     }
-                    if (!t.isEmpty() && !t.startsWith("#") && !t.startsWith("//")) {
+                    boolean declaration = t.startsWith("@") && t.indexOf('=') > 1; // "@name = value" (HttpFile's rule)
+                    if (!t.isEmpty() && !t.startsWith("#") && !t.startsWith("//") && !declaration) {
                         break;
                     }
                 }

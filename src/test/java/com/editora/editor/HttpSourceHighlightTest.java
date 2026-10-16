@@ -128,4 +128,24 @@ class HttpSourceHighlightTest {
         assertEquals("tag", style("doc attr"));
         assertEquals("attribute", style("attr="));
     }
+
+    @Test
+    void aBrowserBoundaryWithLeadingDashesIsABoundary() {
+        String text = "POST http://h/form\nContent-Type: multipart/form-data; boundary=----WebKitFormBoundaryAb12\n\n"
+                + "------WebKitFormBoundaryAb12\nContent-Disposition: form-data; name=\"t\"\n\nhi\n"
+                + "------WebKitFormBoundaryAb12--\n";
+        StyleSpans<Collection<String>> spans =
+                TextMateHighlighter.compute(text, GrammarRegistry.shared().forFileName("api.http"));
+        int at = text.indexOf("------WebKit");
+        int pos = 0;
+        String style = "";
+        for (StyleSpan<Collection<String>> span : spans) {
+            if (at < pos + span.getLength()) {
+                style = String.join(" ", span.getStyle());
+                break;
+            }
+            pos += span.getLength();
+        }
+        assertEquals("heading", style);
+    }
 }

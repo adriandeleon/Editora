@@ -690,6 +690,8 @@ public class EditorBuffer implements TabContent {
             markdownLintValidator;
 
     private boolean markdownLintEnabled;
+    /** What the controller last asked for Markdown lint (the setting), re-applied when the language changes. */
+    private boolean markdownLintWanted;
     /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
     private final ImageDrop imageDrop =
             new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
@@ -3250,6 +3252,7 @@ public class EditorBuffer implements TabContent {
 
     /** Turns Markdown linting on/off for this buffer (controller gates on the setting; Markdown buffers only). */
     public void setMarkdownLintEnabled(boolean on) {
+        this.markdownLintWanted = on;
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
         if (this.markdownLintEnabled || mdLintOverlay != null) {
             // The overlay is shared with a .http buffer's {{variable}} marks: keep it on while they are.
@@ -7484,6 +7487,10 @@ public class EditorBuffer implements TabContent {
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
         // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
         spell.languageChanged();
+        // A Save As (or a language override) can turn a .http buffer into Markdown and back: the overlay they
+        // share follows the new language — the {{variable}} marks stop, Markdown lint starts, or the reverse.
+        setMarkdownLintEnabled(markdownLintWanted);
+        httpVariableMarks.update();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
