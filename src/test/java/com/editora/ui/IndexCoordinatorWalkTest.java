@@ -62,6 +62,23 @@ class IndexCoordinatorWalkTest {
     }
 
     @Test
+    void anExtensionlessScriptIsIndexedByItsShebang(@TempDir Path root) throws Exception {
+        // B10: `bin/release` opened as shell in the editor but was never in Go to Symbol.
+        file(root, "bin/release", "#!/usr/bin/env bash\nbump_version() {\n  :\n}\n");
+        file(root, "LICENSE", "release() is not code here\n");
+
+        IndexCoordinator.Walked walked = IndexCoordinator.walk(root, GitignoreFilter.NONE, 10);
+
+        List<String> symbols = walked.scanned().stream()
+                .flatMap(s -> s.symbols().stream())
+                .map(com.editora.index.Symbol::name)
+                .toList();
+        assertEquals(List.of("bump_version"), symbols);
+        assertEquals("shell", IndexCoordinator.languageOf(root.resolve("bin/release")));
+        assertEquals("plaintext", IndexCoordinator.languageOf(root.resolve("LICENSE")));
+    }
+
+    @Test
     void reachingTheCapIsReportedInsteadOfLeavingASilentlyPartialIndex(@TempDir Path root) throws Exception {
         file(root, "a/A.java", "class A {}\n");
         file(root, "b/B.java", "class B {}\n");

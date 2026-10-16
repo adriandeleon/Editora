@@ -3088,6 +3088,15 @@ final class LspCoordinator {
      * the answer has come back. It runs only on a jump that actually happened.
      */
     void gotoDefinition(Runnable afterJump) {
+        gotoDefinition(afterJump, null);
+    }
+
+    /**
+     * As {@link #gotoDefinition(Runnable)}; {@code noAnswer} runs when no server serves the file or the server
+     * finds nothing — the server-free index then gets its turn — and keeps this method's own status message
+     * when it returns false (it could not answer either).
+     */
+    void gotoDefinition(Runnable afterJump, java.util.function.BooleanSupplier noAnswer) {
         EditorBuffer active = host.activeBuffer();
         LibrarySource lib = active == null ? null : librarySources.get(active);
         if (lib != null) {
@@ -3096,6 +3105,9 @@ final class LspCoordinator {
         }
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
+            if (noAnswer != null) {
+                noAnswer.getAsBoolean();
+            }
             return;
         }
         CodeArea area = b.getFocusedArea();
@@ -3108,7 +3120,9 @@ final class LspCoordinator {
                 return;
             }
             if (targets.isEmpty()) {
-                host.setStatus(tr("status.lsp.noDefinition"));
+                if (noAnswer == null || !noAnswer.getAsBoolean()) {
+                    host.setStatus(tr("status.lsp.noDefinition"));
+                }
             } else {
                 LspManager.Target t = targets.get(0);
                 if (t.file() != null) {
