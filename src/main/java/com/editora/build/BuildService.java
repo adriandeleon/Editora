@@ -80,7 +80,7 @@ public final class BuildService {
             return;
         }
         int gen = pump.begin();
-        boolean remote = com.editora.vfs.Vfs.isRemote(workingDir);
+        boolean remote = !com.editora.process.ExecTargets.runsHere(workingDir);
         List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
         Process process;
         try {

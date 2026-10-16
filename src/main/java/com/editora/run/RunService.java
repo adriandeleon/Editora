@@ -156,7 +156,7 @@ public final class RunService {
      */
     public void detectJavaMajor(String javaExecutable, Path where, java.util.function.IntConsumer cb) {
         String executable = javaExecutable == null || javaExecutable.isBlank() ? "java" : javaExecutable;
-        boolean remote = where != null && com.editora.vfs.Vfs.isRemote(where);
+        boolean remote = where != null && !com.editora.process.ExecTargets.runsHere(where);
         String key = remote ? com.editora.process.ExecTargets.forPath(where).id() + " " + executable : executable;
         Integer cached = javaMajors.get(key);
         if (cached != null) {
@@ -273,8 +273,9 @@ public final class RunService {
             return;
         }
         int gen = pump.begin();
-        boolean remote = workingDir != null && com.editora.vfs.Vfs.isRemote(workingDir);
-        // On a host the program is found on the host's PATH, and nothing of this machine's environment goes.
+        boolean remote = workingDir != null && !com.editora.process.ExecTargets.runsHere(workingDir);
+        // Elsewhere (a remote host, a container, WSL) the program is found on that PATH, and nothing of this
+        // machine's environment goes.
         List<String> command = remote ? argv : ProcessRunner.resolveExecutable(argv);
         Process process;
         try {

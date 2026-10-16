@@ -27,7 +27,11 @@ public final class RunConfigWorkingDirectory {
             if (projectRoot != null && !isLocal(projectRoot)) {
                 return projectRoot.resolve(cfg.workingDir());
             }
-            Path dir = Path.of(cfg.workingDir());
+            // In a folder whose program runs elsewhere (a container, WSL) an absolute directory is named as
+            // it is there; the target says which folder of this machine that is.
+            Path dir = projectRoot != null && !com.editora.process.ExecTargets.runsHere(projectRoot)
+                    ? com.editora.process.ExecTargets.forPath(projectRoot).toPath(cfg.workingDir())
+                    : Path.of(cfg.workingDir());
             if (dir.isAbsolute()) {
                 return dir;
             }

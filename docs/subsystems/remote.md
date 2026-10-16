@@ -65,7 +65,13 @@ mapped folder's server starts on its target, gets no process id, and is told abo
 documents by the target's names for them (`WireUris.mapped`, translating `file:` keys through
 `toTargetPath` / `toPath`; a file outside the folder, or of another scheme, passes as it is). A test-only
 `MappedTestTarget` records any path handed to a tool by this machine's spelling (`GitMappedTargetFxTest`,
-`LspMappedTargetProcessTest`).
+`LspMappedTargetProcessTest`, `RunMappedTargetFxTest`). Run, Build and Maven follow it too: a mapped folder's
+program, build and classpath resolution start on its target (`RunService`, `BuildService`,
+`MavenClasspathResolver`), with that side's JDK and environment and none of this machine's; a file is handed
+to its interpreter, and a Maven wrapper above the module by its absolute path, by the target's name for it;
+the wrapper is the POSIX one whatever this machine is (`BuildTool`); and an absolute working directory typed in
+a run configuration is read as the target names it (`RunConfigWorkingDirectory`). Search still reads a mapped
+folder with this machine's ripgrep: its files are local.
 
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
