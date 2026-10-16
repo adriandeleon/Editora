@@ -21,6 +21,11 @@ import static com.editora.i18n.Messages.tr;
  * history's memory budget, so a file of large titled downloads must not pin every one of them. A reference
  * into a body that was too large to keep says so.
  *
+ * <p>The session also holds the <b>session variables</b> a response sets — a {@code # @capture} line or a handler's
+ * {@code client.global.set} — which later requests read as {@code {{name}}} ({@link HttpVars#scope}: above the
+ * environment, below the file's own {@code @name = value} lines). They are cleared with the responses, on the same
+ * environment rule.
+ *
  * <p>Thread-safe: requests run on worker threads while the editor may clear the session.
  */
 public final class CapturedResponses {
@@ -34,6 +39,9 @@ public final class CapturedResponses {
     private record Captured(int status, List<String[]> headers, String body, long bodyChars, boolean failed) {}
 
     private final Map<String, Captured> byName = new LinkedHashMap<>();
+
+    /** The session variables, in the order they were first set. */
+    private final Map<String, String> globals = new LinkedHashMap<>();
 
     /** The environment the captured responses were made in; see {@link #resetUnlessEnvironment}. */
     private String environment;
@@ -65,9 +73,32 @@ public final class CapturedResponses {
                         result.status(), List.copyOf(headers), keep ? body : null, body.length(), result.failed()));
     }
 
-    /** Forgets every captured response. */
+    /** Forgets every captured response and session variable. */
     public synchronized void clear() {
         byName.clear();
+        globals.clear();
+    }
+
+    /** Sets the session variable {@code name} to {@code value}; a null {@code value} removes it. */
+    public synchronized void setGlobal(String name, String value) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        if (value == null) {
+            globals.remove(name);
+        } else {
+            globals.put(name, value);
+        }
+    }
+
+    /** Removes every session variable (a handler's {@code client.global.clearAll()}). */
+    public synchronized void clearGlobals() {
+        globals.clear();
+    }
+
+    /** A copy of the session variables, in the order they were first set. */
+    public synchronized Map<String, String> globals() {
+        return new LinkedHashMap<>(globals);
     }
 
     /**
@@ -78,6 +109,7 @@ public final class CapturedResponses {
         String e = env == null ? "" : env;
         if (environment != null && !environment.equals(e)) {
             byName.clear();
+            globals.clear();
         }
         environment = e;
     }

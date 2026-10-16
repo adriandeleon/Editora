@@ -341,6 +341,30 @@ final class DoctorCoordinator {
                     .disabled()));
         }
 
+        // The HTTP Client's JavaScript response handlers run on the user's Node.js.
+        if (s.isHttpClientSupport() && !simple) {
+            String nodeSetting = s.getHttpNodePath().isBlank() ? "node" : s.getHttpNodePath();
+            DoctorCheck handlers = DoctorCheck.checking(
+                            "http.scripts", "run", tr("doctor.label.httpScripts"), nodeSetting)
+                    .withSettings("web");
+            if (s.isHttpScriptsEnabled()) {
+                specs.add(probe(handlers, base -> {
+                    String exe = com.editora.process.ProcessRunner.resolveExecutable(List.of(nodeSetting))
+                            .get(0);
+                    int[] v = com.editora.http.NodeResponseScripts.version(exe);
+                    if (v == null) {
+                        return base.missing("doctor.tip.httpNode", nodeSetting);
+                    }
+                    String version = "v" + v[0] + "." + v[1] + "." + v[2];
+                    return com.editora.http.HttpScripts.guardFor(v) == com.editora.http.HttpScripts.Guard.NONE
+                            ? base.warn(version, "doctor.tip.httpNodeOld", version)
+                            : base.ok(tr("doctor.detail.httpScripts", version));
+                }));
+            } else {
+                specs.add(terminal(handlers.disabled()));
+            }
+        }
+
         // Standalone Java/Python/Make runs work without LSP; Bash Run still follows its LSP gate.
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(s.getMavenJdkHome());
         String javaExecutable = selectedJava.isBlank() ? "java" : selectedJava;

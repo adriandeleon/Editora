@@ -21,9 +21,11 @@ import static com.editora.i18n.Messages.tr;
  * reference ({@code < ./file} raw, {@code <@ ./file} substituted), response-redirect operators
  * ({@code >> file} / {@code >>! file} force), and per-request comment directives above the request line
  * ({@code # @no-redirect}, {@code # @no-cookie-jar}, {@code # @no-log}, {@code # @no-auto-encoding},
- * {@code # @timeout 2 m}, {@code # @connection-timeout 500 ms}, {@code # @name x}). JavaScript — response
- * handlers ({@code > {% … %}} / {@code > file.js}) and pre-request scripts ({@code < {% … %}}) — is recognized
- * so it never becomes part of the request, but it is not executed; the request reports that it was ignored.
+ * {@code # @timeout 2 m}, {@code # @connection-timeout 500 ms}, {@code # @name x}), and the response checks
+ * {@code # @assert …} / {@code # @capture …} ({@link HttpChecks}). JavaScript response handlers
+ * ({@code > {% … %}} / {@code > file.js}) are read into {@link Parsed#handlers()} for {@link ResponseScripts} to run;
+ * pre-request scripts ({@code < {% … %}}) are recognized so they never become part of the request, but they are
+ * not executed yet; the request reports that it was ignored.
  */
 public final class HttpFile {
 
@@ -44,7 +46,8 @@ public final class HttpFile {
 
     /**
      * Per-request comment directives, read only from the comment lines above the request line; a {@code 0}
-     * timeout means "use the default". Timeouts are in milliseconds.
+     * timeout means "use the default". Timeouts are in milliseconds. {@code checks} are the {@code @assert} and
+     * {@code @capture} lines, in order.
      */
     public record Directives(
             boolean noRedirect,
@@ -52,8 +55,31 @@ public final class HttpFile {
             boolean noLog,
             boolean noAutoEncoding,
             long timeoutMillis,
-            long connectionTimeoutMillis) {
-        public static final Directives NONE = new Directives(false, false, false, false, 0, 0);
+            long connectionTimeoutMillis,
+            List<HttpChecks.Check> checks) {
+        public static final Directives NONE = new Directives(false, false, false, false, 0, 0, List.of());
+
+        public Directives {
+            checks = checks == null ? List.of() : List.copyOf(checks);
+        }
+    }
+
+    /**
+     * A JavaScript response handler: inline ({@code > {% … %}}, {@code source} set, {@code path} null) or a file
+     * ({@code > ./check.js}, {@code path} as written, relative to the request file). {@code line} is the 0-based line
+     * the handler starts on — in the file for a request from {@link #parse}, in the block otherwise — and
+     * {@code column} the column its inline source starts at (just after {@code {%}), so an error in the script can
+     * be placed in the {@code .http} file. {@code closed} is false for an inline script without its {@code %}}.
+     */
+    public record Handler(String source, String path, int line, int column, boolean closed) {
+
+        public boolean isFile() {
+            return path != null;
+        }
+
+        Handler shifted(int lines) {
+            return new Handler(source, path, line + lines, column, closed);
+        }
     }
 
     /** An external request body: the {@code path} (relative to the request file), whether to substitute
@@ -120,11 +146,18 @@ public final class HttpFile {
             String httpVersion,
             List<String[]> variables,
             List<String> warnings,
-            String error) {
+            String error,
+            List<Handler> handlers) {
 
         public Parsed {
             variables = variables == null ? List.of() : List.copyOf(variables);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
+            handlers = handlers == null ? List.of() : List.copyOf(handlers);
+        }
+
+        /** The {@code @assert}/{@code @capture} checks of this request. */
+        public List<HttpChecks.Check> checks() {
+            return directives == null ? List.of() : directives.checks();
         }
 
         /**
@@ -149,7 +182,8 @@ public final class HttpFile {
                     httpVersion,
                     variables,
                     all,
-                    error);
+                    error,
+                    handlers);
         }
     }
 
@@ -272,7 +306,19 @@ public final class HttpFile {
         }
         if (i >= lines.length) {
             return new Parsed(
-                    "GET", "", List.of(), "", null, null, List.of(), Directives.NONE, null, List.of(), List.of(), null);
+                    "GET",
+                    "",
+                    List.of(),
+                    "",
+                    null,
+                    null,
+                    List.of(),
+                    Directives.NONE,
+                    null,
+                    List.of(),
+                    List.of(),
+                    null,
+                    List.of());
         }
         // URL continuation lines: indented, and not shaped like a header ("  ?a=1", "  &b=2", "  /api" — IntelliJ
         // splits long targets this way). An indented "Accept: x" right after the request line is a header.
@@ -337,8 +383,8 @@ public final class HttpFile {
         }
         StringBuilder body = new StringBuilder();
         List<Redirect> redirects = new ArrayList<>();
+        List<Handler> handlers = new ArrayList<>();
         boolean bodyDone = trailerStarted;
-        boolean handlerWarned = false;
         for (; i < lines.length; i++) {
             String t = lines[i].strip();
             if (isRedirect(t)) {
@@ -347,12 +393,14 @@ public final class HttpFile {
                 continue;
             }
             if (isHandler(t)) {
-                bodyDone = true; // a response handler ends the body; it is not executed
-                if (!handlerWarned) {
-                    warnings.add(tr("http.warn.handlerIgnored"));
-                    handlerWarned = true;
+                bodyDone = true; // a response handler ends the body
+                int end = scriptEnd(lines, i, lines.length, t);
+                Handler h = handler(lines, i, end);
+                if (h.source() != null && !h.closed()) {
+                    warnings.add(tr("http.warn.handlerUnclosed"));
                 }
-                i = scriptEnd(lines, i, lines.length, t); // a multi-line {% … %} script is skipped whole
+                handlers.add(h);
+                i = end; // a multi-line {% … %} script is read whole
                 continue;
             }
             if (isResponseRef(t)) {
@@ -382,7 +430,8 @@ public final class HttpFile {
                 rl.version(),
                 List.of(),
                 warnings,
-                rl.error());
+                rl.error(),
+                handlers);
     }
 
     /** Like {@link #parseRequest(String)} but carries the request's {@code name}, {@code directives},
@@ -403,7 +452,8 @@ public final class HttpFile {
                 p.httpVersion(),
                 req.variables(),
                 warnings,
-                p.error());
+                p.error(),
+                p.handlers().stream().map(h -> h.shifted(req.startLine())).toList());
     }
 
     /**
@@ -492,6 +542,7 @@ public final class HttpFile {
         boolean noAutoEncoding = false;
         long timeout = 0;
         long connectionTimeout = 0;
+        List<HttpChecks.Check> checks = new ArrayList<>();
         for (int k = from; k < to; k++) {
             String s = lines[k].strip();
             if (!isComment(s)) {
@@ -516,9 +567,20 @@ public final class HttpFile {
                         timeoutDirective("connection-timeout", tok.substring("connection-timeout".length()), warnings);
             } else if (low.startsWith("timeout")) {
                 timeout = timeoutDirective("timeout", tok.substring("timeout".length()), warnings);
+            } else if (isDirective(low, "assert") || isDirective(low, "capture")) {
+                boolean capture = low.startsWith("capture");
+                HttpChecks.Check check = HttpChecks.parse(tok.substring(capture ? 7 : 6), capture, warnings);
+                if (check != null) {
+                    checks.add(check);
+                }
             }
         }
-        return new Directives(noRedirect, noCookieJar, noLog, noAutoEncoding, timeout, connectionTimeout);
+        return new Directives(noRedirect, noCookieJar, noLog, noAutoEncoding, timeout, connectionTimeout, checks);
+    }
+
+    /** {@code low} (a lower-cased directive without its {@code @}) is {@code word}, alone or followed by a space. */
+    private static boolean isDirective(String low, String word) {
+        return low.equals(word) || (low.startsWith(word) && Character.isWhitespace(low.charAt(word.length())));
     }
 
     private static long timeoutDirective(String directive, String value, List<String> warnings) {
@@ -645,6 +707,35 @@ public final class HttpFile {
             }
         }
         return to - 1; // unterminated: the rest of the section is the script
+    }
+
+    /**
+     * The handler on lines {@code [from, end]}: an inline {@code {% … %}} script with its source (the text between
+     * the markers, line breaks kept so its line numbers match the file's), or a file reference.
+     */
+    private static Handler handler(String[] lines, int from, int end) {
+        String first = lines[from];
+        int open = first.indexOf("{%");
+        if (open < 0) {
+            String path = first.strip().substring(1).strip();
+            return new Handler(null, path, from, 0, true);
+        }
+        int column = open + 2;
+        int close = first.indexOf("%}", column);
+        if (close >= 0) {
+            return new Handler(first.substring(column, close), null, from, column, true);
+        }
+        StringBuilder src = new StringBuilder(first.substring(column));
+        for (int k = from + 1; k <= end; k++) {
+            src.append('\n');
+            int c = lines[k].indexOf("%}");
+            if (k == end && c >= 0) {
+                src.append(lines[k], 0, c);
+                return new Handler(src.toString(), null, from, column, true);
+            }
+            src.append(lines[k]);
+        }
+        return new Handler(src.toString(), null, from, column, false);
     }
 
     /** An indented line right after the request line that continues the URL rather than starting the headers. */

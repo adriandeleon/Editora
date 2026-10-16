@@ -321,8 +321,17 @@ public final class GitService {
      */
     private static final List<String> REMOTE_GIT = List.of("git");
 
+    /**
+     * Whether git for {@code dir} runs on this machine: its execution target's answer, not its filesystem's. A
+     * folder of this machine can still have its tools run elsewhere (bind-mounted into a container, in WSL).
+     */
     private static boolean isLocal(Path dir) {
-        return dir == null || dir.getFileSystem() == java.nio.file.FileSystems.getDefault();
+        return ExecTargets.runsHere(dir);
+    }
+
+    /** Whether {@code p} is on this machine's own filesystem (so reading it is no network round trip). */
+    private static boolean onThisFileSystem(Path p) {
+        return p == null || p.getFileSystem() == java.nio.file.FileSystems.getDefault();
     }
 
     /** The git command for the machine {@code dir} is on. */
@@ -371,7 +380,13 @@ public final class GitService {
         boolean ok = false;
         String out = "";
         try {
-            Path anywhere = context.toAbsolutePath().getRoot(); // a directory that is certainly there
+            // A directory that is certainly there and on the same target: a remote filesystem's root, or, for a
+            // folder of this machine whose tools run elsewhere, the folder itself (this machine's "/" is local).
+            Path anywhere = onThisFileSystem(context)
+                    ? (Files.isDirectory(context)
+                            ? context
+                            : context.toAbsolutePath().getParent())
+                    : context.toAbsolutePath().getRoot();
             List<String> argv = new ArrayList<>(commandFor(context));
             argv.add("--version");
             ProcessRunner.Result r = ProcessRunner.run(anywhere, QUICK, argv, READ_ENV);
@@ -400,7 +415,7 @@ public final class GitService {
     }
 
     /** {@code path} as the git that serves it names it: this machine's absolute path, or the host's. */
-    private static String gitPath(Path path) {
+    static String gitPath(Path path) {
         Path absolute = path.toAbsolutePath();
         return isLocal(absolute)
                 ? absolute.toString()
@@ -692,16 +707,8 @@ public final class GitService {
 
     private GitDiff diffHead(Path root, Path file) {
         // -U0: no context lines, so hunk headers map cleanly to changed line ranges + tooltip bodies.
-        ProcessRunner.Result r = git(
-                root,
-                QUICK,
-                GitSafety.LITERAL_PATHSPECS,
-                "diff",
-                "--no-color",
-                "-U0",
-                "HEAD",
-                "--",
-                file.toAbsolutePath().toString());
+        ProcessRunner.Result r =
+                git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "diff", "--no-color", "-U0", "HEAD", "--", gitPath(file));
         if (!r.ok()) {
             return GitDiff.EMPTY; // untracked / unmerged / new repo with no HEAD: no bars
         }
@@ -728,15 +735,8 @@ public final class GitService {
         submit(exec, () -> {
             List<DiffParser.Hunk> hunks = null;
             if (gitAvailable(root) && root != null && file != null) {
-                ProcessRunner.Result r = git(
-                        root,
-                        QUICK,
-                        GitSafety.LITERAL_PATHSPECS,
-                        "diff",
-                        "--no-color",
-                        "-U0",
-                        "--",
-                        file.toAbsolutePath().toString());
+                ProcessRunner.Result r =
+                        git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "diff", "--no-color", "-U0", "--", gitPath(file));
                 // An unmerged path answers with a combined diff ("@@@"), which is not a hunk to stage.
                 hunks = r.ok() && !r.out().contains("\n@@@ ") ? DiffParser.parseHunks(r.out()) : null;
             }
@@ -912,7 +912,7 @@ public final class GitService {
                         String.valueOf(max)));
                 if (file != null) {
                     args.add("--");
-                    args.add(file.toAbsolutePath().toString());
+                    args.add(gitPath(file));
                 }
                 ProcessRunner.Result r = git(root, QUICK, args.toArray(new String[0]));
                 if (r.ok()) {
@@ -1189,7 +1189,7 @@ public final class GitService {
         if (cached != null) {
             return cached;
         }
-        ProcessRunner.Result r = runBlame(root, options, plan, List.of("--", abs.toString()));
+        ProcessRunner.Result r = runBlame(root, options, plan, List.of("--", gitPath(abs)));
         if (!r.ok()) {
             return List.of(); // includes a capture that was cut off: never parsed, never cached
         }
@@ -1211,7 +1211,7 @@ public final class GitService {
         BlameOptions options = blameOptions;
         BlameIgnoreRevs.Plan plan = ignoreRevsPlanFor(root);
         String source = revision + ":" + path;
-        BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(plan));
+        BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(root, plan));
         List<BlameParser.BlameLine> cached = cachedBlame(key.source(), key);
         if (cached != null) {
             return cached;
@@ -1279,7 +1279,7 @@ public final class GitService {
             Path root, BlameOptions options, BlameIgnoreRevs.Plan plan, List<String> target) {
         List<String> args = new ArrayList<>(List.of(GitSafety.LITERAL_PATHSPECS, "blame", "--porcelain"));
         args.addAll(options.args());
-        args.addAll(plan.args());
+        args.addAll(plan.args(file -> gitPath(root.getFileSystem().getPath(file))));
         args.addAll(target);
         blameRuns.incrementAndGet();
         Map<String, String> env = plan.withoutGlobalConfig() ? envWithoutGlobalIgnoreRevs(root) : READ_ENV;
@@ -1294,17 +1294,12 @@ public final class GitService {
     /** Repository root → its configured ignore-revs files. Blame is re-requested after every status refresh. */
     private final Map<Path, CachedIgnoreRevs> ignoreRevsConfig = new ConcurrentHashMap<>();
 
-    /** The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are now. */
     /**
-     * {@link #ignoreRevsPlan} for a local repository. A remote one leaves {@code blame.ignoreRevsFile} to the
-     * host's git: checking the files and rewriting the global configuration would mean temporary files on
-     * the host for every blame.
+     * The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are
+     * now. For a repository on a remote host the configuration is the host's (its {@code ~}, its global
+     * config), and the files are looked at over SFTP, on the blame's own thread.
      */
     private BlameIgnoreRevs.Plan ignoreRevsPlanFor(Path root) {
-        return isLocal(root) ? ignoreRevsPlan(root) : BlameIgnoreRevs.Plan.NONE;
-    }
-
-    private BlameIgnoreRevs.Plan ignoreRevsPlan(Path root) {
         long now = System.nanoTime();
         CachedIgnoreRevs cached = ignoreRevsConfig.get(root);
         if (cached == null || now - cached.readNanos() > IGNORE_REVS_CONFIG_TTL.toNanos()) {
@@ -1318,12 +1313,13 @@ public final class GitService {
     }
 
     /** The part of a blame cache key that changes when an ignore-revs file in play is edited. */
-    private static String ignoreRevsSignature(BlameIgnoreRevs.Plan plan) {
+    private static String ignoreRevsSignature(Path root, BlameIgnoreRevs.Plan plan) {
         StringBuilder sb = new StringBuilder(plan.withoutGlobalConfig() ? "g" : "");
         for (String file : plan.files()) {
             try {
-                java.nio.file.attribute.BasicFileAttributes attrs =
-                        Files.readAttributes(Path.of(file), java.nio.file.attribute.BasicFileAttributes.class);
+                // On the repository's own file system: a host path, for a repository on a remote host.
+                java.nio.file.attribute.BasicFileAttributes attrs = Files.readAttributes(
+                        root.getFileSystem().getPath(file), java.nio.file.attribute.BasicFileAttributes.class);
                 sb.append('|').append(file).append(':').append(attrs.size()).append(':');
                 sb.append(attrs.lastModifiedTime().toMillis());
             } catch (IOException | RuntimeException gone) {
@@ -1342,18 +1338,52 @@ public final class GitService {
     private Map<String, String> envWithoutGlobalIgnoreRevs(Path root) {
         try {
             ProcessRunner.Result global = git(root, QUICK, "config", "--global", "--includes", "-z", "--list");
-            Path config = Files.createTempFile("editora-git-global", ".config");
-            config.toFile().deleteOnExit();
-            Files.writeString(
-                    config,
-                    BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
-                            global.ok() ? global.out() : "", root.toString().replace('\\', '/')));
+            String text = BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
+                    global.ok() ? global.out() : "", gitPath(root).replace('\\', '/'));
+            String path;
+            if (isLocal(root)) {
+                Path config = Files.createTempFile("editora-git-global", ".config");
+                config.toFile().deleteOnExit();
+                Files.writeString(config, text);
+                path = config.toString();
+            } else {
+                path = hostGlobalConfigCopy(root, text);
+            }
             Map<String, String> env = new LinkedHashMap<>(READ_ENV);
-            env.put("GIT_CONFIG_GLOBAL", config.toString());
+            env.put("GIT_CONFIG_GLOBAL", path);
             return env;
         } catch (IOException | RuntimeException e) {
             return READ_ENV; // blame then fails the way it does in a terminal
         }
+    }
+
+    /**
+     * Where {@code text}, the host's global config without {@code blame.ignoreRevsFile}, is on the host: in
+     * Editora's cache folder there, named by its contents, so it is written once and not again for every
+     * blame. Named as the host names it, for {@code GIT_CONFIG_GLOBAL}.
+     */
+    private static String hostGlobalConfigCopy(Path root, String text) throws IOException {
+        ExecTarget target = ExecTargets.forPath(root);
+        Path dir = target.cacheDir();
+        if (dir == null) {
+            throw new IOException("no cache folder on " + target.id());
+        }
+        String name;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            name = "git-global-" + java.util.HexFormat.of().formatHex(digest, 0, 8) + ".config";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e);
+        }
+        Path config = dir.resolve(name);
+        if (!Files.isRegularFile(config)) {
+            Files.createDirectories(dir);
+            Path partial = dir.resolve(name + ".part");
+            Files.writeString(partial, text);
+            Files.move(partial, config, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        return target.toTargetPath(config);
     }
 
     private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
@@ -1370,7 +1400,7 @@ public final class GitService {
                     attrs.lastModifiedTime().toMillis(),
                     attrs.size(),
                     options,
-                    ignoreRevsSignature(plan));
+                    ignoreRevsSignature(root, plan));
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -1540,7 +1570,7 @@ public final class GitService {
      * and if nothing resolves, falls back to a plain absolute-normalized path.
      */
     static Path realPath(Path p) {
-        if (!isLocal(p)) {
+        if (!onThisFileSystem(p)) {
             // Not asked of the server: this is called on the JavaFX thread, and a remote folder is reached
             // by the one spelling its connection opened it under.
             return p.toAbsolutePath().normalize();

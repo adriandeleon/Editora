@@ -218,6 +218,31 @@ class ConfigExporterTest {
     }
 
     @Test
+    void anExportGoesToTheExportDirectoryWhenOneIsSetAndOtherwiseToTheHomeDirectory(
+            @TempDir Path cfg, @TempDir Path dest) throws Exception {
+        SharedConfig shared = new SharedConfig(cfg, false);
+        shared.load();
+        try {
+            Path home = Path.of(System.getProperty("user.home"));
+            assertEquals(home, shared.exportDirectory(), "by default an export lands in the home directory");
+
+            shared.setExportDirectory(dest);
+            assertEquals(dest, shared.exportConfig().getParent());
+            assertEquals(
+                    dest,
+                    shared.exportConfigAsync(false)
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .getParent(),
+                    "the command's background export follows it too");
+
+            shared.setExportDirectory(null);
+            assertEquals(home, shared.exportDirectory());
+        } finally {
+            shared.shutdown();
+        }
+    }
+
+    @Test
     void theHttpResponseHistoryIsExportedOnlyWhenAskedFor(@TempDir Path tmp) throws Exception {
         Path cfg = Files.createDirectories(tmp.resolve(".editora"));
         Files.writeString(cfg.resolve("settings.json"), "{}");

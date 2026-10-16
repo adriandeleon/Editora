@@ -400,6 +400,9 @@ public class SettingsWindow {
     private Spinner<Integer> gitAutoFetchSpinner;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
+    private CheckBox httpScriptsCheck;
+    private TextField httpNodeField;
+    private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
     private CheckBox mcpCheck;
     private CheckBox aiMasterCheck;
@@ -1679,6 +1682,27 @@ public class SettingsWindow {
         httpCheck = new CheckBox(tr("settings.httpClient.enable"));
         httpCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setHttpClientSupport(now);
+            apply();
+        });
+        httpScriptsCheck = new CheckBox(tr("settings.httpClient.scripts"));
+        httpScriptsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHttpScriptsEnabled(now);
+            apply();
+        });
+        httpNodeField = new TextField();
+        httpNodeField.setPromptText("node");
+        commitOnEnterOrBlur(httpNodeField, () -> config.getSettings().getHttpNodePath(), now -> {
+            config.getSettings().setHttpNodePath(now);
+            apply();
+        });
+        httpScriptTimeoutSpinner = IntSpinners.editable(1, 600, 10, 1);
+        httpScriptTimeoutSpinner.setPrefWidth(90);
+        httpScriptTimeoutSpinner.setAccessibleText(tr("settings.httpClient.scriptTimeout"));
+        httpScriptTimeoutSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setHttpScriptTimeoutSeconds(now);
             apply();
         });
 
@@ -3930,6 +3954,28 @@ public class SettingsWindow {
                 httpCheck,
                 tr("settings.httpClient.hint"),
                 "http client rest request enable run send response built-in");
+        checkRow(
+                http,
+                Category.WEB,
+                httpScriptsCheck,
+                tr("settings.httpClient.scriptsHint"),
+                "http client response handler javascript script node test assert client.global trust");
+        Button nodeBrowse = browseButton(tr("settings.httpClient.nodePath"), httpNodeField);
+        httpNodeField.setPrefWidth(PATH_FIELD_WIDTH);
+        controlRow(
+                http,
+                Category.WEB,
+                tr("settings.httpClient.nodePath"),
+                tr("settings.httpClient.nodePathHint"),
+                new HBox(6, httpNodeField, nodeBrowse),
+                "http client response handler node nodejs path executable javascript");
+        controlRow(
+                http,
+                Category.WEB,
+                tr("settings.httpClient.scriptTimeout"),
+                tr("settings.httpClient.scriptTimeoutHint"),
+                httpScriptTimeoutSpinner,
+                "http client response handler script timeout seconds node javascript");
         return p;
     }
 
@@ -8638,6 +8684,9 @@ public class SettingsWindow {
             ripgrepCommandField.setText(settings.getRipgrepCommand());
             refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
+            httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
+            httpNodeField.setText(settings.getHttpNodePath());
+            httpScriptTimeoutSpinner.getValueFactory().setValue(settings.getHttpScriptTimeoutSeconds());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
             aiMasterCheck.setSelected(settings.isAiEnabled());

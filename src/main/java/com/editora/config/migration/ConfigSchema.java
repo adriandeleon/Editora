@@ -243,10 +243,13 @@ public enum ConfigSchema {
                     // v122→123: + rulers / languageRulers / showIndentGuides (additive). A missing rulers list
                     // is the old single ruler at 80; indent guides are new and on.
                     Map.entry(122, (Migration) ConfigMigrations::identity),
-                    // v123→124: + bash-language-server settings (bashShellcheckPath/Arguments, bashShfmt*,
+                    // v123→124: + httpScriptsEnabled / httpNodePath / httpScriptTimeoutSeconds (additive: handlers
+                    // on, node on the PATH, 10 s).
+                    Map.entry(123, (Migration) ConfigMigrations::identity),
+                    // v124→125: + bash-language-server settings (bashShellcheckPath/Arguments, bashShfmt*,
                     // bashBackgroundAnalysisMaxFiles, bashIncludeAllWorkspaceSymbols, bashExplainshellEndpoint),
                     // additive: every default is the server's own default, so nothing changes until set.
-                    Map.entry(123, (Migration) ConfigMigrations::identity)),
+                    Map.entry(124, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -332,10 +335,12 @@ public enum ConfigSchema {
     /** One file per {@code .http} file: its chosen environment and last responses (HTTP Client). */
     // v1 → v2: each response gained protocol, charset and `sent` (how the request went out, for Copy as cURL),
     // and the file gained clearedAt — all additive (absent ⇒ unknown / never cleared).
+    // v2 → v3: + landedAt, urlTemplate, fingerprint per response (additive).
+    // v3 → v4: + tests, what each response's @assert checks and handlers found (additive; absent ⇒ none ran).
     HTTP_HISTORY(
             HttpResponseHistory.SCHEMA_VERSION,
             1,
-            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity));
+            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity, 3, ConfigMigrations::identity));
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

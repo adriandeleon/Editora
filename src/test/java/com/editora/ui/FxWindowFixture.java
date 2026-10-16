@@ -27,6 +27,8 @@ final class FxWindowFixture implements AutoCloseable {
     final SharedConfig shared;
     final WindowManager windowManager;
     final MainController controller;
+    /** This window's own folder for Export Configuration's zip, deleted on {@link #dispose()}. */
+    final Path exportDir;
 
     /** Set to leave the config directory in place on {@link #dispose()} — for a test that starts again on it. */
     boolean keepConfigDir;
@@ -38,6 +40,7 @@ final class FxWindowFixture implements AutoCloseable {
         this.shared = shared;
         this.windowManager = wm;
         this.controller = controller;
+        this.exportDir = shared.exportDirectory();
     }
 
     /** Boot a window on the FX thread, isolated to a fresh temp config dir. */
@@ -88,6 +91,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
@@ -108,6 +112,16 @@ final class FxWindowFixture implements AutoCloseable {
     }
 
     /**
+     * Export Configuration writes its zip to the home directory; a test window writes it to a temporary folder
+     * of its own, so the command sweep (which runs {@code config.export}) leaves nothing in the real home.
+     */
+    private static void isolateExports(SharedConfig shared) throws IOException {
+        shared.setExportDirectory(Files.createTempDirectory(EXPORT_DIR_PREFIX));
+    }
+
+    private static final String EXPORT_DIR_PREFIX = "editora-fx-exports";
+
+    /**
      * Boot a default window after {@code beforeWindows} has prepared the shared config — the place where
      * {@code App.start} does its own pre-window wiring (claiming the config dir, for one).
      */
@@ -117,6 +131,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            isolateExports(shared);
             beforeWindows.accept(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
@@ -135,6 +150,7 @@ final class FxWindowFixture implements AutoCloseable {
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
             keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
@@ -223,6 +239,14 @@ final class FxWindowFixture implements AutoCloseable {
         try {
             if (!keepConfigDir) {
                 deleteRecursively(configDir);
+            }
+        } catch (IOException e) {
+            failure = combine(failure, e);
+        }
+        try {
+            // Only the folder isolateExports made: a test that moved the export elsewhere keeps that place.
+            if (exportDir.getFileName().toString().startsWith(EXPORT_DIR_PREFIX)) {
+                deleteRecursively(exportDir);
             }
         } catch (IOException e) {
             failure = combine(failure, e);

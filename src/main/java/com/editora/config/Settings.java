@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 124;
+    public static final int SCHEMA_VERSION = 125;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -497,6 +497,15 @@ public class Settings {
     private boolean searchRespectGitignore = true;
     /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
     private boolean httpClientSupport = true;
+    /**
+     * Run the JavaScript response handlers ({@code > {% … %}}, {@code > ./check.js}) of {@code .http} requests on
+     * Node.js — only from trusted folders: on by default.
+     */
+    private boolean httpScriptsEnabled = true;
+    /** The Node.js that runs HTTP response handlers: blank = {@code node} on the PATH. */
+    private String httpNodePath = "";
+    /** Seconds one HTTP response handler may run before it is stopped (1–600). */
+    private int httpScriptTimeoutSeconds = 10;
     /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
     private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
@@ -907,6 +916,30 @@ public class Settings {
 
     public void setHttpClientSupport(boolean httpClientSupport) {
         this.httpClientSupport = httpClientSupport;
+    }
+
+    public boolean isHttpScriptsEnabled() {
+        return httpScriptsEnabled;
+    }
+
+    public void setHttpScriptsEnabled(boolean httpScriptsEnabled) {
+        this.httpScriptsEnabled = httpScriptsEnabled;
+    }
+
+    public String getHttpNodePath() {
+        return httpNodePath;
+    }
+
+    public void setHttpNodePath(String httpNodePath) {
+        this.httpNodePath = httpNodePath == null ? "" : httpNodePath.strip();
+    }
+
+    public int getHttpScriptTimeoutSeconds() {
+        return httpScriptTimeoutSeconds;
+    }
+
+    public void setHttpScriptTimeoutSeconds(int seconds) {
+        this.httpScriptTimeoutSeconds = Math.max(1, Math.min(600, seconds));
     }
 
     public boolean isHtmlPreviewSupport() {

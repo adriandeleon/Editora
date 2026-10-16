@@ -97,6 +97,25 @@ final class HttpClientCoordinator {
         default boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
             return false;
         }
+
+        /**
+         * Whether the JavaScript response handlers of {@code file} may run: true when its folder is trusted, or the
+         * user trusts it now (the same trust store as build scripts and secrets). Called on the FX thread, while the
+         * run's worker waits; it may block on a dialog. A window without a trust store refuses.
+         */
+        default boolean allowScripts(Path file) {
+            return false;
+        }
+
+        /** Whether {@code file} — a response handler file, by its real path — is in a trusted folder (FX thread). */
+        default boolean isTrusted(Path file) {
+            return false;
+        }
+
+        /** The folder Editora copies its response-handler runner to; null when handlers cannot run. */
+        default Path scriptCacheDir() {
+            return null;
+        }
     }
 
     private final CoordinatorHost host;
@@ -406,7 +425,13 @@ final class HttpClientCoordinator {
         HttpClientService.Handle[] run = new HttpClientService.Handle[1];
         // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
         run[0] = service.run(
-                parsed, environmentFor(buffer), baseDir, session, HttpSecretGate.forBuffer(buffer, ops), ex -> {
+                parsed,
+                environmentFor(buffer),
+                baseDir,
+                session,
+                HttpSecretGate.forBuffer(buffer, ops),
+                HttpScriptGate.forBuffer(buffer, ops, host.settings()),
+                ex -> {
                     if (running.remove(buffer, run[0])) {
                         finishRun(
                                 buffer,
@@ -616,6 +641,7 @@ final class HttpClientCoordinator {
                     baseDir,
                     session,
                     HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
+                    HttpScriptGate.forBuffer(b, ops, host.settings()), // so is the folder, if any has a handler
                     i -> {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {

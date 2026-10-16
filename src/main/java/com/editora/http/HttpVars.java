@@ -192,9 +192,11 @@ public final class HttpVars {
 
     /**
      * Builds the variables for one request: the environment's values (each resolved against the others, so
-     * {@code "api": "{{base}}/api"} works), then {@code fileVars} layered on top in order (each resolved
-     * against what is in effect at its line, so a later {@code @var} may use an earlier one, an environment
-     * variable, a dynamic built-in, or — given {@code captured} — an earlier response).
+     * {@code "api": "{{base}}/api"} works) with {@code captured}'s session variables over them, then {@code fileVars}
+     * layered on top in order (each resolved against what is in effect at its line, so a later {@code @var} may use
+     * an earlier one, an environment or session variable, a dynamic built-in, or — given {@code captured} — an
+     * earlier response). A session variable came from a response: its value is used as is, never resolved, so a
+     * response cannot make a request read a secret.
      */
     public static Scope scope(
             Map<String, String> envVars,
@@ -217,6 +219,12 @@ public final class HttpVars {
             Path dir,
             boolean dry) {
         Map<String, String> raw = envVars == null ? Map.of() : envVars;
+        Map<String, String> globals = captured == null ? Map.of() : captured.globals();
+        if (!globals.isEmpty()) {
+            Map<String, String> layered = new LinkedHashMap<>(raw);
+            globals.forEach((name, value) -> layered.put(name, escape(value))); // escaped: inserted, never resolved
+            raw = layered;
+        }
         Map<String, String> values = new LinkedHashMap<>();
         Map<String, Unresolved> missing = new HashMap<>();
         Set<String> fileNames = new HashSet<>();

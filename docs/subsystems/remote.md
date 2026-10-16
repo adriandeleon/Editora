@@ -52,6 +52,17 @@ readable ones with their caret and pin. There are no placeholder tabs while disc
 local or null directory, and otherwise the `vfs/SshExecTarget` of the connection that owns the path, but only
 while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its working directory.
 
+Where a command runs is the target's question, not the filesystem's (`ExecTargets.runsHere`,
+`ExecTarget.isLocal`). A folder of this machine can have its tools run elsewhere — bind-mounted into a
+container, inside a WSL distribution — through a *mapped* resolver (`ExecTargets.registerMapped`), asked
+about every local path without I/O. While the setting is off, or that target has not been allowed, such a
+folder's tools run here, as before: its files are local. So code that picks a tool, its environment or its
+arguments asks the target, and every path handed to a tool goes through `ExecTarget.toTargetPath` (an SFTP
+path's text happens to be the host's path; a mapped folder's is not). File-access decisions — whether reading
+a path is a network round trip — stay on the filesystem (`Vfs.isLocal`). Git follows this already
+(`GitService.isLocal` / `gitPath`, `GitHubService`, `RemoteExec.runsFor`); a test-only `MappedTestTarget`
+records any path handed to a tool by this machine's spelling (`GitMappedTargetFxTest`).
+
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
   pid line on stderr, sets directory and environment, and `exec`s the program. No PTY.
@@ -131,6 +142,12 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   (`GitPathScope.learnRemote`: one `find`, eight levels deep, skipping `node_modules` and the like) when the
   project is shown, after a clone or init, and on a tree refresh at most once a minute. Until it has answered,
   a remote path is in the active repository when under its root, as before.
+- **Blame's ignore-revs file** (`BlameIgnoreRevs`) works on a host as locally: a `.git-blame-ignore-revs` at
+  the root is used when nothing is configured, and a `blame.ignoreRevsFile` the host's global config names
+  but this repository lacks no longer breaks blame. The configuration is the host's (its `~`, read with
+  `git config --path`), the files are looked at over SFTP on the blame's thread, and the stand-in global
+  config (the user's without that key) is written on the host, in its `~/.cache/editora`, named by its
+  contents so it is written once (`GitService.hostGlobalConfigCopy`), for `GIT_CONFIG_GLOBAL`.
 - **Fetch automatically** (`GitAutoFetch`, `GitService.autoFetch`) fetches a remote repository on its host,
   by the host's git (`commandFor`), with the same batch-mode environment as a local one (`GitSafety.autoFetchEnv`)
   and under the same trust rule. A `GIT_SSH_COMMAND` or `GIT_SSH` the host's login profile exports is the
@@ -248,7 +265,6 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   compiled for the debugger on its host, with the host's `javac` (beside its `jdk.home`, else on its `PATH`),
   into `<cache>/debug-classes/<id>` (removed when the session ends), and launched from there
   (`DapManager.compileOnHost`).
-- **Not yet:** `blame.ignoreRevsFile` handling (left to the host's git).
 
 Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
 servers on localhost), and, in the `Remote probe` workflow below, against macOS 15.7's own OpenSSH 9.9p2 with

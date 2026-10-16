@@ -10,9 +10,14 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 /**
- * Finds the {@link ExecTarget} for a path. A path on the default filesystem (or no path at all) runs here;
- * any other is offered to the registered {@link Resolver}s, the same per-window registry shape as
- * {@code Vfs.RemoteProvider}. This package knows nothing about SSH: the remote engine registers itself.
+ * Finds the {@link ExecTarget} for a path. A path on another filesystem (an SFTP folder) is offered to the
+ * registered {@link Resolver}s, the same per-window registry shape as {@code Vfs.RemoteProvider}. A path on
+ * this machine's own filesystem runs here, unless a <em>mapped</em> resolver claims it: a folder whose files
+ * are this machine's but whose tools run elsewhere (bind-mounted into a container, inside a WSL distribution).
+ * This package knows nothing about SSH, containers or WSL: each engine registers itself.
+ *
+ * <p>So where a command runs is the target's question ({@link ExecTarget#isLocal()}), not the filesystem's:
+ * a mapped folder is read and written like any local one, and its tools are not this machine's.
  */
 public final class ExecTargets {
 
@@ -26,6 +31,9 @@ public final class ExecTargets {
     private static final ExecTarget LOCAL = new LocalExecTarget();
 
     private static final Set<Resolver> RESOLVERS = new CopyOnWriteArraySet<>();
+
+    /** Resolvers for folders of this machine's own filesystem whose tools run elsewhere; asked in order. */
+    private static final Set<Resolver> MAPPED = new CopyOnWriteArraySet<>();
 
     /** Whether commands may run anywhere but here: the user's {@code remoteExecution} setting. Off by default. */
     private static volatile BooleanSupplier remoteEnabled = () -> false;
@@ -46,6 +54,26 @@ public final class ExecTargets {
 
     public static void unregister(Resolver resolver) {
         RESOLVERS.remove(resolver);
+    }
+
+    /**
+     * Registers an engine that runs the tools of some folders of this machine's own filesystem elsewhere. Its
+     * {@link Resolver#forPath} is asked about every local path a command runs for, so it must answer from
+     * memory (a prefix match), without I/O.
+     */
+    public static void registerMapped(Resolver resolver) {
+        if (resolver != null) {
+            MAPPED.add(resolver);
+        }
+    }
+
+    public static void unregisterMapped(Resolver resolver) {
+        MAPPED.remove(resolver);
+    }
+
+    /** Whether a tool for {@code path} runs on this machine: its target's {@link ExecTarget#isLocal()}. No I/O. */
+    public static boolean runsHere(Path path) {
+        return forPath(path).isLocal();
     }
 
     /**
@@ -93,21 +121,39 @@ public final class ExecTargets {
      * anything, rather than silently running the command here against the wrong files.
      */
     public static ExecTarget forPath(Path path) {
-        if (path == null || path.getFileSystem() == FileSystems.getDefault()) {
+        if (path == null) {
             return LOCAL;
         }
-        if (!remoteEnabled.getAsBoolean()) {
-            return new Unavailable(path, "running commands on remote hosts is turned off");
+        if (path.getFileSystem() == FileSystems.getDefault()) {
+            // A mapped folder's files are this machine's: while its own target may not be used (the setting is
+            // off, or the user has not allowed that container or distribution), its tools run here, as before.
+            for (Resolver resolver : MAPPED) {
+                ExecTarget target = resolver.forPath(path);
+                if (target != null) {
+                    return remoteEnabled.getAsBoolean() && hostAllowed.test(target.id()) ? target : LOCAL;
+                }
+            }
+            return LOCAL;
         }
         for (Resolver resolver : RESOLVERS) {
             ExecTarget target = resolver.forPath(path);
             if (target != null) {
-                return hostAllowed.test(target.id())
-                        ? target
-                        : new Unavailable(path, "running commands on " + target.id() + " has not been allowed");
+                return gated(path, target);
             }
         }
-        return new Unavailable(path, "no connection to run commands on");
+        return remoteEnabled.getAsBoolean()
+                ? new Unavailable(path, "no connection to run commands on")
+                : new Unavailable(path, "running commands on remote hosts is turned off");
+    }
+
+    /** {@code target}, while the user lets commands run elsewhere at all and on it in particular. */
+    private static ExecTarget gated(Path path, ExecTarget target) {
+        if (!remoteEnabled.getAsBoolean()) {
+            return new Unavailable(path, "running commands on remote hosts is turned off");
+        }
+        return hostAllowed.test(target.id())
+                ? target
+                : new Unavailable(path, "running commands on " + target.id() + " has not been allowed");
     }
 
     /** A path on a filesystem no engine runs commands for (never connected, or its window has closed). */
