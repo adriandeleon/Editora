@@ -185,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkboxes can be clicked to tick the source, a double-click on a block puts the caret on its source line, the
   block holding the caret is marked in Split, code blocks show their language, an image or diagram enlarges on
   click, front matter is a table (and can be hidden), and an empty document says so.
-- **Markdown preview to the side or in its own tab** (`View: Markdown Preview to the Side`, `View: Markdown Preview
+- **Markdown preview to the side or in its own tab** (`Markdown: Open Preview to the Side`, `Markdown: Open Preview
   in a Tab`), following the active Markdown file or locked to one.
 - **Markdown completion:** relative paths after `](`, heading anchors after `#` (this file and `file.md#`),
   reference labels, emoji after `:`, languages after a fence, and Mermaid keywords inside a Mermaid fence.
@@ -233,7 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Markdown preview:** Find searches the rendered preview when only the preview is showing. A safe subset of HTML
   is rendered (`<br>`, `<kbd>`, `<sub>`/`<sup>`, `<b>`/`<i>`/`<em>`/`<strong>`/`<code>`, `<a>`, `<img>`,
   `<details>`/`<summary>`, `align="center"`). Footnotes are numbered and linked both ways, inline footnotes
-  (`^[…]`) are recognised, a code block has Copy, a link has Copy Link Address, and links can be reached with Tab.
+  (`^[…]`) are recognised, the right-click menu has Copy Code Block on a code block and Copy Link Address on a link, and links can be reached with Tab.
   The light/dark toggle can return to "follow the app theme"; zoom and the Split divider are remembered per file.
 - **Markdown settings:** load remote images (on by default), preview theme (Follows the app theme / Light / Dark),
   folder for pasted images, and the heading levels listed by the table of contents.
@@ -307,7 +307,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the URL, in the request's folder. The status-and-headers text report is the second choice in the dialog.
 - **The installed Linux app is 22 MB smaller.** The bundled Java runtime no longer carries the unused client and minimal
   JVMs beside the server one.
-- **Snippet words no longer expand in the middle of a sentence.** In a Markdown document, Tab after a word such
+- **Snippet words no longer expand in the middle of a sentence.** In a Markdown or plain-text document, Tab after a word such
   as `code`, `link` or `bold` expands the snippet only when the word is alone on its line or is chosen from the
   completion popup.
 - **A double-click in the Markdown preview selects the word** instead of jumping to the source line (see the
@@ -318,14 +318,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   apart, `~struck~` is still strikethrough, as is `~~struck~~`. An ordinary paste of copied HTML that holds a table, link, list or heading arrives as
   Markdown. Exported HTML no longer accepts `data:` URIs as link targets, and as image sources only `data:image/`.
 - **Word wrap is now set per kind of file: on for Markdown and plain text, off for code.** "Wrap long lines in code"
-  keeps the old setting; a new "Wrap long lines in prose" governs Markdown and plain text. If you had switched word
+  keeps the old setting; a new "Wrap long lines in Markdown and plain text" governs them. If you had switched word
   wrap on, everything still wraps. Toggle Word Wrap flips the preference that governs the file in front. A buffer
   with a very long unbroken run of characters opens unwrapped until toggled.
 - **A buffer showing only the Markdown preview refuses editing commands** (with a status message) instead of
   editing the hidden source; switch to Editor or Split to edit.
 - **Markdown preview:** entering Preview opens at the editor's position, and Split keeps the two panes on the same
   block instead of the same scroll fraction. Code blocks and wide tables scroll sideways instead of wrapping or
-  being squeezed. The preview menu's "Select All" (which copied the document) is gone and "Copy" is "Copy All".
+  being squeezed. The preview menu's "Select All" selects the preview's text instead of copying the document, "Copy" copies
+  the selection, and the old "Copy" (the whole document) is "Copy All".
 - **Markdown lint:** a front-matter `title:` counts as the document's top-level heading (as in markdownlint); the
   search for `.markdownlint.*` stops at the project or Git root; with the minimap visible the scrollbar lint stripe
   is hidden, since the minimap shows the same marks.
