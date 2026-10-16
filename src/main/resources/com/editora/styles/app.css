@@ -3249,6 +3249,30 @@
     -fx-font-size: 11.5px;
     -fx-text-fill: -color-fg-muted;
 }
+/* Switches. AtlantaFX draws an off switch as a -color-fg-emphasis knob on a -color-bg-subtle track — in
+   Editora Dark a near-black knob on a near-black track, about 1.1:1 against a card (WCAG asks 3:1 for a
+   control). The off knob and the track outline take -color-fg-muted (at least 4.5:1 on every surface,
+   StyleContrastTest). This is an author sheet, so the states the base rule would erase are restated. A
+   disabled switch is grey in both states: a teal knob reads "on" though the setting is not in force. */
+.toggle-switch > .thumb {
+    -fx-background-color: -color-fg-muted, -color-fg-muted;
+    -fx-opacity: 1;
+}
+.toggle-switch > .thumb-area {
+    -fx-background-color: -color-fg-muted, -color-bg-subtle;
+}
+.toggle-switch:selected > .thumb {
+    -fx-background-color: -color-accent-emphasis, -color-fg-emphasis;
+}
+.toggle-switch:selected > .thumb-area {
+    -fx-background-color: -color-accent-emphasis, -color-accent-emphasis;
+}
+.toggle-switch:disabled:selected > .thumb {
+    -fx-background-color: -color-fg-muted, -color-bg-default;
+}
+.toggle-switch:disabled:selected > .thumb-area {
+    -fx-background-color: -color-fg-muted, -color-fg-muted;
+}
 
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
 /* Kit input row: chip + borderless query over a divider — the input is the card's first row, so it
