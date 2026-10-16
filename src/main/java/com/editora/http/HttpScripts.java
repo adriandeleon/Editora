@@ -98,6 +98,16 @@ public final class HttpScripts {
         };
     }
 
+    /**
+     * The flags that make Node wait for a debugger on a free 127.0.0.1 port: {@code --inspect-brk}, and under the
+     * permission model {@code --allow-inspector}, without which Node ignores it (adl, 2026-10-16: Debug Request only).
+     */
+    public static List<String> debugFlags(Guard guard) {
+        return guard == Guard.NONE
+                ? List.of("--inspect-brk=127.0.0.1:0")
+                : List.of("--allow-inspector", "--inspect-brk=127.0.0.1:0");
+    }
+
     /** The environment Node is started with: {@code inherited} reduced to {@link #KEPT}, with {@code path} as PATH. */
     public static Map<String, String> environment(Map<String, String> inherited, String path, boolean windows) {
         Map<String, String> env = new LinkedHashMap<>();

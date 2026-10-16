@@ -70,12 +70,37 @@ public final class NodeResponseScripts implements ResponseScripts {
      * The run's settings: whether handlers run at all, the Node command ({@code node}, or a path), the timeout of one
      * handler, and the folder the shim is copied to.
      */
-    public record Settings(boolean enabled, String node, Duration timeout, Path shimDir) {
+    public record Settings(boolean enabled, String node, Duration timeout, Path shimDir, Debugger debugger) {
         public Settings {
             node = node == null || node.isBlank() ? "node" : node.strip();
             timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? DEFAULT_TIMEOUT : timeout;
         }
+
+        /** Settings for a run that is not debugged. */
+        public Settings(boolean enabled, String node, Duration timeout, Path shimDir) {
+            this(enabled, node, timeout, shimDir, null);
+        }
     }
+
+    /**
+     * Attaches a debugger to a script waiting for one (Debug Request): each script of the run is started with
+     * {@code --inspect-brk} on a free 127.0.0.1 port — and, under the permission model, {@code --allow-inspector}
+     * (adl, 2026-10-16) — and this is told the port once Node listens. No timeout applies while it is debugged; a
+     * debugger that has not attached after {@link #ATTACH_DEADLINE} is given up on and the script stopped.
+     */
+    public interface Debugger {
+        /**
+         * Called on a launcher thread once the script named {@code label} waits on {@code port}; {@code shim} is the
+         * runner around it, to be stepped over.
+         */
+        void attach(int port, String label, Path shim);
+    }
+
+    /** How long a debugged script waits for its debugger to attach. */
+    static final Duration ATTACH_DEADLINE = Duration.ofSeconds(30);
+
+    private static final java.util.regex.Pattern INSPECTOR_LISTENING =
+            java.util.regex.Pattern.compile("Debugger listening on ws://127\\.0\\.0\\.1:(\\d+)/");
 
     /** The trust side, given by the window. */
     public interface Trust {
@@ -233,7 +258,13 @@ public final class NodeResponseScripts implements ResponseScripts {
                     input.environment(),
                     globals,
                     exchange.details().secretValues());
-            Launch launch = launch(argv(ready), workingDir(), stdin, settings.timeout(), input.cancelled());
+            Launch launch = launch(
+                    argv(ready, debugging()),
+                    workingDir(),
+                    stdin,
+                    settings.timeout(),
+                    input.cancelled(),
+                    watch(tr("http.debug.label.handler", label(request)), ready.shim()));
             if (launch.cancelled()) {
                 break;
             }
@@ -309,9 +340,18 @@ public final class NodeResponseScripts implements ResponseScripts {
             }
             String nonce = nonce();
             String stdin = HttpScripts.preInput(nonce, script, request, input, variables, globals);
-            Launch launch = launch(argv(ready), workingDir(), stdin, settings.timeout(), input.cancelled());
+            Launch launch = launch(
+                    argv(ready, debugging()),
+                    workingDir(),
+                    stdin,
+                    settings.timeout(),
+                    input.cancelled(),
+                    watch(tr("http.debug.label.pre", label(request)), ready.shim()));
             if (launch.cancelled()) {
                 return cancelled();
+            }
+            if (launch.debuggerMissing()) {
+                return notRun(tr("http.preScript.why.debugger"), tests, changes, warnings);
             }
             if (launch.startError() != null) {
                 return notRun(
@@ -356,6 +396,9 @@ public final class NodeResponseScripts implements ResponseScripts {
 
     /** What one launch reports as tests: its output, or the timeout or crash as the error. */
     private HttpTests outcome(Launch launch, HttpScripts.Output out) {
+        if (launch.debuggerMissing()) {
+            return new HttpTests(List.of(), List.of(), tr("http.script.debuggerMissing", ATTACH_DEADLINE.toSeconds()));
+        }
         if (launch.timedOut()) {
             return new HttpTests(
                     List.of(),
@@ -368,12 +411,32 @@ public final class NodeResponseScripts implements ResponseScripts {
         return new HttpTests(out.tests(), out.log(), out.error());
     }
 
-    private static List<String> argv(Ready ready) {
+    private static List<String> argv(Ready ready, boolean debug) {
         List<String> argv = new ArrayList<>();
         argv.add(ready.node().executable());
         argv.addAll(HttpScripts.flags(ready.node().guard(), ready.shim()));
+        if (debug) {
+            argv.addAll(HttpScripts.debugFlags(ready.node().guard()));
+        }
         argv.add(ready.shim().toString());
         return argv;
+    }
+
+    private boolean debugging() {
+        return settings.debugger() != null;
+    }
+
+    /** What a debugged launch watches for, or null for a run that is not debugged. */
+    private DebugWatch watch(String label, Path shim) {
+        Debugger d = settings.debugger();
+        return d == null ? null : new DebugWatch(d, label, shim);
+    }
+
+    /** A request as a debug session names it: its {@code @name}, else its method and URL as written. */
+    private static String label(HttpFile.Parsed request) {
+        return request.name() != null && !request.name().isBlank()
+                ? request.name()
+                : request.method() + " " + request.url();
     }
 
     private static String nonce() {
@@ -517,13 +580,75 @@ public final class NodeResponseScripts implements ResponseScripts {
     // --- launching ---------------------------------------------------------------------------------------------
 
     /** How one Node process went. {@code startError} is set when it could not be started at all. */
-    record Launch(int exit, String stdout, String stderr, boolean timedOut, boolean cancelled, String startError) {}
+    record Launch(
+            int exit,
+            String stdout,
+            String stderr,
+            boolean timedOut,
+            boolean cancelled,
+            String startError,
+            boolean debuggerMissing) {
+
+        Launch(int exit, String stdout, String stderr, boolean timedOut, boolean cancelled, String startError) {
+            this(exit, stdout, stderr, timedOut, cancelled, startError, false);
+        }
+    }
+
+    /**
+     * A debugged launch: hands the inspector port Node prints to the {@code debugger}, and notes when one attached
+     * (Node prints that too).
+     */
+    static final class DebugWatch {
+        private final Debugger debugger;
+        private final String label;
+        private final Path shim;
+        private volatile long listeningAt;
+        private volatile boolean attached;
+
+        DebugWatch(Debugger debugger, String label, Path shim) {
+            this.debugger = debugger;
+            this.label = label;
+            this.shim = shim;
+        }
+
+        void onLine(String line) {
+            java.util.regex.Matcher m = INSPECTOR_LISTENING.matcher(line);
+            if (listeningAt == 0 && m.find()) {
+                listeningAt = System.nanoTime();
+                try {
+                    debugger.attach(Integer.parseInt(m.group(1)), label, shim);
+                } catch (RuntimeException failed) {
+                    // no debugger attaches: the deadline stops the script
+                }
+            } else if (line.startsWith("Debugger attached")) {
+                attached = true;
+            }
+        }
+
+        /** Whether the debugger has had its time and is still not there. */
+        boolean gaveUp(long startedAt) {
+            if (attached) {
+                return false;
+            }
+            long since = listeningAt == 0 ? startedAt : listeningAt;
+            return System.nanoTime() - since > ATTACH_DEADLINE.toNanos();
+        }
+    }
 
     /**
      * Runs {@code argv} in {@code dir} with the minimal environment, {@code stdin} as its input; kills it (and anything
      * it started) after {@code timeout} or once {@code cancelled}.
      */
     static Launch launch(List<String> argv, Path dir, String stdin, Duration timeout, BooleanSupplier cancelled) {
+        return launch(argv, dir, stdin, timeout, cancelled, null);
+    }
+
+    /**
+     * As {@link #launch(List, Path, String, Duration, BooleanSupplier)}; under a {@code watch} (a debugged script)
+     * there is no timeout — a paused script waits for its user — but a debugger that does not attach in time stops it.
+     */
+    static Launch launch(
+            List<String> argv, Path dir, String stdin, Duration timeout, BooleanSupplier cancelled, DebugWatch watch) {
         ProcessBuilder pb = new ProcessBuilder(argv);
         if (dir != null) {
             pb.directory(dir.toFile());
@@ -545,7 +670,9 @@ public final class NodeResponseScripts implements ResponseScripts {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         Thread outPump = pump(p.getInputStream(), out, MAX_STDOUT);
-        Thread errPump = pump(p.getErrorStream(), err, MAX_STDERR);
+        Thread errPump = watch == null
+                ? pump(p.getErrorStream(), err, MAX_STDERR)
+                : linePump(p.getErrorStream(), err, MAX_STDERR, watch::onLine);
         Thread feeder = Thread.ofVirtual().name("http-script-stdin").start(() -> {
             try (OutputStream in = p.getOutputStream()) {
                 in.write(stdin.getBytes(StandardCharsets.UTF_8));
@@ -553,16 +680,23 @@ public final class NodeResponseScripts implements ResponseScripts {
                 // Node exited (or was killed) before reading everything: its result says why
             }
         });
-        long deadline = System.nanoTime() + timeout.toNanos();
+        long startedAt = System.nanoTime();
+        long deadline = startedAt + timeout.toNanos();
         boolean timedOut = false;
         boolean wasCancelled = false;
+        boolean debuggerMissing = false;
         try {
             while (!p.waitFor(50, TimeUnit.MILLISECONDS)) {
                 if (cancelled.getAsBoolean()) {
                     wasCancelled = true;
                     break;
                 }
-                if (System.nanoTime() > deadline) {
+                if (watch != null) {
+                    if (watch.gaveUp(startedAt)) {
+                        debuggerMissing = true;
+                        break;
+                    }
+                } else if (System.nanoTime() > deadline) {
                     timedOut = true;
                     break;
                 }
@@ -571,7 +705,7 @@ public final class NodeResponseScripts implements ResponseScripts {
             Thread.currentThread().interrupt();
             wasCancelled = true;
         }
-        if (timedOut || wasCancelled) {
+        if (timedOut || wasCancelled || debuggerMissing) {
             p.descendants().forEach(ProcessHandle::destroyForcibly);
             p.destroyForcibly();
         }
@@ -592,7 +726,30 @@ public final class NodeResponseScripts implements ResponseScripts {
         synchronized (err) {
             stderr = err.toString(StandardCharsets.UTF_8);
         }
-        return new Launch(exit, stdout, stderr, timedOut, wasCancelled, null);
+        return new Launch(exit, stdout, stderr, timedOut, wasCancelled, null, debuggerMissing);
+    }
+
+    /** {@link #pump}, also handing each whole line to {@code onLine} (Node's inspector messages). */
+    private static Thread linePump(
+            InputStream in, ByteArrayOutputStream into, int cap, java.util.function.Consumer<String> onLine) {
+        return Thread.ofVirtual().name("http-script-err").start(() -> {
+            try (java.io.BufferedReader r =
+                    new java.io.BufferedReader(new java.io.InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    onLine.accept(line);
+                    byte[] bytes = (line + "\n").getBytes(StandardCharsets.UTF_8);
+                    synchronized (into) {
+                        int room = cap - into.size();
+                        if (room > 0) {
+                            into.write(bytes, 0, Math.min(bytes.length, room));
+                        }
+                    }
+                }
+            } catch (IOException closed) {
+                // the process went away
+            }
+        });
     }
 
     private static Thread pump(InputStream in, ByteArrayOutputStream into, int cap) {

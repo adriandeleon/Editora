@@ -1867,6 +1867,13 @@ public class EditorBuffer implements TabContent {
                 MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
                 runAll.setOnAction(ev -> httpGutter.hooks().runAll().run());
                 items.addAll(java.util.List.of(runRequest, runAll));
+                if (httpDebugHandler != null
+                        && com.editora.http.HttpScriptLines.requestHasScripts(getContent(), at.line())) {
+                    MenuItem debugRequest = new MenuItem(tr("editmenu.debugHttpRequest"));
+                    debugRequest.setGraphic(MenuIcons.debug());
+                    debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
+                    items.add(debugRequest);
+                }
                 items.add(new SeparatorMenuItem());
             } else if (runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -3528,6 +3535,14 @@ public class EditorBuffer implements TabContent {
      * Injects what this {@code .http} buffer asks of the window ({@link HttpHooks}): running, Run All, cancel, the ▶
      * tooltip, the {@code {{variable}}} check and the {@code {{} completion context. Null clears them.
      */
+    /** Debug Request for the request at a 0-based line (the editor menu); null when there is none to offer. */
+    private java.util.function.IntConsumer httpDebugHandler;
+
+    /** Sets what the editor menu's Debug Request does with the request at a line (null removes the item). */
+    public void setHttpDebugHandler(java.util.function.IntConsumer handler) {
+        this.httpDebugHandler = handler;
+    }
+
     public void setHttpHooks(HttpHooks hooks) {
         httpGutter.setHooks(hooks);
         HttpHooks set = httpGutter.hooks();

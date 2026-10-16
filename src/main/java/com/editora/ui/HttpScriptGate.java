@@ -23,9 +23,14 @@ final class HttpScriptGate {
 
     /**
      * What runs {@code buffer}'s response handlers in one run. An untitled buffer is trusted as the project it was
-     * opened in, if any; without a project there is no folder to trust, and no handler runs.
+     * opened in, if any; without a project there is no folder to trust, and no handler runs. A {@code debugger}
+     * (Debug Request) makes each script wait for it.
      */
-    static ResponseScripts forBuffer(EditorBuffer buffer, HttpClientCoordinator.WindowOps ops, Settings settings) {
+    static ResponseScripts forBuffer(
+            EditorBuffer buffer,
+            HttpClientCoordinator.WindowOps ops,
+            Settings settings,
+            NodeResponseScripts.Debugger debugger) {
         Path project = ops.projectRoot();
         Path file = buffer.getPath();
         Path asFile = file != null ? file : project == null ? null : project.resolve(buffer.getDisplayName());
@@ -62,7 +67,8 @@ final class HttpScriptGate {
                         settings.isHttpScriptsEnabled(),
                         settings.getHttpNodePath(),
                         Duration.ofSeconds(settings.getHttpScriptTimeoutSeconds()),
-                        cache),
+                        cache,
+                        debugger),
                 trust,
                 file,
                 folder);

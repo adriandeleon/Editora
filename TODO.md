@@ -1459,8 +1459,10 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] HTTP Client — JavaScript phase 2: pre-request scripts (`< {% %}`, `< ./pre.js`) with `request.variables.set`
       (script values never resolved; a script-chosen host is a dynamic host for the secrets prompt), the JetBrains
       `crypto` API and `jwt`, `client.global.headers`; an unrun pre-request script keeps its request unsent
-- [ ] HTTP Client — JavaScript phase 3: Debug Request (`node --inspect-brk` + js-debug; external files, then inline
-      blocks through source maps); `crypto.subtle`, `xpath`, streamed responses
+- [x] HTTP Client — JavaScript phase 3: Debug Request (`--inspect-brk` + `--allow-inspector`, js-debug `attach`);
+      breakpoints on a `.http` file's script lines and in script files (no source maps: the shim names the `.http`
+      file and its line offset)
+- [ ] HTTP Client — scripts: `crypto.subtle`, `xpath`, streamed responses, Debug All (a Run All under the debugger)
 - [ ] HTTP Client — JetBrains gaps left by the 2026-10 review (the review's 55 findings are fixed):
       WebSocket / GraphQL / SSE streaming, OAuth 2.0 (`{{$auth.token}}`), TLS options (`SSLConfiguration`: skip
       verification, client certificates) and a proxy setting, a persistent cookie jar, compare with a previous

@@ -1404,12 +1404,87 @@ public final class DapManager implements DapClient.Host {
         Process proc = BusyExecutable.start(pb);
         String nodeExe = cmd.isEmpty() ? null : cmd.get(0);
         attachSocket(
-                proc, null, port, spec, bps, filters, epoch, DapPaths.LOCAL, file.toString(), cwdOf(file), nodeExe);
+                proc,
+                null,
+                port,
+                spec,
+                bps,
+                filters,
+                epoch,
+                DapPaths.LOCAL,
+                file.toString(),
+                cwdOf(file),
+                nodeExe,
+                null);
+    }
+
+    /**
+     * Attaches the JavaScript debugger to a Node.js on this machine that waits for one on its inspector {@code port}
+     * — an HTTP Client script started with {@code --inspect-brk}. js-debug is started as for a JavaScript file and
+     * asked to {@code attach} ({@link LaunchConfig#nodeAttach}); it sets the breakpoints and resumes the script, and
+     * steps over {@code skipFiles} (the shim around it). The session is called {@code name} and ends with the script.
+     * There is nothing to restart: Restart only stops it.
+     */
+    public void startJsAttach(int port, String name, Path cwd, List<String> skipFiles) {
+        if (managerClosed) {
+            return;
+        }
+        if (!enabled) {
+            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            return;
+        }
+        if (!isLanguageAvailable("javascript")) {
+            listener.onError("JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            return;
+        }
+        if (client != null) {
+            stop(); // one session at a time
+        }
+        DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor("javascript");
+        restartAction = null;
+        debugFile = cwd;
+        long epoch = beginSession();
+        setState(State.STARTING);
+        List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
+        List<String> filters = exceptionFilters;
+        Map<String, Object> attach = LaunchConfig.nodeAttach(spec.launchType(), name, port, skipFiles);
+        startupTask = io.submit(() -> {
+            try {
+                if (jsServer == null) {
+                    fail(epoch, "The vscode-js-debug adapter was not found.");
+                    return;
+                }
+                int serverPort = freePort();
+                List<String> cmd = ProcessRunner.resolveExecutable(
+                        List.of(spec.defaultInterpreter(), jsServer.toString(), String.valueOf(serverPort)));
+                ProcessBuilder pb = new ProcessBuilder(cmd);
+                ProcessRunner.applyUserEnv(pb);
+                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                Process proc = BusyExecutable.start(pb);
+                attachSocket(
+                        proc,
+                        null,
+                        serverPort,
+                        spec,
+                        bps,
+                        filters,
+                        epoch,
+                        DapPaths.LOCAL,
+                        null,
+                        cwd == null ? null : cwd.toString(),
+                        null,
+                        attach);
+            } catch (Exception e) {
+                fail(epoch, "Could not start the debugger: " + msg(e));
+            }
+        });
     }
 
     /**
      * Wires a started socket adapter ({@code proc}, listening on this machine's {@code port} — through
-     * {@code forward} for one on a remote host) to a new session and launches {@code program}.
+     * {@code forward} for one on a remote host) to a new session and launches {@code program} — or, given
+     * {@code attachArgs}, sends that {@code attach} instead.
      */
     private void attachSocket(
             Process proc,
@@ -1422,7 +1497,8 @@ public final class DapManager implements DapClient.Host {
             DapPaths paths,
             String program,
             String cwd,
-            String nodeExe) {
+            String nodeExe,
+            Map<String, Object> attachArgs) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             if (forward != null) {
@@ -1451,10 +1527,13 @@ public final class DapManager implements DapClient.Host {
                 c.dispose();
                 return;
             }
-            c.launch(LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false))
+            (attachArgs != null
+                            ? c.attach(attachArgs)
+                            : c.launch(
+                                    LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false)))
                     .whenComplete((v, le) -> {
                         if (le != null) {
-                            fail(epoch, "launch failed: " + msg(le));
+                            fail(epoch, (attachArgs != null ? "attach failed: " : "launch failed: ") + msg(le));
                         }
                     });
             Platform.runLater(() -> {
@@ -1665,7 +1744,8 @@ public final class DapManager implements DapClient.Host {
                 DapPaths.on(target, file.getFileSystem()),
                 target.toTargetPath(file),
                 target.toTargetPath(dir),
-                node);
+                node,
+                null);
     }
 
     /** Matches the line vscode-js-debug's server prints once it listens: {@code … listening at host:port}. */

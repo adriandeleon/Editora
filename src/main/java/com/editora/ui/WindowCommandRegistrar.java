@@ -1987,6 +1987,7 @@ final class WindowCommandRegistrar {
         // default) and Simple UI mode; the palette also needs a .http buffer (Import cURL excepted).
         host.registry().register(Command.of("http.runRequest", host.httpClient()::runRequestAtCaret));
         host.registry().register(Command.of("http.runFile", host.httpClient()::runFile));
+        host.registry().register(Command.of("http.debugRequest", host.httpClient()::debugRequestAtCaret));
         host.registry().register(Command.of("http.cancelRequest", host.httpClient()::cancelActiveRequest));
         host.registry().register(Command.of("http.selectEnvironment", host.httpClient()::selectEnvironment));
         host.registry().register(Command.of("http.importCurl", host.httpClient()::importCurl));

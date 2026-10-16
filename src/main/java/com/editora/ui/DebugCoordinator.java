@@ -58,6 +58,9 @@ final class DebugCoordinator {
     interface Ops {
         void openToolWindow();
 
+        /** Debug Request on the active {@code .http} file: its scripts under the debugger (HTTP Client). */
+        default void debugHttpRequest() {}
+
         /** Opens the Run Configurations page on {@code name} — see {@code RunCoordinator.Ops}. */
         void editConfiguration(String name);
 
@@ -208,6 +211,12 @@ final class DebugCoordinator {
     /** {@link #relaunch} of a session attached to a JVM a build or test run started: it cannot be redone. */
     private static final Runnable ONE_SHOT_ATTACH = () -> {};
 
+    /**
+     * {@link #relaunch} of a session attached to an HTTP Client script: redoing it would send the request again,
+     * which is Debug Request's to do, not Restart's.
+     */
+    private static final Runnable HTTP_SCRIPT_ATTACH = () -> {};
+
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
         this.dapManager = dapManager;
@@ -339,6 +348,10 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.cannotRestartAttached"));
             return;
         }
+        if (again == HTTP_SCRIPT_ATTACH) {
+            host.setStatus(tr("status.debug.cannotRestartHttpScript"));
+            return;
+        }
         if (again == null) {
             dapManager.restart();
             return;
@@ -349,7 +362,28 @@ final class DebugCoordinator {
 
     /** Whether Restart can do anything for the session there is: not for one attached to a build or test run. */
     boolean restartAvailable() {
-        return relaunch != ONE_SHOT_ATTACH;
+        return relaunch != ONE_SHOT_ATTACH && relaunch != HTTP_SCRIPT_ATTACH;
+    }
+
+    /**
+     * Attaches the JavaScript debugger to an HTTP Client script waiting on its inspector {@code port} (Debug Request):
+     * a session called {@code label}, stepping over the runner {@code shim}, with every breakpoint — the {@code .http}
+     * file's script lines and script files alike. Called on the FX thread.
+     */
+    void attachHttpScript(int port, String label, Path shim) {
+        if (!debugEffectiveFor("javascript")) {
+            host.setStatus(tr("status.http.debugUnavailable"));
+            return;
+        }
+        ops.openToolWindow();
+        nameSession(label);
+        relaunch = HTTP_SCRIPT_ATTACH;
+        Path dir = shim == null ? null : shim.getParent();
+        List<String> skip = new java.util.ArrayList<>(List.of("<node_internals>/**"));
+        if (shim != null) {
+            skip.add(shim.toString());
+        }
+        withClosedBreakpoints(() -> dapManager.startJsAttach(port, label, dir, skip));
     }
 
     /** Window close: the before-launch build must not outlive the window that started it. */
@@ -483,6 +517,10 @@ final class DebugCoordinator {
 
     /** Whether a buffer's language has a registered debug adapter (java/python/javascript). */
     boolean isDebuggableBuffer(EditorBuffer b) {
+        if (b != null && b.isHttpFile()) {
+            // Its scripts are debugged with Debug Request, on this machine only (remote .http files do not run).
+            return host.settings().isJsDebugEnabled() && host.isLocalBuffer(b);
+        }
         if (b == null || !DapServerRegistry.isDebuggable(b.getLanguage())) {
             return false;
         }
@@ -1348,6 +1386,10 @@ final class DebugCoordinator {
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
     private void launchBuffer(EditorBuffer b) {
+        if (b != null && b.isHttpFile()) {
+            ops.debugHttpRequest(); // its scripts, around the request at the caret
+            return;
+        }
         // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
         // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
         // setting can change.
@@ -1795,8 +1837,26 @@ final class DebugCoordinator {
     void toggleBreakpointAtCaret() {
         EditorBuffer b = breakpointBuffer();
         if (b != null) {
-            b.toggleBreakpoint(b.getFocusedArea().getCurrentParagraph());
+            int line = b.getFocusedArea().getCurrentParagraph();
+            if (breakpointAllowed(b, line)) {
+                b.toggleBreakpoint(line);
+            }
         }
+    }
+
+    /**
+     * Whether a breakpoint may go on {@code line} of {@code b}: anywhere a debugger can stop, which in a {@code .http}
+     * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
+     */
+    private boolean breakpointAllowed(EditorBuffer b, int line) {
+        if (!b.isHttpFile() || b.getBreakpointManager().isBreakpoint(line)) {
+            return true;
+        }
+        if (com.editora.http.HttpScriptLines.isScriptLine(b.getContent(), line)) {
+            return true;
+        }
+        host.setStatus(tr("status.debug.httpScriptLinesOnly"));
+        return false;
     }
 
     /**
@@ -1831,6 +1891,9 @@ final class DebugCoordinator {
             return;
         }
         int line = b.getFocusedArea().getCurrentParagraph();
+        if (!breakpointAllowed(b, line)) {
+            return;
+        }
         var mgr = b.getBreakpointManager();
         // A line without a breakpoint gets one only when the form is accepted: creating it up front left it
         // behind — saved, and sent to a live session — when the form was cancelled.
@@ -1991,6 +2054,11 @@ final class DebugCoordinator {
      *  restore persisted breakpoints). Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
+        buffer.setGutterBreakpointClick((b, line) -> {
+            if (breakpointAllowed(b, line)) {
+                b.toggleBreakpoint(line);
+            }
+        });
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));

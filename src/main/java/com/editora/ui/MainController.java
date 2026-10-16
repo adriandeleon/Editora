@@ -2447,6 +2447,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public void debugHttpRequest() {
+                        httpClient.debugRequestAtCaret();
+                    }
+
+                    @Override
                     public void editConfiguration(String name) {
                         runConfigurations.runConfigEditor.accept(name);
                     }
@@ -6331,6 +6336,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public Path scriptCacheDir() {
                     return config.getConfigDir().resolve("cache").resolve("http-scripts");
                 }
+
+                @Override
+                public com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+                    if (debugCoordinator == null || !debugCoordinator.debugEffectiveFor("javascript")) {
+                        return null;
+                    }
+                    // Told on a launcher thread once the script waits; the session starts on the FX thread.
+                    return (port, label, shim) ->
+                            Platform.runLater(() -> debugCoordinator.attachHttpScript(port, label, shim));
+                }
             });
 
     /** The {@code .http} editor's unresolved-variable marks and {@code {{} completion. */
@@ -7708,6 +7723,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> httpRunTooltip(keymap),
                 null,
                 null));
+        buffer.setHttpDebugHandler(line -> httpClient.debugRequest(buffer, line)); // editor menu → Debug Request
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶

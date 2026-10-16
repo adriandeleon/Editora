@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP Client: Debug Request.** `HTTP: Debug Request at Caret` (also **Debug Request** in a `.http` file's
+  right-click menu, and Debug on a `.http` file) sends the request with its pre-request scripts and response
+  handlers under the JavaScript debugger. A script stops at its breakpoints, with the call stack, variables,
+  watches and stepping of any JavaScript session, and the request goes on when you continue.
+  - **Breakpoints go on the lines of a `{% %}` block** in the `.http` file itself, or in a `./check.js` handler
+    file. Elsewhere in a `.http` file the toggle says why it doesn't set one.
+  - It needs JavaScript debugging, as for a `.js` file: Settings → Debugging and vscode-js-debug.
+  - A paused script is not stopped by the script timeout. A script whose debugger doesn't attach within 30
+    seconds is stopped. Restart doesn't send the request again: run Debug Request again.
+  - The script runs as usual — trusted folder, minimal environment, Node's permission model — and Node's
+    inspector is allowed only for this, on a random port on 127.0.0.1.
 - **HTTP Client: pre-request scripts.** A `< {% … %}` block or a `< ./sign.js` line above a request runs on
   Node.js before the request is resolved and sent.
   - **`request.variables.set(name, value)`** sets a variable for that request only. It wins over every other
