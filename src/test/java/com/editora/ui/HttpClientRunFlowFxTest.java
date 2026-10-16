@@ -118,6 +118,7 @@ class HttpClientRunFlowFxTest {
         coordinator.shutdown();
         server.stop(0);
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private void awaitHits(int n) throws InterruptedException {

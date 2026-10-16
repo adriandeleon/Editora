@@ -60,7 +60,11 @@ class RemoteFileSystemsHostKeyFxTest {
         SshServer sshd = SshServer.setUpDefaultServer();
         sshd.setHost("127.0.0.1");
         sshd.setPort(port);
-        sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(hostKey));
+        // Generate the host key now, not on the first key exchange: a P-521 key is slow to make on a loaded
+        // runner, and inside the handshake that time would count against a test's auth deadline.
+        SimpleGeneratorHostKeyProvider keys = new SimpleGeneratorHostKeyProvider(hostKey);
+        keys.loadKeys(null);
+        sshd.setKeyPairProvider(keys);
         sshd.setPasswordAuthenticator(AcceptAllPasswordAuthenticator.INSTANCE);
         sshd.setSubsystemFactories(java.util.List.of(new SftpSubsystemFactory()));
         sshd.start();
@@ -225,15 +229,22 @@ class RemoteFileSystemsHostKeyFxTest {
     /**
      * A user who takes longer than the handshake timeout to compare the fingerprint still connects — the dialog's
      * think-time is excluded from the deadline (#486). The host-key prompt blocks the key exchange that gates
-     * authentication, so it lands inside the auth wait: here the auth timeout is a short 600ms but the prompt
-     * blocks for 1500ms before accepting; without the exclusion the handshake would time out first.
+     * authentication, so it lands inside the auth wait: here the prompt blocks for a second longer than the
+     * whole auth timeout before accepting; without the exclusion the handshake would time out first.
+     *
+     * <p>The timeout is not short, because the key exchange around the prompt still counts against it. With
+     * 600ms it failed on macOS CI ("Authentication timed out"); on Linux with every core oversubscribed, the
+     * exchange took about 700ms before the prompt appeared, and still 550 to 680ms with the host key made up
+     * front.
      */
     @Test
     void aSlowHostKeyAnswerDoesNotTimeOutTheHandshake(@TempDir Path dir) throws Exception {
+        java.time.Duration authTimeout = java.time.Duration.ofMillis(2500);
         fs = new RemoteFileSystems(
                 (host, port, keyType, fingerprint) -> {
                     try {
-                        Thread.sleep(1500); // the human is reading the fingerprint — longer than the 600ms timeout
+                        // The human is reading the fingerprint: longer than the whole auth timeout.
+                        Thread.sleep(authTimeout.toMillis() + 1000);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
@@ -241,7 +252,7 @@ class RemoteFileSystemsHostKeyFxTest {
                 },
                 dir.resolve("known_hosts"),
                 java.time.Duration.ofSeconds(20), // connect: generous (the future fulfils before the prompt)
-                java.time.Duration.ofMillis(600)); // auth: short — the prompt overlaps this wait
+                authTimeout); // the prompt overlaps this wait
         SshServer server = sftpServer(dir.resolve("host.ser"), 0);
         try {
             RemoteFileSystems.Result r = connectAndWait(server.getPort());

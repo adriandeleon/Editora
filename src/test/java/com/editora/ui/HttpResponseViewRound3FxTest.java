@@ -400,17 +400,26 @@ class HttpResponseViewRound3FxTest {
         for (int i = 1; i <= 11; i++) {
             eleven.add("{{u" + i + "}} was sent as empty text");
         }
-        show(p, 300, 600);
+        Stage stage = show(p, 900, 600);
         showIn(p, exchange("n", ok("{\"x\":1}", List.of(), eleven)));
-        await(() -> p.warnBadgeForTest() != null && p.warnBadgeForTest().equals("⚠ 11"));
+        await(() -> p.warnBadgeForTest() != null && p.warnBadgeForTest().startsWith("⚠ 11"));
         Label status = p.controlsForTest().statusLabel();
-        // The label's skin copies its text into the Text node on a layout pass: lay out before reading it.
-        String shown = FxTestSupport.callOnFx(() -> {
-            p.applyCss();
-            p.layout();
-            return ((Text) status.lookup(".text")).getText();
-        });
-        assertEquals(FxTestSupport.callOnFx(status::getText), shown, "the status line is not ellipsized");
+        // At what width the badge must shorten depends on the platform's fonts (macOS fits the full badge at
+        // 300 px), so check the rule itself at every width: the status line is cut only once the badge is short.
+        for (int width = 900; width >= 260; width -= 20) {
+            int w = width;
+            String[] seen = FxTestSupport.callOnFx(() -> {
+                stage.setWidth(w);
+                p.applyCss();
+                p.layout();
+                return new String[] {status.getText(), ((Text) status.lookup(".text")).getText(), p.warnBadgeForTest()};
+            });
+            boolean statusCut = !seen[0].equals(seen[1]);
+            boolean badgeShort = "⚠ 11".equals(seen[2]);
+            assertTrue(
+                    !statusCut || badgeShort,
+                    "at " + w + " px the status line was cut before the badge: " + seen[1] + " | " + seen[2]);
+        }
     }
 
     // --- X6: a cancelled Run All says it was cancelled ----------------------------------------------------------

@@ -119,6 +119,7 @@ class HttpHistoryRound2FxTest {
         coordinators.forEach(HttpClientCoordinator::shutdown);
         server.stop(0);
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private String url(String path) {
