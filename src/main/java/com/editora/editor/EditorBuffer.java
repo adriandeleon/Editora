@@ -53,7 +53,6 @@ import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSessions;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
@@ -8899,8 +8898,7 @@ public class EditorBuffer implements TabContent {
 
     private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
         Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
-        ParsedSnippet parsed =
-                SnippetParser.parse(snippet.body(), SnippetTyping.variables(a, from, to, path, language, root));
+        ParsedSnippet parsed = SnippetTyping.parse(snippet, a, from, to, path, language, root);
         String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
         // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.

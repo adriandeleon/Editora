@@ -2,6 +2,7 @@ package com.editora.snippet;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import com.editora.config.ConfigManager;
 import org.junit.jupiter.api.Test;
@@ -188,6 +189,35 @@ class SnippetManagerTest {
         assertTrue(text.contains("\t1)\n\t\techo 1\n\t\t;;\n"), text);
         assertTrue(text.contains("\t*)\n\t\techo default\n\t\t;;\nesac"), text);
         assertFalse(text.contains("\n\t;;"), "no ;; at the pattern's level: " + text);
+    }
+
+    @Test
+    void theBundledShellSnippetsAreIdiomaticAndEndWhereTheyShould(@TempDir Path dir) {
+        // B9: elif had only an `elseif` trigger, expr taught the antiquated external command, for_in's final tab
+        // stop was its list (the body was unreachable) with `do` on its own line, and the loops ended in a stray
+        // blank line; function inserted the Allman `name ()⏎{` its own description advised against.
+        SnippetManager m = manager(dir);
+        assertNotNull(m.byPrefix("shell", "elif"));
+        assertEquals("elif", m.byPrefix("shell", "elseif").name(), "the old trigger still works");
+        assertEquals(
+                "$(( 1 + 1 ))",
+                SnippetParser.parse(m.byPrefix("shell", "expr").body(), name -> null)
+                        .text());
+        assertEquals("arith", m.byPrefix("shell", "expr").name());
+
+        ParsedSnippet forIn = SnippetParser.parse(m.byPrefix("shell", "for_in").body(), name -> null);
+        assertEquals("for VAR in LIST; do\n\techo \"$VAR\"\ndone", forIn.text());
+        assertEquals(
+                List.of(1, 2, 0),
+                forIn.stops().stream().map(TabStop::number).distinct().toList(),
+                "VAR, LIST, body");
+        assertEquals(
+                "name() {\n\t\n}",
+                SnippetParser.parse(m.byPrefix("shell", "function").body(), n -> null)
+                        .text());
+        for (Snippet s : m.forLanguage("shell")) {
+            assertFalse(s.body().endsWith("\n"), s.prefix() + " adds a blank line after itself");
+        }
     }
 
     /**
