@@ -337,7 +337,7 @@ class SettingsApplyFxTest {
             assertNotNull(side, "the Structure row's side combo");
             assertFalse(show.isSelected(), "hidden outside Settings");
             assertEquals(moved, side.getValue(), "moved outside Settings");
-            assertTrue(side.isDisable());
+            assertFalse(side.isDisable(), "a hidden window's side can still be chosen");
             assertFalse(toolWindows.isVisible(structure), "re-reading the row changes nothing");
             assertEquals(moved, toolWindows.currentSide(structure));
         });
