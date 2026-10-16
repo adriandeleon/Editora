@@ -71,5 +71,11 @@
   "Cmd-S-t": "buffer.reopenClosed",
   "M-S-i": "edit.addCaretsToLineEnds",
   "Cmd-k Cmd-d": "edit.skipOccurrence",
-  "Cmd-u": "edit.undoLastCaret"
+  "Cmd-u": "edit.undoLastCaret",
+  "Cmd-enter": "edit.insertLineBelow",
+  "Cmd-S-enter": "edit.insertLineAbove",
+  "Cmd-S-k": "edit.deleteLine",
+  "Cmd-l": "edit.selectLine",
+  "Cmd-]": "edit.indentLines",
+  "Cmd-[": "edit.outdentLines"
 }

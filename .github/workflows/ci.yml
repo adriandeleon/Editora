@@ -108,8 +108,25 @@ jobs:
       # A test that fails is run again, twice at most. One that then passes is a flake: the build stays
       # green and the `build` job names it, so it is fixed rather than forgotten.
       # `test`, not `verify`: the coverage floors are for the whole suite, and one shard is a quarter of it.
+      #
+      # A hang names itself, as on the other lanes (scripts/dump-stuck-jvms.sh): the JVMs' threads are dumped at
+      # 14 minutes (a shard takes about 7) and the step stops at 17, before the job's 20, so the steps below
+      # still print the dump and upload it. The file stays under target/ with the shard's number: the artifact's
+      # layout is what the `build` job merges.
       - name: Test
-        run: ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
+        timeout-minutes: 17
+        shell: bash
+        run: |
+          scripts/dump-stuck-jvms.sh 840 target/jvm-dumps-shard-${{ matrix.shard }}.txt </dev/null >/dev/null 2>&1 &
+          dumper=$!
+          trap 'kill "$dumper" 2>/dev/null' EXIT
+          ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
+
+      - name: Thread dumps of a hung test run
+        if: always()
+        run: |
+          dumps=target/jvm-dumps-shard-${{ matrix.shard }}.txt
+          if [ -s "$dumps" ]; then cat "$dumps"; else echo "no hang"; fi
 
       # Also when the tests failed: the `build` job reports on all four shards, and the reports hold the
       # output and stack trace of a failed test. The coverage file gets the shard's number so that the
@@ -129,6 +146,7 @@ jobs:
           path: |
             target/jacoco-shard-*.exec
             target/surefire-reports
+            target/jvm-dumps-shard-*.txt
           retention-days: 7
           if-no-files-found: ignore
 

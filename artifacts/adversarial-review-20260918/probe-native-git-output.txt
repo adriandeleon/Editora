@@ -1,0 +1,83 @@
+literal-pathspec$ git ['init', '-q']
+exit=0
+
+literal-pathspec$ git ['clean', '-f', '--', 'a*.txt']
+exit=0
+Removing a*.txt
+Removing alpha.txt
+Removing another.txt
+
+Remaining .txt files: []
+
+no-final-newline$ git ['init', '-q']
+exit=0
+
+no-final-newline$ git ['add', '--', 'f']
+exit=0
+
+PatchWriter output:
+--- a/f
++++ b/f
+@@ -1,1 +1,1 @@
+-old
++new
+
+no-final-newline$ git ['apply', '--cached', '--check', '/tmp/editora-review-probes-x6eckb3e/no-eof.patch']
+exit=1
+error: patch failed: f:1
+error: f: patch does not apply
+
+stale-repeated-context$ git ['init', '-q']
+exit=0
+
+stale-repeated-context$ git ['add', '--', 'f']
+exit=0
+
+PatchWriter output for replacing first old with new:
+--- a/f
++++ b/f
+@@ -2,7 +2,7 @@
+ a
+ b
+ c
+-old
++new
+ d
+ e
+ f
+
+stale-repeated-context$ git ['add', '--', 'f']
+exit=0
+
+Index replaced before applying displayed patch:
+prefix
+removed-first-block
+separator
+a
+b
+c
+old
+d
+e
+f
+end
+
+stale-repeated-context$ git ['apply', '--cached', '--check', '/tmp/editora-review-probes-x6eckb3e/offset.patch']
+exit=0
+
+stale-repeated-context$ git ['apply', '--cached', '/tmp/editora-review-probes-x6eckb3e/offset.patch']
+exit=0
+
+stale-repeated-context$ git ['show', ':f']
+exit=0
+prefix
+removed-first-block
+separator
+a
+b
+c
+new
+d
+e
+f
+end

@@ -1,0 +1,4 @@
+PROBE duplicate-sync: server-open-version=1 change-count=0 client-version=2
+PROBE save-includeText: requested=true actual=null
+PROBE patch-both-no-eof: --- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n-old\n+new\n
+PROBE conflict-parser: GitStatus[repo=true, branch=main, upstream=, ahead=0, behind=0, files=[]]

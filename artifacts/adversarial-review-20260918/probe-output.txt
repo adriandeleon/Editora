@@ -1,0 +1,11 @@
+PROBE metadata-hunk: original=480004 applied=Binary/large content: 480004 chars, 120001 lines\n
+PROBE narrowed-lsp: outside\nRENAMED\ntail\n
+PROBE regex-context: foo$1$1
+PROBE readonly-find: editable=false text=bar
+PROBE close-save: allowed=true dirty=true text=later unsaved edit
+PROBE close-save disk: snapshot
+PROBE failed-save-as: path=/tmp/review-docs-7271855349860297500/failed.txt dirty=false exists=false
+PROBE lsp-dirty-delete: accepted=true exists=false disposed=true
+
+Sep 18, 2026 8:13:33 PM com.sun.javafx.application.PlatformImpl startup
+WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @2b7175ba'
