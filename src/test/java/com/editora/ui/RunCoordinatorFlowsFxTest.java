@@ -485,6 +485,48 @@ class RunCoordinatorFlowsFxTest {
     }
 
     @Test
+    void theRunWindowSaysWhichRuntimeTheProgramRunsUnder() throws Exception {
+        Process ask = new ProcessBuilder(
+                        "bash", "-c", "echo \"${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}\"")
+                .redirectErrorStream(true)
+                .start();
+        String bashVersion = new String(ask.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        org.junit.jupiter.api.Assumptions.assumeTrue(ask.waitFor() == 0, "needs bash");
+        open("which.sh", "#!/usr/bin/env bash\necho hi\n", true);
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitRuntimeChip("Bash " + bashVersion);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("Bash " + bashVersion, runtimeChip(), "the chip stays after the program exits");
+
+        // A runtime it cannot ask (a plain sh) shows no chip — never the previous run's.
+        clearLog();
+        open("plain.sh", "#!/bin/sh\necho hi\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("", runtimeChip());
+    }
+
+    /** Polls outside the log's lock: the chip is read on the FX thread, which takes that lock to log. */
+    private void awaitRuntimeChip(String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (!expected.equals(runtimeChip())) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("runtime chip never said '" + expected + "', it says '" + runtimeChip() + "'");
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    private String runtimeChip() {
+        try {
+            return FxTestSupport.callOnFx(run.panel()::runtimeText);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @Test
     void ctrlDOnAnEmptyInputLineEndsTheInput() throws Exception {
         open("cat.sh", "#!/bin/sh\ncat\necho \"cat done\"\n", true);
         FxTestSupport.runOnFx(run::runActiveFile);

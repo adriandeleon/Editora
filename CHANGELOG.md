@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
+  state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it
+  for the runtime's own version banner and, for Java, the JDK's folder.
+  - It asks the very executable the run starts, in the run's folder and environment — so a run configuration's
+    JDK, a virtualenv's `python`, a pyenv `.python-version` and a remote host's own runtime are what it reports.
+  - The program doesn't wait for the answer: the chip fills in a moment after the launch. It stays after the
+    program exits and is replaced by the next run. A runtime it can't ask (a plain `sh`, a compiled binary) and
+    an attached debug session show no chip.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added

@@ -991,6 +991,9 @@ final class DebugCoordinator {
 
     // --- DAP event sink + panel actions ------------------------------------------------------------
 
+    /** Bumped when a session starts or ends, so a slow runtime probe cannot label the next one. */
+    private long runtimeGeneration;
+
     private DapManager.Listener dapListener() {
         return new DapManager.Listener() {
             @Override
@@ -998,6 +1001,12 @@ final class DebugCoordinator {
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
                 // starts in that state by itself, so there is nothing to show and no reason to build it now.
                 boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
+                if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
+                    runtimeGeneration++; // a probe still out answers for the session that just ended
+                    if (debugPanel != null) {
+                        panel().setRuntime(null);
+                    }
+                }
                 if (state == DapManager.State.STARTING) {
                     if (!consoleStarted) {
                         panel().clearConsole(); // each launch starts with its own output
@@ -1063,6 +1072,16 @@ final class DebugCoordinator {
             @Override
             public void onProgramExit(int code) {
                 panel().appendNotice(tr("run.exited", code));
+            }
+
+            @Override
+            public void onDebuggeeRuntime(List<String> runtime, Path where, java.util.Map<String, String> env) {
+                long generation = runtimeGeneration;
+                com.editora.run.RuntimeProbe.probe(runtime, where, env, version -> {
+                    if (generation == runtimeGeneration && debugPanel != null) {
+                        panel().setRuntime(version);
+                    }
+                });
             }
 
             @Override

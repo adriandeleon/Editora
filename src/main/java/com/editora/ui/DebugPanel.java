@@ -113,6 +113,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private final Actions actions;
     private final Label status = new Label();
+    /** The runtime the debugged program runs under; shown while its session lives (see {@link #setRuntime}). */
+    private final Label runtime = RunPanel.runtimeChip();
     /** Spins while a before-launch build prepares, the session starts, or the program runs — not while paused. */
     private final ProgressIndicator busy = RunPanel.busySpinner();
 
@@ -253,9 +255,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(runToCursor, "debug.runToCursor", "U", actions::runToCursor, Icons.debugRunToCursor()),
                 spacer(),
                 busy,
+                runtime,
                 status);
         start.getStyleClass().add("debug-start"); // green play accent
         HBox.setMargin(busy, new Insets(0, 4, 0, 0)); // the toolbar packs its buttons 2px apart
+        HBox.setMargin(runtime, new Insets(0, 6, 0, 0));
         toolbar.setAlignment(Pos.CENTER_LEFT);
         // gdb-style single-key shortcuts, live only while focus is somewhere in this panel (the eval field
         // is exempt so the REPL types normally). Bare letters aren't bound in any keymap, so the scene
@@ -589,6 +593,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.setDisable(!suspended);
         if (!active) {
             sessionFile = "";
+            setRuntime(null);
             stack.getItems().clear();
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
@@ -607,6 +612,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
         stop.setDisable(!active && !preparing);
         refreshStatus();
+    }
+
+    /** The runtime the session's program runs under, once its probe answers; {@code null} hides the chip. */
+    public void setRuntime(com.editora.run.RuntimeVersion version) {
+        RunPanel.showRuntime(runtime, version);
+    }
+
+    /** The runtime chip's text, or "" while it is hidden. */
+    String runtimeText() {
+        return runtime.isVisible() ? runtime.getText() : "";
     }
 
     /** Records the file the session is debugging; shown beside the state while the session lives. */

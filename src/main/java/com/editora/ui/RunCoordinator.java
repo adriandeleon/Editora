@@ -433,6 +433,9 @@ final class RunCoordinator {
     /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
     private boolean consoleUsed;
 
+    /** Bumped by each run, so a slow runtime probe cannot label a newer run's console (see showRuntime). */
+    private long runtimeGeneration;
+
     /**
      * Whether the Run console has something to show: a live process, or the output of one that ran in this
      * window. Availability must not fall back to "the active tab is runnable" when a run exits — that closed
@@ -569,6 +572,8 @@ final class RunCoordinator {
                         consoleDir = cwd; // so a compiler error's file link in the build output resolves
                         consoleUsed = true;
                         panel().started(commandLine);
+                        runtimeGeneration++; // the build step is not the program: no runtime chip for it
+                        panel().setRuntime(null);
                     }
 
                     @Override
@@ -1301,6 +1306,7 @@ final class RunCoordinator {
         consoleUsed = true;
         ops.openToolWindow();
         panel().started(label);
+        showRuntime(command, workingDir, env);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
@@ -1342,6 +1348,21 @@ final class RunCoordinator {
         // After the call, not inside onStart: RunService publishes the process before it notifies, so by here
         // isRunning() is true whether the launch succeeded or failed back through onError above.
         ops.onRunStateChanged();
+    }
+
+    /**
+     * Clears the Run window's runtime chip, then fills it in with what {@code command}'s runtime reports, run
+     * the way the launch runs it (its folder, so its host, and its environment). An answer that arrives after
+     * a newer run started is dropped.
+     */
+    private void showRuntime(List<String> command, Path workingDir, java.util.Map<String, String> env) {
+        long generation = ++runtimeGeneration;
+        panel().setRuntime(null);
+        com.editora.run.RuntimeProbe.probe(command, workingDir, env, version -> {
+            if (generation == runtimeGeneration) {
+                panel().setRuntime(version);
+            }
+        });
     }
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */

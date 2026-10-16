@@ -120,6 +120,14 @@ public final class DapManager implements DapClient.Host {
         /** The program Editora started for this session ended by itself with {@code code}; the session
          *  ends right after. Not reported for a program that was stopped. */
         default void onProgramExit(int code) {}
+
+        /**
+         * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
+         * adapter starts it with, before the program's own arguments — in {@code where} (its folder, so its
+         * host) with {@code env} on top of the user's environment. Not reported for an attach: the program
+         * was already running, under whatever started it.
+         */
+        default void onDebuggeeRuntime(List<String> runtime, Path where, Map<String, String> env) {}
     }
 
     private final LspManager lsp;
@@ -1238,6 +1246,9 @@ public final class DapManager implements DapClient.Host {
                 Platform.runLater(() -> {
                     if (isCurrent(epoch, c)) {
                         setState(State.RUNNING);
+                        if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
+                            listener.onDebuggeeRuntime(List.of(javaExec), runtimeWhere(file), Map.of());
+                        }
                     }
                 });
             }));
@@ -1435,6 +1446,10 @@ public final class DapManager implements DapClient.Host {
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
+                    if (interpreter != null) {
+                        listener.onDebuggeeRuntime(
+                                interpreter.argv(List.of()), runtimeWhere(paths, cwd), interpreter.env());
+                    }
                 }
             });
         });
@@ -1597,6 +1612,12 @@ public final class DapManager implements DapClient.Host {
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
+                    if (attachArgs == null) {
+                        listener.onDebuggeeRuntime(
+                                List.of(nodeExe == null || nodeExe.isBlank() ? spec.defaultInterpreter() : nodeExe),
+                                runtimeWhere(paths, cwd),
+                                Map.of());
+                    }
                 }
             });
         });
@@ -1847,6 +1868,16 @@ public final class DapManager implements DapClient.Host {
 
     private static String cwdOf(Path file) {
         return file.getParent() == null ? null : file.getParent().toString();
+    }
+
+    /** Where a debuggee's runtime is asked its version: {@code file}'s folder, so its host; null is here. */
+    private static Path runtimeWhere(Path file) {
+        return file == null ? null : file.getParent();
+    }
+
+    /** As above, for a launch folder named as the adapter's machine names it. */
+    private static Path runtimeWhere(DapPaths paths, String cwd) {
+        return cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
     }
 
     // --- Controls -------------------------------------------------------------------------------
