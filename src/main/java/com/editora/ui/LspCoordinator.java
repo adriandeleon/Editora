@@ -2285,10 +2285,10 @@ final class LspCoordinator {
         // Tab re-indents the current line to the server's convention via range formatting (when supported).
         buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 buffer.sendLspChange(); // the didChange debounce may be pending: format the text on screen
                 lspManager.rangeFormatting(
-                        buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+                        buffer.getPath(), sl, sc, el, ec, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -2297,7 +2297,7 @@ final class LspCoordinator {
         // command, so any other server (or language) drops out inside handlePasteEvent's capability gate.
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 lspManager.handlePasteEvent(
                         buffer.getPath(),
                         sl,
@@ -2305,8 +2305,8 @@ final class LspCoordinator {
                         el,
                         ec,
                         text,
-                        tabSize,
-                        buffer.detectInsertSpaces(tabSize),
+                        indent.tabSize(),
+                        indent.insertSpaces(),
                         stillValid,
                         applied -> {});
             }
@@ -2322,10 +2322,10 @@ final class LspCoordinator {
         // On-type formatting (#740): re-indent the line after a server-declared trigger character.
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 buffer.sendLspChange(); // the server must have the character that triggered this
                 lspManager.onTypeFormatting(
-                        buffer.getPath(), line, character, ch, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+                        buffer.getPath(), line, character, ch, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -2642,10 +2642,12 @@ final class LspCoordinator {
 
     private com.google.gson.JsonObject refactorEdit(
             JdtlsRefactor.Request request, com.google.gson.JsonArray arguments) {
-        int tabSize = host.settings().getTabSize();
         EditorBuffer buffer = activeLspBuffer();
-        boolean spaces = buffer == null || buffer.detectInsertSpaces(tabSize);
-        return JdtlsRefactor.refactorEditParams(request.name(), request.params(), tabSize, spaces, arguments);
+        com.editora.lsp.FormattingIndent indent = buffer == null
+                ? new com.editora.lsp.FormattingIndent(host.settings().getTabSize(), true)
+                : formattingIndent(buffer);
+        return JdtlsRefactor.refactorEditParams(
+                request.name(), request.params(), indent.tabSize(), indent.insertSpaces(), arguments);
     }
 
     /** Asks the server where {@code source} can move, lets the user choose, and moves it there. */
@@ -3438,6 +3440,11 @@ final class LspCoordinator {
         });
     }
 
+    /** The indentation a formatting request describes for {@code buffer} (see {@link com.editora.lsp.FormattingIndent}). */
+    private static com.editora.lsp.FormattingIndent formattingIndent(EditorBuffer buffer) {
+        return com.editora.lsp.FormattingIndent.of(buffer.indentUnit(), buffer.getTabSize());
+    }
+
     /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
      *  server is running and advertises formatting. Edits apply through the undoable buffer. */
     void formatDocument() {
@@ -3451,7 +3458,9 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return;
         }
-        int tabSize = host.settings().getTabSize();
+        // The document's own indentation, not the global tab size: a formatter given the global width
+        // re-indents every line of a file indented differently (shfmt -i=4 over a two-space script).
+        com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
         host.setStatus(tr("status.lsp.formatting"));
         // Sync the latest text first (like gotoDefinition/findReferences/showHover): the didChange debounce
         // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
@@ -3463,7 +3472,7 @@ final class LspCoordinator {
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
         // Snapshot the text and drop the reply if it changed, mirroring tryLspReindentLine's line guard.
         String snapshot = buffer.getContent();
-        lspManager.formatDocument(path, tabSize, buffer.detectInsertSpaces(tabSize), edits -> {
+        lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
             }

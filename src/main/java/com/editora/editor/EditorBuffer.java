@@ -8274,7 +8274,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** The indent unit for this buffer: the EditorConfig override, else the document's own (cached). */
-    private String indentUnit() {
+    public String indentUnit() {
         return indentKeys.unit(tabSize, indentInsertSpacesOverride, indentSizeOverride);
     }
 
