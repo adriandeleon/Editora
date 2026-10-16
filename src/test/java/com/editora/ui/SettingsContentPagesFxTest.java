@@ -5,15 +5,22 @@ import java.util.List;
 import java.util.Map;
 
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.config.Settings;
+import com.editora.todo.TodoPattern;
+import com.editora.todo.TodoPatterns;
+import com.editora.todo.TodoScanner;
 import com.editora.toolbar.ToolbarCatalog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -207,6 +214,74 @@ class SettingsContentPagesFxTest {
             assertEquals(Map.of("java", List.of(100), "python", List.of(79)), settings.getLanguageRulers());
             assertFalse(flagged(perLanguage));
             assertEquals("java: 100; python: 79", perLanguage.getText());
+        });
+    }
+
+    private HBox todoRow(int i) {
+        VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
+        return (HBox) rows.getChildren().get(i);
+    }
+
+    @Test
+    void anAddedTodoPatternMatchesNothingUntilNamedAndThenMatchesItsName() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setTodoPatterns(new ArrayList<>(List.of(new TodoPattern("TODO", "\\bTODO\\b", "", true, true))));
+            rig.show();
+            Region page = rig.page("TODO");
+            SettingsRig.button(page, tr("settings.todo.add")).fire();
+            String line = "// TODO fix and BUG here";
+            // Every TODO used to be matched twice: once by TODO and once by the new row's \\bTODO\\b.
+            assertEquals(
+                    1,
+                    TodoScanner.scan(line, TodoPatterns.compile(settings.getTodoPatterns()))
+                            .size());
+
+            TextField name = (TextField) todoRow(1).getChildren().get(1);
+            TextField regex = (TextField) todoRow(1).getChildren().get(2);
+            SettingsRig.typeAndEnter(name, "BUG");
+            assertEquals("\\bBUG\\b", regex.getText(), "the regex follows the name it was empty for");
+            assertEquals("\\bBUG\\b", settings.getTodoPatterns().get(1).getPattern());
+            assertEquals(
+                    2,
+                    TodoScanner.scan(line, TodoPatterns.compile(settings.getTodoPatterns()))
+                            .size());
+
+            SettingsRig.typeAndEnter(name, "FIX");
+            assertEquals("\\bFIX\\b", settings.getTodoPatterns().get(1).getPattern(), "still its own default");
+            SettingsRig.typeAndEnter(regex, "\\bFIX(ME)?\\b");
+            SettingsRig.typeAndEnter(name, "FIXES");
+            assertEquals("\\bFIX(ME)?\\b", settings.getTodoPatterns().get(1).getPattern(), "a hand-written one stays");
+        });
+    }
+
+    @Test
+    void aTodoPatternWithNoNameOrNothingToMatchIsFlaggedAndItsDeleteIsConfirmed() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setTodoPatterns(new ArrayList<>(List.of(new TodoPattern("HACK", "\\bHACK\\b", "", true, true))));
+            rig.show();
+            Region page = rig.page("TODO");
+            TextField name = (TextField) todoRow(0).getChildren().get(1);
+            TextField regex = (TextField) todoRow(0).getChildren().get(2);
+            CheckBox matchCase = (CheckBox) todoRow(0).getChildren().get(4);
+            assertEquals(tr("settings.todo.caseTip"), matchCase.getTooltip().getText(), "\"Aa\" says what it is");
+
+            SettingsRig.typeAndEnter(name, "  ");
+            assertEquals("HACK", settings.getTodoPatterns().get(0).getName(), "a blank name is not stored");
+            assertTrue(flagged(name));
+            SettingsRig.typeAndEnter(name, "HACK");
+            assertFalse(flagged(name));
+            SettingsRig.typeAndEnter(regex, "");
+            assertEquals("\\bHACK\\b", settings.getTodoPatterns().get(0).getPattern());
+            assertEquals("\\bHACK\\b", regex.getText(), "an emptied regex goes back to the name's own");
+
+            Button remove = (Button) todoRow(0).getChildren().get(5);
+            List<SettingsRig.Shown> asked = SettingsRig.answering(ButtonBar.ButtonData.CANCEL_CLOSE, remove::fire);
+            assertEquals(1, asked.size());
+            assertTrue(asked.get(0).content().contains("HACK"), asked.get(0).content());
+            assertEquals(1, settings.getTodoPatterns().size(), "Cancel keeps it");
+            SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, remove::fire);
+            assertEquals(List.of(), settings.getTodoPatterns());
+            SettingsRig.button(page, tr("settings.todo.add")).fire();
         });
     }
 }

@@ -8,7 +8,10 @@ import java.util.function.Supplier;
 import javafx.geometry.Pos;
 import javafx.geometry.VPos;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
@@ -59,13 +62,15 @@ final class TodoSettingsPane {
     /** The pattern rows plus "Add pattern". */
     Node patternsEditor() {
         Button add = new Button(tr("settings.todo.add"));
+        // A new row starts empty, with the caret in its name: typing BUG makes it match \bBUG\b. It used to
+        // start as "NEW" matching \bTODO\b, which counted every TODO twice until the regex was edited.
         add.setOnAction(e -> {
             List<TodoPattern> list = mutablePatterns();
-            list.add(new TodoPattern(
-                    tr("settings.todo.newName"), "\\bTODO\\b", TodoPatterns.DEFAULT_COLOR, false, true));
+            list.add(new TodoPattern("", "", TodoPatterns.DEFAULT_COLOR, true, true));
             settings.get().setTodoPatterns(list);
             rebuildRows();
             apply.run();
+            ((HBox) patternsBox.getChildren().getLast()).getChildren().get(1).requestFocus();
         });
         VBox box = new VBox(6, patternsBox, add);
         rebuildRows();
@@ -86,24 +91,30 @@ final class TodoSettingsPane {
 
     private Node row(int index) {
         TodoPattern p = settings.get().getTodoPatterns().get(index);
+        String shownName = p.getName() == null ? "" : p.getName();
         CheckBox enabled = new CheckBox();
         enabled.setSelected(p.isEnabled());
         enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
-        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + p.getName());
-        TextField name = new TextField(p.getName());
+        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + shownName);
+        TextField name = new TextField(shownName);
         name.setPromptText(tr("settings.todo.namePrompt"));
+        name.setAccessibleText(tr("settings.todo.namePrompt"));
         name.setPrefWidth(110);
         TextField regex = new TextField(p.getPattern());
         regex.setPromptText(tr("settings.todo.regexPrompt"));
+        regex.setAccessibleText(tr("settings.todo.regexPrompt") + " — " + shownName);
         HBox.setHgrow(regex, Priority.ALWAYS);
         ColorPicker color = new ColorPicker(parseColor(p.getColor()));
         color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
+        color.setAccessibleText(tr("settings.todo.colorPrompt") + " — " + shownName);
         color.setPrefWidth(56);
         CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
         caseSensitive.setSelected(p.isCaseSensitive());
+        caseSensitive.setTooltip(new Tooltip(tr("settings.todo.caseTip")));
+        caseSensitive.setAccessibleText(tr("settings.todo.caseTip") + " — " + shownName);
         Button remove = new Button("✕");
         remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
-        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + p.getName());
+        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + shownName);
 
         Runnable commit = () -> {
             List<TodoPattern> cur = mutablePatterns();
@@ -112,14 +123,28 @@ final class TodoSettingsPane {
             }
             TodoPattern up = cur.get(index);
             up.setEnabled(enabled.isSelected());
-            up.setName(name.getText());
-            // A malformed expression is skipped by TodoPatterns.compile, so saving it silently switched the
-            // keyword off. Flag the field and keep the stored pattern until the expression is valid.
-            String problem = TodoPatterns.syntaxProblem(regex.getText());
-            regex.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problem != null);
-            regex.setTooltip(problem == null ? null : new Tooltip(tr("settings.todo.regexInvalid", problem)));
-            if (problem == null) {
-                up.setPattern(regex.getText());
+            String newName = name.getText() == null ? "" : name.getText().strip();
+            // The regex follows the name while it is still the name's own default (or empty): renaming NEW to
+            // BUG then matches BUG, as the row suggests. A hand-written regex is left alone.
+            String rx = regex.getText() == null ? "" : regex.getText();
+            if (!newName.isEmpty() && (rx.isBlank() || rx.equals(TodoPatterns.regexFor(up.getName())))) {
+                rx = TodoPatterns.regexFor(newName);
+                regex.setText(rx);
+            }
+            // A row with no name or nothing to match is flagged and that part is not stored; a malformed
+            // expression would be skipped by TodoPatterns.compile, silently switching the keyword off.
+            String nameProblem = newName.isEmpty() ? tr("settings.todo.nameEmpty") : null;
+            flag(name, nameProblem);
+            if (nameProblem == null) {
+                up.setName(newName);
+            }
+            String syntax = TodoPatterns.syntaxProblem(rx);
+            String regexProblem = rx.isBlank()
+                    ? tr("settings.todo.regexEmpty")
+                    : syntax == null ? null : tr("settings.todo.regexInvalid", syntax);
+            flag(regex, regexProblem);
+            if (regexProblem == null) {
+                up.setPattern(rx);
             }
             up.setColor(toHex(color.getValue()));
             up.setCaseSensitive(caseSensitive.isSelected());
@@ -140,6 +165,10 @@ final class TodoSettingsPane {
         onBlur.accept(name);
         onBlur.accept(regex);
         remove.setOnAction(e -> {
+            String label = shownName.isBlank() ? p.getPattern() : shownName;
+            if (!confirmDelete(remove, label)) {
+                return;
+            }
             List<TodoPattern> cur = mutablePatterns();
             if (index < cur.size()) {
                 cur.remove(index);
@@ -151,6 +180,26 @@ final class TodoSettingsPane {
         HBox row = new HBox(6, enabled, name, regex, color, caseSensitive, remove);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
+    }
+
+    /** Marks {@code field} red with {@code why} as its tooltip, or clears that when {@code why} is null. */
+    private static void flag(TextField field, String why) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
+        field.setTooltip(why == null ? null : new Tooltip(why));
+        field.setAccessibleHelp(why);
+    }
+
+    /** Asks before a pattern is deleted; Cancel is the default button, so Enter keeps it. */
+    private static boolean confirmDelete(Node owner, String label) {
+        ButtonType delete = new ButtonType(tr("settings.todo.delete"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("settings.todo.deleteConfirm", label), delete, ButtonType.CANCEL));
+        confirm.initOwner(owner.getScene() == null ? null : owner.getScene().getWindow());
+        confirm.setTitle(tr("settings.todo.deleteTitle"));
+        confirm.setHeaderText(null);
+        ((Button) confirm.getDialogPane().lookupButton(delete)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
     }
 
     /** The five per-part color pickers; each writes its {@code Settings} field and applies live. */

@@ -479,8 +479,8 @@ class SettingsPagesFxTest {
             SettingsRig.button(page, tr("settings.todo.add")).fire();
             assertEquals(2, settings.getTodoPatterns().size());
             TodoPattern added = settings.getTodoPatterns().get(1);
-            assertEquals(tr("settings.todo.newName"), added.getName());
-            assertEquals("\\bTODO\\b", added.getPattern());
+            assertEquals("", added.getName(), "a new pattern starts empty, to be named");
+            assertEquals("", added.getPattern(), "and matches nothing until then");
             assertTrue(added.isEnabled());
             assertEquals(2, rows.getChildren().size());
             assertEquals(1, rig.applied.size());
@@ -519,7 +519,12 @@ class SettingsPagesFxTest {
                     ((HBox) rows.getChildren().get(0)).getChildren().get(3);
             assertEquals(Color.web("#E5C07B"), first.getValue());
 
-            ((Button) ((HBox) rows.getChildren().get(0)).getChildren().get(5)).fire(); // remove FIXME
+            SettingsRig.answering(
+                    ButtonBar.ButtonData.OK_DONE,
+                    () -> ((Button) ((HBox) rows.getChildren().get(0))
+                                    .getChildren()
+                                    .get(5))
+                            .fire()); // remove FIXME, confirmed
             assertEquals(1, settings.getTodoPatterns().size());
             assertEquals("HACK", settings.getTodoPatterns().get(0).getName());
             assertEquals(1, rows.getChildren().size());
