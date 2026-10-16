@@ -13,6 +13,7 @@ import com.editora.process.ExecSpec;
 import com.editora.process.ExecTarget;
 import com.editora.process.PortForward;
 import com.editora.process.PosixShell;
+import com.editora.process.RemoteEnv;
 import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.session.ClientSession;

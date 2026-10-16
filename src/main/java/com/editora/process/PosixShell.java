@@ -93,6 +93,29 @@ public final class PosixShell {
     }
 
     /**
+     * {@link #commandLine} as arguments, for a launcher that takes them one by one instead of one string for a
+     * login shell to parse ({@code docker exec}, {@code wsl.exe --exec}): {@code /bin/sh -c <guard> editora
+     * <script> <argv>…}, nothing quoted.
+     */
+    public static java.util.List<String> argv(
+            ExecSpec spec, String cwd, String path, Map<String, String> userLocale, Map<String, String> profile) {
+        java.util.List<String> argv = new java.util.ArrayList<>(java.util.List.of(
+                "/bin/sh", "-c", GROUP_GUARD, "editora", script(spec, cwd, path, userLocale, profile)));
+        argv.addAll(spec.argv());
+        return java.util.List.copyOf(argv);
+    }
+
+    /** {@link #killCommandLine} as arguments, for a launcher that takes them one by one. */
+    public static java.util.List<String> killArgv(long pid, boolean force) {
+        if (pid <= 1) {
+            throw new IllegalArgumentException("not a process to signal: " + pid);
+        }
+        String signal = force ? "KILL" : "TERM";
+        return java.util.List.of(
+                "/bin/sh", "-c", "kill -s " + signal + " -- -" + pid + " 2>/dev/null || kill -s " + signal + " " + pid);
+    }
+
+    /**
      * The command line that signals the process group a {@link #commandLine} child leads: {@code TERM}, or
      * {@code KILL} with {@code force}. Falls back to the one process when it leads no group.
      */

@@ -76,6 +76,19 @@ on its target through the same launch path as a remote host's (`DapManager`, `De
 `DapPaths.on` owns only the files whose tools run on the adapter's target, so a breakpoint in another local
 file is not sent there (`DapMappedTargetFxTest`).
 
+**Containers** (`container/`). `ContainerExecTarget` runs a bind-mounted folder's tools in a running container
+with `docker exec` or `podman exec` (`ContainerEngine`, one configurable command that both accept):
+`exec -i [-u user] <container> /bin/sh -c <guard> editora <script> <argv>…` — the same script as on an SSH
+host (`PosixShell.argv`), so the command prints its pid, sets its folder and the container's login environment
+(`RemoteEnv`, probed once through the container's login shell), and becomes the program. `exec` starts it as
+the leader of its own process group, so Stop signals the group with a second `exec` (`PosixShell.killArgv`).
+Paths cross through the bind mounts read from `inspect` (`ContainerMounts`, deepest mount first; `ContainerInfo`
+also reads a dev container's `remoteUser` from its `devcontainer.metadata` label). Unlike an SSH session,
+killing the local `exec` client leaves the program running in the container: Editora stops what it started
+(`ProcessRegistry`). Not yet: binding a folder to its container, the consent question, a cache folder,
+forwarded ports. `ContainerProbeFxTest` is the opt-in check against a real engine
+(`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
+
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
   pid line on stderr, sets directory and environment, and `exec`s the program. No PTY.

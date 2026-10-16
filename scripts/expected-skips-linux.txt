@@ -41,3 +41,6 @@ com.editora.ui.DebugPanelFocusRetentionFxTest#steppingFromThePanelKeepsFocusInTh
 
 # Opt-in: runs only against a real SSH server named with -Dremote.probe=user@host:port (see its Javadoc).
 com.editora.ui.RealSshdProbeFxTest
+# Opt-in: runs only against a real container engine and an image already present, named with
+# -Dcontainer.probe=<docker|podman> and -Dcontainer.probe.image (see its Javadoc).
+com.editora.container.ContainerProbeFxTest
