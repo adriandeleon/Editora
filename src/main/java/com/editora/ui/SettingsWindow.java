@@ -309,12 +309,8 @@ public class SettingsWindow {
     private javafx.scene.control.ColorPicker todoMediumColorPicker;
     private javafx.scene.control.ColorPicker todoLowColorPicker;
     private VBox markdownLintRulesBox;
-    /** Working copy of the External Tools list, edited live by the master-detail page. */
-    /** The External Tools ListView, so {@link #reloadExternalTools} can restore the selection. */
-    private ListView<com.editora.externaltool.ExternalTool> externalToolList;
-
-    private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
-            javafx.collections.FXCollections.observableArrayList();
+    /** The External Tools page's editor (see {@link ExternalToolsEditor}); null until that page is built. */
+    private ExternalToolsEditor externalToolsEditor;
 
     // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
     private final javafx.collections.ObservableList<String> toolbarCurrentItems =
@@ -324,7 +320,6 @@ public class SettingsWindow {
     private ToolbarActions toolbarActions; // → MainController/ToolbarCoordinator
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
-    private boolean loadingExternalTool = false;
     private ListView<com.editora.config.Abbreviation> abbrevList;
     private final javafx.collections.ObservableList<com.editora.config.Abbreviation> abbrevItems =
             javafx.collections.FXCollections.observableArrayList();
@@ -5415,7 +5410,7 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.EXTERNAL_TOOLS,
-                externalToolsEditor(),
+                externalTools().node(),
                 "external tools command cli macro stdin output console run formatter filter");
         Label macros = note(tr("settings.externalTool.macrosHelp"));
         macros.setWrapText(true);
@@ -5424,195 +5419,46 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Master-detail editor: a list of tools on the left, a form for the selected tool on the right. */
-    private javafx.scene.Node externalToolsEditor() {
-        reloadExternalTools();
-
-        ListView<com.editora.externaltool.ExternalTool> list = new ListView<>(externalToolItems);
-        externalToolList = list;
-        list.setPrefSize(200, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.externaltool.ExternalTool t, boolean empty) {
-                super.updateItem(t, empty);
-                setText(
-                        empty || t == null
-                                ? null
-                                : (t.getName().isBlank() ? tr("settings.externalTool.unnamed") : t.getName()));
-            }
-        });
-
-        TextField name = new TextField();
-        TextField command = new TextField();
-        TextField arguments = new TextField();
-        TextField workingDir = new TextField();
-        workingDir.setPromptText(tr("settings.externalTool.workingDirPrompt"));
-        ComboBox<com.editora.externaltool.ExternalTool.StdinSource> stdin =
-                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
-                        com.editora.externaltool.ExternalTool.StdinSource.values()));
-        stdin.setConverter(enumConverter(s -> tr("externalTool.stdin." + s.name())));
-        ComboBox<com.editora.externaltool.ExternalTool.OutputTarget> output =
-                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
-                        com.editora.externaltool.ExternalTool.OutputTarget.values()));
-        output.setConverter(enumConverter(o -> tr("externalTool.output." + o.name())));
-        CheckBox enabled = new CheckBox(tr("settings.externalTool.enabled"));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.externalTool.name"), name);
-        formRow(form, 1, tr("settings.externalTool.command"), command);
-        formRow(form, 2, tr("settings.externalTool.arguments"), arguments);
-        formRow(form, 3, tr("settings.externalTool.workingDir"), workingDir);
-        formRow(form, 4, tr("settings.externalTool.stdin"), stdin);
-        formRow(form, 5, tr("settings.externalTool.output"), output);
-        form.add(enabled, 1, 6);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        Runnable commit = () -> {
-            com.editora.externaltool.ExternalTool t = list.getSelectionModel().getSelectedItem();
-            if (t == null || loadingExternalTool) {
-                return;
-            }
-            // Distinct names can produce one externalTool.run.<slug> command ("Format JSON" / "format-json";
-            // any two symbol-only names both fall back to "tool"). CommandRegistry.register is a put, so the
-            // second tool silently shadowed the first: the palette showed one entry and a keybinding on it
-            // always ran the later tool. MacroService refuses the same collision — mirror it.
-            if (slugTaken(t, name.getText())) {
-                macroWarn(tr("settings.externalTool.idExists", name.getText()));
-                name.setText(t.getName()); // put the field back
-                return;
-            }
-            // The command id is derived from the name, so a rename is a new command: carry the key binding
-            // across (as saveMacro does) instead of leaving a chord bound to an id nothing registers.
-            String oldId = com.editora.externaltool.ExternalTool.commandIdFor(t.getName());
-            String newId = com.editora.externaltool.ExternalTool.commandIdFor(name.getText());
-            String oldChord = newId.equals(oldId) ? null : currentChordFor(oldId);
-            t.setName(name.getText());
-            t.setCommand(command.getText());
-            t.setArguments(arguments.getText());
-            t.setWorkingDir(workingDir.getText());
-            if (stdin.getValue() != null) {
-                t.setStdin(stdin.getValue());
-            }
-            if (output.getValue() != null) {
-                t.setOutput(output.getValue());
-            }
-            t.setEnabled(enabled.isSelected());
-            list.refresh();
-            persistExternalTools(); // re-registers externalTool.run.* (incl. the renamed id)
-            if (!newId.equals(oldId) && shortcutActions != null) {
-                shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
-                if (oldChord != null && !oldChord.isBlank()) {
-                    shortcutActions.rebind(newId, oldChord);
-                }
-            }
-        };
-        // Combos + checkbox apply immediately; text fields commit on Enter / focus-loss (the todoRow idiom).
-        stdin.valueProperty().addListener((o, a, b) -> commit.run());
-        output.valueProperty().addListener((o, a, b) -> commit.run());
-        enabled.selectedProperty().addListener((o, a, b) -> commit.run());
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(name);
-        wire.accept(command);
-        wire.accept(arguments);
-        wire.accept(workingDir);
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingExternalTool = true;
-            try {
-                form.setDisable(now == null);
-                name.setText(now == null ? "" : now.getName());
-                command.setText(now == null ? "" : now.getCommand());
-                arguments.setText(now == null ? "" : now.getArguments());
-                workingDir.setText(now == null ? "" : now.getWorkingDir());
-                stdin.setValue(now == null ? null : now.getStdin());
-                output.setValue(now == null ? null : now.getOutput());
-                enabled.setSelected(now != null && now.isEnabled());
-            } finally {
-                loadingExternalTool = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.externalTool.add"));
-        add.setOnAction(e -> {
-            // Two tools named "New Tool" share one externalTool.run.<slug> command: only one would run, and
-            // commit then refuses every edit to the other until it is renamed.
-            String newName = tr("settings.externalTool.newName");
-            for (int n = 2; slugTaken(null, newName); n++) {
-                newName = tr("settings.externalTool.newName") + " " + n;
-            }
-            com.editora.externaltool.ExternalTool t = new com.editora.externaltool.ExternalTool(
-                    newName,
-                    "",
-                    "",
-                    "",
-                    com.editora.externaltool.ExternalTool.StdinSource.NONE,
-                    com.editora.externaltool.ExternalTool.OutputTarget.CONSOLE,
-                    true);
-            externalToolItems.add(t);
-            persistExternalTools();
-            list.getSelectionModel().select(t);
-        });
-        Button remove = new Button(tr("settings.externalTool.remove"));
-        remove.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                String id = com.editora.externaltool.ExternalTool.commandIdFor(
-                        externalToolItems.get(i).getName());
-                externalToolItems.remove(i);
-                persistExternalTools();
-                if (shortcutActions != null) {
-                    shortcutActions.reset(id); // drop its key binding, as deleting a macro does
-                }
-            }
-        });
-        // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-
-        VBox left = new VBox(6, list);
-        VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        if (!externalToolItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox top = new HBox(12, left, right);
-        top.setAlignment(Pos.TOP_LEFT);
-        VBox.setVgrow(top, Priority.ALWAYS);
-
-        // One bottom bar below the whole editor: Add / Remove on the left, Save aligned on the right.
-        HBox buttons = new HBox(6, add, remove, spacer(), save);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, top, buttons);
+    private ExternalToolsEditor externalTools() {
+        externalToolsEditor = new ExternalToolsEditor(new ExternalToolsEditor.Hooks(
+                () -> config.getSettings().getExternalTools(),
+                tools -> {
+                    config.getSettings().setExternalTools(tools);
+                    apply(); // re-registers externalTool.run.*
+                },
+                this::macroWarn,
+                this::confirmDelete,
+                this::currentChordFor,
+                (id, chord) -> {
+                    if (shortcutActions != null) {
+                        shortcutActions.rebind(id, chord);
+                    }
+                },
+                id -> {
+                    if (shortcutActions != null) {
+                        shortcutActions.reset(id);
+                    }
+                },
+                (field, commit) -> {
+                    commitFields.add(field);
+                    field.getProperties().put(COMMIT_KEY, commit);
+                },
+                () -> stage));
+        return externalToolsEditor;
     }
 
-    /** True when {@code newName} would give {@code tool} the command id another tool already uses. */
-    private boolean slugTaken(com.editora.externaltool.ExternalTool tool, String newName) {
-        String id = com.editora.externaltool.ExternalTool.commandIdFor(newName);
-        for (com.editora.externaltool.ExternalTool other : externalToolItems) {
-            if (other != tool
-                    && com.editora.externaltool.ExternalTool.commandIdFor(other.getName())
-                            .equals(id)) {
-                return true;
-            }
-        }
-        return false;
+    /** "Delete “name”?" with Cancel as the default button, so Enter does not delete. */
+    private boolean confirmDelete(String name) {
+        Alert a = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("settings.externalTool.confirmDelete", name),
+                ButtonType.OK,
+                ButtonType.CANCEL));
+        a.initOwner(stage);
+        a.setHeaderText(null);
+        ((Button) a.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
+        ((Button) a.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
     }
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
@@ -5774,27 +5620,6 @@ public class SettingsWindow {
             out.add(new com.editora.config.Abbreviation(a.getAbbreviation(), a.getExpansion()));
         }
         return out;
-    }
-
-    private static java.util.List<com.editora.externaltool.ExternalTool> copyTools(
-            java.util.List<com.editora.externaltool.ExternalTool> src) {
-        java.util.List<com.editora.externaltool.ExternalTool> out = new java.util.ArrayList<>();
-        for (com.editora.externaltool.ExternalTool t : src) {
-            out.add(new com.editora.externaltool.ExternalTool(
-                    t.getName(),
-                    t.getCommand(),
-                    t.getArguments(),
-                    t.getWorkingDir(),
-                    t.getStdin(),
-                    t.getOutput(),
-                    t.isEnabled()));
-        }
-        return out;
-    }
-
-    private void persistExternalTools() {
-        config.getSettings().setExternalTools(new java.util.ArrayList<>(externalToolItems));
-        apply();
     }
 
     private static <T> StringConverter<T> enumConverter(java.util.function.Function<T, String> label) {
@@ -8435,30 +8260,6 @@ public class SettingsWindow {
     // --- load + sync (unchanged behavior) --------------------------------------------------------
 
     /**
-     * Re-reads the External Tools list from the live settings. The page is built eagerly in the constructor
-     * (one SettingsWindow per MainController), so a startup snapshot went stale the moment another window
-     * added a tool — and this window's next save wrote its snapshot back, deleting the other's tool.
-     */
-    private void reloadExternalTools() {
-        if (sameTools(externalToolItems, config.getSettings().getExternalTools())) {
-            return; // nothing changed behind the page: keep the rows (and the form's caret) as they are
-        }
-        var selected = externalToolList == null
-                ? null
-                : externalToolList.getSelectionModel().getSelectedItem();
-        String selectedName = selected == null ? null : selected.getName();
-        externalToolItems.setAll(copyTools(config.getSettings().getExternalTools()));
-        if (externalToolList != null && selectedName != null) {
-            for (var t : externalToolItems) {
-                if (selectedName.equals(t.getName())) {
-                    externalToolList.getSelectionModel().select(t);
-                    break;
-                }
-            }
-        }
-    }
-
-    /**
      * Re-reads every list editor whose working copy is written back whole (External Tools, Abbreviations,
      * Remote sites). Each is a snapshot of a shared store that a command, a tool window or another window's
      * Settings can change; saving a stale snapshot deleted whatever had been added since. Runs whenever the
@@ -8466,7 +8267,9 @@ public class SettingsWindow {
      * elsewhere. Field edits commit on focus loss, so nothing typed is pending when it runs.
      */
     private void reloadStoreBackedEditors() {
-        reloadExternalTools();
+        if (externalToolsEditor != null) {
+            externalToolsEditor.reload();
+        }
         reloadAbbrevs();
         reloadRemote();
     }
@@ -8486,29 +8289,6 @@ public class SettingsWindow {
         if (reloadTemplates != null) {
             reloadTemplates.run();
         }
-    }
-
-    private static boolean sameTools(
-            java.util.List<com.editora.externaltool.ExternalTool> a,
-            java.util.List<com.editora.externaltool.ExternalTool> b) {
-        if (a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            com.editora.externaltool.ExternalTool x = a.get(i);
-            com.editora.externaltool.ExternalTool y = b.get(i);
-            if (x != y
-                    && !(java.util.Objects.equals(x.getName(), y.getName())
-                            && java.util.Objects.equals(x.getCommand(), y.getCommand())
-                            && java.util.Objects.equals(x.getArguments(), y.getArguments())
-                            && java.util.Objects.equals(x.getWorkingDir(), y.getWorkingDir())
-                            && x.getStdin() == y.getStdin()
-                            && x.getOutput() == y.getOutput()
-                            && x.isEnabled() == y.isEnabled())) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static boolean sameAbbrevs(

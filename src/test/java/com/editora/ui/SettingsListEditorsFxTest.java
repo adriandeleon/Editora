@@ -13,9 +13,11 @@ import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DialogPane;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.Region;
@@ -103,6 +105,61 @@ class SettingsListEditorsFxTest {
         });
         action.run();
         return closed.get();
+    }
+
+    /** Runs {@code action}, answering the dialog it opens with {@code answer}; returns the dialog's text. */
+    private static String answeringDialogs(ButtonType answer, Runnable action) {
+        java.util.concurrent.atomic.AtomicReference<String> text = new java.util.concurrent.atomic.AtomicReference<>();
+        Platform.runLater(() -> {
+            for (Window win : List.copyOf(Window.getWindows())) {
+                if (win.getScene() != null && win.getScene().getRoot() instanceof DialogPane pane && win.isShowing()) {
+                    text.set(pane.getContentText());
+                    ((Button) pane.lookupButton(answer)).fire();
+                }
+            }
+        });
+        action.run();
+        return text.get();
+    }
+
+    private static ListView<ExternalTool> toolList(SettingsWindow w) {
+        return FxTestSupport.field(FxTestSupport.field(w, "externalToolsEditor"), "list");
+    }
+
+    /**
+     * External Tools applies every edit as it is made (no Save button), and Remove asks first with Cancel as the
+     * default button: Cancel keeps the tool, OK deletes it.
+     */
+    @Test
+    void anExternalToolIsSavedWithoutAButtonAndRemoveAsksFirst() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx));
+            FxTestSupport.runOnFx(() -> {
+                Region pg = page(w, "EXTERNAL_TOOLS");
+                assertTrue(
+                        all(pg, Button.class, new ArrayList<>()).stream()
+                                .noneMatch(b -> tr("settings.save").equals(b.getText())),
+                        "no Save button");
+                assertEquals(
+                        tr("settings.externalTool.empty"), ((Label) toolList(w).getPlaceholder()).getText());
+                button(pg, tr("settings.externalTool.add")).fire();
+                TextField command = fields(pg).get(1);
+                command.setText("jq .");
+                command.fireEvent(new ActionEvent());
+                assertEquals(
+                        "jq .",
+                        fx.shared.getSettings().getExternalTools().get(0).getCommand());
+                String name = fx.shared.getSettings().getExternalTools().get(0).getName();
+
+                Button remove = button(pg, tr("settings.externalTool.remove"));
+                String asked = answeringDialogs(ButtonType.CANCEL, remove::fire);
+                assertEquals(tr("settings.externalTool.confirmDelete", name), asked);
+                assertEquals(1, fx.shared.getSettings().getExternalTools().size(), "Cancel keeps the tool");
+                answeringDialogs(ButtonType.OK, remove::fire);
+                assertEquals(0, fx.shared.getSettings().getExternalTools().size(), "OK deletes it");
+                FxTestSupport.<Stage>field(w, "stage").hide();
+            });
+        }
     }
 
     private static SettingsWindow shown(FxWindowFixture fx) {
@@ -477,9 +534,7 @@ class SettingsListEditorsFxTest {
                 // The second row can be edited straight away (it used to be refused as a duplicate id).
                 List<TextField> tfs = fields(pg);
                 tfs.get(1).setText("echo");
-                assertEquals(
-                        0,
-                        dismissingDialogs(() -> button(pg, tr("settings.save")).fire()));
+                assertEquals(0, dismissingDialogs(() -> tfs.get(1).fireEvent(new ActionEvent())));
                 assertEquals(
                         "echo",
                         fx.shared.getSettings().getExternalTools().get(1).getCommand());
@@ -492,17 +547,17 @@ class SettingsListEditorsFxTest {
                                 .filter(c -> c.id().startsWith("externalTool.run."))
                                 .count());
                 Region pg = page(w, "EXTERNAL_TOOLS");
-                ListView<ExternalTool> list = FxTestSupport.field(w, "externalToolList");
+                ListView<ExternalTool> list = toolList(w);
                 list.getSelectionModel().select(0);
                 List<TextField> tfs = fields(pg);
                 tfs.get(0).setText("Fmt");
-                button(pg, tr("settings.save")).fire();
+                tfs.get(0).fireEvent(new ActionEvent());
                 SettingsWindow.ShortcutActions actions = FxTestSupport.field(w, "shortcutActions");
                 actions.rebind("externalTool.run.fmt", "C-M-9");
                 assertEquals("externalTool.run.fmt", keymap.commandFor("C-M-9"));
 
                 tfs.get(0).setText("Format JSON");
-                button(pg, tr("settings.save")).fire();
+                tfs.get(0).fireEvent(new ActionEvent());
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
@@ -516,10 +571,12 @@ class SettingsListEditorsFxTest {
                                 .keybindingsFor(KeymapManager.isMac())
                                 .containsValue("externalTool.run.fmt"),
                         "no override is left on the id nothing registers");
-                ListView<ExternalTool> list = FxTestSupport.field(w, "externalToolList");
+                ListView<ExternalTool> list = toolList(w);
                 list.getSelectionModel().select(0);
-                button(page(w, "EXTERNAL_TOOLS"), tr("settings.externalTool.remove"))
-                        .fire();
+                answeringDialogs(
+                        ButtonType.OK,
+                        () -> button(page(w, "EXTERNAL_TOOLS"), tr("settings.externalTool.remove"))
+                                .fire());
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {

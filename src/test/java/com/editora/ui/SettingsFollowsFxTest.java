@@ -414,7 +414,7 @@ class SettingsFollowsFxTest {
                             "", "x", "", "", ExternalTool.StdinSource.NONE, ExternalTool.OutputTarget.CONSOLE, true))));
             rig.show();
             Region page = rig.page("EXTERNAL_TOOLS");
-            ListView<ExternalTool> list = rig.control("externalToolList");
+            ListView<ExternalTool> list = FxTestSupport.field(rig.control("externalToolsEditor"), "list");
             assertEquals(2, list.getItems().size());
             rig.stage().getScene().getRoot().applyCss();
             rig.stage().getScene().getRoot().layout();
