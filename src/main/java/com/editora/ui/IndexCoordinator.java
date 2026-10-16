@@ -236,8 +236,9 @@ final class IndexCoordinator {
         if (file == null || !Vfs.isLocal(file) || !file.startsWith(indexedRoot)) {
             return;
         }
-        // The buffer's text is authoritative and already in memory, so this costs no disk read.
-        String language = LanguageRegistry.forFileName(file.getFileName().toString());
+        // The buffer's text is authoritative and already in memory, so this costs no disk read. Its language,
+        // too: an extension-less script is shell by its #! line, which its file name does not say.
+        String language = buffer.getLanguage();
         index.put(file, DeclarationScanner.scan(buffer.getContent(), language));
         if (!projectFiles.contains(file)) {
             // A file first saved after the walk: its symbols were found but the file itself was not, so
@@ -359,11 +360,34 @@ final class IndexCoordinator {
 
     /** The symbols of one file on disk, or none when it has no declaration rules or is too large to read. */
     private static List<Symbol> scanFile(Path file) throws IOException {
-        String language = LanguageRegistry.forFileName(file.getFileName().toString());
+        String language = languageOf(file);
         if (!DeclarationScanner.supports(language) || Files.size(file) > MAX_FILE_BYTES) {
             return List.of();
         }
         return DeclarationScanner.scan(Files.readString(file), language);
+    }
+
+    /**
+     * The language a file is indexed as: by its name, or — for a name with no extension that says nothing,
+     * such as {@code bin/release} — by its {@code #!} line, the way the editor opens it. Only those files have
+     * their first bytes read.
+     */
+    static String languageOf(Path file) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        String language = LanguageRegistry.forFileName(name);
+        if (!LanguageRegistry.plaintext().equals(language) || name.indexOf('.') >= 0) {
+            return language;
+        }
+        byte[] head;
+        try (java.io.InputStream in = Files.newInputStream(file)) {
+            head = in.readNBytes(256);
+        } catch (IOException | RuntimeException e) {
+            return language;
+        }
+        String text = new String(head, java.nio.charset.StandardCharsets.ISO_8859_1);
+        int nl = text.indexOf('\n');
+        String extension = com.editora.editor.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
+        return extension == null ? language : LanguageRegistry.forFileName("shebang." + extension);
     }
 
     /** {@code path} (a file, or a folder and everything under it) was deleted: stop offering it now. */
@@ -527,8 +551,7 @@ final class IndexCoordinator {
                         return ProjectWalk.Verdict.SKIP;
                     }
                     files.add(p);
-                    String language =
-                            LanguageRegistry.forFileName(p.getFileName().toString());
+                    String language = languageOf(p);
                     // No declaration rules means no symbols whatever the file says: don't read 2 MB of a
                     // lock file, an image or a minified bundle to learn that.
                     if (!DeclarationScanner.supports(language)) {

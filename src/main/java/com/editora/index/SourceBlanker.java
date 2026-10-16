@@ -1,6 +1,7 @@
 package com.editora.index;
 
 import com.editora.editops.Commenter.CommentStyle;
+import com.editora.editops.ShellScan;
 
 /**
  * Replaces the contents of comments and string literals with spaces, preserving every offset.
@@ -93,6 +94,27 @@ final class SourceBlanker {
         }
         blankRange(out, start, n);
         return n;
+    }
+
+    /**
+     * {@link #blank} for shell, which also blanks what a line-at-a-time scan cannot see is data: the lines of
+     * a here-document and of a quoted string that spans lines (a usage text that mentions {@code deploy()}),
+     * found with {@link ShellScan}.
+     */
+    static String blankShell(String text, CommentStyle style) {
+        if (text == null || text.isEmpty()) {
+            return text == null ? "" : text;
+        }
+        ShellScan.Result r = ShellScan.scan(text);
+        char[] out = text.toCharArray();
+        for (int line = 0; line < r.lineCount(); line++) {
+            if (r.startState(line) != ShellScan.CODE) {
+                int from = r.lineStart(line);
+                int to = line + 1 < r.lineCount() ? r.lineStart(line + 1) - 1 : text.length();
+                blankRange(out, from, to);
+            }
+        }
+        return blank(new String(out), style);
     }
 
     /** Spaces out {@code [from,to)}, leaving newlines so line numbering is unaffected. */
