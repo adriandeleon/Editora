@@ -78,7 +78,10 @@ not attached after `ATTACH_DEADLINE` (30 s) stops the script. The window's debug
   crash) keeps its request unsent: `status.http.preScriptNotRun` with an `http.preScript.why.*` reason.
   `client.exit()` is not an error. Scripts never see secrets (`request.environment.get` is the env file as written).
 - Debug Request only: `--allow-inspector` with the permission model kept (adl, 2026-10-16); the inspector listens
-  on a random 127.0.0.1 port while the session lasts. Breakpoints in a `.http` file only on script lines.
+  on a random 127.0.0.1 port while the session lasts. `--allow-inspector` exists from Node 24.12 / 25.0; before
+  that the permission model shuts the inspector for good, so a debugged script there runs without `--permission`
+  (`HttpScripts.launchFlags` / `allowsInspector`), and the debugger is told (`Debugger.attach(…, unguardedNode)`)
+  to say so in the Debug console and status bar; the response carries `http.warn.debugUnguarded`. Breakpoints in a `.http` file only on script lines.
 - Every path handed to Node is a real path: under the permission model Node may not read a link on the way
   (`/var` on macOS).
 

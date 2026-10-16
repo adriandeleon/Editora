@@ -368,9 +368,10 @@ final class DebugCoordinator {
     /**
      * Attaches the JavaScript debugger to an HTTP Client script waiting on its inspector {@code port} (Debug Request):
      * a session called {@code label}, stepping over the runner {@code shim}, with every breakpoint — the {@code .http}
-     * file's script lines and script files alike. Called on the FX thread.
+     * file's script lines and script files alike. {@code unguardedNode} names a Node that runs it without its permission
+     * model (one that cannot let a debugger in under it), which the console and status bar then say. FX thread.
      */
-    void attachHttpScript(int port, String label, Path shim) {
+    void attachHttpScript(int port, String label, Path shim, String unguardedNode) {
         if (!debugEffectiveFor("javascript")) {
             host.setStatus(tr("status.http.debugUnavailable"));
             return;
@@ -384,6 +385,12 @@ final class DebugCoordinator {
             skip.add(shim.toString());
         }
         withClosedBreakpoints(() -> dapManager.startJsAttach(port, label, dir, skip));
+        if (unguardedNode != null) {
+            // Said after the session starts (which clears the console), where the user is looking.
+            String why = tr("status.http.debugUnguarded", unguardedNode);
+            panel().appendOutput(why + System.lineSeparator(), "stderr");
+            host.setStatus(why);
+        }
     }
 
     /** Window close: the before-launch build must not outlive the window that started it. */

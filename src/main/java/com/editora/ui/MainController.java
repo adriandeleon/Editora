@@ -6381,8 +6381,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         return null;
                     }
                     // Told on a launcher thread once the script waits; the session starts on the FX thread.
-                    return (port, label, shim) ->
-                            Platform.runLater(() -> debugCoordinator.attachHttpScript(port, label, shim));
+                    return (port, label, shim, unguarded) ->
+                            Platform.runLater(() -> debugCoordinator.attachHttpScript(port, label, shim, unguarded));
                 }
             });
 

@@ -80,8 +80,52 @@ class DebugScriptsIntegrationTest {
 
     @Test
     void aBreakpointInTheHttpFileAndOneInAHandlerFileBothStop(@TempDir Path tmp) throws Exception {
+        List<String> unguarded = new CopyOnWriteArrayList<>();
+        HttpExchange ex = debugRun(tmp, null, unguarded);
+        int[] v = NodeResponseScripts.version(com.editora.process.ProcessRunner.resolveExecutable(List.of("node"))
+                .get(0));
+        boolean keepsModel = HttpScripts.guardFor(v) == HttpScripts.Guard.NONE || HttpScripts.allowsInspector(v);
+        String told = keepsModel ? "null" : "v" + v[0] + "." + v[1] + "." + v[2];
+        assertEquals(List.of(told, told), unguarded);
+        if (keepsModel) {
+            assertTrue(ex.result().warnings().isEmpty(), ex.result().warnings().toString());
+        }
+    }
+
+    @Test
+    void anOlderNodeIsDebuggedWithoutItsPermissionModelAndSaysSo(@TempDir Path tmp) throws Exception {
+        assumeTrue(
+                !System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"),
+                "a sh stand-in");
+        String real = com.editora.process.ProcessRunner.resolveExecutable(List.of("node"))
+                .get(0);
+        // A Node that says it is 22.23.2 (no --allow-inspector there) and runs the real one otherwise.
+        Path fake = tmp.resolve("bin").resolve("node");
+        Files.createDirectories(fake.getParent());
+        Files.writeString(
+                fake,
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo v22.23.2; exit 0; fi\nexec \"" + real
+                        + "\" \"$@\"\n");
+        assertTrue(fake.toFile().setExecutable(true));
+        List<String> unguarded = new CopyOnWriteArrayList<>();
+        HttpExchange ex = debugRun(tmp.resolve("run"), fake.toString(), unguarded);
+        assertEquals(List.of("v22.23.2", "v22.23.2"), unguarded, "the debugger is told, for each script");
+        assertTrue(
+                ex.result().warnings().stream().anyMatch(w -> w.contains("Node.js v22.23.2 cannot let a debugger in")),
+                ex.result().warnings().toString());
+    }
+
+    /**
+     * Debug Request of a request with an inline handler and a handler file, each with a breakpoint, on {@code node}
+     * (null: the one on the PATH): both stop, at their files and lines, and the result arrives once resumed. What each
+     * script's debugger was told of its Node ({@code unguardedNode}) is added to {@code unguarded}.
+     */
+    private HttpExchange debugRun(Path tmp, String node, List<String> unguarded) throws Exception {
         Path home = Path.of(System.getProperty("user.home"));
         assumeTrue(DebugAdapterLocator.locateJsDebugServer("", home).isPresent(), "needs vscode-js-debug");
+        Files.createDirectories(tmp);
         Path dir = Files.createDirectories(tmp.resolve("api")).toRealPath();
         Path cache = Files.createDirectories(tmp.resolve("cache"));
 
@@ -135,13 +179,15 @@ class DebugScriptsIntegrationTest {
         assumeTrue(detected.get(60, TimeUnit.SECONDS), "needs node on the PATH");
 
         List<String> labels = new CopyOnWriteArrayList<>();
-        NodeResponseScripts.Debugger debugger = (port, label, shim) -> {
+        NodeResponseScripts.Debugger debugger = (port, label, shim, unguardedNode) -> {
             labels.add(label);
+            unguarded.add(String.valueOf(unguardedNode));
             Platform.runLater(() -> manager.startJsAttach(
                     port, label, shim.getParent(), List.of(shim.toString(), "<node_internals>/**")));
         };
         ResponseScripts scripts = new NodeResponseScripts(
-                new NodeResponseScripts.Settings(true, "node", Duration.ofSeconds(5), cache, debugger),
+                new NodeResponseScripts.Settings(
+                        true, node == null ? "node" : node, Duration.ofSeconds(5), cache, debugger),
                 new NodeResponseScripts.Trust() {
                     @Override
                     public SecretGate.Verdict allowRun(java.util.function.BooleanSupplier cancelled) {
@@ -190,5 +236,6 @@ class DebugScriptsIntegrationTest {
         assertEquals(1, tests.passed(), tests.toString());
         assertEquals(List.of("status 200"), tests.log());
         assertEquals(List.of("Response handler of one", "Response handler of one"), labels);
+        return got.get().get(0);
     }
 }

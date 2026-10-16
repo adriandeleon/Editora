@@ -91,9 +91,11 @@ public final class NodeResponseScripts implements ResponseScripts {
     public interface Debugger {
         /**
          * Called on a launcher thread once the script named {@code label} waits on {@code port}; {@code shim} is the
-         * runner around it, to be stepped over.
+         * runner around it, to be stepped over. {@code unguardedNode} is the Node version when the script runs without
+         * the permission model because that Node cannot let a debugger in under it ({@link
+         * HttpScripts#allowsInspector}), else null.
          */
-        void attach(int port, String label, Path shim);
+        void attach(int port, String label, Path shim, String unguardedNode);
     }
 
     /** How long a debugged script waits for its debugger to attach. */
@@ -264,7 +266,7 @@ public final class NodeResponseScripts implements ResponseScripts {
                     stdin,
                     settings.timeout(),
                     input.cancelled(),
-                    watch(tr("http.debug.label.handler", label(request)), ready.shim()));
+                    watch(tr("http.debug.label.handler", label(request)), ready));
             if (launch.cancelled()) {
                 break;
             }
@@ -283,6 +285,8 @@ public final class NodeResponseScripts implements ResponseScripts {
         }
         if (node.guard() == HttpScripts.Guard.NONE) {
             warnings.add(tr("http.warn.nodeUnguarded", node.version()));
+        } else if (debugging() && debugsUnguarded(ready)) {
+            warnings.add(tr("http.warn.debugUnguarded", node.version()));
         }
         return new Result(tests, changes, warnings);
     }
@@ -346,7 +350,7 @@ public final class NodeResponseScripts implements ResponseScripts {
                     stdin,
                     settings.timeout(),
                     input.cancelled(),
-                    watch(tr("http.debug.label.pre", label(request)), ready.shim()));
+                    watch(tr("http.debug.label.pre", label(request)), ready));
             if (launch.cancelled()) {
                 return cancelled();
             }
@@ -382,6 +386,8 @@ public final class NodeResponseScripts implements ResponseScripts {
         }
         if (node.guard() == HttpScripts.Guard.NONE) {
             warnings.add(tr("http.warn.nodeUnguarded", node.version()));
+        } else if (debugging() && debugsUnguarded(ready)) {
+            warnings.add(tr("http.warn.debugUnguarded", node.version()));
         }
         return new PreResult(null, variables, tests, changes, warnings);
     }
@@ -414,13 +420,20 @@ public final class NodeResponseScripts implements ResponseScripts {
     private static List<String> argv(Ready ready, boolean debug) {
         List<String> argv = new ArrayList<>();
         argv.add(ready.node().executable());
-        argv.addAll(HttpScripts.flags(ready.node().guard(), ready.shim()));
-        if (debug) {
-            argv.addAll(HttpScripts.debugFlags(
-                    ready.node().guard(), HttpScripts.parseVersion(ready.node().version())));
-        }
+        argv.addAll(HttpScripts.launchFlags(
+                ready.node().guard(), HttpScripts.parseVersion(ready.node().version()), ready.shim(), debug));
         argv.add(ready.shim().toString());
         return argv;
+    }
+
+    /**
+     * Whether a debugged script on this Node runs without its permission model: the model is on for every other run,
+     * but this Node cannot open the inspector under it ({@link HttpScripts#allowsInspector}).
+     */
+    private static boolean debugsUnguarded(Ready ready) {
+        return ready.node().guard() != HttpScripts.Guard.NONE
+                && !HttpScripts.allowsInspector(
+                        HttpScripts.parseVersion(ready.node().version()));
     }
 
     private boolean debugging() {
@@ -428,9 +441,15 @@ public final class NodeResponseScripts implements ResponseScripts {
     }
 
     /** What a debugged launch watches for, or null for a run that is not debugged. */
-    private DebugWatch watch(String label, Path shim) {
+    private DebugWatch watch(String label, Ready ready) {
         Debugger d = settings.debugger();
-        return d == null ? null : new DebugWatch(d, label, shim);
+        return d == null
+                ? null
+                : new DebugWatch(
+                        d,
+                        label,
+                        ready.shim(),
+                        debugsUnguarded(ready) ? ready.node().version() : null);
     }
 
     /** A request as a debug session names it: its {@code @name}, else its method and URL as written. */
@@ -603,13 +622,15 @@ public final class NodeResponseScripts implements ResponseScripts {
         private final Debugger debugger;
         private final String label;
         private final Path shim;
+        private final String unguardedNode;
         private volatile long listeningAt;
         private volatile boolean attached;
 
-        DebugWatch(Debugger debugger, String label, Path shim) {
+        DebugWatch(Debugger debugger, String label, Path shim, String unguardedNode) {
             this.debugger = debugger;
             this.label = label;
             this.shim = shim;
+            this.unguardedNode = unguardedNode;
         }
 
         void onLine(String line) {
@@ -617,7 +638,7 @@ public final class NodeResponseScripts implements ResponseScripts {
             if (listeningAt == 0 && m.find()) {
                 listeningAt = System.nanoTime();
                 try {
-                    debugger.attach(Integer.parseInt(m.group(1)), label, shim);
+                    debugger.attach(Integer.parseInt(m.group(1)), label, shim, unguardedNode);
                 } catch (RuntimeException failed) {
                     // no debugger attaches: the deadline stops the script
                 }

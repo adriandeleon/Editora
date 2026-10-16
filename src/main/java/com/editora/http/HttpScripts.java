@@ -116,6 +116,32 @@ public final class HttpScripts {
         return flags;
     }
 
+    /**
+     * Whether Node {@code version} lets a debugger in under its permission model: {@code --allow-inspector} exists from
+     * 24.12 (and 25.0). Before that the permission model shuts the inspector with no way to open it, so a debugged
+     * script runs without the permission model there (adl, 2026-10-16), and says so.
+     */
+    public static boolean allowsInspector(int[] version) {
+        if (version == null || version.length < 2) {
+            return false;
+        }
+        return version[0] >= 25 || (version[0] == 24 && version[1] >= 12);
+    }
+
+    /**
+     * Every flag a script's Node gets before the shim: the permission model for {@code guard} letting it read only
+     * {@code shim}, and for a {@code debug} run the inspector flags — on a Node that cannot let a debugger in under its
+     * permission model ({@link #allowsInspector}), without the permission model (adl, 2026-10-16).
+     */
+    public static List<String> launchFlags(Guard guard, int[] version, Path shim, boolean debug) {
+        Guard g = debug && guard != Guard.NONE && !allowsInspector(version) ? Guard.NONE : guard;
+        List<String> out = new ArrayList<>(flags(g, shim));
+        if (debug) {
+            out.addAll(debugFlags(g, version));
+        }
+        return out;
+    }
+
     /** Whether Node {@code version} takes {@code --disable-warning} (20.11+, 21.3+, 22+). */
     static boolean disablesWarnings(int[] version) {
         if (version == null || version.length < 2) {

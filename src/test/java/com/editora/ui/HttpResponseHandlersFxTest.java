@@ -24,6 +24,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpScripts;
 import com.editora.http.HttpTests;
 import com.editora.http.NodeResponseScripts;
 import com.editora.process.ProcessRunner;
@@ -376,7 +377,12 @@ class HttpResponseHandlersFxTest {
         assumeTrue(nodeAvailable(), "node is not installed");
         ops.trust = true;
         java.util.concurrent.BlockingQueue<String> attached = new java.util.concurrent.LinkedBlockingQueue<>();
-        ops.debugger = (port, label, shim) -> attached.add(port + " " + label + " " + shim.getFileName());
+        java.util.concurrent.atomic.AtomicReference<String> unguardedSeen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ops.debugger = (port, label, shim, unguarded) -> {
+            unguardedSeen.set(String.valueOf(unguarded));
+            attached.add(port + " " + label + " " + shim.getFileName());
+        };
         EditorBuffer b = httpBuffer(
                 dir.resolve("api.http"), "### login\nGET " + url("/login") + "\n\n> {% client.log('ran') %}\n");
         FxTestSupport.runOnFx(coordinator::debugRequestAtCaret);
@@ -386,6 +392,13 @@ class HttpResponseHandlersFxTest {
         assertTrue(Integer.parseInt(parts[0]) > 0, call);
         assertTrue(parts[1].startsWith("Response handler of login "), call);
         assertTrue(parts[1].endsWith(".js"), "the shim is named, to be stepped over: " + call);
+        int[] v = NodeResponseScripts.version(
+                ProcessRunner.resolveExecutable(List.of("node")).get(0));
+        boolean keepsModel = HttpScripts.guardFor(v) == HttpScripts.Guard.NONE || HttpScripts.allowsInspector(v);
+        assertEquals(
+                keepsModel ? "null" : "v" + v[0] + "." + v[1] + "." + v[2],
+                unguardedSeen.get(),
+                "an older Node is debugged without its permission model, and says which Node");
         assertTrue(FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b)), "waiting for its debugger");
         FxTestSupport.runOnFx(() -> coordinator.cancelRun(b)); // nobody attaches here: Cancel ends it
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
