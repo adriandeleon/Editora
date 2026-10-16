@@ -6127,10 +6127,18 @@ public class SettingsWindow {
                         config.getSettings().getPluginRegistryUrl(),
                         config.getSettings().getPluginRegistryUrlRaw()),
                 now -> {
+                    if (!now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now)) {
+                        return; // the field is red and says why; the registry in use stays
+                    }
                     config.getSettings().setPluginRegistryUrl(now);
                     apply();
                     updateRegistryWarn();
                 });
+        pluginRegistryField.textProperty().addListener((o, was, now) -> {
+            boolean bad = !now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now);
+            pluginRegistryField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
+            pluginRegistryField.setTooltip(bad ? new Tooltip(tr("settings.plugins.registryNotHttps")) : null);
+        });
         Label regNote = note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);

@@ -78,4 +78,26 @@ class SettingsPluginsFxTest {
             assertTrue(rows.stream().allMatch(CheckBox::isDisabled));
         });
     }
+
+    /** http:// and plain text used to be saved and only failed at Browse, in untranslated English. */
+    @Test
+    void aRegistryThatIsNotAnHttpsAddressIsRefusedWithTheReason() throws Exception {
+        SettingsWindow w = showPlugins();
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField reg = FxTestSupport.field(w, "pluginRegistryField");
+            reg.setText("http://registry.example.invalid/index.json");
+            reg.fireEvent(new javafx.event.ActionEvent());
+            assertEquals("", fx.shared.getSettings().getPluginRegistryUrlRaw(), "the built-in registry stays");
+            assertTrue(reg.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(
+                    Messages.tr("settings.plugins.registryNotHttps"),
+                    reg.getTooltip().getText());
+            reg.setText("https://registry.example.invalid/index.json");
+            reg.fireEvent(new javafx.event.ActionEvent());
+            assertFalse(reg.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(
+                    "https://registry.example.invalid/index.json",
+                    fx.shared.getSettings().getPluginRegistryUrlRaw());
+        });
+    }
 }
