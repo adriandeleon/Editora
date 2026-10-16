@@ -19,7 +19,6 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.RootResolver;
 import com.editora.run.ProgramArgs;
 import com.editora.test.TestRunRecognizer;
-import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -482,8 +481,9 @@ final class BuildCoordinator {
         host.setStatus(tr("status.build.started", tool.displayName(), label));
         java.util.Map<String, String> environment = tool != BuildTool.MAVEN
                 ? java.util.Map.of()
-                : Vfs.isRemote(root)
-                        // The host's own JDK, or the one configured for it; never this machine's JDK or PATH.
+                : !com.editora.process.ExecTargets.runsHere(root)
+                        // Where the build runs elsewhere: the JDK there, or the one configured for it; never
+                        // this machine's JDK or PATH.
                         ? RunCoordinator.remoteJdkEnvironment(
                                 com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
                         : com.editora.run.JdkToolchain.environment(

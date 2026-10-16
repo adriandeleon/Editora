@@ -273,7 +273,11 @@ final class RunCoordinator {
             reportIncomplete(cfg, "status.run.configNeedsWorkingDir");
             return;
         }
+        // Two questions: whether reading the folder is a network round trip (an SFTP folder), and whether the
+        // program runs elsewhere (a remote host, a container, WSL) — where this machine's environment and
+        // executables mean nothing.
         boolean remote = com.editora.vfs.Vfs.isRemote(cwd);
+        boolean elsewhere = !com.editora.process.ExecTargets.runsHere(cwd);
         Path script = RunConfigWorkingDirectory.script(cfg, cwd);
         if (!remote) {
             // Checked here, so the message names what is missing: a missing directory used to surface as
@@ -291,7 +295,7 @@ final class RunCoordinator {
         }
         java.util.Map<String, String> env;
         try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(remote));
+            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(elsewhere));
         } catch (ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
             ops.editConfiguration(cfg.name());
@@ -307,7 +311,7 @@ final class RunCoordinator {
             ShellCommand.Launch shell;
             try {
                 shell = ShellCommand.launch(
-                        firstLine, cfg.target(), cfg.interpreter(), cfg.interpreterOptions(), existsHere(remote));
+                        firstLine, cfg.target(), cfg.interpreter(), cfg.interpreterOptions(), existsHere(elsewhere));
             } catch (ProgramArgs.UnclosedQuoteException e) {
                 host.setStatus(tr("status.run.optionsUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
                 ops.editConfiguration(cfg.name());
@@ -315,7 +319,7 @@ final class RunCoordinator {
             }
             java.util.Map<String, String> all = new java.util.LinkedHashMap<>(shell.env());
             all.putAll(env); // the configuration's own variables win over a shebang's env assignments
-            if (!remote && ShellCommand.isBash(shell.interpreter().get(0))) {
+            if (!elsewhere && ShellCommand.isBash(shell.interpreter().get(0))) {
                 ReadPromptShim.environment(System.getenv()).forEach(all::putIfAbsent);
             }
             streamRun(cfg.name(), cwd, ScriptRunCommand.build(cfg.type(), cfg.target(), args, shell), all);
@@ -537,7 +541,8 @@ final class RunCoordinator {
         }
         java.util.Map<String, String> env;
         try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(com.editora.vfs.Vfs.isRemote(root)));
+            env = com.editora.run.EnvVars.resolve(
+                    cfg.env(), inheritedVariables(!com.editora.process.ExecTargets.runsHere(root)));
         } catch (ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
             ops.editConfiguration(cfg.name());
@@ -545,7 +550,7 @@ final class RunCoordinator {
         }
         String jdkHome = jdkHomeFor(root, cfg);
         java.util.Map<String, String> launchEnv = javaEnvironment(root, jdkHome, env);
-        boolean onHost = com.editora.vfs.Vfs.isRemote(root);
+        boolean onHost = !com.editora.process.ExecTargets.runsHere(root);
         String javaOverride =
                 onHost ? (jdkHome.isBlank() ? "" : hostJava(jdkHome, null)) : JdkToolchain.javaExecutable(jdkHome);
         String label = shortName(cfg.mainClass());
@@ -765,8 +770,9 @@ final class RunCoordinator {
             if (args == null) {
                 return;
             }
-            String java =
-                    com.editora.vfs.Vfs.isRemote(root) ? hostJava(jdkHome, null) : JdkToolchain.javaExecutable(jdkHome);
+            String java = !com.editora.process.ExecTargets.runsHere(root)
+                    ? hostJava(jdkHome, null)
+                    : JdkToolchain.javaExecutable(jdkHome);
             List<String> command = JavaRunCommand.build(java, List.of(), cp, m.fqn(), List.of(), args);
             streamRun(shortName(m.fqn()), root, command, javaEnvironment(root, jdkHome, null));
         });
@@ -821,7 +827,7 @@ final class RunCoordinator {
     }
 
     private String javaExecutableFor(Path root, String resolved) {
-        if (com.editora.vfs.Vfs.isRemote(root)) {
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
             return hostJava(remoteJdkHome(root), resolved);
         }
         String configured = JdkToolchain.javaExecutable(effectiveMavenJdk(root, null));
@@ -833,13 +839,13 @@ final class RunCoordinator {
      * in its tools, or blank for its own java), never this machine's setting, which names a folder here.
      */
     private String jdkHomeFor(Path root, RunConfiguration cfg) {
-        return com.editora.vfs.Vfs.isRemote(root) ? remoteJdkHome(root) : effectiveMavenJdk(root, cfg);
+        return !com.editora.process.ExecTargets.runsHere(root) ? remoteJdkHome(root) : effectiveMavenJdk(root, cfg);
     }
 
     /** The environment for a Java program or build of {@code root}: on a host, its JDK only — not this PATH. */
     private static java.util.Map<String, String> javaEnvironment(
             Path root, String jdkHome, java.util.Map<String, String> configured) {
-        if (!com.editora.vfs.Vfs.isRemote(root)) {
+        if (com.editora.process.ExecTargets.runsHere(root)) {
             return launchEnvironment(jdkHome, configured);
         }
         java.util.LinkedHashMap<String, String> env = new java.util.LinkedHashMap<>(remoteJdkEnvironment(jdkHome));
@@ -891,7 +897,7 @@ final class RunCoordinator {
         try {
             // jdtls names the file as its machine does: on a remote project, a path on the host.
             Path project = ops.projectRoot();
-            Path file = project != null && com.editora.vfs.Vfs.isRemote(project)
+            Path file = project != null && !com.editora.process.ExecTargets.runsHere(project)
                     ? com.editora.process.ExecTargets.forPath(project).toPath(mc.filePath())
                     : Path.of(mc.filePath());
             return ops.programArgs(file);
@@ -987,7 +993,7 @@ final class RunCoordinator {
         boolean javaSource = !buffer.isPython() && !buffer.isShell();
         // On a remote host the program runs with the host's own java and environment: this machine's JDK
         // setting is a path here, and its PATH means nothing there. A host can name its JDK (jdk.home).
-        boolean remote = com.editora.vfs.Vfs.isRemote(path);
+        boolean remote = !com.editora.process.ExecTargets.runsHere(path);
         String jdkHome = !javaSource
                 ? ""
                 : remote ? remoteJdkHome(path) : host.settings().getMavenJdkHome();
@@ -1045,7 +1051,7 @@ final class RunCoordinator {
         java.util.Map<String, String> env = launchEnv;
         ShellCommand.Launch shell = null;
         if (buffer.isShell()) {
-            boolean remote = com.editora.vfs.Vfs.isRemote(path);
+            boolean remote = !com.editora.process.ExecTargets.runsHere(path);
             // The shebang decides the interpreter and its flags, as running ./script would.
             shell = ShellCommand.launch(firstLine(buffer), path.getFileName().toString(), "", "", existsHere(remote));
             java.util.Map<String, String> shellEnv = new java.util.LinkedHashMap<>(shell.env());
@@ -1069,7 +1075,8 @@ final class RunCoordinator {
     private List<String> buildRunCommand(
             EditorBuffer buffer, Path path, String javaExecutable, List<String> args, ShellCommand.Launch shell) {
         if (shell != null) {
-            return ShellCommand.argv(shell, path.toString(), args);
+            return ShellCommand.argv(
+                    shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
         }
         List<String> command = new ArrayList<>();
         if (buffer.isPython()) {
@@ -1084,7 +1091,7 @@ final class RunCoordinator {
                 command.add(String.valueOf(javaSource));
             }
         }
-        command.add(path.toString());
+        command.add(com.editora.process.ExecTargets.forPath(path).toTargetPath(path)); // its name where it runs
         command.addAll(args);
         return command;
     }

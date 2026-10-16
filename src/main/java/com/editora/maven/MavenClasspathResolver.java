@@ -18,7 +18,7 @@ public final class MavenClasspathResolver {
      * The selected JDK is exposed to Maven through {@code JAVA_HOME} and the process {@code PATH}.
      */
     public static List<String> resolve(Path root, String jdkHome) {
-        if (com.editora.vfs.Vfs.isRemote(root)) {
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
             return resolveOnHost(root, jdkHome);
         }
         Path output = null;
