@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Settings → Remote: editing the saved sites in a shown window, the way a user does, one field at a time. */
 @Tag("fx")
@@ -105,6 +106,68 @@ class SettingsRemoteSitesFxTest {
             assertEquals(2222, saved.port());
             assertEquals("deploy", saved.user());
             assertEquals(1, fx.shared.getConnections().size());
+        }
+    }
+
+    private static boolean red(TextField field) {
+        return field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER);
+    }
+
+    /** A port of 70000 or a host with spaces used to be saved without a word, failing only at Connect. */
+    @Test
+    void aValueThatCannotWorkIsRefusedWithTheReasonAndNotSaved() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> fx.shared.putConnection(new RemoteConnection(
+                    "box.example", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Box", "")));
+            SettingsWindow w = showRemote(fx);
+            ListView<RemoteConnection> list = FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
+            List<TextField> f = formFields(w);
+            FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+
+            typeAndEnter(f.get(2), "70000");
+            assertTrue(red(f.get(2)));
+            assertEquals(
+                    Messages.tr("settings.remote.check.port"),
+                    f.get(2).getTooltip().getText());
+            assertEquals("70000", f.get(2).getText(), "what was typed stays, to be fixed");
+            assertEquals(22, fx.shared.getConnections().get(0).port(), "nothing was saved");
+
+            typeAndEnter(f.get(2), "");
+            assertFalse(red(f.get(2)));
+            assertEquals("22", f.get(2).getText(), "blank is the default port, shown");
+
+            typeAndEnter(f.get(1), "my box");
+            assertTrue(red(f.get(1)));
+            assertEquals("box.example", fx.shared.getConnections().get(0).host());
+            typeAndEnter(f.get(1), "box2.example");
+            assertFalse(red(f.get(1)));
+            assertEquals("box2.example", fx.shared.getConnections().get(0).host());
+        }
+    }
+
+    /** The key field's own hint reads ~/.ssh/id_ed25519, but a ~ path was saved as typed and never found. */
+    @Test
+    void aKeyFileUnderTildeIsExpandedAndAMissingOneIsFlagged() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> fx.shared.putConnection(
+                    new RemoteConnection("box.example", 22, "me", RemoteConnection.AuthMethod.KEY, "", "Box", "")));
+            SettingsWindow w = showRemote(fx);
+            ListView<RemoteConnection> list = FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
+            List<TextField> f = formFields(w);
+            FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+
+            typeAndEnter(f.get(4), "~/.ssh/editora-test-no-such-key");
+            String expanded = System.getProperty("user.home") + "/.ssh/editora-test-no-such-key";
+            assertEquals(expanded, fx.shared.getConnections().get(0).keyPath());
+            assertEquals(expanded, f.get(4).getText());
+            long deadline = System.nanoTime() + 10_000_000_000L;
+            while (System.nanoTime() < deadline
+                    && FxTestSupport.callOnFx(() -> f.get(4).getTooltip()) == null) {
+                Thread.sleep(20);
+            }
+            assertEquals(
+                    Messages.tr("settings.remote.check.keyMissing", expanded),
+                    FxTestSupport.callOnFx(() -> f.get(4).getTooltip().getText()));
         }
     }
 }

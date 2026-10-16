@@ -109,6 +109,10 @@ final class RemoteSitesPane {
         keyBrowse.setOnAction(e -> {
             FileChooser fc = new FileChooser();
             fc.setTitle(tr("remote.keyPrompt"));
+            java.io.File ssh = new java.io.File(System.getProperty("user.home", ""), ".ssh");
+            if (ssh.isDirectory()) {
+                fc.setInitialDirectory(ssh); // where keys live
+            }
             java.io.File f = fc.showOpenDialog(keyBrowse.getScene().getWindow());
             if (f != null) {
                 keyPath.setText(f.getAbsolutePath());
@@ -119,6 +123,10 @@ final class RemoteSitesPane {
         WrapRow keyRow = new WrapRow(6, 6, WrapRow.setGrow(keyPath), keyBrowse);
         // The key-file row only applies to "Private key file" auth.
         auth.valueProperty().addListener((o, a, b) -> keyRow.setDisable(b != RemoteConnection.AuthMethod.KEY));
+        // A value that cannot work turns its field red with the reason as it is typed; it is not saved until fixed.
+        host.textProperty().addListener((o, a, b) -> mark(host, RemoteSiteCheck.host(b)));
+        port.textProperty().addListener((o, a, b) -> mark(port, RemoteSiteCheck.port(b)));
+        user.textProperty().addListener((o, a, b) -> mark(user, RemoteSiteCheck.user(b)));
 
         GridPane form = new GridPane();
         form.setHgap(8);
@@ -237,6 +245,9 @@ final class RemoteSitesPane {
             } finally {
                 loading = false;
             }
+            if (now != null) {
+                checkKeyFile(now);
+            }
         });
 
         Button add = new Button(tr("settings.remote.add"));
@@ -293,18 +304,19 @@ final class RemoteSitesPane {
         if (cur == null || i < 0 || loading) {
             return;
         }
-        int portNum;
-        try {
-            portNum = Integer.parseInt(port.getText().strip());
-        } catch (NumberFormatException ex) {
-            portNum = 0; // the record coerces <= 0 to the default SFTP port
+        if (RemoteSiteCheck.host(host.getText()) != null
+                || RemoteSiteCheck.port(port.getText()) != null
+                || RemoteSiteCheck.user(user.getText()) != null) {
+            return; // the field says what is wrong; the site keeps its last good values until it is fixed
         }
+        String portText = port.getText().strip();
+        String key = RemoteSiteCheck.expandHome(keyPath.getText(), System.getProperty("user.home", ""));
         RemoteConnection updated = new RemoteConnection(
                 host.getText().strip(),
-                portNum,
+                portText.isEmpty() ? 0 : Integer.parseInt(portText), // the record makes 0 the default SFTP port
                 user.getText().strip(),
                 auth.getValue() == null ? RemoteConnection.AuthMethod.DEFAULT_KEYS : auth.getValue(),
-                keyPath.getText().strip(),
+                key,
                 label.getText().strip(),
                 cur.lastPath()); // preserve the remembered path; not edited here
         // What was decided for the host (may run commands, its tools) follows the connection when its host,
@@ -321,6 +333,45 @@ final class RemoteSitesPane {
         }
         list.refresh();
         persist();
+        loading = true; // show what was saved: the default port for a blank one, the key path with ~ expanded
+        try {
+            port.setText(String.valueOf(updated.port()));
+            keyPath.setText(updated.keyPath());
+        } finally {
+            loading = false;
+        }
+        checkKeyFile(updated);
+    }
+
+    /** Marks {@code field} red with {@code problemKey}'s text as its tooltip, or clears that. */
+    private static void mark(TextField field, String problemKey) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problemKey != null);
+        field.setTooltip(problemKey == null ? null : new javafx.scene.control.Tooltip(tr(problemKey)));
+    }
+
+    /**
+     * Warns (amber, not refused: the key may live on a drive that is not mounted yet) when a "Private key file"
+     * site names a file that cannot be read. The check touches the disk, so it runs off the FX thread.
+     */
+    private void checkKeyFile(RemoteConnection site) {
+        keyPath.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_WARNING, false);
+        keyPath.setTooltip(null);
+        if (site.auth() != RemoteConnection.AuthMethod.KEY) {
+            return;
+        }
+        String path = site.keyPath();
+        java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> !path.isBlank() && java.nio.file.Files.isReadable(java.nio.file.Path.of(path)))
+                .exceptionally(e -> false)
+                .thenAccept(readable -> javafx.application.Platform.runLater(() -> {
+                    if (!readable && path.equals(keyPath.getText())) {
+                        keyPath.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_WARNING, true);
+                        keyPath.setTooltip(new javafx.scene.control.Tooltip(
+                                path.isBlank()
+                                        ? tr("settings.remote.check.keyNone")
+                                        : tr("settings.remote.check.keyMissing", path)));
+                    }
+                }));
     }
 
     private void persist() {
