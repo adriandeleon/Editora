@@ -113,6 +113,7 @@ class HttpResponseViewFixesFxTest {
             stages.forEach(Stage::close);
             buffers.forEach(EditorBuffer::dispose);
         });
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private String url(String path) {
