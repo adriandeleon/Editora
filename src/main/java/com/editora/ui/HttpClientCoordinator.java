@@ -680,20 +680,28 @@ final class HttpClientCoordinator {
                 return;
             }
             String request = CurlImport.toHttpRequest(clip.strip());
+            if (request == null) {
+                host.setStatus(tr("status.http.notCurl")); // no curl word or no URL: nothing worth writing
+                return;
+            }
             // Every {{ of the command was written as \{{ (sent as {{, never read as a variable): say so.
             boolean escaped = clip.contains("{{");
+            // Body lines the format reads as comments, handlers or a new request: said, not silently dropped.
+            int altered = CurlImport.alteredBodyLines(request);
+            String note = altered > 0 ? " — " + tr("status.http.curlBodyAltered", String.valueOf(altered)) : "";
             EditorBuffer b = host.activeBuffer();
             if (b != null && b.isHttpFile() && b.isEditable()) {
                 String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
                 b.getArea().insertText(b.getArea().getLength(), snippet);
                 b.getArea().moveTo(b.getArea().getLength());
-                host.setStatus(tr(escaped ? "status.http.curlImportedEscaped" : "status.http.curlImported"));
+                host.setStatus(tr(escaped ? "status.http.curlImportedEscaped" : "status.http.curlImported") + note);
             } else {
                 EditorBuffer nb = new EditorBuffer();
                 nb.setDisplayName("requests.http");
                 ops.openTab(nb);
                 nb.setContent(request);
-                host.setStatus(tr(escaped ? "status.http.curlImportedNewEscaped" : "status.http.curlImportedNew"));
+                host.setStatus(
+                        tr(escaped ? "status.http.curlImportedNewEscaped" : "status.http.curlImportedNew") + note);
             }
         });
     }
