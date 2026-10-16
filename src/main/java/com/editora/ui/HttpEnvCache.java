@@ -30,7 +30,7 @@ final class HttpEnvCache {
 
     private record Key(Path file, Path project) {}
 
-    /** Reads env files (and other small HTTP-client files) off the FX thread, in order; idles out. */
+    /** Reads env files, and writes saved responses, off the FX thread, in order; idles out. */
     static final ExecutorService IO = io();
 
     private static ExecutorService io() {

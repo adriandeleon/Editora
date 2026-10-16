@@ -242,7 +242,8 @@ class HttpHistoryRound3FxTest {
         run(second, b2, 1);
         FxTestSupport.runOnFx(() -> first.runRequest(b1, 4));
         awaitHit("GET /slow");
-        FxTestSupport.runOnFx(() -> second.panelForTest(b2).clearButtonForTest().fire());
+        FxTestSupport.runOnFx(
+                () -> second.panelForTest(b2).controlsForTest().clearButton().fire());
         HttpHistorySync.awaitIdleForTest();
         slow.countDown();
         await(() -> !first.isRunningForTest(b1));
@@ -303,8 +304,8 @@ class HttpHistoryRound3FxTest {
         hits.clear();
         FxTestSupport.runOnFx(() -> {
             HttpClientPanel p = c.panelForTest(b);
-            p.historyPickerForTest().setValue(p.history().get(0));
-            p.runButtonForTest().fire();
+            p.controlsForTest().historyPicker().setValue(p.history().get(0));
+            p.controlsForTest().runButton().fire();
         });
         await(() -> !c.isRunningForTest(b));
         assertEquals(1, hits.size(), hits.toString());
@@ -329,8 +330,8 @@ class HttpHistoryRound3FxTest {
         host.statuses.clear();
         FxTestSupport.runOnFx(() -> {
             HttpClientPanel p = c.panelForTest(b);
-            p.historyPickerForTest().setValue(p.history().get(0));
-            p.runButtonForTest().fire();
+            p.controlsForTest().historyPicker().setValue(p.history().get(0));
+            p.controlsForTest().runButton().fire();
         });
         await(() -> !c.isRunningForTest(b));
         assertEquals(1, hits.size(), hits.toString());
@@ -352,8 +353,8 @@ class HttpHistoryRound3FxTest {
         hits.clear();
         FxTestSupport.runOnFx(() -> {
             HttpClientPanel p = c.panelForTest(b);
-            p.historyPickerForTest().setValue(p.history().get(0));
-            p.runButtonForTest().fire();
+            p.controlsForTest().historyPicker().setValue(p.history().get(0));
+            p.controlsForTest().runButton().fire();
         });
         await(() -> !c.isRunningForTest(b));
         assertEquals(1, hits.size(), hits.toString());
@@ -370,8 +371,8 @@ class HttpHistoryRound3FxTest {
         String command = FxTestSupport.callOnFx(() -> {
             Clipboard.getSystemClipboard().clear();
             HttpClientPanel p = c.panelForTest(b);
-            p.historyPickerForTest().setValue(p.history().get(0));
-            p.copyCurlButtonForTest().fire();
+            p.controlsForTest().historyPicker().setValue(p.history().get(0));
+            p.controlsForTest().copyCurlButton().fire();
             return Clipboard.getSystemClipboard().getString();
         });
         assertTrue(command != null && command.startsWith("curl "), String.valueOf(command));

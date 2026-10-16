@@ -207,7 +207,7 @@ class HttpHistoryRound2FxTest {
         for (int i = 0; i < 3; i++) {
             int index = i;
             FxTestSupport.runOnFx(() -> {
-                p.historyPickerForTest().setValue(p.history().get(index));
+                p.controlsForTest().historyPicker().setValue(p.history().get(index));
                 c.copyActiveAsCurl();
             });
             assertEquals(tr("status.http.curlCopied"), second.last);

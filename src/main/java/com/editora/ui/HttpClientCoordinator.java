@@ -1,9 +1,5 @@
 package com.editora.ui;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -15,35 +11,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 
-import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
-import javafx.stage.FileChooser;
 
 import com.editora.config.HttpResponseHistory;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.CapturedResponses;
-import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
 import com.editora.http.HttpClientService;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
-import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
-import com.editora.http.ResponseRedirects;
 import com.editora.http.RunEnvironment;
-import com.editora.io.StagedExport;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -137,6 +122,9 @@ final class HttpClientCoordinator {
     /** Each panel's saved history: read, saved, merged across windows, and moved with its file. */
     private final HttpHistorySync history;
 
+    /** Copy as cURL, Open in tab and Save for a response the panel shows. */
+    private final HttpResponseActions actions;
+
     /** Each file's env files as last read, so the FX thread never reads them (a run reads them on its worker). */
     private final HttpEnvCache envCache = new HttpEnvCache();
 
@@ -150,64 +138,8 @@ final class HttpClientCoordinator {
                 environments::get,
                 environments::putIfAbsent, // a remembered environment never replaces this file's own choice
                 this::refreshEnvironments);
-        service.setRedirectGuard(this::beforeRedirectOverwrite);
-    }
-
-    /** How long a run waits for the previous content of a redirect target to become a durable revision. */
-    private static final long REDIRECT_CAPTURE_TIMEOUT_SECONDS = 30;
-
-    /**
-     * {@link ResponseRedirects.Guard}: called on the request's worker thread before {@code >>!} replaces an
-     * existing file. The decision is made on the FX thread (buffers and history live there) and awaited here;
-     * if it cannot be had — the window is closing, the history store does not answer — the file is left alone.
-     */
-    private ResponseRedirects.Decision beforeRedirectOverwrite(Path target) {
-        CompletableFuture<ResponseRedirects.Decision> decision = new CompletableFuture<>();
-        Platform.runLater(() -> {
-            try {
-                decideRedirectOverwrite(target, decision::complete);
-            } catch (RuntimeException failure) {
-                decision.complete(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED));
-            }
-        });
-        try {
-            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        } catch (ExecutionException | TimeoutException unanswered) {
-            // fall through: not preserved
-        }
-        return ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED);
-    }
-
-    /** FX thread: refuses a target that is open with unsaved changes, else records it in Local History. */
-    private void decideRedirectOverwrite(Path target, Consumer<ResponseRedirects.Decision> completion) {
-        Path wanted = target.toAbsolutePath().normalize();
-        boolean[] unsaved = new boolean[1];
-        host.forEachBuffer(b -> {
-            if (b.getPath() != null
-                    && b.isDirty()
-                    && b.getPath().toAbsolutePath().normalize().equals(wanted)) {
-                unsaved[0] = true;
-            }
-        });
-        if (unsaved[0]) {
-            completion.accept(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_UNSAVED_CHANGES));
-            return;
-        }
-        HistoryCoordinator history = ops.history();
-        if (history == null) {
-            completion.accept(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.NOT_KEPT));
-            return;
-        }
-        history.captureBeforeOverwriteDurably(target, capture -> {
-            ResponseRedirects.Verdict verdict = !capture.safe()
-                    ? ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED
-                    : capture.recorded()
-                            ? ResponseRedirects.Verdict.KEPT_IN_HISTORY
-                            : ResponseRedirects.Verdict.NOT_KEPT;
-            completion.accept(new ResponseRedirects.Decision(verdict, capture.expectedBytes()));
-        });
+        this.actions = new HttpResponseActions(host, ops);
+        service.setRedirectGuard(new HttpRedirectGuard(host, ops::history));
     }
 
     /** Whether the HTTP Client is enabled (the setting, suppressed in Simple UI mode). */
@@ -327,8 +259,8 @@ final class HttpClientCoordinator {
         var s = host.settings();
         HttpClientPanel p = new HttpClientPanel(
                 () -> saveResponse(buffer),
-                this::copyAsCurl,
-                this::openResponseInTab,
+                actions::copyAsCurl,
+                actions::openInTab,
                 s.getFontFamily(),
                 editorFontSize());
         p.setOnEnvironmentChanged(env -> {
@@ -382,6 +314,12 @@ final class HttpClientCoordinator {
     /** The active buffer's response panel, or {@code null}. */
     private HttpClientPanel activePanel() {
         return panelFor(host.activeBuffer());
+    }
+
+    /** Save response for the response {@code buffer}'s panel shows (see {@link HttpResponseActions#save}). */
+    private void saveResponse(EditorBuffer buffer) {
+        HttpClientPanel p = panelFor(buffer);
+        actions.save(buffer, p == null ? null : p.getSelectedExchange(), p == null ? null : p.getSelectedEntry());
     }
 
     /** Test-harness accessor for a buffer's response panel (mirrors {@code CsvCoordinator.gridNodeFor}). */
@@ -798,7 +736,7 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.curlNotSent")); // its URL and headers may still be templates
                 return;
             }
-            copyAsCurl(ex);
+            actions.copyAsCurl(ex);
         });
     }
 
@@ -811,7 +749,7 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.noResponseSelected"));
                 return;
             }
-            openResponseInTab(ex);
+            actions.openInTab(ex);
         });
     }
 
@@ -975,117 +913,6 @@ final class HttpClientCoordinator {
         // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read oddly.
         host.setStatus(
                 total > 1 ? tr("status.http.cancelledAfter", kept.size(), total) : tr("status.http.cancelledTooLate"));
-    }
-
-    private void copyAsCurl(HttpExchange ex) {
-        HttpExchange.Details how = ex.details();
-        if (HttpExchange.isBodyPlaceholder(ex.requestBody())
-                && how.bodyFile() == null
-                && how.formParts().isEmpty()) {
-            // Saved by an older version, which kept only the body's summary: a command would upload that text.
-            host.setStatus(tr("status.http.curlUnavailable"));
-            return;
-        }
-        String curl = CurlExport.toCurl(ex); // from how it was sent: file upload, form fields, digest, -L
-        ClipboardContent cc = new ClipboardContent();
-        cc.putString(curl);
-        Clipboard.getSystemClipboard().setContent(cc);
-        host.setStatus(tr("status.http.curlCopied"));
-    }
-
-    private void openResponseInTab(HttpExchange ex) {
-        HttpResult r = ex.result();
-        if (r.failed()) {
-            host.setStatus(tr("status.http.noResponseSelected"));
-            return;
-        }
-        if (r.binary()) {
-            host.setStatus(tr("status.http.binaryResponse")); // no text form — Save keeps the bytes
-            return;
-        }
-        EditorBuffer buffer = new EditorBuffer();
-        buffer.setDisplayName("response" + HttpResponseFormat.extensionFor(r.contentType()));
-        ops.openTab(buffer);
-        buffer.setContent(r.body()); // the body as received; the viewer's pretty-printing is display-only
-    }
-
-    /**
-     * Save response: the body exactly as received (the default — the bytes, so an image or an archive is the
-     * real file), or the whole response with its status line and headers as text.
-     */
-    private void saveResponse(EditorBuffer buffer) {
-        HttpClientPanel p = panelFor(buffer);
-        HttpExchange ex = p == null ? null : p.getSelectedExchange();
-        if (ex == null || ex.result().failed()) {
-            host.setStatus(tr("status.http.noResponseSelected"));
-            return;
-        }
-        HttpResult r = ex.result();
-        String ext = HttpResponseFormat.extensionFor(r.contentType());
-        FileChooser chooser = new FileChooser();
-        chooser.setTitle(tr("dialog.saveResponse.title"));
-        FileChooser.ExtensionFilter bodyOnly =
-                new FileChooser.ExtensionFilter(tr("dialog.saveResponse.body"), "*" + (ext.isEmpty() ? ".txt" : ext));
-        FileChooser.ExtensionFilter report =
-                new FileChooser.ExtensionFilter(tr("dialog.saveResponse.withHeaders"), "*.txt");
-        chooser.getExtensionFilters().setAll(bodyOnly, report);
-        chooser.setSelectedExtensionFilter(bodyOnly);
-        chooser.setInitialFileName(saveName(ex.url(), ext));
-        Path dir = folderOf(buffer) != null ? folderOf(buffer) : ops.projectRoot(); // untitled: the project
-        if (dir != null && Files.isDirectory(dir)) {
-            chooser.setInitialDirectory(dir.toFile());
-        }
-        File chosen = chooser.showSaveDialog(host.window());
-        if (chosen == null) {
-            return;
-        }
-        // Written off the FX thread (a response may be 50 MB). Staged: the Save dialog may have confirmed replacing a
-        // file, which a failed write must not empty.
-        Path target = chosen.toPath();
-        boolean asReport = chooser.getSelectedExtensionFilter() == report;
-        HttpHistoryEntry entry = p.getSelectedEntry();
-        boolean partial = entry != null && entry.bodyCut();
-        HttpEnvCache.IO.execute(() -> {
-            String status;
-            try {
-                if (asReport) {
-                    StagedExport.writeString(target, HttpResponseFormat.render(r));
-                } else {
-                    byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
-                            ? r.rawBody()
-                            : r.body().getBytes(StandardCharsets.UTF_8);
-                    StagedExport.write(target, bytes);
-                }
-                status = tr(partial ? "status.http.savedPartial" : "status.http.saved", target.getFileName());
-            } catch (IOException | RuntimeException e) {
-                status = tr("status.http.saveFailed", e.getMessage());
-            }
-            String done = status;
-            Platform.runLater(() -> host.setStatus(done));
-        });
-    }
-
-    /**
-     * The file name Save offers: the URL's last path segment when it already names a file ({@code logo.png}),
-     * else {@code response} plus the extension of the content type ({@code response.json}). Pure.
-     */
-    static String saveName(String url, String ext) {
-        String u = url == null ? "" : url;
-        int cut = u.length();
-        for (char c : new char[] {'?', '#'}) {
-            int at = u.indexOf(c);
-            if (at >= 0) {
-                cut = Math.min(cut, at);
-            }
-        }
-        String path = u.substring(0, cut);
-        int scheme = path.indexOf("://");
-        int slash = path.lastIndexOf('/');
-        String last = slash < 0 || slash <= scheme + 2 ? "" : path.substring(slash + 1);
-        if (last.matches("[\\w-]+(\\.[\\w-]+)*\\.[A-Za-z0-9]{1,8}")) {
-            return last;
-        }
-        return "response" + (ext == null || ext.isEmpty() ? ".txt" : ext);
     }
 
     /**

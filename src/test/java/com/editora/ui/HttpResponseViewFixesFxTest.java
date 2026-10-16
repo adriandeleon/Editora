@@ -187,7 +187,7 @@ class HttpResponseViewFixesFxTest {
         hits.clear();
         // A DELETE inserted at the top: the "Missing" request is now third, and position 1 holds "Users".
         FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "### Danger\nDELETE " + url("/danger") + "\n\n"));
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         finished();
         assertEquals(List.of("GET /missing"), hits, "the server got the request the response came from");
@@ -202,7 +202,8 @@ class HttpResponseViewFixesFxTest {
         HttpClientCoordinator c = coordinator(new Ops(config));
         String text = "GET {{host}}/one\n\n###\nGET {{host}}/items/{{id}}\n";
         EditorBuffer b = open(c, work.resolve("t.http"), text);
-        javafx.scene.control.ComboBox<String> env = c.panelForTest(b).environmentPickerForTest();
+        javafx.scene.control.ComboBox<String> env =
+                c.panelForTest(b).controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("a"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         finished();
@@ -211,7 +212,7 @@ class HttpResponseViewFixesFxTest {
             env.setValue("b"); // the URL it sent no longer equals what the template gives now
         });
         hits.clear();
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         finished();
         assertEquals(List.of("GET /items/2"), hits);
@@ -229,7 +230,7 @@ class HttpResponseViewFixesFxTest {
             b.getArea().moveTo(1, 0);
         });
         hits.clear();
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         host.awaitStatus(s -> s.equals(tr("status.http.rerunAtCaret", "GET " + url("/gone"))));
         finished();
@@ -254,7 +255,7 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         finished();
         HttpClientPanel p = c.panelForTest(b);
-        TextArea headers = p.headersAreaForTest();
+        TextArea headers = p.controlsForTest().headersArea();
         String shown = FxTestSupport.callOnFx(headers::getText);
         assertTrue(shown.startsWith("HTTP"), "the headers box starts with the status line: " + shown);
         assertFalse(shown.contains("⚠"), "no warning sits among the headers");
@@ -325,7 +326,7 @@ class HttpResponseViewFixesFxTest {
         HttpClientPanel p = c.panelForTest(b);
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
-        Timeline elapsed = p.elapsedForTest();
+        Timeline elapsed = p.controlsForTest().elapsed();
         assertEquals(Animation.Status.RUNNING, FxTestSupport.callOnFx(elapsed::getStatus));
         FxTestSupport.runOnFx(() -> c.onBufferClosed(b));
         assertEquals(Animation.Status.STOPPED, FxTestSupport.callOnFx(elapsed::getStatus));
@@ -347,7 +348,7 @@ class HttpResponseViewFixesFxTest {
         });
         FxTestSupport.drainFx();
         HttpClientPanel p = c.panelForTest(b);
-        javafx.scene.Node body = p.bodyAreaForTest();
+        javafx.scene.Node body = p.controlsForTest().bodyArea();
         await(() -> body.getScene() != null); // the panel's own SplitPane adds the body on its first layout
         FxTestSupport.runOnFx(() -> {
             body.requestFocus();
@@ -376,7 +377,7 @@ class HttpResponseViewFixesFxTest {
             st.show();
         });
         FxTestSupport.drainFx();
-        javafx.scene.control.ComboBox<?> history = p.historyPickerForTest();
+        javafx.scene.control.ComboBox<?> history = p.controlsForTest().historyPicker();
         double w = FxTestSupport.callOnFx(history::getWidth);
         assertTrue(w <= 280 - 60, "the History picker narrowed to the panel: " + w);
     }

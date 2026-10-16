@@ -119,7 +119,7 @@ class HttpVariableHintsFxTest {
         await(() -> !b.httpVariableDiagnostics().isEmpty());
         assertEquals(List.of("{{host}}", "{{token}}"), marked(b), "no environment chosen yet");
 
-        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
+        ComboBox<String> env = coordinator.panelForTest(b).controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         await(() -> b.httpVariableDiagnostics().size() == 1);
         assertEquals(List.of("{{token}}"), marked(b), "the env file of the parent folder applies");

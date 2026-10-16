@@ -256,12 +256,14 @@ class HttpResponseViewRound3FxTest {
             assertEquals(tr("status.http.remoteBlocked"), host.last);
             FxTestSupport.runOnFx(c::cancelActiveRequest);
             assertEquals(tr("status.http.remoteBlocked"), host.last);
-            FxTestSupport.runOnFx(() -> p.runButtonForTest().fire()); // disabled: does nothing
+            FxTestSupport.runOnFx(() -> p.controlsForTest().runButton().fire()); // disabled: does nothing
 
-            assertTrue(FxTestSupport.callOnFx(() -> p.runButtonForTest().isDisabled()), "Run is disabled");
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> p.controlsForTest().runButton().isDisabled()), "Run is disabled");
             assertEquals(
                     tr("httppanel.remoteRunTip"),
-                    FxTestSupport.callOnFx(() -> p.runBlockedTooltipForTest().getText()),
+                    FxTestSupport.callOnFx(
+                            () -> p.controlsForTest().runBlockedTooltip().getText()),
                     "and a tooltip says why");
         }
         // A local file still runs.
@@ -269,7 +271,7 @@ class HttpResponseViewRound3FxTest {
         HttpClientCoordinator c = coordinator();
         EditorBuffer local = open(c, work.resolve("local.http"), "GET " + url("/local") + "\n");
         assertFalse(FxTestSupport.callOnFx(
-                () -> c.panelForTest(local).runButtonForTest().isDisabled()));
+                () -> c.panelForTest(local).controlsForTest().runButton().isDisabled()));
         FxTestSupport.runOnFx(() -> c.runRequest(local, 0));
         finished();
         // Sent after the remote file's attempts, so anything they had sent would have arrived first.
@@ -290,7 +292,7 @@ class HttpResponseViewRound3FxTest {
             cc.putString("MARKER");
             Clipboard.getSystemClipboard().setContent(cc);
         });
-        var body = p.bodyAreaForTest();
+        var body = p.controlsForTest().bodyArea();
         FxTestSupport.runOnFx(() -> {
             body.requestFocus();
             body.selectRange(0, 1);
@@ -304,7 +306,7 @@ class HttpResponseViewRound3FxTest {
         });
         assertEquals(1, FxTestSupport.callOnFx(body::getCurrentParagraph), "C-n moved down a line");
 
-        TextArea head = p.headersAreaForTest();
+        TextArea head = p.controlsForTest().headersArea();
         String before = FxTestSupport.callOnFx(head::getText);
         FxTestSupport.runOnFx(() -> {
             head.requestFocus();
@@ -328,7 +330,7 @@ class HttpResponseViewRound3FxTest {
         showIn(p, exchange("w", ok("{}", List.of(), List.of("first warning", "second warning", "third warning"))));
         show(p, 700, 600);
         assertFalse(FxTestSupport.callOnFx(p::notesExpandedForTest), "more than two warnings start collapsed");
-        Label badge = p.warnBadgeLabelForTest();
+        Label badge = p.controlsForTest().warnBadgeLabel();
         assertTrue(FxTestSupport.callOnFx(badge::isFocusTraversable), "the badge takes the focus");
         FxTestSupport.runOnFx(() -> {
             badge.requestFocus();
@@ -337,23 +339,23 @@ class HttpResponseViewRound3FxTest {
         assertTrue(FxTestSupport.callOnFx(p::notesExpandedForTest), "Enter on the badge opens the warnings");
 
         FxTestSupport.runOnFx(() -> {
-            p.notesPaneForTest().setExpanded(false);
-            p.requestPaneForTest().setExpanded(true);
+            p.controlsForTest().notesPane().setExpanded(false);
+            p.controlsForTest().requestPane().setExpanded(true);
         });
         FxTestSupport.drainFx();
-        TextArea request = p.requestAreaForTest();
+        TextArea request = p.controlsForTest().requestArea();
         FxTestSupport.runOnFx(() -> {
             request.requestFocus();
             key(request, KeyCode.TAB, false, false, false);
         });
         assertEquals(
-                p.notesPaneForTest(),
+                p.controlsForTest().notesPane(),
                 FxTestSupport.callOnFx(() -> request.getScene().getFocusOwner()),
                 "Tab from the request reaches the collapsed warnings, not past them");
 
         FxTestSupport.runOnFx(() -> {
-            p.bodyAreaForTest().requestFocus();
-            key(p.bodyAreaForTest(), KeyCode.G, false, true, false); // C-g
+            p.controlsForTest().bodyArea().requestFocus();
+            key(p.controlsForTest().bodyArea(), KeyCode.G, false, true, false); // C-g
         });
         assertEquals(1, escapes[0], "C-g leaves the panel like Escape");
     }
@@ -374,12 +376,16 @@ class HttpResponseViewRound3FxTest {
         // The top section is fitted after layout: wait for it to settle rather than for a fixed time.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline
-                && (FxTestSupport.callOnFx(() -> p.notesAreaForTest().getHeight()) < 3.5 * row
-                        || FxTestSupport.callOnFx(() -> p.headersAreaForTest().getHeight()) < 4 * row)) {
+                && (FxTestSupport.callOnFx(() -> p.controlsForTest().notesArea().getHeight()) < 3.5 * row
+                        || FxTestSupport.callOnFx(
+                                        () -> p.controlsForTest().headersArea().getHeight())
+                                < 4 * row)) {
             Thread.sleep(20);
         }
-        double notes = FxTestSupport.callOnFx(() -> p.notesAreaForTest().getHeight());
-        double heads = FxTestSupport.callOnFx(() -> p.headersAreaForTest().getHeight());
+        double notes =
+                FxTestSupport.callOnFx(() -> p.controlsForTest().notesArea().getHeight());
+        double heads =
+                FxTestSupport.callOnFx(() -> p.controlsForTest().headersArea().getHeight());
         assertTrue(FxTestSupport.callOnFx(p::notesExpandedForTest));
         assertTrue(notes >= 3.5 * row, "both wrapped warnings show (" + notes + " px, row " + row + ")");
         assertTrue(heads >= 4 * row, "the headers keep several rows (" + heads + " px, row " + row + ")");
@@ -397,7 +403,7 @@ class HttpResponseViewRound3FxTest {
         show(p, 300, 600);
         showIn(p, exchange("n", ok("{\"x\":1}", List.of(), eleven)));
         await(() -> p.warnBadgeForTest() != null && p.warnBadgeForTest().equals("⚠ 11"));
-        Label status = p.statusLabelForTest();
+        Label status = p.controlsForTest().statusLabel();
         String shown = FxTestSupport.callOnFx(() -> ((Text) status.lookup(".text")).getText());
         assertEquals(FxTestSupport.callOnFx(status::getText), shown, "the status line is not ellipsized");
     }
@@ -413,7 +419,7 @@ class HttpResponseViewRound3FxTest {
         FxTestSupport.runOnFx(c::runFile);
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
         HttpClientPanel p = c.panelForTest(b);
-        FxTestSupport.runOnFx(() -> p.runButtonForTest().fire()); // Cancel
+        FxTestSupport.runOnFx(() -> p.controlsForTest().runButton().fire()); // Cancel
         releaseSlow.countDown();
         await(() -> p.runSummaryForTest() != null);
         assertEquals(tr("httppanel.runAllCancelled", 2, 4, 0L), FxTestSupport.callOnFx(p::runSummaryForTest));
@@ -444,7 +450,10 @@ class HttpResponseViewRound3FxTest {
                 "the instruction comes before the details, which a narrow status bar cuts: " + status);
         HttpClientPanel p = c.panelForTest(b);
         assertEquals(tr("httppanel.notSent"), FxTestSupport.callOnFx(p::statusForTest), "not \"Request failed\"");
-        assertTrue(FxTestSupport.callOnFx(() -> p.copyCurlButtonForTest().isDisabled()), "nothing to copy");
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> p.controlsForTest().copyCurlButton().isDisabled()),
+                "nothing to copy");
         FxTestSupport.runOnFx(() -> {
             ClipboardContent cc = new ClipboardContent();
             cc.putString("MARKER");
@@ -472,7 +481,7 @@ class HttpResponseViewRound3FxTest {
             b.getArea().moveTo(1, 0);
         });
         HttpClientPanel p = c.panelForTest(b);
-        FxTestSupport.runOnFx(() -> p.runButtonForTest().fire());
+        FxTestSupport.runOnFx(() -> p.controlsForTest().runButton().fire());
         host.awaitStatus(s -> s.startsWith("GET " + url("/kept"))); // the result replaced the status-bar note
         assertEquals(
                 tr("status.http.rerunAtCaret", "GET " + url("/gone")),
@@ -492,14 +501,15 @@ class HttpResponseViewRound3FxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 4));
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
         HttpClientPanel p = c.panelForTest(b);
-        FxTestSupport.runOnFx(() -> p.historyPickerForTest()
-                .setValue(p.historyPickerForTest().getItems().get(0)));
+        FxTestSupport.runOnFx(() -> p.controlsForTest()
+                .historyPicker()
+                .setValue(p.controlsForTest().historyPicker().getItems().get(0)));
         assertTrue(
                 FxTestSupport.callOnFx(p::headersForTest).startsWith("HTTP"), "an older response shows during the run");
         assertTrue(FxTestSupport.callOnFx(p::statusForTest).contains(url("/slow")), "…under the running status");
 
         FxTestSupport.runOnFx(() -> {
-            p.historyPickerForTest().setValue(null);
+            p.controlsForTest().historyPicker().setValue(null);
             c.cancelRun(b);
         });
         assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
@@ -558,12 +568,13 @@ class HttpResponseViewRound3FxTest {
         FxTestSupport.runOnFx(c::runFile);
         finished();
         HttpClientPanel p = c.panelForTest(b);
-        List<String> names = FxTestSupport.callOnFx(() -> p.historyPickerForTest().getItems().stream()
+        List<String> names = FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getItems().stream()
                 .map(HttpHistoryEntry::name)
                 .toList());
         assertEquals(List.of("B", "A"), names, "newest first, like the rest of History");
-        FxTestSupport.runOnFx(() -> p.historyPickerForTest()
-                .setValue(p.historyPickerForTest().getItems().get(1)));
+        FxTestSupport.runOnFx(() -> p.controlsForTest()
+                .historyPicker()
+                .setValue(p.controlsForTest().historyPicker().getItems().get(1)));
         String notes = FxTestSupport.callOnFx(p::notesForTest);
         assertTrue(notes.indexOf("{{u1}}") < notes.indexOf("{{u9}}"), "the URL's warning first: " + notes);
     }
@@ -576,18 +587,20 @@ class HttpResponseViewRound3FxTest {
                 p,
                 exchange("ok", ok("{}", List.of(), List.of())),
                 exchange("bad", HttpResult.failure("refused", List.of())));
-        await(() -> p.historyPickerForTest().getWidth() > 0);
+        await(() -> p.controlsForTest().historyPicker().getWidth() > 0);
         assertTrue(
-                FxTestSupport.callOnFx(() -> p.historyPickerForTest().getWidth()) > HttpPanelLayout.HISTORY_WIDTH,
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getWidth())
+                        > HttpPanelLayout.HISTORY_WIDTH,
                 "wider than 340 px in a wide panel");
         double[] widths = new double[2];
         for (int i = 0; i < 2; i++) {
             int k = i;
-            FxTestSupport.runOnFx(() -> p.historyPickerForTest()
-                    .setValue(p.historyPickerForTest().getItems().get(k)));
+            FxTestSupport.runOnFx(() -> p.controlsForTest()
+                    .historyPicker()
+                    .setValue(p.controlsForTest().historyPicker().getItems().get(k)));
             FxTestSupport.drainFx();
             widths[k] = FxTestSupport.callOnFx(() -> {
-                Label code = (Label) p.historyPickerForTest().lookup(".http-history-code");
+                Label code = (Label) p.controlsForTest().historyPicker().lookup(".http-history-code");
                 return Math.max(code.minWidth(-1), code.prefWidth(-1));
             });
         }
