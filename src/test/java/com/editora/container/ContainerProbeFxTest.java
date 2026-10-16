@@ -86,11 +86,13 @@ class ContainerProbeFxTest {
         resolver = path -> target.covers(path) ? target : null;
         ExecTargets.setRemoteEnabled(() -> true);
         ExecTargets.registerMapped(resolver);
+        ExecTargets.registerMapped(ContainerBindings.shared());
     }
 
     @AfterEach
     void tearDown() {
         ExecTargets.unregisterMapped(resolver);
+        ExecTargets.unregisterMapped(ContainerBindings.shared());
         ExecTargets.setRemoteEnabled(null);
         engine("rm", "-f", name);
     }
@@ -197,5 +199,37 @@ class ContainerProbeFxTest {
         assertTrue(done.await(60, TimeUnit.SECONDS));
         assertTrue(out.contains("hello Ñandú"), out.toString());
         assertEquals(3, exit[0]);
+    }
+
+    /** A dev container is found for its folder by the label the Dev Containers CLI and VS Code put on it. */
+    @Test
+    void aDevContainerIsFoundForItsFolderByItsLabel() throws Exception {
+        Path other = Files.createDirectories(dir.toRealPath().resolve("dev"));
+        String dev = name + "-dev";
+        ProcessRunner.Result run = engine(
+                "run",
+                "-d",
+                "--name",
+                dev,
+                "--label",
+                ContainerInfo.LOCAL_FOLDER_LABEL + "=" + other,
+                "-v",
+                other + ":/workspaces/dev:Z",
+                System.getProperty("container.probe.image", "eclipse-temurin:25-jdk"),
+                "sleep",
+                "infinity");
+        assertTrue(run.ok(), run.message());
+        try {
+            ContainerExecTarget found = ContainerBindings.shared().bind(other, null, ContainerBindings.lookup(engine));
+
+            assertNotNull(found, "the dev container for the folder");
+            assertEquals("container:" + dev, found.id());
+            ProcessRunner.Result pwd = ProcessRunner.run(other, Duration.ofSeconds(60), List.of("pwd"));
+            assertEquals("/workspaces/dev", pwd.out().strip(), pwd.message());
+            assertTrue(engine.runningContainers().contains(dev));
+        } finally {
+            ContainerBindings.shared().unbind(other);
+            engine("rm", "-f", dev);
+        }
     }
 }

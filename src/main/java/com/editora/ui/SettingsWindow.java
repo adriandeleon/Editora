@@ -369,6 +369,7 @@ public class SettingsWindow {
 
     private CheckBox snippetTabExpansionCheck;
     private CheckBox remoteExecutionCheck;
+    private TextField containerEngineField;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -5109,6 +5110,20 @@ public class SettingsWindow {
         execNote.setWrapText(true);
         execNote.setMaxWidth(460);
         cardRow(execCard, Category.REMOTE, execNote, "remote run command execute ssh host server");
+        containerEngineField = new TextField();
+        containerEngineField.setPromptText("docker");
+        containerEngineField.setPrefWidth(PATH_FIELD_WIDTH);
+        commitOnEnterOrBlur(containerEngineField, () -> config.getSettings().getContainerEngine(), now -> {
+            config.getSettings().setContainerEngine(now);
+            apply();
+        });
+        controlRow(
+                execCard,
+                Category.REMOTE,
+                tr("settings.remote.containerEngine"),
+                tr("settings.remote.containerEngineHint"),
+                containerEngineField,
+                "container docker podman engine dev container devcontainer run tools");
         return p;
     }
 
@@ -8559,6 +8574,7 @@ public class SettingsWindow {
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
             snippetTabExpansionCheck.setSelected(settings.isSnippetTabExpansion());
             remoteExecutionCheck.setSelected(settings.isRemoteExecution());
+            containerEngineField.setText(settings.getContainerEngine());
             autocompleteMermaidCheck.setSelected(settings.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());

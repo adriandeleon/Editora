@@ -847,6 +847,11 @@ class CommandSweepFxTest {
             if (command.contains("__EDITORA_PATH_BEGIN__")) {
                 return null;
             }
+            // The container engine asked which containers run (Containers: Run This Project's Tools in a
+            // Container… lists them): a read-only question, like a version probe.
+            if (command.matches("\\S*(docker|podman)(\\.exe)? (ps|inspect)\\b.*")) {
+                return null;
+            }
             String program = command.strip().split("\\s+", 2)[0];
             String name = program.substring(Math.max(program.lastIndexOf('/'), program.lastIndexOf('\\')) + 1);
             if (!name.equals("git") && !name.equals("git.exe")) {

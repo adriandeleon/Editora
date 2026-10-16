@@ -85,8 +85,22 @@ the leader of its own process group, so Stop signals the group with a second `ex
 Paths cross through the bind mounts read from `inspect` (`ContainerMounts`, deepest mount first; `ContainerInfo`
 also reads a dev container's `remoteUser` from its `devcontainer.metadata` label). Unlike an SSH session,
 killing the local `exec` client leaves the program running in the container: Editora stops what it started
-(`ProcessRegistry`). Not yet: binding a folder to its container, the consent question, a cache folder,
-forwarded ports. `ContainerProbeFxTest` is the opt-in check against a real engine
+(`ProcessRegistry`).
+
+A folder is bound to its container by `ContainerBindings` (one per app, the mapped resolver `App` registers):
+the container the user picked for the folder (`Settings.containerBindings`, folder path → container), else
+the running dev container started for it (its `devcontainer.local_folder` label), provided one of its mounts
+covers the folder. `ui/ContainerCoordinator` asks the engine off the FX thread when the window's project
+changes and when the window comes back to the front (at most every 30 s), then puts the one-time question
+per container, as for an SSH host (the answer is kept with the hosts' answers, by `container:<name>`); picking
+a container with Containers: Run This Project's Tools in a Container… is the agreement itself, and Containers:
+Run This Project's Tools Here forgets the pick and withdraws it. Until then, or with remote execution off, the
+folder's tools run here. When where a folder's tools run changes, a language server started on the other
+side is stopped and its tabs reopen on the right one (`LspManager.shutdownSessionsOnAnotherTarget`: a
+session remembers the target it started on). The engine's command is `Settings.containerEngine` (Settings →
+Remote; blank is `docker`). Not yet: a cache folder in the container (jdtls keeps its own default; the
+java-debug plugin is the container's own `dap.java`), forwarded ports (debuggers that listen on a port), and
+stopping a container's programs after Editora itself crashed. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
 
 - A command is one string built by `process/PosixShell`:
