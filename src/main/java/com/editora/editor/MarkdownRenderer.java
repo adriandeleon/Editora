@@ -1244,14 +1244,16 @@ public final class MarkdownRenderer {
      */
     private static Node highlightedCodeBlock(String literal, String info) {
         String code = stripTrailingNewline(literal);
-        IGrammar grammar = code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS ? null : grammarForInfo(info);
+        boolean console = ConsoleSession.isConsole(info); // a terminal session: prompts, commands, output
+        IGrammar grammar =
+                code.isEmpty() || code.length() > MAX_HIGHLIGHT_CHARS ? null : grammarForInfo(console ? "sh" : info);
         if (grammar == null) {
             return codeBlock(literal);
         }
         TextFlow flow = new TextFlow();
         flow.getStyleClass().add("md-code-block");
         flow.setMaxWidth(Double.MAX_VALUE);
-        String cacheKey = grammar.getScopeName() + '\u0000' + code;
+        String cacheKey = (console ? "console\u0000" : "") + grammar.getScopeName() + '\u0000' + code;
         List<Run> known = TOKEN_CACHE.get(cacheKey);
         if (known != null) {
             flow.getChildren().setAll(tokenNodes(known)); // seen before: coloured at once, no flash of plain text
@@ -1261,7 +1263,7 @@ public final class MarkdownRenderer {
         initial.getStyleClass().add("text");
         flow.getChildren().add(initial);
         CODE_HIGHLIGHT_POOL.execute(() -> {
-            List<Run> runs = tokenizeRuns(code, grammar);
+            List<Run> runs = console ? ConsoleSession.runs(code, grammar) : tokenizeRuns(code, grammar);
             if (runs == null) {
                 return; // tokenize failed — leave the plain text
             }
@@ -1368,6 +1370,7 @@ public final class MarkdownRenderer {
             Map.entry("go", "go"),
             Map.entry("bash", "sh"),
             Map.entry("shell", "sh"),
+            Map.entry("shellscript", "sh"), // VS Code's language id
             Map.entry("sh", "sh"),
             Map.entry("zsh", "sh"),
             Map.entry("cpp", "cpp"),

@@ -522,7 +522,8 @@ class RunConfigurationCommandsFxTest {
         assertEquals(2, pickerRows().size());
         answerPicker(1, KeyCode.ENTER);
 
-        assertEquals(List.of(tr("status.debug.configTypeUnsupported", "python")), runStatuses);
+        assertEquals(
+                List.of(tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python"))), runStatuses);
     }
 
     @Test
@@ -562,7 +563,7 @@ class RunConfigurationCommandsFxTest {
         assertEquals(
                 List.of(
                         tr("status.run.configNeedsTarget", "Deploy"),
-                        tr("status.debug.configTypeUnsupported", "python")),
+                        tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python"))),
                 runStatuses);
 
         // Renamed in Settings: the old ids must not linger in the palette.

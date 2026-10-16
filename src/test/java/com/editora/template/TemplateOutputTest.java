@@ -326,4 +326,41 @@ class TemplateOutputTest {
                         .primary(),
                 "nothing left to create");
     }
+
+    @Test
+    void templatesFollowTheProjectsIndentStyle(@TempDir Path tmp) throws Exception {
+        // B14: the template bodies' four spaces were written as is under `indent_style = tab`.
+        EditorConfigProperties tabs = new EditorConfigProperties(false, null, null, null, null, null, null, null);
+        EditorConfigProperties two = new EditorConfigProperties(true, 2, null, null, null, null, null, null);
+        String body = "main() {\n    if x; then\n        y\n    fi\n}\n  - yaml\n /** doc */";
+        assertEquals(
+                "main() {\n\tif x; then\n\t\ty\n\tfi\n}\n  - yaml\n /** doc */", TemplateOutput.reindent(body, tabs));
+        assertEquals(
+                "main() {\n  if x; then\n    y\n  fi\n}\n  - yaml\n /** doc */", TemplateOutput.reindent(body, two));
+        assertEquals(body, TemplateOutput.reindent(body, EditorConfigProperties.EMPTY), "no rule, no change");
+        assertEquals("main() {\n\t".length(), TemplateOutput.caretAfterReindent(body, "main() {\n    ".length(), tabs));
+
+        Path dir = Files.createDirectories(tmp.resolve("tabbed"));
+        TemplateOutput.Plan plan = TemplateOutput.plan(request(
+                bundled(tmp, "shell-script"), dir, Map.of("baseName", "tool", "summary", "S"), null, path -> tabs));
+        TemplateOutput.Outcome outcome = TemplateOutput.write(plan);
+        String written = Files.readString(dir.resolve("tool.sh"));
+        assertTrue(written.contains("main() {\n\t\n}"), written);
+        TemplateOutput.Target t = outcome.primary();
+        assertEquals(written.indexOf("main() {\n\t") + "main() {\n\t".length(), t.caret(), "the caret follows the tab");
+    }
+
+    @Test
+    void aScriptOnAFileSystemWithoutExecutableBitsIsReported(@TempDir Path tmp) throws Exception {
+        // B14: on Windows (no POSIX permissions) a new script silently got no executable bit.
+        Path zip = tmp.resolve("fs.zip");
+        try (java.nio.file.FileSystem fs = java.nio.file.FileSystems.newFileSystem(zip, Map.of("create", "true"))) {
+            Path root = fs.getPath("/");
+            assertFalse(TemplateOutput.create(root, root.resolve("tool.sh"), "#!/bin/sh\necho hi\n"));
+            assertTrue(TemplateOutput.create(root, root.resolve("notes.txt"), "no shebang\n"), "nothing to mark");
+        }
+        if (tmp.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            assertTrue(TemplateOutput.create(tmp, tmp.resolve("ok.sh"), "#!/bin/sh\n"));
+        }
+    }
 }

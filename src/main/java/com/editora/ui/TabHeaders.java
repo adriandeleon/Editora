@@ -93,8 +93,9 @@ final class TabHeaders {
         if (remote) {
             header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
         }
-        // A file-type glyph reflecting the file's kind (Java/Python/image/…), or a generic doc.
-        Node typeIcon = FileIcons.forFileName(buffer.getTitle());
+        // A file-type glyph reflecting the file's kind (Java/Python/image/…) — by its resolved language when the
+        // name says nothing (a shebang script, a picked language) — or a generic doc.
+        Node typeIcon = FileIcons.forBuffer(buffer.getTitle(), buffer.getLanguage());
         typeIcon.getStyleClass().add("tab-file-icon");
         header.getChildren().add(typeIcon);
         header.getChildren().add(title);

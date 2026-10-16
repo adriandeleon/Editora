@@ -236,8 +236,9 @@ final class IndexCoordinator {
         if (file == null || !Vfs.isLocal(file) || !file.startsWith(indexedRoot)) {
             return;
         }
-        // The buffer's text is authoritative and already in memory, so this costs no disk read.
-        String language = LanguageRegistry.forFileName(file.getFileName().toString());
+        // The buffer's text is authoritative and already in memory, so this costs no disk read. Its language,
+        // too: an extension-less script is shell by its #! line, which its file name does not say.
+        String language = buffer.getLanguage();
         index.put(file, DeclarationScanner.scan(buffer.getContent(), language));
         if (!projectFiles.contains(file)) {
             // A file first saved after the walk: its symbols were found but the file itself was not, so
@@ -359,11 +360,34 @@ final class IndexCoordinator {
 
     /** The symbols of one file on disk, or none when it has no declaration rules or is too large to read. */
     private static List<Symbol> scanFile(Path file) throws IOException {
-        String language = LanguageRegistry.forFileName(file.getFileName().toString());
+        String language = languageOf(file);
         if (!DeclarationScanner.supports(language) || Files.size(file) > MAX_FILE_BYTES) {
             return List.of();
         }
         return DeclarationScanner.scan(Files.readString(file), language);
+    }
+
+    /**
+     * The language a file is indexed as: by its name, or — for a name with no extension that says nothing,
+     * such as {@code bin/release} — by its {@code #!} line, the way the editor opens it. Only those files have
+     * their first bytes read.
+     */
+    static String languageOf(Path file) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        String language = LanguageRegistry.forFileName(name);
+        if (!LanguageRegistry.plaintext().equals(language) || name.indexOf('.') >= 0) {
+            return language;
+        }
+        byte[] head;
+        try (java.io.InputStream in = Files.newInputStream(file)) {
+            head = in.readNBytes(256);
+        } catch (IOException | RuntimeException e) {
+            return language;
+        }
+        String text = new String(head, java.nio.charset.StandardCharsets.ISO_8859_1);
+        int nl = text.indexOf('\n');
+        String extension = com.editora.editor.Shebang.extension(nl < 0 ? text : text.substring(0, nl));
+        return extension == null ? language : LanguageRegistry.forFileName("shebang." + extension);
     }
 
     /** {@code path} (a file, or a folder and everything under it) was deleted: stop offering it now. */
@@ -415,6 +439,83 @@ final class IndexCoordinator {
         projectRelPaths = List.of();
         indexedRoot = null;
         build(() -> host.setStatus(tr("status.index.built", index.symbolCount(), index.fileCount())));
+    }
+
+    /**
+     * Go to Definition without a language server: the declaration of the name at the caret, from the file's
+     * own declarations first, then the project's symbol index (one match jumps, several open the picker).
+     * Returns false — and does nothing — for a language the index does not read, so the caller's message
+     * stands.
+     */
+    boolean gotoDefinitionAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !DeclarationScanner.supports(b.getLanguage())) {
+            return false;
+        }
+        org.fxmisc.richtext.CodeArea a = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
+        String name = nameAt(a.getParagraph(a.getCurrentParagraph()).getText(), a.getCaretColumn(), b.getLanguage());
+        if (name == null) {
+            host.setStatus(tr("status.definition.noName"));
+            return true;
+        }
+        for (Symbol s : DeclarationScanner.scan(b.getContent(), b.getLanguage())) {
+            if (s.name().equals(name)) {
+                if (b.getPath() != null) {
+                    ops.openAndGoto(b.getPath(), s.line(), s.column());
+                } else {
+                    a.moveTo(s.line(), s.column());
+                    a.requestFollowCaret();
+                }
+                host.setStatus(tr("status.definition.fromIndex", name));
+                return true;
+            }
+        }
+        if (!isEnabled()) {
+            host.setStatus(tr("status.definition.notFound", name));
+            return true;
+        }
+        ensureBuilt(() -> {
+            List<SymbolIndex.Hit> exact = index.search(name, SymbolIndex.DEFAULT_LIMIT).stream()
+                    .filter(h -> h.symbol().name().equals(name))
+                    .toList();
+            if (exact.isEmpty()) {
+                host.setStatus(tr("status.definition.notFound", name));
+            } else if (exact.size() == 1) {
+                Symbol s = exact.get(0).symbol();
+                ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
+                host.setStatus(tr("status.definition.fromIndex", name));
+            } else {
+                lastResults = exact;
+                picker.show(host.window());
+            }
+        });
+        return true;
+    }
+
+    /**
+     * The name at {@code column} of {@code line}: identifier characters, and in shell also {@code . : -}, which
+     * its function names use ({@code pkg::fn}, {@code my-fn}); null when the caret is on none.
+     */
+    static String nameAt(String line, int column, String language) {
+        boolean shell = "shell".equals(language);
+        java.util.function.IntPredicate part =
+                c -> Character.isLetterOrDigit(c) || c == '_' || (shell && (c == '.' || c == ':' || c == '-'));
+        int start = Math.min(column, line.length());
+        while (start > 0 && part.test(line.charAt(start - 1))) {
+            start--;
+        }
+        int end = Math.min(column, line.length());
+        while (end < line.length() && part.test(line.charAt(end))) {
+            end++;
+        }
+        // Trailing/leading punctuation is not part of a name: `fn:` or `--flag`.
+        while (start < end && !Character.isLetterOrDigit(line.charAt(start)) && line.charAt(start) != '_') {
+            start++;
+        }
+        while (end > start && !Character.isLetterOrDigit(line.charAt(end - 1)) && line.charAt(end - 1) != '_') {
+            end--;
+        }
+        return start < end ? line.substring(start, end) : null;
     }
 
     /** {@code index.gotoSymbol}: prompt for a name and jump to the declaration. */
@@ -527,8 +628,7 @@ final class IndexCoordinator {
                         return ProjectWalk.Verdict.SKIP;
                     }
                     files.add(p);
-                    String language =
-                            LanguageRegistry.forFileName(p.getFileName().toString());
+                    String language = languageOf(p);
                     // No declaration rules means no symbols whatever the file says: don't read 2 MB of a
                     // lock file, an image or a minified bundle to learn that.
                     if (!DeclarationScanner.supports(language)) {

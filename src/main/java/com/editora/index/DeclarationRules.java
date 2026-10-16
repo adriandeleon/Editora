@@ -213,9 +213,20 @@ final class DeclarationRules {
             rule("(?:^|\\s)(?:interface|trait)\\s+(?<n>\\w+)", SymbolKind.INTERFACE),
             rule("(?:^|\\s)function\\s+&?\\s*(?<n>\\w+)", SymbolKind.METHOD));
 
+    /**
+     * A shell function's name: Google's {@code pkg::fn}, dotted {@code lib.fn} and dashed {@code my-fn} names
+     * included, but starting with a word character (so {@code -x ()} is not one).
+     */
+    private static final String SHELL_NAME = "\\w[\\w.:-]*";
+
     private static final List<Rule> SHELL = List.of(
-            rule("^\\s*(?:function\\s+)?(?<n>[\\w-]+)\\s*\\(\\s*\\)", SymbolKind.FUNCTION),
-            rule("^\\s*function\\s+(?<n>[\\w-]+)", SymbolKind.FUNCTION));
+            rule("^\\s*(?:function\\s+)?(?<n>" + SHELL_NAME + ")\\s*\\(\\s*\\)", SymbolKind.FUNCTION),
+            rule("^\\s*function\\s+(?<n>" + SHELL_NAME + ")", SymbolKind.FUNCTION),
+            // A script-level variable, declared on purpose: only at column 0 (not a function's local) and only
+            // behind a declaring builtin — a bare `x=1` is as often a scratch value as a setting.
+            rule(
+                    "^(?:readonly|declare|typeset|export)(?:\\s+-[A-Za-z]+)*\\s+(?<n>[A-Za-z_]\\w*)(?:\\[[^\\]]*\\])?\\+?=",
+                    SymbolKind.VARIABLE));
 
     private static final List<Rule> LUA = List.of(
             rule("^\\s*(?:local\\s+)?function\\s+(?<n>[\\w.:]+)", SymbolKind.FUNCTION),

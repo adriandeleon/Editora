@@ -84,7 +84,8 @@ final class RunScan {
         } else if (in.eligible() && "python".equals(language)) {
             runnable = true;
             line = pythonRunLine(text); // the __main__ guard, else the first line
-        } else if (in.eligible() && "shell".equals(language)) {
+        } else if (in.eligible() && "shell".equals(language) && !ShellFiles.isStartupFile(in.name())) {
+            // (A sourced startup file — .bashrc, .xinitrc, .envrc … — is never run: no ▶ for it.)
             // Gated like Python, by the Run feature alone: shell Run used to also need LSP and the Bash server
             // toggle (both off for a new user), so a .sh had no ▶ until someone found that out.
             runnable = true;

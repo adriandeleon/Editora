@@ -429,7 +429,30 @@ public final class FileIcons {
         }
 
         // Otherwise key off the language id (which doubles as the LSP languageId for many types).
-        return switch (LanguageRegistry.forFileName(fileName)) {
+        return keyForLanguage(LanguageRegistry.forFileName(fileName));
+    }
+
+    /**
+     * The glyph key for an open buffer: its file name, but its <em>resolved</em> language when the name says
+     * nothing (plain text) — an extension-less script with a shebang or modeline, or a language picked in the
+     * status bar. Non-language file types (images, archives, …) still go by extension.
+     */
+    public static String iconKeyFor(String fileName, String language) {
+        String byName = iconKeyFor(fileName);
+        if (language == null || LanguageRegistry.PLAINTEXT.equals(language) || !"generic".equals(byName)) {
+            return byName;
+        }
+        return keyForLanguage(language);
+    }
+
+    /** A fresh glyph node for an open buffer named {@code fileName} whose language is {@code language}. */
+    public static Node forBuffer(String fileName, String language) {
+        String path = PATHS.get(iconKeyFor(fileName, language));
+        return boxed(path == null ? Icons.fileSheet() : Icons.of(path));
+    }
+
+    private static String keyForLanguage(String language) {
+        return switch (language) {
             case "java" -> "java";
             case "python" -> "python";
             case "javascript", "javascriptreact" -> "javascript";

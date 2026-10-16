@@ -67,6 +67,15 @@ class ShellGrammarTest {
                 "for ((i = 0; i < 10; i++)); do echo $i; done",
                 "echo \"${foo:-$(echo \"${bar:-baz}\")}\"",
                 "[[ $x =~ ^[[:alpha:]]+$ ]] && echo ok",
+                // `&>` is a redirection; read as a background `&` it left a statement open.
+                "cmd &> /dev/null &",
+                "cmd &>> log.txt",
+                // zsh closes a group on a `}` with no `;` before it.
+                "{ echo try } always { echo finally }",
+                "repeat 3 { echo hi }",
+                "precmd() { vcs_info }",
+                "[[ $s =~ ^[a-z]+(foo|bar)$ ]] && echo m",
+                "for i in {1..10}; do echo $i; done",
             })
     void theLineAfterTheConstructIsBackAtTheTopLevel(String snippet) {
         Line alone = lastLine("echo SENTINEL");
@@ -116,5 +125,64 @@ class ShellGrammarTest {
         assertTrue(apt.contains("quoted text|string") && apt.contains("single|string"), apt.toString());
         assertTrue(forList.stream().noneMatch(t -> t.endsWith("|string")), forList.toString());
         assertEquals(List.of("body words|string"), heredoc);
+    }
+    /** {@code $? $# $$ $! $*} are variables like {@code $@} and {@code $1} — they used to look like keywords. */
+    @Test
+    void specialParametersAreVariables() {
+        List<String> styles = lastLine("echo $? $# $$ $! $* $@ $1").styles();
+
+        assertTrue(styles.stream().skip(1).allMatch(t -> t.endsWith("|variable")), styles.toString());
+    }
+
+    /** Parameter-expansion operators the grammar did not know, and a command substitution inside one. */
+    @Test
+    void parameterExpansionOperatorsAndNestedCommands() {
+        List<String> ops =
+                lastLine("echo ${a:+alt} ${b+x} ${c^^} ${d,,} ${e^} ${f,}").styles();
+        List<String> nested = lastLine("x=${y:-$(date)}").styles();
+
+        for (String op :
+                List.of(":+|operator", "+|operator", "^^|operator", ",,|operator", "^|operator", ",|operator")) {
+            assertTrue(ops.contains(op), op + " in " + ops);
+        }
+        assertTrue(nested.contains("date|function"), "the command in $(…) is a command: " + nested);
+    }
+
+    /** The right side of {@code =~} is a regular expression, not commands. */
+    @Test
+    void theRightSideOfARegexMatchIsARegex() {
+        List<String> styles =
+                lastLine("if [[ $s =~ ^[a-z]+(foo|bar)$ ]]; then :; fi").styles();
+
+        assertTrue(styles.contains("^[a-z]+(foo|bar)$|regexp"), styles.toString());
+        assertTrue(styles.stream().noneMatch(t -> t.startsWith("foo|") || t.startsWith("bar|")), styles.toString());
+    }
+
+    /** A brace expansion is a word; {@code &>} is one redirection; {@code select … in}, {@code coproc} are keywords. */
+    @Test
+    void braceExpansionRedirectionAndKeywords() {
+        assertTrue(lastLine("for i in {1..10}; do :; done").styles().contains("{1..10}|null"));
+        assertTrue(lastLine("cmd &> /dev/null").styles().contains("&>|operator"));
+        assertTrue(lastLine("select o in a b; do break; done").styles().contains("in|keyword"));
+        assertTrue(lastLine("coproc cat file").styles().contains("coproc|keyword"));
+    }
+
+    /**
+     * The body of {@code g() ( … )} and {@code function h() { … }} is the function's body. tm4e read the grammar's
+     * {@code "applyEndPatternLast": 1} as false, so the function rule ended the moment it began and the body lost its
+     * scope (VS Code, reading the same file, did not).
+     */
+    @Test
+    void functionBodiesBelongToTheFunction() {
+        for (String def : List.of("g() (\n  echo g", "function h() {\n  echo h", "k ()\n{\n  echo k")) {
+            IStateStack state = null;
+            List<String> scopes = List.of();
+            for (String line : def.split("\n")) {
+                var result = SHELL.tokenizeLine(line + "\n", state, Duration.ofSeconds(5));
+                state = result.getRuleStack();
+                scopes = result.getTokens()[result.getTokens().length - 1].getScopes();
+            }
+            assertTrue(scopes.contains("meta.function.body.shell"), def + " -> " + scopes);
+        }
     }
 }

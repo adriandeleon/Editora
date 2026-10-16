@@ -449,7 +449,7 @@
       ]
     },
     "constructors": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "(?<=;|^)(?=\\s*(?:(?:private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)\\s+)*[A-Z]\\w*\\()",
       "end": "}",
       "patterns": [
@@ -883,7 +883,7 @@
       ]
     },
     "methods": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "(?<=;|^|\\{)(?=\\s*(?:(?:private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)|def|(?:(?:void|boolean|byte|char|short|int|float|long|double)|@?(?:[A-Za-z]\\w*\\.)*[A-Z]+\\w*)[]\\[]*(?:<.*>)?)\\s+([^=]+\\s+)?\\w+\\s*\\()",
       "end": "}|(?=[^{])",
       "name": "meta.definition.method.groovy",
@@ -1117,7 +1117,7 @@
           "name": "constant.character.escape.groovy"
         },
         {
-          "applyEndPatternLast": 1,
+          "applyEndPatternLast": true,
           "begin": "\\$\\w",
           "end": "(?=\\W)",
           "name": "variable.other.interpolated.groovy",
@@ -1315,7 +1315,7 @@
       ]
     },
     "variables": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "patterns": [
         {
           "begin": "(?=(?:(?:private|protected|public|native|synchronized|abstract|threadsafe|transient|static|final)|def|(?:void|boolean|byte|char|short|int|float|long|double)|(?:[a-z]\\w*\\.)*[A-Z]+\\w*)\\s+[],<>\\[_\\w\\d\\s]+(?:=|$))",

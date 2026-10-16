@@ -79,8 +79,11 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    /** The same strict-mode preamble as the "Zsh Script" template, so both ways of starting one agree. */
     private static final String ZSH = """
             #!/usr/bin/env zsh
+            emulate -L zsh
+            setopt errexit nounset pipefail
 
             {cursor}
             """;

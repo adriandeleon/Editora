@@ -943,7 +943,9 @@ final class EditingCoordinator {
             host.setStatus(tr(
                     !buffer.supportsComments()
                             ? "status.noCommentSyntax"
-                            : onlyShebang(buffer) ? "status.commentShebang" : "status.commentCannotNest"));
+                            : onlyShebang(buffer)
+                                    ? "status.commentShebang"
+                                    : intoHereDoc(buffer) ? "status.commentHereDoc" : "status.commentCannotNest"));
         }
     }
 
@@ -955,6 +957,13 @@ final class EditingCoordinator {
                 a.getSelection().getStart(),
                 a.getSelection().getEnd(),
                 com.editora.editops.Commenter.styleFor(buffer.getLanguage()));
+    }
+
+    /** Whether the selection reaches into a shell here-doc's data, which Toggle Comment leaves alone. */
+    private static boolean intoHereDoc(EditorBuffer buffer) {
+        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        return com.editora.editops.Commenter.intoHereDoc(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */

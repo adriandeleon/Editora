@@ -81,4 +81,30 @@ class DiagnosticMapperTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 DiagnosticMapper.mapReport(null).isEmpty()); // null report → empty (clears)
     }
+
+    /**
+     * ShellCheck links each code to its wiki page and tags an unused variable Unnecessary; both reach the editor
+     * now (shell review C9). Only a web address is kept as a link.
+     */
+    @org.junit.jupiter.api.Test
+    void theRulesDocumentationLinkAndTheUnnecessaryTagAreKept() {
+        var range =
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 0), new org.eclipse.lsp4j.Position(1, 6));
+        var unused = new org.eclipse.lsp4j.Diagnostic(
+                range, "unused appears unused.", org.eclipse.lsp4j.DiagnosticSeverity.Warning, "shellcheck", "SC2034");
+        unused.setCodeDescription(
+                new org.eclipse.lsp4j.DiagnosticCodeDescription("https://www.shellcheck.net/wiki/SC2034"));
+        unused.setTags(java.util.List.of(org.eclipse.lsp4j.DiagnosticTag.Unnecessary));
+        var local =
+                new org.eclipse.lsp4j.Diagnostic(range, "x", org.eclipse.lsp4j.DiagnosticSeverity.Hint, "lint", "L1");
+        local.setCodeDescription(new org.eclipse.lsp4j.DiagnosticCodeDescription("file:///etc/passwd"));
+
+        var mapped = DiagnosticMapper.map(java.util.List.of(unused, local));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "https://www.shellcheck.net/wiki/SC2034", mapped.get(0).href());
+        org.junit.jupiter.api.Assertions.assertTrue(mapped.get(0).unnecessary());
+        org.junit.jupiter.api.Assertions.assertNull(mapped.get(1).href(), "only a web page is a link");
+        org.junit.jupiter.api.Assertions.assertFalse(mapped.get(1).unnecessary());
+    }
 }

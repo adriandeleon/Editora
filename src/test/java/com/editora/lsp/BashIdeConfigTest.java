@@ -163,7 +163,7 @@ class BashIdeConfigTest {
     @Test
     void aSessionAnswersTheConfigurationItWasGivenAndPushesAChange() throws Exception {
         var spec = new LspServerRegistry.ServerSpec("bash", List.of("bash-language-server"), List.of());
-        LanguageServerSession session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {});
+        LanguageServerSession session = new LanguageServerSession(spec, Path.of("/srv/project"), d -> {}, (t, m) -> {});
         FakeLanguageServer fake = new FakeLanguageServer();
         session.attachForTest(fake, new ServerCapabilities());
         Settings s = new Settings();
@@ -183,5 +183,33 @@ class BashIdeConfigTest {
         int pushes = fake.configurations.size();
         session.setBashIde(BashIdeConfig.of(s));
         assertEquals(pushes, fake.configurations.size(), "an unchanged configuration is not pushed again");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static int analysisCapFor(Path root) throws Exception {
+        var spec = new LspServerRegistry.ServerSpec("bash", List.of("bash-language-server"), List.of());
+        LanguageServerSession session = new LanguageServerSession(spec, root, d -> {}, (t, m) -> {});
+        session.setBashIde(BashIdeConfig.of(new Settings()));
+        ConfigurationItem item = new ConfigurationItem();
+        item.setSection("bashIde");
+        var section = (Map<String, Object>) session.configuration(new ConfigurationParams(List.of(item)))
+                .get()
+                .get(0);
+        return (Integer) section.get("backgroundAnalysisMaxFiles");
+    }
+
+    /**
+     * A loose script directly in the home folder, the temp folder or at a filesystem root gets that folder as its
+     * workspace; the server is told not to walk it for scripts (shell review C8). A real project keeps the cap.
+     */
+    @Test
+    void noBackgroundAnalysisWhenTheWorkspaceIsHomeTheTempFolderOrARoot(@org.junit.jupiter.api.io.TempDir Path project)
+            throws Exception {
+        assertEquals(0, analysisCapFor(Path.of(System.getProperty("user.home"))));
+        assertEquals(0, analysisCapFor(Path.of(System.getProperty("java.io.tmpdir"))));
+        assertEquals(0, analysisCapFor(project.getRoot()));
+        assertEquals(500, analysisCapFor(project));
+        assertTrue(RootResolver.isBroadRoot(Path.of(System.getProperty("user.home"))));
+        assertEquals(false, RootResolver.isBroadRoot(project));
     }
 }

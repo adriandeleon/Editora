@@ -112,7 +112,7 @@ class ShellFileNoticeFxTest {
             FxTestSupport.runOnFx(() ->
                     fx.controller.templateActions.createFileOfType(dir, NewFileCatalog.byId("scripts.shell"), "tool"));
             Path tool = dir.resolve("tool.sh");
-            assertEquals("#!/usr/bin/env bash\nset -euo pipefail\n", Files.readString(tool), "written with LF");
+            assertEquals("#!/usr/bin/env bash\nset -euo pipefail\n\n", Files.readString(tool), "written with LF");
 
             EditorBuffer buffer = open(async, fx, tool);
             assertNull(FxTestSupport.callOnFx(buffer::fileNoticeText));

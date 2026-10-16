@@ -284,6 +284,46 @@ class DeclarationScannerTest {
         }
 
         @Test
+        void shellNamesOfEveryStyleAndScriptVariables() {
+            // B10: `pkg::fn` (Google's style), dotted and dashed names were missed; variables never indexed.
+            String src = """
+                    readonly VERSION=1.2
+                    declare -A HOSTS=()
+                    export PREFIX=/opt
+                    mylib::helper() { :; }
+                    my.dotted() { :; }
+                    my-dash() { :; }
+                    function ns::kw {
+                      local scratch=1
+                    }
+                    plain=1
+                    """;
+            assertEquals(
+                    List.of("VERSION", "HOSTS", "PREFIX", "mylib::helper", "my.dotted", "my-dash", "ns::kw"),
+                    names(src, "shell"));
+            assertEquals(
+                    SymbolKind.VARIABLE,
+                    DeclarationScanner.scan(src, "shell").get(0).kind());
+        }
+
+        @Test
+        void nothingIsDeclaredInsideAHereDocOrAMultiLineString() {
+            String src = """
+                    cat > /tmp/gen.sh <<'EOF'
+                    generated_fn() {
+                        echo inside
+                    }
+                    function also_in_heredoc {
+                    EOF
+                    usage="Usage:
+                      deploy()   deploy the app
+                    "
+                    real() { :; }
+                    """;
+            assertEquals(List.of("real"), names(src, "shell"));
+        }
+
+        @Test
         void ruby() {
             String src = """
                     module Tools

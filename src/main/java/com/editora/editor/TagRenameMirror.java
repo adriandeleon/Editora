@@ -173,7 +173,8 @@ final class TagRenameMirror {
             String lang = language.get();
             boolean prose = LanguageRegistry.plaintext().equals(lang) || "markdown".equals(lang);
             int paragraph = getCurrentParagraph();
-            int[] word = DoubleClickWord.at(getText(paragraph), getCaretColumn(), prose, "css".equals(lang));
+            int[] word =
+                    DoubleClickWord.at(getText(paragraph), getCaretColumn(), prose, DoubleClickWord.hyphenated(lang));
             if (word != null) {
                 selectRange(paragraph, word[0], paragraph, word[1]);
             }
