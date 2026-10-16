@@ -41,7 +41,8 @@ class AiCoordinatorFxTest {
             scope.onClose(() -> server.stop(0));
             Settings settings = enabled();
             settings.setAiProvider("openai");
-            settings.setAiEndpoint("http://127.0.0.1:" + server.getAddress().getPort());
+            settings.setAiEndpointOpenai(
+                    "http://127.0.0.1:" + server.getAddress().getPort());
             Ops ops = new Ops();
             AiCoordinator coordinator = coordinator(settings, ops);
             scope.onClose(() -> FxTestSupport.runOnFx(coordinator::shutdown));
