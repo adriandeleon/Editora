@@ -405,6 +405,7 @@ final class LspCoordinator {
             }
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
+        lspManager.setOnServerStatus(this::onServerStatus);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
@@ -2230,11 +2231,19 @@ final class LspCoordinator {
      * {@code language/status} type (or "Message"/"Error").
      */
     void onServerStatus(String type, String message) {
+        onServerStatus(null, type, message);
+    }
+
+    /**
+     * As {@link #onServerStatus(String, String)}, from the server {@code serverId} (null = unknown): the
+     * message is prefixed with that server's name — it used to read "Java LSP:" whichever server sent it.
+     */
+    void onServerStatus(String serverId, String type, String message) {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
         if (message != null && !message.isBlank()) {
-            host.setStatus(tr("status.lsp.server", message));
+            host.setStatus(tr("status.lsp.server", serverId == null ? "LSP" : serverLabel(serverId), message));
         }
         if (type != null) {
             String t = type.toLowerCase(Locale.ROOT);
