@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Emacs registers.** In the Emacs keymap:
+  - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
+  - `C-x r i` inserts a register's text, leaving the cursor before it.
+  - `C-x r SPC` saves the cursor's file and position in a register.
+  - `C-x r j` jumps back to that position, opening the file if it is closed.
+
+  Each command takes the register's name as the next key; Escape cancels. A saved position follows edits
+  to its file while the file is open. `Edit: List Registers` shows them all. Registers last for the
+  session, one set per window, and every command is also in the palette.
 - **More text tools, in the String Manipulation picker and the command palette.**
   - **Encode and decode the selected text:** Base64, URL encoding, JSON string escapes, HTML entities, and
     `\uXXXX` escapes. They work on every selection at once. A decode that cannot read one selection changes
