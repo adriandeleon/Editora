@@ -1145,27 +1145,38 @@ public class SettingsWindow {
             config.getSettings().setTheme(now);
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
             if (!config.getSettings().isEditorThemeUserSet()) {
-                String match = EditorThemes.defaultFor(now);
-                config.getSettings().setEditorTheme(match);
-                loading = true;
-                editorThemeCombo.setValue(match);
-                loading = false;
+                config.getSettings().setEditorTheme(EditorThemes.defaultFor(now));
+                applyPreviewTheme(config.getSettings().getEditorTheme());
+                editorThemeCombo.setButtonCell(editorThemeCell()); // "Automatic" names the theme it follows
             }
             apply();
         });
 
+        // The first item, "", is "Automatic": the editor theme follows the app theme, as on a fresh install.
+        // Once another was picked there used to be no way back short of resetting every setting.
         editorThemeCombo = new ComboBox<>();
-        editorThemeCombo.getItems().setAll(EditorThemes.names());
+        editorThemeCombo.getItems().setAll(editorThemeChoices());
         editorThemeCombo.setPrefWidth(220);
+        editorThemeCombo.setCellFactory(v -> editorThemeCell());
+        editorThemeCombo.setButtonCell(editorThemeCell());
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
             if (now != null) {
-                applyPreviewTheme(now); // keep the preview in sync even on programmatic set
+                applyPreviewTheme(
+                        now.isEmpty()
+                                ? EditorThemes.defaultFor(config.getSettings().getTheme())
+                                : now);
             }
             if (loading || now == null) {
                 return;
             }
-            config.getSettings().setEditorTheme(now);
-            config.getSettings().setEditorThemeUserSet(true);
+            boolean automatic = now.isEmpty();
+            config.getSettings()
+                    .setEditorTheme(
+                            automatic
+                                    ? EditorThemes.defaultFor(
+                                            config.getSettings().getTheme())
+                                    : now);
+            config.getSettings().setEditorThemeUserSet(!automatic);
             apply();
         });
 
@@ -8107,7 +8118,8 @@ public class SettingsWindow {
             if (!editorTheme.equals(settings.getEditorTheme())) {
                 settings.setEditorTheme(editorTheme);
             }
-            editorThemeCombo.setValue(editorTheme);
+            editorThemeCombo.setValue(settings.isEditorThemeUserSet() ? editorTheme : "");
+            editorThemeCombo.setButtonCell(editorThemeCell()); // the app theme "Automatic" names may have changed
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
             indentStyleCombo.setValue(settings.getIndentStyle());
             fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
@@ -8677,6 +8689,33 @@ public class SettingsWindow {
         }
     }
 
+    /** "" (Automatic) followed by every editor theme. */
+    private static List<String> editorThemeChoices() {
+        List<String> choices = new ArrayList<>();
+        choices.add("");
+        choices.addAll(EditorThemes.names());
+        return choices;
+    }
+
+    /** An editor-theme cell: "Automatic (Nord Dark)" for "", else the theme's name. */
+    private ListCell<String> editorThemeCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String name, boolean empty) {
+                super.updateItem(name, empty);
+                setText(
+                        empty || name == null
+                                ? null
+                                : name.isEmpty()
+                                        ? tr(
+                                                "settings.editorTheme.auto",
+                                                EditorThemes.defaultFor(
+                                                        config.getSettings().getTheme()))
+                                        : name);
+            }
+        };
+    }
+
     public void syncThemes() {
         if (!built) {
             return;
@@ -8685,10 +8724,12 @@ public class SettingsWindow {
         loading = true;
         try {
             themeCombo.getItems().setAll(Themes.names()); // pick up user themes reloaded from the config folder
-            editorThemeCombo.getItems().setAll(EditorThemes.names());
+            editorThemeCombo.getItems().setAll(editorThemeChoices());
             themeCombo.setValue(config.getSettings().getTheme());
             editorThemeCombo.setValue(
-                    EditorThemes.normalize(config.getSettings().getEditorTheme()));
+                    config.getSettings().isEditorThemeUserSet()
+                            ? EditorThemes.normalize(config.getSettings().getEditorTheme())
+                            : "");
         } finally {
             loading = prev;
         }

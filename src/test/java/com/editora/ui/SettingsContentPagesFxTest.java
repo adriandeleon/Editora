@@ -8,6 +8,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ColorPicker;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
@@ -361,6 +362,35 @@ class SettingsContentPagesFxTest {
             assertTrue(twRow("structure").show().isSelected());
             assertTrue(sideCard(home).contains(twRow("notes").node()));
             assertTrue(SettingsRig.texts(page).contains(tr("settings.toolWindows.layoutNote")));
+        });
+    }
+
+    @Test
+    void automaticPutsAPickedEditorThemeBackToFollowingTheAppTheme() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setEditorThemeUserSet(false);
+            rig.show();
+            rig.page("APPEARANCE");
+            ComboBox<String> theme = rig.control("themeCombo");
+            ComboBox<String> editorTheme = rig.control("editorThemeCombo");
+            assertEquals("", editorTheme.getItems().getFirst(), "Automatic is the first choice");
+            assertEquals("", editorTheme.getValue());
+            assertEquals(
+                    tr("settings.editorTheme.auto", EditorThemes.defaultFor(settings.getTheme())),
+                    editorTheme.getButtonCell().getText());
+
+            editorTheme.setValue("Dracula");
+            theme.setValue("Nord Light");
+            assertEquals("Dracula", settings.getEditorTheme(), "a picked theme stays");
+
+            editorTheme.setValue("");
+            assertFalse(settings.isEditorThemeUserSet());
+            assertEquals(EditorThemes.defaultFor("Nord Light"), settings.getEditorTheme());
+            theme.setValue("Editora Dark");
+            assertEquals(EditorThemes.defaultFor("Editora Dark"), settings.getEditorTheme(), "and follows again");
+            assertEquals(
+                    tr("settings.editorTheme.auto", EditorThemes.defaultFor("Editora Dark")),
+                    editorTheme.getButtonCell().getText());
         });
     }
 }
