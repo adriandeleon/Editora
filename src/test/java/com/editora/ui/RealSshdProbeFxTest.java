@@ -388,6 +388,23 @@ class RealSshdProbeFxTest {
             return null;
         });
 
+        step("the host says where a project's repositories are (the Project tree's Git menus)", () -> {
+            ProcessRunner.Result nested = ProcessRunner.run(
+                    app,
+                    Duration.ofSeconds(30),
+                    List.of("sh", "-c", "mkdir -p libs/inner && git -C libs/inner init -q"));
+            check(nested.ok(), "a nested repository: " + nested.err());
+            GitPathScope.learnRemote(app, true);
+            await("the host's answer", 30, () -> GitPathScope.knowsRemote(app));
+            Path innerFile = app.resolve("libs/inner/x.txt");
+            check(
+                    app.resolve("libs/inner").equals(GitPathScope.nearestRepository(innerFile)),
+                    "the nested one: " + GitPathScope.nearestRepository(innerFile));
+            check(GitPathScope.of(innerFile, app) == GitPathScope.OTHER, "another repository than the project's");
+            check(GitPathScope.of(app.resolve("README.md"), app) == GitPathScope.ACTIVE, "the project's own");
+            return null;
+        });
+
         step("ripgrep lists and searches on the host", () -> {
             Files.writeString(app.resolve("needle.txt"), "a needle here\n");
             if (!RemoteFiles.hasRipgrep(app)) {
