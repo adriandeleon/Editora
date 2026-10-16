@@ -35,6 +35,15 @@ class HttpVariableIndexTest {
     }
 
     @Test
+    void namesTheScriptsSetAreNotMarked() {
+        String text =
+                "# @capture id = $.id\n< {% request.variables.set('sig', 'x') %}\nGET http://h/{{sig}}/{{id}}/{{tok}}\n"
+                        + "\n> {% client.global.set(\"tok\", response.body.t) %}\n\n### next\nGET http://h/{{other}}\n";
+        assertEquals(List.of("{{other}}"), refs(problems(text, Map.of(), null)));
+        assertTrue(HttpVariableIndex.variablesAt(text, 2, null).containsAll(List.of("id", "sig", "tok")));
+    }
+
+    @Test
     void anUndefinedNameIsMarkedWhereItIsWritten() {
         List<HttpVariableIndex.Problem> ps =
                 problems("GET {{host}}/a?x={{tokn}}\nAuthorization: Bearer {{token}}\n", Map.of("host", "h"), null);

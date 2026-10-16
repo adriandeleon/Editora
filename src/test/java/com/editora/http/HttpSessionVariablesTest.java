@@ -91,4 +91,56 @@ class HttpSessionVariablesTest {
                 .forEach(c -> c.applyTo(s));
         assertEquals(Map.of("b", "2"), s.globals());
     }
+
+    @Test
+    void aHostMadeOfASessionOrScriptValueIsOnlyKnownAtTheSend() {
+        CapturedResponses s = new CapturedResponses();
+        s.setGlobal("base", "http://h.test");
+        HttpFile.Parsed viaGlobal =
+                HttpFile.parseRequest(HttpFile.parse("@api = {{base}}/v1\nGET {{api}}/x\nX-K: {{$processEnv PATH}}\n")
+                        .get(0));
+        SecretApproval.Preview p = SecretApproval.preview(viaGlobal, Map.of(), null, s);
+        assertTrue(p.hostFromResponse(), "a session value, even through an @var line");
+        assertTrue(p.hostUnfixed());
+
+        HttpFile.Parsed viaScript = HttpFile.parseRequest(
+                HttpFile.parse("< {% request.variables.set('t', 'http://e.test') %}\nGET {{t}}/x\n")
+                        .get(0));
+        assertTrue(SecretApproval.preview(viaScript, Map.of(), null, new CapturedResponses())
+                .hostFromResponse());
+
+        HttpFile.Parsed fixed = HttpFile.parseRequest(
+                HttpFile.parse("GET http://h.test/{{id}}\n").get(0));
+        assertTrue(!SecretApproval.preview(fixed, Map.of(), null, s).hostFromResponse());
+    }
+
+    @Test
+    void aScriptsVariableWinsAndIsNeverResolved() {
+        HttpFile.Parsed p = HttpFile.parseRequest(
+                        HttpFile.parse("@t = file\nGET http://h/{{t}}\n").get(0))
+                .withScriptVariables(Map.of("t", "{{$processEnv HOME}}"));
+        HttpVars.Unresolved sink = new HttpVars.Unresolved();
+        HttpVars.Scope scope = HttpVars.scope(Map.of("t", "env"), p.variables(), NOW, null, null);
+        assertEquals("{{$processEnv HOME}}", HttpVars.substitute("{{t}}", scope, NOW, null, null, sink));
+        assertTrue(sink.secretReads().isEmpty());
+        assertEquals(List.of("t"), sink.sessionReads());
+    }
+
+    @Test
+    void globalHeadersSkipWhatTheRequestSetsAndNeverAHost() {
+        CapturedResponses s = new CapturedResponses();
+        s.setGlobalHeader("X-Trace", "a");
+        s.setGlobalHeader("x-trace", "b"); // one header, whatever its case
+        s.setGlobalHeader("Host", "evil.test");
+        assertEquals(Map.of("x-trace", "b"), s.globalHeaders());
+        HttpFile.Parsed own =
+                HttpFile.parseRequest("GET http://h/\nX-TRACE: mine\n").withGlobalHeaders(s.globalHeaders());
+        assertEquals(1, own.headers().size());
+        assertEquals("mine", own.headers().get(0)[1]);
+        HttpFile.Parsed none = HttpFile.parseRequest("GET http://h/\n").withGlobalHeaders(Map.of("X-A", "{{x}}"));
+        assertEquals("\\{{x}}", none.headers().get(0)[1], "escaped: sent as written");
+        s.resetUnlessEnvironment("dev");
+        s.resetUnlessEnvironment("prod");
+        assertTrue(s.globalHeaders().isEmpty());
+    }
 }

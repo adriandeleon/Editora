@@ -72,7 +72,11 @@ public final class SecretApproval {
                 HttpVars.substitute(h[1], dry.scope(), dry.now(), captured, baseDir, hostSink);
             }
         }
-        boolean fromResponse = !hostSink.responseReads().isEmpty();
+        // A host made of a response, a session variable, or (for a request with a pre-request script) a name nothing
+        // defines yet — the script may set it — is only known at the send.
+        boolean fromResponse = !hostSink.responseReads().isEmpty()
+                || !hostSink.sessionReads().isEmpty()
+                || (!request.preScripts().isEmpty() && !hostSink.isEmpty());
         boolean unfixed = fromResponse
                 || !hostSink.secretReads().isEmpty()
                 || !hostSink.dynamicReads().isEmpty();

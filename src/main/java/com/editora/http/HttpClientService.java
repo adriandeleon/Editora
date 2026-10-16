@@ -289,8 +289,7 @@ public final class HttpClientService {
                 SecretApproval.Grant approval =
                         SecretApproval.ask(gate, handle::isCancelled, List.of(request), vars, baseDir, responses);
                 beforeRun(handlers, List.of(request), handle);
-                HttpExchange sent = executeSafely(handle, request, vars, baseDir, responses, session, approval);
-                ex = afterResponse(handle, request, sent, vars, responses, handlers);
+                ex = sendOne(handle, request, vars, baseDir, responses, session, approval, handlers);
                 responses.put(request.name(), ex.result());
             } finally {
                 active.remove(handle);
@@ -367,8 +366,7 @@ public final class HttpClientService {
                         int index = out.size();
                         Platform.runLater(() -> onStart.accept(index));
                     }
-                    HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session, approval);
-                    ex = afterResponse(handle, req, ex, vars, captured, handlers);
+                    HttpExchange ex = sendOne(handle, req, vars, baseDir, captured, session, approval, handlers);
                     captured.put(req.name(), ex.result());
                     out.add(ex);
                     if (handle.isCancelled()) {
@@ -381,6 +379,114 @@ public final class HttpClientService {
             handle.deliver(() -> onResult.accept(out));
         });
         return handle;
+    }
+
+    /**
+     * One request of a run, start to end: its pre-request scripts ({@link #preRequest}), which may keep it unsent; then
+     * the send, with the {@code request.variables} they set and the session's global headers; then its checks and
+     * response handlers ({@link #afterResponse}). The pre-request scripts' tests and log come first in the result.
+     */
+    private HttpExchange sendOne(
+            Handle handle,
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured,
+            Session session,
+            SecretApproval.Grant approval,
+            ResponseScripts scripts) {
+        ResponseScripts.PreResult pre = preRequest(handle, request, vars, baseDir, captured, scripts);
+        if (pre.notSent() != null) {
+            HttpExchange unsent;
+            try {
+                // From the dry resolution, every secret source as written: a request that was not sent keeps none.
+                unsent = SecretApproval.unsentReport(request, vars, baseDir, captured, pre.notSent(), List.of());
+            } catch (RuntimeException | OutOfMemoryError failed) {
+                unsent = new HttpExchange(
+                        request.method() + " " + request.url(),
+                        request.method(),
+                        request.url(),
+                        request.headers(),
+                        "",
+                        HttpResult.failure(pre.notSent(), List.of()),
+                        null);
+            }
+            return unsent.withResult(unsent.result().withTests(pre.tests(), pre.warnings()));
+        }
+        HttpFile.Parsed ready =
+                request.withScriptVariables(pre.variables()).withGlobalHeaders(captured.globalHeaders());
+        HttpExchange ex = executeSafely(handle, ready, vars, baseDir, captured, session, approval);
+        ex = afterResponse(handle, ready, ex, vars, captured, scripts);
+        if (pre.tests().isEmpty() && pre.warnings().isEmpty()) {
+            return ex;
+        }
+        HttpResult r = ex.result();
+        List<String> warnings = new ArrayList<>(pre.warnings());
+        warnings.addAll(r.warnings() == null ? List.of() : r.warnings());
+        return ex.withResult(new HttpResult(
+                r.status(),
+                r.headers(),
+                r.body(),
+                r.contentType(),
+                r.elapsedMs(),
+                r.sizeBytes(),
+                r.error(),
+                warnings,
+                r.rawBody(),
+                r.truncated(),
+                r.written(),
+                r.protocol(),
+                pre.tests().plus(r.tests())));
+    }
+
+    /**
+     * Runs {@code request}'s pre-request scripts through {@code scripts}, with the request as far as it resolves
+     * before them (every secret source kept as written), and applies their session changes to {@code captured}.
+     */
+    private static ResponseScripts.PreResult preRequest(
+            Handle handle,
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured,
+            ResponseScripts scripts) {
+        if (request.preScripts().isEmpty()) {
+            return ResponseScripts.PreResult.NONE;
+        }
+        try {
+            String url = request.url();
+            List<String[]> headers = request.headers();
+            String body = request.body();
+            try {
+                PreparedRequest p = PreparedRequest.dry(
+                                request.withGlobalHeaders(captured.globalHeaders()), vars, baseDir, captured)
+                        .prepared();
+                url = p.targetUrl();
+                headers = p.headers();
+                body = p.body().display();
+            } catch (RuntimeException unresolvable) {
+                // the script sees the request as written
+            }
+            ResponseScripts.PreResult r = scripts.runPre(
+                    request,
+                    new ResponseScripts.PreInput(
+                            vars,
+                            captured.globals(),
+                            captured.globalHeaders(),
+                            url,
+                            headers,
+                            body,
+                            handle::isCancelled));
+            r.changes().forEach(c -> c.applyTo(captured));
+            return r;
+        } catch (RuntimeException | OutOfMemoryError failed) {
+            return new ResponseScripts.PreResult(
+                    tr("status.http.preScriptNotRun", String.valueOf(failed)),
+                    Map.of(),
+                    HttpTests.NONE,
+                    List.of(),
+                    List.of());
+        }
     }
 
     /** Lets {@code scripts} ask its question once, before the run's first request; a failure asks nothing. */

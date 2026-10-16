@@ -184,6 +184,53 @@ public final class HttpScripts {
         return root.toString();
     }
 
+    /**
+     * The shim's input for one pre-request script ({@code "mode": "pre"}, no response): the request as far as it
+     * resolves before the script ({@code url}, {@code headers}, {@code body}, every secret source kept as written) and
+     * as written in {@code request}, its {@code @name = value} lines with the {@code variablesSoFar} an earlier
+     * pre-request script set over them, the environment's variables and the session variables.
+     */
+    public static String preInput(
+            String nonce,
+            Script script,
+            HttpFile.Parsed request,
+            ResponseScripts.PreInput in,
+            Map<String, String> variablesSoFar,
+            Map<String, String> globals) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("nonce", nonce);
+        root.put("mode", "pre");
+        ObjectNode s = root.putObject("script");
+        s.put("source", script.source());
+        s.put("filename", script.filename());
+        s.put("line", script.line());
+        s.put("column", script.column());
+        ObjectNode req = root.putObject("request");
+        req.put("method", request.method());
+        req.put("url", nullToEmpty(in.url()));
+        req.put("urlRaw", nullToEmpty(request.url()));
+        pairs(req.putArray("headers"), in.headers(), List.of());
+        pairs(req.putArray("headersRaw"), request.headers(), List.of());
+        req.put("body", nullToEmpty(in.body()));
+        req.put("bodyRaw", nullToEmpty(request.body()));
+        ObjectNode env = root.putObject("environment");
+        in.environment().forEach(env::put);
+        ObjectNode vars = root.putObject("variables");
+        for (String[] v : request.variables()) {
+            if (v != null && v.length >= 2) {
+                vars.put(v[0], v[1]);
+            }
+        }
+        if (variablesSoFar != null) {
+            variablesSoFar.forEach(vars::put);
+        }
+        ObjectNode g = root.putObject("globals");
+        if (globals != null) {
+            globals.forEach(g::put);
+        }
+        return root.toString();
+    }
+
     private static void pairs(ArrayNode into, List<String[]> pairs, List<String> secrets) {
         if (pairs == null) {
             return;
@@ -210,9 +257,16 @@ public final class HttpScripts {
         return s == null ? "" : s;
     }
 
-    /** What one handler reported: its tests, log lines and session-variable changes, and the error it stopped with. */
+    /**
+     * What one script reported: its tests, log lines, session changes, the {@code request.variables} a pre-request
+     * script set, and the error it stopped with.
+     */
     public record Output(
-            List<HttpTests.Test> tests, List<String> log, List<ResponseScripts.GlobalChange> changes, String error) {}
+            List<HttpTests.Test> tests,
+            List<String> log,
+            List<ResponseScripts.GlobalChange> changes,
+            Map<String, String> variables,
+            String error) {}
 
     /**
      * The result line marked {@code nonce} in {@code stdout} (the last one, should a script print the marker itself),
@@ -265,6 +319,19 @@ public final class HttpScripts {
                                 kind, name, c.path(2).asText("")));
                     }
                 }
+                case ResponseScripts.GlobalChange.HEADER_SET -> {
+                    String name = c.path(1).asText("");
+                    if (!name.isEmpty()) {
+                        changes.add(new ResponseScripts.GlobalChange(
+                                kind, name, c.path(2).asText("")));
+                    }
+                }
+                case ResponseScripts.GlobalChange.HEADER_CLEAR -> {
+                    String name = c.path(1).asText("");
+                    if (!name.isEmpty()) {
+                        changes.add(new ResponseScripts.GlobalChange(kind, name, null));
+                    }
+                }
                 case ResponseScripts.GlobalChange.CLEAR -> {
                     String name = c.path(1).asText("");
                     if (!name.isEmpty()) {
@@ -276,9 +343,15 @@ public final class HttpScripts {
                 default -> {}
             }
         }
+        Map<String, String> variables = new LinkedHashMap<>();
+        root.path("variables").properties().forEach(v -> {
+            if (!v.getKey().isEmpty() && variables.size() < MAX_ENTRIES) {
+                variables.put(v.getKey(), v.getValue().asText(""));
+            }
+        });
         JsonNode e = root.path("error");
         String error = e.isTextual() && !e.asText().isBlank() ? cut(e.asText()) : null;
-        return new Output(tests, log, changes, error);
+        return new Output(tests, log, changes, variables, error);
     }
 
     private static String cut(String s) {
