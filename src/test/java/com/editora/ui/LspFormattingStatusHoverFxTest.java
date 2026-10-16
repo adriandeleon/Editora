@@ -73,4 +73,12 @@ class LspFormattingStatusHoverFxTest {
 
         assertFalse(formatAndGetOptions().isInsertSpaces());
     }
+
+    @Test
+    void openingAFileOnItsServerShowsTheStatusSegmentAtOnce() throws Exception {
+        fx.open("A.java", "class A {}\n");
+
+        assertFalse(fx.ops.statusBarLabels.isEmpty(), "the status bar was told about the server");
+        assertEquals("jdtls", fx.ops.statusBarLabels.get(fx.ops.statusBarLabels.size() - 1));
+    }
 }

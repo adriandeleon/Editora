@@ -2012,6 +2012,12 @@ final class LspCoordinator {
                 clearDiagnostics(path);
             }
         }
+        if (buffer == host.activeBuffer()) {
+            // The "LSP: <server>" segment and the Problems stripe follow whether the active file is managed,
+            // which only changes here. Every other refresh (a tab switch, a server detected) runs before a
+            // newly opened file reaches this point, so they stayed hidden until the user switched tabs.
+            updateStatusBar();
+        }
     }
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
