@@ -624,13 +624,15 @@ public final class HttpClientService {
     private static Prepared prepare(HttpFile.Parsed request, Path baseDir, Function<String, String> sub) {
         String method = request.method().isEmpty() ? "GET" : request.method();
 
+        // The URL first, then the headers: the unresolved-variable warnings follow the order of the file.
+        String requestUrl = sub.apply(request.url()).trim();
         List<String[]> headers = new ArrayList<>();
         for (String[] h : request.headers()) {
             headers.add(new String[] {h[0], sub.apply(h[1])});
         }
         // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header; a target without
         // a scheme is http:// (JetBrains).
-        HttpTargets.Target target = HttpTargets.resolve(sub.apply(request.url()).trim(), headers);
+        HttpTargets.Target target = HttpTargets.resolve(requestUrl, headers);
         String url = UrlEncoding.withScheme(target.url(), null);
         headers = new ArrayList<>(target.headers());
         if (!request.directives().noAutoEncoding()) {

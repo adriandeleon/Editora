@@ -93,6 +93,10 @@ public final class HttpErrors {
         if (all.contains("invalid uri scheme")) {
             return tr("status.http.error.scheme", scheme(url));
         }
+        if (all.contains("undefined scheme") || all.contains("missing scheme")) {
+            // Java's "URI with undefined scheme": usually a {{host}} that resolved to nothing, so say that.
+            return tr("status.http.error.noScheme", url == null ? "" : url);
+        }
         IllegalArgumentException bad = find(failure, IllegalArgumentException.class);
         if (bad != null && (all.contains("uri") || all.contains("illegal character") || all.contains("scheme"))) {
             return tr("status.http.error.badUrl", detail(bad));
