@@ -240,7 +240,7 @@ was also checked with BusyBox's `sh` and `setsid`.
 The `Remote probe` workflow (`.github/workflows/remote-probe.yml`; run it from the Actions tab, or push a
 `probe/**` branch) runs the probe on two runners, each against a server of its own started unprivileged on a
 high port: a `macos-15` runner's own `/usr/sbin/sshd`, and dropbear from the distribution on `ubuntu-latest`
-(its `authorized_keys` folder in the runner's home, as dropbear insists). It installs the host's tools from
+(Ubuntu's 2022.83, older than the 2025.89 checked locally; it reads the runner's `~/.ssh/authorized_keys`). It installs the host's tools from
 the sources Editora's installer uses (the pinned jdtls milestone, java-debug from Open VSX, js-debug from
 GitHub, debugpy with pip, pyright with npm), and gives the account a login profile like a real user's: the
 tools' `bin` folders on `PATH`, a `JAVA_HOME`. It is not part of CI.

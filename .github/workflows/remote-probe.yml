@@ -144,8 +144,9 @@ jobs:
           ssh -V
           dscl . -read "/Users/$(id -un)" UserShell
 
-      # Linux: dropbear from the distribution, unprivileged. Its authorized_keys folder (-D) and every folder
-      # above it must not be writable by group or others, so it is not under the runner's temp folder.
+      # Linux: dropbear from the distribution, unprivileged. Ubuntu's (2022.83) predates -D, so the keys go
+      # where every dropbear looks, ~/.ssh/authorized_keys (a throwaway runner's); that folder and the home
+      # above it must not be writable by group or others.
       - name: Private dropbear
         if: matrix.server == 'dropbear'
         shell: bash
@@ -155,15 +156,15 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends dropbear-bin openssh-sftp-server
           dpkg-query -W dropbear-bin
-          A="$HOME/.dropbear-probe"
-          mkdir -p "$A"
-          chmod 700 "$A"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           chmod go-w "$HOME"
-          cp "$S/authorized_keys" "$A/authorized_keys"
+          cat "$S/authorized_keys" >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
           cd "$S"
           dropbearkey -t ed25519 -f host_ed25519 >/dev/null
           dropbearkey -t ecdsa -f host_ecdsa >/dev/null
-          nohup dropbear -F -E -s -p 127.0.0.1:22523 -P "$S/server.pid" -D "$A" \
+          nohup dropbear -F -E -s -p 127.0.0.1:22523 -P "$S/server.pid" \
             -r "$S/host_ed25519" -r "$S/host_ecdsa" > "$S/server.log" 2>&1 &
           echo "PROBE_PORT=22523" >> "$GITHUB_ENV"
           getent passwd "$(id -un)" | cut -d: -f7
