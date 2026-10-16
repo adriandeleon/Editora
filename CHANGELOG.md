@@ -546,6 +546,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP Client: a failing pre-request script is named as one.** Its Tests block read "Response handler error"
+  and its badge "✗ handler error"; they now say "Pre-request script error" and "✗ pre-request error". A Tests
+  block with only log lines is titled "Script output", since either kind of script may have written them, and a
+  script that runs out of time "did not finish", not "the handler did not finish".
+- **HTTP Client: a `{{name}}` set by a script file is not underlined.** A name a `< ./pre.js` or `> ./check.js`
+  file sets with `request.variables.set` or `client.global.set` was marked as unresolved, because only inline
+  scripts were read. The check now reads the script files a `.http` file names (as a run finds them, up to
+  1 MB; reading one to find names runs nothing). An edit to a script file shows on the next check of the
+  `.http` file.
 - **Export Configuration leaves out the installed ShellCheck and shfmt** (`plugins/tools/`) and the Typst CLI
   (`plugins/typst/`), as it already did language servers and debug adapters. The zip no longer carries about
   20 MB of executables built for this machine's OS. A plugin can no longer take the id `tools`, so installing or
