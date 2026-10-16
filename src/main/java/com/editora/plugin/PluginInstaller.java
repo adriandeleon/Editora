@@ -257,11 +257,12 @@ public final class PluginInstaller {
 
     /**
      * Folder names under {@code <config>/plugins} that belong to Editora itself: the in-app installer puts
-     * downloaded language servers, debug adapters and the Typst CLI there ({@code plugins/lsp},
-     * {@code plugins/dap}, {@code plugins/typst}). A plugin with one of these ids would be installed over
-     * — and removed together with — every one of those tools.
+     * downloaded language servers, debug adapters, the Typst CLI and single-binary tools there
+     * ({@code plugins/lsp}, {@code plugins/dap}, {@code plugins/typst}, {@code plugins/tools}). A plugin with
+     * one of these ids would be installed over — and removed together with — every one of those tools. Config
+     * export leaves these folders out too.
      */
-    private static final Set<String> RESERVED_IDS = Set.of("lsp", "dap", "typst");
+    private static final Set<String> RESERVED_IDS = Set.of("lsp", "dap", "typst", "tools");
 
     /** Whether {@code id} names one of the built-in tool folders (compared without case: some volumes fold it). */
     public static boolean isReservedId(String id) {

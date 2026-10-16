@@ -73,12 +73,22 @@ class HttpResponseHandlerParseTest {
     }
 
     @Test
-    void aPreRequestScriptIsStillIgnoredWithAWarning() {
-        Parsed p = first("< {% request.variables.set(\"a\", 1) %}\nGET http://h/a\n");
+    void preRequestScriptsAboveTheRequestAreReadInOrder() {
+        Parsed p = first("### a\n# @name a\n< {% request.variables.set(\"a\", 1) %}\n< ./sign.js\nGET http://h/a\n");
         assertTrue(p.handlers().isEmpty());
-        assertTrue(
-                p.warnings().stream().anyMatch(w -> w.contains("pre-request script")),
-                p.warnings().toString());
+        assertEquals(2, p.preScripts().size());
+        assertEquals(" request.variables.set(\"a\", 1) ", p.preScripts().get(0).source());
+        assertEquals(2, p.preScripts().get(0).line());
+        assertEquals("./sign.js", p.preScripts().get(1).path());
+        assertTrue(p.warnings().isEmpty(), p.warnings().toString());
+    }
+
+    @Test
+    void anUnclosedPreRequestScriptTakesTheRestOfItsSection() {
+        // Without its %} the script runs to the end of the section, request line included: no request is left.
+        assertTrue(HttpFile.parse("### a\n< {%\n  x();\nGET http://h/a\n").isEmpty());
+        assertEquals(
+                1, HttpFile.parse("### a\n< {%\n  x();\n###\nGET http://h/b\n").size(), "the next section is fine");
     }
 
     @Test

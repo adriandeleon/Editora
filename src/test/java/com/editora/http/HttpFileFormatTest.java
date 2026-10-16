@@ -162,9 +162,11 @@ class HttpFileFormatTest {
         assertEquals(4, r.startLine());
         Parsed p = HttpFile.parseRequest(r);
         assertEquals("body", p.body());
-        assertTrue(
-                p.warnings().stream().anyMatch(w -> w.contains("pre-request script")),
-                p.warnings().toString());
+        assertEquals(1, p.preScripts().size(), "read as the request's pre-request script");
+        assertEquals(
+                "\n  request.variables.set(\"x\", \"1\");\n",
+                p.preScripts().get(0).source());
+        assertEquals(1, p.preScripts().get(0).line(), "its line in the file");
         assertEquals("http://h/a", only("< ./prepare.js\nGET http://h/a\n").url());
         assertEquals(
                 "GET",

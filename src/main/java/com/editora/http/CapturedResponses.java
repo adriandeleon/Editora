@@ -43,6 +43,9 @@ public final class CapturedResponses {
     /** The session variables, in the order they were first set. */
     private final Map<String, String> globals = new LinkedHashMap<>();
 
+    /** The session's global headers ({@code client.global.headers}), added to each request that does not set them. */
+    private final Map<String, String> globalHeaders = new LinkedHashMap<>();
+
     /** The environment the captured responses were made in; see {@link #resetUnlessEnvironment}. */
     private String environment;
 
@@ -77,6 +80,28 @@ public final class CapturedResponses {
     public synchronized void clear() {
         byName.clear();
         globals.clear();
+        globalHeaders.clear();
+    }
+
+    /**
+     * Sets the global header {@code name} (a script's {@code client.global.headers.set}); a null {@code value} removes
+     * it. A {@code Host} header is never kept: where a request goes is not a script's to change behind the secrets
+     * prompt.
+     */
+    public synchronized void setGlobalHeader(String name, String value) {
+        if (name == null || name.isBlank() || name.strip().equalsIgnoreCase("Host")) {
+            return;
+        }
+        String n = name.strip();
+        globalHeaders.keySet().removeIf(k -> k.equalsIgnoreCase(n)); // header names are case-insensitive
+        if (value != null) {
+            globalHeaders.put(n, value);
+        }
+    }
+
+    /** A copy of the global headers, in the order they were first set. */
+    public synchronized Map<String, String> globalHeaders() {
+        return new LinkedHashMap<>(globalHeaders);
     }
 
     /** Sets the session variable {@code name} to {@code value}; a null {@code value} removes it. */
@@ -110,6 +135,7 @@ public final class CapturedResponses {
         if (environment != null && !environment.equals(e)) {
             byName.clear();
             globals.clear();
+            globalHeaders.clear();
         }
         environment = e;
     }

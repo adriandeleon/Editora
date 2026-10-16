@@ -1,9 +1,11 @@
-// Editora HTTP Client: runs one JavaScript response handler of a .http request on the user's Node.js.
+// Editora HTTP Client: runs one JavaScript response handler or pre-request script of a .http request on the user's
+// Node.js.
 //
-// Input: one JSON object on stdin (the response, the request as sent, the environment, the session variables and
-// the script). Output: one line on stdout, the run's nonce followed by a JSON object (tests, log lines, session
-// variable changes, an error). Everything else the script prints is captured as log lines, so the result line is
-// the only thing written to stdout. The API follows the JetBrains HTTP Client's response handler API:
+// Input: one JSON object on stdin (the mode, the response for a handler, the request, the environment, the session
+// variables and headers, and the script). Output: one line on stdout, the run's nonce followed by a JSON object
+// (tests, log lines, session changes, the request variables a pre-request script set, an error). Everything else the
+// script prints is captured as log lines, so the result line is the only thing written to stdout. The API follows the
+// JetBrains HTTP Client's response handler, pre-request and crypto APIs:
 // https://www.jetbrains.com/help/idea/http-response-handling-api-reference.html
 //
 // Started with a minimal environment and, where Node supports it, the permission model (no file writes, no child
@@ -11,6 +13,7 @@
 'use strict';
 
 const vm = require('node:vm');
+const nodeCrypto = require('node:crypto');
 
 const MAX_LOG_LINES = 1000;
 const MAX_LINE = 10000;
@@ -30,7 +33,7 @@ class AssertionError extends Error {
   }
 }
 
-const out = { tests: [], log: [], globals: [], error: null };
+const out = { tests: [], log: [], globals: [], variables: {}, error: null };
 let logDropped = 0;
 
 function cut(s) {
@@ -179,11 +182,11 @@ function buildApi(input) {
       return Object.keys(globals).length === 0;
     },
     headers: {
-      set() {
-        log('client.global.headers is not supported by Editora yet; the header was not set');
+      set(name, value) {
+        out.globals.push(['headerSet', String(name), asText(value)]);
       },
-      clear() {
-        log('client.global.headers is not supported by Editora yet');
+      clear(name) {
+        out.globals.push(['headerClear', String(name)]);
       },
     },
   };
@@ -219,6 +222,7 @@ function buildApi(input) {
     },
   };
 
+  const pre = input.mode === 'pre';
   const res = input.response || {};
   const resHeaders = res.headers || [];
   const mime = (res.contentType && res.contentType.mimeType) || '';
@@ -231,7 +235,7 @@ function buildApi(input) {
     }
   }
   const cookies = () => findHeader(resHeaders, 'set-cookie').map(parseCookie).filter((c) => c !== null);
-  const response = {
+  const response = pre ? undefined : {
     body,
     status: res.status,
     headers: {
@@ -316,8 +320,14 @@ function buildApi(input) {
         return v === undefined ? null : v;
       },
       set(name, value) {
-        variables[String(name)] = asText(value);
-        log('request.variables.set only affects this script in a response handler');
+        const n = String(name);
+        const v = asText(value);
+        variables[n] = v;
+        if (pre) {
+          out.variables[n] = v; // in force for this request
+        } else {
+          log('request.variables.set only affects this script in a response handler');
+        }
       },
     },
   };
@@ -356,6 +366,188 @@ function parseCookie(text) {
   return cookie;
 }
 
+// --- crypto: the JetBrains HTTP Client crypto API on Node's crypto -----------------------------------------------
+
+function encodingOf(e) {
+  const n = String(e || 'utf8').toLowerCase().replace(/[-_]/g, '');
+  return { utf8: 'utf8', ascii: 'ascii', latin1: 'latin1', iso88591: 'latin1', utf16le: 'utf16le', ucs2: 'utf16le' }[n] || 'utf8';
+}
+
+function base64Bytes(text, urlSafe) {
+  return Buffer.from(String(text), urlSafe ? 'base64url' : 'base64');
+}
+
+class Digest {
+  constructor(bytes) {
+    this.bytes = bytes;
+  }
+  toHex() {
+    return this.bytes.toString('hex');
+  }
+  toBase64(urlSafe) {
+    return this.bytes.toString(urlSafe ? 'base64url' : 'base64');
+  }
+}
+
+function hasher(algorithm, secret) {
+  const chunks = [];
+  const api = {
+    updateWithText(text, encoding) {
+      chunks.push(Buffer.from(String(text), encodingOf(encoding)));
+      return api;
+    },
+    updateWithHex(hex) {
+      chunks.push(Buffer.from(String(hex), 'hex'));
+      return api;
+    },
+    updateWithBase64(text, urlSafe) {
+      chunks.push(base64Bytes(text, urlSafe));
+      return api;
+    },
+    digest() {
+      const h = secret ? nodeCrypto.createHmac(algorithm, secret) : nodeCrypto.createHash(algorithm);
+      for (const c of chunks) h.update(c);
+      return new Digest(h.digest());
+    },
+  };
+  return api;
+}
+
+function hmacOf(algorithm) {
+  return {
+    withTextSecret(secret, encoding) {
+      return hasher(algorithm, Buffer.from(String(secret), encodingOf(encoding)));
+    },
+    withHexSecret(secret) {
+      return hasher(algorithm, Buffer.from(String(secret), 'hex'));
+    },
+    withBase64Secret(secret, urlSafe) {
+      return hasher(algorithm, base64Bytes(secret, urlSafe));
+    },
+  };
+}
+
+const HASHES = { md5: 'md5', sha1: 'sha1', sha256: 'sha256', sha384: 'sha384', sha512: 'sha512' };
+
+const cryptoApi = { hmac: {} };
+for (const [name, alg] of Object.entries(HASHES)) {
+  cryptoApi[name] = () => hasher(alg);
+  cryptoApi.hmac[name] = () => hmacOf(alg);
+}
+cryptoApi.sha3 = (bits) => hasher('sha3-' + String(bits || 256));
+cryptoApi.hmac.sha3 = (bits) => hmacOf('sha3-' + String(bits || 256));
+Object.defineProperty(cryptoApi, 'subtle', {
+  get() {
+    throw new Error('crypto.subtle is not supported by Editora yet');
+  },
+});
+
+// --- jwt: sign, verify and decode with HMAC secrets or PEM keys ------------------------------------------------
+
+const JWT_ALGORITHMS = {
+  HS256: ['hmac', 'sha256'], HS384: ['hmac', 'sha384'], HS512: ['hmac', 'sha512'],
+  RS256: ['rsa', 'sha256'], RS384: ['rsa', 'sha384'], RS512: ['rsa', 'sha512'],
+  PS256: ['pss', 'sha256'], PS384: ['pss', 'sha384'], PS512: ['pss', 'sha512'],
+  ES256: ['ec', 'sha256'], ES384: ['ec', 'sha384'], ES512: ['ec', 'sha512'],
+};
+
+function b64url(value) {
+  return Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
+}
+
+function jwtAlgorithm(name) {
+  const a = JWT_ALGORITHMS[String(name || 'HS256').toUpperCase()];
+  if (!a) throw new Error('unsupported JWT algorithm: ' + name);
+  return a;
+}
+
+function keyText(key) {
+  if (typeof key === 'string' || Buffer.isBuffer(key)) return key;
+  throw new Error('a JWT key is a secret or a PEM key (CryptoKey objects are not supported by Editora yet)');
+}
+
+function jwtSign(payload, key, options) {
+  const o = options || {};
+  const algorithm = String(o.algorithm || 'HS256').toUpperCase();
+  const [kind, hash] = jwtAlgorithm(algorithm);
+  const now = Math.floor(Date.now() / 1000);
+  const claims = Object.assign({}, typeof payload === 'object' && payload !== null ? payload : { data: payload });
+  if (claims.iat === undefined && o.noTimestamp !== true) claims.iat = now;
+  if (o.expiresIn !== undefined) claims.exp = now + Number(o.expiresIn);
+  if (o.notBefore !== undefined) claims.nbf = now + Number(o.notBefore);
+  if (o.audience !== undefined) claims.aud = o.audience;
+  if (o.issuer !== undefined) claims.iss = o.issuer;
+  if (o.subject !== undefined) claims.sub = o.subject;
+  if (o.jwtid !== undefined) claims.jti = o.jwtid;
+  const header = Object.assign({ alg: algorithm, typ: 'JWT' }, o.header || {});
+  const input = b64url(header) + '.' + b64url(claims);
+  return input + '.' + jwtSignature(kind, hash, input, keyText(key)).toString('base64url');
+}
+
+function jwtSignature(kind, hash, input, key) {
+  if (kind === 'hmac') return nodeCrypto.createHmac(hash, key).update(input).digest();
+  if (kind === 'rsa') return nodeCrypto.sign(hash, Buffer.from(input), key);
+  if (kind === 'pss') {
+    return nodeCrypto.sign(hash, Buffer.from(input), {
+      key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: nodeCrypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    });
+  }
+  return nodeCrypto.sign(hash, Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' });
+}
+
+function jwtParts(token) {
+  const parts = String(token).split('.');
+  if (parts.length !== 3) throw new Error('not a JWT: it has ' + parts.length + ' parts');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  return { header, payload, signature: parts[2], input: parts[0] + '.' + parts[1] };
+}
+
+function jwtVerify(token, key, options) {
+  const o = options || {};
+  const p = jwtParts(token);
+  const algorithm = String(p.header.alg || '').toUpperCase();
+  if (o.algorithm && String(o.algorithm).toUpperCase() !== algorithm) {
+    throw new Error('JWT algorithm ' + algorithm + ' is not ' + o.algorithm);
+  }
+  const [kind, hash] = jwtAlgorithm(algorithm);
+  const signature = Buffer.from(p.signature, 'base64url');
+  const k = keyText(key);
+  let ok;
+  if (kind === 'hmac') {
+    const expected = nodeCrypto.createHmac(hash, k).update(p.input).digest();
+    ok = expected.length === signature.length && nodeCrypto.timingSafeEqual(expected, signature);
+  } else if (kind === 'rsa') {
+    ok = nodeCrypto.verify(hash, Buffer.from(p.input), k, signature);
+  } else if (kind === 'pss') {
+    ok = nodeCrypto.verify(hash, Buffer.from(p.input), {
+      key: k, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: nodeCrypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    }, signature);
+  } else {
+    ok = nodeCrypto.verify(hash, Buffer.from(p.input), { key: k, dsaEncoding: 'ieee-p1363' }, signature);
+  }
+  if (!ok) throw new Error('invalid JWT signature');
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof p.payload.exp === 'number' && now >= p.payload.exp) throw new Error('JWT expired');
+  if (typeof p.payload.nbf === 'number' && now < p.payload.nbf) throw new Error('JWT not active yet');
+  if (o.audience !== undefined) {
+    const aud = [].concat(p.payload.aud === undefined ? [] : p.payload.aud);
+    const wanted = [].concat(o.audience);
+    if (!wanted.some((a) => aud.includes(a))) throw new Error('JWT audience is not ' + wanted.join(', '));
+  }
+  if (o.issuer !== undefined && p.payload.iss !== o.issuer) throw new Error('JWT issuer is not ' + o.issuer);
+  return p.payload;
+}
+
+const jwtApi = {
+  sign: jwtSign,
+  verify: jwtVerify,
+  decode(token, options) {
+    const p = jwtParts(token);
+    return options && options.complete ? { header: p.header, payload: p.payload, signature: p.signature } : p.payload;
+  },
+};
+
 // --- running -----------------------------------------------------------------------------------------------------
 
 function finish(nonce) {
@@ -380,7 +572,7 @@ async function run(input) {
   process.on('unhandledRejection', (e) => log('Unhandled promise rejection: ' + stackOf(e)));
 
   const s = input.script || {};
-  const head = '(function (client, response, request, jsonPath, xpath, console) {';
+  const head = '(function (client, response, request, jsonPath, xpath, console, crypto, jwt) {';
   try {
     const script = new vm.Script(head + String(s.source || '') + '\n})', {
       filename: s.filename || 'handler.js',
@@ -388,7 +580,8 @@ async function run(input) {
       columnOffset: (s.column || 0) - head.length,
     });
     const fn = script.runInThisContext();
-    const r = fn.call(undefined, api.client, api.response, api.request, jsonPath, xpath, consoleLike);
+    const r = fn.call(
+      undefined, api.client, api.response, api.request, jsonPath, xpath, consoleLike, cryptoApi, jwtApi);
     if (r && typeof r.then === 'function') {
       await r;
     }

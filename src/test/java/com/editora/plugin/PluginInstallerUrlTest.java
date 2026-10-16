@@ -297,14 +297,14 @@ class PluginInstallerUrlTest {
         assertEquals(List.of("victim", "victim/keep.txt"), outsideThePluginsFolder());
     }
 
-    /** {@code plugins/lsp}, {@code dap} and {@code typst} hold the downloaded language tools. */
+    /** {@code plugins/lsp}, {@code dap}, {@code typst} and {@code tools} hold the downloaded language tools. */
     @Test
     void aDownloadedPluginCannotTakeTheNameOfABuiltInToolFolder() throws IOException {
         Path server =
                 Files.createDirectories(pluginsDir.resolve("lsp/java/bin")).resolve("jdtls");
         Files.writeString(server, "launcher");
 
-        for (String id : List.of("lsp", "dap", "typst", "LSP")) {
+        for (String id : List.of("lsp", "dap", "typst", "tools", "LSP")) {
             PluginInstaller.Result result = installer.installFromUrlSync(
                     published(TestArchives.zip("plugin.json", "{\"id\":\"" + id + "\"}", "java/bin/jdtls", "pwned")));
             assertFalse(result.ok(), id);

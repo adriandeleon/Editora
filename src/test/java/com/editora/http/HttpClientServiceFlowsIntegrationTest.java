@@ -393,6 +393,7 @@ class HttpClientServiceFlowsIntegrationTest {
                                 List.of(),
                                 List.of(),
                                 null,
+                                List.of(),
                                 List.of()),
                         Map.of(),
                         null)
@@ -418,6 +419,7 @@ class HttpClientServiceFlowsIntegrationTest {
                         List.of(),
                         List.of(),
                         null,
+                        List.of(),
                         List.of()),
                 Map.of(),
                 null);
