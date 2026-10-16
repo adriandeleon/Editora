@@ -174,9 +174,10 @@ class MarkdownLintOverlayFxTest {
             MarkdownLintOverlay overlay = EditorFx.field(buffer[0], "mdLintOverlay");
             javafx.scene.canvas.Canvas canvas = EditorFx.field(overlay, "canvas");
             canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-            EditorFx.setField(overlay, "paintedX", -1000.0);
-            EditorFx.setField(overlay, "checksLeft", 1);
-            EditorFx.call(overlay, "arm");
+            AfterLayoutPaint afterLayout = EditorFx.field(overlay, "afterLayout");
+            EditorFx.setField(afterLayout, "paintedX", -1000.0);
+            EditorFx.setField(afterLayout, "checksLeft", 1);
+            EditorFx.call(afterLayout, "arm");
         });
         double[] repainted = settled(buffer[0]);
         assertEquals(moved[1], repainted[0], 2, "repainted without being asked to");

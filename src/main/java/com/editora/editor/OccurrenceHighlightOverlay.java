@@ -2,7 +2,6 @@ package com.editora.editor;
 
 import java.util.List;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -35,6 +34,8 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
 
     private boolean active;
     private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
@@ -42,6 +43,14 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
 
     OccurrenceHighlightOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         getStyleClass().add("occurrence-overlay");
         setMouseTransparent(true);
         setVisible(false);
@@ -122,10 +131,7 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void redraw() {

@@ -64,20 +64,22 @@ agent all go through `AsyncPipeWriter`, never the FX thread.
 ### 2. Debounce and coalesce
 
 Re-highlighting is debounced; overlay/ruler/minimap redraws coalesce to **one per pulse** with
-a `pending` flag + `Platform.runLater`. Don't add per-keystroke or per-scroll-pulse work that
-isn't coalesced. The coalescing shape:
+a `pending` flag. Don't add per-keystroke or per-scroll-pulse work that isn't coalesced. The overlays drawn
+over the text paint after the pulse's layout through `AfterLayoutPaint` (see
+[Canvas overlays](#canvas-overlays)); the minimap, the stripes and the ruler, which do not sit on a character,
+use `Platform.runLater`. The coalescing shape:
 
 ```java
 private boolean redrawPending;
 private void scheduleRedraw() {
     if (!active || redrawPending) return;
     redrawPending = true;
-    Platform.runLater(() -> { redrawPending = false; redraw(); });
+    afterLayout.request(); // or Platform.runLater(() -> { redrawPending = false; redraw(); })
 }
 ```
 
-"One per pulse" here means one per event-loop turn: the `runLater` runs before the next input event, which
-is normally but not always the next pulse. The toolbar's edit state (Save/Undo/Redo/Cut/Copy) follows the same
+For `runLater`, "one per pulse" means one per event-loop turn: the `runLater` runs before the next input
+event, which is normally but not always the next pulse. The toolbar's edit state (Save/Undo/Redo/Cut/Copy) follows the same
 shape: a typed character fires an edit and a selection change, and `MainController.scheduleEditStateRefresh`
 turns both into one refresh per turn. That refresh reads the buffer's dirty *property*, not `isDirty()`: the
 exact answer can cost an O(document) compare, and the property's own listener re-runs the refresh when it
@@ -345,11 +347,13 @@ diagnostics, …) follows one discipline:
   viewport call, and an overlay that is on for every buffer (the Personal-Notes highlight) also asks a cheap
   gate (`NoteManager.hasActiveSpans`) before arming its paint, so a buffer without a note never does
   the visible-paragraph lookups — the same shape as the TODO overlay being off until it has marks
-- **painted after the pulse's layout** when it is placed from the laid-out text (`MarkdownLintOverlay`,
-  `NoteHighlightOverlay`, the indent guides): a `Platform.runLater` paint runs before the pulse that lays the
-  text out, and when the gutter then changes width (a 1,000th line, line numbers toggled, the font) that stale
-  frame is shown. A post-layout pulse listener paints, then looks again at where the first visible character
-  is for three pulses
+- **painted after the pulse's layout**: every overlay placed from the laid-out text schedules its paint
+  through `AfterLayoutPaint`. A `Platform.runLater` paint runs between pulses, and when the next pulse moves
+  the text (the line numbers widening on the fold recompute's debounce after the 1,000th line, line numbers
+  toggled, the font) that pulse shows the old paint for one frame (on macOS the lint squiggles stayed there).
+  `AfterLayoutPaint` paints from a post-layout pulse listener, then looks again at where the first visible
+  character is for three pulses — one character-bounds query per pulse while the checks last.
+  `FrameWatch` (tests) checks every shown frame rather than where a paint settles
 - **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
   line far off screen, so a model that follows edits (Personal Notes, which are painted inline) must not ask
   for gutter repaints per keystroke — notes did, two per note per moved line

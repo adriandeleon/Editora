@@ -2,16 +2,12 @@ package com.editora.editor;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
 import java.util.function.Predicate;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.Node;
-import javafx.scene.Scene;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.image.PixelReader;
@@ -39,12 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 class NoteIndicatorsFxTest {
-
-    /**
-     * How long after a change each frame is checked: the line-number gutter is re-padded on the fold manager's
-     * 250 ms recompute, not by the edit that crossed a power of ten.
-     */
-    private static final long WATCH_NANOS = 800_000_000L;
 
     @BeforeAll
     static void boot() throws Exception {
@@ -136,77 +126,22 @@ class NoteIndicatorsFxTest {
     }
 
     /**
-     * Runs {@code change}, then at the end of each pulse for {@link #WATCH_NANOS} — after the scene's layout and
-     * the overlay's own post-layout paint, so what is checked is the frame about to be shown — compares the
-     * highlight with the note's text. Returns a line per frame that had it elsewhere.
-     *
-     * <p>A post-layout listener the overlay registers during a pulse's layout runs after this one in that pulse;
-     * when the overlay has a paint pending that way, its frame is checked at the start of the next pulse instead
-     * (nothing of the overlay's runs in between).
+     * Runs {@code change} and compares the highlight with the note's text in every frame shown for a while after
+     * it ({@link FrameWatch}). Returns a line per frame that had it elsewhere.
      */
     private static List<String> framesOffText(EditorBuffer buffer, int start, Runnable change) throws Exception {
-        List<String> off = new ArrayList<>();
-        CountDownLatch done = new CountDownLatch(1);
-        EditorFx.onFx(() -> {
-            Scene scene = buffer.getNode().getScene();
-            Object overlay = EditorFx.field(buffer, "noteOverlay");
-            int[] pulse = {0};
-            long[] began = {System.nanoTime()};
-            boolean[] deferred = {false};
-            Runnable[] check = new Runnable[1];
-            Runnable[] first = new Runnable[1];
-            Runnable verify = () -> {
-                Bounds box = charBox(buffer, start);
-                int[] row = box == null ? null : paintedAt(buffer, box);
-                if (box != null && (row == null || Math.abs(row[0] - box.getMinX()) > 1.5)) {
-                    off.add("frame " + pulse[0] + ": text at x=" + box.getMinX() + ", highlight at "
-                            + (row == null ? "none" : "x=" + row[0]));
-                }
-            };
-            check[0] = () -> {
-                pulse[0]++;
-                if (paintsLaterThisPulse(overlay, scene)) {
-                    deferred[0] = true;
-                } else {
-                    verify.run();
-                }
-                if (System.nanoTime() - began[0] >= WATCH_NANOS && !deferred[0]) {
-                    scene.removePreLayoutPulseListener(first[0]);
-                    scene.removePostLayoutPulseListener(check[0]);
-                    done.countDown();
-                } else {
-                    Platform.requestNextPulse();
-                }
-            };
-            // Before each layout: the deferred check of the last frame, then this listener moved behind every
-            // post-layout listener registered so far.
-            first[0] = () -> {
-                if (deferred[0]) {
-                    deferred[0] = false;
-                    verify.run();
-                }
-                scene.removePostLayoutPulseListener(check[0]);
-                scene.addPostLayoutPulseListener(check[0]);
-            };
-            change.run();
-            scene.addPreLayoutPulseListener(first[0]);
-            Platform.requestNextPulse();
-        });
-        assertTrue(done.await(30, TimeUnit.SECONDS), "the pulses ran");
-        return EditorFx.callFx(() -> List.copyOf(off));
-    }
-
-    /** Whether the overlay has a paint pending from a post-layout listener of {@code scene}'s current pulse. */
-    private static boolean paintsLaterThisPulse(Object overlay, Scene scene) {
-        try {
-            java.lang.reflect.Field armed = overlay.getClass().getDeclaredField("armed");
-            armed.setAccessible(true);
-            return armed.get(overlay) == scene && Boolean.TRUE.equals(EditorFx.field(overlay, "redrawPending"));
-        } catch (NoSuchFieldException paintsFromRunLater) {
-            return false; // nothing of the overlay's runs in the pulse
-        } catch (IllegalAccessException e) {
-            throw new AssertionError(e);
-        }
+        Object overlay = EditorFx.callFx(() -> EditorFx.field(buffer, "noteOverlay"));
+        return FrameWatch.wrongFrames(
+                buffer,
+                overlay,
+                () -> {
+                    Bounds box = charBox(buffer, start);
+                    int[] row = box == null ? null : paintedAt(buffer, box);
+                    return box != null && (row == null || Math.abs(row[0] - box.getMinX()) > 1.5)
+                            ? "text at x=" + box.getMinX() + ", highlight at " + (row == null ? "none" : "x=" + row[0])
+                            : null;
+                },
+                change);
     }
 
     @Test

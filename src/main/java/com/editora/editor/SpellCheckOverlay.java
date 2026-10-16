@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.BitSet;
 import java.util.List;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -51,6 +50,10 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     private boolean rendering = true;
 
     private boolean redrawPending;
+
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
+
     private double laidOutWidth = -1;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private SpellCheckOverlay follower;
@@ -157,6 +160,14 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
      */
     SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                () -> active && rendering);
         this.textSnapshot = textSnapshot;
         getStyleClass().add("spellcheck-overlay");
         setMouseTransparent(true);
@@ -388,10 +399,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */

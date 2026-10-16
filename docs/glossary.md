@@ -52,7 +52,8 @@ unit-testable without a real window. Recipe in
 the two ways work is kept off the [hot path](#hot-path). *Debounce*: wait
 for a quiet interval before doing expensive text-driven work
 (`multiPlainChanges().successionEnds(Duration.ofMillis(250))`). *Coalesce*: collapse many redraw
-requests in a pulse to one via a `pending` flag + `Platform.runLater`. See
+requests in a pulse to one via a `pending` flag, painted after the pulse's layout (`AfterLayoutPaint`) or
+from `Platform.runLater`. See
 [performance.md](performance.md#2-debounce-and-coalesce).
 
 ### EditorBuffer

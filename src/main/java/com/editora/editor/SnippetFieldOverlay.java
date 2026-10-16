@@ -1,6 +1,5 @@
 package com.editora.editor;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -32,10 +31,21 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
     private boolean active;
     private boolean rendering = true;
     private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
+
     private SnippetFieldOverlay follower;
 
     SnippetFieldOverlay(CodeArea area, SnippetSessions sessions) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                () -> active);
         this.sessions = sessions;
         getStyleClass().add("snippet-field-overlay");
         setMouseTransparent(true);
@@ -104,10 +114,7 @@ final class SnippetFieldOverlay extends Region implements SecondaryPane.Followed
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void redraw() {
