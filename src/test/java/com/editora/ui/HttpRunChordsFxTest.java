@@ -72,10 +72,11 @@ class HttpRunChordsFxTest {
                 FxTestSupport.runOnFx(() -> {
                     b.getArea().requestFocus();
                     if (keymap.equals("cua")) {
-                        press(b, KeyCode.ENTER, true, true, true); // Ctrl+Alt+Shift+Enter
+                        // Ctrl+Alt+Shift+Enter; on macOS cua.mac.json binds Option+Cmd+Shift+Enter instead
+                        press(b, KeyCode.ENTER, true, !MAC, true, MAC);
                     } else {
-                        press(b, KeyCode.C, false, true, false); // C-c C-r
-                        press(b, KeyCode.R, false, true, false);
+                        press(b, KeyCode.C, false, true, false, false); // C-c C-r (the same on macOS)
+                        press(b, KeyCode.R, false, true, false, false);
                     }
                 });
                 long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
@@ -86,10 +87,10 @@ class HttpRunChordsFxTest {
                 assertTrue(FxTestSupport.callOnFx(() -> http.isRunningForTest(b)), keymap + ": running");
                 FxTestSupport.runOnFx(() -> {
                     if (keymap.equals("cua")) {
-                        press(b, KeyCode.K, false, true, true); // Ctrl+Alt+K
+                        press(b, KeyCode.K, false, !MAC, true, MAC); // Ctrl+Alt+K; Option+Cmd+K on macOS
                     } else {
-                        press(b, KeyCode.C, false, true, false); // C-c C-k
-                        press(b, KeyCode.K, false, true, false);
+                        press(b, KeyCode.C, false, true, false, false); // C-c C-k
+                        press(b, KeyCode.K, false, true, false, false);
                     }
                 });
                 assertFalse(FxTestSupport.callOnFx(() -> http.isRunningForTest(b)), keymap + ": Cancel stopped it");
@@ -101,8 +102,11 @@ class HttpRunChordsFxTest {
         }
     }
 
-    private static void press(EditorBuffer b, KeyCode code, boolean shift, boolean ctrl, boolean alt) {
-        b.getArea().fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, false));
-        b.getArea().fireEvent(new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code, shift, ctrl, alt, false));
+    /** The keymap files the app loads on this OS: the {@code .mac.json} variants on macOS. */
+    private static final boolean MAC = com.editora.command.KeymapManager.isMac();
+
+    private static void press(EditorBuffer b, KeyCode code, boolean shift, boolean ctrl, boolean alt, boolean meta) {
+        b.getArea().fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, meta));
+        b.getArea().fireEvent(new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code, shift, ctrl, alt, meta));
     }
 }
