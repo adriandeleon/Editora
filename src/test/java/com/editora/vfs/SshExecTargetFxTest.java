@@ -94,6 +94,60 @@ class SshExecTargetFxTest {
         assertEquals("oops\n", r.err(), "the pid line is the transport's, not the command's");
     }
 
+    private long attempts(String needle) {
+        return fixture.commands().stream().filter(c -> c.contains(needle)).count();
+    }
+
+    /** Runs the connection's one-time environment probe first, so the closes below meet the command itself. */
+    private void warmUp() {
+        assertEquals(0, ProcessRunner.run(remoteDir, TIMEOUT, List.of("true")).exit());
+    }
+
+    /**
+     * dropbear 2022.82 to 2024.85 (Debian 12, Ubuntu 24.04) now and then closes a channel before the command
+     * on it starts, saying nothing, when channels open and close at the same time. The command never ran, so
+     * it is started again; before, the caller got "the remote host did not start the command" (about one
+     * command in 40 while five others ran, against a real dropbear 2022.83).
+     */
+    @Test
+    void aCommandWhoseChannelClosedBeforeItStartedIsStartedAgain() {
+        warmUp();
+        fixture.closeBeforeStart(2);
+
+        ProcessRunner.Result r = ProcessRunner.run(remoteDir, TIMEOUT, List.of("echo", "second-try"));
+
+        assertEquals(0, r.exit(), r.err());
+        assertEquals("second-try\n", r.out());
+        assertEquals(3, attempts("second-try"), "two silent closes, then the command");
+    }
+
+    @Test
+    void aHostThatNeverStartsTheCommandIsGivenUpOnAfterThreeTries() {
+        warmUp();
+        fixture.closeBeforeStart(10);
+
+        ProcessRunner.Result r = ProcessRunner.run(remoteDir, TIMEOUT, List.of("echo", "never-runs"));
+
+        assertEquals(-1, r.exit());
+        assertTrue(r.err().contains("did not start the command"), r.err());
+        assertEquals(3, attempts("never-runs"));
+        fixture.closeBeforeStart(0);
+    }
+
+    /** A host that said why it did not start the command (a broken startup file, a refusal) is not asked again. */
+    @Test
+    void aCommandTheHostRefusedWithAReasonIsNotStartedAgain() {
+        warmUp();
+        fixture.closeBeforeStart(10, "bash: .bashrc: line 3: syntax error");
+
+        ProcessRunner.Result r = ProcessRunner.run(remoteDir, TIMEOUT, List.of("echo", "said-once"));
+
+        assertEquals(-1, r.exit());
+        assertTrue(r.err().contains("syntax error"), "what the host said: " + r.err());
+        assertEquals(1, attempts("said-once"));
+        fixture.closeBeforeStart(0);
+    }
+
     /**
      * A variable the account's login profile exports — JAVA_HOME, MAVEN_OPTS, a version manager's — reaches a
      * command, as it would in the account's own terminal; a command's own value still wins. Before, only PATH

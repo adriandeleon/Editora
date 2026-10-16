@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default. Turn them off with `View: Toggle Indent Guides` or in Settings → Editor. They are hidden in Zen and
   Simple UI and in large-file mode, follow the theme, and skip folded lines. The ruler toggle is now
   `View: Toggle Rulers`.
+- **Line commands, at every cursor.**
+  - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
+    the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
+  - `Edit: Delete Line` (`Ctrl+Shift+K`, IntelliJ's `Ctrl+Y`) deletes the line or every selected line
+    without touching the clipboard or the kill ring. Emacs' Kill Whole Line is unchanged.
+  - `Edit: Select Line` (`Ctrl+L`) selects the line, and grows by a line each time.
+  - `Edit: Indent Lines` / `Edit: Outdent Lines` (`Ctrl+]` / `Ctrl+[`) shift the line or selection by the
+    file's indent unit, wherever the cursor is.
+
+  Each runs at every cursor as one undo step, opens a collapsed fold before changing it, and renumbers an
+  ordered Markdown list it changes. Keys are in the VS Code and Sublime keymaps, partly in CUA and IntelliJ
+  (`⌘` on macOS); Delete Line is also in the Edit menu.
 - **More ways to place multiple cursors.**
   - `Edit: Split Selection into Lines` turns each selected line into its own selection (Sublime's
     `Ctrl+Shift+L`; also in the Edit menu).
@@ -68,7 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   debugpy's Python, js-debug, java-debug, and any language server (`server = command`, one per line).
   Changes reach open windows at once. The global switch is in Settings → Remote and in the
   `Remote: Toggle Running Commands on the Host` command. Works with OpenSSH servers (on Linux and on macOS, where Remote Login is one) and dropbear: on a
-  dropbear host, stopping a program also stops what it started, and a lost connection ends it. Removing a
+  dropbear host, stopping a program also stops what it started, and a lost connection ends it, and on the
+  older dropbear Debian 12 and Ubuntu 24.04 ship, a command no longer fails now and then with "the remote
+  host did not start the command". Removing a
   saved site keeps that host's answer and tool commands, for when it is added back.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
@@ -316,6 +330,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
+  long method signatures such as `Files.find(…)` or `Map.merge(…)` are no longer cut off. It still sizes itself to
+  the widest row, so short lists stay narrow.
 - **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
   whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
   to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and

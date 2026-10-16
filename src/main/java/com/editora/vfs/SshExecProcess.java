@@ -47,15 +47,51 @@ final class SshExecProcess extends RemoteProcess {
         channel.addCloseFutureListener(closed -> action.run());
     }
 
+    /** How many times a command is started when its channel closes before it begins ({@link NotStarted}). */
+    static final int START_ATTEMPTS = 3;
+
+    /**
+     * The channel closed before the command's pid line, and the host said nothing: the command never ran (the
+     * pid line is the first thing its script does). dropbear 2022.82 to 2024.85 — what Debian 12 and Ubuntu
+     * 24.04 ship — does this now and then when channels open and close at the same time (its "failure on
+     * concurrent channel open/close", fixed in 2024.86), so such a start is tried again.
+     */
+    static final class NotStarted extends IOException {
+        NotStarted() {
+            super("the remote host did not start the command");
+        }
+    }
+
     /**
      * Starts {@code commandLine} (built by {@link PosixShell#commandLine}) and waits for its pid line, so a
      * command the host could not even begin fails here, with what the host said, rather than as a process
-     * that produced nothing.
+     * that produced nothing. A command whose channel closed before it began, silently, is started again, up to
+     * {@link #START_ATTEMPTS} times in all, while the connection is up: it never ran, so nothing runs twice.
      */
     static SshExecProcess start(ClientSession session, String targetId, String commandLine, Duration timeout)
             throws IOException {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return startOnce(session, targetId, commandLine, timeout);
+            } catch (NotStarted e) {
+                if (attempt >= START_ATTEMPTS || !session.isOpen()) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(50L * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private static SshExecProcess startOnce(
+            ClientSession session, String targetId, String commandLine, Duration timeout) throws IOException {
         ChannelExec channel = session.createExecChannel(commandLine);
         AtomicBoolean started = new AtomicBoolean();
+        AtomicBoolean timedOut = new AtomicBoolean();
         try {
             channel.open().verify(timeout);
             // A startup file that never returns would leave the read below waiting forever.
@@ -66,6 +102,7 @@ final class SshExecProcess extends RemoteProcess {
                     return;
                 }
                 if (!started.get()) {
+                    timedOut.set(true);
                     channel.close(true);
                 }
             });
@@ -75,6 +112,11 @@ final class SshExecProcess extends RemoteProcess {
         } catch (IOException | RuntimeException e) {
             started.set(true);
             channel.close(true);
+            if (e instanceof NotStarted && timedOut.get()) {
+                // Closed by us: the host took too long, which starting again would only repeat.
+                throw new IOException(
+                        "the remote host did not start the command within " + timeout.toSeconds() + " s", e);
+            }
             throw e instanceof IOException io ? io : new IOException(e.getMessage(), e);
         }
     }
@@ -96,7 +138,10 @@ final class SshExecProcess extends RemoteProcess {
         String text = (char) mark + line.toString(StandardCharsets.UTF_8);
         if (b == -1 || !text.startsWith(PosixShell.PID_MARK)) {
             String said = noise.toString(StandardCharsets.UTF_8).strip();
-            throw new IOException(said.isEmpty() ? "the remote host did not start the command" : said);
+            if (said.isEmpty()) {
+                throw new NotStarted();
+            }
+            throw new IOException(said);
         }
         try {
             return Long.parseLong(text.substring(PosixShell.PID_MARK.length()).strip());

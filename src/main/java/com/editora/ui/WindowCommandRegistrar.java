@@ -2636,6 +2636,17 @@ final class WindowCommandRegistrar {
                         "edit.transposeLines",
                         () -> host.editing().transpose(com.editora.editops.Transposer::transposeLines)));
         host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
+        for (var line : java.util.Map.of(
+                        "edit.insertLineBelow", EditorBuffer.LineCommand.INSERT_BELOW,
+                        "edit.insertLineAbove", EditorBuffer.LineCommand.INSERT_ABOVE,
+                        "edit.deleteLine", EditorBuffer.LineCommand.DELETE,
+                        "edit.selectLine", EditorBuffer.LineCommand.SELECT,
+                        "edit.indentLines", EditorBuffer.LineCommand.INDENT,
+                        "edit.outdentLines", EditorBuffer.LineCommand.OUTDENT)
+                .entrySet()) {
+            host.registry()
+                    .register(Command.of(line.getKey(), () -> host.editing().lineCommand(line.getValue())));
+        }
         host.registry()
                 .register(Command.of(
                         "edit.duplicateLine",

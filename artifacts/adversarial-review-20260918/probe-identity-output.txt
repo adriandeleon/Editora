@@ -1,0 +1,22 @@
+PROBE overwrite-rename: accepted=true
+PROBE duplicate-target: A-path=/tmp/review-identity-2238164522014053664/B.java B-path=/tmp/review-identity-2238164522014053664/B.java A-text=class A {} B-text=UNSAVED B B-dirty=true
+PROBE coordinator-narrowed: accepted=true text=outside\nRENAMED\ntail\n
+PROBE rename-lsp: old-managed=true new-managed=false
+Sep 18, 2026 8:17:10 PM com.sun.javafx.application.PlatformImpl startup
+WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @15f0dc9e'
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: regular expression has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: regular expression has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape
+Sep 18, 2026 8:17:12 PM org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp lambda$0
+WARNING: character class has ']' without escape

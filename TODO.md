@@ -1543,6 +1543,11 @@ A backlog of planned features and improvements. Unordered within each section.
       paragraph-bounds query per visible indented line, blank lines from `editops/IndentLevels`, and a
       frame key that skips repaints when nothing it draws changed (~13% of keystrokes repaint while typing).
       *Deferred: highlighting the caret's own block guide; a structured per-language rulers editor*
+- [x] Line commands — `edit.insertLineBelow/Above`, `edit.deleteLine` (no kill ring), `edit.selectLine`
+      (grows by lines), `edit.indentLines/outdentLines` (caret anywhere). Pure `editops/LineCommands` per caret,
+      run at every caret through `MultiCarets.applyAtEachCaret` (Tab's `MultiTab.plan` fan-out), one undo step;
+      folds at the carets opened first; Markdown ordered lists renumbered.
+      *Deferred: Duplicate / Move Line at every caret (still the primary caret only)*
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
 - [x] Multi-caret extras — `edit.splitSelectionIntoLines` (Sublime: each line's selected part),
