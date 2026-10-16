@@ -68,7 +68,7 @@ Content-Type: application/json
 %}
 
 ### A script file, and a global header it sets for this request and the ones after
-# The editor does not read script files, so it underlines {{requestId}}; the request still gets its value.
+# {{requestId}} is set by the script file; the editor reads it, so the name is not underlined.
 < ./scripts/request-id.js
 GET {{host}}/anything?id={{requestId}}
 
