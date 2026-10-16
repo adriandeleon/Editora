@@ -104,4 +104,34 @@ class CurlImportCommandsTest {
                 + "  --data '{\"a\":\"it'\\''s\"}'";
         assertEquals("POST http://h/a\nContent-Type: application/json\n\n{\"a\":\"it's\"}\n", http(exported));
     }
+
+    @Test
+    void editorasOwnMultipartExportRoundTrips() {
+        // What CurlExport writes for a multipart file part: a double-quoted path, which may hold ';' and '"'.
+        String exported = "curl -X POST -L 'http://h/up' \\\n"
+                + "  -F 'f=@\"/work/a;b \\\"x\\\".json\";filename=\"b.json\";type=application/json' \\\n"
+                + "  --form-string 'note=hi'";
+        String out = http(exported);
+        assertTrue(
+                out.contains(
+                        "name=\"f\"; filename=\"b.json\"\nContent-Type: application/json\n\n< /work/a;b \"x\".json\n"),
+                out);
+        assertTrue(out.contains("name=\"note\"\n\nhi\n"), out);
+    }
+
+    @Test
+    void theHttpVersionFlagsAreKept() {
+        assertTrue(http("curl -L --http1.1 'http://h/v'").startsWith("GET http://h/v HTTP/1.1\n"));
+        assertTrue(http("curl --http2 https://h/v").startsWith("GET https://h/v HTTP/2\n"));
+        HttpFile.Parsed p = HttpFile.parseRequest(http("curl --http1.1 http://h/v"));
+        assertEquals("http://h/v", p.url());
+        assertEquals("HTTP/1.1", p.httpVersion());
+    }
+
+    @Test
+    void uploadFileIsAPutOfTheFile() {
+        assertEquals("PUT http://h/put\n\n< ./file.bin\n", http("curl -T ./file.bin http://h/put"));
+        assertEquals("POST http://h/put\n\n< ./file.bin\n", http("curl -X POST --upload-file file.bin http://h/put"));
+        assertEquals("GET http://h/put\n", http("curl -T - http://h/put"), "stdin cannot be written in a .http file");
+    }
 }

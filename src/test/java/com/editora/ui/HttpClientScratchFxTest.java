@@ -114,8 +114,13 @@ class HttpClientScratchFxTest {
             EditorBuffer created = new EditorBuffer();
             created.setDisplayName("scratch.http");
             created.setContent(text);
-            created.setHttpRunHandler(line -> coordinator.runRequest(created, line));
-            created.setHttpCancelHandler(() -> coordinator.cancelRun(created));
+            created.setHttpHooks(new com.editora.editor.HttpHooks(
+                    line -> coordinator.runRequest(created, line),
+                    null,
+                    () -> coordinator.cancelRun(created),
+                    null,
+                    null,
+                    null));
             created.setHttpEnabled(true);
             created.settleRunScan();
             host.buffers.add(created);
@@ -140,7 +145,7 @@ class HttpClientScratchFxTest {
         Files.writeString(project.resolve("http-client.env.json"), "{\"dev\":{\"host\":\"" + url("") + "\"}}");
         ops.projectRoot = project;
         EditorBuffer b = untitled("GET {{host}}/json?scratch\n");
-        ComboBox<String> env = FxTestSupport.field(coordinator.panelForTest(b), "envCombo");
+        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
         assertEquals(List.of("", "dev"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
@@ -216,7 +221,9 @@ class HttpClientScratchFxTest {
     void aSecretReadFromAnUntitledBufferIsTrustedAsTheProjectOrRefused() throws Exception {
         EditorBuffer b = untitled("GET " + url("/json") + "?k={{$processEnv.HOME}}\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
-        assertEquals(tr("status.http.secretsNeedFolder", "$processEnv.HOME"), host.last, "no project: not read");
+        // The gate is asked on the run's worker: the request is reported unsent, with why.
+        String refused = host.awaitStatus(s -> s.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")));
+        assertTrue(refused.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")), "no project: not read");
         assertEquals(List.of(), hits);
 
         ops.projectRoot = project;

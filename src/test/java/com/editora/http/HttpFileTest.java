@@ -106,24 +106,13 @@ class HttpFileTest {
     }
 
     @Test
-    void fileVariablesCollectsAtDeclarations() {
-        assertEquals("@host = https://api.example.com\n@token = abc", HttpFile.fileVariables(SAMPLE));
-    }
-
-    @Test
-    void extractPrependsVariablesToTheChosenRequest() {
-        String extracted = HttpFile.extract(SAMPLE, 0);
-        assertTrue(extracted.startsWith("@host = https://api.example.com\n@token = abc\n\n"));
-        assertTrue(extracted.contains("GET {{host}}/users"));
-        assertTrue(extracted.contains("Authorization: Bearer {{token}}"));
-        // The other request's body is NOT included.
-        assertTrue(!extracted.contains("POST"));
-    }
-
-    @Test
-    void extractOutOfRangeIsNull() {
-        assertNull(HttpFile.extract(SAMPLE, 5));
-        assertNull(HttpFile.extract("", 0));
+    void aRequestCarriesTheDeclarationsAboveIt() {
+        List<String[]> vars = HttpFile.parse(SAMPLE).get(0).variables();
+        assertEquals(2, vars.size());
+        assertEquals("host", vars.get(0)[0]);
+        assertEquals("https://api.example.com", vars.get(0)[1]);
+        assertEquals("token", vars.get(1)[0]);
+        assertEquals("abc", vars.get(1)[1]);
     }
 
     @Test

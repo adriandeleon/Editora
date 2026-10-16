@@ -132,7 +132,7 @@ class HttpClientChainingFxTest {
     void anUnresolvedReferenceIsWarnedAndAnEnvironmentChangeForgetsResponses(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("http-client.env.json"), "{\"dev\":{},\"prod\":{}}");
         EditorBuffer b = httpBuffer(dir.resolve("env.http"), file());
-        ComboBox<String> env = FxTestSupport.field(coordinator.panelForTest(b), "envCombo");
+        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         runLine(b, 2);
         FxTestSupport.runOnFx(() -> env.setValue("prod"));

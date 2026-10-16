@@ -1294,6 +1294,23 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /**
+     * One node per request of a {@code .http} file: its name (when it has one) and method + URL. Its own
+     * "request" kind: as a "method" it got the function icon and a trailing {@code ()} ({@code GET /slow()}).
+     */
+    private static List<StructureNode> httpRequestNodes(String text) {
+        List<StructureNode> roots = new ArrayList<>();
+        for (com.editora.http.HttpFile.Request r : com.editora.http.HttpFile.parse(text)) {
+            String call = r.method() + " " + r.url();
+            String label = r.name() == null || r.name().isBlank() ? call : r.name() + " — " + call;
+            roots.add(new StructureNode(null, label, HTTP_REQUEST_KIND, r.startLine()));
+        }
+        return roots;
+    }
+
+    /** The Structure kind of a {@code .http} request (its icon: {@link StructureIcons}). */
+    static final String HTTP_REQUEST_KIND = "request";
+
+    /**
      * Builds the heading outline for a Typst buffer, nested by level — the Markdown branch's twin.
      *
      * <p>Without it a {@code .typ} file fell through to the generic fold-region path, which for Typst meant
@@ -1301,17 +1318,6 @@ public class StructurePanel extends VBox implements ToolWindowContent {
      * sections showed one entry reading {@code #align()}. Sections are what a Typst document is navigated
      * by, and nothing else in the outline was worth keeping alongside them.
      */
-    /** One node per request of a {@code .http} file: its name (when it has one) and method + URL. */
-    private static List<StructureNode> httpRequestNodes(String text) {
-        List<StructureNode> roots = new ArrayList<>();
-        for (com.editora.http.HttpFile.Request r : com.editora.http.HttpFile.parse(text)) {
-            String call = r.method() + " " + r.url();
-            String label = r.name() == null || r.name().isBlank() ? call : r.name() + " — " + call;
-            roots.add(new StructureNode(null, label, "method", r.startLine()));
-        }
-        return roots;
-    }
-
     private static List<StructureNode> typstHeadingNodes(String text) {
         List<StructureNode> roots = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();

@@ -14,6 +14,10 @@ import java.util.regex.Pattern;
  * not end the quoting. The body goes out with {@code --data-raw}, so one that starts with {@code @} is sent as
  * text instead of making curl read a local file.
  *
+ * <p>The quoting is POSIX (bash, zsh, sh), and the UI says so: fish reads {@code \\} inside single quotes as one
+ * backslash, PowerShell escapes a quote by doubling it and continues lines with a backtick, and the Windows
+ * command prompt has no single quotes at all.
+ *
  * <p>The command reproduces what Editora sent, not its display text: a {@code < file} body is
  * {@code --data-binary @file}, a multipart form becomes {@code -F} / {@code --form-string} fields, the Digest
  * shorthand becomes {@code --digest -u}, redirects are followed ({@code -L}) unless the request said
@@ -23,10 +27,6 @@ public final class CurlExport {
 
     private static final Pattern PLAIN_METHOD = Pattern.compile("[A-Za-z][A-Za-z0-9-]*");
 
-    /** The details of a request known only by its text: nothing beyond method, URL, headers and body. */
-    private static final HttpExchange.Details TEXT_ONLY =
-            new HttpExchange.Details(null, List.of(), null, null, false, null, null, false);
-
     private CurlExport() {}
 
     /** The cURL command for an executed request, from its resolved values and how it was sent. */
@@ -34,13 +34,9 @@ public final class CurlExport {
         return toCurl(ex.method(), ex.url(), ex.headers(), ex.requestBody(), ex.details());
     }
 
-    /** The cURL command for a request known only by its text (no redirect, upload or auth details). */
-    public static String toCurl(String method, String url, List<String[]> headers, String body) {
-        return toCurl(method, url, headers, body, TEXT_ONLY);
-    }
-
+    /** The cURL command for a request from its parts; {@code details} null means known only by its text. */
     static String toCurl(String method, String url, List<String[]> headers, String body, HttpExchange.Details details) {
-        HttpExchange.Details d = details == null ? TEXT_ONLY : details;
+        HttpExchange.Details d = details == null ? HttpExchange.Details.NONE : details;
         StringBuilder sb = new StringBuilder("curl");
         String m = method == null ? "" : method.strip();
         if (m.equalsIgnoreCase("HEAD")) {
@@ -68,8 +64,9 @@ public final class CurlExport {
             }
         }
         if (d.digestUser() != null) {
+            // Without the password (a restored entry never has it) curl asks for it instead of sending a wrong one.
             sb.append(" \\\n  --digest -u ")
-                    .append(quote(d.digestUser() + ":" + (d.digestPass() == null ? "" : d.digestPass())));
+                    .append(quote(d.digestPass() == null ? d.digestUser() : d.digestUser() + ":" + d.digestPass()));
         }
         if (form) {
             for (HttpExchange.FormPart p : d.formParts()) {

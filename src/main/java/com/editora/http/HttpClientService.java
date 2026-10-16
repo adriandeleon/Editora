@@ -3,20 +3,12 @@ package com.editora.http;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -41,8 +33,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javafx.application.Platform;
 
@@ -71,6 +61,11 @@ import static com.editora.i18n.Messages.tr;
  * negotiation for {@code https://}, or what the request line asks for. One client is kept per run and per
  * directive set, so the requests of a Run All reuse their connections.
  *
+ * <p>Secrets: a request that reads the process environment or {@code .env} ({@link DynamicVars#isSecretSource}) asks
+ * the run's {@link SecretGate} first, on the worker and before anything is sent. What it asks about comes from a
+ * dry resolution of the request by the same code as the send ({@link #preview}), so no form or indirection the
+ * resolver accepts can reach a server unasked; each send then refuses a read the gate did not approve.
+ *
  * <p>A run always ends with a delivered result: anything thrown while preparing or sending a request — even an
  * {@link OutOfMemoryError} on a huge response — becomes that request's failure, and Run All carries on with the
  * next request.
@@ -86,13 +81,13 @@ public final class HttpClientService {
     /** How long a response body may keep arriving after its headers before the run is stopped. */
     private static final Duration DEFAULT_BODY_DEADLINE = Duration.ofMinutes(5);
 
-    /** Up to this size an uploaded {@code < file} body is also shown as text in the history and cURL views. */
-    private static final long SHOWN_FILE_BODY_BYTES = 1024 * 1024;
-
     /** The JDK client's limit on the exchanges of one request (the original one plus the redirects followed). */
     private static final int REDIRECT_LIMIT = Integer.getInteger("jdk.httpclient.redirects.retrylimit", 5);
 
-    /** The {@link HttpResult#error()} of a request the user cancelled. */
+    /**
+     * The {@link HttpResult#error()} of a request the user cancelled: a marker compared as is (and saved so in the
+     * history), shown translated by {@link HttpResult#shownError()}.
+     */
     public static final String CANCELLED = "request cancelled";
 
     static {
@@ -103,6 +98,10 @@ public final class HttpClientService {
      * Lets a request set its own {@code Host} header (testing a virtual host by IP). The JDK reads this property
      * once, when its HTTP classes first load, so {@code App.main} sets it at startup; this is the fallback for
      * other entry points and only works if no HTTP client was used before.
+     *
+     * <p>The property applies to every {@code java.net.http} client in the process, not only this one. That is
+     * acceptable because no other caller takes a header name from user content or sets {@code Host};
+     * {@code RestrictedHostHeaderTest} fails if one starts to.
      */
     public static void allowHostHeader() {
         String allowed = System.getProperty("jdk.httpclient.allowRestrictedHeaders", "");
@@ -160,6 +159,8 @@ public final class HttpClientService {
         private final CompletableFuture<Void> delivered = new CompletableFuture<>();
         private volatile CompletableFuture<?> pending;
         private volatile InputStream stream;
+        /** The request body of the exchange in flight, whose files a cancel closes (they stay open otherwise). */
+        private volatile RequestBodies.Content body;
 
         public void cancel() {
             if (cancelled.compareAndSet(false, true)) {
@@ -168,6 +169,10 @@ public final class HttpClientService {
                     f.cancel(true);
                 }
                 closeQuietly(stream);
+                RequestBodies.Content b = body;
+                if (b != null) {
+                    b.release();
+                }
             }
         }
 
@@ -189,6 +194,124 @@ public final class HttpClientService {
                 }
             });
         }
+    }
+
+    /**
+     * The trust gate for secrets: asked, on the run's worker and before anything is sent, whether the run may read
+     * {@code reads} (the secret sources its requests resolve, as written: {@code $env TOKEN}, {@code $dotenv KEY})
+     * and send what they resolve to {@code hosts}. It may block (a dialog on the FX thread). Returns null to allow,
+     * else the message the requests that read secrets are reported with, unsent.
+     */
+    @FunctionalInterface
+    public interface SecretGate {
+        /** Reads anything without asking (tests, tools; the editor always passes its own gate). */
+        SecretGate UNCHECKED = (reads, hosts) -> null;
+
+        String check(List<String> reads, List<String> hosts);
+    }
+
+    /**
+     * What a request would read and where it would go, from a dry resolution that runs the same code as a send
+     * ({@link #prepare}) but keeps every secret source as written: the {@code reads} (see
+     * {@link HttpVars.Unresolved#secretReads()}) and the {@code hosts} ({@code host:port}) it would contact.
+     */
+    public record Preview(List<String> reads, List<String> hosts) {}
+
+    /**
+     * The dry resolution of {@code request}: URL, headers, inline and {@code <@} bodies, multipart parts (their
+     * {@code <@} files included), {@code >>} targets, the {@code @var} lines above it and the environment values they
+     * use — every secret source read on the way, and the host it would be sent to. No secret value is read into the
+     * result. Reads the request's body files, so call it off the FX thread.
+     */
+    public static Preview preview(
+            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
+        ZonedDateTime now = ZonedDateTime.now();
+        HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
+        HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
+        Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
+        return new Preview(sink.secretReads(), List.of(hostOf(p.targetUrl())));
+    }
+
+    /**
+     * The report of a request refused for its secrets: what it would have sent, from the dry resolution — every
+     * secret source as written — so neither the response view nor the saved history holds a value that was refused.
+     */
+    private static HttpExchange notSent(
+            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured, String why) {
+        ZonedDateTime now = ZonedDateTime.now();
+        HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
+        HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
+        Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
+        List<String> warnings = new ArrayList<>(p.warnings());
+        warnings.addAll(sink.warnings());
+        String url = p.targetUrl(); // not percent-encoded: the {{references}} read as written
+        String label = p.method() + " " + (request.directives().noLog() ? withoutQueryValues(url) : url);
+        return new HttpExchange(
+                label,
+                p.method(),
+                url,
+                p.headers(),
+                p.body().display(),
+                HttpResult.failure(why, warnings),
+                p.details());
+    }
+
+    /** {@code host[:port]} of {@code url}, read leniently (a {@code {{reference}}} kept in a dry host stays as is). */
+    static String hostOf(String url) {
+        String u = url == null ? "" : url.strip();
+        int scheme = u.indexOf("://");
+        if (scheme < 0) {
+            return u;
+        }
+        int start = scheme + 3;
+        int end = start;
+        while (end < u.length() && "/?#".indexOf(u.charAt(end)) < 0) {
+            end++;
+        }
+        String authority = u.substring(start, end);
+        int at = authority.lastIndexOf('@');
+        return at < 0 ? authority : authority.substring(at + 1);
+    }
+
+    /**
+     * The secret reads a run may make: null for an unchecked run; else the approved ones (empty when none were, or
+     * the gate refused, with its {@code refusal}).
+     */
+    private record Approval(java.util.Set<String> reads, String refusal) {}
+
+    /** Asks {@code gate} once about every secret the {@code requests} would read; nothing is asked when none do. */
+    private static Approval approve(
+            SecretGate gate,
+            List<HttpFile.Parsed> requests,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured) {
+        if (gate == null || gate == SecretGate.UNCHECKED) {
+            return null;
+        }
+        java.util.Set<String> reads = new java.util.LinkedHashSet<>();
+        java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
+        for (HttpFile.Parsed request : requests) {
+            try {
+                Preview p = preview(request, vars, baseDir, captured);
+                if (!p.reads().isEmpty()) {
+                    reads.addAll(p.reads());
+                    hosts.addAll(p.hosts());
+                }
+            } catch (Throwable unreadable) {
+                // nothing is approved for it: if its send does read a secret, the send is refused
+            }
+        }
+        if (reads.isEmpty()) {
+            return new Approval(java.util.Set.of(), null);
+        }
+        String refusal;
+        try {
+            refusal = gate.check(List.copyOf(reads), List.copyOf(hosts));
+        } catch (RuntimeException failure) {
+            refusal = tr("status.http.secretsRefused", String.join(", ", reads));
+        }
+        return refusal == null ? new Approval(reads, null) : new Approval(java.util.Set.of(), refusal);
     }
 
     /**
@@ -226,21 +349,19 @@ public final class HttpClientService {
     private record ClientKey(
             boolean noRedirect, boolean noCookieJar, Duration connectTimeout, HttpClient.Version version) {}
 
-    /** Runs a single request off-thread (its own cookie jar, no prior context), posting on the FX thread. */
-    public Handle run(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, Consumer<HttpExchange> onResult) {
-        return run(request, vars, baseDir, new CapturedResponses(), onResult);
-    }
-
     /**
      * Runs a single request off-thread (its own cookie jar), resolving {@code {{name.response…}}} against
-     * {@code captured} — the buffer's session — and recording this request's result there under its name.
+     * {@code captured} — the buffer's session, a fresh one when null — and recording this request's result there
+     * under its name. {@code gate} is asked on the worker, before anything is sent, when the request reads a secret
+     * ({@link SecretGate#UNCHECKED} asks nothing); refused, the request is reported unsent. The result posts on the FX
+     * thread.
      */
     public Handle run(
             HttpFile.Parsed request,
             Map<String, String> vars,
             Path baseDir,
             CapturedResponses captured,
+            SecretGate gate,
             Consumer<HttpExchange> onResult) {
         Handle handle = new Handle();
         active.add(handle);
@@ -248,7 +369,8 @@ public final class HttpClientService {
         exec.submit(() -> {
             HttpExchange ex;
             try (Session session = new Session(new CookieManager())) {
-                ex = executeSafely(handle, request, vars, baseDir, responses, session);
+                Approval approval = approve(gate, List.of(request), vars, baseDir, responses);
+                ex = executeSafely(handle, request, vars, baseDir, responses, session, approval);
                 responses.put(request.name(), ex.result());
             } finally {
                 active.remove(handle);
@@ -258,48 +380,19 @@ public final class HttpClientService {
         return handle;
     }
 
-    /** Runs {@code requests} sequentially off-thread, sharing one cookie jar + captured-response session so
-     *  later requests can reference earlier responses; posts all exchanges together on the FX thread. */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, null, null, onResult);
-    }
-
-    /** As {@link #runAll(List, Map, Path, Consumer)}, resolving and recording responses in {@code responses}. */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses responses,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, responses, null, onResult);
-    }
-
     /**
-     * As {@link #runAll(List, Map, Path, Consumer)}, telling {@code onStart} (on the FX thread, may be null)
-     * the index of each request as it starts, so the viewer can show "2 of 5" while the run is in flight.
-     */
-    public Handle runAll(
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            java.util.function.IntConsumer onStart,
-            Consumer<List<HttpExchange>> onResult) {
-        return runAll(requests, vars, baseDir, null, onStart, onResult);
-    }
-
-    /**
-     * Runs {@code requests} in order, resolving and recording responses in {@code responses} (the buffer's
-     * chaining session; a fresh one when null) and telling {@code onStart} each request's index as it starts.
+     * Runs {@code requests} in order off-thread, sharing one cookie jar and the captured-response session
+     * {@code responses} (the buffer's; a fresh one when null), so later requests can reference earlier responses.
+     * {@code gate} is asked once, before the first request is sent, about every secret the requests read; refused,
+     * the requests that read one are reported unsent and the others still run. {@code onStart} (on the FX thread,
+     * may be null) is told each request's index as it starts ("2 of 5"); all exchanges post together at the end.
      */
     public Handle runAll(
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
             Path baseDir,
             CapturedResponses responses,
+            SecretGate gate,
             java.util.function.IntConsumer onStart,
             Consumer<List<HttpExchange>> onResult) {
         Handle handle = new Handle();
@@ -308,12 +401,13 @@ public final class HttpClientService {
         exec.submit(() -> {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
+                Approval approval = approve(gate, requests, vars, baseDir, captured);
                 for (HttpFile.Parsed req : requests) {
                     if (onStart != null) {
                         int index = out.size();
                         Platform.runLater(() -> onStart.accept(index));
                     }
-                    HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session);
+                    HttpExchange ex = executeSafely(handle, req, vars, baseDir, captured, session, approval);
                     captured.put(req.name(), ex.result());
                     out.add(ex);
                     if (handle.isCancelled()) {
@@ -338,9 +432,11 @@ public final class HttpClientService {
             Map<String, String> vars,
             Path baseDir,
             CapturedResponses captured,
-            Session session) {
+            Session session,
+            Approval approval) {
+        HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
         try {
-            return execute(handle, request, vars, baseDir, captured, session);
+            return execute(handle, request, vars, baseDir, captured, session, approval, unresolved);
         } catch (Throwable failure) { // also an OutOfMemoryError: the arrays it was filling are garbage by now
             String method = request == null
                             || request.method() == null
@@ -353,8 +449,11 @@ public final class HttpClientService {
                     : failure instanceof OutOfMemoryError
                             ? tr("status.http.error.memory")
                             : tr("status.http.error.internal", describe(failure));
+            // What was known before it broke — a parse warning, a variable that did not resolve — still helps.
+            List<String> warnings = new ArrayList<>(request == null ? List.of() : request.warnings());
+            warnings.addAll(unresolved.warnings());
             return new HttpExchange(
-                    method + " " + url, method, url, List.of(), "", HttpResult.failure(message, List.of()));
+                    method + " " + url, method, url, List.of(), "", HttpResult.failure(message, warnings), null);
         }
     }
 
@@ -369,63 +468,27 @@ public final class HttpClientService {
             Map<String, String> vars,
             Path baseDir,
             CapturedResponses captured,
-            Session session) {
+            Session session,
+            Approval approval,
+            HttpVars.Unresolved unresolved) {
         // The clock is a real instant in the user's zone: $timestamp/$isoTimestamp are UTC whatever the zone.
         ZonedDateTime now = ZonedDateTime.now();
         // The variables this request sees: the environment's, then the @var lines above it (in order), resolved
         // now — so they may use an earlier response or $dotenv beside the file. What cannot be resolved is
-        // collected and reported, never sent silently as an empty value.
-        HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
+        // collected (in the caller's `unresolved`, so a failure still reports it) and never sent silently as "".
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir);
         Function<String, String> sub = s -> HttpVars.substitute(s, scope, now, captured, baseDir, unresolved);
-        String method = request.method().isEmpty() ? "GET" : request.method();
-
-        List<String[]> headers = new ArrayList<>();
-        for (String[] h : request.headers()) {
-            headers.add(new String[] {h[0], sub.apply(h[1])});
-        }
-        // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header; a target without
-        // a scheme is http:// (JetBrains).
-        HttpTargets.Target target = HttpTargets.resolve(sub.apply(request.url()).trim(), headers);
-        String url = UrlEncoding.withScheme(target.url(), null);
-        headers = new ArrayList<>(target.headers());
-        if (!request.directives().noAutoEncoding()) {
-            url = UrlEncoding.encodeIllegal(url); // default auto-encoding (off under @no-auto-encoding)
-        }
-        headers = HttpAuth.normalizeHeaders(headers);
-        // Trim whitespace/newlines the JDK client would reject, and collect any header it still can't send —
-        // otherwise a header (a pasted Authorization with a trailing \r\n) is dropped silently and the request
-        // goes out unauthenticated. From here on `headers` is the sendable, trimmed set.
-        HttpHeaders.Partition hp = HttpHeaders.partition(headers);
-        headers = new ArrayList<>(hp.sendable());
-        List<String> warnings = new ArrayList<>();
-        // e.g. a body written without the required blank line before it, an ignored script, a bad @timeout
-        warnings.addAll(request.warnings());
-        warnings.addAll(hp.warnings());
+        Prepared p = prepare(request, baseDir, sub);
+        String method = p.method();
+        String url = p.url();
+        List<String[]> headers = p.headers();
+        List<String> warnings = p.warnings();
         String requestedVersion = request.httpVersion();
-        HttpVersions.Choice version = HttpVersions.choose(requestedVersion, url);
-        if (version.warning() != null) {
-            warnings.add(version.warning());
-        }
-        String contentType = headerValue(headers, "Content-Type");
-
-        BodyContent bc = resolveBody(request, baseDir, sub, contentType, headers, warnings);
-        // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
-        DigestAuth.Credentials digest = digestCredentials(headers);
-        if (digest != null) {
-            headers.removeIf(h -> h[0].equalsIgnoreCase("Authorization"));
-        }
-        boolean noLog = request.directives().noLog();
-        String label = method + " " + (noLog ? withoutQueryValues(url) : url);
-        HttpExchange.Details details = new HttpExchange.Details(
-                bc.file() == null ? null : bc.file().toAbsolutePath().toString(),
-                bc.parts(),
-                digest == null ? null : digest.user(),
-                digest == null ? null : digest.pass(),
-                !request.directives().noRedirect(),
-                requestedVersion,
-                null,
-                noLog);
+        HttpVersions.Choice version = p.version();
+        RequestBodies.Content bc = p.body();
+        DigestAuth.Credentials digest = p.digest();
+        String label = p.label();
+        HttpExchange.Details details = p.details();
         if (request.error() != null) {
             // A GraphQL/WebSocket/gRPC request: sending it as plain HTTP would only produce a confusing error.
             warnings.addAll(unresolved.warnings());
@@ -437,8 +500,18 @@ public final class HttpClientService {
             // The body the request names cannot be read. Sending the request without it would look like a
             // server problem (and could create an empty resource), so it is not sent at all.
             warnings.add(bc.problem());
-            HttpResult notSent = HttpResult.failure("request not sent: " + bc.problem(), warnings);
+            HttpResult notSent = HttpResult.failure(tr("http.request.notSent", bc.problem()), warnings);
             return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
+        }
+        if (approval != null && !approval.reads().containsAll(unresolved.secretReads())) {
+            // What this send resolved reads a secret the gate did not approve: refused before the first byte, and
+            // reported from the dry resolution, so the secret is not in the history either.
+            List<String> unapproved = new ArrayList<>(unresolved.secretReads());
+            unapproved.removeAll(approval.reads());
+            String why = approval.refusal() != null
+                    ? approval.refusal()
+                    : tr("status.http.secretsUnapproved", String.join(", ", unapproved));
+            return notSent(request, vars, baseDir, captured, why);
         }
         if (handle.isCancelled()) {
             warnings.addAll(unresolved.warnings());
@@ -451,6 +524,10 @@ public final class HttpClientService {
         Duration connect = request.directives().connectionTimeoutMillis() > 0
                 ? Duration.ofMillis(request.directives().connectionTimeoutMillis())
                 : CONNECT_TIMEOUT;
+        handle.body = bc;
+        if (handle.isCancelled()) {
+            bc.release(); // cancel() ran before the body was registered
+        }
         try {
             HttpClient client = session.client(new ClientKey(
                     request.directives().noRedirect(), request.directives().noCookieJar(), connect, version.version()));
@@ -482,13 +559,17 @@ public final class HttpClientService {
             if (resp.undecoded() != null) {
                 warnings.add(tr("status.http.warn.undecoded", resp.undecoded()));
             }
+            if (resp.overLayered() != null) {
+                warnings.add(tr("status.http.warn.tooManyEncodings", ContentDecoding.MAX_LAYERS, resp.overLayered()));
+            }
             if (resp.truncated()) {
-                warnings.add("response truncated at " + megabytes(maxResponseBytes)
-                        + " — the rest of the body was not downloaded");
+                warnings.add(tr("http.warn.truncated", megabytes(maxResponseBytes)));
             }
             if (resp.stopped() == Stop.DEADLINE) {
-                warnings.add("response still arriving after " + bodyDeadline.toSeconds() + " s — stopped; showing the "
-                        + resp.body().length + " bytes received so far");
+                warnings.add(tr(
+                        "http.warn.deadline",
+                        String.valueOf(bodyDeadline.toSeconds()),
+                        String.valueOf(resp.body().length)));
             } else if (resp.stopped() == Stop.IDLE) {
                 warnings.add(tr("status.http.warn.idle", seconds(timeout), resp.body().length));
             }
@@ -528,8 +609,95 @@ public final class HttpClientService {
                     : withUrl(HttpErrors.message(e, url, timeout, connect, explicitTimeout), url);
             return new HttpExchange(
                     label, method, url, headers, bc.display(), HttpResult.failure(message, warnings), details);
+        } finally {
+            handle.body = null;
+            bc.release(); // the upload's files, whether it finished, failed or was cancelled
         }
     }
+
+    /**
+     * What a request resolves to before anything is sent: method, URL, headers, body, Digest credentials, the label
+     * and the details — every {@code {{…}}} of it substituted through {@code sub}, the {@code >>} targets included,
+     * so whatever the run reads (the secrets the trust gate asks about) is known before the first byte goes out.
+     * {@link #preview} runs exactly this with a dry {@code sub}.
+     */
+    private static Prepared prepare(HttpFile.Parsed request, Path baseDir, Function<String, String> sub) {
+        String method = request.method().isEmpty() ? "GET" : request.method();
+
+        List<String[]> headers = new ArrayList<>();
+        for (String[] h : request.headers()) {
+            headers.add(new String[] {h[0], sub.apply(h[1])});
+        }
+        // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header; a target without
+        // a scheme is http:// (JetBrains).
+        HttpTargets.Target target = HttpTargets.resolve(sub.apply(request.url()).trim(), headers);
+        String url = UrlEncoding.withScheme(target.url(), null);
+        headers = new ArrayList<>(target.headers());
+        if (!request.directives().noAutoEncoding()) {
+            url = UrlEncoding.encodeIllegal(url); // default auto-encoding (off under @no-auto-encoding)
+        }
+        headers = HttpAuth.normalizeHeaders(headers);
+        // Trim whitespace/newlines the JDK client would reject, and collect any header it still can't send —
+        // otherwise a header (a pasted Authorization with a trailing \r\n) is dropped silently and the request
+        // goes out unauthenticated. From here on `headers` is the sendable, trimmed set.
+        HttpHeaders.Partition hp = HttpHeaders.partition(headers);
+        headers = new ArrayList<>(hp.sendable());
+        List<String> warnings = new ArrayList<>();
+        // e.g. a body written without the required blank line before it, an ignored script, a bad @timeout
+        warnings.addAll(request.warnings());
+        warnings.addAll(hp.warnings());
+        String requestedVersion = request.httpVersion();
+        HttpVersions.Choice version = HttpVersions.choose(requestedVersion, url);
+        if (version.warning() != null) {
+            warnings.add(version.warning());
+        }
+        String contentType = headerValue(headers, "Content-Type");
+
+        RequestBodies.Content bc = RequestBodies.resolve(request, baseDir, sub, contentType, headers, warnings);
+        // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
+        DigestAuth.Credentials digest = digestCredentials(headers);
+        if (digest != null) {
+            headers.removeIf(h -> h[0].equalsIgnoreCase("Authorization"));
+        }
+        boolean noLog = request.directives().noLog();
+        String label = method + " " + (noLog ? withoutQueryValues(url) : url);
+        HttpExchange.Details details = new HttpExchange.Details(
+                bc.file() == null ? null : bc.file().toAbsolutePath().toString(),
+                bc.parts(),
+                digest == null ? null : digest.user(),
+                digest == null ? null : digest.pass(),
+                !request.directives().noRedirect(),
+                requestedVersion,
+                null,
+                noLog);
+        for (HttpFile.Redirect r : request.redirects()) {
+            sub.apply(r.path()); // resolved again when written; here so that what it reads is known up front
+        }
+        return new Prepared(
+                method,
+                url,
+                UrlEncoding.withScheme(target.url(), null),
+                headers,
+                warnings,
+                version,
+                bc,
+                digest,
+                label,
+                details);
+    }
+
+    /** {@link #prepare}'s result; {@code targetUrl} is the URL before auto-encoding (for showing its host). */
+    private record Prepared(
+            String method,
+            String url,
+            String targetUrl,
+            List<String[]> headers,
+            List<String> warnings,
+            HttpVersions.Choice version,
+            RequestBodies.Content body,
+            DigestAuth.Credentials digest,
+            String label,
+            HttpExchange.Details details) {}
 
     private static String megabytes(int bytes) {
         return bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)) + " MB" : bytes + " bytes";
@@ -558,44 +726,6 @@ public final class HttpClientService {
         return sb.toString();
     }
 
-    /**
-     * The request body: its publisher, a display string (for the history/cURL view), and how it went out (a file
-     * streamed as is, multipart fields) for the cURL export. A non-null {@code problem} means the body the request
-     * refers to could not be read and the request must not be sent. {@code digestFeed} feeds the body to a
-     * {@code qop=auth-int} Digest answer; a streamed body (a {@code < file}, a multipart form with file parts) is
-     * read again for it as it goes, never held in memory whole.
-     */
-    private record BodyContent(
-            HttpRequest.BodyPublisher publisher,
-            String display,
-            String problem,
-            DigestAuth.BodyFeed digestFeed,
-            Path file,
-            List<HttpExchange.FormPart> parts) {
-
-        static BodyContent of(byte[] bytes, String display) {
-            return new BodyContent(
-                    HttpRequest.BodyPublishers.ofByteArray(bytes),
-                    display,
-                    null,
-                    md -> md.update(bytes),
-                    null,
-                    List.of());
-        }
-
-        static BodyContent unreadable(String problem) {
-            return new BodyContent(
-                    HttpRequest.BodyPublishers.noBody(), "(" + problem + ")", problem, md -> {}, null, List.of());
-        }
-    }
-
-    /** Feeds {@code file} to a digest in chunks. */
-    private static void feedFile(Path file, java.security.MessageDigest md) throws IOException {
-        try (InputStream in = Files.newInputStream(file)) {
-            in.transferTo(new java.security.DigestOutputStream(OutputStream.nullOutputStream(), md));
-        }
-    }
-
     /** Why a body stopped arriving before its end. */
     private enum Stop {
         DEADLINE,
@@ -610,156 +740,10 @@ public final class HttpClientService {
             boolean truncated,
             Stop stopped,
             String undecoded,
+            String overLayered,
             HttpClient.Version version,
             URI uri,
             List<URI> redirects) {}
-
-    private static BodyContent resolveBody(
-            HttpFile.Parsed request,
-            Path baseDir,
-            Function<String, String> sub,
-            String contentType,
-            List<String[]> headers,
-            List<String> warnings) {
-        // multipart/form-data: assemble the parts (inline parts substituted, < ./file parts slurped).
-        if (Multipart.isMultipart(contentType)) {
-            String boundary = Multipart.boundaryOf(contentType);
-            if (boundary.isEmpty()) {
-                boundary = "EditoraBoundary" + Long.toHexString(System.nanoTime());
-                setHeader(headers, "Content-Type", contentType + "; boundary=" + boundary);
-            }
-            List<String> problems = new ArrayList<>();
-            List<Multipart.Part> parsed = Multipart.parse(request.body(), boundary);
-            // File parts stay files: the body is streamed from them while it is sent, its length known up front.
-            Multipart.Body form = Multipart.assemble(parsed, boundary, baseDir, sub, problems);
-            if (!problems.isEmpty()) {
-                return BodyContent.unreadable(String.join("; ", problems));
-            }
-            HttpRequest.BodyPublisher publisher;
-            try {
-                publisher = form.publisher();
-            } catch (java.io.FileNotFoundException gone) {
-                return BodyContent.unreadable("multipart file not found: " + gone.getMessage());
-            }
-            return new BodyContent(
-                    publisher,
-                    "(multipart/form-data, " + form.length() + " bytes)",
-                    null,
-                    form::feed,
-                    null,
-                    formParts(form.parts()));
-        }
-        Charset charset = HttpResult.charsetOf(contentType);
-        // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
-        if (request.bodyRef() != null && baseDir != null) {
-            try {
-                HttpFile.BodyRef ref = request.bodyRef();
-                Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
-                Path bodyFile = HttpPaths.contained(baseDir, ref.path());
-                if (bodyFile == null) {
-                    return BodyContent.unreadable("body file outside the request folder: " + ref.path());
-                }
-                if (!ref.substitute()) {
-                    // "< file": the file's bytes are the body, untouched and streamed — a decode/re-encode round
-                    // trip through String corrupts anything that is not valid UTF-8 (an image, a protobuf), and a
-                    // multi-gigabyte upload must not be read into memory first.
-                    long size = Files.size(bodyFile);
-                    String shown = shownFileBody(bodyFile, size, ref.path(), cs);
-                    return new BodyContent(
-                            HttpRequest.BodyPublishers.ofFile(bodyFile),
-                            shown,
-                            null,
-                            md -> feedFile(bodyFile, md),
-                            bodyFile,
-                            List.of());
-                }
-                String content = sub.apply(new String(Files.readAllBytes(bodyFile), cs));
-                return BodyContent.of(encode(content, charset, warnings), content);
-            } catch (Exception e) {
-                return BodyContent.unreadable(
-                        "body file not found: " + request.bodyRef().path());
-            }
-        }
-        if (request.bodyRef() != null) {
-            return BodyContent.unreadable("body file needs a saved request file to resolve against: "
-                    + request.bodyRef().path());
-        }
-        String body = sub.apply(request.body());
-        if (body == null || body.isBlank()) {
-            return new BodyContent(HttpRequest.BodyPublishers.noBody(), "", null, md -> {}, null, List.of());
-        }
-        return BodyContent.of(encode(body, charset, warnings), body);
-    }
-
-    /** What the history shows for a {@code < file} body: its text when small and textual, else a note. */
-    private static String shownFileBody(Path file, long size, String shownPath, Charset cs) throws IOException {
-        if (size > SHOWN_FILE_BODY_BYTES) {
-            return "(body from " + shownPath + ", " + HttpResponseFormat.humanSize(size) + ")";
-        }
-        byte[] raw = Files.readAllBytes(file);
-        return HttpResult.looksBinary(raw, null)
-                ? "(binary body from " + shownPath + ", " + raw.length + " bytes)"
-                : new String(raw, cs);
-    }
-
-    /**
-     * {@code text} in {@code charset} — the one the request's {@code Content-Type} declares, else UTF-8 — with a
-     * warning when a character has no form in it (it goes out as {@code ?}).
-     */
-    static byte[] encode(String text, Charset charset, List<String> warnings) {
-        try {
-            ByteBuffer b = charset.newEncoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .encode(CharBuffer.wrap(text));
-            byte[] out = new byte[b.remaining()];
-            b.get(out);
-            return out;
-        } catch (CharacterCodingException | UnsupportedOperationException e) {
-            warnings.add(tr("status.http.warn.unmappable", charset.name()));
-            return text.getBytes(charset);
-        }
-    }
-
-    private static final Pattern DISPOSITION_PARAM =
-            Pattern.compile("(?i)(?:^|;)\\s*(name|filename)\\s*=\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[^;]*)");
-
-    /**
-     * The multipart parts as form fields for the cURL export, from the parts as they went out: names, the text sent
-     * (an inline value, or a {@code <@ ./file} part after substitution) and the files streamed.
-     */
-    private static List<HttpExchange.FormPart> formParts(List<Multipart.Resolved> parts) {
-        List<HttpExchange.FormPart> out = new ArrayList<>();
-        for (Multipart.Resolved p : parts) {
-            String name = null;
-            String filename = null;
-            String type = null;
-            for (Map.Entry<String, String> h : p.headers().entrySet()) {
-                if (h.getKey().equalsIgnoreCase("Content-Disposition")) {
-                    Matcher m = DISPOSITION_PARAM.matcher(h.getValue());
-                    while (m.find()) {
-                        String v = m.group(2).strip();
-                        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
-                            v = v.substring(1, v.length() - 1);
-                        }
-                        if (m.group(1).equalsIgnoreCase("name")) {
-                            name = v;
-                        } else {
-                            filename = v;
-                        }
-                    }
-                } else if (h.getKey().equalsIgnoreCase("Content-Type")) {
-                    type = h.getValue();
-                }
-            }
-            out.add(
-                    p.file() != null
-                            ? new HttpExchange.FormPart(
-                                    name, null, p.file().toAbsolutePath().toString(), filename, type)
-                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, null, type));
-        }
-        return out;
-    }
 
     private static String withUrl(String message, String url) {
         return url.isBlank() ? message : message + "  (" + url + ")";
@@ -825,16 +809,17 @@ public final class HttpClientService {
                     raw, resp.headers().firstValue("Content-Encoding").orElse(null));
             AtomicLong lastRead = new AtomicLong(System.nanoTime());
             ScheduledFuture<?> watchdog = watch(raw, stopped, lastRead, idle);
-            try {
+            try (InputStream body = decoded.stream()) { // closing it ends the decoders' inflaters
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
-                boolean truncated = readCapped(decoded.stream(), out, maxResponseBytes, handle, stopped, lastRead);
+                boolean truncated = readCapped(body, out, maxResponseBytes, handle, stopped, lastRead);
                 return new Received(
                         resp.statusCode(),
                         resp.headers(),
                         out.toByteArray(),
                         truncated,
                         stopped.get(),
-                        decoded.undecoded(),
+                        decoded.tooManyLayers() ? null : decoded.undecoded(),
+                        decoded.tooManyLayers() ? decoded.undecoded() : null,
                         resp.version(),
                         resp.uri(),
                         redirects);
@@ -1041,16 +1026,6 @@ public final class HttpClientService {
             }
         }
         return "";
-    }
-
-    private static void setHeader(List<String[]> headers, String name, String value) {
-        for (String[] h : headers) {
-            if (h[0].equalsIgnoreCase(name)) {
-                h[1] = value;
-                return;
-            }
-        }
-        headers.add(new String[] {name, value});
     }
 
     /** Stops the daemon worker (window close). Without this, each closed window leaks its http-client thread. */

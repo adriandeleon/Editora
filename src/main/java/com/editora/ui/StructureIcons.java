@@ -22,6 +22,7 @@ final class StructureIcons {
     private static final String MODULE = "M20 8h-3V4H3v16h18V8zM5 6h10v2H5zM5 10h14v8H5z"; // package/box
     private static final String HEADING = "M5 4v16h2v-7h6v7h2V4h-2v7H7V4z"; // an "H" (Markdown heading)
     private static final String DOT = "M9 9h6v6H9z"; // neutral square
+    private static final String REQUEST = "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"; // a sent message (.http request)
 
     /** A fresh glyph Node for {@code kind} (the lowercased SymbolKind id). */
     static Node forKind(String kind) {
@@ -38,6 +39,7 @@ final class StructureIcons {
             case "field", "property", "variable", "constant", "key" -> FIELD;
             case "module", "namespace", "package", "file" -> MODULE;
             case "heading" -> HEADING;
+            case "request" -> REQUEST;
             default -> DOT;
         };
     }

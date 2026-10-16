@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Writes a response body to the request's {@code >>} / {@code >>!} targets, and says what it did.
  *
@@ -130,15 +132,19 @@ public final class ResponseRedirects {
                     redirect.path() == null ? "" : fill.apply(redirect.path()).strip();
             String shown = path;
             if (stop.getAsBoolean()) {
-                warnings.add("response not saved to " + shown + ": the request was cancelled");
+                warnings.add(tr("http.redirect.notSavedCancelled", shown));
+                continue;
+            }
+            String unusable = unusablePath(path);
+            if (unusable != null) {
+                warnings.add(tr("http.warn.redirectPath", shown, unusable));
                 continue;
             }
             try {
                 Path target = HttpPaths.containedForWrite(baseDir, path);
                 if (target == null) {
                     // a ">> ../../x" (or a symlink) must not write outside the request file's folder
-                    warnings.add("response not saved to " + shown
-                            + ": the path must be a regular file inside the request file's folder");
+                    warnings.add(tr("http.redirect.notSavedOutside", shown));
                     continue;
                 }
                 shown = display(baseDir, target);
@@ -146,7 +152,7 @@ public final class ResponseRedirects {
                 (line.written() ? written : warnings).add(line.text());
             } catch (IOException | RuntimeException failure) {
                 // a failed redirect write never aborts the response — but it is reported
-                warnings.add("response not saved to " + shown + ": " + reason(failure));
+                warnings.add(tr("http.redirect.notSaved", shown, reason(failure)));
             }
         }
     }
@@ -183,31 +189,31 @@ public final class ResponseRedirects {
             return createNumbered(target, shown, body);
         }
         if (truncated) {
-            return Line.skipped(shown + " not replaced: the response is incomplete");
+            return Line.skipped(tr("http.redirect.notReplacedIncomplete", shown));
         }
         if (status < 200 || status > 299) {
-            return Line.skipped(shown + " not replaced: the response is an error (HTTP " + status + ")");
+            return Line.skipped(tr("http.redirect.notReplacedError", shown, String.valueOf(status)));
         }
         Decision decision = guard.beforeOverwrite(target);
         if (decision == null) {
             decision = Decision.of(Verdict.REFUSED_NOT_PRESERVED);
         }
         if (cancelled.getAsBoolean()) {
-            return Line.skipped(shown + " not replaced: the request was cancelled");
+            return Line.skipped(tr("http.redirect.notReplacedCancelled", shown));
         }
         if (!decision.allowed()) {
             return Line.skipped(
                     decision.verdict() == Verdict.REFUSED_UNSAVED_CHANGES
-                            ? shown + " not replaced: it is open with unsaved changes"
-                            : shown + " not replaced: its current content could not be kept in Local History");
+                            ? tr("http.redirect.notReplacedUnsaved", shown)
+                            : tr("http.redirect.notReplacedNotKept", shown));
         }
         if (!replace(target, decision.expectedBytes(), body)) {
-            return Line.skipped(shown + " not replaced: it changed while the response was being saved");
+            return Line.skipped(tr("http.redirect.notReplacedChanged", shown));
         }
         return Line.saved(
                 decision.verdict() == Verdict.KEPT_IN_HISTORY
-                        ? "response saved to " + shown + ", replacing the file (previous version in Local History)"
-                        : "response saved to " + shown + ", replacing the file (previous version not kept)");
+                        ? tr("http.redirect.replacedKept", shown)
+                        : tr("http.redirect.replacedNotKept", shown));
     }
 
     private static Line createNew(Path target, String shown, byte[] body) throws IOException {
@@ -218,10 +224,9 @@ public final class ResponseRedirects {
             // Raw bytes, exclusive create: a file (or a link) that appeared since the checks is never written.
             Files.write(target, body, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         } catch (FileAlreadyExistsException appeared) {
-            return Line.skipped(
-                    "response not saved to " + shown + ": a file appeared there while the request was running");
+            return Line.skipped(tr("http.redirect.appeared", shown));
         }
-        return Line.saved("response saved to " + shown);
+        return Line.saved(tr("http.redirect.saved", shown));
     }
 
     /** The most numbered siblings tried for a {@code >>} onto a taken name before giving up. */
@@ -233,9 +238,8 @@ public final class ResponseRedirects {
      */
     private static Line createNumbered(Path target, String shown, byte[] body) throws IOException {
         String name = target.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        String stem = dot > 0 ? name.substring(0, dot) : name;
-        String ext = dot > 0 ? name.substring(dot) : "";
+        String stem = numberedStem(name);
+        String ext = name.substring(stem.length());
         for (int n = 1; n <= MAX_NUMBERED; n++) {
             Path candidate = target.resolveSibling(stem + "-" + n + ext);
             if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
@@ -247,10 +251,9 @@ public final class ResponseRedirects {
                 continue;
             }
             String parent = shown.lastIndexOf('/') >= 0 ? shown.substring(0, shown.lastIndexOf('/') + 1) : "";
-            return Line.saved("response saved to " + parent + candidate.getFileName() + " (" + shown
-                    + " already exists; >>! replaces it)");
+            return Line.saved(tr("http.redirect.savedNumbered", parent + candidate.getFileName(), shown));
         }
-        return Line.skipped("response not saved to " + shown + ": the file and its numbered copies already exist");
+        return Line.skipped(tr("http.redirect.allTaken", shown));
     }
 
     /**
@@ -267,7 +270,7 @@ public final class ResponseRedirects {
         }
         Path dir = target.toAbsolutePath().getParent();
         if (dir == null) {
-            throw new IOException("no folder to stage the file in");
+            throw new IOException(tr("http.redirect.noFolder"));
         }
         Path staged = Files.createTempFile(dir, "." + stem(target) + ".", ".editora-tmp");
         try {
@@ -302,6 +305,37 @@ public final class ResponseRedirects {
     private static String stem(Path target) {
         String name = target.getFileName().toString();
         return name.length() > 40 ? name.substring(0, 40) : name;
+    }
+
+    /**
+     * The part of {@code name} a number goes after: everything before the extension. Leading dots belong to
+     * the name ({@code .env} → {@code .env-1}, {@code ..hidden} → {@code ..hidden-1}), and a trailing dot is not
+     * an extension ({@code notes.} → {@code notes.-1}). Pure.
+     */
+    static String numberedStem(String name) {
+        int lead = 0;
+        while (lead < name.length() && name.charAt(lead) == '.') {
+            lead++;
+        }
+        int dot = name.lastIndexOf('.');
+        return dot > lead && dot < name.length() - 1 ? name.substring(0, dot) : name;
+    }
+
+    /**
+     * Why {@code path} (substituted) cannot name a file to save to, or null: it ends in a folder separator, or
+     * it holds a line break or another control character (a variable whose value ran over a line). Pure.
+     */
+    static String unusablePath(String path) {
+        if (path.endsWith("/") || path.endsWith("\\")) {
+            return tr("http.warn.redirectPath.folder");
+        }
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c < 0x20 || c == 0x7f) {
+                return tr("http.warn.redirectPath.control");
+            }
+        }
+        return null;
     }
 
     private static String display(Path baseDir, Path target) {
