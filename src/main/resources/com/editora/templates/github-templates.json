@@ -1,0 +1,72 @@
+{
+  "name": "GitHub Issue + PR Templates",
+  "description": "Bug report and feature request issue forms plus a pull request template under .github/ (multi-file)",
+  "files": [
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.md",
+      "body": [
+        "---",
+        "name: Bug report",
+        "about: Something does not work as expected",
+        "title: \"\"",
+        "labels: bug",
+        "assignees: \"\"",
+        "---",
+        "",
+        "## What happened",
+        "",
+        "## What you expected to happen",
+        "",
+        "## Steps to reproduce",
+        "",
+        "1. ",
+        "2. ",
+        "3. ",
+        "",
+        "## Environment",
+        "",
+        "- Version:",
+        "- Operating system:",
+        "",
+        "## Logs or screenshots"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.md",
+      "body": [
+        "---",
+        "name: Feature request",
+        "about: Suggest an idea or an improvement",
+        "title: \"\"",
+        "labels: enhancement",
+        "assignees: \"\"",
+        "---",
+        "",
+        "## The problem",
+        "",
+        "What are you trying to do, and what gets in the way?",
+        "",
+        "## The solution you would like",
+        "",
+        "## Alternatives you have considered"
+      ]
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "body": [
+        "## Summary",
+        "",
+        "${cursor}",
+        "",
+        "## Why",
+        "",
+        "## How it was tested",
+        "",
+        "- [ ] Tests added or updated",
+        "- [ ] Documentation updated",
+        "",
+        "Closes #"
+      ]
+    }
+  ]
+}

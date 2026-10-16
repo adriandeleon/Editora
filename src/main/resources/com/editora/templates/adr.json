@@ -1,0 +1,29 @@
+{
+  "name": "Architecture Decision Record",
+  "description": "An ADR: status, context, decision, consequences and the alternatives considered",
+  "language": "markdown",
+  "fileName": "${baseName:0001-decision-title}.md",
+  "body": [
+    "# ${title:Decision title}",
+    "",
+    "- **Status:** ${status:Proposed}",
+    "- **Date:** ${date}",
+    "- **Deciders:** ${author}",
+    "",
+    "## Context",
+    "",
+    "${cursor}What problem or force makes a decision necessary now?",
+    "",
+    "## Decision",
+    "",
+    "What we will do.",
+    "",
+    "## Consequences",
+    "",
+    "What becomes easier, what becomes harder, and what we will have to watch.",
+    "",
+    "## Alternatives considered",
+    "",
+    "- Option — why it was not chosen."
+  ]
+}

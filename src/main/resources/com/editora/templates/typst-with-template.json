@@ -1,0 +1,47 @@
+{
+  "name": "Typst Document + Template",
+  "description": "A Typst document whose page setup and title block live in a reusable template.typ (multi-file)",
+  "files": [
+    {
+      "path": "template.typ",
+      "body": [
+        "// Page setup and title block shared by every document that imports it:",
+        "//   #import \"template.typ\": conf",
+        "//   #show: conf.with(title: \"…\", author: \"…\")",
+        "#let conf(title: \"\", author: \"\", date: none, doc) = {",
+        "  set document(title: title, author: author)",
+        "  set page(paper: \"${paper:a4}\", margin: 2.5cm, numbering: \"1\")",
+        "  set text(size: 11pt)",
+        "  set heading(numbering: \"1.\")",
+        "  set par(justify: true)",
+        "",
+        "  align(center)[",
+        "    #text(18pt, weight: \"bold\", title)",
+        "    #v(4pt)",
+        "    #author",
+        "    #if date != none [ · #date]",
+        "  ]",
+        "  v(1em)",
+        "",
+        "  doc",
+        "}"
+      ]
+    },
+    {
+      "path": "${baseName:main}.typ",
+      "body": [
+        "#import \"template.typ\": conf",
+        "",
+        "#show: conf.with(",
+        "  title: \"${title:Title}\",",
+        "  author: \"${author}\",",
+        "  date: \"${date}\",",
+        ")",
+        "",
+        "= Introduction",
+        "",
+        "${cursor}"
+      ]
+    }
+  ]
+}
