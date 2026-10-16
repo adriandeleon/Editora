@@ -1984,10 +1984,11 @@ final class LspCoordinator {
         }
         Path path = buffer.getPath();
         String serverId = serverIdForBuffer(buffer); // pom.xml → maven-pom (when available), else the language's server
-        boolean remote = path != null && com.editora.vfs.Vfs.isRemote(path);
+        // Where the file's tools run elsewhere (a remote host, a container, WSL) its server runs there too, when
+        // that may run commands; astro-ls does not yet.
+        boolean remote = path != null && !com.editora.process.ExecTargets.runsHere(path);
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
-                // A remote file is served on its host when that may run commands; astro-ls is not yet.
                 && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)

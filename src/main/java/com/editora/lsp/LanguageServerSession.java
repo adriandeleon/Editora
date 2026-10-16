@@ -330,14 +330,16 @@ final class LanguageServerSession implements LanguageClient {
      */
     boolean start() {
         try {
-            if (com.editora.vfs.Vfs.isRemote(root)) {
-                // On the folder's host: its own server, its own PATH and locale, ended with the connection.
-                // It is told about documents by their paths on that host.
-                uris = WireUris.remote(com.editora.vfs.Vfs.authorityOf(root));
-                process = com.editora.process.ExecTargets.forPath(root)
-                        .start(com.editora.process.ExecSpec.of(
-                                        command, root, remoteEnvironment, com.editora.process.ExecSpec.Locale.USER)
-                                .withLongLived(true));
+            com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+            if (!target.isLocal()) {
+                // Where the folder's tools run (a remote host, a container, WSL): its own server, its own PATH
+                // and locale. It is told about documents by its own paths for them.
+                uris = com.editora.vfs.Vfs.isRemote(root)
+                        ? WireUris.remote(com.editora.vfs.Vfs.authorityOf(root))
+                        : WireUris.mapped(target);
+                process = target.start(com.editora.process.ExecSpec.of(
+                                command, root, remoteEnvironment, com.editora.process.ExecSpec.Locale.USER)
+                        .withLongLived(true));
             } else {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
                 pb.directory(root.toFile());
@@ -453,9 +455,9 @@ final class LanguageServerSession implements LanguageClient {
         InitializeParams ip = new InitializeParams();
         // Our pid means nothing on another machine; a server that watches its parent would exit at once.
         ip.setProcessId(
-                com.editora.vfs.Vfs.isRemote(root)
-                        ? null
-                        : (int) ProcessHandle.current().pid());
+                com.editora.process.ExecTargets.runsHere(root)
+                        ? (int) ProcessHandle.current().pid()
+                        : null);
         String uri = uris.toWire(DocumentUris.ofDirectory(root));
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));

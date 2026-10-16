@@ -60,8 +60,12 @@ folder's tools run here, as before: its files are local. So code that picks a to
 arguments asks the target, and every path handed to a tool goes through `ExecTarget.toTargetPath` (an SFTP
 path's text happens to be the host's path; a mapped folder's is not). File-access decisions — whether reading
 a path is a network round trip — stay on the filesystem (`Vfs.isLocal`). Git follows this already
-(`GitService.isLocal` / `gitPath`, `GitHubService`, `RemoteExec.runsFor`); a test-only `MappedTestTarget`
-records any path handed to a tool by this machine's spelling (`GitMappedTargetFxTest`).
+(`GitService.isLocal` / `gitPath`, `GitHubService`, `RemoteExec.runsFor`), and so do language servers: a
+mapped folder's server starts on its target, gets no process id, and is told about the folder and its
+documents by the target's names for them (`WireUris.mapped`, translating `file:` keys through
+`toTargetPath` / `toPath`; a file outside the folder, or of another scheme, passes as it is). A test-only
+`MappedTestTarget` records any path handed to a tool by this machine's spelling (`GitMappedTargetFxTest`,
+`LspMappedTargetProcessTest`).
 
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
