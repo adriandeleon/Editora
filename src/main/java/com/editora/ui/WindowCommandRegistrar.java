@@ -2114,8 +2114,18 @@ final class WindowCommandRegistrar {
                                             host.indexCoordinator().applySupport();
                                             host.settingsWindow().syncAll();
                                         })));
-        host.registry()
-                .register(Command.of("lsp.gotoDefinition", () -> host.ifLsp(host.lspCoordinator()::gotoDefinition)));
+        host.registry().register(Command.of("lsp.gotoDefinition", () -> {
+            // A server's answer first; without one (LSP off, no server for the file, nothing found) the
+            // server-free symbol index answers for the languages it reads.
+            boolean[] lsp = {false};
+            host.ifLsp(() -> {
+                lsp[0] = true;
+                host.lspCoordinator().gotoDefinition(null, host.indexCoordinator()::gotoDefinitionAtCaret);
+            });
+            if (!lsp[0]) {
+                host.indexCoordinator().gotoDefinitionAtCaret(); // false: ifLsp's "LSP is off" stays
+            }
+        }));
         host.registry()
                 .register(Command.of("lsp.peekDefinition", () -> host.ifLsp(host.lspCoordinator()::peekDefinition)));
         host.registry()

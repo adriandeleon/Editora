@@ -441,6 +441,83 @@ final class IndexCoordinator {
         build(() -> host.setStatus(tr("status.index.built", index.symbolCount(), index.fileCount())));
     }
 
+    /**
+     * Go to Definition without a language server: the declaration of the name at the caret, from the file's
+     * own declarations first, then the project's symbol index (one match jumps, several open the picker).
+     * Returns false — and does nothing — for a language the index does not read, so the caller's message
+     * stands.
+     */
+    boolean gotoDefinitionAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !DeclarationScanner.supports(b.getLanguage())) {
+            return false;
+        }
+        org.fxmisc.richtext.CodeArea a = b.getFocusedArea() != null ? b.getFocusedArea() : b.getArea();
+        String name = nameAt(a.getParagraph(a.getCurrentParagraph()).getText(), a.getCaretColumn(), b.getLanguage());
+        if (name == null) {
+            host.setStatus(tr("status.definition.noName"));
+            return true;
+        }
+        for (Symbol s : DeclarationScanner.scan(b.getContent(), b.getLanguage())) {
+            if (s.name().equals(name)) {
+                if (b.getPath() != null) {
+                    ops.openAndGoto(b.getPath(), s.line(), s.column());
+                } else {
+                    a.moveTo(s.line(), s.column());
+                    a.requestFollowCaret();
+                }
+                host.setStatus(tr("status.definition.fromIndex", name));
+                return true;
+            }
+        }
+        if (!isEnabled()) {
+            host.setStatus(tr("status.definition.notFound", name));
+            return true;
+        }
+        ensureBuilt(() -> {
+            List<SymbolIndex.Hit> exact = index.search(name, SymbolIndex.DEFAULT_LIMIT).stream()
+                    .filter(h -> h.symbol().name().equals(name))
+                    .toList();
+            if (exact.isEmpty()) {
+                host.setStatus(tr("status.definition.notFound", name));
+            } else if (exact.size() == 1) {
+                Symbol s = exact.get(0).symbol();
+                ops.openAndGoto(exact.get(0).file(), s.line(), s.column());
+                host.setStatus(tr("status.definition.fromIndex", name));
+            } else {
+                lastResults = exact;
+                picker.show(host.window());
+            }
+        });
+        return true;
+    }
+
+    /**
+     * The name at {@code column} of {@code line}: identifier characters, and in shell also {@code . : -}, which
+     * its function names use ({@code pkg::fn}, {@code my-fn}); null when the caret is on none.
+     */
+    static String nameAt(String line, int column, String language) {
+        boolean shell = "shell".equals(language);
+        java.util.function.IntPredicate part =
+                c -> Character.isLetterOrDigit(c) || c == '_' || (shell && (c == '.' || c == ':' || c == '-'));
+        int start = Math.min(column, line.length());
+        while (start > 0 && part.test(line.charAt(start - 1))) {
+            start--;
+        }
+        int end = Math.min(column, line.length());
+        while (end < line.length() && part.test(line.charAt(end))) {
+            end++;
+        }
+        // Trailing/leading punctuation is not part of a name: `fn:` or `--flag`.
+        while (start < end && !Character.isLetterOrDigit(line.charAt(start)) && line.charAt(start) != '_') {
+            start++;
+        }
+        while (end > start && !Character.isLetterOrDigit(line.charAt(end - 1)) && line.charAt(end - 1) != '_') {
+            end--;
+        }
+        return start < end ? line.substring(start, end) : null;
+    }
+
     /** {@code index.gotoSymbol}: prompt for a name and jump to the declaration. */
     void gotoSymbol() {
         if (!isEnabled()) {
