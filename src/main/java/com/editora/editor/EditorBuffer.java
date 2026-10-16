@@ -636,6 +636,8 @@ public class EditorBuffer implements TabContent {
     private boolean httpFeatureEnabled;
     /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
     private final HttpGutter httpGutter = new HttpGutter();
+    /** A {@code .http} buffer's last results after its request lines, and the ▶ colours they give (U11). */
+    private final HttpResultMarks httpResults = new HttpResultMarks();
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -1014,7 +1016,7 @@ public class EditorBuffer implements TabContent {
                         ? "test-run-marker"
                         : line == httpGutter.runningGlyphLine(this::isFoldedLine)
                                 ? FoldManager.HTTP_RUNNING_CLASS
-                                : null,
+                                : httpResults.glyphClass(line), // the ▶ of a request that ran: its outcome
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -1091,6 +1093,9 @@ public class EditorBuffer implements TabContent {
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             shiftCodeLenses(changes);
+            if (httpResults.shift(changes, area)) {
+                refreshInlayAreas(); // a request's result follows it when lines are added above
+            }
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
@@ -2494,8 +2499,16 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** The inlays of one line: its hints, then — after the last character — its code lens. */
+    /** The inlays of one line: its hints, its code lens, then a {@code .http} request's last result. */
     private java.util.List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> lsp = lspInlaysOn(line);
+        return httpResults.isEmpty() || line < 0 || line >= area.getParagraphs().size()
+                ? lsp
+                : httpResults.inlays(line, lsp, area.getParagraphLength(line));
+    }
+
+    /** The LSP inlays of one line: its hints, then — after the last character — its code lens. */
+    private java.util.List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
         java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
         java.util.List<CodeLens> lenses = codeLensByLine.get(line);
         if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
@@ -2576,6 +2589,7 @@ public class EditorBuffer implements TabContent {
      * look and hand cursor a pick would have given it are set here.
      */
     private void installCodeLensClick(CodeArea a) {
+        httpResults.install(a); // and on a .http request's result
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
                 return;
@@ -3672,6 +3686,36 @@ public class EditorBuffer implements TabContent {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
     }
 
+    /**
+     * Shows each request's last result after its method/URL line, muted with the status coloured, and colours its ▶
+     * by the outcome (U11). Inlays, never text: not in the document, undo, a copy, a search or a save. A result whose
+     * line no longer reads {@link HttpLineResult#anchor()} is left out; one whose line is edited later goes at the next
+     * Run scan. Empty removes them all.
+     */
+    public void setHttpResults(java.util.List<HttpLineResult> results) {
+        if (!httpResults.isEmpty() || (results != null && !results.isEmpty())) {
+            repaintHttpResults(httpResults.set(results, this::paragraphTextOrNull));
+        }
+    }
+
+    /** The results shown after the request lines, by line. */
+    public java.util.List<HttpLineResult> httpResults() {
+        return httpResults.all();
+    }
+
+    /** Runs the click action of the result after {@code line}, as a click on it does; false when it has none. */
+    public boolean activateHttpResult(int line) {
+        return httpResults.activate(line);
+    }
+
+    private void repaintHttpResults(java.util.Set<Integer> lines) {
+        if (lines != null) {
+            ensureInlayFactory();
+            refreshInlayAreas();
+            lines.forEach(this::refreshGutterLine);
+        }
+    }
+
     /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
     private boolean isFoldedLine(int line) {
         return line >= 0 && line < area.getParagraphs().size() && area.isFolded(line);
@@ -3927,6 +3971,7 @@ public class EditorBuffer implements TabContent {
         runnable = now.runnable();
         runLine = now.line();
         httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
+        repaintHttpResults(httpResults.reanchor(now.httpLines(), this::paragraphTextOrNull)); // edited: it goes
         makeTargets = now.makeTargets();
         testLines = now.testLines();
         mainLines = now.mainLines();
@@ -6516,6 +6561,9 @@ public class EditorBuffer implements TabContent {
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
+        if (inlayFactoryInstalled) {
+            area2.setInlayFactory(this::inlaysOn); // hints, lenses and results set before the split opened
+        }
         imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view

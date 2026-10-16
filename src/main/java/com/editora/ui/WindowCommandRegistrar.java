@@ -634,6 +634,15 @@ final class WindowCommandRegistrar {
                                         host.httpClient()::applySupport)));
         host.registry()
                 .register(Command.of(
+                        "http.toggleInlineResults",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "http.toggleInlineResults",
+                                        () -> host.config().getSettings().isHttpInlineResults(),
+                                        v -> host.config().getSettings().setHttpInlineResults(v),
+                                        host.httpClient()::applySupport)));
+        host.registry()
+                .register(Command.of(
                         "view.toggleDebug",
                         () -> host.editorSettings()
                                 .toggleSetting(

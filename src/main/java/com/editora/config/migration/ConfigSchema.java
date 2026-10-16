@@ -252,7 +252,10 @@ public enum ConfigSchema {
                     Map.entry(124, (Migration) ConfigMigrations::identity),
                     // v125→126: + containerEngine / containerBindings (additive: docker, no folder bound to a
                     // container by hand; a dev container is still found by its label).
-                    Map.entry(125, (Migration) ConfigMigrations::identity)),
+                    Map.entry(125, (Migration) ConfigMigrations::identity),
+                    // v126→127: + httpInlineResults (additive: absent is the default, on — a request line shows
+                    // its last result after a run; nobody had a choice to keep).
+                    Map.entry(126, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

@@ -78,6 +78,8 @@ final class HttpHistorySync {
     private final BiConsumer<EditorBuffer, String> environmentRestored;
     private final Consumer<EditorBuffer> refreshEnvironments;
     private final Map<EditorBuffer, Tracked> tracked = new IdentityHashMap<>();
+    /** Told when a saved history was put in a buffer's panel (the request lines' results follow). */
+    private Consumer<EditorBuffer> onRestored = b -> {};
 
     /**
      * @param store the window's history store (may answer null: keep nothing)
@@ -137,8 +139,14 @@ final class HttpHistorySync {
                 }
                 refreshEnvironments.accept(buffer);
                 take(panel, t, entries);
+                onRestored.accept(buffer);
             });
         });
+    }
+
+    /** Sets who is told when a saved history was put in a buffer's panel (null: nobody). */
+    void setOnRestored(Consumer<EditorBuffer> onRestored) {
+        this.onRestored = onRestored == null ? b -> {} : onRestored;
     }
 
     /** {@code buffer}'s panel went away (the feature was switched off): its history is no longer followed. */
@@ -212,6 +220,7 @@ final class HttpHistorySync {
                     environmentRestored.accept(buffer, found.environment);
                 }
                 take(panel, t, older);
+                onRestored.accept(buffer);
                 refreshEnvironments.accept(buffer);
                 persist(buffer);
                 if (old != null) {

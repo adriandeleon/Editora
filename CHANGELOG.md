@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
 
+- **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
+  how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
+  status is in the outcome's colour, failed tests are red, and the request's ▶ takes the colour too (amber for a
+  4xx, red for a 5xx, a failure or failed tests).
+  - Click the result to show that response in the response view; hover it to see when it ran.
+  - The results come from the response history, so they are back when the file is reopened, and Clear removes them.
+    A request whose line you edit loses its result.
+  - The text is not part of the file: it is never copied, searched, saved or undone.
+  - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
+    Request Lines`.
+
 ### Changed
 
 - **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
