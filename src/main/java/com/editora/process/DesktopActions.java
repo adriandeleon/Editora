@@ -143,7 +143,7 @@ public final class DesktopActions {
     private static void launch(List<String> argv, Path workingDir, Consumer<String> onError) {
         EXEC.submit(() -> {
             try {
-                processBuilder(argv, workingDir).start();
+                BusyExecutable.start(processBuilder(argv, workingDir));
             } catch (Exception e) {
                 if (onError != null) {
                     onError.accept(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
