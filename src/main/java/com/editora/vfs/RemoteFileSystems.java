@@ -17,7 +17,6 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -49,9 +48,12 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  */
 public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.Resolver {
 
-    /** The result of a connect attempt: {@code root} is the remote start directory (the connection's last
-     *  path, else the SFTP home) when {@code ok}, else {@code error} explains the failure. */
-    public record Result(boolean ok, Path root, String error) {}
+    /**
+     * The result of a connect attempt: {@code root} is the remote start directory (the connection's last path,
+     * else the SFTP home) when {@code ok}, else {@code failure} says what went wrong and {@code error} is its
+     * underlying message.
+     */
+    public record Result(boolean ok, Path root, String error, ConnectFailure failure) {}
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_TIMEOUT = Duration.ofSeconds(20);
@@ -65,18 +67,14 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     private final Duration connectTimeout;
     private final Duration authTimeout;
     /**
-     * Host-key-dialog time during the <em>current</em> connect, so the auth deadline can discount it (#486): the
-     * trust-on-first-use prompt blocks the key exchange that gates auth, and a careful "compare this fingerprint"
-     * answer must not time the handshake out. {@code promptAccumulatedNanos} is completed prompt time;
-     * {@code promptStartNanos} marks a prompt still on screen (0 when none) so {@link #livePromptElapsedNanos()}
-     * counts the in-progress wait too — the deadline is checked <em>while</em> the dialog is up, before the
-     * verifier's {@code finally} has folded it in. The verifier (a MINA I/O thread) writes both; the auth wait
-     * (the serialized {@code sftp-connect} thread) reads them. Reset per connect; safe because {@link #exec}
-     * serializes connects.
+     * Time spent answering during the <em>current</em> connect — the host-key question, a password, a 2FA code —
+     * which the auth deadline leaves out (#486). Reset per connect; safe because {@link #exec} serializes them.
      */
-    private final AtomicLong promptAccumulatedNanos = new AtomicLong();
+    private final PromptClock promptClock = new PromptClock();
 
-    private final AtomicLong promptStartNanos = new AtomicLong();
+    /** How this window asks for passwords, passphrases and the server's questions during a login. */
+    private final LoginQuestions loginQuestions;
+
     private final java.util.concurrent.atomic.AtomicBoolean shutDown = new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sftp-connect");
@@ -105,32 +103,47 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     public RemoteFileSystems() {
-        this(null);
+        this(null, (LoginPrompt) null);
     }
 
     /**
      * @param prompt asks about a host key not yet in {@code known_hosts}; null rejects unknown hosts outright.
+     * @param login asks for what a login needs while it runs; null asks nothing (only a secret given to {@link
+     *     #connect} is tried).
      */
-    public RemoteFileSystems(HostKeyPrompt prompt) {
-        this(prompt, knownHostsFile());
+    public RemoteFileSystems(HostKeyPrompt prompt, LoginPrompt login) {
+        this(prompt, login, knownHostsFile(), CONNECT_TIMEOUT, AUTH_TIMEOUT);
     }
 
-    /** As {@link #RemoteFileSystems(HostKeyPrompt)}, with an explicit {@code known_hosts} (tests). */
+    /** As {@link #RemoteFileSystems(HostKeyPrompt, LoginPrompt)} with no login questions, and an explicit
+     *  {@code known_hosts} (tests). */
     RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts) {
-        this(prompt, knownHosts, CONNECT_TIMEOUT, AUTH_TIMEOUT);
+        this(prompt, null, knownHosts, CONNECT_TIMEOUT, AUTH_TIMEOUT);
     }
 
     /** As above, with explicit connect/auth timeouts — the seam tests use to exercise the deadline quickly. */
     RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
+        this(prompt, null, knownHosts, connectTimeout, authTimeout);
+    }
+
+    /** Every part explicit (tests). */
+    RemoteFileSystems(
+            HostKeyPrompt prompt, LoginPrompt login, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
         this.connectTimeout = connectTimeout;
         this.authTimeout = authTimeout;
+        this.loginQuestions = new LoginQuestions(login, promptClock);
         // Verify the server's host key against ~/.ssh/known_hosts — the same file ssh itself uses, so a host
         // already accepted at the terminal connects without a prompt, and an entry accepted here is honoured
         // by ssh afterwards. MINA's verifier gives the three outcomes SSH requires: a known host whose key
         // matches connects silently; an UNKNOWN host goes to the trust-on-first-use delegate below and is
         // written to the file only once the user accepts; and a known host presenting a DIFFERENT key is
         // refused outright, without asking. That last case is the man-in-the-middle, and it is the point.
-        serverKeyVerifier = new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts);
+        KnownHostsServerKeyVerifier verifier = new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts);
+        verifier.setModifiedServerKeyAcceptor((session, address, entry, expected, actual) -> {
+            session.setAttribute(HOST_KEY_REFUSED, ConnectFailure.Kind.HOST_KEY_CHANGED);
+            return false; // the man-in-the-middle case: never accepted, never asked about
+        });
+        serverKeyVerifier = verifier;
         // The client is shared by every window (SshClients), so a logged-in session can move to another one.
         client = SshClients.acquire();
         // Register this window's engine in the Vfs provider registry (one per window). resolve()/storable() only
@@ -167,6 +180,15 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     /** Unanswered keep-alives before a connection is taken as dead: about a minute and a half at 30 s. */
     static final int HEARTBEAT_MISSES = 3;
 
+    /** Why this connect's host key was refused, read when the login then fails. */
+    private static final org.apache.sshd.common.AttributeRepository.AttributeKey<ConnectFailure.Kind> HOST_KEY_REFUSED =
+            new org.apache.sshd.common.AttributeRepository.AttributeKey<>();
+
+    /** How this engine's logins ask their questions (see {@link LoginQuestions#of}). */
+    LoginQuestions loginQuestions() {
+        return loginQuestions;
+    }
+
     /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
     boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
         return serverKeyVerifier.verifyServerKey(session, address, key);
@@ -198,21 +220,19 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     private ServerKeyVerifier unknownHostVerifier(HostKeyPrompt prompt) {
         return (session, address, key) -> {
             if (prompt == null) {
+                session.setAttribute(HOST_KEY_REFUSED, ConnectFailure.Kind.HOST_KEY_DECLINED);
                 return false; // nothing to ask with — refuse rather than trust silently
             }
             String host = address instanceof InetSocketAddress a ? a.getHostString() : String.valueOf(address);
             int port = address instanceof InetSocketAddress a ? a.getPort() : 22;
-            // Time how long the human takes so the auth deadline can exclude it (#486): this runs on a MINA I/O
-            // thread while the FX dialog blocks it. Mark the start so the deadline check counts the in-progress
-            // wait, then fold the total in and clear the marker when the dialog closes.
-            long t0 = System.nanoTime();
-            promptStartNanos.set(t0);
-            try {
-                return prompt.confirmUnknownHost(host, port, KeyUtils.getKeyType(key), KeyUtils.getFingerPrint(key));
-            } finally {
-                promptAccumulatedNanos.addAndGet(System.nanoTime() - t0);
-                promptStartNanos.set(0);
+            // Timed so the auth deadline can exclude it (#486): this runs on a MINA I/O thread while the FX
+            // dialog blocks it.
+            boolean accepted = promptClock.timed(() ->
+                    prompt.confirmUnknownHost(host, port, KeyUtils.getKeyType(key), KeyUtils.getFingerPrint(key)));
+            if (!accepted) {
+                session.setAttribute(HOST_KEY_REFUSED, ConnectFailure.Kind.HOST_KEY_DECLINED);
             }
+            return accepted;
         };
     }
 
@@ -263,9 +283,10 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                 // Resolved to an absolute path now, while the session is live: "." is the SFTP home directory,
                 // and since MINA SSHD 2.17 a relative path can no longer be made absolute once its
                 // filesystem has been closed (a reconnect closes the previous one).
-                result = new Result(true, fs.getPath(start).toAbsolutePath().normalize(), null);
+                result = new Result(true, fs.getPath(start).toAbsolutePath().normalize(), null, null);
             } catch (Exception e) {
-                result = new Result(false, null, message(e));
+                ConnectFailure failure = ConnectFailure.of(e);
+                result = new Result(false, null, failure.detail(), failure);
             } finally {
                 if (secret != null) {
                     Arrays.fill(secret, '\0');
@@ -371,11 +392,12 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     private SftpFileSystem open(RemoteConnection conn, char[] secret) throws IOException {
-        // Reset the host-key-dialog clock: the trust-on-first-use prompt runs during the key exchange, which MINA
+        // Reset the answering clock: the trust-on-first-use prompt runs during the key exchange, which MINA
         // completes as part of the *auth* wait (the connect future is fulfilled at the transport level, before
-        // KEX), so the verifier's time accumulates here and the auth wait below discounts it (#486).
-        promptAccumulatedNanos.set(0);
-        promptStartNanos.set(0);
+        // KEX), so the verifier's time accumulates here and the auth wait below discounts it (#486), as it does
+        // the login's own questions.
+        promptClock.reset();
+        loginQuestions.reset();
         ClientSession session = client.connect(
                         conn.user(),
                         conn.host(),
@@ -385,11 +407,15 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                 .verify(connectTimeout)
                 .getSession();
         try {
-            authenticate(session, conn, secret, authTimeout, this::livePromptElapsedNanos);
+            authenticate(session, conn, secret, authTimeout, promptClock::elapsedNanos);
             // On success the SftpFileSystem owns the session (closing the FS closes it).
             return SftpClientFactory.instance().createSftpFileSystem(session);
         } catch (IOException | RuntimeException e) {
+            ConnectFailure.Kind refused = session.getAttribute(HOST_KEY_REFUSED); // read first: close clears it
             session.close(true); // failed auth / FS creation: close the session so it isn't leaked
+            if (refused != null) {
+                throw new ConnectFailure.Signal(refused, message(e), e);
+            }
             throw e;
         }
     }
@@ -402,7 +428,11 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * timeout} because {@code promptElapsedNanos} stays 0 when nobody is asked.
      */
     private static void awaitAuthExcludingPrompt(
-            AuthFuture auth, Duration timeout, java.util.function.LongSupplier promptElapsedNanos) throws IOException {
+            ClientSession session,
+            AuthFuture auth,
+            Duration timeout,
+            java.util.function.LongSupplier promptElapsedNanos)
+            throws IOException {
         long start = System.nanoTime();
         while (!auth.await(POLL_MILLIS)) {
             if (handshakeExpired(System.nanoTime() - start, promptElapsedNanos.getAsLong(), timeout)) {
@@ -411,18 +441,14 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         }
         if (!auth.isSuccess()) {
             Throwable t = auth.getException();
+            if (LoginQuestions.cancelled(session)) {
+                throw new ConnectFailure.Signal(ConnectFailure.Kind.CANCELLED, "Login cancelled", t);
+            }
             if (t instanceof IOException io) {
                 throw io;
             }
             throw new IOException(t == null ? "Authentication failed" : t.getMessage(), t);
         }
-    }
-
-    /** Host-key-dialog time so far this connect — completed prompts plus any dialog still on screen (#486). */
-    private long livePromptElapsedNanos() {
-        long start = promptStartNanos.get();
-        long acc = promptAccumulatedNanos.get();
-        return start == 0 ? acc : acc + Math.max(0, System.nanoTime() - start);
     }
 
     /**
@@ -434,17 +460,27 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     /**
-     * Runs the auth handshake on {@code session} for {@code conn}, using {@code secret} as the password or key
-     * passphrase, returning once authenticated.
+     * Runs the auth handshake on {@code session} for {@code conn}, returning once authenticated. {@code secret},
+     * when given, is tried first as the password or the key's passphrase; anything else the login needs is
+     * asked for while it runs, through the owning engine's {@link LoginPrompt}.
      *
-     * <p>For password auth the password is <b>removed from the session as soon as the handshake finishes</b>.
-     * MINA's client API is String-only ({@code addPasswordIdentity(String)} / a String-returning
-     * {@code PasswordIdentityProvider}), so a String copy that the caller's {@code char[]} wipe cannot reach
-     * is unavoidable at this boundary — but {@code addPasswordIdentity} otherwise keeps that String on the
-     * session's identity list for the <em>entire connected session</em>, which can be hours. A password is
-     * only needed for the initial handshake (SSH re-keys against the host key, not the password), so removing
-     * it in a {@code finally} shrinks its lifetime from "until you disconnect" to "the handshake", after which
-     * it is unreachable and eligible for GC. Package-visible so it can be tested against a real SSH server.
+     * <p>What each method may use, so that choosing one means what it says:
+     * <ul>
+     *   <li>{@code PASSWORD}: the password and the server's own questions (keyboard-interactive), no keys —
+     *       otherwise MINA's default keys were tried first, silently.
+     *   <li>{@code KEY}: that key file. A server that wants a 2FA code after the key still gets its questions.
+     *   <li>{@code DEFAULT_KEYS}: the default keys in {@code ~/.ssh}, then, as {@code ssh} does, a password or the
+     *       server's questions if the server offers those.
+     * </ul>
+     *
+     * <p>A given password is <b>removed from the session as soon as the handshake finishes</b>. MINA's client API
+     * is String-only ({@code addPasswordIdentity(String)} / a String-returning {@code PasswordIdentityProvider}),
+     * so a String copy that the caller's {@code char[]} wipe cannot reach is unavoidable at this boundary — but
+     * {@code addPasswordIdentity} otherwise keeps that String on the session's identity list for the <em>entire
+     * connected session</em>, which can be hours. A password is only needed for the initial handshake (SSH
+     * re-keys against the host key, not the password), so removing it in a {@code finally} shrinks its lifetime
+     * from "until you disconnect" to "the handshake", after which it is unreachable and eligible for GC.
+     * Package-visible so it can be tested against a real SSH server.
      */
     static void authenticate(ClientSession session, RemoteConnection conn, char[] secret, Duration timeout)
             throws IOException {
@@ -452,8 +488,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     /**
-     * As above, but discounts {@code promptElapsedNanos} — the time a host-key dialog was on screen — from the
-     * auth deadline, so a careful "compare this fingerprint" answer doesn't time the handshake out (#486).
+     * As above, but discounts {@code promptElapsedNanos} — the time a person spent answering, the host-key
+     * question included — from the auth deadline, so a careful answer doesn't time the handshake out (#486).
      */
     static void authenticate(
             ClientSession session,
@@ -462,46 +498,108 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             Duration timeout,
             java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
+        session.setAttribute(LoginQuestions.SUBJECT, conn.id());
         String passwordIdentity = null;
         try {
             switch (conn.auth()) {
                 case PASSWORD -> {
-                    if (secret != null) {
+                    session.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
+                    if (secret != null && secret.length > 0) {
                         passwordIdentity = new String(secret);
                         session.addPasswordIdentity(passwordIdentity);
+                        LoginQuestions.next(session, LoginQuestions.PASSWORDS); // so a prompt after it says "again"
                     }
                 }
-                case KEY -> session.setKeyIdentityProvider(keyProvider(List.of(Path.of(conn.keyPath())), secret));
+                case KEY ->
+                    session.setKeyIdentityProvider(keyProvider(session, List.of(Path.of(conn.keyPath())), secret));
                 case DEFAULT_KEYS -> {
                     List<Path> keys = defaultKeyFiles();
                     if (!keys.isEmpty()) {
-                        session.setKeyIdentityProvider(keyProvider(keys, secret));
+                        session.setKeyIdentityProvider(keyProvider(session, keys, secret));
                     }
                 }
             }
-            awaitAuthExcludingPrompt(session.auth(), timeout, promptElapsedNanos);
+            awaitAuthExcludingPrompt(session, session.auth(), timeout, promptElapsedNanos);
         } finally {
             if (passwordIdentity != null) {
                 session.removePasswordIdentity(passwordIdentity); // don't retain it past the handshake
             }
+            if (conn.auth() != RemoteConnection.AuthMethod.PASSWORD) {
+                // Nor a passphrase: the key provider holds it, and keys are needed only to log in.
+                session.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
+            }
         }
     }
 
-    private static void closeQuietly(java.io.Closeable c) {
-        try {
-            c.close();
-        } catch (Exception ignored) {
-            // best-effort
-        }
-    }
-
-    private static KeyIdentityProvider keyProvider(List<Path> files, char[] passphrase) {
+    private static KeyIdentityProvider keyProvider(ClientSession session, List<Path> files, char[] passphrase) {
         FileKeyPairProvider provider = new FileKeyPairProvider(files.toArray(Path[]::new));
-        if (passphrase != null && passphrase.length > 0) {
-            provider.setPasswordFinder(FilePasswordProvider.of(new String(passphrase)));
-        }
+        provider.setPasswordFinder(new Passphrases(session, passphrase));
         return provider;
     }
+
+    /**
+     * A key's passphrase, asked for when the key turns out to be encrypted, as {@code ssh} does: the one given
+     * before the login first (if any), then the person, up to {@link #PASSPHRASE_ATTEMPTS} tries. Cancelling skips
+     * that key and the login goes on with the next way in.
+     */
+    private static final class Passphrases implements FilePasswordProvider {
+        private final ClientSession session;
+        private final String given;
+        private final Set<String> skipped = ConcurrentHashMap.newKeySet();
+
+        Passphrases(ClientSession session, char[] given) {
+            this.session = session;
+            this.given = given == null || given.length == 0 ? null : new String(given);
+        }
+
+        @Override
+        public String getPassword(
+                org.apache.sshd.common.session.SessionContext context,
+                org.apache.sshd.common.NamedResource resource,
+                int retryIndex) {
+            if (retryIndex == 0 && given != null) {
+                return given;
+            }
+            int attempt = retryIndex + 1; // above 1: an earlier passphrase, given or typed, was wrong
+            char[][] answers = LoginQuestions.of(session)
+                    .ask(
+                            session,
+                            new LoginPrompt.Challenge(
+                                    LoginPrompt.Kind.PASSPHRASE,
+                                    resource == null ? "" : resource.getName(),
+                                    "",
+                                    "",
+                                    List.of(new LoginPrompt.Question("", false)),
+                                    attempt));
+            if (answers == null) {
+                skipped.add(resource == null ? "" : resource.getName());
+                return null;
+            }
+            String passphrase = new String(answers[0]);
+            LoginQuestions.wipe(answers);
+            return passphrase;
+        }
+
+        @Override
+        public ResourceDecodeResult handleDecodeAttemptResult(
+                org.apache.sshd.common.session.SessionContext context,
+                org.apache.sshd.common.NamedResource resource,
+                int retryIndex,
+                String password,
+                Exception err) {
+            if (err == null) {
+                return ResourceDecodeResult.TERMINATE; // decoded: nothing more to try
+            }
+            String name = resource == null ? "" : resource.getName();
+            boolean more = retryIndex + 1 < PASSPHRASE_ATTEMPTS + (given == null ? 0 : 1);
+            return skipped.contains(name) || password == null || !more
+                    ? ResourceDecodeResult.IGNORE // skip this key; the login goes on without it
+                    : ResourceDecodeResult.RETRY;
+        }
+    }
+
+    /** Passphrases asked for per key before it is skipped, as {@code ssh}'s three. */
+    static final int PASSPHRASE_ATTEMPTS = 3;
 
     /** The user's default private keys in {@code ~/.ssh}, most-modern-first, that actually exist. */
     private static List<Path> defaultKeyFiles() {

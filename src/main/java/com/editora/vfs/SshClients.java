@@ -30,6 +30,8 @@ final class SshClients {
     static final AttributeRepository.AttributeKey<RemoteFileSystems> ENGINE = new AttributeRepository.AttributeKey<>();
 
     private static final Duration HEARTBEAT = Duration.ofSeconds(30);
+    /** MINA's outer bound on a login, questions and all: past every question's own two-minute wait. */
+    private static final Duration LOGIN_LIMIT = Duration.ofMinutes(15);
 
     private static SshClient client;
     private static int users;
@@ -46,6 +48,11 @@ final class SshClients {
                 RemoteFileSystems engine = engineOf(session);
                 return engine != null && engine.verifyServerKey(session, address, key);
             });
+            // The login's questions (passwords, 2FA codes), put by the window that owns the session.
+            c.setUserInteraction(LoginInteraction.INSTANCE);
+            // RemoteFileSystems times a login out itself, leaving out the time a person spends answering; MINA's
+            // own limit (two minutes, answering included) would end a login whose code took a while to find.
+            CoreModuleProperties.AUTH_TIMEOUT.set(c, LOGIN_LIMIT);
             RemoteFileSystems.keepAlive(c, HEARTBEAT);
             // A language server's messages are small and wait for each other: never hold one back to fill a packet.
             CoreModuleProperties.TCP_NODELAY.set(c, true);

@@ -17,6 +17,35 @@ own once another engine adopts it), so each window keeps its own `known_hosts` a
 `Remote: Disconnect` closes the SSH session, not only the SFTP channel: the session also carries commands and
 forwarded ports.
 
+## Logging in
+
+The connect form takes no password: what a login needs is asked for while it runs, as `ssh` asks at the
+terminal. `vfs/LoginPrompt` is the window's question (in the app, `RemoteCoordinator.answerLogin`, a blocking
+FX dialog on the pattern of the host-key question, 120 s to answer); `vfs/LoginQuestions` puts it for the
+engine that owns the session (`SshClients.engineOf`), so a window's login asks in that window.
+
+- **Keyboard-interactive** (a server's own questions — where 2FA codes come from): the shared client's
+  `UserInteraction` is `vfs/LoginInteraction`. The server's name, instruction and prompts are shown as sent,
+  each answer hidden unless the server allows echo.
+- **Password**: a given password (`connect`'s `secret`, used by tests) is the first try; then
+  `resolveAuthPasswordAttempt` asks, up to three in all.
+- **Key passphrase**: asked only when a key turns out to be encrypted (`RemoteFileSystems.Passphrases`, the
+  key provider's `FilePasswordProvider`), three tries; cancelling skips that key and the login goes on.
+- What each method may use: `PASSWORD` no keys (MINA's default keys were tried first before); `KEY` that file;
+  `DEFAULT_KEYS` the default `~/.ssh` keys. Each may still answer the server's questions, so a key + 2FA
+  server works. After the login the session's key provider is emptied, so no passphrase outlives it.
+- Time spent answering is left out of the login deadline (`PromptClock`, the #486 rule for host-key prompts,
+  now for every question); MINA's own `AUTH_TIMEOUT` is raised to 15 minutes so it never ends a login first.
+- Cancelling a password or server question sets `LoginQuestions.CANCELLED` (and the engine's per-connect flag,
+  since a closed session's attributes are cleared): nothing more is asked and the connect fails as
+  `CANCELLED`, which the status bar reports without a dialog.
+
+**Why a connect failed** is `vfs/ConnectFailure`: unreachable, timed out, host key declined, host key changed
+(`KnownHostsServerKeyVerifier`'s modified-key acceptor records it), login refused, cancelled, other.
+`RemoteCoordinator.reportConnectFailure` shows a "Remote" dialog with advice for the kind (for a changed key,
+the `ssh-keygen -R` line naming the entry) and the underlying message; a cancel or a declined key only sets
+the status.
+
 ## Projects
 
 A remote folder is a `config/Project` whose `root` is its `sftp://` URI.

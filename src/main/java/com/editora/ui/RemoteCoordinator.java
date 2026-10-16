@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
@@ -17,8 +18,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
@@ -28,6 +31,8 @@ import javafx.util.StringConverter;
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import com.editora.config.Project;
+import com.editora.vfs.ConnectFailure;
+import com.editora.vfs.LoginPrompt;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
 import com.editora.vfs.SftpUri;
@@ -208,9 +213,10 @@ final class RemoteCoordinator {
 
     private RemoteFileSystems remoteFs() {
         if (remoteFs == null) {
-            // Starts the SSH client + wires the Vfs resolver. The prompt is the trust-on-first-use decision:
-            // without one, RemoteFileSystems refuses unknown hosts rather than trusting them.
-            remoteFs = new RemoteFileSystems(this::confirmHostKey);
+            // Starts the SSH client + wires the Vfs resolver. The prompts are the trust-on-first-use decision
+            // (without one, RemoteFileSystems refuses unknown hosts rather than trusting them) and the login's
+            // own questions: a password, a key's passphrase, a 2FA code.
+            remoteFs = new RemoteFileSystems(this::confirmHostKey, this::answerLogin);
         }
         return remoteFs;
     }
@@ -261,6 +267,169 @@ final class RemoteCoordinator {
         return alert.showAndWait().orElse(ButtonType.CANCEL) == connect;
     }
 
+    /** How long a login question (a password, a 2FA code) may sit unanswered before the login is cancelled. */
+    private static final long LOGIN_ANSWER_TIMEOUT_SECONDS = 120;
+
+    /**
+     * A login question, asked on an SSH I/O thread and answered on the FX thread, as {@link #confirmHostKey} is.
+     * Null — cancelled, or left unanswered too long — cancels that question.
+     */
+    private char[][] answerLogin(LoginPrompt.Challenge challenge) {
+        if (Platform.isFxApplicationThread()) {
+            return askLogin(challenge);
+        }
+        AtomicReference<char[][]> answers = new AtomicReference<>();
+        CountDownLatch answered = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            try {
+                answers.set(askLogin(challenge));
+            } finally {
+                answered.countDown();
+            }
+        });
+        try {
+            if (!answered.await(LOGIN_ANSWER_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                return null;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        return answers.get();
+    }
+
+    /** Asks a login question (FX thread); replaced in tests. */
+    java.util.function.Function<LoginPrompt.Challenge, char[][]> loginDialog = this::showLoginDialog;
+
+    private char[][] askLogin(LoginPrompt.Challenge challenge) {
+        return loginDialog.apply(challenge);
+    }
+
+    /**
+     * The login dialog: a password, a passphrase, or the server's own questions, each in its own field — hidden
+     * unless the server says the answer may be shown. Cancel cancels.
+     */
+    private char[][] showLoginDialog(LoginPrompt.Challenge challenge) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.initOwner(host.window());
+        dialog.setTitle(tr("dialog.login.title"));
+        dialog.setHeaderText(
+                switch (challenge.kind()) {
+                    case PASSWORD -> tr("dialog.login.password.header", challenge.subject());
+                    case PASSPHRASE -> tr("dialog.login.passphrase.header", challenge.subject());
+                    case INTERACTIVE ->
+                        challenge.name().isBlank()
+                                ? tr("dialog.login.interactive.header", challenge.subject())
+                                : challenge.name();
+                });
+        ButtonType logIn = new ButtonType(tr("dialog.login.button"), ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().setAll(ButtonType.CANCEL, logIn);
+        GridPane grid = new GridPane();
+        grid.setHgap(8);
+        grid.setVgap(8);
+        int row = 0;
+        if (challenge.attempt() > 1) {
+            grid.add(new Label(tr("dialog.login.retry")), 0, row++, 2, 1);
+        }
+        if (!challenge.instruction().isBlank()) {
+            Label instruction = new Label(challenge.instruction().strip());
+            instruction.setWrapText(true);
+            instruction.setMaxWidth(420);
+            grid.add(instruction, 0, row++, 2, 1);
+        }
+        List<TextField> fields = new ArrayList<>();
+        for (LoginPrompt.Question q : challenge.questions()) {
+            TextField field = q.echo() ? new TextField() : new PasswordField();
+            field.setPrefColumnCount(24);
+            String label =
+                    switch (challenge.kind()) {
+                        case PASSWORD -> tr("dialog.login.password");
+                        case PASSPHRASE -> tr("dialog.login.passphrase");
+                        case INTERACTIVE -> q.text().strip();
+                    };
+            grid.add(new Label(label), 0, row);
+            grid.add(field, 1, row++);
+            fields.add(field);
+        }
+        dialog.getDialogPane().setContent(grid);
+        if (!fields.isEmpty()) {
+            Platform.runLater(fields.getFirst()::requestFocus);
+        }
+        if (dialog.showAndWait().orElse(ButtonType.CANCEL) != logIn) {
+            return null;
+        }
+        char[][] answers = new char[fields.size()][];
+        for (int i = 0; i < fields.size(); i++) {
+            answers[i] = fields.get(i).getText().toCharArray();
+            fields.get(i).clear();
+        }
+        return answers;
+    }
+
+    /**
+     * Says why a connect failed, the way a person can act on it: a dialog for what needs explaining (an
+     * unreachable host, a refused login, a changed host key), only the status bar for what the person did
+     * themselves (cancelled, or declined the host's key).
+     */
+    void reportConnectFailure(RemoteConnection conn, RemoteFileSystems.Result result) {
+        String label = conn.displayLabel();
+        ConnectFailure failure = result.failure() != null
+                ? result.failure()
+                : new ConnectFailure(ConnectFailure.Kind.OTHER, result.error());
+        if (failure.kind() == ConnectFailure.Kind.CANCELLED
+                || failure.kind() == ConnectFailure.Kind.HOST_KEY_DECLINED) {
+            host.setStatus(tr("status.remote.cancelled", label));
+            return;
+        }
+        String knownHostsName = conn.port() == 22 ? conn.host() : "[" + conn.host() + "]:" + conn.port();
+        String header;
+        String advice;
+        switch (failure.kind()) {
+            case UNREACHABLE -> {
+                header = tr("remote.error.unreachable", label);
+                advice = tr("remote.error.unreachable.detail");
+            }
+            case TIMED_OUT -> {
+                header = tr("remote.error.timedOut", label);
+                advice = tr("remote.error.timedOut.detail");
+            }
+            case HOST_KEY_CHANGED -> {
+                header = tr("remote.error.hostKeyChanged", label);
+                advice = tr("remote.error.hostKeyChanged.detail", knownHostsName);
+            }
+            case AUTH_FAILED -> {
+                header = tr("remote.error.authFailed", label);
+                advice = tr("remote.error.authFailed.detail");
+            }
+            default -> {
+                header = tr("status.remote.failed", label);
+                advice = "";
+            }
+        }
+        host.setStatus(header);
+        String detail = failure.detail() == null ? "" : failure.detail().strip();
+        String body = advice.isEmpty() ? detail : detail.isEmpty() ? advice : advice + "\n\n" + detail;
+        if (connectFailureShown != null) {
+            connectFailureShown.accept(header, body);
+            return;
+        }
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.remote.title"));
+        alert.setHeaderText(header);
+        TextArea area = new TextArea(body);
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setPrefColumnCount(52);
+        area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
+        area.getStyleClass().add("git-error-text"); // the error-detail style the Git dialog uses
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
+    }
+
+    /** Takes the connect-failure dialog's header and body instead of showing it (tests). */
+    java.util.function.BiConsumer<String, String> connectFailureShown;
+
     void connect() {
         connect(null);
     }
@@ -304,8 +473,6 @@ final class RemoteCoordinator {
                 return null;
             }
         });
-        PasswordField secretField = new PasswordField();
-        secretField.setPromptText(tr("remote.secretPrompt"));
         TextField keyField = new TextField();
         keyField.setPromptText(tr("remote.keyPrompt"));
         TextInputKeymap.install(keyField, keymap);
@@ -323,14 +490,11 @@ final class RemoteCoordinator {
         Runnable syncAuth = () -> {
             var m = authCombo.getValue();
             boolean key = m == RemoteConnection.AuthMethod.KEY;
-            boolean pwd = m == RemoteConnection.AuthMethod.PASSWORD;
             keyField.setDisable(!key);
             keyBrowse.setDisable(!key);
-            secretField.setDisable(!key && !pwd);
-            secretField.setPromptText(pwd ? tr("remote.secretPrompt") : tr("remote.passphrasePrompt"));
         };
         authCombo.valueProperty().addListener((o, a, b) -> syncAuth.run());
-        if (prefill != null) { // reconnecting a saved connection — fill everything but the secret
+        if (prefill != null) { // reconnecting a saved connection — a password is asked for during the login
             hostField.setText(prefill.host());
             portField.setText(String.valueOf(prefill.port()));
             userField.setText(prefill.user() == null ? "" : prefill.user());
@@ -354,10 +518,8 @@ final class RemoteCoordinator {
         grid.add(new Label(tr("remote.key")), 0, 3);
         grid.add(keyField, 1, 3, 2, 1);
         grid.add(keyBrowse, 3, 3);
-        grid.add(new Label(tr("remote.secret")), 0, 4);
-        grid.add(secretField, 1, 4, 3, 1);
-        grid.add(new Label(tr("remote.path")), 0, 5);
-        grid.add(pathField, 1, 5, 3, 1);
+        grid.add(new Label(tr("remote.path")), 0, 4);
+        grid.add(pathField, 1, 4, 3, 1);
         GridPane.setHgrow(hostField, Priority.ALWAYS);
 
         BooleanProperty valid = new SimpleBooleanProperty(false);
@@ -390,18 +552,13 @@ final class RemoteCoordinator {
                             keyField.getText().strip(),
                             null,
                             path.isEmpty() ? null : path);
-                    char[] secret = secretField.getText().isEmpty()
-                            ? null
-                            : secretField.getText().toCharArray();
-                    // connect() wipes what it is given; the project's own window may need to log in too.
-                    char[] again = secret == null ? null : secret.clone();
                     host.setStatus(tr("status.remote.connecting", conn.displayLabel()));
-                    remoteFs().connect(conn, secret, r -> {
+                    // No secret up front: what the login needs is asked for while it runs (answerLogin).
+                    remoteFs().connect(conn, null, r -> {
                         if (r.ok()) {
-                            connected(conn, r.root(), again);
+                            connected(conn, r.root(), null);
                         } else {
-                            wipe(again);
-                            ops.reportError(tr("status.remote.failed", conn.displayLabel()), r.error());
+                            reportConnectFailure(conn, r);
                         }
                     });
                 },
@@ -490,7 +647,7 @@ final class RemoteCoordinator {
                 mount(conn, r.root());
             } else {
                 showDisconnected();
-                ops.reportError(tr("status.remote.failed", conn.displayLabel()), r.error());
+                reportConnectFailure(conn, r);
             }
         });
     }
