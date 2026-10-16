@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Simple UI mode trims the tab right-click menu too**, as it already trimmed the menu bar. The menu keeps
+  Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File Manager, Copy Path and
+  Rename. Git, Local History, Compare With, Open in Diff Viewer, Open Terminal, Close Unmodified, Close to the
+  Left/Right and Pin are hidden while the mode is on. Unpin stays on a tab that was pinned before.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added
