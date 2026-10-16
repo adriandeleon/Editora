@@ -361,7 +361,10 @@ public final class NewFileContent {
         if (caret >= 0) {
             text = text.substring(0, caret) + text.substring(caret + "{cursor}".length());
         }
-        text = trimTrailingBlankLines(text);
+        String trimmed = trimTrailingBlankLines(text);
+        // A template that ends with its cursor after a blank line (the shell preamble, then a gap, then the
+        // script) keeps that gap: trimming it put the caret straight under `set -euo pipefail`.
+        text = caret >= 0 && trimmed.length() < caret ? text.substring(0, caret) : trimmed;
         return new Rendered(text, caret < 0 ? text.length() : Math.min(caret, text.length()));
     }
 
