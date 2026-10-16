@@ -59,4 +59,32 @@ class DotEnvTest {
         assertEquals("\"never closed", env.get("E"), "an unclosed quote does not swallow the lines below");
         assertEquals("6", env.get("F"));
     }
+
+    @Test
+    void aByteOrderMarkIsNotPartOfTheFirstKey() {
+        assertEquals(
+                java.util.List.of("API_KEY", "B"),
+                java.util.List.copyOf(DotEnv.parse("\uFEFFAPI_KEY=x\nB=y\n").keySet()));
+    }
+
+    @Test
+    void aMultiLineValueIsReadOnceAndEscapesAcrossLinesHold() {
+        assertEquals(
+                java.util.Map.of("A", "one\\\ntwo \"q\"\nthree", "B", "b"),
+                DotEnv.parse("A=\"one\\\\\ntwo \\\"q\\\"\nthree\"\nB=b\n"));
+        assertEquals("x\\", DotEnv.parse("A=\"x\\\\\"\n").get("A"), "an escaped backslash before the quote");
+    }
+
+    @Test
+    void aStrayQuoteAboveManyLinesIsNotQuadratic() {
+        StringBuilder big = new StringBuilder("A=\"open\n");
+        for (int i = 0; i < 100_000; i++) {
+            big.append("LINE").append(i).append("=v\n");
+        }
+        // It used to rescan the whole tail for every line (2 s for 20,000 lines); now each line is scanned once.
+        java.util.Map<String, String> m = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(10), () -> DotEnv.parse(big.toString()));
+        assertEquals("\"open", m.get("A"), "an unclosed quote stays one line");
+        assertEquals("v", m.get("LINE99999"));
+    }
 }

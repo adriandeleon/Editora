@@ -32,7 +32,7 @@ final class HttpVariableHints {
         /** The environment selected for the buffer's file ({@code ""}: none). */
         String environment(EditorBuffer buffer);
 
-        /** The folder whose env files apply to the buffer, or null. */
+        /** The folder whose env files apply to the buffer as last read, or null; FX thread, no file access. */
         Path envDir(EditorBuffer buffer);
     }
 
@@ -62,11 +62,25 @@ final class HttpVariableHints {
                         () -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY)));
     }
 
-    /** Checks {@code buffer} again if its environment, env files or {@code .env} changed since the last check. */
+    /**
+     * Checks {@code buffer} again if its environment, env files or {@code .env} changed since the last check. The
+     * files are looked at on the worker (after any check already queued), the answer acted on on the FX thread.
+     */
     void refresh(EditorBuffer buffer) {
-        if (buffer != null && buffer.isHttpFile() && !fingerprint(buffer).equals(fingerprints.get(buffer))) {
-            buffer.refreshHttpVariableLint();
+        if (buffer == null || !buffer.isHttpFile()) {
+            return;
         }
+        String env = source.environment(buffer);
+        Path envDir = source.envDir(buffer);
+        Path dir = folderOf(buffer);
+        worker.execute(() -> {
+            String now = fingerprint(env, envDir, dir);
+            Platform.runLater(() -> {
+                if (!now.equals(fingerprints.get(buffer))) {
+                    buffer.refreshHttpVariableLint();
+                }
+            });
+        });
     }
 
     void forget(EditorBuffer buffer) {
@@ -81,27 +95,26 @@ final class HttpVariableHints {
     private void check(
             EditorBuffer buffer, String text, java.util.function.Consumer<List<MarkdownLint.Diagnostic>> done) {
         String env = source.environment(buffer);
-        Path envDir = source.envDir(buffer);
-        Path dir = buffer.getPath() == null
-                ? null
-                : buffer.getPath().toAbsolutePath().getParent();
-        fingerprints.put(buffer, fingerprint(buffer));
+        Path envDir = source.envDir(buffer); // as last read: no file access here
+        Path dir = folderOf(buffer);
         worker.execute(() -> {
-            HttpVariableIndex.Context ctx;
+            String checkedAgainst = fingerprint(env, envDir, dir); // what this check reads, before it reads it
+            HttpVariableIndex.Context ctx = HttpVariableIndex.Context.EMPTY;
             List<MarkdownLint.Diagnostic> marks;
             try {
                 ctx = context(env, envDir, dir);
                 marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
-            } catch (RuntimeException unexpected) {
-                // Never leave the previous marks standing as if they were current: clear them instead.
+            } catch (Throwable unexpected) { // also an Error (a StackOverflowError on a pathological file)
+                // Never leave the previous marks standing as if they were current: clear them instead (the
+                // completion keeps the context, if that much was read).
                 java.util.logging.Logger.getLogger(HttpVariableHints.class.getName())
                         .log(java.util.logging.Level.WARNING, "{{variable}} check failed", unexpected);
-                ctx = HttpVariableIndex.Context.EMPTY;
                 marks = List.of();
             }
             HttpVariableIndex.Context checked = ctx;
             List<MarkdownLint.Diagnostic> result = marks;
             Platform.runLater(() -> {
+                fingerprints.put(buffer, checkedAgainst);
                 contexts.put(buffer, checked);
                 done.accept(result);
             });
@@ -110,10 +123,25 @@ final class HttpVariableHints {
 
     /** The context for environment {@code env} of the env files in {@code envDir}, with {@code $dotenv} in {@code dir}. */
     static HttpVariableIndex.Context context(String env, Path envDir, Path dir) {
-        if (envDir == null || env == null || env.isEmpty()) {
-            return new HttpVariableIndex.Context(Map.of(), dir);
+        HttpEnvironments.EnvFiles files = HttpEnvironments.read(envDir);
+        boolean selected = env != null && !env.isEmpty();
+        return new HttpVariableIndex.Context(
+                selected ? files.variables(env) : Map.of(),
+                dir,
+                HttpVariableIndex.Context.readDotenvKeys(dir),
+                selected ? Map.of() : definedIn(files),
+                files.problems());
+    }
+
+    /** Which environments of {@code files} define each variable name (for "no environment selected" marks). */
+    static Map<String, List<String>> definedIn(HttpEnvironments.EnvFiles files) {
+        Map<String, List<String>> out = new java.util.HashMap<>();
+        for (String name : files.names()) {
+            for (String key : files.variables(name).keySet()) {
+                out.computeIfAbsent(key, k -> new ArrayList<>()).add(name);
+            }
         }
-        return new HttpVariableIndex.Context(HttpEnvironments.read(envDir).variables(env), dir);
+        return out;
     }
 
     /** One amber squiggle per problem (lint diagnostics are 1-based); the tooltip reads {@code {{name}}: reason}. */
@@ -126,13 +154,15 @@ final class HttpVariableHints {
         return out;
     }
 
-    /** The environment name and the modification times of the files the check reads. */
-    private String fingerprint(EditorBuffer buffer) {
-        Path envDir = source.envDir(buffer);
-        Path dir = buffer.getPath() == null
+    private static Path folderOf(EditorBuffer buffer) {
+        return buffer.getPath() == null
                 ? null
                 : buffer.getPath().toAbsolutePath().getParent();
-        return source.environment(buffer)
+    }
+
+    /** The environment name and the modification times of the files a check reads. Stats files: on the worker. */
+    private static String fingerprint(String env, Path envDir, Path dir) {
+        return env
                 + "|" + envDir
                 + "|" + stamp(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE))
                 + "|" + stamp(envDir == null ? null : envDir.resolve(HttpEnv.PRIVATE_FILE))
