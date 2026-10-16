@@ -43,6 +43,20 @@ final class KeymapLayers {
         settings.switchKeymap(id);
     }
 
+    /** The keymaps of the enabled, loaded plugins, in load order; none while plugin support is off. */
+    static java.util.List<Map<String, String>> pluginKeymaps(
+            Settings settings, com.editora.plugin.PluginManager plugins) {
+        java.util.List<Map<String, String>> out = new java.util.ArrayList<>();
+        if (settings.isPluginSupport() && plugins != null) {
+            for (com.editora.plugin.PluginDescriptor d : plugins.descriptors()) {
+                if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
+                    out.add(d.manifest().keymap);
+                }
+            }
+        }
+        return out;
+    }
+
     /** The overrides that bind a chord to a command — everything except the blank-valued "unbind" entries. */
     static Map<String, String> userBindings(Map<String, String> userOverrides) {
         Map<String, String> bindings = new LinkedHashMap<>();

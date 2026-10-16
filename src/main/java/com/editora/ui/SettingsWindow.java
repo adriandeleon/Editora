@@ -2173,10 +2173,6 @@ public class SettingsWindow {
         return p;
     }
 
-    /**
-     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
-     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
-     */
     /** Asks before Templates → Remove deletes a user template file. Replaceable so a test can answer. */
     private java.util.function.Predicate<com.editora.template.Template> confirmTemplateRemoval =
             this::confirmTemplateRemovalDialog;
@@ -2194,6 +2190,10 @@ public class SettingsWindow {
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
+    /**
+     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
+     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
+     */
     private boolean confirmResetAllShortcuts() {
         Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
@@ -2268,14 +2268,15 @@ public class SettingsWindow {
             row.getStyleClass().add("shortcut-row-recording");
             // Enter saves and Escape cancels from inside the field: it records Tab like any other key, so
             // the Save button beside it cannot be reached from the keyboard.
-            TextField capture = ShortcutCapture.field(seq -> commitRecording(s.id(), seq), () -> {
-                recordingCommandId = null;
-                refreshShortcuts(s.id());
-            });
+            TextField capture =
+                    ShortcutCapture.field(shortcutActions::display, seq -> commitRecording(s.id(), seq), () -> {
+                        recordingCommandId = null;
+                        refreshShortcuts(s.id());
+                    });
             Button save = new Button(tr("settings.shortcuts.save"));
             save.getStyleClass().add("success");
             save.setDefaultButton(false);
-            save.setOnAction(e -> commitRecording(s.id(), capture.getText()));
+            save.setOnAction(e -> commitRecording(s.id(), ShortcutCapture.recorded(capture)));
             Button cancel = new Button(tr("settings.shortcuts.cancel"));
             cancel.setOnAction(e -> {
                 recordingCommandId = null;
@@ -2337,6 +2338,12 @@ public class SettingsWindow {
                         || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
                     select.run();
                     e.consume();
+                } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
+                        || e.getCode() == javafx.scene.input.KeyCode.BACK_SPACE) {
+                    if (s.chord() != null) {
+                        removeShortcut(s.id());
+                    }
+                    e.consume();
                 } else if (target >= 0) {
                     if (target < all.size()) {
                         all.get(target).requestFocus();
@@ -2351,11 +2358,11 @@ public class SettingsWindow {
                     refreshShortcuts();
                 });
                 Button reset = new Button(tr("settings.shortcuts.reset"));
-                reset.setOnAction(e -> {
-                    shortcutActions.reset(s.id());
-                    refreshShortcuts(s.id());
-                });
-                row.getChildren().addAll(record, reset);
+                reset.setOnAction(e -> resetShortcut(s.id()));
+                Button remove = new Button(tr("settings.shortcuts.remove"));
+                remove.setDisable(s.chord() == null);
+                remove.setOnAction(e -> removeShortcut(s.id()));
+                row.getChildren().addAll(record, reset, remove);
             }
         }
         return row;
@@ -2383,6 +2390,47 @@ public class SettingsWindow {
         }
     }
 
+    /** Unbinds a command from the list (its Remove button, or Delete on its row). */
+    private void removeShortcut(String commandId) {
+        shortcutActions.clear(commandId);
+        refreshShortcuts(commandId);
+    }
+
+    /** Resets a command to its keymap default, asking first when that takes a chord back from another command. */
+    private void resetShortcut(String commandId) {
+        List<com.editora.command.KeybindingEdits.Conflict> taken = shortcutActions.takenDefaults(commandId);
+        if (!taken.isEmpty()) {
+            StringBuilder lines = new StringBuilder();
+            for (var c : taken) {
+                lines.append("\n   ")
+                        .append(shortcutActions.display(c.chord()))
+                        .append("  —  ")
+                        .append(titleOf(c.commandId()));
+            }
+            if (!confirmLoss.test(
+                    tr("dialog.shortcut.conflict.title"),
+                    tr("dialog.shortcut.reclaim.body", titleOf(commandId), lines.toString()))) {
+                return;
+            }
+        }
+        shortcutActions.reset(commandId);
+        refreshShortcuts(commandId);
+    }
+
+    /** Asks before a step that loses something; Cancel is the default answer. Replaceable so a test can answer. */
+    private java.util.function.BiPredicate<String, String> confirmLoss = this::confirmCancelDefault;
+
+    private boolean confirmCancelDefault(String title, String body) {
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(title);
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().setMinWidth(460);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
     /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
     private void commitRecording(String commandId, String sequence) {
         recordingCommandId = null;
@@ -2400,15 +2448,23 @@ public class SettingsWindow {
         if (seq.isEmpty()) {
             return false;
         }
+        if (com.editora.command.KeybindingEdits.typesText(seq)) {
+            // Bound, the key would run the command instead of typing its character, everywhere.
+            macroWarn(tr("settings.shortcuts.typesText", shortcutActions.display(seq.split(" ")[0])));
+            return false;
+        }
         List<com.editora.command.KeybindingEdits.Conflict> conflicts = shortcutActions.conflicts(seq, commandId);
         if (!conflicts.isEmpty()) {
             StringBuilder affected = new StringBuilder();
             for (var c : conflicts) {
-                affected.append("\n   ").append(c.chord()).append("  —  ").append(titleOf(c.commandId()));
+                affected.append("\n   ")
+                        .append(shortcutActions.display(c.chord()))
+                        .append("  —  ")
+                        .append(titleOf(c.commandId()));
             }
             Alert confirm = Dialogs.styled(new Alert(
                     Alert.AlertType.CONFIRMATION,
-                    tr("dialog.shortcut.conflict.body", seq, affected.toString()),
+                    tr("dialog.shortcut.conflict.body", shortcutActions.display(seq), affected.toString()),
                     ButtonType.OK,
                     ButtonType.CANCEL));
             confirm.initOwner(stage);
@@ -8788,6 +8844,24 @@ public class SettingsWindow {
         void reset(String commandId);
 
         void resetAll();
+
+        /** {@code chordSeq} in the active keymap's notation — what the list shows ({@code Ctrl+S}, {@code ⌘S}). */
+        default String display(String chordSeq) {
+            return chordSeq;
+        }
+
+        /** Unbinds {@code commandId}: its own bindings and its keymap defaults. */
+        default void clear(String commandId) {}
+
+        /** The default chords of {@code commandId} another command's override now holds (Reset takes them back). */
+        default java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
+            return java.util.List.of();
+        }
+
+        /** Drops every binding of a command that is gone (a deleted macro), in every keymap. */
+        default void forget(String commandId) {
+            reset(commandId);
+        }
     }
 
     /**

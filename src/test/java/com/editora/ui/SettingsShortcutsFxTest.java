@@ -1,17 +1,26 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.DialogPane;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 
+import com.editora.command.KeymapManager;
 import com.editora.macro.Macro;
 import com.editora.macro.MacroStep;
 import org.junit.jupiter.api.BeforeAll;
@@ -20,6 +29,9 @@ import org.junit.jupiter.api.Test;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Keymaps and Macros pages in a real Settings window: what the user records, sees and keeps. */
@@ -94,6 +106,173 @@ class SettingsShortcutsFxTest {
                         MacroStep.key("ESCAPE"), pane.steps().get(pane.steps().size() - 1));
                 stage(w).hide();
             });
+        }
+    }
+
+    /** A window on the CUA keymap: its notation ({@code Ctrl+S}, {@code ⌘S}) is not the keymap's own tokens. */
+    static FxWindowFixture cua() throws Exception {
+        return FxWindowFixture.create(
+                Files.createTempDirectory("settings-shortcuts"),
+                shared -> shared.getSettings().setKeymap("cua"));
+    }
+
+    static KeymapManager keymap(FxWindowFixture fx) {
+        return FxTestSupport.field(fx.controller, "keymap");
+    }
+
+    /** The keymap's first chord bound to {@code commandId}, in keymap tokens. */
+    static String rawChord(FxWindowFixture fx, String commandId) {
+        return keymap(fx).bindings().entrySet().stream()
+                .filter(e -> e.getValue().equals(commandId))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+    }
+
+    static Map<String, String> overrides(FxWindowFixture fx) {
+        return fx.shared.getSettings().keybindingsFor(KeymapManager.isMac());
+    }
+
+    static HBox row(SettingsWindow w, String commandId) {
+        Map<String, HBox> rows = FxTestSupport.field(w, "shortcutRowsById");
+        return rows.get(commandId);
+    }
+
+    /** The chord (or "unbound") label a list row shows. */
+    static String listed(SettingsWindow w, String commandId) {
+        return all(row(w, commandId), Label.class, new ArrayList<>()).get(1).getText();
+    }
+
+    static void pressOn(Node target, KeyCode code, boolean shift, boolean ctrl, boolean alt) {
+        target.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, false));
+    }
+
+    /** Enter on a row selects it; a second Enter starts recording. Returns the capture field. */
+    static TextField record(SettingsWindow w, String commandId) throws Exception {
+        FxTestSupport.runOnFx(() -> press(row(w, commandId), KeyCode.ENTER));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> press(row(w, commandId), KeyCode.ENTER));
+        FxTestSupport.drainFx();
+        return FxTestSupport.callOnFx(
+                () -> all(row(w, commandId), TextField.class, new ArrayList<>()).get(0));
+    }
+
+    /** Runs {@code action}, closing every dialog it opens; returns how many were closed. */
+    static int dismissingDialogs(Runnable action) {
+        AtomicInteger closed = new AtomicInteger();
+        Platform.runLater(() -> {
+            for (Window win : List.copyOf(Window.getWindows())) {
+                if (win.getScene() != null && win.getScene().getRoot() instanceof DialogPane && win.isShowing()) {
+                    closed.incrementAndGet();
+                    win.hide();
+                }
+            }
+        });
+        action.run();
+        return closed.get();
+    }
+
+    /** The recorder showed "C-S-k f5" under CUA while the list beside it said "Ctrl+Shift+S". */
+    @Test
+    void theRecorderShowsTheKeymapsNotationAndBindsTheKeymapTokens() throws Exception {
+        try (var fx = cua()) {
+            SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
+            TextField capture = record(w, "file.save");
+            String expected = keymap(fx).display("C-M-S-f11");
+            assertNotEquals("C-M-S-f11", expected, "precondition: CUA writes chords its own way");
+            FxTestSupport.runOnFx(() -> {
+                pressOn(capture, KeyCode.F11, true, true, true);
+                assertEquals(expected, capture.getText());
+                press(capture, KeyCode.ENTER);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertEquals("file.save", overrides(fx).get("C-M-S-f11"), "stored in keymap tokens");
+                assertEquals(expected, listed(w, "file.save"));
+                stage(w).hide();
+            });
+        }
+    }
+
+    /** A bare "e" used to be bound, after which typing "e" anywhere ran the command. */
+    @Test
+    void aKeyThatTypesTextIsRefusedWithAMessage() throws Exception {
+        try (var fx = cua()) {
+            SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
+            String before = rawChord(fx, "file.save");
+            TextField capture = record(w, "file.save");
+            FxTestSupport.runOnFx(() -> {
+                pressOn(capture, KeyCode.E, false, false, false);
+                int dialogs = dismissingDialogs(() -> press(capture, KeyCode.ENTER));
+                assertEquals(1, dialogs, "the user is told why");
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertNull(overrides(fx).get("e"));
+                assertEquals(before, rawChord(fx, "file.save"), "the old shortcut stays");
+                stage(w).hide();
+            });
+        }
+    }
+
+    /** There was no way to unbind a command; Delete on its row (or Remove) does it now. */
+    @Test
+    void deleteOnARowRemovesTheShortcut() throws Exception {
+        try (var fx = cua()) {
+            SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
+            String chord = rawChord(fx, "file.save");
+            FxTestSupport.runOnFx(() -> press(row(w, "file.save"), KeyCode.DELETE));
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertNull(rawChord(fx, "file.save"), "nothing runs File: Save any more");
+                assertEquals("", overrides(fx).get(chord), "its default chord is suppressed");
+                assertEquals(tr("settings.shortcuts.unbound"), listed(w, "file.save"));
+                press(row(w, "file.save"), KeyCode.ENTER); // select it: Remove is there, and greyed
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(button(row(w, "file.save"), tr("settings.shortcuts.remove"))
+                        .isDisable());
+                stage(w).hide();
+            });
+        }
+    }
+
+    /** Reset on a command whose chord another command took did nothing, though the status said "reset". */
+    @Test
+    void resetTakesAChordBackAfterAskingFirst() throws Exception {
+        try (var fx = cua()) {
+            SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "KEYMAPS"));
+            String open = rawChord(fx, "file.open");
+            List<String> asked = new ArrayList<>();
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow.ShortcutActions actions = FxTestSupport.field(w, "shortcutActions");
+                actions.rebind("file.save", open);
+                assertNull(rawChord(fx, "file.open"), "precondition: File: Open lost its chord");
+                FxTestSupport.call(w, "refreshShortcuts", new Class<?>[] {});
+                java.util.function.BiPredicate<String, String> answer = (title, body) -> asked.add(body);
+                setField(w, "confirmLoss", answer);
+                press(row(w, "file.open"), KeyCode.ENTER);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                button(row(w, "file.open"), tr("settings.shortcuts.reset")).fire();
+                assertEquals(1, asked.size(), "asked before taking the chord from File: Save");
+                assertTrue(asked.get(0).contains(keymap(fx).display(open)), asked.get(0));
+                assertEquals("file.open", keymap(fx).bindings().get(open), "the chord is back");
+                assertFalse(overrides(fx).containsValue("file.open"));
+                stage(w).hide();
+            });
+        }
+    }
+
+    static void setField(Object target, String name, Object value) {
+        try {
+            java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
+            f.setAccessible(true);
+            f.set(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
         }
     }
 }

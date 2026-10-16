@@ -486,7 +486,7 @@ class SettingsListsFxTest {
 
             assertEquals(0, SettingsRig.all(row("cmd.1"), Button.class).size());
             click(row("cmd.1"));
-            assertEquals(2, SettingsRig.all(row("cmd.1"), Button.class).size());
+            assertEquals(3, SettingsRig.all(row("cmd.1"), Button.class).size()); // Record, Reset, Remove
             assertTrue(row("cmd.1").getStyleClass().contains("shortcut-row-selected"));
             HBox selected = row("cmd.1");
             click(selected); // a second click on the selected row leaves it as it is

@@ -383,7 +383,7 @@ final class MacroSettingsPane extends HBox {
             return;
         }
         if (host.shortcuts() != null) {
-            host.shortcuts().reset(MacroService.commandIdFor(sel)); // drop its keybinding
+            host.shortcuts().forget(MacroService.commandIdFor(sel)); // drop its keybinding, in every keymap
         }
         dirty.set(false);
         editingId = null;
@@ -417,11 +417,13 @@ final class MacroSettingsPane extends HBox {
         chordLabel.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
         chordLabel.setMinWidth(Region.USE_PREF_SIZE);
         Button record = new Button(tr("settings.shortcuts.record"));
-        Button clear = new Button(tr("settings.shortcuts.reset"));
+        // A macro has no default chord, so this removes the binding — and says so.
+        Button clear = new Button(tr("settings.shortcuts.remove"));
+        clear.setDisable(!bound);
         fitToLabel(record, clear);
         clear.setOnAction(e -> {
             if (host.shortcuts() != null) {
-                host.shortcuts().reset(commandId);
+                host.shortcuts().clear(commandId);
             }
             rebuildKeybinding();
             host.shortcutsChanged();
@@ -441,10 +443,11 @@ final class MacroSettingsPane extends HBox {
             host.rebind(commandId, seq);
             done.run();
         };
-        TextField capture = ShortcutCapture.field(commit, done);
+        SettingsWindow.ShortcutActions actions = host.shortcuts();
+        TextField capture = ShortcutCapture.field(seq -> actions == null ? seq : actions.display(seq), commit, done);
         Button save = new Button(tr("settings.shortcuts.save"));
         save.getStyleClass().add("success");
-        save.setOnAction(e -> commit.accept(capture.getText()));
+        save.setOnAction(e -> commit.accept(ShortcutCapture.recorded(capture)));
         Button cancel = new Button(tr("settings.shortcuts.cancel"));
         cancel.setOnAction(e -> done.run());
         fitToLabel(save, cancel);
