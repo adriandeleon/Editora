@@ -11,6 +11,7 @@ import com.editora.config.HttpResponseHistory;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpTests;
 
 /**
  * One row of the response view's History: the {@link HttpExchange}, the request's {@code name} (its
@@ -163,7 +164,8 @@ record HttpHistoryEntry(
                 new byte[0],
                 r.truncated(),
                 r.written(),
-                r.protocol());
+                r.protocol(),
+                r.tests());
         HttpExchange ex = new HttpExchange(
                 exchange.label(),
                 exchange.method(),
@@ -286,7 +288,8 @@ record HttpHistoryEntry(
                 body.getBytes(charset(s.charset())),
                 s.truncated(), // as received; a body cut by the history is bodyCut, not "not downloaded"
                 List.of(),
-                s.protocol());
+                s.protocol(),
+                HttpTests.NONE);
         String method = s.method() == null ? "GET" : s.method();
         String url = s.url() == null ? "" : s.url();
         HttpExchange ex = new HttpExchange(

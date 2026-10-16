@@ -26,6 +26,11 @@ public record HttpExchange(
         details = details == null ? Details.NONE : details;
     }
 
+    /** This exchange with {@code result} in place of its own. */
+    public HttpExchange withResult(HttpResult result) {
+        return new HttpExchange(label, method, url, headers, requestBody, result, details);
+    }
+
     /**
      * How the request went out, beyond its resolved text.
      *
