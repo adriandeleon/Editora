@@ -194,6 +194,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   older dropbear Debian 12 and Ubuntu 24.04 ship, a command no longer fails now and then with "the remote
   host did not start the command". Removing a
   saved site keeps that host's answer and tool commands, for when it is added back.
+- **Tools in a container.** A project folder bind-mounted into a running container — the dev container that
+  the Dev Containers CLI or VS Code started for it, or a container you pick with Containers: Run This
+  Project's Tools in a Container… — can have its git, builds, tests, language servers and debuggers run
+  inside the container, with the container's own PATH, environment and user, while you edit the files here.
+  Editora asks once per container; Containers: Run This Project's Tools Here goes back. Works with Docker and
+  Podman (Settings → Remote → Container engine). A debugger listening on a port inside the container is
+  reached from here, whatever the container's network.
+- **Tools in WSL (Windows).** A project inside a WSL distribution, opened as `\\wsl.localhost\Ubuntu\…`, can
+  have its git, builds, tests, language servers and debuggers run inside that distribution with its own Linux
+  tools, instead of Windows ones reading the files across the share. Editora asks once per distribution;
+  Containers: Run This Project's Tools Here goes back.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug

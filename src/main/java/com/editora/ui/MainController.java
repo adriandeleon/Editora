@@ -255,6 +255,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     // --- Remote files (SFTP via MINA SSHD; off-thread connect/auth) — owned by RemoteCoordinator ---
     RemoteCoordinator remoteCoordinator;
 
+    /**
+     * Where this window's files' tools run has changed — a host allowed or withdrawn, a folder bound to a
+     * container or released: the features that run tools look again.
+     */
+    private void toolsMoved() {
+        lspManager.forgetRemoteDetections(); // a server's command there may have been set
+        git.refresh();
+        lspCoordinator.remoteExecChanged(); // tabs start, or stop, their servers where their tools run
+        if (projectPanel != null) {
+            projectPanel.refreshRemoteWatch(); // the folder's host may be watched now, or no longer
+        }
+    }
+
+    /** The container this window's project's tools run in, if any. */
+    ContainerCoordinator containerCoordinator;
+
     RemoteCoordinator remoteCoordinator() {
         return remoteCoordinator;
     }
@@ -946,6 +962,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (projectPanel != null) {
             projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
         }
+        if (containerCoordinator != null) {
+            containerCoordinator.windowFocused(); // a dev container may have been started or stopped meanwhile
+        }
         diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
         httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the pickers and {{variable}} marks
     }
@@ -1187,6 +1206,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
         setProjectRoot(project == null ? null : project.rootPath());
+        if (containerCoordinator != null) {
+            containerCoordinator.projectChanged(true); // its dev container, or the container named for it
+        }
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
                 .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
@@ -2628,6 +2650,27 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
+        containerCoordinator = new ContainerCoordinator(coordinatorHost, new ContainerCoordinator.Ops() {
+            @Override
+            public Path projectRoot() {
+                return windowProjectRoot();
+            }
+
+            @Override
+            public boolean execAllowed(String targetId) {
+                return config.remoteExecAllowed(targetId);
+            }
+
+            @Override
+            public void setExecAllowed(String targetId, boolean allowed) {
+                config.setRemoteExecAllowed(targetId, allowed);
+            }
+
+            @Override
+            public void execChanged() {
+                toolsMoved();
+            }
+        });
         remoteToolWindow = toolWindow("remote", ToolWindow.Side.RIGHT, Icons::remote, remoteCoordinator::panel);
         agentToolWindow = toolWindow("agent", ToolWindow.Side.RIGHT, Icons::agent, agentCoordinator::panel);
         toolWindows.register(projectToolWindow);
@@ -2808,12 +2851,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void remoteExecChanged() {
-                lspManager.forgetRemoteDetections(); // a server's command on the host may have been set
-                git.refresh();
-                lspCoordinator.remoteExecChanged(); // remote tabs start, or stop, their servers on the host
-                if (projectPanel != null) {
-                    projectPanel.refreshRemoteWatch(); // the folder's host may be watched now, or no longer
-                }
+                toolsMoved();
             }
 
             @Override

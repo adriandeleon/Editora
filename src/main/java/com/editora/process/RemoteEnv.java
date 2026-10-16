@@ -1,10 +1,8 @@
-package com.editora.vfs;
+package com.editora.process;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.editora.process.PosixShell;
 
 /**
  * What a host's <em>login shell</em> sets up, learned once per connection. A command started over SSH gets a
@@ -21,9 +19,9 @@ import com.editora.process.PosixShell;
  * @param profile the other variables the login profile sets ({@code JAVA_HOME}, {@code MAVEN_OPTS},
  *     {@code GOPATH}, …) that a plain command over SSH would not have
  */
-record RemoteEnv(String path, String home, String os, Map<String, String> locale, Map<String, String> profile) {
+public record RemoteEnv(String path, String home, String os, Map<String, String> locale, Map<String, String> profile) {
 
-    static final RemoteEnv UNKNOWN = new RemoteEnv(null, null, null, Map.of(), Map.of());
+    public static final RemoteEnv UNKNOWN = new RemoteEnv(null, null, null, Map.of(), Map.of());
 
     RemoteEnv(String path, String home, String os, Map<String, String> locale) {
         this(path, home, os, locale, Map.of());
@@ -97,7 +95,7 @@ record RemoteEnv(String path, String home, String os, Map<String, String> locale
      * account's shell as an interactive login shell so the profile files that set up version managers are
      * read; the markers fence the values off from whatever those files print.
      */
-    static String probeCommandLine() {
+    public static String probeCommandLine() {
         StringBuilder printf = new StringBuilder("printf '%s\\n' ").append(BEGIN);
         printf.append(" \"$PATH\" \"$HOME\" \"$(uname -s)\"");
         LOCALE_VARIABLES.forEach(name -> printf.append(" \"$").append(name).append('"'));
@@ -114,7 +112,7 @@ record RemoteEnv(String path, String home, String os, Map<String, String> locale
     }
 
     /** Reads {@link #probeCommandLine}'s output; {@link #UNKNOWN} when the markers are not both there. */
-    static RemoteEnv parse(String output) {
+    public static RemoteEnv parse(String output) {
         if (output == null) {
             return UNKNOWN;
         }

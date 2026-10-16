@@ -64,7 +64,8 @@ class ChildLocalePolicyTest {
             "typst/TypstRenderer.java", // detect()
             "io/Trash.java", // `gio trash` (exit code)
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
-            "ui/GitPathScope.java"); // `find` on a remote host: where a project's .git entries are
+            "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
+            "container/ContainerEngine.java"); // the engine's inspect / ps output
 
     /**
      * Long-lived, shown to the user, or a JVM tool on the user's paths: the inherited locale. The number is
@@ -82,6 +83,8 @@ class ChildLocalePolicyTest {
             Map.entry("github/GitHubService.java", 1), // a failed CI log, streamed to keep its tail: shown, not parsed
             Map.entry("http/NodeResponseScripts.java", 1), // an HTTP response handler: its log is shown (minimal env)
             Map.entry("install/InstallService.java", 5), // npm/pip/gem/… installs + tar extraction
+            Map.entry("container/ContainerExecTarget.java", 1), // the engine's exec client of a container command
+            Map.entry("wsl/WslExecTarget.java", 1), // wsl.exe, the launcher of a command in a WSL distribution
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
             Map.entry("maven/MavenClasspathResolver.java", 1), // Maven on the user's project
             Map.entry("mermaid/Mermaid.java", 2), // render + export
@@ -94,6 +97,8 @@ class ChildLocalePolicyTest {
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */
     private static final Set<String> RAW_SPAWN_FILES = Set.of(
             "agent/AcpClient.java",
+            "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only
+            "wsl/WslExecTarget.java", // wsl.exe: the user's environment, here only
             "build/BuildService.java",
             "dap/DapManager.java",
             "http/NodeResponseScripts.java", // applyUserEnv, then reduced to a minimal environment

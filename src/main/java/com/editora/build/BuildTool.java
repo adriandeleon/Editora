@@ -383,12 +383,16 @@ public enum BuildTool {
         if (wrapper == null) {
             return List.of();
         }
-        isWindows = isWindows && isLocal(root);
+        isWindows = isWindows && com.editora.process.ExecTargets.runsHere(root);
         // "./mvnw" only names the wrapper when it sits in the working directory; one found in an ancestor is
-        // launched by its absolute path (the build still runs in `root`, which is what selects the module).
+        // launched by its absolute path (the build still runs in `root`, which is what selects the module),
+        // as the machine the build runs on names it.
         boolean inRoot = root.toAbsolutePath().normalize().equals(wrapper.getParent());
         return List.of(
-                isWindows || !inRoot ? wrapper.toAbsolutePath().normalize().toString() : "./" + unixName);
+                isWindows || !inRoot
+                        ? com.editora.process.ExecTargets.forPath(root)
+                                .toTargetPath(wrapper.toAbsolutePath().normalize())
+                        : "./" + unixName);
     }
 
     /**
@@ -401,8 +405,8 @@ public enum BuildTool {
      */
     private static Path wrapperFile(
             Path root, Path projectRoot, boolean isWindows, String unixName, String windowsName) {
-        if (!isLocal(root)) {
-            isWindows = false; // a remote host is POSIX, whatever this machine is
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            isWindows = false; // a remote host, a container, WSL: POSIX, whatever this machine is
         }
         Path start = root.toAbsolutePath().normalize();
         Path top = projectRoot == null ? start : projectRoot.toAbsolutePath().normalize();

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 125;
+    public static final int SCHEMA_VERSION = 126;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -274,6 +274,18 @@ public class Settings {
      * host is still asked once (the connection store keeps the answer) before anything runs there.
      */
     private boolean remoteExecution = true;
+
+    /**
+     * The container engine's command, for a folder whose tools run in a container: blank is {@code docker};
+     * {@code podman} takes the same arguments. A command line is allowed ({@code flatpak-spawn --host docker}).
+     */
+    private String containerEngine = "";
+
+    /**
+     * Folders whose tools run in a container the user named, by the folder's path: container name or id. A
+     * folder not listed is matched to a running dev container started for it, when there is one.
+     */
+    private java.util.Map<String, String> containerBindings = new java.util.LinkedHashMap<>();
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
@@ -1545,6 +1557,30 @@ public class Settings {
      */
     public boolean isRemoteExecution() {
         return remoteExecution;
+    }
+
+    public String getContainerEngine() {
+        return containerEngine;
+    }
+
+    public void setContainerEngine(String containerEngine) {
+        this.containerEngine = containerEngine == null ? "" : containerEngine.strip();
+    }
+
+    public java.util.Map<String, String> getContainerBindings() {
+        return java.util.Map.copyOf(containerBindings);
+    }
+
+    public void setContainerBindings(java.util.Map<String, String> containerBindings) {
+        java.util.Map<String, String> kept = new java.util.LinkedHashMap<>();
+        if (containerBindings != null) {
+            containerBindings.forEach((folder, container) -> {
+                if (folder != null && !folder.isBlank() && container != null && !container.isBlank()) {
+                    kept.put(folder.strip(), container.strip());
+                }
+            });
+        }
+        this.containerBindings = kept;
     }
 
     public void setRemoteExecution(boolean remoteExecution) {

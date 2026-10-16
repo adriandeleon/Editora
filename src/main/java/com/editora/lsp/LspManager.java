@@ -3835,6 +3835,32 @@ public final class LspManager {
     }
 
     /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */
+    /**
+     * Shuts down every started session whose folder's tools now run somewhere else than where it was started:
+     * a folder bound to a container, or released from one, or a host whose agreement was withdrawn. Its
+     * documents are reopened on the right server by the next sync. Deliberate: no crash notice. Returns
+     * whether any was.
+     */
+    public boolean shutdownSessionsOnAnotherTarget() {
+        boolean any = false;
+        var it = sessionsByRoot.entrySet().iterator();
+        while (it.hasNext()) {
+            var e = it.next();
+            LanguageServerSession s = e.getValue();
+            String started = s.targetId();
+            if (started != null
+                    && !started.equals(
+                            com.editora.process.ExecTargets.forPath(s.root()).id())) {
+                sessionByDocUri.values().removeIf(v -> v == s);
+                pendingApplyExpected.remove(s);
+                disposeDeliberately(e.getKey(), s);
+                it.remove();
+                any = true;
+            }
+        }
+        return any;
+    }
+
     public void shutdownServer(String serverId) {
         String prefix = sessionKeyPrefix(serverId);
         var it = sessionsByRoot.entrySet().iterator();
