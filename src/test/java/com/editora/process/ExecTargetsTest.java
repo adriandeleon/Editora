@@ -35,6 +35,40 @@ class ExecTargetsTest {
         assertTrue(ExecTargets.local().isAvailable());
     }
 
+    /**
+     * A folder of this machine whose tools run elsewhere (a container, WSL) is claimed by a mapped resolver: its
+     * paths get that target, and the rest of the disk stays here. While the user does not let commands run
+     * elsewhere, or not on that target, the folder's tools run here, as they always did: its files are local.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlink
+    void aMappedFolderRunsOnItsTargetWhileThatIsAllowed(@TempDir Path dir) throws IOException {
+        Path folder = java.nio.file.Files.createDirectories(dir.resolve("app"));
+        MappedTestTarget target = MappedTestTarget.register(folder, dir.resolve("mounted"));
+        try {
+            Path file = folder.toRealPath().resolve("src/A.java");
+            assertSame(target, ExecTargets.forPath(file));
+            assertSame(target, ExecTargets.forPath(folder.toRealPath()));
+            assertFalse(ExecTargets.runsHere(file));
+            assertSame(ExecTargets.local(), ExecTargets.forPath(dir.resolve("elsewhere.txt")), "not in the folder");
+            assertTrue(
+                    target.toTargetPath(file).startsWith(dir.resolve("mounted").toString()));
+            assertEquals(file, target.toPath(target.toTargetPath(file)));
+
+            ExecTargets.setRemoteHostAllowed(id -> !id.equals("mapped:test"));
+            assertSame(ExecTargets.local(), ExecTargets.forPath(file), "not allowed there: here, as before");
+            ExecTargets.setRemoteHostAllowed(null);
+            ExecTargets.setRemoteEnabled(() -> false);
+            assertSame(ExecTargets.local(), ExecTargets.forPath(file), "the setting off: here, as before");
+            assertTrue(ExecTargets.runsHere(file));
+        } finally {
+            target.unregister();
+            ExecTargets.setRemoteHostAllowed(null);
+        }
+        ExecTargets.setRemoteEnabled(() -> true);
+        assertSame(ExecTargets.local(), ExecTargets.forPath(folder), "unregistered: here");
+    }
+
     @Test
     void theLocalTargetNamesPathsAsTheyAre(@TempDir Path dir) {
         ExecTarget local = ExecTargets.local();

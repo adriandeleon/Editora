@@ -321,8 +321,17 @@ public final class GitService {
      */
     private static final List<String> REMOTE_GIT = List.of("git");
 
+    /**
+     * Whether git for {@code dir} runs on this machine: its execution target's answer, not its filesystem's. A
+     * folder of this machine can still have its tools run elsewhere (bind-mounted into a container, in WSL).
+     */
     private static boolean isLocal(Path dir) {
-        return dir == null || dir.getFileSystem() == java.nio.file.FileSystems.getDefault();
+        return ExecTargets.runsHere(dir);
+    }
+
+    /** Whether {@code p} is on this machine's own filesystem (so reading it is no network round trip). */
+    private static boolean onThisFileSystem(Path p) {
+        return p == null || p.getFileSystem() == java.nio.file.FileSystems.getDefault();
     }
 
     /** The git command for the machine {@code dir} is on. */
@@ -371,7 +380,13 @@ public final class GitService {
         boolean ok = false;
         String out = "";
         try {
-            Path anywhere = context.toAbsolutePath().getRoot(); // a directory that is certainly there
+            // A directory that is certainly there and on the same target: a remote filesystem's root, or, for a
+            // folder of this machine whose tools run elsewhere, the folder itself (this machine's "/" is local).
+            Path anywhere = onThisFileSystem(context)
+                    ? (Files.isDirectory(context)
+                            ? context
+                            : context.toAbsolutePath().getParent())
+                    : context.toAbsolutePath().getRoot();
             List<String> argv = new ArrayList<>(commandFor(context));
             argv.add("--version");
             ProcessRunner.Result r = ProcessRunner.run(anywhere, QUICK, argv, READ_ENV);
@@ -400,7 +415,7 @@ public final class GitService {
     }
 
     /** {@code path} as the git that serves it names it: this machine's absolute path, or the host's. */
-    private static String gitPath(Path path) {
+    static String gitPath(Path path) {
         Path absolute = path.toAbsolutePath();
         return isLocal(absolute)
                 ? absolute.toString()
@@ -692,16 +707,8 @@ public final class GitService {
 
     private GitDiff diffHead(Path root, Path file) {
         // -U0: no context lines, so hunk headers map cleanly to changed line ranges + tooltip bodies.
-        ProcessRunner.Result r = git(
-                root,
-                QUICK,
-                GitSafety.LITERAL_PATHSPECS,
-                "diff",
-                "--no-color",
-                "-U0",
-                "HEAD",
-                "--",
-                file.toAbsolutePath().toString());
+        ProcessRunner.Result r =
+                git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "diff", "--no-color", "-U0", "HEAD", "--", gitPath(file));
         if (!r.ok()) {
             return GitDiff.EMPTY; // untracked / unmerged / new repo with no HEAD: no bars
         }
@@ -728,15 +735,8 @@ public final class GitService {
         submit(exec, () -> {
             List<DiffParser.Hunk> hunks = null;
             if (gitAvailable(root) && root != null && file != null) {
-                ProcessRunner.Result r = git(
-                        root,
-                        QUICK,
-                        GitSafety.LITERAL_PATHSPECS,
-                        "diff",
-                        "--no-color",
-                        "-U0",
-                        "--",
-                        file.toAbsolutePath().toString());
+                ProcessRunner.Result r =
+                        git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "diff", "--no-color", "-U0", "--", gitPath(file));
                 // An unmerged path answers with a combined diff ("@@@"), which is not a hunk to stage.
                 hunks = r.ok() && !r.out().contains("\n@@@ ") ? DiffParser.parseHunks(r.out()) : null;
             }
@@ -912,7 +912,7 @@ public final class GitService {
                         String.valueOf(max)));
                 if (file != null) {
                     args.add("--");
-                    args.add(file.toAbsolutePath().toString());
+                    args.add(gitPath(file));
                 }
                 ProcessRunner.Result r = git(root, QUICK, args.toArray(new String[0]));
                 if (r.ok()) {
@@ -1189,7 +1189,7 @@ public final class GitService {
         if (cached != null) {
             return cached;
         }
-        ProcessRunner.Result r = runBlame(root, options, plan, List.of("--", abs.toString()));
+        ProcessRunner.Result r = runBlame(root, options, plan, List.of("--", gitPath(abs)));
         if (!r.ok()) {
             return List.of(); // includes a capture that was cut off: never parsed, never cached
         }
@@ -1279,7 +1279,7 @@ public final class GitService {
             Path root, BlameOptions options, BlameIgnoreRevs.Plan plan, List<String> target) {
         List<String> args = new ArrayList<>(List.of(GitSafety.LITERAL_PATHSPECS, "blame", "--porcelain"));
         args.addAll(options.args());
-        args.addAll(plan.args());
+        args.addAll(plan.args(file -> gitPath(root.getFileSystem().getPath(file))));
         args.addAll(target);
         blameRuns.incrementAndGet();
         Map<String, String> env = plan.withoutGlobalConfig() ? envWithoutGlobalIgnoreRevs(root) : READ_ENV;
@@ -1570,7 +1570,7 @@ public final class GitService {
      * and if nothing resolves, falls back to a plain absolute-normalized path.
      */
     static Path realPath(Path p) {
-        if (!isLocal(p)) {
+        if (!onThisFileSystem(p)) {
             // Not asked of the server: this is called on the JavaFX thread, and a remote folder is reached
             // by the one spelling its connection opened it under.
             return p.toAbsolutePath().normalize();

@@ -307,14 +307,12 @@ public final class GitHubService {
     }
 
     private static String hostOf(Path dir) {
-        return dir == null || com.editora.vfs.Vfs.isLocal(dir)
-                ? LOCAL
-                : ExecTargets.forPath(dir).id();
+        return ExecTargets.runsHere(dir) ? LOCAL : ExecTargets.forPath(dir).id();
     }
 
     /** The gh for {@code dir}'s machine: the configured one here, the host's own (or its configured tool) there. */
     private List<String> commandFor(Path dir) {
-        if (dir == null || com.editora.vfs.Vfs.isLocal(dir)) {
+        if (ExecTargets.runsHere(dir)) {
             return command;
         }
         String configured = ExecTargets.remoteTool(dir, "gh");
@@ -372,8 +370,13 @@ public final class GitHubService {
                 Path at = location;
                 String host = hostOf(at);
                 List<String> probed = commandFor(at);
-                // A remote host is asked from a directory it certainly has; this machine from anywhere.
-                Path anchor = LOCAL.equals(host) ? null : at.toAbsolutePath().getRoot();
+                // Another machine is asked from a directory it certainly has: a remote filesystem's root, or the
+                // folder itself when it is this machine's but its tools run elsewhere. This machine from anywhere.
+                Path anchor = LOCAL.equals(host)
+                        ? null
+                        : at.getFileSystem() == java.nio.file.FileSystems.getDefault()
+                                ? at.toAbsolutePath()
+                                : at.toAbsolutePath().getRoot();
                 Availability fresh = probe(probed, anchor, QUICK);
                 synchronized (probeLock) {
                     if (configured != command) {

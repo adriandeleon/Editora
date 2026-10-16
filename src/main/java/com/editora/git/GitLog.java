@@ -268,7 +268,7 @@ public final class GitLog {
         args.addAll(query.options());
         if (request.file() != null) {
             args.add("--");
-            args.add(request.file().toAbsolutePath().toString());
+            args.add(GitService.gitPath(request.file()));
         } else if (!request.paths().isEmpty()) {
             args.add("--");
             args.addAll(request.paths()); // literal, relative to the repository root git runs in
