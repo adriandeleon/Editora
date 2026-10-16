@@ -366,9 +366,11 @@ class SplitPaneOverlaysFxTest {
             b.setRulerColumn(40);
         });
         Parent pane = pane2(b);
-        javafx.scene.shape.Line ruler = (javafx.scene.shape.Line) overlay(pane, "column-ruler");
-        assertNotNull(ruler, "pane 2 has a column ruler");
+        javafx.scene.Group rulers = (javafx.scene.Group) overlay(pane, "column-rulers");
+        assertNotNull(rulers, "pane 2 has a column ruler");
         settle();
+        javafx.scene.shape.Line ruler = FxTestSupport.callOnFx(
+                () -> (javafx.scene.shape.Line) rulers.getChildren().get(0));
         assertTrue(FxTestSupport.callOnFx(ruler::isVisible), "shown with pane 1's");
         assertEquals(columnX(pane, second, 40), FxTestSupport.callOnFx(ruler::getStartX), 1.0, "at column 40");
         assertTrue(FxTestSupport.callOnFx(ruler::getEndY) > 300, "as tall as the pane");
@@ -381,7 +383,10 @@ class SplitPaneOverlaysFxTest {
                 FxTestSupport.callOnFx(ruler::getStartX),
                 1.0,
                 "it stays on the column when pane 2 scrolls sideways");
-        javafx.scene.shape.Line primary = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "columnRuler"));
+        javafx.scene.shape.Line primary = FxTestSupport.callOnFx(
+                () -> (javafx.scene.shape.Line) FxTestSupport.<javafx.scene.Group>field(b, "columnRuler")
+                        .getChildren()
+                        .get(0));
         assertTrue(
                 FxTestSupport.callOnFx(primary::getStartX) - FxTestSupport.callOnFx(ruler::getStartX) > 100,
                 "while pane 1's did not move");
@@ -389,7 +394,8 @@ class SplitPaneOverlaysFxTest {
 
         FxTestSupport.runOnFx(() -> b.setColumnRulerVisible(false));
         settle();
-        assertTrue(!FxTestSupport.callOnFx(ruler::isVisible), "and is hidden with pane 1's");
+        assertTrue(
+                !FxTestSupport.callOnFx(() -> rulers.isVisible() && ruler.isVisible()), "and is hidden with pane 1's");
     }
 
     /** Pane-local left edge of column {@code col} on the first line of {@code view}. */

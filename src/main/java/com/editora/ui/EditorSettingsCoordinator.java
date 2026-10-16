@@ -161,6 +161,73 @@ final class EditorSettingsCoordinator {
         host.setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
     }
 
+    /** {@code editor.setRulers}: the ruler columns for every file, as {@code 80, 120}; blank = none. */
+    void promptRulers() {
+        Settings s = host.config().getSettings();
+        host.promptText(
+                commandTitle("editor.setRulers"),
+                tr("palette.rulers.columns"),
+                com.editora.editor.RulerColumns.format(s.getRulers()),
+                v -> {
+                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
+                    if (columns == null) {
+                        host.setStatus(tr("status.rulers.invalid", v.trim()));
+                        return;
+                    }
+                    s.setRulers(columns);
+                    rulersChanged(s, columns);
+                });
+    }
+
+    /**
+     * {@code editor.setLanguageRulers}: the ruler columns for files in the active buffer's language, used
+     * instead of the global ones; blank goes back to the global ones.
+     */
+    void promptLanguageRulers() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            host.setStatus(tr("status.noFileOpen"));
+            return;
+        }
+        Settings s = host.config().getSettings();
+        String language = buffer.getLanguage();
+        java.util.List<Integer> own = s.getLanguageRulers().get(language);
+        host.promptText(
+                commandTitle("editor.setLanguageRulers"),
+                tr("palette.rulers.language", language),
+                own == null ? "" : com.editora.editor.RulerColumns.format(own),
+                v -> {
+                    java.util.Map<String, java.util.List<Integer>> map =
+                            new java.util.LinkedHashMap<>(s.getLanguageRulers());
+                    java.util.List<Integer> columns = null;
+                    if (v.isBlank()) {
+                        map.remove(language);
+                    } else {
+                        columns = com.editora.editor.RulerColumns.parse(v);
+                        if (columns == null) {
+                            host.setStatus(tr("status.rulers.invalid", v.trim()));
+                            return;
+                        }
+                        map.put(language, columns);
+                    }
+                    s.setLanguageRulers(map);
+                    rulersChanged(s, columns == null ? s.getRulers() : columns);
+                });
+    }
+
+    private void rulersChanged(Settings s, java.util.List<Integer> columns) {
+        host.requestSave();
+        applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll();
+        }
+        host.setStatus(
+                columns.isEmpty()
+                        ? tr("status.rulers.none")
+                        : tr("status.rulers.set", com.editora.editor.RulerColumns.format(columns)));
+    }
+
     void toggleLineHighlight() {
         Settings s = host.config().getSettings();
         s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
@@ -877,7 +944,9 @@ final class EditorSettingsCoordinator {
         boolean zen = host.chrome().zenActive() || host.chrome().diffUiActive();
         boolean focus = zen || host.chrome().expertActive();
         boolean simple = host.chrome().simpleModeActive();
+        buffer.setRulerColumns(s.getRulers(), s.getLanguageRulers());
         buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
+        buffer.setIndentGuidesVisible(Chrome.indentGuides(s.isShowIndentGuides(), zen, simple));
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
