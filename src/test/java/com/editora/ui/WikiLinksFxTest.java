@@ -2,7 +2,11 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import javafx.application.Platform;
 
 import com.editora.config.Settings;
 import org.junit.jupiter.api.AfterEach;
@@ -13,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Where a wiki link leads: through the project's link index, and beside the document without one. */
 @Tag("fx")
@@ -57,8 +62,27 @@ class WikiLinksFxTest {
             }
         };
         graph = new MarkdownLinkGraph(host, () -> root, () -> true);
-        assertNull(WikiLinks.resolve(doc, "setup"), "asking starts the index; it has not landed yet");
-        FxTestSupport.callOnFx(() -> graph.submit(ix -> {})).get(20, TimeUnit.SECONDS);
+        CompletableFuture<Void> landed = new CompletableFuture<>();
+        graph.addListener(() -> landed.complete(null));
+        // Asking off the FX thread hands the build to it. Held, so the build cannot land (a walk of five files
+        // takes a millisecond) before this thread reads the answer: under load it sometimes did.
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            held.countDown();
+            try {
+                release.await(20, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(held.await(20, TimeUnit.SECONDS));
+        try {
+            assertNull(WikiLinks.resolve(doc, "setup"), "asking starts the index; it has not landed yet");
+        } finally {
+            release.countDown();
+        }
+        landed.get(20, TimeUnit.SECONDS); // nothing else asked for it
 
         assertEquals(setup, WikiLinks.resolve(doc, "setup"));
         assertEquals(setup, WikiLinks.resolve(doc, "docs/setup"));
