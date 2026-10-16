@@ -50,16 +50,20 @@ public interface DapPaths {
 
     /**
      * Paths for an adapter running on {@code target}, whose files Editora reaches through {@code fileSystem}
-     * (the connection's); {@link #LOCAL} for this machine.
+     * (a connection's, or this machine's for a folder whose tools run elsewhere: a container, WSL);
+     * {@link #LOCAL} for this machine. It owns the files whose tools run on that same target.
      */
     static DapPaths on(ExecTarget target, java.nio.file.FileSystem fileSystem) {
         if (target == null || target.isLocal()) {
             return LOCAL;
         }
+        String id = target.id();
         return new DapPaths() {
             @Override
             public boolean owns(Path file) {
-                return file.getFileSystem() == fileSystem;
+                return file.getFileSystem() == fileSystem
+                        && id.equals(
+                                com.editora.process.ExecTargets.forPath(file).id());
             }
 
             @Override

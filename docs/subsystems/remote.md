@@ -71,7 +71,10 @@ program, build and classpath resolution start on its target (`RunService`, `Buil
 to its interpreter, and a Maven wrapper above the module by its absolute path, by the target's name for it;
 the wrapper is the POSIX one whatever this machine is (`BuildTool`); and an absolute working directory typed in
 a run configuration is read as the target names it (`RunConfigWorkingDirectory`). Search still reads a mapped
-folder with this machine's ripgrep: its files are local.
+folder with this machine's ripgrep: its files are local. Debugging follows as well: a mapped folder's file is debugged
+on its target through the same launch path as a remote host's (`DapManager`, `DebugCoordinator`), and
+`DapPaths.on` owns only the files whose tools run on the adapter's target, so a breakpoint in another local
+file is not sent there (`DapMappedTargetFxTest`).
 
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a

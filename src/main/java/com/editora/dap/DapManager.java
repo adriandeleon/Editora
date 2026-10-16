@@ -659,7 +659,7 @@ public final class DapManager implements DapClient.Host {
             return false;
         }
         boolean hostPlugin = file != null
-                && com.editora.vfs.Vfs.isRemote(file)
+                && !com.editora.process.ExecTargets.runsHere(file)
                 && enabled
                 && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
         if (!javaDebugUsable() && !hostPlugin) {
@@ -713,7 +713,9 @@ public final class DapManager implements DapClient.Host {
                             r.modulePaths(),
                             // A remote file runs on its host's JDK, as jdtls there resolves it: the override is
                             // a JDK on this machine.
-                            javaExecOverride == null || javaExecOverride.isBlank() || com.editora.vfs.Vfs.isRemote(file)
+                            javaExecOverride == null
+                                            || javaExecOverride.isBlank()
+                                            || !com.editora.process.ExecTargets.runsHere(file)
                                     ? r.javaExec()
                                     : javaExecOverride,
                             cwd,
@@ -841,7 +843,7 @@ public final class DapManager implements DapClient.Host {
      */
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
-        boolean remote = com.editora.vfs.Vfs.isRemote(file);
+        boolean remote = !com.editora.process.ExecTargets.runsHere(file);
         DapPaths paths = pathsFor(file);
         Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
@@ -1191,7 +1193,7 @@ public final class DapManager implements DapClient.Host {
      * file's host through a tunnel that closes with the session.
      */
     private CompletableFuture<org.eclipse.lsp4j.debug.Capabilities> connectJava(DapClient c, Path file, int port) {
-        if (!com.editora.vfs.Vfs.isRemote(file)) {
+        if (com.editora.process.ExecTargets.runsHere(file)) {
             return c.connect(port, "java");
         }
         try {
@@ -1206,7 +1208,7 @@ public final class DapManager implements DapClient.Host {
 
     /** How the adapter of a session for {@code file} names files: its host's paths for a remote file. */
     static DapPaths pathsFor(Path file) {
-        return file != null && com.editora.vfs.Vfs.isRemote(file)
+        return file != null && !com.editora.process.ExecTargets.runsHere(file)
                 ? DapPaths.on(com.editora.process.ExecTargets.forPath(file), file.getFileSystem())
                 : DapPaths.LOCAL;
     }
@@ -1235,7 +1237,7 @@ public final class DapManager implements DapClient.Host {
         List<String> filters = exceptionFilters;
         startupTask = io.submit(() -> {
             try {
-                boolean remote = com.editora.vfs.Vfs.isRemote(file);
+                boolean remote = !com.editora.process.ExecTargets.runsHere(file);
                 if (spec.kind() == DapServerRegistry.Kind.STDIO) {
                     if (remote) {
                         startRemoteStdio(file, spec, bps, filters, epoch);
@@ -1269,7 +1271,7 @@ public final class DapManager implements DapClient.Host {
             listener.onError("Open a file to debug first.");
             return false;
         }
-        if (com.editora.vfs.Vfs.isRemote(file)) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
             String problem = remoteProblem(file, language);
             if (problem != null) {
                 listener.onError(problem);

@@ -293,7 +293,7 @@ final class DebugCoordinator {
      * asked for its adapter when the session starts (this machine's detection says nothing about it).
      */
     boolean debugEffectiveFor(String language, Path file) {
-        if (file == null || Vfs.isLocal(file)) {
+        if (file == null || com.editora.process.ExecTargets.runsHere(file)) {
             return debugEffectiveFor(language);
         }
         if (!debugSupportEnabled() || language == null || !DapManager.debuggableOnHost(language)) {
@@ -486,10 +486,11 @@ final class DebugCoordinator {
         if (b == null || !DapServerRegistry.isDebuggable(b.getLanguage())) {
             return false;
         }
-        if (host.isLocalBuffer(b)) {
+        if (host.isLocalBuffer(b) && (b.getPath() == null || com.editora.process.ExecTargets.runsHere(b.getPath()))) {
             return true;
         }
-        // A remote file is debugged on its host — Python and JavaScript so far — while that may run commands.
+        // A file whose tools run elsewhere (a remote host, a container, WSL) is debugged there, while that may
+        // run commands.
         return b.getPath() != null && DapManager.debuggableOnHost(b.getLanguage()) && RemoteExec.runsFor(b.getPath());
     }
 
@@ -1390,7 +1391,7 @@ final class DebugCoordinator {
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
         boolean compactSource = "java".equals(language) && b.isCompactSource();
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        String jdkHome = !"java".equals(language) || Vfs.isRemote(b.getPath())
+        String jdkHome = !"java".equals(language) || !com.editora.process.ExecTargets.runsHere(b.getPath())
                 ? ""
                 : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
@@ -1485,7 +1486,7 @@ final class DebugCoordinator {
         Path cwd = configuredDir != null ? configuredDir : root;
         // On a remote project the debuggee runs on its host: the JDK jdtls resolves there (DapManager ignores
         // a java of this machine), and none of this machine's PATH or JAVA_HOME.
-        boolean onHost = Vfs.isRemote(root);
+        boolean onHost = !com.editora.process.ExecTargets.runsHere(root);
         String jdkHome = onHost ? "" : configuredJdkHome(root, cfg);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         java.util.Map<String, String> jdkEnv = onHost
@@ -1570,7 +1571,7 @@ final class DebugCoordinator {
                 if (opt == null) {
                     return;
                 }
-                List<String> mainArgs = debugArgs(programArgsForMain(opt));
+                List<String> mainArgs = debugArgs(programArgsForMain(opt, routing));
                 if (mainArgs == null) {
                     return;
                 }
@@ -1603,12 +1604,14 @@ final class DebugCoordinator {
     }
 
     /** Per-main-class program args, reusing the per-file store keyed by the main class's own source file. */
-    private String programArgsForMain(DapManager.MainClassOption opt) {
+    private String programArgsForMain(DapManager.MainClassOption opt, Path routing) {
         if (opt.filePath() == null || opt.filePath().isBlank()) {
             return "";
         }
         try {
-            return ops.programArgs(Path.of(opt.filePath()));
+            // jdtls names the file as the machine it runs on does (a remote host's, a container's path).
+            return ops.programArgs(
+                    com.editora.process.ExecTargets.forPath(routing).toPath(opt.filePath()));
         } catch (RuntimeException e) {
             return "";
         }
@@ -1616,8 +1619,8 @@ final class DebugCoordinator {
 
     /** The default JDK for a loose file or Maven project; a saved configuration may override it. */
     private String configuredJdkHome(Path root, RunConfiguration cfg) {
-        if (root != null && Vfs.isRemote(root)) {
-            return ""; // a JDK setting names a folder on this machine; the host's jdtls resolves its own
+        if (root != null && !com.editora.process.ExecTargets.runsHere(root)) {
+            return ""; // a JDK setting names a folder on this machine; the jdtls where it runs resolves its own
         }
         if (root != null && !java.nio.file.Files.isRegularFile(root.resolve("pom.xml"))) {
             return "";
@@ -1706,12 +1709,15 @@ final class DebugCoordinator {
     private Path attachRouting(Path anchor) {
         List<Path> openJava = new ArrayList<>();
         host.forEachBuffer(b -> {
-            // Java files on the anchor's own machine: the attach goes through that machine's jdtls.
+            // Java files whose tools run where the anchor's do: the attach goes through that machine's jdtls.
             if (b.getPath() != null
                     && "java".equals(b.getLanguage())
                     && (anchor == null
-                            ? host.isLocalBuffer(b)
-                            : com.editora.config.PathKeys.sameFileSystem(b.getPath(), anchor))) {
+                            ? host.isLocalBuffer(b) && com.editora.process.ExecTargets.runsHere(b.getPath())
+                            : com.editora.process.ExecTargets.forPath(b.getPath())
+                                    .id()
+                                    .equals(com.editora.process.ExecTargets.forPath(anchor)
+                                            .id()))) {
                 openJava.add(b.getPath());
             }
         });

@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RemoteDebugFxTest {
 
     /** Serves DAP on stdio, or on a port when given one (printing the line vscode-js-debug prints). */
-    private static final String ADAPTER = """
+    static final String ADAPTER = """
             import json, os, socket, sys
             LOG = os.environ.get("FAKE_DAP_LOG") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "dap.log")
             log = open(LOG, "a", buffering=1)
