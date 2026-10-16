@@ -99,10 +99,7 @@ class LanguageChangeFxTest {
             Thread.sleep(25);
         }
         EditorBuffer b = active();
-        FxTestSupport.runOnFx(() -> {
-            b.setRunEnabled(true);
-            b.setShellRunEnabled(true); // the shell Run gate itself is not what this test is about
-        });
+        FxTestSupport.runOnFx(() -> b.setRunEnabled(true));
         assertFalse(FxTestSupport.callOnFx(b::isRunnable), "plain text is not runnable");
 
         FxTestSupport.runOnFx(() -> b.setLanguageOverride("shell"));
