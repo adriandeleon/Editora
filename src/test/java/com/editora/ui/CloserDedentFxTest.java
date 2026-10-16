@@ -56,8 +56,9 @@ class CloserDedentFxTest {
         // The re-align replaces the indent under the caret; the caret must come back after the keyword, or
         // the terminator and everything after it would be typed in front of it.
         assertEquals("if x; then\n    echo\nelif y; then", type("shell", "if x; then\n    echo\n    ", "elif y; then"));
+        // A case item's ;; stays at its body's level (shfmt / Google style), not at the pattern's.
         assertEquals(
-                "case x in\n    a)\n        echo\n    ;; # done",
+                "case x in\n    a)\n        echo\n        ;; # done",
                 type("shell", "case x in\n    a)\n        echo\n        ", ";; # done"));
     }
 
@@ -101,6 +102,27 @@ class CloserDedentFxTest {
         // An empty block: the closer sits directly under its opener, at the opener's indent.
         String empty = "f() {\n    if a; then\n    fi\n}\n";
         assertEquals(empty.replace("    fi", "    fi "), typeAfter("shell", empty, "    fi", " "));
+    }
+
+    @Test
+    void aCaseStatementTypedLineByLineKeepsItsShape() throws Exception {
+        // B1: the body under a pattern used to stay at the pattern's level, and ;; then fell to column 0,
+        // taking every later pattern with it.
+        assertEquals(
+                "case $x in\n    a)\n        echo a\n        ;;\n    b)\n        echo b\n        ;;\nesac\n",
+                type("shell", "", "case $x in\na)\necho a\n;;\nb)\necho b\n;;\nesac\n"));
+    }
+
+    @Test
+    void aHereDocTypedInAFunctionGetsADelimiterBashRecognises() throws Exception {
+        // B2: the delimiter inherited the body's indent, and bash read the rest of the file as here-doc text.
+        assertEquals(
+                "f() {\n    cat <<EOF\n    if x; then\n    hello\nEOF\n    echo after\n    ",
+                type("shell", "f() {\n    ", "cat <<EOF\nif x; then\nhello\nEOF\necho after\n"));
+        assertEquals(
+                "while true; do\n    done=false\n    ",
+                type("shell", "", "while true; do\ndone=false\n"),
+                "an assignment named like a closer is not one");
     }
 
     @Test

@@ -8681,7 +8681,8 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = IndentWindow.closerAlignIndent(style, IndentKeys.doc(a), caret, tabSize, currentIndent, c);
+        String aligned = IndentWindow.closerAlignIndent(
+                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit());
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
