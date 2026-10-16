@@ -207,6 +207,10 @@ public class SettingsWindow {
 
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
+    private VBox languageControl; // the combo + its "restart to apply" note
+    /** The UI language setting this run started with (the one in force until a restart). */
+    private static String languageAtStart;
+
     private ComboBox<String> keymapCombo;
     private ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
     /** Command id -> its row's chord chip, filled in once shortcutActions arrives. */
@@ -1169,13 +1173,18 @@ public class SettingsWindow {
             }
             config.getSettings().setUiLanguage(now);
             config.save();
-            Alert restart = Dialogs.styled(
-                    new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK));
-            restart.initOwner(stage);
-            restart.setTitle(tr("dialog.language.title"));
-            restart.setHeaderText(null);
-            restart.showAndWait();
         });
+        // No dialog per change (the arrow keys change a closed combo one language at a time): the row says
+        // it, for as long as the choice is not the language this run started with.
+        if (languageAtStart == null) {
+            languageAtStart = config.getSettings().getUiLanguage();
+        }
+        Label restartNote = new Label(tr("dialog.language.restart"));
+        restartNote.getStyleClass().addAll("settings-row-desc", "settings-restart-note");
+        restartNote.visibleProperty().bind(languageCombo.valueProperty().isNotEqualTo(languageAtStart));
+        restartNote.managedProperty().bind(restartNote.visibleProperty());
+        languageControl = new VBox(4, languageCombo, restartNote);
+        languageControl.setAlignment(Pos.CENTER_RIGHT);
 
         keymapCombo = new ComboBox<>();
         keymapCombo.getItems().addAll(com.editora.command.KeymapManager.AVAILABLE.keySet());
@@ -2151,7 +2160,7 @@ public class SettingsWindow {
                 Category.APPEARANCE,
                 tr("settings.uiLanguage"),
                 tr("settings.uiLanguage.note"),
-                languageCombo,
+                languageControl,
                 "language interface ui locale translation");
         controlRow(
                 mainCard,

@@ -3190,6 +3190,10 @@
 .settings-row {
     -fx-padding: 13 0 13 0;
 }
+/* "Restart Editora to apply": a setting chosen now that the running app is not using yet. */
+.settings-restart-note {
+    -fx-text-fill: -state-amber;
+}
 /* A row whose title or description shows what was searched for: a visible reason for the hit. */
 .settings-row:search-hit {
     -fx-background-color: -color-accent-subtle;

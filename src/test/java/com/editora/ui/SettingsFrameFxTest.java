@@ -310,4 +310,36 @@ class SettingsFrameFxTest {
             });
         }
     }
+
+    @Test
+    void choosingALanguageSaysRestartOnTheRowInsteadOfADialogPerStep() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            javafx.scene.control.ComboBox<String> language = FxTestSupport.field(window, "languageCombo");
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            String start = config.getSettings().getUiLanguage();
+            FxTestSupport.runOnFx(() -> {
+                language.requestFocus();
+                // Down on a closed combo commits the next language at once: it used to open a modal per step.
+                javafx.event.Event.fireEvent(
+                        language, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(
+                        javafx.stage.Window.getWindows().stream()
+                                .noneMatch(w -> w.isShowing()
+                                        && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane),
+                        "no dialog");
+                assertTrue(!start.equals(config.getSettings().getUiLanguage()), "the choice is saved");
+                javafx.scene.Node note =
+                        language.getParent().getChildrenUnmodifiable().get(1);
+                assertTrue(note.isVisible(), "the row says a restart applies it");
+                language.setValue(start);
+                assertTrue(!note.isVisible(), "back to the running language: nothing to restart for");
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
+    }
 }
