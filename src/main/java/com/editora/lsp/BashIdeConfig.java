@@ -182,6 +182,25 @@ public record BashIdeConfig(
                 explainshellEndpoint);
     }
 
+    /** This configuration reading at most {@code max} workspace scripts in the background (0 = none). */
+    public BashIdeConfig withBackgroundAnalysisMaxFiles(int max) {
+        return new BashIdeConfig(
+                shellcheckPath,
+                shellcheckArguments,
+                shfmtPath,
+                shfmtDialect,
+                shfmtSimplify,
+                shfmtBinaryNextLine,
+                shfmtCaseIndent,
+                shfmtFuncNextLine,
+                shfmtSpaceRedirects,
+                shfmtKeepPadding,
+                shfmtIgnoreEditorconfig,
+                max,
+                includeAllWorkspaceSymbols,
+                explainshellEndpoint);
+    }
+
     /** The ShellCheck command the server is told to run. */
     public String effectiveShellcheck() {
         return shellcheckPath.isEmpty() ? SHELLCHECK : shellcheckPath;

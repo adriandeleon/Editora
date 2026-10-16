@@ -86,4 +86,54 @@ class ProblemsPanelFxTest {
                 FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().isEmpty()),
                 "files with no diagnostics are filtered out");
     }
+
+    /**
+     * A row shows the rule's code, and its context menu opens the rule's documentation and copies the code
+     * (shell review C9).
+     */
+    @Test
+    void aRowNamesItsRuleAndItsMenuOpensTheDocsAndCopiesTheCode() throws Exception {
+        List<String> opened = new java.util.ArrayList<>();
+        LspDiagnostic d = new LspDiagnostic(
+                2,
+                5,
+                2,
+                7,
+                Severity.INFO,
+                "Double quote to prevent globbing and word splitting.",
+                "SC2086",
+                "shellcheck",
+                "https://www.shellcheck.net/wiki/SC2086",
+                false);
+        assertEquals("3:  Double quote to prevent globbing and word splitting.  [SC2086]", ProblemsPanel.rowText(d));
+
+        javafx.scene.control.ContextMenu menu =
+                FxTestSupport.callOnFx(() -> new ProblemsPanel(new ProblemsPanel.Actions() {
+                            @Override
+                            public void open(Path file, int line, int col) {}
+
+                            @Override
+                            public void openUrl(String url) {
+                                opened.add(url);
+                            }
+                        })
+                        .contextMenuFor(d));
+        assertEquals(
+                List.of(
+                        com.editora.i18n.Messages.tr("problems.menu.openRuleDocs"),
+                        com.editora.i18n.Messages.tr("problems.menu.copyCode")),
+                FxTestSupport.callOnFx(
+                        () -> menu.getItems().stream().map(i -> i.getText()).toList()));
+        FxTestSupport.runOnFx(() -> menu.getItems().get(0).fire());
+        assertEquals(List.of("https://www.shellcheck.net/wiki/SC2086"), opened);
+        FxTestSupport.runOnFx(() -> menu.getItems().get(1).fire());
+        assertEquals(
+                "SC2086",
+                FxTestSupport.callOnFx(
+                        () -> javafx.scene.input.Clipboard.getSystemClipboard().getString()));
+
+        LspDiagnostic plain = new LspDiagnostic(0, 0, 0, 1, Severity.ERROR, "boom", null, "x");
+        assertEquals("1:  boom", ProblemsPanel.rowText(plain));
+        assertEquals(null, FxTestSupport.callOnFx(() -> new ProblemsPanel(NOOP).contextMenuFor(plain)));
+    }
 }

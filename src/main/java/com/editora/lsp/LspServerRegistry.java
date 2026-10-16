@@ -265,10 +265,15 @@ public final class LspServerRegistry {
     /**
      * The language id sent to the <i>server</i> in {@code didOpen} for a routing id: the Maven pseudo id
      * {@link #MAVEN_POM_LANGUAGE_ID} maps back to {@code xml} (lemminx keys its XML handling on that, and
-     * lemminx-maven detects a POM by its URI, not the language id); every other id is passed through.
+     * lemminx-maven detects a POM by its URI, not the language id); the editor's {@code shell} is the protocol's
+     * {@code shellscript} (the id LSP lists and bash-language-server's own clients send — a server or wrapper
+     * keyed on it saw an unknown language); every other id is passed through.
      */
     public static String protocolLanguageId(String routeLanguageId) {
-        return MAVEN_POM_LANGUAGE_ID.equals(routeLanguageId) ? "xml" : routeLanguageId;
+        if (MAVEN_POM_LANGUAGE_ID.equals(routeLanguageId)) {
+            return "xml";
+        }
+        return "shell".equals(routeLanguageId) ? "shellscript" : routeLanguageId;
     }
 
     /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */

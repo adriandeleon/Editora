@@ -749,6 +749,16 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /**
+     * The {@code bashIde} section this session sends: what it was given (else the server's defaults), with
+     * background analysis off when the workspace is a folder nobody should walk — home, the temp folder or a
+     * filesystem root, which is what a loose {@code ~/.bashrc} or {@code /tmp/x.sh} gets as its root.
+     */
+    private BashIdeConfig effectiveBashIde() {
+        BashIdeConfig base = bashIde == null ? BashIdeConfig.defaults() : bashIde;
+        return RootResolver.isBroadRoot(root) ? base.withBackgroundAnalysisMaxFiles(0) : base;
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -763,7 +773,8 @@ final class LanguageServerSession implements LanguageClient {
      * settings for is sent nothing — see {@link LspServerSettings}.
      */
     private void pushConfiguration() {
-        java.util.Map<String, Object> settings = LspServerSettings.push(serverId, javaOnTypeFormatting, bashIde);
+        java.util.Map<String, Object> settings =
+                LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde());
         if (settings == null) {
             return;
         }
@@ -2149,7 +2160,7 @@ final class LanguageServerSession implements LanguageClient {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(LspServerSettings.answer(serverId, item.getSection(), bashIde));
+                out.add(LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde()));
             }
         }
         return CompletableFuture.completedFuture(out);

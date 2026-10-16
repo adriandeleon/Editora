@@ -66,6 +66,37 @@ public final class RootResolver {
     }
 
     /**
+     * Whether {@code root} is a folder no server should walk for one file: a filesystem root, the user's home,
+     * or the temporary-files folder. A loose script directly in {@code ~} (a {@code ~/.bashrc}), in
+     * {@code /tmp} or at {@code /} gets that folder as its workspace — the fallback when no marker is found —
+     * and bash-language-server then globbed the whole tree, following symbolic links, for scripts to index.
+     * Remote roots: only a filesystem root counts (this machine's home and temp folder mean nothing there).
+     */
+    public static boolean isBroadRoot(Path root) {
+        if (root == null) {
+            return false;
+        }
+        Path abs = root.toAbsolutePath().normalize();
+        if (abs.getParent() == null) {
+            return true;
+        }
+        if (com.editora.vfs.Vfs.isRemote(abs)) {
+            return false;
+        }
+        String home = System.getProperty("user.home");
+        String tmp = System.getProperty("java.io.tmpdir");
+        return sameFolder(abs, home) || sameFolder(abs, tmp) || sameFolder(abs, "/tmp");
+    }
+
+    private static boolean sameFolder(Path abs, String other) {
+        if (other == null || other.isBlank()) {
+            return false;
+        }
+        Path o = Path.of(other).toAbsolutePath().normalize();
+        return abs.equals(o) || abs.equals(com.editora.config.PathKeys.canonical(o));
+    }
+
+    /**
      * A marker found in the user's home directory or at a filesystem root does not make that directory a
      * workspace: a dotfiles {@code ~/.git} or a stray {@code ~/package.json} would hand a language server
      * the whole home directory to enumerate and index for one loose file in {@code ~/Downloads}.
