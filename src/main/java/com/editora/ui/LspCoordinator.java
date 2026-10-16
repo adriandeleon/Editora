@@ -161,6 +161,9 @@ final class LspCoordinator {
         /** The active project's root for LSP root resolution (null when Projects is off / no project). */
         Path lspProjectRoot();
 
+        /** Shows the Python interpreter status-bar item ({@code text == null} hides it). */
+        default void setStatusBarPython(String text, String tooltip) {}
+
         /** Detection finished updating — re-evaluate the active buffer's install banner. */
         void onDetectionSettled();
 
@@ -370,6 +373,42 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
+            @Override
+            public Path projectRoot() {
+                return ops.lspProjectRoot();
+            }
+
+            @Override
+            public com.editora.config.ConfigManager config() {
+                return ops.config();
+            }
+
+            @Override
+            public void setStatusItem(String text, String tooltip) {
+                ops.setStatusBarPython(text, tooltip);
+            }
+
+            @Override
+            public void interpreterChanged() {
+                pythonInterpreterChanged();
+            }
+
+            @Override
+            public OverlayHost overlayHost() {
+                return host.overlayHost();
+            }
+
+            @Override
+            public javafx.stage.Window window() {
+                return host.window();
+            }
+
+            @Override
+            public void setStatus(String message) {
+                host.setStatus(message);
+            }
+        });
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
         this.problemsActions = new ProblemsPanel.Actions() {
@@ -411,6 +450,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnServerStatus(this::onServerStatus);
+        lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
@@ -906,6 +946,11 @@ final class LspCoordinator {
             return;
         }
         ops.setLspLoading(false); // diagnostics flowing ⇒ the server is up; stop the loading bar
+        if (file != null && libraryOrigins.containsKey(file.toAbsolutePath().normalize())) {
+            // A library file read through the project's server: its "errors" (the stdlib type-checked under the
+            // project's rules) are not the user's problems — VS Code shows none for them either (review B4).
+            diagnostics = List.of();
+        }
         // A language server publishes diagnostics project-wide (jdtls especially), but we only surface
         // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
         // workspace noise from a single open file.
@@ -920,9 +965,14 @@ final class LspCoordinator {
         // would otherwise fill the window with whole-workspace noise. Project scope keeps everything, which
         // is the only way a workspace build's results are worth anything: with jdtls autobuild off, an error
         // in a file you never opened is invisible until you open it.
-        boolean keep = projectWideProblems ? !diagnostics.isEmpty() : buffer != null && !diagnostics.isEmpty();
+        // Faded/struck tags (unused, deprecated) are drawn, not listed: one file's unused names would otherwise
+        // outnumber its real problems (review B3).
+        List<LspDiagnostic> listed = diagnostics.stream().anyMatch(LspDiagnostic::tagOnlyHint)
+                ? diagnostics.stream().filter(d -> !d.tagOnlyHint()).toList()
+                : diagnostics;
+        boolean keep = projectWideProblems ? !listed.isEmpty() : buffer != null && !listed.isEmpty();
         if (keep) {
-            problems.put(key, diagnostics);
+            problems.put(key, listed);
         } else {
             problems.remove(key);
         }
@@ -2016,6 +2066,15 @@ final class LspCoordinator {
                 && (remote
                         ? remoteServerAvailable(buffer, path, serverId)
                         : Boolean.TRUE.equals(serverAvailable.get(serverId)));
+        if (eligible && "python".equals(serverId)) {
+            pythonInterpreters.captureSnapshot(); // what the server's start resolves its interpreter from
+        }
+        if (eligible
+                && libraryOrigin(path, serverId) != null
+                && libraryViewModeApplied.add(path.toAbsolutePath().normalize())
+                && !buffer.isDirty()) {
+            buffer.setViewMode(true); // a library or stub file is for reading; Enable Editing is one click away
+        }
         if (eligible) {
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
@@ -2101,10 +2160,62 @@ final class LspCoordinator {
             boolean sameHost = project != null && project.getFileSystem() == file.getFileSystem();
             return sameHost ? project : file.getParent();
         }
+        LibraryOrigin origin = libraryOrigin(file, serverId);
+        if (origin != null) {
+            return origin.root(); // a library file reached from the project: read in the project's server (B4)
+        }
         return com.editora.lsp.RootResolver.resolve(
                 ops.lspProjectRoot(),
                 buffer.getPath(),
                 com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId));
+    }
+
+    /** Library files already put in View mode once (Enable Editing then sticks). */
+    private final java.util.Set<Path> libraryViewModeApplied = new java.util.HashSet<>();
+
+    /** The server (and its root) a library file was reached from by navigation. */
+    record LibraryOrigin(String serverId, Path root) {}
+
+    /** Library files reached by Go to Definition and friends → the server that sent us there (review B4). */
+    private final Map<Path, LibraryOrigin> libraryOrigins = new java.util.HashMap<>();
+
+    /**
+     * Remembers that navigation from {@code anchor} led to {@code target} outside both the anchor's server root
+     * and the project: the stdlib, site-packages, a server's bundled stubs. Opening it then joins that server
+     * (which treats it as a library and reports nothing about it) instead of starting a second one on the
+     * library folder — which indexed all 612 files of {@code /usr/lib/python3.13}, or nvm's whole tree for
+     * Pyright's own {@code builtins.pyi}, and painted the stdlib red. It also opens in View mode.
+     */
+    void noteLibraryTarget(Path anchor, Path target) {
+        if (anchor == null || target == null || com.editora.vfs.Vfs.isRemote(target)) {
+            return;
+        }
+        String serverId = lspManager.managedServerId(anchor);
+        Path root = lspManager.sessionRoot(anchor);
+        if (serverId == null || root == null) {
+            return;
+        }
+        if (isLibraryTarget(target, root, ops.lspProjectRoot())) {
+            libraryOrigins.put(target.toAbsolutePath().normalize(), new LibraryOrigin(serverId, root));
+        }
+    }
+
+    /** Whether {@code target} lies outside the server root and the project. Pure. */
+    static boolean isLibraryTarget(Path target, Path serverRoot, Path projectRoot) {
+        Path t = target.toAbsolutePath().normalize();
+        if (serverRoot != null && t.startsWith(serverRoot.toAbsolutePath().normalize())) {
+            return false;
+        }
+        return projectRoot == null || !t.startsWith(projectRoot.toAbsolutePath().normalize());
+    }
+
+    /** The origin recorded for {@code file} when the buffer is about to be served by {@code serverId}. */
+    private LibraryOrigin libraryOrigin(Path file, String serverId) {
+        if (file == null) {
+            return null;
+        }
+        LibraryOrigin o = libraryOrigins.get(file.toAbsolutePath().normalize());
+        return o != null && o.serverId().equals(serverId) ? o : null;
     }
 
     /** Servers that cannot run on a remote host yet (astro-ls needs a trusted TypeScript SDK found there). */
@@ -2200,9 +2311,41 @@ final class LspCoordinator {
         };
     }
 
+    /** The window's Python interpreter: status-bar item, picker, and what Pyright is told (review B1). */
+    final PythonInterpreterCoordinator pythonInterpreters;
+
+    /** The buffer + language the Python interpreter item was last computed for (re-resolved only on a change). */
+    private EditorBuffer pythonStatusBuffer;
+
+    private String pythonStatusLanguage;
+
+    /** {@code python.selectInterpreter}: the interpreter picker for the active file's project. */
+    void selectPythonInterpreter() {
+        pythonInterpreters.selectInterpreter(host.activeBuffer());
+    }
+
+    /** The project's interpreter pick changed: servers re-resolve it, the item is recomputed. */
+    void pythonInterpreterChanged() {
+        lspManager.refreshPythonInterpreters();
+        pythonStatusBuffer = null;
+        updateStatusBar();
+    }
+
+    /** Recomputes the Python interpreter item when the active buffer (or its language) changed. */
+    private void updatePythonStatus(EditorBuffer b) {
+        String language = b == null ? null : b.getLanguage();
+        if (b == pythonStatusBuffer && java.util.Objects.equals(language, pythonStatusLanguage)) {
+            return;
+        }
+        pythonStatusBuffer = b;
+        pythonStatusLanguage = language;
+        pythonInterpreters.refreshStatus(b);
+    }
+
     /** Updates the status-bar LSP segment: "LSP: &lt;server&gt;" when the active file is managed, else hidden. */
     void updateStatusBar() {
         EditorBuffer b = host.activeBuffer();
+        updatePythonStatus(b);
         // The actually-managing server (so a pom.xml on lemminx-maven reads "maven-pom", not the language's "xml").
         String serverId = b == null || b.getPath() == null ? null : lspManager.managedServerId(b.getPath());
         ops.setStatusBarLsp(serverId != null ? serverLabel(serverId) : null);
@@ -2899,7 +3042,7 @@ final class LspCoordinator {
 
     // --- jdtls project + editing commands (#746) -----------------------------------------------------
 
-    /** Organize the active file's imports ({@code java/organizeImports}). */
+    /** Organize the active file's imports, the way its server does it ({@link LspManager#organizeImportsAny}). */
     void organizeImports() {
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
@@ -2913,11 +3056,16 @@ final class LspCoordinator {
         int lastLine = Math.max(0, area.getParagraphs().size() - 1);
         int lastChar = area.getParagraph(lastLine).length();
         lspManager.changeDocument(b.getPath(), b.text()); // the server organizes the text it has
-        lspManager.organizeImports(
+        lspManager.organizeImportsAny(
                 b.getPath(),
                 lastLine,
                 lastChar,
-                ok -> host.setStatus(tr(ok ? "status.lsp.importsOrganized" : "status.lsp.importsUnchanged")));
+                outcome -> host.setStatus(tr(
+                        switch (outcome) {
+                            case ORGANIZED -> "status.lsp.importsOrganized";
+                            case UNCHANGED -> "status.lsp.importsUnchanged";
+                            case UNSUPPORTED -> "status.lsp.importsUnsupported";
+                        })));
     }
 
     /** Copies the fully qualified name of the symbol at the caret ({@code java.getFullyQualifiedName}). */
@@ -3136,6 +3284,7 @@ final class LspCoordinator {
             } else {
                 LspManager.Target t = targets.get(0);
                 if (t.file() != null) {
+                    noteLibraryTarget(originPath, t.file());
                     ops.openAndGoto(t.file(), t.line(), t.character());
                     if (afterJump != null) {
                         // openAndGoto finishes its work in a runLater of its own, so the hook has to queue
@@ -3238,6 +3387,7 @@ final class LspCoordinator {
             }
             LspManager.Target t = targets.get(0);
             if (t.file() != null) {
+                noteLibraryTarget(lib.anchor(), t.file());
                 ops.openAndGoto(t.file(), t.line(), t.character());
             } else {
                 openLibraryDefinition(lib.anchor(), t, current);
@@ -3405,6 +3555,7 @@ final class LspCoordinator {
     /** Opens a resolved target: a workspace file directly, a {@code jdt://} class file as read-only source. */
     private void openTarget(Path anchor, LspManager.Target t) {
         if (t.file() != null) {
+            noteLibraryTarget(anchor, t.file());
             ops.openAndGoto(t.file(), t.line(), t.character());
         } else {
             EditorBuffer origin = host.activeBuffer();
@@ -5527,13 +5678,21 @@ final class LspCoordinator {
             if (c == null || c.path() == null) {
                 continue;
             }
-            pendingWatched.put(
-                    c.path(),
+            com.editora.lsp.LspManager.WatchedKind kind =
                     switch (c.kind()) {
                         case CREATED -> com.editora.lsp.LspManager.WatchedKind.CREATED;
                         case DELETED -> com.editora.lsp.LspManager.WatchedKind.DELETED;
                         case CHANGED -> com.editora.lsp.LspManager.WatchedKind.CHANGED;
-                    });
+                    };
+            // Merged, not overwritten: writing a new file is a create then a modify, and a server told only
+            // "changed" about a file it never knew ignores it — a new module stayed unresolved (review B6).
+            com.editora.lsp.LspManager.WatchedKind merged =
+                    com.editora.lsp.LspManager.mergeWatched(pendingWatched.get(c.path()), kind);
+            if (merged == null) {
+                pendingWatched.remove(c.path());
+            } else {
+                pendingWatched.put(c.path(), merged);
+            }
         }
         watchedFlush.setOnFinished(e -> flushWatchedFiles());
         watchedFlush.playFromStart();

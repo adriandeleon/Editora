@@ -693,4 +693,22 @@ class LspManagerTest {
                 spans);
         assertTrue(LspManager.codeLensSpans(null).isEmpty());
     }
+
+    /**
+     * Writing a new file is a create then a modify inside one coalescing window. Overwriting the first with the
+     * second told Pyright "changed" about a file it never knew, so a new module stayed unresolved (Python
+     * review B6).
+     */
+    @Test
+    void watchedEventsForOnePathMergeInsteadOfOverwriting() {
+        var created = LspManager.WatchedKind.CREATED;
+        var changed = LspManager.WatchedKind.CHANGED;
+        var deleted = LspManager.WatchedKind.DELETED;
+        assertEquals(created, LspManager.mergeWatched(created, changed));
+        assertEquals(created, LspManager.mergeWatched(null, created));
+        org.junit.jupiter.api.Assertions.assertNull(LspManager.mergeWatched(created, deleted), "never existed");
+        assertEquals(changed, LspManager.mergeWatched(deleted, created), "an atomic save");
+        assertEquals(deleted, LspManager.mergeWatched(changed, deleted));
+        assertEquals(changed, LspManager.mergeWatched(changed, changed));
+    }
 }

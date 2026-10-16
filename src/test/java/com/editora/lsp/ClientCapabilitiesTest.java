@@ -217,4 +217,19 @@ class ClientCapabilitiesTest {
         assertTrue(Boolean.TRUE.equals(ws.getDiagnostics().getRefreshSupport()));
         assertTrue(Boolean.TRUE.equals(ws.getFoldingRange().getRefreshSupport()));
     }
+
+    // --- Python review B3: unused / deprecated tags --------------------------------------------------
+
+    /**
+     * Pyright sends "x is not accessed" and "f is deprecated" only to a client that declares it can show
+     * them; without the tag support an unused import looked like any other line.
+     */
+    @Test
+    void publishDiagnosticsDeclaresTheUnnecessaryAndDeprecatedTags() {
+        var publish = CAPS.getTextDocument().getPublishDiagnostics();
+        assertNotNull(publish.getTagSupport(), "tagSupport missing (review B3)");
+        var tags = publish.getTagSupport().getRight().getValueSet();
+        assertTrue(tags.contains(org.eclipse.lsp4j.DiagnosticTag.Unnecessary));
+        assertTrue(tags.contains(org.eclipse.lsp4j.DiagnosticTag.Deprecated));
+    }
 }

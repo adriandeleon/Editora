@@ -6248,6 +6248,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setStatusBarPython(String text, String tooltip) {
+            statusBar.setPythonInterpreter(text, tooltip);
+        }
+
+        @Override
         public void setProblemsAvailable(boolean available) {
             if (problemsToolWindow != null) {
                 toolWindows.setAvailable(problemsToolWindow, available);
