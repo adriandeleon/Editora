@@ -124,6 +124,14 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   configured tool), and never probes a host from the JavaFX thread. User commands get a host-neutral
   environment (`REMOTE_USER_ENV`: nothing from this machine's locale). Credentials for fetch and push are the
   host's own; nothing prompts (`GIT_TERMINAL_PROMPT=0`).
+- **Clone and init on the host:** in a window whose project is remote, Git: Clone clones on that host, by its
+  git, from the host's network with its SSH keys and credential helpers. The form proposes the folder above the
+  project; the folder is typed as the host names it (`PathKeys.resolveUserInputOn`: an absolute path is the
+  host's, `~` the account's home there, `ExecTarget.homeDir`), checked and its missing parents created over SFTP
+  off the FX thread (`CloneDestination`), and its Browse button (a local folder dialog) is hidden. The README
+  is looked for off the FX thread too. Git: Init in such a window resolves the typed folder the same way.
+  `GitService.clone` / `init` hand git the host's own path (`gitPath`). An HTTPS URL that needs a password
+  fails rather than prompts, as fetch does.
 - **Hunk staging** writes a private index on the host and publishes it over `index.lock` with a server-side
   replacement (`AtomicFileWrite.replaceAtomically`, `posix-rename@openssh.com`), never a delete-then-rename.
 - **GitHub:** `gh` for a remote repository is the host's own (or its configured `gh` tool), signed in there or
@@ -228,15 +236,15 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   compiled for the debugger on its host, with the host's `javac` (beside its `jdk.home`, else on its `PATH`),
   into `<cache>/debug-classes/<id>` (removed when the session ends), and launched from there
   (`DapManager.compileOnHost`).
-- **Not yet:** cloning or `git init` onto a remote host (`GitService.REMOTE_NOT_YET`), auto-fetch, the Project
-  tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git).
+- **Not yet:** auto-fetch, the Project tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left
+  to the host's git).
 
 Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
 servers on localhost), and, in the `Remote probe` workflow below, against macOS 15.7's own OpenSSH 9.9p2 with
 a bash login shell and no `setsid`, and Ubuntu 24.04's dropbear 2022.83:
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
 a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
-argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
+argument quoting, Git, a clone onto the host, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
 outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
 dropped connection, and ed25519 keys; all pass on all four (dropbear 2022.83 since the start retry above). dropbear needed the group guard above: before it, Stop
 left a program's children running and a dropped connection left the program itself. Its `authorized_keys`

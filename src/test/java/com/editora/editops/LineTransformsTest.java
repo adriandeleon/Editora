@@ -101,4 +101,22 @@ class LineTransformsTest {
         assertEquals("only", LineTransforms.sortAscending("only"));
         assertEquals("", LineTransforms.sortAscending(""));
     }
+
+    @Test
+    void caseSensitiveSortIsPlainCharacterOrder() {
+        assertEquals("B\nZ\na\nb\nfile10\nfile2\n", LineTransforms.sortCaseSensitive("b\nfile2\nZ\na\nfile10\nB\n"));
+    }
+
+    @Test
+    void uniqueSortKeepsOneOfEach() {
+        assertEquals("a\nb\nfile2\nfile10", LineTransforms.sortUnique("file10\nb\na\nfile2\nb\na"));
+    }
+
+    @Test
+    void keepAndRemoveLinesByRegularExpression() {
+        java.util.regex.Pattern todo = java.util.regex.Pattern.compile("TODO|FIXME");
+        String text = "a TODO\nb\nc FIXME\nd\n";
+        assertEquals("a TODO\nc FIXME\n", LineTransforms.keepMatching(text, todo));
+        assertEquals("b\nd\n", LineTransforms.removeMatching(text, todo));
+    }
 }

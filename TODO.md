@@ -1310,9 +1310,11 @@ A backlog of planned features and improvements. Unordered within each section.
       length, reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). Each its own
       palette command; one filterable picker `Edit: String Manipulation…` (`C-c x`). Pure/unit-tested
       `editops/StringCase` + `editops/LineTransforms`; single undoable edit, result re-selected.
-      *Deferred (P2/P3): escape/unescape (Java/JSON/XML/HTML) + URL/Base64/unicode-escape encode/decode +
-      diacritics→ASCII, align-by-separator, keep/remove lines matching a pattern, increment numbers /
-      sequences across multi-carets, multi-caret fan-out.*
+      *Deferred (P2/P3): ~~JSON/HTML escape/unescape + URL/Base64/unicode-escape encode/decode~~ (done:
+      `editops/TextCodecs`, every selection), Java/XML string escapes, diacritics→ASCII, align-by-separator,
+      ~~keep/remove lines matching a pattern~~ (done: `edit.keepLines`/`edit.removeLines`), ~~increment numbers
+      across multi-carets~~ (done: `editops/NumberAtCaret`, `C-u N` repeats), number sequences, case-op
+      multi-caret fan-out.* Also added: case-sensitive and unique line sorts.
 - [x] Plain-text developer formats — syntax highlighting for unified diffs (`.diff`/`.patch`, green/red
       added/removed lines via new `.text.diff-*` semantic classes), Makefile (`Makefile`/`GNUmakefile`/`.mk`),
       justfile, Protocol Buffers (`.proto`), GraphQL (`.graphql`/`.gql`), and `.gitattributes`

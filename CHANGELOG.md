@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Each command takes the register's name as the next key; Escape cancels. A saved position follows edits
   to its file while the file is open. `Edit: List Registers` shows them all. Registers last for the
   session, one set per window, and every command is also in the palette.
+- **More text tools, in the String Manipulation picker and the command palette.**
+  - **Encode and decode the selected text:** Base64, URL encoding, JSON string escapes, HTML entities, and
+    `\uXXXX` escapes. They work on every selection at once. A decode that cannot read one selection changes
+    nothing.
+  - **`Edit: Increment Number` / `Edit: Decrement Number`:** change the number at each cursor, or the next
+    one on its line. They handle negatives, zero padding (`007` → `008`) and hexadecimal (`0x0f` → `0x10`);
+    `C-u N` steps by N. In Emacs they are bound to `C-c =` and `C-c -`.
+  - **`Edit: Keep Lines Matching…` / `Edit: Remove Lines Matching…`:** filter lines with a regular
+    expression.
+  - **Two more sorts:** case-sensitive, and natural order with duplicates removed.
 - **Several rulers, rulers per language, and indent guides.** Settings → Editor now takes a list of ruler
   columns (`80, 120`) and, per language, lists that replace it (`java: 100; python: 79, 88`; a language with
   nothing after its colon has no rulers). The palette has `Editor: Set Rulers…` and `Editor: Set Rulers for
@@ -127,8 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blame, and staging (whole files or single hunks), committing, branches, stashes and fetch / pull / push. It
   is the host's own `git`, over the same SSH connection, with the host's credentials. Editora asks once per host
   before running anything there. The GitHub tool window and commands use the host's own `gh` for such a
-  repository, signed in there. Cloning onto a remote host and auto-fetch are not available for remote folders
-  yet.
+  repository, signed in there. Git: Clone in a remote project's window clones on that host, by its git, into a
+  folder next to the project (typed as the host names it, `~` its home), and Git: Init creates a repository
+  there. Auto-fetch is not available for remote folders yet.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers

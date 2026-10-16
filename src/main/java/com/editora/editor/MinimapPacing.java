@@ -4,8 +4,9 @@ package com.editora.editor;
  * Pure pacing for the {@link Minimap}'s edit-driven re-render: the longer the document, the longer two
  * renders are kept apart.
  *
- * <p>A render ends in {@code canvas.snapshot()}, a forced full-scene layout whose cost does not shrink
- * with the row aggregation ({@link MinimapRows}). The 200 ms typing-pause debounce alone would run it at
+ * <p>A render scans the document, draws and snapshots the runs, and ends in a {@code VirtualFlow} layout for
+ * the viewport box; part of that cost does not shrink with the row aggregation ({@link MinimapRows}). (The
+ * snapshot used to force a whole-window layout as well.) The 200 ms typing-pause debounce alone would run it at
  * every pause of a long edit session, so above {@link #FREE_LINES} the interval between two renders grows
  * with the line count — one per 200 ms at 2,000 lines, one per second at 10,000, capped at
  * {@link #MAX_INTERVAL_MILLIS}. Nothing is lost: the render after the last pause always runs, it only

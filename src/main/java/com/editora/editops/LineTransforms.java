@@ -51,6 +51,34 @@ public final class LineTransforms {
         return applyToLines(text, lines -> lines.sort(NATURAL.reversed()));
     }
 
+    /** Sorts lines ascending by plain character order: case-sensitive, digits compared one by one. */
+    public static String sortCaseSensitive(String text) {
+        return applyToLines(text, lines -> lines.sort(Comparator.naturalOrder()));
+    }
+
+    /** Sorts lines ascending in natural order and keeps one of each (exact match). */
+    public static String sortUnique(String text) {
+        return replaceLines(text, lines -> {
+            List<String> sorted = new ArrayList<>(lines);
+            sorted.sort(NATURAL);
+            return new ArrayList<>(new LinkedHashSet<>(sorted));
+        });
+    }
+
+    /** Keeps only the lines in which {@code pattern} finds a match (Emacs {@code keep-lines}). */
+    public static String keepMatching(String text, java.util.regex.Pattern pattern) {
+        return replaceLines(
+                text,
+                lines -> lines.stream().filter(l -> pattern.matcher(l).find()).toList());
+    }
+
+    /** Removes the lines in which {@code pattern} finds a match (Emacs {@code flush-lines}). */
+    public static String removeMatching(String text, java.util.regex.Pattern pattern) {
+        return replaceLines(
+                text,
+                lines -> lines.stream().filter(l -> !pattern.matcher(l).find()).toList());
+    }
+
     /** Sorts lines by length, shortest first (natural order breaks length ties). */
     public static String sortByLength(String text) {
         return applyToLines(

@@ -257,7 +257,9 @@ without the network); and the release-asset manifest. The Java side has matching
 packaging files as text.
 
 CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`. A separate
-advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block a merge until it has a
+advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`. The macOS jobs run on pull requests only, not
+again on `master` after the merge (the account runs five macOS jobs at a time); Windows runs on both. The FX
+job does not block a merge until it has a
 track record there.
 
 Remote development is checked against real SSH servers by `RealSshdProbeFxTest`, an opt-in probe that CI

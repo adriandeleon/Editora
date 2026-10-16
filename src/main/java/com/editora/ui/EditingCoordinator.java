@@ -2053,7 +2053,23 @@ final class EditingCoordinator {
             "edit.shuffleLines",
             "edit.removeDuplicateLines",
             "edit.removeEmptyLines",
-            "edit.trimTrailingWhitespace");
+            "edit.trimTrailingWhitespace",
+            "edit.sortLinesCaseSensitive",
+            "edit.sortLinesUnique",
+            "edit.keepLines",
+            "edit.removeLines",
+            "edit.encode.base64",
+            "edit.decode.base64",
+            "edit.encode.url",
+            "edit.decode.url",
+            "edit.escape.json",
+            "edit.unescape.json",
+            "edit.escape.html",
+            "edit.unescape.html",
+            "edit.escape.unicode",
+            "edit.unescape.unicode",
+            "edit.incrementNumber",
+            "edit.decrementNumber");
 
     /**
      * Applies a pure token transform ({@link com.editora.editops.StringCase} — the case-style
@@ -2216,6 +2232,93 @@ final class EditingCoordinator {
         area.moveTo(Math.min(caret, area.getLength()));
         area.requestFollowCaret();
         host.setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
+    }
+
+    /**
+     * Encodes, decodes or escapes the text of every selection ({@link com.editora.editops.TextCodecs}), as one
+     * undoable edit; a caret with nothing selected is left as it is. Text a decode cannot read changes
+     * nothing anywhere.
+     */
+    void selectionCodec(java.util.function.UnaryOperator<String> codec) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicBoolean selected = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            buffer.atEachCaret((text, s, e) -> {
+                if (s == e) {
+                    return new com.editora.editops.Indenter.TabEdit(s, s, "", s, e);
+                }
+                selected.set(true);
+                // A decode can produce '\r'; the document stores it as '\n'.
+                String after = com.editora.editor.LineEndings.toLf(codec.apply(text.substring(s, e)));
+                return new com.editora.editops.Indenter.TabEdit(s, e, after, s, s + after.length());
+            });
+        } catch (IllegalArgumentException unreadable) {
+            host.setStatus(tr("status.stringops.cannotDecode"));
+            return;
+        }
+        if (!selected.get()) {
+            host.setStatus(tr("status.stringops.selectFirst"));
+        }
+    }
+
+    /**
+     * Adds {@code delta} to the number at every caret ({@link com.editora.editops.NumberAtCaret}) as one
+     * undoable edit; with {@code C-u N} the command runs N times. A caret with no number on its line is left
+     * where it is.
+     */
+    void changeNumber(long delta) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicBoolean found = new java.util.concurrent.atomic.AtomicBoolean();
+        buffer.atEachCaret((text, s, e) -> {
+            com.editora.editops.Indenter.TabEdit edit = com.editora.editops.NumberAtCaret.change(text, s, e, delta);
+            if (edit == null) {
+                return new com.editora.editops.Indenter.TabEdit(s, s, "", s, e);
+            }
+            found.set(true);
+            return edit;
+        });
+        if (!found.get()) {
+            host.setStatus(tr("status.stringops.noNumber"));
+        }
+    }
+
+    /**
+     * Keep Lines Matching ({@code keep}) / Remove Lines Matching: prompts for a regular expression, then keeps or
+     * removes the matching lines of the selection — or of the whole buffer — like the other line transforms.
+     */
+    void filterLines(boolean keep) {
+        EditorBuffer buffer = host.activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        if (area == null || !activeEditable()) {
+            return;
+        }
+        String title = tr(keep ? "command.edit.keepLines" : "command.edit.removeLines");
+        host.promptText(title, tr("dialog.filterLines.label"), singleLineSelection(area), pattern -> {
+            if (pattern.isEmpty()) {
+                return;
+            }
+            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            if (err != null) {
+                host.setStatus(tr("find.badRegex", err));
+                return;
+            }
+            java.util.regex.Pattern compiled = java.util.regex.Pattern.compile(pattern);
+            lineTransform(text -> keep
+                    ? com.editora.editops.LineTransforms.keepMatching(text, compiled)
+                    : com.editora.editops.LineTransforms.removeMatching(text, compiled));
+        });
     }
 
     void lineTransform(java.util.function.UnaryOperator<String> op) {
