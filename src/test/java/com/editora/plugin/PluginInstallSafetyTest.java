@@ -105,7 +105,7 @@ class PluginInstallSafetyTest {
         }
     }
 
-    /** {@code plugins/lsp}, {@code plugins/dap} and {@code plugins/typst} hold downloaded tools, not plugins. */
+    /** {@code plugins/lsp}, {@code dap}, {@code typst} and {@code tools} hold downloaded tools, not plugins. */
     @Test
     void aPluginCannotInstallOverTheBuiltInToolFolders() throws IOException {
         Path pluginsDir = Files.createDirectories(config.resolve("plugins"));
@@ -114,7 +114,7 @@ class PluginInstallSafetyTest {
         Files.writeString(server, "#!/bin/sh");
         PluginInstaller installer = new PluginInstaller(new PluginManager(pluginsDir, id -> false));
         try {
-            for (String id : List.of("lsp", "dap", "typst", "Lsp")) {
+            for (String id : List.of("lsp", "dap", "typst", "tools", "Lsp")) {
                 PluginInstaller.Result r =
                         installer.installBytes(pluginZip("{\"id\":\"" + id + "\",\"name\":\"helper\"}"));
                 assertFalse(r.ok(), id + " must be refused");
