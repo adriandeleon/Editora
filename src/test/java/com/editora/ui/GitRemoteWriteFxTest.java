@@ -222,4 +222,64 @@ class GitRemoteWriteFxTest {
         assertEquals(root, existing.get(), "the enclosing repository on the host");
         assertFalse(Files.exists(sftp.serverPath("app/sub/.git")));
     }
+
+    /** Gives the host a second commit on main, made elsewhere and pushed to the repository's origin. */
+    private String aCommitOnTheOrigin(Path bare) throws Exception {
+        Path other = sftp.serverPath("elsewhere");
+        git(sftp.serverPath(""), "clone", "-q", bare.toString(), other.toString());
+        git(other, "config", "user.email", "bo@example.com");
+        git(other, "config", "user.name", "Bo");
+        git(other, "config", "commit.gpgsign", "false");
+        Files.writeString(other.resolve("b.txt"), "new\n");
+        git(other, "add", "b.txt");
+        git(other, "commit", "-q", "-m", "second");
+        git(other, "push", "-q", "origin", "main");
+        return git(other, "rev-parse", "HEAD").strip();
+    }
+
+    private Path anOrigin() throws Exception {
+        Path bare = sftp.serverPath("origin.git");
+        git(sftp.serverPath(""), "clone", "-q", "--bare", repo.toString(), bare.toString());
+        git(repo, "remote", "add", "origin", bare.toString());
+        git(repo, "fetch", "-q", "origin");
+        return bare;
+    }
+
+    /** "Fetch automatically" fetches a repository on a host there, by the host's git, as the user's fetch does. */
+    @Test
+    void anAutomaticFetchOfARemoteRepositoryRunsOnTheHost() throws Exception {
+        String second = aCommitOnTheOrigin(anOrigin());
+
+        ProcessRunner.Result r = await(cb -> service.autoFetch(root, cb));
+
+        assertNotNull(r, "it ran");
+        assertTrue(r.ok(), r.message());
+        assertEquals(second, git(repo, "rev-parse", "origin/main").strip(), "origin/main moved on the host");
+    }
+
+    /**
+     * An ssh command the host's login profile exports is the user's, and is left alone, as an exported one is
+     * on this machine: Editora's batch-mode ssh would otherwise replace it. Here the profile's "ssh" records
+     * that it ran.
+     */
+    @Test
+    void anSshCommandTheHostsProfileExportsIsTheOneAnAutomaticFetchUses() throws Exception {
+        Path marker = sftp.serverPath("ssh-ran");
+        Path fakeSsh = sftp.serverPath("fake-ssh");
+        Files.writeString(fakeSsh, "#!/bin/sh\necho \"$@\" > '" + marker + "'\nexit 1\n");
+        fakeSsh.toFile().setExecutable(true);
+        String profile = "export GIT_SSH_COMMAND='" + fakeSsh + "'\n";
+        for (String name : List.of(".bash_profile", ".zprofile", ".profile")) {
+            Files.writeString(sftp.home().resolve(name), profile); // whichever the login shell reads
+        }
+        git(repo, "remote", "add", "origin", "ssh://git@example.invalid/repo.git");
+        sftp.reconnect(); // the profile is read when a connection is made
+        Path again = sftp.remotePath("app");
+
+        ProcessRunner.Result r = await(cb -> service.autoFetch(again, cb));
+
+        assertNotNull(r, "it ran");
+        assertFalse(r.ok(), "the fake ssh fails the fetch");
+        assertTrue(Files.exists(marker), "the profile's ssh ran, not Editora's batch-mode one: " + r.message());
+    }
 }
