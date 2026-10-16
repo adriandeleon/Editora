@@ -1085,6 +1085,17 @@ public final class DapManager implements DapClient.Host {
         if (frames == null || frames.isEmpty()) {
             return List.of();
         }
+        // java-debug finds a class's source through jdtls, which knows a Java script by the .java stand-in
+        // it is shown (LspManager.scriptForStandIn): the frame is the script's.
+        frames = frames.stream()
+                .map(frame -> {
+                    Path script = lsp == null ? null : lsp.scriptForStandIn(frame.file());
+                    return script == null
+                            ? frame
+                            : new DapModels.StackFrameInfo(
+                                    frame.id(), frame.name(), script, frame.line(), frame.column());
+                })
+                .toList();
         SourceAlias alias = activeSourceAlias();
         if (alias == null) {
             return frames;

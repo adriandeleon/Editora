@@ -99,6 +99,17 @@ final class LanguageServerSession implements LanguageClient {
      */
     private volatile WireUris uris = WireUris.LOCAL;
 
+    /**
+     * Documents the server is shown as another file, with their text rewritten on the wire (key → that
+     * file's URI, key → the rewrite) — see {@link #alias}. Kept apart from {@link #shadows}, which holds the
+     * editor's own text: that is what an edit the server sends back is checked against.
+     */
+    private final Map<String, String> aliasUris = new ConcurrentHashMap<>();
+
+    private final Map<String, java.util.function.UnaryOperator<String>> aliasTexts = new ConcurrentHashMap<>();
+    /** {@link #uris} with the {@link #aliasUris} on top; what every request and reply goes through. */
+    private final WireUris named = WireUris.aliasing(() -> uris, aliasUris);
+
     private final Map<String, Integer> versions = new ConcurrentHashMap<>();
     /** Per-document shadow of the text the server last received — the diff base for incremental sync
      *  (#678). Invariant: after every send, {@code shadows.get(uri)} equals the server's document. */
@@ -809,7 +820,29 @@ final class LanguageServerSession implements LanguageClient {
      * queue-until-ready path by calling document methods before attaching.
      */
     WireUris uris() {
-        return uris;
+        return named;
+    }
+
+    /**
+     * Shows the server document {@code key} as the file {@code wireUri}, its text passed through
+     * {@code wireText} on the way out ({@link JavaScriptShadow}). Call before {@link #didOpen}; the alias
+     * lasts until {@link #didClose} has been sent. Such a document always syncs in full, since an
+     * incremental splice is computed on the editor's text, not the rewritten one.
+     */
+    void alias(String key, String wireUri, java.util.function.UnaryOperator<String> wireText) {
+        aliasUris.put(key, wireUri);
+        aliasTexts.put(key, wireText);
+    }
+
+    /** Whether {@code key} is shown to the server as another file ({@link #alias}). */
+    boolean isAliased(String key) {
+        return aliasUris.containsKey(key);
+    }
+
+    /** {@code text} of document {@code key} as the server is to receive it. */
+    private String wireText(String key, String text) {
+        var rewrite = text == null ? null : aliasTexts.get(key);
+        return rewrite == null ? text : rewrite.apply(text);
     }
 
     /** TEST SEAM: a server that names documents differently from their keys, as a remote one will. */
@@ -818,7 +851,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     private TextDocumentIdentifier doc(String key) {
-        return new TextDocumentIdentifier(uris.toWire(key));
+        return new TextDocumentIdentifier(named.toWire(key));
     }
 
     void attachForTest(LanguageServer testServer, ServerCapabilities caps) {
@@ -955,8 +988,8 @@ final class LanguageServerSession implements LanguageClient {
             shadows.put(uri, text); // update in the same order as the wire notification
             sendsSinceResync.remove(uri);
             server.getTextDocumentService()
-                    .didOpen(
-                            new DidOpenTextDocumentParams(new TextDocumentItem(uris.toWire(uri), languageId, 1, text)));
+                    .didOpen(new DidOpenTextDocumentParams(
+                            new TextDocumentItem(named.toWire(uri), languageId, 1, wireText(uri, text))));
         });
     }
 
@@ -983,7 +1016,7 @@ final class LanguageServerSession implements LanguageClient {
             int version = versions.merge(uri, 1, Integer::sum);
             server.getTextDocumentService()
                     .didChange(new DidChangeTextDocumentParams(
-                            new VersionedTextDocumentIdentifier(uris.toWire(uri), version), events));
+                            new VersionedTextDocumentIdentifier(named.toWire(uri), version), events));
         });
         return !identical[0]; // a send still queued for initialize has compared nothing yet: reported as sent
     }
@@ -999,6 +1032,9 @@ final class LanguageServerSession implements LanguageClient {
     private List<TextDocumentContentChangeEvent> changeEventsFor(String uri, String text) {
         String old = shadows.put(uri, text);
         if (text.equals(old)) return List.of();
+        if (aliasTexts.containsKey(uri)) {
+            return List.of(new TextDocumentContentChangeEvent(wireText(uri, text))); // see alias()
+        }
         if (old == null || changeSyncKind(capabilities) != TextDocumentSyncKind.Incremental) {
             return List.of(new TextDocumentContentChangeEvent(text));
         }
@@ -1041,7 +1077,7 @@ final class LanguageServerSession implements LanguageClient {
 
     void didSave(String uri, String savedText) {
         whenReady(() -> {
-            String text = saveIncludesText() ? savedText : null;
+            String text = saveIncludesText() ? wireText(uri, savedText) : null;
             server.getTextDocumentService().didSave(new DidSaveTextDocumentParams(doc(uri), text));
         });
     }
@@ -1072,6 +1108,8 @@ final class LanguageServerSession implements LanguageClient {
             shadows.remove(uri); // remove in wire order; queued changes before this still need their base
             sendsSinceResync.remove(uri);
             server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(doc(uri)));
+            aliasUris.remove(uri); // only now: the close itself had to name the alias
+            aliasTexts.remove(uri);
         });
     }
 
