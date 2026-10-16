@@ -87,12 +87,30 @@ public final class ConfigExporter {
      *       that are in the export anyway;
      *   <li>the instance lock, the single-instance and MCP endpoint files (the latter holds a live access
      *       token), the spawned-process ledger and the session log;
-     *   <li>a staging file of an atomic write that is in flight ({@code .<name>-<random>.tmp}).
+     *   <li>a staging file of an atomic write that is in flight ({@code .<name>-<random>.tmp});
+     *   <li>{@code http-history/} — the HTTP Client's saved responses: bodies, full URLs (a query may hold a
+     *       key) and whatever a server sent back — unless the user asked for it at export time
+     *       ({@code includeHttpHistory}).
      * </ul>
      *
      * Pure.
      */
+    static boolean included(String relative, boolean includeHttpHistory) {
+        if (relative.startsWith(HTTP_HISTORY_DIR + "/") && !includeHttpHistory) {
+            return false;
+        }
+        return includedConfig(relative);
+    }
+
+    /** The folder of the HTTP Client's saved responses, left out of an export unless asked for. */
+    static final String HTTP_HISTORY_DIR = HttpResponseHistory.DIR_NAME;
+
+    /** {@link #included(String, boolean)} without the HTTP response history. */
     static boolean included(String relative) {
+        return included(relative, false);
+    }
+
+    private static boolean includedConfig(String relative) {
         if (relative.startsWith("plugins/lsp/")
                 || relative.startsWith("plugins/dap/")
                 || relative.startsWith("jdtls-workspaces/")
@@ -126,6 +144,18 @@ public final class ConfigExporter {
      */
     public static Path export(Path configDir, Path destinationDir, String version, String userName, LocalDateTime now)
             throws IOException {
+        return export(configDir, destinationDir, version, userName, now, false);
+    }
+
+    /** As {@link #export(Path, Path, String, String, LocalDateTime)}, with the HTTP response history when asked. */
+    public static Path export(
+            Path configDir,
+            Path destinationDir,
+            String version,
+            String userName,
+            LocalDateTime now,
+            boolean includeHttpHistory)
+            throws IOException {
         Path zip = destinationDir.resolve(zipName(configDir, version, userName, now));
         ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         boolean complete = false;
@@ -138,7 +168,7 @@ public final class ConfigExporter {
                 }
                 for (Path file : files) {
                     String entry = configDir.relativize(file).toString().replace('\\', '/');
-                    if (!included(entry) || file.equals(zip)) {
+                    if (!included(entry, includeHttpHistory) || file.equals(zip)) {
                         continue;
                     }
                     try (InputStream in = Files.newInputStream(file)) {

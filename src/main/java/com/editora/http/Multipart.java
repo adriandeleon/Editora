@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Pure {@code multipart/form-data} body builder for a request authored in a {@code .http} file. The body is
  * split on {@code --boundary} lines into {@link Part}s, each with its own headers and either inline content
@@ -29,7 +31,7 @@ import java.util.function.Function;
 public final class Multipart {
 
     /** One multipart section: its {@code headers}, the {@code inlineBody} (when authored inline), or a
-     *  {@code filePath} (relative to the request file) to slurp instead — with its {@code {{vars}}}
+     *  {@code filePath} (relative to the request file) sent instead — streamed as is, or read and its {@code {{vars}}}
      *  substituted when {@code substituteFile} (a {@code <@ ./file} part). */
     public record Part(Map<String, String> headers, String inlineBody, String filePath, boolean substituteFile) {
 
@@ -144,8 +146,9 @@ public final class Multipart {
      * part as the file itself, read only while the body is sent. A large upload is therefore never held in
      * memory, and {@link #length()} — the sum of the pieces — keeps the request's {@code Content-Length} known.
      */
-    public static final class Body {
+    public static final class Body implements java.io.Closeable {
         private final List<Object> pieces; // byte[] or Path, in wire order
+        private final List<FileBodyPublisher> filePublishers = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final long length;
         private final List<Resolved> parts;
 
@@ -176,16 +179,28 @@ public final class Multipart {
             return out;
         }
 
-        /** A publisher that sends the pieces in order, files straight from disk, with the summed length. */
+        /**
+         * A publisher that sends the pieces in order, files straight from disk, with the summed length. Its files
+         * are closed by {@link #close}, also while an upload is still reading them (a cancelled run).
+         */
         public HttpRequest.BodyPublisher publisher() throws FileNotFoundException {
             List<HttpRequest.BodyPublisher> publishers = new ArrayList<>();
             for (Object p : pieces) {
-                publishers.add(
-                        p instanceof Path file
-                                ? HttpRequest.BodyPublishers.ofFile(file)
-                                : HttpRequest.BodyPublishers.ofByteArray((byte[]) p));
+                if (p instanceof Path file) {
+                    FileBodyPublisher f = new FileBodyPublisher(file);
+                    filePublishers.add(f);
+                    publishers.add(f);
+                } else {
+                    publishers.add(HttpRequest.BodyPublishers.ofByteArray((byte[]) p));
+                }
             }
             return HttpRequest.BodyPublishers.concat(publishers.toArray(HttpRequest.BodyPublisher[]::new));
+        }
+
+        /** Closes the files of every publisher made by {@link #publisher}. Idempotent. */
+        @Override
+        public void close() {
+            filePublishers.forEach(FileBodyPublisher::close);
         }
 
         /** Writes the whole body to {@code out}, reading the files as it goes. */
@@ -248,10 +263,10 @@ public final class Multipart {
                     file = null;
                 }
                 if (file == null) {
-                    problems.add("multipart file is outside the request folder: " + path);
+                    problems.add(tr("http.multipart.outside", path));
                     resolved.add(new Resolved(headers, null, null));
                 } else if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
-                    problems.add("multipart file not found: " + path); // the part stays empty
+                    problems.add(tr("http.multipart.notFound", path)); // the part stays empty
                     resolved.add(new Resolved(headers, null, null));
                 } else if (p.substituteFile()) {
                     try {
@@ -259,7 +274,7 @@ public final class Multipart {
                         write(text, content);
                         resolved.add(new Resolved(headers, content, null));
                     } catch (IOException | RuntimeException unreadable) {
-                        problems.add("multipart file not found: " + path);
+                        problems.add(tr("http.multipart.notFound", path));
                         resolved.add(new Resolved(headers, null, null));
                     }
                 } else {
@@ -267,7 +282,7 @@ public final class Multipart {
                     try {
                         size = Files.size(file);
                     } catch (IOException unreadable) {
-                        problems.add("multipart file not found: " + path);
+                        problems.add(tr("http.multipart.notFound", path));
                         resolved.add(new Resolved(headers, null, null));
                         write(text, "\r\n");
                         continue;
@@ -298,26 +313,6 @@ public final class Multipart {
         text.reset();
         pieces.add(bytes);
         return bytes.length;
-    }
-
-    /** Assembles the multipart wire bytes; inline parts pass through {@code subst} and file parts are read
-     *  from {@code baseDir}. Best-effort — a missing file leaves its part empty rather than throwing. */
-    public static byte[] build(List<Part> parts, String boundary, Path baseDir, Function<String, String> subst) {
-        return build(parts, boundary, baseDir, subst, new ArrayList<>());
-    }
-
-    /**
-     * As {@link #build(List, String, Path, Function)}, but reports each file part that could not be read in
-     * {@code problems}. The whole body in memory: the request itself streams {@link #assemble}'s {@link Body}.
-     */
-    public static byte[] build(
-            List<Part> parts, String boundary, Path baseDir, Function<String, String> subst, List<String> problems) {
-        try {
-            return assemble(parts, boundary, baseDir, subst, problems).toBytes();
-        } catch (IOException e) {
-            problems.add("multipart file not readable: " + e.getMessage());
-            return new byte[0];
-        }
     }
 
     private static void write(ByteArrayOutputStream out, String s) {

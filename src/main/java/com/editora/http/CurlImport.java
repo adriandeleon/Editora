@@ -165,6 +165,8 @@ public final class CurlImport {
         boolean digest;
         boolean head;
         boolean get;
+        String version; // --http1.1 / --http2 → the request line's version
+        String uploadFile; // -T / --upload-file
     }
 
     /** Builds a {@code METHOD url} + headers + body request block from a {@code curl} command. */
@@ -243,6 +245,9 @@ public final class CurlImport {
             case "-G", "--get" -> c.get = true;
             case "--digest" -> c.digest = true;
             case "--basic" -> c.digest = false;
+            case "--http1.0", "-0" -> c.version = "HTTP/1.0";
+            case "--http1.1" -> c.version = "HTTP/1.1";
+            case "--http2", "--http2-prior-knowledge" -> c.version = "HTTP/2";
             default -> {} // -L, -k, -s, --compressed, … : nothing to carry over
         }
     }
@@ -282,11 +287,22 @@ public final class CurlImport {
             }
             case "-e", "--referer" -> c.headers.add(new String[] {"Referer", v});
             case "--url" -> c.url = v;
+            case "-T", "--upload-file" -> {
+                if (!v.equals("-") && !v.equals(".")) {
+                    c.uploadFile = v; // curl PUTs the file (stdin is not something a .http file can say)
+                }
+            }
             default -> {} // an option Editora has no counterpart for; its argument is consumed with it
         }
     }
 
     private static String render(Command c) {
+        if (c.uploadFile != null && c.bodyFile == null && c.data.isEmpty() && c.json.isEmpty() && c.form.isEmpty()) {
+            c.bodyFile = c.uploadFile;
+            if (c.method == null) {
+                c.method = "PUT";
+            }
+        }
         boolean hasData = !c.data.isEmpty() || c.bodyFile != null || !c.json.isEmpty();
         boolean hasForm = !c.form.isEmpty();
         String url = c.url == null ? "" : c.url;
@@ -310,11 +326,17 @@ public final class CurlImport {
             headers.removeIf(h -> h[0].equalsIgnoreCase("Content-Type")
                     && !h[1].toLowerCase(Locale.ROOT).contains("boundary="));
             addIfAbsent(headers, "Content-Type", "multipart/form-data; boundary=" + BOUNDARY);
+        } else if (hasData && c.bodyFile != null && c.bodyFile.equals(c.uploadFile)) {
+            // -T sends the file as it is: curl adds no Content-Type, and neither does the import
         } else if (hasData && !(c.get && c.bodyFile == null)) {
             addIfAbsent(headers, "Content-Type", "application/x-www-form-urlencoded");
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(method).append(' ').append(url).append('\n');
+        sb.append(method).append(' ').append(url);
+        if (c.version != null) {
+            sb.append(' ').append(c.version);
+        }
+        sb.append('\n');
         for (String[] h : headers) {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
         }
@@ -350,8 +372,19 @@ public final class CurlImport {
             boolean fileAsText = false;
             if (!literal && (value.startsWith("@") || value.startsWith("<"))) {
                 fileAsText = value.startsWith("<"); // name=<file: the file's content as a plain field
-                String[] attrs = value.substring(1).split(";");
-                file = attrs[0];
+                // The file may be double-quoted (curl's -F syntax, and Editora's own Copy as cURL): then it may
+                // hold ';' and '\"', and the attributes start after the closing quote.
+                String rest = value.substring(1);
+                if (rest.startsWith("\"")) {
+                    int close = closingQuote(rest);
+                    file = curlUnescape(rest.substring(1, close < 0 ? rest.length() : close));
+                    rest = close < 0 ? "" : rest.substring(close + 1);
+                } else {
+                    int semi = rest.indexOf(';');
+                    file = semi < 0 ? rest : rest.substring(0, semi);
+                    rest = semi < 0 ? "" : rest.substring(semi);
+                }
+                String[] attrs = (";" + rest).split(";");
                 for (int k = 1; k < attrs.length; k++) {
                     String a = attrs[k].strip();
                     if (a.startsWith("type=")) {
@@ -405,7 +438,26 @@ public final class CurlImport {
     }
 
     private static String unquote(String s) {
-        return s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"") ? s.substring(1, s.length() - 1) : s;
+        return s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")
+                ? curlUnescape(s.substring(1, s.length() - 1))
+                : s;
+    }
+
+    /** The index of the {@code "} closing {@code s} (which starts with one), skipping {@code \"}; -1 if none. */
+    private static int closingQuote(String s) {
+        for (int i = 1; i < s.length(); i++) {
+            if (s.charAt(i) == '\\') {
+                i++;
+            } else if (s.charAt(i) == '"') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Undoes curl's {@code \"} and {@code \\} escapes inside a double-quoted {@code -F} value. */
+    private static String curlUnescape(String s) {
+        return s.replace("\\\"", "\"").replace("\\\\", "\\");
     }
 
     private static void addIfAbsent(List<String[]> headers, String name, String value) {

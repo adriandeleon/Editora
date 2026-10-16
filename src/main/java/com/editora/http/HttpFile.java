@@ -94,18 +94,6 @@ public final class HttpFile {
             variables = variables == null ? List.of() : List.copyOf(variables);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
         }
-
-        /** A request with no declarations or warnings, whose section is just its own lines. */
-        public Request(
-                int startLine,
-                int endLine,
-                String method,
-                String url,
-                String name,
-                Directives directives,
-                String block) {
-            this(startLine, endLine, method, url, name, directives, block, List.of(), startLine, endLine, List.of());
-        }
     }
 
     /**
@@ -115,8 +103,7 @@ public final class HttpFile {
      * {@link #parseRequest(Request)}); {@code bodyRef} is non-null for an external body; {@code redirects}
      * holds any {@code >>}/{@code >>!} targets.
      *
-     * <p>{@code warning} is the first parse problem (kept for older callers); {@code warnings} lists them all.
-     * {@code httpVersion} is the request line's version — {@code null}, {@code HTTP/1.1}, {@code HTTP/2} or
+     * <p>{@code warnings} lists the parse problems, in order. {@code httpVersion} is the request line's version — {@code null}, {@code HTTP/1.1}, {@code HTTP/2} or
      * {@code HTTP/2 (Prior Knowledge)} (anything else is kept as written, e.g. {@code HTTP/1.0}); it is never
      * part of {@code url}. A non-null {@code error} means the request cannot be sent at all (a GraphQL,
      * WebSocket or gRPC request).
@@ -130,7 +117,6 @@ public final class HttpFile {
             BodyRef bodyRef,
             List<Redirect> redirects,
             Directives directives,
-            String warning,
             String httpVersion,
             List<String[]> variables,
             List<String> warnings,
@@ -138,34 +124,7 @@ public final class HttpFile {
 
         public Parsed {
             variables = variables == null ? List.of() : List.copyOf(variables);
-            warnings = warnings == null ? (warning == null ? List.of() : List.of(warning)) : List.copyOf(warnings);
-        }
-
-        /** A request without a version, declarations, extra warnings or error (older callers, tests). */
-        public Parsed(
-                String method,
-                String url,
-                List<String[]> headers,
-                String body,
-                String name,
-                BodyRef bodyRef,
-                List<Redirect> redirects,
-                Directives directives,
-                String warning) {
-            this(
-                    method,
-                    url,
-                    headers,
-                    body,
-                    name,
-                    bodyRef,
-                    redirects,
-                    directives,
-                    warning,
-                    null,
-                    List.of(),
-                    null,
-                    null);
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
         }
     }
 
@@ -287,7 +246,8 @@ public final class HttpFile {
             }
         }
         if (i >= lines.length) {
-            return new Parsed("GET", "", List.of(), "", null, null, List.of(), Directives.NONE, null);
+            return new Parsed(
+                    "GET", "", List.of(), "", null, null, List.of(), Directives.NONE, null, List.of(), List.of(), null);
         }
         // URL continuation lines: indented, and not shaped like a header ("  ?a=1", "  &b=2", "  /api" — IntelliJ
         // splits long targets this way). An indented "Accept: x" right after the request line is a header.
@@ -329,7 +289,7 @@ public final class HttpFile {
                 // JetBrains .http convention we still send no body (a colon-bearing body line like `{"a": 1}`
                 // would otherwise be parsed as a bogus header); surface a warning so the empty request doesn't
                 // look like a server problem, rather than guessing where the body starts.
-                malformed = "a request body must be separated from the headers by a blank line (found \"" + t + "\")";
+                malformed = tr("http.warn.noBlankLine", t);
             }
         }
         if (malformed != null) {
@@ -389,12 +349,11 @@ public final class HttpFile {
                 rl.method(),
                 rl.url(),
                 headers,
-                body.toString().strip(),
+                trimBlankLines(body.toString()),
                 null,
                 bodyRef,
                 redirects,
                 Directives.NONE,
-                warnings.isEmpty() ? null : warnings.get(0),
                 rl.version(),
                 List.of(),
                 warnings,
@@ -416,11 +375,27 @@ public final class HttpFile {
                 p.bodyRef(),
                 p.redirects(),
                 req.directives(),
-                warnings.isEmpty() ? null : warnings.get(0),
                 p.httpVersion(),
                 req.variables(),
                 warnings,
                 p.error());
+    }
+
+    /**
+     * {@code body} without its leading and trailing blank lines. Only whole blank lines go: the first line keeps its
+     * indentation (a YAML or indented-text body would otherwise change meaning) and inner lines are untouched.
+     */
+    static String trimBlankLines(String body) {
+        String[] lines = body.split("\n", -1);
+        int first = 0;
+        int last = lines.length - 1;
+        while (first <= last && lines[first].isBlank()) {
+            first++;
+        }
+        while (last >= first && lines[last].isBlank()) {
+            last--;
+        }
+        return first > last ? "" : String.join("\n", java.util.Arrays.copyOfRange(lines, first, last + 1));
     }
 
     /**
@@ -443,48 +418,6 @@ public final class HttpFile {
             }
         }
         return true;
-    }
-
-    /**
-     * The {@code @name = value} declarations outside request bodies (above a request line, or in a section
-     * without a request) as {@code [name, rawValue]} pairs, in document order. A body line that merely looks
-     * like one is body text.
-     */
-    public static List<String[]> fileVariablePairs(String text) {
-        return scan(text).declarations();
-    }
-
-    /** The file's declarations outside bodies, in order, one {@code @name = value} per line. */
-    public static String fileVariables(String text) {
-        StringBuilder sb = new StringBuilder();
-        for (String[] v : fileVariablePairs(text)) {
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-            sb.append('@').append(v[0]).append(" = ").append(v[1]);
-        }
-        return sb.toString();
-    }
-
-    /**
-     * The temp-file content for running request {@code index} on its own: the declarations in effect for it
-     * (so {@code {{vars}}} still resolve) followed by that request's block, or {@code null} when the index is
-     * out of range.
-     */
-    public static String extract(String text, int index) {
-        List<Request> requests = parse(text);
-        if (index < 0 || index >= requests.size()) {
-            return null;
-        }
-        Request r = requests.get(index);
-        StringBuilder vars = new StringBuilder();
-        for (String[] v : r.variables()) {
-            if (vars.length() > 0) {
-                vars.append('\n');
-            }
-            vars.append('@').append(v[0]).append(" = ").append(v[1]);
-        }
-        return vars.isEmpty() ? r.block() : vars + "\n\n" + r.block();
     }
 
     // --- helpers ----------------------------------------------------------------------------------
@@ -750,12 +683,6 @@ public final class HttpFile {
             }
         }
         return new RequestLine("GET", s, version, null);
-    }
-
-    /** The two-part form ({@code [method, url]}) of {@link #requestLine}. */
-    static String[] methodUrl(String line) {
-        RequestLine rl = requestLine(line);
-        return new String[] {rl.method(), rl.url()};
     }
 
     private static String normalizeVersion(Matcher v) {

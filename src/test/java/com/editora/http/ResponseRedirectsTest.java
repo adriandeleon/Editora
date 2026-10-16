@@ -178,7 +178,7 @@ class ResponseRedirectsTest {
     void variablesInTheTargetPathAreFilledInBeforeContainment() throws Exception {
         java.util.Map<String, String> vars = java.util.Map.of("out", "results", "id", "42", "up", "..");
         java.util.function.Function<String, String> sub =
-                s -> HttpVars.substitute(s, vars, java.time.LocalDateTime.now());
+                s -> HttpFixtures.substitute(s, vars, java.time.ZonedDateTime.now());
         ResponseRedirects.write(
                 redirects("GET http://x.test/\n\n>> {{out}}/r-{{id}}.json\n>> {{up}}/escape.txt\n"),
                 dir,
@@ -271,5 +271,39 @@ class ResponseRedirectsTest {
                 written,
                 warnings);
         assertTrue(written.isEmpty() && warnings.isEmpty());
+    }
+
+    @Test
+    void dotfilesKeepTheirLeadingDotsWhenNumbered() throws Exception {
+        for (String name : List.of(".env", "..hidden", ".config.json", "notes.", "a.tar.gz")) {
+            Files.writeString(dir.resolve(name), "taken");
+        }
+        write(">> .env\n>> ..hidden\n>> .config.json\n>> notes.\n>> a.tar.gz", 200, "new", false, null);
+        for (String numbered : List.of(".env-1", "..hidden-1", ".config-1.json", "notes.-1", "a.tar-1.gz")) {
+            assertEquals("new", Files.readString(dir.resolve(numbered)), numbered);
+        }
+        assertEquals(5, written.size(), written.toString());
+    }
+
+    @Test
+    void aFolderPathOrAControlCharacterIsRefusedNotTurnedIntoAFile() throws Exception {
+        java.util.function.Function<String, String> sub = s -> s.replace("{{name}}", "nl\n.json");
+        ResponseRedirects.write(
+                redirects("GET http://x.test/\n\n>> sub/\n>> {{name}}\n"),
+                dir,
+                200,
+                "new".getBytes(UTF_8),
+                false,
+                null,
+                written,
+                warnings,
+                sub,
+                () -> false);
+        assertTrue(written.isEmpty(), written.toString());
+        assertFalse(Files.exists(dir.resolve("sub")), "no file named after the folder");
+        try (var files = Files.list(dir)) {
+            assertEquals(0, files.count(), "nothing was created");
+        }
+        assertEquals(2, warnings.size(), warnings.toString());
     }
 }

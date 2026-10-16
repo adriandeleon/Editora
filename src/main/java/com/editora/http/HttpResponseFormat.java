@@ -9,6 +9,8 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Renders an {@link HttpResult} into a readable response report: a status line, the response headers, a
  * blank line, the body <b>as received</b>, and a footer with status/time/size. Pure, so the formatting + JSON
@@ -77,7 +79,7 @@ public final class HttpResponseFormat {
             sb.append('\n');
         }
         if (r.failed()) {
-            return sb.append("⚠  ").append(r.error()).toString();
+            return sb.append("⚠  ").append(r.shownError()).toString();
         }
         sb.append(r.protocol() == null ? "HTTP" : r.protocol())
                 .append(' ')
@@ -87,11 +89,9 @@ public final class HttpResponseFormat {
             sb.append(h[0]).append(": ").append(h[1]).append('\n');
         }
         // The body exactly as the server sent it — a saved report must not carry the viewer's reformatting.
-        sb.append('\n').append(r.binary() ? "(binary body, " + humanSize(r.sizeBytes()) + " — not shown)" : r.body());
+        sb.append('\n').append(r.binary() ? tr("http.report.binaryBody", humanSize(r.sizeBytes())) : r.body());
         if (r.truncated()) {
-            sb.append("\n… [truncated: only the first ")
-                    .append(humanSize(r.sizeBytes()))
-                    .append(" were received]");
+            sb.append("\n").append(tr("http.report.truncated", humanSize(r.sizeBytes())));
         }
         sb.append("\n\n— ")
                 .append(r.status())

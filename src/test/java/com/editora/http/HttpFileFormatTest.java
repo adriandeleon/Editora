@@ -87,7 +87,6 @@ class HttpFileFormatTest {
                 "### a\nPOST http://h\nContent-Type: text/plain\n\n@user = mallory\n\n### b\nGET http://h/{{user}}\n";
         List<Request> rs = HttpFile.parse(text);
         assertTrue(rs.get(1).variables().isEmpty());
-        assertTrue(HttpFile.fileVariablePairs(text).isEmpty());
         assertEquals("@user = mallory", HttpFile.parseRequest(rs.get(0)).body());
     }
 
@@ -188,5 +187,13 @@ class HttpFileFormatTest {
         assertEquals(
                 ">not a handler\n=>arrow",
                 only("POST http://h\n\n>not a handler\n=>arrow\n").body());
+    }
+
+    @Test
+    void onlyBlankLinesAreTrimmedFromAnInlineBody() {
+        Parsed p = HttpFile.parseRequest(
+                "POST http://h/\nContent-Type: application/yaml\n\n\n  a: 1\n  b:   \n    - x\n\n  \n");
+        assertEquals("  a: 1\n  b:   \n    - x", p.body(), "first-line indentation and inner spaces are kept");
+        assertEquals("", HttpFile.parseRequest("POST http://h/\n\n   \n\n").body());
     }
 }

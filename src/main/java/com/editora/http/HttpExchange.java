@@ -21,14 +21,9 @@ public record HttpExchange(
         HttpResult result,
         Details details) {
 
+    /** {@code details} may be null for a request that was never built (it is then {@link Details#NONE}). */
     public HttpExchange {
         details = details == null ? Details.NONE : details;
-    }
-
-    /** An exchange without request details (tests, a request that was never built). */
-    public HttpExchange(
-            String label, String method, String url, List<String[]> headers, String requestBody, HttpResult result) {
-        this(label, method, url, headers, requestBody, result, Details.NONE);
     }
 
     /**
@@ -69,5 +64,19 @@ public record HttpExchange(
      * One {@code multipart/form-data} field: its {@code name} and either an inline {@code value} or a {@code file}
      * (absolute path) uploaded under {@code filename}; {@code contentType} when the part declared one.
      */
+    /**
+     * Whether {@code requestBody} is the one-line summary the response view shows for a body that was streamed
+     * ({@code (multipart/form-data, N bytes)}, {@code (body from ./x, 2 MB)}) rather than the text sent. Without
+     * {@link Details} saying how it was sent, such an entry cannot be turned back into a command. Pure.
+     */
+    public static boolean isBodyPlaceholder(String requestBody) {
+        if (requestBody == null || !requestBody.startsWith("(") || !requestBody.endsWith(")")) {
+            return false;
+        }
+        return requestBody.startsWith("(multipart/form-data, ")
+                || requestBody.startsWith("(body from ")
+                || requestBody.startsWith("(binary body from ");
+    }
+
     public record FormPart(String name, String value, String file, String filename, String contentType) {}
 }

@@ -43,10 +43,13 @@ class HttpVariableEditorFxTest {
     /** The validator the window injects, run synchronously against a fixed environment. */
     private static void checkAgainst(EditorBuffer buffer, Map<String, String> env) {
         HttpVariableIndex.Context ctx = new HttpVariableIndex.Context(env, null);
-        buffer.setHttpVariableLint((text, done) -> done.accept(HttpVariableIndex.unresolved(text, ctx, null).stream()
-                .map(p -> new MarkdownLint.Diagnostic(
-                        p.line() + 1, p.column() + 1, p.length(), "warning", p.reference(), p.reason()))
-                .toList()));
+        buffer.setHttpHooks(buffer.httpHooks()
+                .withVariables(
+                        (text, done) -> done.accept(HttpVariableIndex.unresolved(text, ctx, null).stream()
+                                .map(p -> new MarkdownLint.Diagnostic(
+                                        p.line() + 1, p.column() + 1, p.length(), "warning", p.reference(), p.reason()))
+                                .toList()),
+                        null));
     }
 
     @Test
@@ -87,7 +90,8 @@ class HttpVariableEditorFxTest {
             BufferCompletion completion = EditorFx.field(buffer, "completionActions");
             buffer.setCompletionProvider((s, d, p, sp, prose) -> List.of());
             buffer.setAutocomplete(true, true, true, true);
-            buffer.setHttpVariableContext(() -> new HttpVariableIndex.Context(Map.of("host", "http://h"), null));
+            buffer.setHttpHooks(buffer.httpHooks()
+                    .withVariables(null, () -> new HttpVariableIndex.Context(Map.of("host", "http://h"), null)));
 
             buffer.triggerCompletion();
             assertTrue(buffer.completionShowing(), "the popup opened inside {{");

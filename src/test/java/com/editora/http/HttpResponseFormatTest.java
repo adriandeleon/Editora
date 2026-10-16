@@ -31,7 +31,7 @@ class HttpResponseFormatTest {
     }
 
     private static HttpResult json(String body) {
-        return new HttpResult(200, java.util.List.of(), body, "application/json", 1, body.length(), null);
+        return HttpFixtures.text(200, java.util.List.of(), body, "application/json", 1, body.length(), null);
     }
 
     @Test
@@ -69,7 +69,7 @@ class HttpResponseFormatTest {
     @Test
     void viewClipsALongBodyAndReportsTheFullLength() {
         String body = "x".repeat(1000);
-        HttpResult r = new HttpResult(200, java.util.List.of(), body, "text/plain", 1, 1000, null);
+        HttpResult r = HttpFixtures.text(200, java.util.List.of(), body, "text/plain", 1, 1000, null);
         HttpResponseFormat.BodyView view = HttpResponseFormat.view(r, 400);
         assertTrue(view.clipped());
         assertEquals(400, view.text().length());
@@ -79,14 +79,14 @@ class HttpResponseFormatTest {
         assertFalse(whole.clipped());
         assertEquals(body, whole.text());
         // A cut never lands inside a surrogate pair.
-        HttpResult emoji = new HttpResult(200, java.util.List.of(), "ab\uD83D\uDE00cd", "text/plain", 1, 8, null);
+        HttpResult emoji = HttpFixtures.text(200, java.util.List.of(), "ab\uD83D\uDE00cd", "text/plain", 1, 8, null);
         assertEquals("ab", HttpResponseFormat.view(emoji, 3).text());
     }
 
     @Test
     void binaryResponsesHaveNoTextView() {
         byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D};
-        HttpResult r = HttpResult.ofBytes(200, java.util.List.of(), png, "image/png", 1, java.util.List.of(), false);
+        HttpResult r = HttpFixtures.bytes(200, java.util.List.of(), png, "image/png", 1, java.util.List.of(), false);
         assertTrue(r.binary());
         assertEquals("", r.body());
         assertEquals(12, r.sizeBytes());
@@ -94,11 +94,11 @@ class HttpResponseFormatTest {
         assertTrue(HttpResponseFormat.render(r).contains("binary body"));
         // A declared charset (UTF-16 is full of NULs) and a textual type are text.
         byte[] utf16 = "héllo".getBytes(java.nio.charset.StandardCharsets.UTF_16);
-        HttpResult t = HttpResult.ofBytes(
+        HttpResult t = HttpFixtures.bytes(
                 200, java.util.List.of(), utf16, "text/plain; charset=utf-16", 1, java.util.List.of(), false);
         assertFalse(t.binary());
         assertEquals("héllo", t.body());
-        HttpResult latin = HttpResult.ofBytes(
+        HttpResult latin = HttpFixtures.bytes(
                 200,
                 java.util.List.of(),
                 "café".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1),
@@ -112,7 +112,7 @@ class HttpResponseFormatTest {
 
     @Test
     void reportMarksATruncatedResponse() {
-        HttpResult r = HttpResult.ofBytes(
+        HttpResult r = HttpFixtures.bytes(
                 200, java.util.List.of(), "partial".getBytes(), "text/plain", 1, java.util.List.of(), true);
         assertTrue(r.truncated());
         assertTrue(HttpResponseFormat.render(r).contains("truncated"));

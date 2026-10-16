@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.List;
 
 import com.editora.http.HttpExchange;
+import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
 import org.junit.jupiter.api.Test;
 
@@ -13,11 +14,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class HttpStatusTextTest {
 
     private static HttpExchange ex(HttpResult r) {
-        return new HttpExchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
+        return HttpFixtures.exchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
     }
 
     private static HttpResult status(int code) {
-        return new HttpResult(code, List.of(), "", "text/plain", 32, 44, null);
+        return HttpFixtures.text(code, List.of(), "", "text/plain", 32, 44, null);
     }
 
     @Test
@@ -66,5 +67,48 @@ class HttpStatusTextTest {
         assertEquals(1, HttpStatusText.firstToShow(List.of(ok, bad, refused)), "the first failure is shown");
         assertEquals(0, HttpStatusText.firstToShow(List.of(ok, ok)));
         assertEquals(-1, HttpStatusText.firstToShow(List.of()));
+    }
+
+    @Test
+    void numbersFollowTheUiLanguage() {
+        String before = com.editora.i18n.Messages.current();
+        try {
+            com.editora.i18n.Messages.init("de");
+            assertEquals("1,4", HttpStatusText.seconds(1.44));
+            assertEquals("4,9 KB", HttpStatusText.size(5000));
+            com.editora.i18n.Messages.init("en");
+            assertEquals("1.4", HttpStatusText.seconds(1.44));
+            assertEquals("598 B", HttpStatusText.size(598));
+        } finally {
+            com.editora.i18n.Messages.init(before);
+        }
+    }
+
+    @Test
+    void theStatusBarDoesNotRepeatTheUrlTheEngineAppendsToAnError() {
+        HttpExchange refused = ex(HttpResult.failure(
+                "Connection refused — is a server listening on x.test?  (http://x.test/a)", List.of()));
+        assertEquals(
+                tr(
+                        "status.http.failedError",
+                        "GET http://x.test/a",
+                        "Connection refused — is a server listening on x.test?"),
+                HttpStatusText.finished(refused));
+        assertEquals("other (http://y/)", HttpStatusText.withoutUrl("other (http://y/)", "http://x.test/a"));
+    }
+
+    @Test
+    void aRunAllHasASummaryAndASingleRunNone() {
+        HttpExchange ok = ex(status(200));
+        HttpExchange bad = ex(status(500));
+        assertEquals(tr("httppanel.runAllFailed", 1L, 3), HttpStatusText.runAllSummary(List.of(ok, bad, ok)));
+        assertEquals(tr("httppanel.runAllOk", 2), HttpStatusText.runAllSummary(List.of(ok, ok)));
+        assertEquals(null, HttpStatusText.runAllSummary(List.of(ok)));
+    }
+
+    @Test
+    void repeatedNotesAreShownOnceWithACount() {
+        assertEquals(List.of("a (×2)", "b"), HttpStatusText.grouped(List.of("a", "b", "a", " ")));
+        assertEquals(List.of(), HttpStatusText.grouped(null));
     }
 }

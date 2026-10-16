@@ -36,7 +36,7 @@ class HttpVarsResolutionTest {
     }
 
     private static HttpResult ok(String body) {
-        return new HttpResult(200, List.of(), body, "application/json", 1, body.length(), null);
+        return HttpFixtures.text(200, List.of(), body, "application/json", 1, body.length(), null);
     }
 
     @Test
@@ -122,15 +122,15 @@ class HttpVarsResolutionTest {
 
     @Test
     void bracesAroundAVariableStayBraces() {
-        assertEquals("{1}", HttpVars.substitute("{{{a}}}", Map.of("a", "1"), CLOCK));
+        assertEquals("{1}", HttpFixtures.substitute("{{{a}}}", Map.of("a", "1"), CLOCK));
     }
 
     @Test
     @Timeout(5)
     void pathologicalInputIsLinear() {
         String spaces = "{{" + " ".repeat(200_000);
-        assertEquals(spaces, HttpVars.substitute(spaces, Map.of(), CLOCK));
+        assertEquals(spaces, HttpFixtures.substitute(spaces, Map.of(), CLOCK));
         String opens = "{{ ".repeat(50_000);
-        assertEquals(opens, HttpVars.substitute(opens, Map.of(), CLOCK));
+        assertEquals(opens, HttpFixtures.substitute(opens, Map.of(), CLOCK));
     }
 }

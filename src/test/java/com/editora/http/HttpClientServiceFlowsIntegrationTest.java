@@ -156,7 +156,7 @@ class HttpClientServiceFlowsIntegrationTest {
             throws Exception {
         AtomicReference<com.editora.http.HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(request, vars, baseDir, ex -> {
+        svc.run(request, vars, baseDir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -176,10 +176,11 @@ class HttpClientServiceFlowsIntegrationTest {
     private List<com.editora.http.HttpExchange> runAll(String fileText, Map<String, String> vars) throws Exception {
         AtomicReference<List<com.editora.http.HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        HttpClientService.Handle handle = svc.runAll(requests(fileText), vars, null, all -> {
-            got.set(all);
-            done.countDown();
-        });
+        HttpClientService.Handle handle =
+                svc.runAll(requests(fileText), vars, null, null, HttpClientService.SecretGate.UNCHECKED, null, all -> {
+                    got.set(all);
+                    done.countDown();
+                });
         assertTrue(done.await(30, TimeUnit.SECONDS), "the run should have completed");
         handle.delivered().get(30, TimeUnit.SECONDS);
         assertFalse(handle.isCancelled());
@@ -382,7 +383,18 @@ class HttpClientServiceFlowsIntegrationTest {
     void aRequestWithoutAUrlFailsWithoutNamingOne() throws Exception {
         HttpResult r = run(
                         new HttpFile.Parsed(
-                                "", "", List.of(), "", null, null, List.of(), HttpFile.Directives.NONE, null),
+                                "",
+                                "",
+                                List.of(),
+                                "",
+                                null,
+                                null,
+                                List.of(),
+                                HttpFile.Directives.NONE,
+                                null,
+                                List.of(),
+                                List.of(),
+                                null),
                         Map.of(),
                         null)
                 .result();
@@ -395,7 +407,18 @@ class HttpClientServiceFlowsIntegrationTest {
     void aMissingMethodMeansGet() throws Exception {
         com.editora.http.HttpExchange ex = run(
                 new HttpFile.Parsed(
-                        "", url("/echo"), List.of(), "", null, null, List.of(), HttpFile.Directives.NONE, null),
+                        "",
+                        url("/echo"),
+                        List.of(),
+                        "",
+                        null,
+                        null,
+                        List.of(),
+                        HttpFile.Directives.NONE,
+                        null,
+                        List.of(),
+                        List.of(),
+                        null),
                 Map.of(),
                 null);
         assertEquals("GET", ex.method());
@@ -430,7 +453,13 @@ class HttpClientServiceFlowsIntegrationTest {
         AtomicReference<List<com.editora.http.HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
         HttpClientService.Handle handle = svc.runAll(
-                requests("GET " + url("/slow") + "\n\n###\nGET " + url("/whoami") + "\n"), Map.of(), null, all -> {
+                requests("GET " + url("/slow") + "\n\n###\nGET " + url("/whoami") + "\n"),
+                Map.of(),
+                null,
+                null,
+                HttpClientService.SecretGate.UNCHECKED,
+                null,
+                all -> {
                     got.set(all);
                     done.countDown();
                 });

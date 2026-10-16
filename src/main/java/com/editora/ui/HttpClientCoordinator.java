@@ -5,17 +5,28 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.function.IntFunction;
 
+import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
+import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.stage.FileChooser;
@@ -25,13 +36,13 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.CapturedResponses;
 import com.editora.http.CurlExport;
 import com.editora.http.CurlImport;
-import com.editora.http.HttpEnv;
+import com.editora.http.HttpClientService;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
-import com.editora.http.HttpVars;
 import com.editora.http.ResponseRedirects;
+import com.editora.io.StagedExport;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -88,10 +99,11 @@ final class HttpClientCoordinator {
         }
 
         /**
-         * Whether a request in {@code file} may read the secrets {@code reads} ({@code $processEnv.X},
-         * {@code $dotenv.X}) and send them to {@code hosts}: true when the file's folder is trusted, or the user
-         * trusts it now (the build-wrapper trust store, so one answer covers both). Blocking, on the FX thread. A
-         * window without a trust store refuses, so nothing secret is sent unasked.
+         * Whether a request in {@code file} may read the secrets {@code reads} — the secret sources it resolves, as
+         * written ({@code $processEnv X}, {@code $env.X}, {@code $dotenv X}; see {@link HttpSecretGate}) — and send
+         * them to {@code hosts}: true when the file's folder is trusted, or the user trusts it now (the build-wrapper
+         * trust store, so one answer covers both). Called on the FX thread, while the run's worker waits; it may
+         * block on a dialog. A window without a trust store refuses, so nothing secret is sent unasked.
          */
         default boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
             return false;
@@ -100,7 +112,7 @@ final class HttpClientCoordinator {
 
     private final CoordinatorHost host;
     private final WindowOps ops;
-    private final com.editora.http.HttpClientService service = new com.editora.http.HttpClientService();
+    private final HttpClientService service = new HttpClientService();
 
     /** One response panel per open {@code .http} buffer (a Node can't be shared across tabs); dropped on
      *  close ({@link #onBufferClosed}) and when the feature is switched off. */
@@ -108,7 +120,11 @@ final class HttpClientCoordinator {
 
     /** The in-flight run of each buffer (FX thread only). A result is applied only while its handle is still
      *  the buffer's current one, so a cancelled or superseded run can never overwrite a newer response. */
-    private final Map<EditorBuffer, com.editora.http.HttpClientService.Handle> running = new IdentityHashMap<>();
+    private final Map<EditorBuffer, HttpClientService.Handle> running = new IdentityHashMap<>();
+
+    /** The run of each buffer the user cancelled and whose results have not arrived yet: what it finished before
+     *  the cancel (a Run All's earlier requests) still lands in History. Dropped when a newer run starts. */
+    private final Map<EditorBuffer, HttpClientService.Handle> cancelling = new IdentityHashMap<>();
 
     /** Each buffer's request-chaining session: every run (single or Run All) records into it, so a request
      *  can use the response of one run earlier. Cleared when the environment changes or the buffer closes. */
@@ -117,25 +133,14 @@ final class HttpClientCoordinator {
     /** The environment chosen for each buffer's file ({@code ""} = none), once known (FX thread only). */
     private final Map<EditorBuffer, String> environments = new IdentityHashMap<>();
 
-    /** The file each panel's history belongs to (null while untitled), to notice a first Save / a Save As. */
-    private final Map<EditorBuffer, Path> historyPaths = new IdentityHashMap<>();
-
-    /** Reads saved histories off the FX thread; idles out. */
-    private static final ExecutorService LOADER = loader();
-
-    private static ExecutorService loader() {
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), r -> {
-            Thread t = new Thread(r, "http-history-load");
-            t.setDaemon(true);
-            return t;
-        });
-        pool.allowCoreThreadTimeOut(true);
-        return pool;
-    }
+    /** Each panel's saved history: read, saved, merged across windows, and moved with its file. */
+    private final HttpHistorySync history;
 
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
+        this.history =
+                new HttpHistorySync(host, ops::historyStore, this::panelFor, environments, this::refreshEnvironments);
         service.setRedirectGuard(this::beforeRedirectOverwrite);
     }
 
@@ -148,9 +153,8 @@ final class HttpClientCoordinator {
      * if it cannot be had — the window is closing, the history store does not answer — the file is left alone.
      */
     private ResponseRedirects.Decision beforeRedirectOverwrite(Path target) {
-        java.util.concurrent.CompletableFuture<ResponseRedirects.Decision> decision =
-                new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
+        CompletableFuture<ResponseRedirects.Decision> decision = new CompletableFuture<>();
+        Platform.runLater(() -> {
             try {
                 decideRedirectOverwrite(target, decision::complete);
             } catch (RuntimeException failure) {
@@ -158,18 +162,17 @@ final class HttpClientCoordinator {
             }
         });
         try {
-            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException unanswered) {
+        } catch (ExecutionException | TimeoutException unanswered) {
             // fall through: not preserved
         }
         return ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED);
     }
 
     /** FX thread: refuses a target that is open with unsaved changes, else records it in Local History. */
-    private void decideRedirectOverwrite(
-            Path target, java.util.function.Consumer<ResponseRedirects.Decision> completion) {
+    private void decideRedirectOverwrite(Path target, Consumer<ResponseRedirects.Decision> completion) {
         Path wanted = target.toAbsolutePath().normalize();
         boolean[] unsaved = new boolean[1];
         host.forEachBuffer(b -> {
@@ -226,60 +229,23 @@ final class HttpClientCoordinator {
             HttpClientPanel p = createPanelFor(buffer);
             panels.put(buffer, p);
             buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
-            historyPaths.put(buffer, buffer.getPath());
             refreshEnvironments(buffer);
-            loadSaved(buffer, p);
+            history.attached(buffer, p);
         } else if (!want && has) {
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
-            panels.remove(buffer);
-            historyPaths.remove(buffer);
-        } else if (want && buffer.getPath() != null && !buffer.getPath().equals(historyPaths.get(buffer))) {
-            adoptSavedPath(buffer); // a first Save of an untitled buffer, or a Save As: its history moves along
-        }
-    }
-
-    /**
-     * {@code buffer} now has a file (first Save) or another one (Save As): what its panel holds is merged with
-     * any history saved for that file (older entries after the panel's) and written there, so the responses
-     * of an untitled scratch buffer are not lost when it is saved.
-     */
-    private void adoptSavedPath(EditorBuffer buffer) {
-        HttpClientPanel panel = panelFor(buffer);
-        Path file = buffer.getPath();
-        historyPaths.put(buffer, file);
-        HttpResponseHistory store = ops.historyStore();
-        if (panel == null || store == null) {
-            refreshEnvironments(buffer);
-            return;
-        }
-        LOADER.execute(() -> {
-            HttpResponseHistory.Stored stored;
-            try {
-                stored = store.load(file);
-            } catch (RuntimeException e) {
-                stored = new HttpResponseHistory.Stored();
+            HttpClientPanel gone = panels.remove(buffer);
+            history.detached(buffer);
+            HttpClientService.Handle run = running.remove(buffer);
+            if (run != null) {
+                run.cancel(); // the feature went off mid-run: nothing is left to show the response
+                buffer.setHttpRunning(-1);
             }
-            List<HttpHistoryEntry> older = new ArrayList<>();
-            for (HttpResponseHistory.Response r : stored.responses) {
-                try {
-                    older.add(HttpHistoryEntry.fromStored(r));
-                } catch (RuntimeException ignored) {
-                    // skip a damaged entry
-                }
+            if (gone != null) {
+                gone.dispose(); // stops its elapsed-time timer, which otherwise kept the panel alive
             }
-            String env = stored.file.isEmpty() ? null : stored.environment;
-            javafx.application.Platform.runLater(() -> {
-                if (panels.get(buffer) != panel || !file.equals(buffer.getPath())) {
-                    return; // closed, switched off, or saved elsewhere again meanwhile
-                }
-                if (env != null) {
-                    environments.putIfAbsent(buffer, env);
-                }
-                panel.addOlder(older);
-                refreshEnvironments(buffer);
-                persist(buffer);
-            });
-        });
+        } else if (want) {
+            history.followPath(buffer); // a first Save of an untitled buffer, a Save As, a rename: history follows
+        }
     }
 
     /** Re-target on tab switch: (re)evaluate the active buffer's preview attachment + environment list. */
@@ -292,11 +258,15 @@ final class HttpClientCoordinator {
     /** Drops the closed buffer's panel (the map is strongly keyed, so this hook is required). */
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
-            panels.remove(closed);
-            historyPaths.remove(closed);
+            HttpClientPanel gone = panels.remove(closed);
+            if (gone != null) {
+                gone.dispose(); // a run in flight left its timer going for ever, pinning the panel and the buffer
+            }
+            history.closed(closed);
             captures.remove(closed);
             environments.remove(closed);
-            com.editora.http.HttpClientService.Handle run = running.remove(closed);
+            cancelling.remove(closed); // a cancelled run's late results have no panel to land in
+            HttpClientService.Handle run = running.remove(closed);
             if (run != null) {
                 run.cancel(); // nobody is left to read the response
             }
@@ -313,14 +283,40 @@ final class HttpClientCoordinator {
                 editorFontSize());
         p.setOnEnvironmentChanged(env -> {
             environments.put(buffer, env);
-            persist(buffer);
+            history.persist(buffer);
             environmentListener.accept(buffer); // the editor's {{variable}} marks follow the choice
         });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
-        p.setOnEscape(() -> buffer.getArea().requestFocus());
-        p.setOnCleared(() -> persist(buffer));
+        p.setOnEscape(() -> {
+            // In Preview the editor is hidden, so focusing it did nothing: show it beside the response first.
+            if (buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
+                buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
+            }
+            focusWhenShown(buffer.getArea());
+        });
+        p.setOnCleared(() -> history.cleared(buffer));
         return p;
+    }
+
+    /**
+     * Focuses {@code node} now, or as soon as it is back in a scene: a Split's SplitPane adds the editor to the
+     * scene only when its skin lays it out, so right after leaving Preview a focus request would go nowhere.
+     */
+    private static void focusWhenShown(Node node) {
+        if (node.getScene() != null) {
+            node.requestFocus();
+            return;
+        }
+        node.sceneProperty().addListener(new ChangeListener<>() {
+            @Override
+            public void changed(ObservableValue<? extends Scene> o, Scene was, Scene now) {
+                if (now != null) {
+                    o.removeListener(this);
+                    node.requestFocus();
+                }
+            }
+        });
     }
 
     private int editorFontSize() {
@@ -389,25 +385,36 @@ final class HttpClientCoordinator {
         HttpFile.Request req = requests.get(index);
         HttpFile.Parsed parsed = HttpFile.parseRequest(req);
         Map<String, String> vars = variables(buffer, text);
-        if (!secretReadsAllowed(buffer, text, List.of(req), List.of(parsed), vars)) {
-            return; // the folder is not trusted and the user declined: nothing is sent
-        }
         Path baseDir = folderOf(buffer); // null: an untitled scratch buffer
         CapturedResponses session = capturesFor(buffer);
         if (baseDir == null) {
-            List<String> needs = HttpScratch.needsFolder(req, parsed, rawDefinitions(text, envDir(buffer)));
+            List<String> needs = HttpScratch.needsFolder(parsed, vars);
             if (!needs.isEmpty()) {
-                finishRun(buffer, List.of(parsed), List.of(index), List.of(notSent(parsed, needs)), false);
+                HttpExchange unsent = notSent(parsed, needs);
+                finishRun(
+                        buffer,
+                        List.of(parsed),
+                        List.of(index),
+                        List.of(unsent),
+                        new long[] {System.currentTimeMillis()},
+                        identitySet(List.of(unsent)),
+                        false);
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
-        String label = HttpScratch.label(parsed, vars, session, baseDir, java.time.ZonedDateTime.now());
+        String label = HttpScratch.label(parsed, vars, session, baseDir, ZonedDateTime.now());
         startRun(buffer, label);
         buffer.setHttpRunning(index);
-        com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
-        run[0] = service.run(parsed, vars, baseDir, session, ex -> {
+        long startedAt = System.currentTimeMillis();
+        HttpClientService.Handle[] run = new HttpClientService.Handle[1];
+        // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
+        run[0] = service.run(parsed, vars, baseDir, session, HttpSecretGate.forBuffer(buffer, ops), ex -> {
             if (running.remove(buffer, run[0])) {
-                finishRun(buffer, List.of(parsed), List.of(index), List.of(ex), false);
+                finishRun(
+                        buffer, List.of(parsed), List.of(index), List.of(ex), new long[] {startedAt}, Set.of(), false);
+            } else if (cancelling.remove(buffer, run[0])) {
+                landCancelled(
+                        buffer, List.of(parsed), List.of(index), List.of(ex), new long[] {startedAt}, Set.of(), 1);
             }
         });
         track(buffer, run[0]);
@@ -419,6 +426,13 @@ final class HttpClientCoordinator {
         return file == null ? null : file.toAbsolutePath().getParent();
     }
 
+    /** An identity set of {@code exchanges} (records compare by value; two "not sent" results may be equal). */
+    private static Set<HttpExchange> identitySet(Collection<HttpExchange> exchanges) {
+        Set<HttpExchange> set = Collections.newSetFromMap(new IdentityHashMap<>());
+        set.addAll(exchanges);
+        return set;
+    }
+
     /** What a request an untitled buffer cannot send reports instead: not sent, save the file first. */
     private static HttpExchange notSent(HttpFile.Parsed parsed, List<String> needs) {
         String line = parsed.method() + " " + parsed.url();
@@ -428,32 +442,47 @@ final class HttpClientCoordinator {
                 parsed.url(),
                 parsed.headers(),
                 "",
-                HttpResult.failure(tr("httppanel.saveFirstToUse", String.join(", ", needs)), List.of()));
+                HttpResult.failure(tr("httppanel.saveFirstToUse", String.join(", ", needs)), List.of()),
+                null);
     }
 
     /**
-     * The response view's Run button: re-sends the request the selected history entry came from (when the
-     * file still has a request at that position), else the request at the caret.
+     * The response view's Run button: re-sends the request the selected history entry came from — found by its
+     * name, else by its method and URL template ({@link HttpRerunTarget}), never by its old position alone,
+     * since requests move — else, saying so, the request at the caret. With nothing selected: the caret's.
      */
     private void runAgain(EditorBuffer buffer, HttpHistoryEntry entry) {
         if (!isEnabled()) {
             host.setStatus(disabledMessage());
             return;
         }
-        int index = entry == null ? -1 : entry.requestIndex();
-        if (index >= 0 && index < HttpFile.parse(buffer.getContent()).size()) {
-            runIndex(buffer, index);
-        } else {
+        if (entry == null) {
             runRequest(buffer, buffer.getArea().getCurrentParagraph());
+            return;
         }
+        HttpExchange ex = entry.exchange();
+        int index = HttpRerunTarget.find(
+                HttpFile.parse(buffer.getContent()), entry.name(), ex.method(), ex.url(), entry.requestIndex());
+        if (index >= 0) {
+            runIndex(buffer, index);
+            return;
+        }
+        int caret = buffer.getArea().getCurrentParagraph();
+        if (HttpFile.requestIndexAt(buffer.getContent(), caret) < 0) {
+            host.setStatus(tr("status.http.rerunGone"));
+            return;
+        }
+        runRequest(buffer, caret);
+        host.setStatus(tr("status.http.rerunAtCaret", ex.method() + " " + ex.url()));
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
-    private void track(EditorBuffer buffer, com.editora.http.HttpClientService.Handle run) {
-        com.editora.http.HttpClientService.Handle previous = running.put(buffer, run);
+    private void track(EditorBuffer buffer, HttpClientService.Handle run) {
+        HttpClientService.Handle previous = running.put(buffer, run);
         if (previous != null) {
             previous.cancel();
         }
+        cancelling.remove(buffer); // superseded: a cancelled run's late results must not land over this one
     }
 
     /** {@code http.cancelRequest}: cancel the active {@code .http} buffer's in-flight request(s). */
@@ -463,12 +492,13 @@ final class HttpClientCoordinator {
 
     /** Cancels {@code buffer}'s in-flight run (the Cancel button and the command share this). */
     void cancelRun(EditorBuffer buffer) {
-        com.editora.http.HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
+        HttpClientService.Handle run = buffer == null ? null : running.remove(buffer);
         if (run == null) {
             host.setStatus(tr("status.http.nothingRunning"));
             return;
         }
         run.cancel();
+        cancelling.put(buffer, run); // what it finished before the cancel still lands (landCancelled)
         buffer.setHttpRunning(-1);
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
@@ -480,6 +510,11 @@ final class HttpClientCoordinator {
     /** Whether {@code buffer} has a request in flight. Test accessor. */
     boolean isRunningForTest(EditorBuffer buffer) {
         return running.containsKey(buffer);
+    }
+
+    /** {@code buffer}'s in-flight run, or null. Test accessor. */
+    HttpClientService.Handle handleForTest(EditorBuffer buffer) {
+        return running.get(buffer);
     }
 
     // --- commands ---
@@ -513,9 +548,6 @@ final class HttpClientCoordinator {
                 return;
             }
             Map<String, String> vars = variables(b, text);
-            if (!secretReadsAllowed(b, text, blocks, reqs, vars)) {
-                return; // the folder is not trusted and the user declined: nothing is sent
-            }
             String label = b.getPath() == null
                     ? b.getDisplayName()
                     : b.getPath().getFileName().toString();
@@ -524,10 +556,8 @@ final class HttpClientCoordinator {
             // An untitled buffer sends what it can; a request needing the file's folder reports "save first".
             Map<Integer, HttpExchange> skipped = new LinkedHashMap<>();
             List<Integer> sent = new ArrayList<>();
-            Map<String, List<String>> defs = baseDir == null ? rawDefinitions(text, envDir(b)) : Map.of();
             for (int i = 0; i < reqs.size(); i++) {
-                List<String> needs =
-                        baseDir == null ? HttpScratch.needsFolder(blocks.get(i), reqs.get(i), defs) : List.of();
+                List<String> needs = baseDir == null ? HttpScratch.needsFolder(reqs.get(i), vars) : List.of();
                 if (needs.isEmpty()) {
                     sent.add(i);
                 } else {
@@ -538,34 +568,60 @@ final class HttpClientCoordinator {
             for (int i = 0; i < reqs.size(); i++) {
                 indexes.add(i);
             }
+            // When each request started (by file position), for its History time; the ones not sent: now.
+            long[] startedAt = new long[reqs.size()];
+            Arrays.fill(startedAt, System.currentTimeMillis());
+            Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
-                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), true);
+                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
                 return;
             }
             startRun(b, label);
-            b.setHttpRunning(sent.get(0));
+            String[] startText = text.split("\n", -1); // each request's line as the run saw it, for the ■
+            IntFunction<String> requestLine = i -> {
+                int line = blocks.get(i).startLine();
+                return line >= 0 && line < startText.length ? startText[line] : null;
+            };
+            b.setHttpRunning(sent.get(0), requestLine.apply(sent.get(0)));
             List<HttpFile.Parsed> toSend = sent.stream().map(reqs::get).toList();
-            com.editora.http.HttpClientService.Handle[] run = new com.editora.http.HttpClientService.Handle[1];
+            HttpClientService.Handle[] run = new HttpClientService.Handle[1];
             run[0] = service.runAll(
                     toSend,
                     vars,
                     baseDir,
                     session,
+                    HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
                     i -> {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {
                             int index = sent.get(i);
-                            b.setHttpRunning(index); // the ■ follows the request in flight
+                            startedAt[index] = System.currentTimeMillis();
+                            b.setHttpRunning(index, requestLine.apply(index)); // the ■ follows the request in flight
                             p.progress(
                                     index,
                                     reqs.size(),
-                                    HttpScratch.label(
-                                            reqs.get(index), vars, session, baseDir, java.time.ZonedDateTime.now()));
+                                    HttpScratch.label(reqs.get(index), vars, session, baseDir, ZonedDateTime.now()));
                         }
                     },
                     exchanges -> {
                         if (running.remove(b, run[0])) {
-                            finishRun(b, reqs, indexes, merged(reqs.size(), sent, exchanges, skipped), true);
+                            finishRun(
+                                    b,
+                                    reqs,
+                                    indexes,
+                                    merged(reqs.size(), sent, exchanges, skipped),
+                                    startedAt,
+                                    unsent,
+                                    true);
+                        } else if (cancelling.remove(b, run[0])) {
+                            landCancelled(
+                                    b,
+                                    reqs,
+                                    indexes,
+                                    merged(reqs.size(), sent, exchanges, skipped),
+                                    startedAt,
+                                    unsent,
+                                    reqs.size());
                         }
                     });
             track(b, run[0]);
@@ -671,7 +727,7 @@ final class HttpClientCoordinator {
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
-            List<String> names = environmentNames(envDir(buffer));
+            List<String> names = HttpEnvironments.read(envDir(buffer)).names();
             String chosen = environments.get(buffer);
             p.setEnvironments(names, chosen != null ? chosen : ops.savedEnvironment());
             environmentListener.accept(buffer); // the list (or the env files) may have changed
@@ -679,10 +735,10 @@ final class HttpClientCoordinator {
     }
 
     /** Told when a buffer's environment choice, or the env files it comes from, may have changed. */
-    private java.util.function.Consumer<EditorBuffer> environmentListener = b -> {};
+    private Consumer<EditorBuffer> environmentListener = b -> {};
 
     /** Sets who is told about environment changes (the editor's {@code {{variable}}} hints). */
-    void setEnvironmentListener(java.util.function.Consumer<EditorBuffer> listener) {
+    void setEnvironmentListener(Consumer<EditorBuffer> listener) {
         this.environmentListener = listener == null ? b -> {} : listener;
     }
 
@@ -692,7 +748,7 @@ final class HttpClientCoordinator {
         return p == null ? "" : p.getSelectedEnvironment();
     }
 
-    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvFiles#envDir}), or null. */
+    /** The folder whose env files apply to {@code buffer} (see {@link HttpEnvironments}), or null. */
     Path envDirFor(EditorBuffer buffer) {
         return buffer == null ? null : envDir(buffer);
     }
@@ -722,32 +778,81 @@ final class HttpClientCoordinator {
             List<HttpFile.Parsed> requests,
             List<Integer> indexes,
             List<HttpExchange> exchanges,
+            long[] startedAt,
+            Set<HttpExchange> unsent,
             boolean all) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         long now = System.currentTimeMillis();
         List<HttpHistoryEntry> entries = new ArrayList<>();
         for (int i = 0; i < exchanges.size(); i++) {
             HttpFile.Parsed req = i < requests.size() ? requests.get(i) : null;
+            HttpExchange ex = exchanges.get(i);
             entries.add(new HttpHistoryEntry(
-                    exchanges.get(i),
+                    ex,
                     req == null ? null : req.name(),
                     i < indexes.size() ? indexes.get(i) : -1,
-                    now,
+                    startedAt != null && i < startedAt.length ? startedAt[i] : now,
                     false,
                     false,
-                    req != null && req.directives().noLog())); // # @no-log: shown now, never written to disk
+                    // # @no-log, and an untitled buffer's "not sent — save first": shown now, never written to disk
+                    (req != null && req.directives().noLog()) || unsent.contains(ex)));
         }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             p.showEntries(entries);
-            persist(buffer);
+            p.showRunSummary(all ? HttpStatusText.runAllSummary(exchanges) : null);
+            history.persist(buffer);
         }
         if (!exchanges.isEmpty()) {
             host.setStatus(all ? HttpStatusText.finishedAll(exchanges) : HttpStatusText.finished(exchanges.get(0)));
         }
     }
 
+    /**
+     * The results of a run the user cancelled: the requests that finished before the cancel (a Run All's first
+     * ones, whose effects on the server are real) go into History like any others; the cancelled one does not.
+     * The view stays as the cancel left it when nothing had finished.
+     */
+    private void landCancelled(
+            EditorBuffer buffer,
+            List<HttpFile.Parsed> requests,
+            List<Integer> indexes,
+            List<HttpExchange> exchanges,
+            long[] startedAt,
+            Set<HttpExchange> unsent,
+            int total) {
+        List<HttpFile.Parsed> keptRequests = new ArrayList<>();
+        List<Integer> keptIndexes = new ArrayList<>();
+        List<HttpExchange> kept = new ArrayList<>();
+        List<Long> keptStarts = new ArrayList<>();
+        for (int i = 0; i < exchanges.size(); i++) {
+            HttpExchange ex = exchanges.get(i);
+            if (ex.result().failed()
+                    && HttpClientService.CANCELLED.equals(ex.result().error())) {
+                continue;
+            }
+            keptRequests.add(i < requests.size() ? requests.get(i) : null);
+            keptIndexes.add(i < indexes.size() ? indexes.get(i) : -1);
+            kept.add(ex);
+            keptStarts.add(startedAt != null && i < startedAt.length ? startedAt[i] : 0L);
+        }
+        if (kept.isEmpty()) {
+            return;
+        }
+        long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
+        finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1);
+        host.setStatus(tr("status.http.cancelledAfter", kept.size(), total));
+    }
+
     private void copyAsCurl(HttpExchange ex) {
+        HttpExchange.Details how = ex.details();
+        if (HttpExchange.isBodyPlaceholder(ex.requestBody())
+                && how.bodyFile() == null
+                && how.formParts().isEmpty()) {
+            // Saved by an older version, which kept only the body's summary: a command would upload that text.
+            host.setStatus(tr("status.http.curlUnavailable"));
+            return;
+        }
         String curl = CurlExport.toCurl(ex); // from how it was sent: file upload, form fields, digest, -L
         ClipboardContent cc = new ClipboardContent();
         cc.putString(curl);
@@ -804,14 +909,18 @@ final class HttpClientCoordinator {
         try {
             // Staged: the Save dialog may have confirmed replacing a file, which a failed write must not empty.
             if (chooser.getSelectedExtensionFilter() == report) {
-                com.editora.io.StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
+                StagedExport.writeString(chosen.toPath(), HttpResponseFormat.render(r));
             } else {
                 byte[] bytes = r.rawBody() != null && r.rawBody().length > 0
                         ? r.rawBody()
                         : r.body().getBytes(StandardCharsets.UTF_8);
-                com.editora.io.StagedExport.write(chosen.toPath(), bytes);
+                StagedExport.write(chosen.toPath(), bytes);
             }
-            host.setStatus(tr("status.http.saved", chosen.toPath().getFileName()));
+            HttpHistoryEntry entry = p.getSelectedEntry();
+            boolean partial = entry != null && entry.bodyCut();
+            host.setStatus(tr(
+                    partial ? "status.http.savedPartial" : "status.http.saved",
+                    chosen.toPath().getFileName()));
         } catch (IOException e) {
             host.setStatus(tr("status.http.saveFailed", e.getMessage()));
         }
@@ -851,11 +960,7 @@ final class HttpClientCoordinator {
         // against the environment selected for the file being run.
         HttpClientPanel p = panelFor(buffer);
         String env = p == null ? "" : p.getSelectedEnvironment();
-        Path envDir = envDir(buffer); // the file's own folder, or the nearest one above it with env files
-        return HttpEnv.merged(
-                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PUBLIC_FILE)),
-                readOrNull(envDir == null ? null : envDir.resolve(HttpEnv.PRIVATE_FILE)),
-                env);
+        return HttpEnvironments.read(envDir(buffer)).variables(env);
     }
 
     /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */
@@ -866,199 +971,9 @@ final class HttpClientCoordinator {
         return session;
     }
 
-    private static String readOrNull(Path file) {
-        if (file == null || !Files.isRegularFile(file)) {
-            return null;
-        }
-        try {
-            return Files.readString(file);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /** The folder whose env files apply to {@code buffer}'s file (its own, or the nearest one above it). */
+    /** The folder whose env files apply to {@code buffer}'s file (see {@link HttpEnvironments}), or null. */
     private Path envDir(EditorBuffer buffer) {
-        Path dir = folderOf(buffer);
-        Path project = ops.projectRoot();
-        if (dir == null) {
-            // An untitled buffer has no folder of its own: the project root's env files, or none.
-            return project == null ? null : HttpEnvFiles.envDir(project, project);
-        }
-        return HttpEnvFiles.envDir(dir, project);
-    }
-
-    /** The environment names declared in {@code dir}'s env files, public first, then private-only ones. */
-    private static List<String> environmentNames(Path dir) {
-        if (dir == null) {
-            return List.of();
-        }
-        return HttpEnv.environmentNames(
-                readOrNull(dir.resolve(HttpEnv.PUBLIC_FILE)), readOrNull(dir.resolve(HttpEnv.PRIVATE_FILE)));
-    }
-
-    // --- secrets trust gate --------------------------------------------------------------------------
-
-    /**
-     * The trust gate for secrets: a request that reads {@code $processEnv} / {@code $dotenv} — directly, through a
-     * {@code @var} line or an environment value — runs only from a trusted folder, or once the user trusts it.
-     * A {@code .http} file from a cloned repository could otherwise send {@code AWS_SECRET_ACCESS_KEY} to any host
-     * on one click. Requests that read no secrets are never asked about.
-     */
-    private boolean secretReadsAllowed(
-            EditorBuffer buffer,
-            String text,
-            List<HttpFile.Request> blocks,
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars) {
-        Path dir = folderOf(buffer);
-        StringBuilder sent = new StringBuilder();
-        for (int i = 0; i < blocks.size(); i++) {
-            sent.append(blocks.get(i).block()).append('\n');
-            HttpFile.BodyRef ref = requests.get(i).bodyRef();
-            if (ref != null && ref.substitute() && dir != null) {
-                sent.append(substitutedBodyFile(dir, ref)).append('\n'); // "<@ file" fills in its {{vars}} too
-            }
-        }
-        List<String> reads = com.editora.http.SecretReads.find(sent.toString(), rawDefinitions(text, envDir(buffer)));
-        if (reads.isEmpty()) {
-            return true;
-        }
-        java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
-        for (HttpFile.Parsed p : requests) {
-            hosts.add(hostOf(HttpVars.substitute(p.url(), vars, LocalDateTime.now())));
-        }
-        // An untitled buffer has no folder: it is trusted as the project it was opened in, if any. Without a
-        // project there is no folder to trust, so the secret is not read (the safe choice).
-        Path project = ops.projectRoot();
-        Path asFile = buffer.getPath() != null
-                ? buffer.getPath()
-                : project == null ? null : project.resolve(buffer.getDisplayName());
-        if (asFile == null) {
-            host.setStatus(tr("status.http.secretsNeedFolder", String.join(", ", reads)));
-            return false;
-        }
-        if (ops.allowSecretReads(asFile, List.copyOf(hosts), reads)) {
-            return true;
-        }
-        host.setStatus(tr("status.http.secretsRefused", String.join(", ", reads)));
-        return false;
-    }
-
-    /** What {@code {{name}}} can stand for, unsubstituted: the file's {@code @var} lines and the environment. */
-    private Map<String, List<String>> rawDefinitions(String text, Path dir) {
-        Map<String, List<String>> defs = new LinkedHashMap<>();
-        for (String[] pair : HttpFile.fileVariablePairs(text)) {
-            defs.computeIfAbsent(pair[0], k -> new java.util.ArrayList<>()).add(pair[1]);
-        }
-        rawEnvironment(dir)
-                .forEach((k, v) -> defs.computeIfAbsent(k, x -> new java.util.ArrayList<>())
-                        .add(v));
-        return defs;
-    }
-
-    /** Every value of every environment in the folder's env files (any could be the one picked next). */
-    private Map<String, String> rawEnvironment(Path dir) {
-        Map<String, String> out = new LinkedHashMap<>();
-        if (dir == null) {
-            return out;
-        }
-        for (String name : List.of("http-client.env.json", "http-client.private.env.json")) {
-            Path file = dir.resolve(name);
-            if (!Files.exists(file)) {
-                continue;
-            }
-            try {
-                String json = Files.readString(file);
-                for (String env : HttpEnv.environmentNames(json)) {
-                    HttpEnv.variables(json, env).forEach((k, v) -> out.merge(k, v, (a, b) -> a + "\n" + b));
-                }
-            } catch (IOException | RuntimeException unreadable) {
-                // an unreadable env file contributes nothing to resolve either
-            }
-        }
-        return out;
-    }
-
-    private static String substitutedBodyFile(Path dir, HttpFile.BodyRef ref) {
-        try {
-            Path file = com.editora.http.HttpPaths.contained(dir, ref.path());
-            // {{ and }} are ASCII in any encoding a body file may declare, so Latin-1 never fails to decode
-            return file == null || !Files.isRegularFile(file)
-                    ? ""
-                    : new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.ISO_8859_1);
-        } catch (IOException | RuntimeException unreadable) {
-            return ""; // the run reports an unreadable body file itself
-        }
-    }
-
-    private static String hostOf(String url) {
-        try {
-            java.net.URI u = java.net.URI.create(url.strip());
-            return u.getHost() == null ? url.strip() : u.getHost() + (u.getPort() >= 0 ? ":" + u.getPort() : "");
-        } catch (RuntimeException e) {
-            return url.strip();
-        }
-    }
-
-    // --- saved history ---------------------------------------------------------------------------------
-
-    /** Reads {@code buffer}'s saved environment + responses off the FX thread, then puts them in its panel. */
-    private void loadSaved(EditorBuffer buffer, HttpClientPanel panel) {
-        HttpResponseHistory store = ops.historyStore();
-        Path file = buffer.getPath();
-        if (store == null || file == null) {
-            return;
-        }
-        LOADER.execute(() -> {
-            HttpResponseHistory.Stored stored;
-            try {
-                stored = store.load(file);
-            } catch (RuntimeException e) {
-                return; // an unreadable history is the same as none
-            }
-            List<HttpHistoryEntry> entries = new ArrayList<>();
-            for (HttpResponseHistory.Response r : stored.responses) {
-                try {
-                    entries.add(HttpHistoryEntry.fromStored(r));
-                } catch (RuntimeException ignored) {
-                    // skip a damaged entry
-                }
-            }
-            String env = stored.environment;
-            javafx.application.Platform.runLater(() -> {
-                if (panels.get(buffer) != panel) {
-                    return; // closed, or the feature was switched off, while reading
-                }
-                if (!stored.file.isEmpty()) {
-                    environments.putIfAbsent(buffer, env); // a file never saved keeps the window's old choice
-                }
-                refreshEnvironments(buffer);
-                panel.restore(entries);
-            });
-        });
-    }
-
-    /** Saves {@code buffer}'s environment choice and its last responses (never {@code @no-log} ones). */
-    private void persist(EditorBuffer buffer) {
-        HttpResponseHistory store = ops.historyStore();
-        HttpClientPanel p = panelFor(buffer);
-        Path file = buffer.getPath();
-        if (store == null || p == null || file == null) {
-            return;
-        }
-        HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
-        String env = environments.get(buffer);
-        state.environment = env == null ? p.getSelectedEnvironment() : env;
-        for (HttpHistoryEntry e : p.history()) {
-            if (state.responses.size() >= HttpResponseHistory.MAX_RESPONSES) {
-                break;
-            }
-            if (!e.noLog()) {
-                state.responses.add(e.toStored());
-            }
-        }
-        store.save(file, state);
+        return HttpEnvironments.forFile(buffer == null ? null : buffer.getPath(), ops.projectRoot());
     }
 
     private void ifHttp(Runnable action) {

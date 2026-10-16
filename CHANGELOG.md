@@ -222,18 +222,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP Client: the response view shows what happened.** The top line reads `404 Not Found · 12 ms · 4 B`,
   coloured by outcome, with the protocol version above the headers and a "Request" section showing the request as
   sent, variables filled in. A running request shows its elapsed time, Run All shows "2 of 5: GET …" and finishes
-  on the first failure, and one Run / Cancel button re-sends the selected request. The toolbar wraps instead of
-  shrinking to "…". Long lines can be wrapped, one-line XML is indented, and images are shown as pictures.
+  on the first failure with a "3 of 13 failed" summary, and one Run / Cancel button re-sends the request the
+  selected response came from (found by its name, or its method and URL, even after the file was edited).
+  Warnings have their own block with a count beside the status line. Cancelling a Run All keeps the responses
+  that had already arrived. The toolbar wraps instead of shrinking to "…". Long lines can be wrapped, one-line
+  XML is indented, and images are shown as pictures.
 - **HTTP Client: history and environments are remembered per file.** The last 10 responses of each `.http` file,
   and its environment, are kept in Editora's config folder and come back when the file is reopened. Bodies are
   capped at 1 MB, credential headers (Authorization, cookies, API keys and tokens) are masked, and requests
-  marked `# @no-log` are never saved. Environment files are found in the file's folder or the nearest folder above
-  it up to the project root, and environments defined only in `http-client.private.env.json` are listed. A
+  marked `# @no-log` are never saved. A restored response still knows how its request was sent, so Copy as cURL
+  after a restart reproduces the upload, form or Digest login. Two windows on one file keep each other's
+  responses, the history follows a renamed or moved file and is removed with a deleted one, and Export
+  Configuration includes it only when you tick "Include HTTP response history". Environment files are found in
+  the file's folder or the nearest folder above it, up to the open project's root, else the file's repository
+  root; outside a repository only the file's own folder counts. Environments defined only in
+  `http-client.private.env.json` are listed. A
   chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
   cleared when the environment changes.
 - **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
-  (VS Code, CUA, Sublime, IntelliJ; Cancel is `Ctrl+Alt+K` in VS Code), and Run All Requests to `C-c C-r` (Emacs)
-  and `Ctrl+Alt+Shift+R`; the ▶ tooltip names both. While a request runs its ▶ turns into a ■ that cancels it,
+  (VS Code, CUA, Sublime, IntelliJ), Run All Requests to `C-c C-r` (Emacs) and `Ctrl+Alt+Shift+Enter`
+  (`Option+Cmd+Shift+Enter` on macOS; GNOME keeps `Ctrl+Alt+Shift+R` for screen recording), and Cancel to
+  `C-c C-k` (Emacs) and `Ctrl+Alt+K` (`Option+Cmd+K` on macOS; the IntelliJ keymap on macOS keeps Control+Option);
+  the ▶ tooltip names both run chords. While a request runs its ▶ turns into a ■ that cancels it,
   and the "Running …" line shows the request with its variables filled in. Escape in the response view returns
   to the editor. Run File and the editor's context menu run the file's requests. `.http` files get request
   folding, one Structure entry per request, completion for methods and headers, a starter request in New File,
@@ -283,11 +293,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **An `.http` file can no longer send your environment secrets without asking.** A request that reads
-  `$processEnv` or `$dotenv` (directly, through an `@var` line, an environment value or a `<@` body file) from a
-  folder you have not trusted now asks first, naming the variables and the hosts; declining sends nothing. It uses
-  the same trust as build scripts, so a trusted project is asked once. Before, a request in a cloned repository
-  could send, say, `AWS_SECRET_ACCESS_KEY` to any host on one click.
-- **HTTP Client: Copy as cURL is safe to paste.** The URL and header names were put in the shell command
+  `$processEnv`, `$env` or `$dotenv` from a folder you have not trusted now asks first, whatever form the read
+  takes: `{{$env NAME}}` or `{{$env.NAME}}`, through an `@var` line or an environment value, in a header, a `<@`
+  body file or a multipart `<@` part. The check follows what the request actually resolves, so no spelling slips
+  past it. The prompt names the variables as written, never their values, and the hosts the request goes to (a
+  redirect may lead elsewhere); declining sends nothing, and a refused secret is never shown or saved. It uses
+  the same trust as build scripts, so a trusted project is asked once, and the check runs off the UI thread, so a
+  malformed `{{` cannot freeze the window. Before, a request in a cloned repository could send, say,
+  `AWS_SECRET_ACCESS_KEY` to any host on one click.
+- **HTTP Client: Copy as cURL is safe to paste into bash or zsh.** The URL and header names were put in the shell command
   unquoted, so a crafted URL ran commands when the copied cURL was pasted into a terminal, and a body starting
   with `@` made curl upload a local file. Every word is quoted now, and the command reproduces what was sent:
   `--data-binary @file` for file bodies, `-F` for forms, `--digest`, `-L` and the HTTP version.
@@ -335,6 +349,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `# @name` or directive line. Digest answers SHA-256 and other RFC 7616 challenges, and Basic/Digest shorthand
   passwords may contain spaces. `@timeout` also stops a body that stalls. Import cURL handles browser and Windows
   copies, `-F`, `--json`, `-d @file`, `-G`, `-I` and options with arguments, and works outside a `.http` file.
+- **HTTP Client: smaller fixes.** `$datetime` writes full month and weekday names (`MMMM`, `dddd`), Day.js
+  formats such as `Do`, `Q`, `d` and `[W]ww` come out right, and a huge date offset gives a warning instead of an
+  error. Indented (YAML) bodies keep their first line's indentation. A nested environment object merges across
+  both env files, and `.env` accepts `export<TAB>` and multi-line quoted values. Copy as cURL of a multipart
+  upload imports back, and curl import keeps `--http1.1` / `--http2` and turns `-T file` into a PUT. More
+  credential headers are masked in the saved history (`X-Auth-Key`, `…-Key`, session and signature headers).
+  Cancelling an upload releases the file at once, and a cancelled re-run of a login no longer empties the token
+  later requests use. Messages about headers, body files, `>>` saves and stalled responses are translated, the
+  elapsed time uses your language's decimal separator, and Escape in Preview goes back to the editor.
 - **HTTP Client: clearer messages.** "Connection refused — is a server listening on …?", "Host not found",
   untrusted certificates and timeouts read as sentences instead of `ConnectException`; failures no longer read
   "exit 404" or "exit 5". A redirect to another host names the custom headers that went along, and a redirect

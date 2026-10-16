@@ -158,7 +158,7 @@ class HttpClientUiFlowFxTest {
                 + "### Secret\n# @no-log\nGET " + url("/json") + "?secret\n";
         EditorBuffer b = open(first, file, text);
         HttpClientPanel panel = first.panelForTest(b);
-        ComboBox<String> env = FxTestSupport.field(panel, "envCombo");
+        ComboBox<String> env = panel.environmentPickerForTest();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> first.runRequest(b, 1));
         host.awaitStatus(s -> !s.startsWith("Running"));
@@ -198,7 +198,7 @@ class HttpClientUiFlowFxTest {
         EditorBuffer b = open(c, work.resolve("b/b.http"), "GET " + url("/json") + "\n");
         assertEquals("dev", FxTestSupport.callOnFx(() -> c.panelForTest(a).getSelectedEnvironment()));
         assertEquals("", FxTestSupport.callOnFx(() -> c.panelForTest(b).getSelectedEnvironment()), "b has no dev");
-        ComboBox<String> envB = FxTestSupport.field(c.panelForTest(b), "envCombo");
+        ComboBox<String> envB = c.panelForTest(b).environmentPickerForTest();
         assertEquals(
                 List.of("", "staging", "local"),
                 FxTestSupport.callOnFx(() -> List.copyOf(envB.getItems())),
@@ -220,7 +220,7 @@ class HttpClientUiFlowFxTest {
         ops.projectRoot = project;
         HttpClientCoordinator c = coordinator(ops);
         EditorBuffer b = open(c, project.resolve("api/v1/req.http"), "GET {{host}}/json\n");
-        ComboBox<String> env = FxTestSupport.field(c.panelForTest(b), "envCombo");
+        ComboBox<String> env = c.panelForTest(b).environmentPickerForTest();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         assertEquals(
@@ -236,7 +236,7 @@ class HttpClientUiFlowFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         host.awaitStatus(s -> !s.startsWith("Running"));
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(0)); // the caret is on the other request
-        Button run = FxTestSupport.field(c.panelForTest(b), "runButton");
+        Button run = c.panelForTest(b).runButtonForTest();
         FxTestSupport.runOnFx(run::fire);
         assertEquals(
                 tr("status.http.finished", "GET " + url("/json") + "?two", "200 OK"),
@@ -273,8 +273,8 @@ class HttpClientUiFlowFxTest {
         EditorBuffer remote = open(c, work.resolve("remote.http"), "GET " + url("/json") + "\n");
         host.remote = remote;
         FxTestSupport.runOnFx(c::applySupport);
-        assertTrue(FxTestSupport.<Boolean>field(local, "httpFeatureEnabled"));
-        assertFalse(FxTestSupport.<Boolean>field(remote, "httpFeatureEnabled"), "a remote file cannot run here");
+        assertTrue(local.isHttpEnabled());
+        assertFalse(remote.isHttpEnabled(), "a remote file cannot run here");
     }
 
     @Test
@@ -284,9 +284,8 @@ class HttpClientUiFlowFxTest {
             EditorBuffer b = new EditorBuffer();
             buffers.add(b);
             b.setDisplayName("api.http");
-            b.setHttpRunHandler(line -> runs[0] = line);
-            b.setHttpRunAllHandler(() -> runs[1]++);
-            b.setHttpRunTooltip(() -> "Run this request (C-M-r)");
+            b.setHttpHooks(new com.editora.editor.HttpHooks(
+                    line -> runs[0] = line, () -> runs[1]++, null, () -> "Run this request (C-M-r)", null, null));
             b.setHttpEnabled(true);
             b.setContent("### one\nGET http://127.0.0.1:1/\nAccept: */*\n");
             b.settleRunScan();
