@@ -1002,7 +1002,9 @@ public class EditorBuffer implements TabContent {
                 this::onRunGlyph,
                 line -> testLines.containsKey(line)
                         ? "test-run-marker"
-                        : line == httpRunningLine() ? FoldManager.HTTP_RUNNING_CLASS : null,
+                        : line == httpGutter.runningGlyphLine(this::isFoldedLine)
+                                ? FoldManager.HTTP_RUNNING_CLASS
+                                : null,
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -3535,6 +3537,10 @@ public class EditorBuffer implements TabContent {
         for (int line : httpGutter.setRunning(index, this::paragraphTextOrNull)) {
             if (line >= 0) {
                 refreshGutterLine(line);
+                int shown = HttpGutter.glyphLine(line, this::isFoldedLine); // a folded request's ■ is on its ### line
+                if (shown != line) {
+                    refreshGutterLine(shown);
+                }
             }
         }
     }
@@ -3545,6 +3551,11 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpRunning(int index, String requestLine) {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
+    }
+
+    /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
+    private boolean isFoldedLine(int line) {
+        return line >= 0 && line < area.getParagraphs().size() && area.isFolded(line);
     }
 
     private String paragraphTextOrNull(int line) {
@@ -3676,7 +3687,7 @@ public class EditorBuffer implements TabContent {
             return true;
         }
         if (httpFeatureEnabled && isHttpFile()) {
-            return httpGutter.isRequestLine(line);
+            return httpGutter.isGlyphLine(line, this::isFoldedLine); // a folded request's ▶ shows on its ### line
         }
         if (isMakefile()) {
             return makeTargets.containsKey(line);
@@ -3695,7 +3706,7 @@ public class EditorBuffer implements TabContent {
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
             if (httpFeatureEnabled && isHttpFile()) {
-                return httpGutter.tooltip(line); // the ■ cancels, a ▶ runs its request (and names the chord)
+                return httpGutter.tooltip(line, this::isFoldedLine); // ■ cancels, ▶ runs its request (names the chord)
             }
             return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
@@ -3712,7 +3723,7 @@ public class EditorBuffer implements TabContent {
         } else if (mainTarget != null) {
             mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
         } else if (httpFeatureEnabled && isHttpFile()) {
-            httpGutter.click(line); // the ■ of the request in flight cancels it; a ▶ runs its request
+            httpGutter.click(line, this::isFoldedLine); // the ■ in flight cancels it; a ▶ runs its request
         } else if (isMakefile()) {
             String target = makeTargets.get(line);
             if (target != null) {
