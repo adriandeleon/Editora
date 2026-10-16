@@ -211,6 +211,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Recent Files dropdown fits its names and asks before removing one.** The dropdown is as wide as the
+  longest file name, up to a limit, so names are no longer cut short. The project labels line up in one
+  column. Clicking a row's trash icon now asks before removing that file from the list, and the question
+  shows the full path, so two files with the same name are easy to tell apart.
 - **HTTP Client: what a request sends is closer to the JetBrains format.** Lines starting with `#` or `//`
   inside a request body are comments and are no longer sent (shell or Markdown bodies that need such lines can
   go in a `< ./file`). Directives (`# @no-redirect`, `# @timeout`) count only above the request line, and
