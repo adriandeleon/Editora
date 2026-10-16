@@ -2167,7 +2167,16 @@ final class LanguageServerSession implements LanguageClient {
 
     @Override
     public void logMessage(MessageParams message) {
-        if (LOG.isLoggable(Level.FINE)) {
+        if (message == null) {
+            return;
+        }
+        // A server's warnings and errors reach the Debug Log (the root logger drops FINE): bash-language-server
+        // says only here that it found no ShellCheck ("disabling linting as no executable was found") or that
+        // a format failed, and the user otherwise saw a script with no diagnostics and no hint why.
+        org.eclipse.lsp4j.MessageType type = message.getType();
+        if (type == org.eclipse.lsp4j.MessageType.Error || type == org.eclipse.lsp4j.MessageType.Warning) {
+            LOG.info("[" + serverId + "] " + message.getMessage());
+        } else if (LOG.isLoggable(Level.FINE)) {
             LOG.fine(message.getMessage());
         }
     }

@@ -774,6 +774,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
+        this.settingsWindow.setInstallToolActions(
+                id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
         this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
@@ -2596,6 +2598,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public boolean typstCliAvailable() {
                 return typst.isTypstCliAvailable();
+            }
+
+            @Override
+            public boolean toolAvailable(String toolId) {
+                return lspCoordinator.bashToolFound(toolId);
             }
 
             @Override
@@ -6534,6 +6541,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void installTypstCli(java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installTypstCli(onDone);
+                }
+
+                @Override
+                public void installTool(String toolId, java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installTools(java.util.List.of(toolId), onDone);
+                }
+
+                @Override
+                public String bashTool(String toolId) {
+                    return lspCoordinator.bashToolCommand(toolId);
                 }
 
                 @Override

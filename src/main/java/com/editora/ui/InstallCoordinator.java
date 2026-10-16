@@ -49,6 +49,11 @@ final class InstallCoordinator {
 
         /** Invalidates the cached tool detection and re-applies LSP/Debug/Mermaid support (+ persists). */
         void reapplyToolSupport();
+
+        /** Whether the command bash-language-server would run for {@code toolId} (shellcheck/shfmt) is there. */
+        default boolean toolAvailable(String toolId) {
+            return false;
+        }
     }
 
     private final CoordinatorHost host;
@@ -241,6 +246,73 @@ final class InstallCoordinator {
                         onResult.accept(result.ok());
                     });
         });
+    }
+
+    /**
+     * Installs ShellCheck and shfmt — whichever of the two is missing — from their pinned, hash-checked
+     * releases into the config dir's {@code plugins/tools}. bash-language-server is then pointed at them (a
+     * blank path setting means "Editora's copy if installed") by the re-applied LSP support.
+     */
+    void installShellTools() {
+        installTools(com.editora.install.InstallCatalog.PINNED_TOOL_IDS, ok -> {});
+    }
+
+    /** Installs the pinned tools {@code toolIds} that are missing and reports the settled outcome. */
+    void installTools(List<String> toolIds, java.util.function.Consumer<Boolean> onResult) {
+        final String key = "tools:" + String.join(",", toolIds);
+        List<String> missing = toolIds.stream()
+                .filter(id -> com.editora.install.InstallCatalog.pinnedTool(id).isPresent())
+                .filter(id -> !ops.toolAvailable(id))
+                .toList();
+        String names = String.join(
+                ", ", toolIds.stream().map(InstallCoordinator::toolName).toList());
+        if (missing.isEmpty()) {
+            host.setStatus(tr("status.install.already", names));
+            onResult.accept(true);
+            return;
+        }
+        if (installingServers.contains(key)) {
+            host.setStatus(tr("status.install.inProgress"));
+            onResult.accept(false);
+            return;
+        }
+        List<Step> steps = missing.stream()
+                .flatMap(id -> com.editora.install.InstallCatalog.toolInstall(id).orElse(List.of()).stream())
+                .toList();
+        String missingNames = String.join(
+                ", ", missing.stream().map(InstallCoordinator::toolName).toList());
+        service.detectPrereqs(present -> {
+            Set<Prereq> needed = steps.stream()
+                    .flatMap(s -> s.prereqs().stream())
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(Prereq.class)));
+            needed.removeAll(present);
+            if (!needed.isEmpty()) {
+                String prereqs = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
+                host.setStatus(tr("status.install.needPrereq", prereqs));
+                alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", prereqs));
+                onResult.accept(false);
+                return;
+            }
+            installingServers.add(key);
+            host.setStatus(tr("status.install.installing", missingNames));
+            service.install(
+                    steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                        installingServers.remove(key);
+                        if (result.ok()) {
+                            ops.reapplyToolSupport(); // the Bash server is pointed at the installed copies
+                            host.setStatus(tr("status.install.done", missingNames));
+                        } else {
+                            host.setStatus(tr("status.install.failed", missingNames));
+                            alert(Alert.AlertType.ERROR, result.message());
+                        }
+                        onResult.accept(result.ok());
+                    });
+        });
+    }
+
+    /** A pinned tool's display name. */
+    static String toolName(String toolId) {
+        return "shellcheck".equals(toolId) ? "ShellCheck" : toolId;
     }
 
     /** Friendly display name for an LSP server id (e.g. {@code json} → "JSON"). */

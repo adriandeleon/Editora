@@ -93,4 +93,28 @@ class BashSettingsPageFxTest {
         commit(row("lsp.bash.explainshellEndpoint"), "http://localhost:5000");
         assertEquals("http://localhost:5000", settings.getBashExplainshellEndpoint());
     }
+
+    @Test
+    void theCardSaysWhetherShellCheckAndShfmtAreThereAndOffersToInstallThem(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        Map<String, javafx.scene.control.Label> status = FxTestSupport.field(window, "bashToolStatusLabels");
+        Map<String, javafx.scene.control.Button> installs = FxTestSupport.field(window, "installButtons");
+
+        commit(row("lsp.bash.shfmtPath"), dir.resolve("nowhere/shfmt").toString());
+        assertEquals(
+                com.editora.i18n.Messages.tr("settings.lsp.bash.shfmtMissing"),
+                FxTestSupport.callOnFx(() -> status.get("shfmt").getText()));
+        assertEquals(
+                false, FxTestSupport.callOnFx(() -> installs.get("tool:shfmt").isDisable()), "Install… offered");
+
+        java.nio.file.Path shfmt = java.nio.file.Files.writeString(dir.resolve("shfmt"), "#!/bin/sh\n");
+        assertTrue(shfmt.toFile().setExecutable(true));
+        commit(row("lsp.bash.shfmtPath"), shfmt.toString());
+        assertEquals(
+                com.editora.i18n.Messages.tr("settings.lsp.bash.toolFound", "shfmt", shfmt.toString()),
+                FxTestSupport.callOnFx(() -> status.get("shfmt").getText()));
+        assertEquals(
+                true, FxTestSupport.callOnFx(() -> installs.get("tool:shfmt").isDisable()));
+        commit(row("lsp.bash.shfmtPath"), "");
+    }
 }

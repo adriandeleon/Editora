@@ -794,6 +794,13 @@ public class SettingsWindow {
     }
 
     /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
+    /** Installs a pinned command-line tool (shellcheck/shfmt) from the Bash card's Install buttons. */
+    private java.util.function.Consumer<String> onInstallTool;
+
+    public void setInstallToolActions(java.util.function.Consumer<String> onInstallTool) {
+        this.onInstallTool = onInstallTool;
+    }
+
     public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
         this.onInstallServer = onInstallServer;
     }
@@ -6613,6 +6620,35 @@ public class SettingsWindow {
         return p;
     }
 
+    /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
+    private final Map<String, Label> bashToolStatusLabels = new java.util.LinkedHashMap<>();
+
+    private static String toolInstallKey(String toolId) {
+        return "tool:" + toolId;
+    }
+
+    /**
+     * Shows whether the ShellCheck and shfmt the Bash server will run are there (the configured path, else
+     * Editora's installed copy, else the name on PATH) — a lookup, no process — and enables their Install buttons.
+     */
+    private void refreshBashToolStatus() {
+        if (bashToolStatusLabels.isEmpty()) {
+            return;
+        }
+        com.editora.lsp.BashIdeConfig tools = LspCoordinator.userBashIde(config.getSettings(), config.getConfigDir());
+        bashToolStatusLabels.forEach((toolId, status) -> {
+            String command = "shfmt".equals(toolId) ? tools.effectiveShfmt() : tools.effectiveShellcheck();
+            String found = com.editora.doctor.DoctorProbes.resolvedPath(List.of(command));
+            boolean ok = !found.isEmpty();
+            status.getStyleClass().setAll("settings-git-status", ok ? "settings-git-found" : "settings-git-missing");
+            status.setText(
+                    ok
+                            ? tr("settings.lsp.bash.toolFound", InstallCoordinator.toolName(toolId), found)
+                            : tr("settings.lsp.bash." + toolId + "Missing"));
+            updateInstallButton(toolInstallKey(toolId), ok);
+        });
+    }
+
     /** Words the Bash card's own rows are found by. */
     private static final String BASH_KEYWORDS = "lsp bash shell shellcheck shfmt format lint bash-language-server ";
 
@@ -6622,6 +6658,23 @@ public class SettingsWindow {
      * {@code .editora/settings.json}.
      */
     private void bashServerRows(Card c) {
+        for (String toolId : com.editora.install.InstallCatalog.PINNED_TOOL_IDS) {
+            Label status = new Label();
+            status.getStyleClass().add("settings-git-status");
+            status.setWrapText(true);
+            status.setMaxWidth(440);
+            bashToolStatusLabels.put(toolId, status);
+            cardRow(c, Category.LSP, status, BASH_KEYWORDS + "installed found");
+            Button install = new Button(tr("settings.install.button"));
+            install.getStyleClass().add("settings-install-button");
+            install.setOnAction(e -> {
+                if (onInstallTool != null) {
+                    onInstallTool.accept(toolId);
+                }
+            });
+            installButtons.put(toolInstallKey(toolId), install);
+            cardRow(c, Category.LSP, install, BASH_KEYWORDS + "install download");
+        }
         bashPathRow(c, "shellcheckPath", Settings::getBashShellcheckPath, Settings::setBashShellcheckPath);
         textRow(
                 c,
@@ -7322,6 +7375,7 @@ public class SettingsWindow {
     }
 
     private void refreshLspStatus() {
+        refreshBashToolStatus();
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }

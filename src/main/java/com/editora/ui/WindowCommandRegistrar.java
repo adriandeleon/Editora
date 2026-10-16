@@ -807,6 +807,9 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "install.typstCli", () -> host.installCoordinator().installTypstCli()));
+        host.registry()
+                .register(Command.of(
+                        "install.shellTools", () -> host.installCoordinator().installShellTools()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
         host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));

@@ -1341,8 +1341,47 @@ final class LspCoordinator {
      * over them (paths and the explainshell endpoint only in a trusted folder).
      */
     com.editora.lsp.BashIdeConfig bashIdeConfig() {
-        return com.editora.lsp.BashIdeConfig.of(host.settings())
+        com.editora.config.ConfigManager config = ops.config();
+        return userBashIde(host.settings(), config == null ? null : config.getConfigDir())
                 .withProject(projectSettings().getBashIde(), projectTrusted());
+    }
+
+    /**
+     * The user's bash-language-server settings with a blank ShellCheck/shfmt path filled in from the copy Editora
+     * installed under {@code configDir} (null = none).
+     */
+    static com.editora.lsp.BashIdeConfig userBashIde(com.editora.config.Settings s, Path configDir) {
+        return com.editora.lsp.BashIdeConfig.of(s)
+                .withInstalledTools(
+                        com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shellcheck"),
+                        com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shfmt"));
+    }
+
+    /** Whether ShellCheck's absence has been pointed out in this window already. */
+    private boolean shellcheckNoticeShown;
+
+    /**
+     * Says once per window that ShellCheck is missing when a shell script is opened on the Bash server: the
+     * server then lints nothing and says so only in its log, so the script just looked clean.
+     */
+    private void noticeMissingShellcheck() {
+        if (!shellcheckNoticeShown && !bashToolFound("shellcheck")) {
+            shellcheckNoticeShown = true;
+            // After the opening finishes: the "Opened <file>" message is written later in the same pass and
+            // replaced this one before anyone could read it.
+            javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.bashNoShellcheck")));
+        }
+    }
+
+    /** Whether the command the Bash server runs for {@code toolId} resolves (a PATH/file lookup, no process). */
+    boolean bashToolFound(String toolId) {
+        return com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
+    }
+
+    /** The command the Bash server runs for {@code toolId} ({@code shellcheck}/{@code shfmt}) in this window. */
+    String bashToolCommand(String toolId) {
+        com.editora.lsp.BashIdeConfig c = bashIdeConfig();
+        return "shfmt".equals(toolId) ? c.effectiveShfmt() : c.effectiveShellcheck();
     }
 
     /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
@@ -2010,6 +2049,9 @@ final class LspCoordinator {
             buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
+            if ("bash".equals(serverId) && !remote) {
+                noticeMissingShellcheck();
+            }
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
@@ -3507,7 +3549,11 @@ final class LspCoordinator {
                 return;
             }
             if (edits.isEmpty()) {
-                host.setStatus(tr("status.lsp.formatNoChange"));
+                // bash-language-server answers "no edits" when shfmt is missing, too: say which it is.
+                host.setStatus(
+                        "bash".equals(lspManager.managedServerId(path)) && !bashToolFound("shfmt")
+                                ? tr("status.lsp.bashNoShfmt")
+                                : tr("status.lsp.formatNoChange"));
                 return;
             }
             if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
