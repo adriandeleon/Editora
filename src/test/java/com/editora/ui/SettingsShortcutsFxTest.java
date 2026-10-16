@@ -266,6 +266,23 @@ class SettingsShortcutsFxTest {
         }
     }
 
+    /** "file save" found nothing, nor did "Ctrl+X Ctrl+S" under Emacs, which writes it "C-x C-s". */
+    @Test
+    void theFilterFindsWordsInAnyOrderAndChordsInAnyNotation() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx, "KEYMAPS");
+                TextField filter = FxTestSupport.field(w, "shortcutFilter");
+                filter.setText("save file");
+                assertTrue(row(w, "file.save") != null, "words in any order");
+                filter.setText("Ctrl+X Ctrl+S");
+                assertTrue(row(w, "file.save") != null, "a chord in another notation");
+                assertNull(row(w, "file.saveAll"), "only the commands on that chord");
+                stage(w).hide();
+            });
+        }
+    }
+
     static void setField(Object target, String name, Object value) {
         try {
             java.lang.reflect.Field f = target.getClass().getDeclaredField(name);

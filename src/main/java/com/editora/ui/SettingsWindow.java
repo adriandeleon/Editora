@@ -2226,13 +2226,11 @@ public class SettingsWindow {
         shortcutListBox.getChildren().clear();
         shortcutRowsById.clear();
         shortcutTabStop = null;
-        String q = shortcutFilter == null ? "" : shortcutFilter.getText().trim().toLowerCase(Locale.ROOT);
+        String q = shortcutFilter == null ? "" : shortcutFilter.getText();
+        String typedChord = com.editora.command.ChordQuery.parse(q);
+        String chordShown = typedChord == null ? null : shortcutActions.display(typedChord);
         for (Shortcut s : shortcutActions.rows()) {
-            boolean match = q.isEmpty()
-                    || s.title().toLowerCase(Locale.ROOT).contains(q)
-                    || s.id().toLowerCase(Locale.ROOT).contains(q)
-                    || (s.chord() != null && s.chord().toLowerCase(Locale.ROOT).contains(q));
-            if (match) {
+            if (shortcutMatches(s, q, chordShown)) {
                 HBox row = shortcutRow(s);
                 shortcutRowsById.put(s.id(), row);
                 shortcutListBox.getChildren().add(row);
@@ -2252,6 +2250,26 @@ public class SettingsWindow {
         if (focus != null) {
             javafx.application.Platform.runLater(focus::requestFocus);
         }
+    }
+
+    /**
+     * Whether a shortcut row matches the filter: every word of {@code query} in its title or id ("file save"
+     * finds "File: Save"), or in its chord as text; or — when the query reads as a chord in any notation — that
+     * chord, shown as {@code chordShown}, is the row's chord or the start of it. Pure.
+     */
+    static boolean shortcutMatches(Shortcut s, String query, String chordShown) {
+        // A query that reads as a chord is matched as one: as text "Ctrl+S" also hit "Ctrl+Shift+S".
+        String chordText = chordShown != null || s.chord() == null ? "" : s.chord();
+        String text = (s.title() + ' ' + s.id() + ' ' + chordText).toLowerCase(Locale.ROOT);
+        boolean words = true;
+        for (String w :
+                (query == null ? "" : query).toLowerCase(Locale.ROOT).strip().split("\\s+")) {
+            words &= text.contains(w);
+        }
+        return words
+                || (chordShown != null
+                        && s.chord() != null
+                        && (s.chord().equals(chordShown) || s.chord().startsWith(chordShown + ' ')));
     }
 
     /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
