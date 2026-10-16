@@ -64,6 +64,15 @@ public final class WslExecTarget implements ExecTarget {
         return true; // wsl.exe starts the distribution when asked
     }
 
+    /**
+     * Windows's watcher on {@code \\wsl.localhost} (the 9P share) is not told what changes inside the
+     * distribution, so a WSL folder is watched there, by inotify or a poll ({@code ui/RemoteWatcher}).
+     */
+    @Override
+    public boolean localWatchSeesChanges() {
+        return false;
+    }
+
     /** {@code wsl.exe -d <distro> --exec <inner…>}: no shell of WSL's own in between. */
     List<String> argv(List<String> inner) {
         List<String> argv = new ArrayList<>(launcher);
@@ -80,8 +89,11 @@ public final class WslExecTarget implements ExecTarget {
      */
     static final String DECODE = "set -f; IFS=; eval $(printf %b $1)";
 
-    /** {@code inner} as an argv of the distribution's shell that survives Windows' command-line joining. */
-    static List<String> windowsSafe(List<String> inner) {
+    /**
+     * {@code inner} as an argv of the distribution's shell that survives Windows' command-line joining: what
+     * follows {@code wsl.exe -d <distro> --exec} for any command Editora runs there.
+     */
+    public static List<String> windowsSafe(List<String> inner) {
         StringBuilder command = new StringBuilder("exec");
         for (String word : inner) {
             command.append(' ').append(PosixShell.quote(word));

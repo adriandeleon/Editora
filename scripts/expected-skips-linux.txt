@@ -46,3 +46,4 @@ com.editora.ui.RealSshdProbeFxTest
 com.editora.container.ContainerProbeFxTest
 # Opt-in, Windows only: runs against a real WSL distribution named with -Dwsl.probe (see its Javadoc).
 com.editora.wsl.WslProbeTest
+com.editora.ui.WslWatchProbeTest

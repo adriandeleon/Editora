@@ -250,7 +250,8 @@ jobs:
           exit "$status"
 
   # A folder inside a WSL distribution, reached from Windows as \\wsl.localhost\…: WslProbeTest on a Windows
-  # runner with a WSL 1 Ubuntu (hosted runners cannot run WSL 2): commands, git, Stop and a port, all inside.
+  # runner with a WSL 1 Ubuntu (hosted runners cannot run WSL 2): commands, git, Stop and a port, all inside;
+  # WslWatchProbeTest: outside changes, watched inside the distribution (inotifywait and the poll).
   wsl:
     name: Probe (windows, WSL 1)
     runs-on: windows-latest
@@ -277,11 +278,11 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           wsl-version: 1
-          additional-packages: git python3
+          additional-packages: git python3 inotify-tools
 
       - name: Probe
         shell: bash
         run: |
           wsl.exe -l -v || true
           ./mvnw -B --no-transfer-progress -Djacoco.skip=true -DexcludedGroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dtest=WslProbeTest -Dwsl.probe=Ubuntu-24.04 test
+            -Dtest='WslProbeTest,WslWatchProbeTest' -Dwsl.probe=Ubuntu-24.04 test

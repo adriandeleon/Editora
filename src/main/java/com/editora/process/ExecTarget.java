@@ -51,6 +51,16 @@ public interface ExecTarget {
     }
 
     /**
+     * Whether this machine's file watcher sees changes to this target's folders as they happen. False for a
+     * folder this machine reaches through a share that does not report them (a WSL distribution's
+     * {@code \\wsl.localhost}): Editora then watches it where its tools run. A remote (SFTP) folder is always
+     * watched there; a container's bind mount is this machine's own folder.
+     */
+    default boolean localWatchSeesChanges() {
+        return true;
+    }
+
+    /**
      * Editora's working folder on this target ({@link #cacheDir} through its file system, by default), or
      * {@code null} when there is none. May ask the target: call it off the FX thread.
      */
