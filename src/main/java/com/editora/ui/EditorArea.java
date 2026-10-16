@@ -230,10 +230,12 @@ final class EditorArea {
         //
         // Ignored while restructuring, and that is not an optimisation. Adding a tab to a pane makes the skin
         // reparent its content, which fires focusWithin *from inside the list mutation*; publishing a new
-        // active tab there runs the controller's selection listener into EditorBuffer.setRenderingActive ->
-        // Minimap.renderContent -> Node.snapshot(), and a snapshot forces a full CSS/layout/peer sync of a
-        // scene graph that is still half-updated, killing the pulse with "validation of PGGroup children
-        // failed". Restructuring sets the focused group explicitly once it has finished.
+        // active tab there runs the controller's selection listener (EditorBuffer.setRenderingActive and the
+        // rest of the tab-switch work) against a scene graph that is still half-updated. When the minimap
+        // snapshotted its on-screen canvas, that forced a full CSS/layout/peer sync of the window and killed
+        // the pulse with "validation of PGGroup children failed"; it now snapshots an offscreen canvas, but
+        // the tab-switch work still expects a finished graph. Restructuring sets the focused group explicitly
+        // once it has finished.
         group.focusWithinProperty().addListener((obs, was, now) -> {
             if (now && !relocating) {
                 setFocusedGroup(group);
