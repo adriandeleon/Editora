@@ -3,7 +3,6 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -42,11 +41,22 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     private boolean rendering = true;
 
     private boolean redrawPending;
+
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private TodoHighlightOverlay follower;
 
     TodoHighlightOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                () -> active && rendering);
         getStyleClass().add("todo-overlay");
         setMouseTransparent(true);
         setVisible(false);
@@ -143,10 +153,7 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void clear() {

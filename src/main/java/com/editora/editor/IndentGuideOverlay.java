@@ -2,9 +2,7 @@ package com.editora.editor;
 
 import java.util.function.IntSupplier;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
-import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -57,18 +55,21 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     private boolean active;
     private boolean rendering = true;
     private boolean redrawPending;
-    /** How many pulses after a paint the overlay looks again (cheaply, see {@link #frameKey}) for moved text. */
-    private static final int CHECKS_AFTER_PAINT = 3;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
 
-    private final Runnable afterLayout = this::afterLayoutPulse;
-    /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
-    private Scene armed;
-
-    private int checksLeft;
     private IndentGuideOverlay follower;
 
     IndentGuideOverlay(CodeArea area, IntSupplier unitColumns, IntSupplier tabSize) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         this.unitColumns = unitColumns;
         this.tabSize = tabSize;
         getStyleClass().add("indent-guide-overlay");
@@ -185,61 +186,15 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     }
 
     /**
-     * Asks for a repaint <em>after the next layout pass</em>. The guides are placed from the laid-out text, so a
-     * paint run before the pulse that lays it out ({@code Platform.runLater} does) is a paint for the old layout
-     * — and when the text then moves without anything the overlay listens to (the gutter widening a pulse
-     * after an edit takes the file to 1,000 lines, line numbers or a breakpoint strip toggled, the font
-     * changed), nothing asked for another and the guides stayed where the text had been. So the paint is tied
-     * to the pulse, and for a few pulses afterwards the overlay looks again; where the text starts is part of
-     * the frame key, so a look that finds nothing moved costs no layout query beyond that one.
+     * Asks for a repaint after the next layout pass (see {@link AfterLayoutPaint}). Where the text starts is part of the frame key as well, so a
+     * repaint that finds nothing moved costs no layout query beyond that one.
      */
     private void scheduleRedraw() {
         if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
-        arm();
-    }
-
-    private void arm() {
-        Scene scene = getScene();
-        if (scene == null) {
-            Platform.runLater(afterLayout); // not in a window: there is no pulse to wait for
-            return;
-        }
-        if (armed != scene) {
-            disarm();
-            scene.addPostLayoutPulseListener(afterLayout);
-            armed = scene;
-        }
-        Platform.requestNextPulse();
-    }
-
-    private void disarm() {
-        if (armed != null) {
-            armed.removePostLayoutPulseListener(afterLayout);
-            armed = null;
-        }
-    }
-
-    /** Runs once the scene has been laid out: paints if asked to, else checks the last paint still fits. */
-    private void afterLayoutPulse() {
-        if (redrawPending) {
-            redrawPending = false;
-            redraw();
-            checksLeft = CHECKS_AFTER_PAINT;
-        } else if (checksLeft > 0) {
-            checksLeft--;
-            if (drawable() && redraw()) {
-                checksLeft = CHECKS_AFTER_PAINT; // the text had moved: keep looking until it settles
-            }
-        }
-        if (checksLeft > 0 && drawable() && armed != null) {
-            Platform.requestNextPulse();
-        } else {
-            checksLeft = 0;
-            disarm();
-        }
+        afterLayout.request();
     }
 
     /** Repaints when anything the guides depend on changed; returns whether it painted a new frame. */

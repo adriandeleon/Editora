@@ -548,6 +548,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Highlights and markers drawn over the text no longer lag the text by a frame.** Find matches, symbol
+  occurrences, whitespace markers, TODO highlights, spelling and LSP squiggles, Markdown and Mermaid lint, log
+  levels, inline debug values, snippet fields and AceJump labels are painted after the text is laid out, like
+  the Personal Notes indicators and the indent guides. When the line numbers gained a digit at the 1,000th line,
+  or were toggled, one frame showed them where the text had been (8 px off in a headless probe).
 - **Personal Notes indicators stay on the note's text, and cost less.**
   - The highlight and its corner marker are painted after the text is laid out, so they no longer sit where the
     text was for a frame (or more) when the line numbers gain a digit or are toggled, or the font changes.
