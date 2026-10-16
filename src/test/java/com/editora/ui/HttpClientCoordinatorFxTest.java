@@ -342,7 +342,7 @@ class HttpClientCoordinatorFxTest {
             });
             assertTrue(FxTestSupport.callOnFx(() -> c.isRunningForTest(b)), "the request is in flight");
             HttpClientPanel panel = FxTestSupport.callOnFx(() -> c.panelForTest(b));
-            javafx.scene.control.Button cancel = panel.runButtonForTest();
+            javafx.scene.control.Button cancel = panel.controlsForTest().runButton();
             assertTrue(FxTestSupport.callOnFx(panel::isRunning), "the Run button is Cancel while it runs");
 
             com.editora.http.HttpClientService.Handle run = FxTestSupport.callOnFx(() -> c.handleForTest(b));

@@ -38,4 +38,11 @@ class HttpFoldRegionsTest {
         assertEquals(List.of(new Region(0, 1)), FoldRegions.detect("GET http://x.test/\nAccept: */*\n", "http"));
         assertEquals(List.of(), FoldRegions.detect("GET http://x.test/\n", "http"), "one line: nothing to fold");
     }
+
+    @Test
+    void variableLinesUnderASeparatorFoldWithTheirRequest() {
+        String text =
+                "###\n@a = 1\n# c\nGET http://x.test/\n\n### Two\n@b = 2\n@c = 3\nPOST http://x.test/\n\n{\"x\": 1}\n";
+        assertEquals(List.of(new Region(0, 3), new Region(5, 10)), FoldRegions.detect(text, "http"));
+    }
 }

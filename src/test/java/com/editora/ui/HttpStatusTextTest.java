@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The response view's status line and the status-bar words — no more "exit 404" (C3, C4, B15). */
 class HttpStatusTextTest {
@@ -110,5 +112,49 @@ class HttpStatusTextTest {
     void repeatedNotesAreShownOnceWithACount() {
         assertEquals(List.of("a (×2)", "b"), HttpStatusText.grouped(List.of("a", "b", "a", " ")));
         assertEquals(List.of(), HttpStatusText.grouped(null));
+    }
+
+    // --- round 3 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void aRequestThatWasNeverSentSaysNotSentNotFailed() {
+        // X13 / Z10: "GET … failed: Not sent: …", and a red "Request failed" for a request that never left.
+        HttpResult refused = HttpResult.failure(tr("status.http.secretsRefused", "$env.X"), List.of());
+        assertTrue(HttpStatusText.notSent(refused));
+        assertFalse(HttpStatusText.notSent(HttpResult.failure("Connection refused", List.of())));
+        assertFalse(HttpStatusText.notSent(status(200)));
+        assertEquals(tr("httppanel.notSent"), HttpStatusText.summary(refused));
+        String bar = HttpStatusText.finished(ex(refused));
+        assertEquals(
+                tr("status.http.notSentError", "GET http://x.test/a", HttpStatusText.notSentReason(refused.error())),
+                bar);
+        assertFalse(bar.contains(tr("http.notSent.prefix")), "said once: " + bar);
+    }
+
+    @Test
+    void aRunAllCountsWhatWasNotSentApartFromWhatFailed() {
+        HttpExchange ok = ex(status(200));
+        HttpExchange bad = ex(status(500));
+        HttpExchange unsent = ex(HttpResult.failure(tr("httppanel.saveFirstToUse", "< ./b.json"), List.of()));
+        assertEquals(tr("status.http.someNotSent", 1L, 2), HttpStatusText.finishedAll(List.of(ok, unsent)));
+        assertEquals(
+                tr("status.http.someFailedNotSent", 1L, 1L, 3), HttpStatusText.finishedAll(List.of(ok, bad, unsent)));
+        assertEquals(tr("httppanel.runAllNotSent", 1L, 2), HttpStatusText.runAllSummary(List.of(ok, unsent)));
+    }
+
+    @Test
+    void aCancelledRunAllSaysSoAndHowFarItGot() {
+        // X6: it read "Run All: all 2 succeeded", a complete green run.
+        HttpExchange ok = ex(status(200));
+        HttpExchange bad = ex(status(404));
+        assertEquals(
+                tr("httppanel.runAllCancelled", 2, 4, 1L), HttpStatusText.runAllCancelledSummary(List.of(ok, bad), 4));
+        assertEquals(tr("httppanel.runAllCancelled", 0, 3, 0L), HttpStatusText.runAllCancelledSummary(List.of(), 3));
+    }
+
+    @Test
+    void theWarningBadgeShortensToItsCount() {
+        assertEquals(tr("httppanel.warnings", 11), HttpStatusText.warningBadge(11, false));
+        assertEquals("⚠ 11", HttpStatusText.warningBadge(11, true));
     }
 }

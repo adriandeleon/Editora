@@ -23,6 +23,9 @@ public final class TextInputKeymap {
 
     private static final Map<String, Consumer<TextInputControl>> ACTIONS = actions();
 
+    /** The {@link #ACTIONS} that do not change the text: caret motion, copy and select all. */
+    private static final Map<String, Consumer<TextInputControl>> READ_ONLY_ACTIONS = readOnly(ACTIONS);
+
     /**
      * The single app-wide {@link KeymapManager} (one instance, reloaded in place on a keymap switch — see
      * {@code WindowManager.reloadSharedKeymap}), set once at startup so generic popup text fields can install
@@ -48,6 +51,15 @@ public final class TextInputKeymap {
         install(control, shared);
     }
 
+    /**
+     * As {@link #installShared}, for a read-only text area (the HTTP response view's headers): caret motion, copy
+     * and select all only. The editing actions change the text through the API, which a non-editable control
+     * does not refuse, so {@code C-k} would have deleted a header line from the view.
+     */
+    public static void installSharedReadOnly(TextInputControl control) {
+        install(control, shared, KeymapManager.isMac(), READ_ONLY_ACTIONS);
+    }
+
     /** Installs configured-keymap caret movement + basic editing on {@code control}. */
     public static void install(TextInputControl control, KeymapManager keymap) {
         install(control, keymap, KeymapManager.isMac());
@@ -55,6 +67,14 @@ public final class TextInputKeymap {
 
     /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
     static void install(TextInputControl control, KeymapManager keymap, boolean mac) {
+        install(control, keymap, mac, ACTIONS);
+    }
+
+    private static void install(
+            TextInputControl control,
+            KeymapManager keymap,
+            boolean mac,
+            Map<String, Consumer<TextInputControl>> actions) {
         if (control == null || keymap == null) {
             return;
         }
@@ -72,7 +92,7 @@ public final class TextInputKeymap {
             if (token == null) {
                 return;
             }
-            Consumer<TextInputControl> action = ACTIONS.get(keymap.commandFor(token));
+            Consumer<TextInputControl> action = actions.get(keymap.commandFor(token));
             if (action != null) {
                 action.accept(control);
                 e.consume();
@@ -139,6 +159,17 @@ public final class TextInputKeymap {
             }
         });
         return m;
+    }
+
+    /** {@code all} without the actions that edit: {@code nav.*}, {@code edit.copy}, {@code edit.selectAll}. Pure. */
+    static Map<String, Consumer<TextInputControl>> readOnly(Map<String, Consumer<TextInputControl>> all) {
+        Map<String, Consumer<TextInputControl>> m = new HashMap<>();
+        all.forEach((id, action) -> {
+            if (id.startsWith("nav.") || id.equals("edit.copy") || id.equals("edit.selectAll")) {
+                m.put(id, action);
+            }
+        });
+        return java.util.Collections.unmodifiableMap(m); // a HashMap: looking up an unbound chord's null id is fine
     }
 
     private static void deleteChar(TextInputControl c) {

@@ -138,16 +138,10 @@ class HttpClientBytesIntegrationTest {
     private static HttpExchange run(HttpClientService svc, String requestText, Path baseDir) throws Exception {
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(
-                HttpFile.parseRequest(requestText),
-                Map.of(),
-                baseDir,
-                null,
-                HttpClientService.SecretGate.UNCHECKED,
-                ex -> {
-                    got.set(ex);
-                    done.countDown();
-                });
+        svc.run(HttpFile.parseRequest(requestText), Map.of(), baseDir, null, SecretGate.UNCHECKED, ex -> {
+            got.set(ex);
+            done.countDown();
+        });
         return await(done, got);
     }
 
@@ -336,7 +330,7 @@ class HttpClientBytesIntegrationTest {
                     Map.of(),
                     dir,
                     null,
-                    HttpClientService.SecretGate.UNCHECKED,
+                    SecretGate.UNCHECKED,
                     ex -> {
                         got.set(ex);
                         done.countDown();

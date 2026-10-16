@@ -8,11 +8,9 @@ import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.nio.channels.UnresolvedAddressException;
 import java.security.cert.CertPathValidatorException;
-import java.security.cert.CertificateException;
 import java.time.Duration;
 import java.util.Locale;
 import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLHandshakeException;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -34,7 +32,7 @@ public final class HttpErrors {
      */
     public static String message(
             Throwable failure, String url, Duration timeout, Duration connectTimeout, boolean explicitTimeout) {
-        String host = hostPort(url);
+        String host = HttpHosts.hostPort(url);
         if (failure instanceof OutOfMemoryError) {
             return tr("status.http.error.memory");
         }
@@ -55,7 +53,7 @@ public final class HttpErrors {
         }
         if (find(failure, UnresolvedAddressException.class) != null
                 || find(failure, UnknownHostException.class) != null) {
-            return tr("status.http.error.unknownHost", hostOnly(url));
+            return tr("status.http.error.unknownHost", HttpHosts.host(url));
         }
         if (find(failure, NoRouteToHostException.class) != null) {
             return tr("status.http.error.noRoute", host);
@@ -66,15 +64,12 @@ public final class HttpErrors {
             if (find(failure, CertPathValidatorException.class) != null
                     || all.contains("pkix path")
                     || all.contains("unable to find valid certification path")) {
-                return tr("status.http.error.untrustedCert", hostOnly(url));
+                return tr("status.http.error.untrustedCert", HttpHosts.host(url));
             }
             if (all.contains("no subject alternative") || all.contains("no name matching")) {
-                return tr("status.http.error.certName", hostOnly(url));
+                return tr("status.http.error.certName", HttpHosts.host(url));
             }
-            if (find(failure, CertificateException.class) != null || ssl instanceof SSLHandshakeException) {
-                return tr("status.http.error.tls", hostOnly(url), detail(ssl));
-            }
-            return tr("status.http.error.tls", hostOnly(url), detail(ssl));
+            return tr("status.http.error.tls", HttpHosts.host(url), detail(ssl));
         }
         if (find(failure, ConnectException.class) != null) {
             return tr("status.http.error.refused", host);
@@ -92,6 +87,10 @@ public final class HttpErrors {
         }
         if (all.contains("invalid uri scheme")) {
             return tr("status.http.error.scheme", scheme(url));
+        }
+        if (all.contains("undefined scheme") || all.contains("missing scheme")) {
+            // Java's "URI with undefined scheme": usually a {{host}} that resolved to nothing, so say that.
+            return tr("status.http.error.noScheme", url == null ? "" : url);
         }
         IllegalArgumentException bad = find(failure, IllegalArgumentException.class);
         if (bad != null && (all.contains("uri") || all.contains("illegal character") || all.contains("scheme"))) {
@@ -142,33 +141,8 @@ public final class HttpErrors {
         return ms % 1000 == 0 ? (ms / 1000) + " s" : ms + " ms";
     }
 
-    private static URI uri(String url) {
-        try {
-            return url == null ? null : URI.create(url);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    private static String hostOnly(String url) {
-        URI u = uri(url);
-        return u == null || u.getHost() == null ? String.valueOf(url) : u.getHost();
-    }
-
-    private static String hostPort(String url) {
-        URI u = uri(url);
-        if (u == null || u.getHost() == null) {
-            return String.valueOf(url);
-        }
-        int port = u.getPort();
-        if (port < 0) {
-            port = "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
-        }
-        return u.getHost() + ":" + port;
-    }
-
     private static String scheme(String url) {
-        URI u = uri(url);
+        URI u = HttpHosts.uri(url);
         return u == null || u.getScheme() == null ? "" : u.getScheme();
     }
 }

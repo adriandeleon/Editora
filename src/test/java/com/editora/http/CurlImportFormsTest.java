@@ -75,10 +75,21 @@ class CurlImportFormsTest {
     }
 
     @Test
-    void nothingToImportIsAnEmptyGet() {
-        assertEquals("GET \n", CurlImport.toHttpRequest(null));
-        assertEquals("GET \n", CurlImport.toHttpRequest("   "));
-        assertEquals("GET \n", CurlImport.toHttpRequest("curl"));
+    void nothingToImportIsNoRequest() {
+        // null: the caller says "no curl command" instead of writing "GET " into the file
+        assertEquals(null, CurlImport.toHttpRequest(null));
+        assertEquals(null, CurlImport.toHttpRequest("   "));
+        assertEquals(null, CurlImport.toHttpRequest("curl"));
+    }
+
+    @Test
+    void bodyLinesTheFormatReadsOtherwiseAreCounted() {
+        assertEquals(0, CurlImport.alteredBodyLines(CurlImport.toHttpRequest("curl -d '{\"a\": 1}' http://h/x")));
+        String md = CurlImport.toHttpRequest(
+                "curl -H 'Content-Type: text/markdown' --data-raw $'# Title\\ntext\\n// c\\n> quote\\nmore' http://h/x");
+        assertEquals(4, CurlImport.alteredBodyLines(md), md); // # and // are comments; from > on, a handler
+        assertEquals(
+                2, CurlImport.alteredBodyLines(CurlImport.toHttpRequest("curl --data-raw $'a\\n### b\\nc' http://h/")));
     }
 
     @Test
