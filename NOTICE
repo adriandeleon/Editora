@@ -112,7 +112,12 @@ These remain under their original upstream licenses (predominantly MIT). All
 grammars are redistributed unmodified except markdown.tmLanguage.json (three
 regular expressions minimally adjusted for the Joni regex backend — the {,3}
 quantifier rewritten as {0,3}, and a variable-length look-behind removed from
-the strikethrough rule) and the two plist-to-JSON conversions noted above.
+the strikethrough rule), python.tmLanguage.json (extended for newer Python:
+PEP 695 type parameters on def/class and the `type` alias statement, PEP 750
+t-string prefixes, an strftime-style f-string format spec, match/case as
+keywords only on a statement ending in a colon, and def/class/decorator names
+that shadow a builtin or are dunders scoped as declarations), and the two
+plist-to-JSON conversions noted above.
 
 Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
 Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,

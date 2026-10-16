@@ -12,7 +12,8 @@ class PythonIndentTest {
 
     /** The indent Enter gives at the end of {@code text} (a Python buffer, four-space unit). */
     private static String enter(String text) {
-        String insert = Indenter.enterEdit(text, text.length(), "python", 4, true, 4).insert();
+        String insert =
+                Indenter.enterEdit(text, text.length(), "python", 4, true, 4).insert();
         return insert.substring(1);
     }
 
