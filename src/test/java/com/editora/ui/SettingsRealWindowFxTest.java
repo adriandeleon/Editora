@@ -241,7 +241,11 @@ class SettingsRealWindowFxTest {
                 Button reset = (Button) SettingsRig.button(advanced, tr("settings.resetDefaults"));
                 List<SettingsRig.Shown> shown = SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, reset::fire);
                 assertEquals(2, shown.size(), "the question, then why it was not done");
-                assertEquals(tr("settings.reset.confirm"), shown.get(0).content());
+                // The question names the backup it is about to write.
+                assertTrue(shown.get(0)
+                        .content()
+                        .startsWith(tr("settings.reset.confirm", "\u0000").split("\u0000")[0]));
+                assertTrue(shown.get(0).content().contains("settings.json.before-reset-"));
                 String[] around = tr("settings.reset.backupFailed", "\u0000").split("\u0000");
                 assertTrue(
                         shown.get(1).content().startsWith(around[0]),

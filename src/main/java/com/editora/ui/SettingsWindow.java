@@ -7787,7 +7787,13 @@ public class SettingsWindow {
         Card resetSection = card(p, tr("settings.section.reset"));
         Button reset = new Button(tr("settings.resetDefaults"));
         reset.setOnAction(e -> resetAll());
-        cardRow(resetSection, Category.ADVANCED, reset, "reset defaults restore factory clear");
+        Button restore = new Button(tr("settings.restore.button"));
+        restore.setOnAction(e -> resetFlow().restore(stage));
+        cardRow(
+                resetSection,
+                Category.ADVANCED,
+                new HBox(8, reset, restore),
+                "reset defaults restore factory clear backup undo");
 
         Card ioSection = card(p, tr("settings.section.io"));
         Button exportConfig = new Button(tr("settings.exportConfig"));
@@ -8344,48 +8350,16 @@ public class SettingsWindow {
     // --- reset -----------------------------------------------------------------------------------
 
     private void resetAll() {
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("settings.reset.title"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-            return;
-        }
-        // A reset clears API keys, external tools, TODO patterns, the toolbar layout and every tool path, and
-        // rewrites settings.json in place. Keep what is there now beside it first; without the copy there
-        // is no reset.
-        Path backup;
-        try {
-            config.save(); // the file is to hold the settings as they are, not as of the last queued write
-            backup = SettingsResetBackup.write(
-                    config.getConfigDir().resolve("settings.json"), java.time.LocalDateTime.now());
-        } catch (java.io.IOException | RuntimeException e) {
-            Alert failed = Dialogs.styled(new Alert(
-                    Alert.AlertType.ERROR,
-                    tr("settings.reset.backupFailed", e.getMessage() == null ? e.toString() : e.getMessage()),
-                    ButtonType.OK));
-            failed.initOwner(stage);
-            failed.setTitle(tr("settings.reset.title"));
-            failed.setHeaderText(null);
-            failed.showAndWait();
-            return;
-        }
-        Settings live = config.getSettings();
-        int historyPerFile = live.getHistoryMaxPerFile();
-        int historyAgeDays = live.getHistoryMaxAgeDays();
-        int historyTotalMb = live.getHistoryMaxTotalMb();
-        Settings.resetToDefaults(live);
-        // The Local History limits are the exception: a default stricter than the user's limit would delete
-        // revisions, which a reset of preferences must not do. A looser limit is kept; the spinners (which
-        // ask before deleting) are the way to lower it.
-        live.setHistoryMaxPerFile(Math.max(historyPerFile, live.getHistoryMaxPerFile()));
-        live.setHistoryMaxAgeDays(historyAgeDays <= 0 ? 0 : Math.max(historyAgeDays, live.getHistoryMaxAgeDays()));
-        live.setHistoryMaxTotalMb(Math.max(historyTotalMb, live.getHistoryMaxTotalMb()));
-        commitReset();
-        if (onStatus != null) {
-            onStatus.accept(tr("status.settings.reset", backup.getFileName().toString()));
-        }
+        resetFlow().resetAll(stage);
+    }
+
+    /** Reset to Defaults and Restore from backup, applied through {@link #commitReset}. */
+    private SettingsResetFlow resetFlow() {
+        return new SettingsResetFlow(config, this::commitReset, text -> {
+            if (onStatus != null) {
+                onStatus.accept(text);
+            }
+        });
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */

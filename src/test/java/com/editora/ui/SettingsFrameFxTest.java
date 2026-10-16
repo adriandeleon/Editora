@@ -413,4 +413,103 @@ class SettingsFrameFxTest {
             });
         }
     }
+
+    /**
+     * Answers the next dialog that opens: {@code inspect} sees its pane first, then {@code button} is fired.
+     * Runs off the FX thread, because the dialog's showAndWait holds the FX call that opened it.
+     */
+    static Thread answerDialog(
+            java.util.function.Consumer<javafx.scene.control.DialogPane> inspect,
+            javafx.scene.control.ButtonType button) {
+        Thread t = new Thread(() -> {
+            for (int i = 0; i < 500; i++) {
+                boolean[] done = {false};
+                try {
+                    FxTestSupport.runOnFx(() -> {
+                        for (javafx.stage.Window w :
+                                javafx.stage.Window.getWindows().stream().toList()) {
+                            if (w.isShowing()
+                                    && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                                inspect.accept(pane);
+                                javafx.scene.control.ButtonType match = pane.getButtonTypes().stream()
+                                        .filter(bt -> bt.getText().equals(button.getText()))
+                                        .findFirst()
+                                        .orElseThrow();
+                                javafx.application.Platform.runLater(
+                                        () -> ((javafx.scene.control.Button) pane.lookupButton(match)).fire());
+                                done[0] = true;
+                                return;
+                            }
+                        }
+                    });
+                    if (done[0]) {
+                        return;
+                    }
+                    Thread.sleep(20);
+                } catch (Exception e) {
+                    return;
+                }
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    @Test
+    void resetSaysWhatItClearsKeepsCredentialsDefaultsToCancelAndCanBeUndone() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(() -> {
+                config.getSettings().setFontSize(21);
+                config.getSettings().setAiApiKey("sk-test-not-real");
+                config.getSettings().setSyncRepoUrl("git@example.invalid:me/sync.git");
+                config.save();
+                window.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
+            });
+            String[] seen = new String[2];
+            Thread answer = answerDialog(
+                    pane -> {
+                        seen[0] = pane.getContentText();
+                        javafx.scene.control.Button cancel =
+                                (javafx.scene.control.Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL);
+                        seen[1] = String.valueOf(cancel.isDefaultButton());
+                    },
+                    findButton("settings.reset.button"));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(window, "resetAll", new Class<?>[0]));
+            answer.join();
+            assertTrue(seen[0].contains("settings.json.before-reset-"), "the dialog names the backup: " + seen[0]);
+            assertTrue(seen[0].contains(com.editora.i18n.Messages.tr("settings.restore.button")), "and how to undo it");
+            assertEquals("true", seen[1], "Enter cancels");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(
+                        new com.editora.config.Settings().getFontSize(),
+                        config.getSettings().getFontSize());
+                assertEquals("sk-test-not-real", config.getSettings().getAiApiKey(), "credentials are kept");
+                assertEquals(
+                        "git@example.invalid:me/sync.git", config.getSettings().getSyncRepoUrl());
+            });
+            assertEquals(1, SettingsResetFlow.backups(config.getSettingsFile()).size());
+
+            // Restore from Backup… puts the reset settings back (and backs up the defaults first).
+            Thread pick = answerDialog(pane -> {}, javafx.scene.control.ButtonType.OK);
+            FxTestSupport.runOnFx(() -> ((SettingsResetFlow) FxTestSupport.call(window, "resetFlow", new Class<?>[0]))
+                    .restore(FxTestSupport.<Stage>field(window, "stage")));
+            pick.join();
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(21, config.getSettings().getFontSize(), "the backup is in force again");
+                Spinner<Integer> fontSize = FxTestSupport.field(window, "fontSize");
+                assertEquals(21, fontSize.getValue(), "and shown");
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+            assertEquals(2, SettingsResetFlow.backups(config.getSettingsFile()).size());
+        }
+    }
+
+    /** A dialog button whose label is the catalog text of {@code key} (matched by text, see answerDialog). */
+    static javafx.scene.control.ButtonType findButton(String key) {
+        return new javafx.scene.control.ButtonType(
+                com.editora.i18n.Messages.tr(key), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+    }
 }
