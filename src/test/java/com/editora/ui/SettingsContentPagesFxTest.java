@@ -284,4 +284,83 @@ class SettingsContentPagesFxTest {
             SettingsRig.button(page, tr("settings.todo.add")).fire();
         });
     }
+
+    /** The row nodes under a side's card on the Tool Windows page, top to bottom. */
+    private List<javafx.scene.Node> sideCard(ToolWindow.Side side) {
+        Map<ToolWindow.Side, Object> cards = rig.control("toolWindowCards");
+        VBox body = (VBox) FxTestSupport.call(cards.get(side), "body", new Class<?>[] {});
+        return List.copyOf(body.getChildren());
+    }
+
+    private ToolWindowsSettingsPane.Row twRow(String id) {
+        ToolWindowsSettingsPane pane = rig.control("toolWindowSettings");
+        return pane.row(id);
+    }
+
+    @Test
+    void toolWindowRowsSitUnderTheirSideInStripeOrderAndFollowEveryMove() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setGitSupport(true);
+            rig.show();
+            rig.page("TOOL_WINDOWS");
+            ToolWindowManager tools = rig.toolWindows;
+            ToolWindowsSettingsPane.Row commit = twRow("commit");
+            tools.setSide(commit.window(), ToolWindow.Side.RIGHT);
+            tools.setVisible(commit.window(), true);
+            rig.stage().hide();
+            rig.show();
+            List<ToolWindow> peers = tools.stripeOrder(ToolWindow.Side.RIGHT);
+            int at = peers.indexOf(commit.window());
+            assertTrue(at >= 0 && at < peers.size() - 1, "Commit has a shown neighbour after it");
+            ToolWindow next = peers.get(at + 1);
+            int rowAt = sideCard(ToolWindow.Side.RIGHT).indexOf(commit.node());
+            int nextAt =
+                    sideCard(ToolWindow.Side.RIGHT).indexOf(twRow(next.getId()).node());
+            assertTrue(rowAt >= 0 && rowAt < nextAt, "the page shows the stripe's order");
+
+            commit.down().fire();
+            assertEquals(
+                    at + 1,
+                    tools.stripeOrder(ToolWindow.Side.RIGHT).indexOf(commit.window()),
+                    "it passed a shown window");
+            assertTrue(
+                    sideCard(ToolWindow.Side.RIGHT).indexOf(commit.node())
+                            > sideCard(ToolWindow.Side.RIGHT)
+                                    .indexOf(twRow(next.getId()).node()),
+                    "and the page shows the new order");
+
+            // A hidden window keeps a side that can be chosen; its row moves to that side's card.
+            commit.show().setSelected(false);
+            assertFalse(commit.side().isDisable());
+            commit.side().setValue(ToolWindow.Side.BOTTOM);
+            assertEquals(ToolWindow.Side.BOTTOM, tools.currentSide(commit.window()));
+            assertTrue(sideCard(ToolWindow.Side.BOTTOM).contains(commit.node()));
+            assertFalse(sideCard(ToolWindow.Side.RIGHT).contains(commit.node()));
+        });
+    }
+
+    @Test
+    void restoreDefaultLayoutPutsMovedAndHiddenWindowsBack() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setNotesSupport(true);
+            rig.show();
+            Region page = rig.page("TOOL_WINDOWS");
+            ToolWindowManager tools = rig.toolWindows;
+            ToolWindow notes = twRow("notes").window();
+            ToolWindow.Side home = notes.getSide();
+            ToolWindow.Side away = home == ToolWindow.Side.BOTTOM ? ToolWindow.Side.LEFT : ToolWindow.Side.BOTTOM;
+            twRow("notes").side().setValue(away);
+            twRow("structure").show().setSelected(false);
+            assertEquals(away, tools.currentSide(notes));
+            assertFalse(tools.isVisible(twRow("structure").window()));
+
+            SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();
+            assertEquals(home, tools.currentSide(notes));
+            assertTrue(tools.isVisible(twRow("structure").window()));
+            assertEquals(home, twRow("notes").side().getValue(), "the page shows it");
+            assertTrue(twRow("structure").show().isSelected());
+            assertTrue(sideCard(home).contains(twRow("notes").node()));
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.toolWindows.layoutNote")));
+        });
+    }
 }

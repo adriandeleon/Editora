@@ -473,42 +473,10 @@ public class SettingsWindow {
 
     private CheckBox zenCheck;
     private CheckBox expertCheck;
-    private CheckBox projectShowCheck;
-    private ComboBox<ToolWindow.Side> projectSideCombo;
-    private ToolWindow projectToolWindowRef;
-    private Label projectDisabledNote;
-    // The Commit tool-window-placement row, disabled until Git is enabled.
-    private CheckBox commitShowCheck;
-    private ComboBox<ToolWindow.Side> commitSideCombo;
-    private Button commitMoveUp;
-    private Button commitMoveDown;
-    private ToolWindow commitToolWindowRef;
-    private Label commitDisabledNote;
-    // The Personal Notes tool-window-placement row, disabled until Personal Notes is enabled.
-    private CheckBox notesShowCheck;
-    private ComboBox<ToolWindow.Side> notesSideCombo;
-    private Button notesMoveUp;
-    private Button notesMoveDown;
-    private ToolWindow notesToolWindowRef;
-    private Label notesDisabledNote;
-    // Problems follows LSP; Debug follows Debugging. Standalone Run is always configurable.
-    private CheckBox problemsShowCheck;
-    private ComboBox<ToolWindow.Side> problemsSideCombo;
-    private Button problemsMoveUp;
-    private Button problemsMoveDown;
-    private ToolWindow problemsToolWindowRef;
-    private Label problemsDisabledNote;
-    private CheckBox runShowCheck;
-    private ComboBox<ToolWindow.Side> runSideCombo;
-    private Button runMoveUp;
-    private Button runMoveDown;
-    private ToolWindow runToolWindowRef;
-    private CheckBox debugShowCheck;
-    private ComboBox<ToolWindow.Side> debugSideCombo;
-    private Button debugMoveUp;
-    private Button debugMoveDown;
-    private ToolWindow debugToolWindowRef;
-    private Label debugDisabledNote;
+    private ToolWindowsSettingsPane toolWindowSettings;
+    /** The Tool Windows page's card for each side; its rows are laid out again after every change. */
+    private final Map<ToolWindow.Side, Card> toolWindowCards = new EnumMap<>(ToolWindow.Side.class);
+
     private ComboBox<String> autoSaveCombo;
     private CheckBox pdfLineNumbersCheck;
     private CheckBox pdfHighlightCheck;
@@ -546,10 +514,6 @@ public class SettingsWindow {
 
     private boolean built;
     private boolean loading;
-    /** Re-read each Tool Windows row from the tool-window manager; run by {@link #load} under the flag below. */
-    private final List<Runnable> toolWindowRowSyncs = new ArrayList<>();
-
-    private boolean syncingToolWindowRows;
 
     public SettingsWindow(
             ConfigManager config,
@@ -1251,7 +1215,7 @@ public class SettingsWindow {
         // The note-indicator toggle is only meaningful while Personal Notes is enabled.
         notesCheck.selectedProperty().addListener((obs, was, now) -> {
             noteIndicatorsCheck.setDisable(!now);
-            updateNotesRowEnabled(); // reflect on the Tool Windows page's Personal Notes row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Personal Notes row
         });
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
@@ -1453,14 +1417,14 @@ public class SettingsWindow {
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setProjectSupport(now);
             apply();
-            updateProjectRowEnabled();
+            refreshToolWindowRows();
         });
 
         gitCheck = new CheckBox(tr("settings.enableGit"));
         gitCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitSupport(now);
             apply();
-            updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Commit row
             blameCheck.setDisable(!now); // inline blame only matters when Git is on
             refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
         });
@@ -1867,7 +1831,7 @@ public class SettingsWindow {
             config.getSettings().setDebugSupport(now);
             apply();
             updateDebugRowsEnabled();
-            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
         });
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
@@ -1900,7 +1864,7 @@ public class SettingsWindow {
             config.getSettings().setLspSupport(now);
             apply();
             updateLspRowsEnabled();
-            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Problems row
             refreshLspStatus();
         });
         for (LspServerUi srv : lspServerUis()) {
@@ -7361,168 +7325,50 @@ public class SettingsWindow {
     private VBox toolWindowsPage() {
         // The page hint reads as the subtitle, like the other pages.
         VBox p = page(tr("settings.cat.toolWindows"), tr("settings.toolWindows.hint"));
-        Card mainCard = card(p, null);
-        // The tool-stripe toggle now lives on the Interface page; "show hidden files" on the Workspace page.
-
-        List<Runnable> moveRefreshers = new ArrayList<>();
-        Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
-        for (ToolWindow tw : toolWindows.getStripeToolWindows()) {
-            CheckBox showCheck = new CheckBox(tr("settings.show"));
-            showCheck.setSelected(toolWindows.isVisible(tw));
-
-            ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
-            sideCombo.getItems().setAll(ToolWindow.Side.values());
-            sideCombo.setConverter(new StringConverter<>() {
-                @Override
-                public String toString(ToolWindow.Side side) {
-                    return sideName(side);
-                }
-
-                @Override
-                public ToolWindow.Side fromString(String s) {
-                    for (ToolWindow.Side side : ToolWindow.Side.values()) {
-                        if (sideName(side).equals(s)) {
-                            return side;
-                        }
-                    }
-                    return null; // the combo is not editable: nothing types a name into it
-                }
-            });
-            sideCombo.setValue(toolWindows.currentSide(tw));
-            sideCombo.setDisable(!showCheck.isSelected());
-
-            Button moveUp = new Button("▲");
-            Button moveDown = new Button("▼");
-            moveUp.getStyleClass().addAll("flat", "reorder-button");
-            moveDown.getStyleClass().addAll("flat", "reorder-button");
-            moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
-            moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
-            moveUp.setAccessibleText(tr("settings.moveEarlier") + " — " + tw.getTitle());
-            moveDown.setAccessibleText(tr("settings.moveLater") + " — " + tw.getTitle());
-            Runnable refreshThisRow = () -> {
-                boolean shown = showCheck.isSelected();
-                moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
-                moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
-            };
-            moveRefreshers.add(refreshThisRow);
-            // The row is built once, but the window can be moved or hidden from the main window meanwhile.
-            toolWindowRowSyncs.add(() -> {
-                showCheck.setSelected(toolWindows.isVisible(tw));
-                sideCombo.setValue(toolWindows.currentSide(tw));
-                sideCombo.setDisable(!showCheck.isSelected());
-                refreshThisRow.run();
-            });
-            moveUp.setOnAction(e -> {
-                toolWindows.move(tw, -1);
-                refreshMoves.run();
-            });
-            moveDown.setOnAction(e -> {
-                toolWindows.move(tw, 1);
-                refreshMoves.run();
-            });
-
-            showCheck.selectedProperty().addListener((obs, was, visible) -> {
-                if (syncingToolWindowRows) {
-                    return;
-                }
-                toolWindows.setVisible(tw, visible);
-                sideCombo.setDisable(!visible);
-                refreshMoves.run();
-            });
-            sideCombo.valueProperty().addListener((obs, old, now) -> {
-                if (now != null && !syncingToolWindowRows) {
-                    toolWindows.setSide(tw, now);
-                    refreshMoves.run();
-                }
-            });
-            if ("project".equals(tw.getId())) {
-                projectShowCheck = showCheck;
-                projectSideCombo = sideCombo;
-                projectToolWindowRef = tw;
-            } else if ("commit".equals(tw.getId())) {
-                commitShowCheck = showCheck;
-                commitSideCombo = sideCombo;
-                commitMoveUp = moveUp;
-                commitMoveDown = moveDown;
-                commitToolWindowRef = tw;
-            } else if ("notes".equals(tw.getId())) {
-                notesShowCheck = showCheck;
-                notesSideCombo = sideCombo;
-                notesMoveUp = moveUp;
-                notesMoveDown = moveDown;
-                notesToolWindowRef = tw;
-            } else if ("problems".equals(tw.getId())) {
-                problemsShowCheck = showCheck;
-                problemsSideCombo = sideCombo;
-                problemsMoveUp = moveUp;
-                problemsMoveDown = moveDown;
-                problemsToolWindowRef = tw;
-            } else if ("run".equals(tw.getId())) {
-                runShowCheck = showCheck;
-                runSideCombo = sideCombo;
-                runMoveUp = moveUp;
-                runMoveDown = moveDown;
-                runToolWindowRef = tw;
-            } else if ("debug".equals(tw.getId())) {
-                debugShowCheck = showCheck;
-                debugSideCombo = sideCombo;
-                debugMoveUp = moveUp;
-                debugMoveDown = moveDown;
-                debugToolWindowRef = tw;
-            }
-
-            // A card row like every other page: the window's name on the left (with the gated ones'
-            // explanation as its description), and show / side / reorder pinned right.
-            Label title = new Label(tw.getTitle());
-            title.getStyleClass().add("settings-row-title");
-            VBox main = new VBox(2, title);
-            HBox.setHgrow(main, Priority.ALWAYS);
-            HBox reorder = new HBox(2, moveUp, moveDown);
-            SettingSwitch show = switchFor(showCheck);
-            show.setAccessibleText(tw.getTitle()); // this row is hand-built, so name its controls here
-            sideCombo.setAccessibleText(tw.getTitle());
-            title.setLabelFor(show);
-            HBox controls = new HBox(8, show, sideCombo, reorder);
-            controls.setAlignment(Pos.CENTER_RIGHT);
-            controls.setMinWidth(Region.USE_PREF_SIZE);
-            HBox rowBox = new HBox(16, main, controls);
-            rowBox.setAlignment(Pos.CENTER_LEFT);
-            rowBox.getStyleClass().add("settings-row");
-            // For the context-gated windows, a muted note explaining why the row may be disabled.
-            if ("project".equals(tw.getId())) {
-                projectDisabledNote = note(tr("settings.toolWindows.projectDisabled"));
-                projectDisabledNote.setWrapText(true);
-                projectDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(projectDisabledNote);
-            } else if ("commit".equals(tw.getId())) {
-                commitDisabledNote = note(tr("settings.toolWindows.commitDisabled"));
-                commitDisabledNote.setWrapText(true);
-                commitDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(commitDisabledNote);
-            } else if ("notes".equals(tw.getId())) {
-                notesDisabledNote = note(tr("settings.toolWindows.notesDisabled"));
-                notesDisabledNote.setWrapText(true);
-                notesDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(notesDisabledNote);
-            } else if ("problems".equals(tw.getId())) {
-                problemsDisabledNote = note(tr("settings.toolWindows.problemsDisabled"));
-                problemsDisabledNote.setWrapText(true);
-                problemsDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(problemsDisabledNote);
-            } else if ("debug".equals(tw.getId())) {
-                debugDisabledNote = note(tr("settings.toolWindows.debugDisabled"));
-                debugDisabledNote.setWrapText(true);
-                debugDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(debugDisabledNote);
-            }
-            cardRow(mainCard, Category.TOOL_WINDOWS, rowBox, "tool window " + tw.getTitle() + " placement side show");
+        Card layout = card(p, null);
+        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
+        restore.setOnAction(e -> toolWindowSettings.restoreDefaultLayout());
+        cardRow(
+                layout,
+                Category.TOOL_WINDOWS,
+                settingRow(tr("settings.toolWindows.layout"), tr("settings.toolWindows.layoutNote"), restore),
+                "tool windows layout restore default reset project window");
+        for (ToolWindow.Side side : ToolWindow.Side.values()) {
+            toolWindowCards.put(side, card(p, sideName(side)));
         }
-        refreshMoves.run();
-        updateProjectRowEnabled();
-        updateGitRowEnabled();
-        updateNotesRowEnabled();
-        updateLspToolRowsEnabled();
+        toolWindowSettings = new ToolWindowsSettingsPane(toolWindows, config::getSettings, this::placeToolWindowRows);
+        for (ToolWindowsSettingsPane.Row row : toolWindowSettings.rows()) {
+            cardRow(
+                    toolWindowCards.get(toolWindows.currentSide(row.window())),
+                    Category.TOOL_WINDOWS,
+                    row.node(),
+                    "tool window " + row.window().getTitle() + " placement side show");
+        }
+        toolWindowSettings.load();
         return p;
+    }
+
+    /**
+     * Puts the Tool Windows rows under the card of their side, in stripe order, and moves each row's search
+     * entry to that card (so a search hides a side's card once none of its rows match).
+     */
+    private void placeToolWindowRows(Map<ToolWindow.Side, List<Node>> bySide) {
+        bySide.forEach((side, nodes) -> {
+            Card card = toolWindowCards.get(side);
+            List<Node> shown = new ArrayList<>(nodes);
+            if (shown.isEmpty()) {
+                Label none = note(tr("settings.toolWindows.noneOnSide"));
+                none.getStyleClass().add("settings-row");
+                shown.add(none);
+            }
+            card.body().getChildren().setAll(shown);
+            for (int i = 0; i < rows.size(); i++) {
+                SettingRow r = rows.get(i);
+                if (nodes.contains(r.node()) && r.card() != card.box()) {
+                    rows.set(i, new SettingRow(r.category(), r.node(), r.keywords(), r.section(), card.box()));
+                }
+            }
+        });
     }
 
     private VBox advancedPage() {
@@ -8353,13 +8199,7 @@ public class SettingsWindow {
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(settings.isProjectSupport());
-            syncingToolWindowRows = true;
-            try {
-                toolWindowRowSyncs.forEach(Runnable::run);
-            } finally {
-                syncingToolWindowRows = false;
-            }
-            updateProjectRowEnabled();
+            toolWindowSettings.load();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
@@ -8380,9 +8220,6 @@ public class SettingsWindow {
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
             updateHistoryRowsEnabled();
-            updateGitRowEnabled();
-            updateNotesRowEnabled();
-            updateLspToolRowsEnabled();
             mermaidCheck.setSelected(settings.isMermaidSupport());
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
@@ -8483,130 +8320,10 @@ public class SettingsWindow {
         probeGit(); // re-check git availability each time Settings opens
     }
 
-    private void updateProjectRowEnabled() {
-        if (projectShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isProjectSupport();
-        boolean visible = on && projectToolWindowRef != null && toolWindows.isVisible(projectToolWindowRef);
-        projectShowCheck.setSelected(visible);
-        projectShowCheck.setDisable(!on);
-        projectSideCombo.setDisable(!visible);
-        if (projectDisabledNote != null) {
-            projectDisabledNote.setVisible(!on);
-            projectDisabledNote.setManaged(!on);
-        }
-    }
-
-    /**
-     * Disables the Commit tool-window-placement row when Git is off (the window can't be shown until
-     * Git is enabled). Unlike the Project row, the Show checkbox value is left untouched — Git's
-     * availability is transient, not the user's persisted visibility preference.
-     */
-    private void updateGitRowEnabled() {
-        if (commitShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isGitSupport();
-        commitShowCheck.setDisable(!on);
-        if (commitDisabledNote != null) {
-            commitDisabledNote.setVisible(!on);
-            commitDisabledNote.setManaged(!on);
-        }
-        if (!on) {
-            commitSideCombo.setDisable(true);
-            commitMoveUp.setDisable(true);
-            commitMoveDown.setDisable(true);
-        } else {
-            boolean shown = commitShowCheck.isSelected();
-            commitSideCombo.setDisable(!shown);
-            commitMoveUp.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, -1));
-            commitMoveDown.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, 1));
-        }
-    }
-
-    /**
-     * Disables the Personal Notes tool-window-placement row when the feature is off (the window can't be
-     * shown until it's enabled). Like the Commit row, the Show checkbox value is left untouched — notes
-     * availability is transient, not the user's persisted visibility preference.
-     */
-    private void updateNotesRowEnabled() {
-        if (notesShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isNotesSupport();
-        notesShowCheck.setDisable(!on);
-        if (notesDisabledNote != null) {
-            notesDisabledNote.setVisible(!on);
-            notesDisabledNote.setManaged(!on);
-        }
-        if (!on) {
-            notesSideCombo.setDisable(true);
-            notesMoveUp.setDisable(true);
-            notesMoveDown.setDisable(true);
-        } else {
-            boolean shown = notesShowCheck.isSelected();
-            notesSideCombo.setDisable(!shown);
-            notesMoveUp.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, -1));
-            notesMoveDown.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, 1));
-        }
-    }
-
-    /**
-     * Disables the feature-gated tool-window rows when their feature is off: Problems needs the LSP
-     * feature on; Debug needs Debugging (DAP) on (independent of LSP — Python/JS debugging doesn't use LSP,
-     * and {@code MainController.applyDebugGating} makes the Debug window available on {@code debugSupport}
-     * alone). Like the Commit/Notes rows, the Show checkbox value is left untouched — availability is
-     * transient, not the user's persisted visibility preference.
-     */
-    private void updateLspToolRowsEnabled() {
-        boolean lsp = config.getSettings().isLspSupport();
-        updateTransientRow(
-                lsp,
-                problemsShowCheck,
-                problemsSideCombo,
-                problemsMoveUp,
-                problemsMoveDown,
-                problemsDisabledNote,
-                problemsToolWindowRef);
-        updateTransientRow(true, runShowCheck, runSideCombo, runMoveUp, runMoveDown, null, runToolWindowRef);
-        updateTransientRow(
-                config.getSettings().isDebugSupport(),
-                debugShowCheck,
-                debugSideCombo,
-                debugMoveUp,
-                debugMoveDown,
-                debugDisabledNote,
-                debugToolWindowRef);
-    }
-
-    /** Shared logic for a context-gated tool-window row: gray out the controls + show the "disabled" note
-     *  when {@code on} is false, else restore the normal show/side/move enabling. */
-    private void updateTransientRow(
-            boolean on,
-            CheckBox show,
-            ComboBox<ToolWindow.Side> side,
-            Button up,
-            Button down,
-            Label disabledNote,
-            ToolWindow ref) {
-        if (show == null) {
-            return;
-        }
-        show.setDisable(!on);
-        if (disabledNote != null) {
-            disabledNote.setVisible(!on);
-            disabledNote.setManaged(!on);
-        }
-        if (!on) {
-            side.setDisable(true);
-            up.setDisable(true);
-            down.setDisable(true);
-        } else {
-            boolean shown = show.isSelected();
-            side.setDisable(!shown);
-            up.setDisable(!shown || !toolWindows.canMove(ref, -1));
-            down.setDisable(!shown || !toolWindows.canMove(ref, 1));
+    /** Re-applies the Tool Windows rows' feature gates (Projects, Git, Notes, LSP, Debugging changed). */
+    private void refreshToolWindowRows() {
+        if (toolWindowSettings != null) {
+            toolWindowSettings.refresh();
         }
     }
 
@@ -8629,7 +8346,7 @@ public class SettingsWindow {
         loading = true;
         try {
             projectsCheck.setSelected(config.getSettings().isProjectSupport());
-            updateProjectRowEnabled();
+            refreshToolWindowRows();
         } finally {
             loading = prev;
         }
@@ -8852,7 +8569,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
-        updateLspToolRowsEnabled(); // refresh the Problems and Debug row gates
+        refreshToolWindowRows(); // refresh the Problems and Debug row gates
         refreshLspStatus();
     }
 

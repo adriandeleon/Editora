@@ -206,6 +206,11 @@ class SettingsListsFxTest {
 
     // --- tool windows ----------------------------------------------------------------------------
 
+    private ToolWindowsSettingsPane.Row twRow(String id) {
+        ToolWindowsSettingsPane pane = rig.control("toolWindowSettings");
+        return pane.row(id);
+    }
+
     @Test
     void aToolWindowRowShowsHidesAndMovesTheWindowInTheRunningEditor() throws Exception {
         FxTestSupport.runOnFx(() -> {
@@ -213,17 +218,18 @@ class SettingsListsFxTest {
             rig.show();
             rig.page("TOOL_WINDOWS");
             ToolWindowManager tools = rig.toolWindows;
-            ToolWindow notes = rig.control("notesToolWindowRef");
-            CheckBox show = rig.control("notesShowCheck");
-            ComboBox<ToolWindow.Side> side = rig.control("notesSideCombo");
-            Button up = rig.control("notesMoveUp");
-            Button down = rig.control("notesMoveDown");
+            ToolWindow notes = twRow("notes").window();
+            CheckBox show = twRow("notes").show();
+            ComboBox<ToolWindow.Side> side = twRow("notes").side();
+            Button up = twRow("notes").up();
+            Button down = twRow("notes").down();
             assertEquals(tools.isVisible(notes), show.isSelected());
             assertEquals(tools.currentSide(notes), side.getValue());
 
             show.setSelected(false);
             assertFalse(tools.isVisible(notes));
-            assertTrue(side.isDisable() && up.isDisable() && down.isDisable(), "a hidden window has no place");
+            assertTrue(up.isDisable() && down.isDisable(), "a hidden window has no place in the stripe");
+            assertFalse(side.isDisable(), "but its side can still be chosen");
 
             show.setSelected(true);
             assertTrue(tools.isVisible(notes));
@@ -242,21 +248,21 @@ class SettingsListsFxTest {
 
             // Put it on a side with neighbours, so there is somewhere to move to.
             side.setValue(ToolWindow.Side.RIGHT);
-            List<ToolWindow> peers = tools.orderedOnSide(ToolWindow.Side.RIGHT);
+            List<ToolWindow> peers = tools.stripeOrder(ToolWindow.Side.RIGHT);
             assertTrue(peers.size() > 1, "the right stripe has other windows");
             int at = peers.indexOf(notes);
             assertEquals(!tools.canMove(notes, -1), up.isDisable());
             assertEquals(!tools.canMove(notes, 1), down.isDisable());
             if (at > 0) {
                 up.fire();
-                assertEquals(at - 1, tools.orderedOnSide(ToolWindow.Side.RIGHT).indexOf(notes));
+                assertEquals(at - 1, tools.stripeOrder(ToolWindow.Side.RIGHT).indexOf(notes));
                 down.fire();
             } else {
                 down.fire();
-                assertEquals(at + 1, tools.orderedOnSide(ToolWindow.Side.RIGHT).indexOf(notes));
+                assertEquals(at + 1, tools.stripeOrder(ToolWindow.Side.RIGHT).indexOf(notes));
                 up.fire();
             }
-            assertEquals(at, tools.orderedOnSide(ToolWindow.Side.RIGHT).indexOf(notes));
+            assertEquals(at, tools.stripeOrder(ToolWindow.Side.RIGHT).indexOf(notes));
             assertEquals(!tools.canMove(notes, -1), up.isDisable(), "the arrows follow the new position");
             assertEquals(!tools.canMove(notes, 1), down.isDisable());
         });
@@ -268,9 +274,9 @@ class SettingsListsFxTest {
             settings.setNotesSupport(true);
             rig.show();
             ToolWindowManager tools = rig.toolWindows;
-            ToolWindow notes = rig.control("notesToolWindowRef");
-            CheckBox show = rig.control("notesShowCheck");
-            ComboBox<ToolWindow.Side> side = rig.control("notesSideCombo");
+            ToolWindow notes = twRow("notes").window();
+            CheckBox show = twRow("notes").show();
+            ComboBox<ToolWindow.Side> side = twRow("notes").side();
             rig.stage().hide();
 
             tools.setVisible(notes, !show.isSelected());
@@ -298,39 +304,40 @@ class SettingsListsFxTest {
             rig.show();
             rig.page("TOOL_WINDOWS");
 
-            record Row(String feature, String check, String prefix) {}
-            for (Row row : List.of(
-                    new Row("notesCheck", "notesShowCheck", "notes"),
-                    new Row("gitCheck", "commitShowCheck", "commit"),
-                    new Row("lspCheck", "problemsShowCheck", "problems"),
-                    new Row("debugCheck", "debugShowCheck", "debug"))) {
-                CheckBox feature = rig.control(row.feature());
-                CheckBox show = rig.control(row.check());
-                Label note = rig.control(row.prefix() + "DisabledNote");
-                ComboBox<?> side = rig.control(row.prefix() + "SideCombo");
-                Button up = rig.control(row.prefix() + "MoveUp");
-                Button down = rig.control(row.prefix() + "MoveDown");
+            record Gate(String feature, String id) {}
+            for (Gate gate : List.of(
+                    new Gate("notesCheck", "notes"),
+                    new Gate("gitCheck", "commit"),
+                    new Gate("lspCheck", "problems"),
+                    new Gate("debugCheck", "debug"))) {
+                CheckBox feature = rig.control(gate.feature());
+                ToolWindowsSettingsPane.Row row = twRow(gate.id());
+                CheckBox show = row.show();
+                Label note = row.disabledNote();
+                ComboBox<?> side = row.side();
+                Button up = row.up();
+                Button down = row.down();
                 boolean shown = show.isSelected();
-                assertFalse(show.isDisable(), row.prefix());
-                assertFalse(note.isVisible(), row.prefix());
+                assertFalse(show.isDisable(), gate.id());
+                assertFalse(note.isVisible(), gate.id());
 
                 feature.setSelected(false);
-                assertTrue(show.isDisable(), row.prefix());
-                assertTrue(side.isDisable() && up.isDisable() && down.isDisable(), row.prefix());
-                assertTrue(note.isVisible() && note.isManaged(), row.prefix() + " says why");
+                assertTrue(show.isDisable(), gate.id());
+                assertTrue(side.isDisable() && up.isDisable() && down.isDisable(), gate.id());
+                assertTrue(note.isVisible() && note.isManaged(), gate.id() + " says why");
                 assertEquals(shown, show.isSelected(), "the user's choice is kept for when the feature is back");
 
                 feature.setSelected(true);
-                assertFalse(show.isDisable(), row.prefix());
-                assertFalse(note.isVisible(), row.prefix());
-                assertEquals(!shown, side.isDisable(), row.prefix());
+                assertFalse(show.isDisable(), gate.id());
+                assertFalse(note.isVisible(), gate.id());
+                assertFalse(side.isDisable(), gate.id());
             }
 
             // The Project row is different: with projects off the window is not shown at all.
             CheckBox projects = rig.control("projectsCheck");
-            CheckBox projectShow = rig.control("projectShowCheck");
-            ComboBox<?> projectSide = rig.control("projectSideCombo");
-            Label projectNote = rig.control("projectDisabledNote");
+            CheckBox projectShow = twRow("project").show();
+            ComboBox<?> projectSide = twRow("project").side();
+            Label projectNote = twRow("project").disabledNote();
             projects.setSelected(false);
             assertFalse(settings.isProjectSupport());
             assertTrue(projectShow.isDisable() && projectSide.isDisable());
