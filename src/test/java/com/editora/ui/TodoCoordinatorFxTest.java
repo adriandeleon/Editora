@@ -290,17 +290,127 @@ class TodoCoordinatorFxTest {
     }
 
     @Test
-    void aScanThatFindsNothingSaysSoAndTheScopeLabelNamesTheOpenFiles() throws Exception {
+    void aScanThatFindsNothingSaysSoAndTheScopeLabelNamesTheCurrentFile() throws Exception {
         toolWindowOpen = true;
         fx(coordinator::refreshPanelIfOpen);
         host.await(("status: " + tr("todo.none"))::equals);
         Label scope = FxTestSupport.field(coordinator.panel(), "scopeLabel");
-        assertEquals(tr("search.scopeOpenFiles"), FxTestSupport.callOnFx(scope::getText));
+        assertEquals(tr("todo.scopeCurrentFile"), FxTestSupport.callOnFx(scope::getText));
+
+        active = buffer(dir.resolve("open.txt"), "nothing\n");
+        fx(coordinator::refreshPanelIfOpen);
+        assertEquals("~open.txt", FxTestSupport.callOnFx(scope::getText));
 
         events.clear();
         toolWindowOpen = false;
         fx(coordinator::refreshPanelIfOpen);
         assertEquals(List.of(), events, "a closed tool window is not refreshed");
+    }
+
+    // --- the no-project window: the active tab only ----------------------------------------------------
+
+    private static void awaitMarks(EditorBuffer b, int count) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (FxTestSupport.callOnFx(() -> b.todoMarks().size()) != count) {
+            assertTrue(System.nanoTime() < deadline, "the buffer's TODO scan found " + count);
+            Thread.sleep(10);
+        }
+    }
+
+    /** Waits for the panel to show a scan result satisfying {@code wanted}. */
+    private TodoService.Outcome awaitPanel(Predicate<TodoService.Outcome> wanted) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (true) {
+            TodoService.Outcome o =
+                    FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.panel(), "lastOutcome"));
+            if (o != null && wanted.test(o)) {
+                return o;
+            }
+            assertTrue(System.nanoTime() < deadline, "the panel showed the wanted scan; last " + o);
+            Thread.sleep(10);
+        }
+    }
+
+    @Test
+    void withoutAProjectThePanelListsOnlyTheActiveTab() throws Exception {
+        EditorBuffer a = buffer(dir.resolve("a.txt"), "// TODO in a\n");
+        EditorBuffer b = buffer(dir.resolve("b.txt"), "// TODO in b\n// FIXME also b\n");
+        active = a;
+        toolWindowOpen = true;
+        fx(coordinator::runScan);
+        assertEquals(List.of("a.txt"), files(awaitPanel(o -> o.totalMatches() == 1)));
+
+        events.clear();
+        active = b;
+        fx(() -> coordinator.setActiveFile(dir.resolve("b.txt")));
+        assertEquals(List.of("b.txt"), files(awaitPanel(o -> o.totalMatches() == 2)));
+        assertEquals(List.of(), events, "a tab switch re-scans without status-bar chatter");
+    }
+
+    @Test
+    void withAProjectThePanelStillScansTheTreeAndEveryOpenBuffer() throws Exception {
+        Path project = Files.createDirectory(dir.resolve("proj"));
+        projectRoot = project;
+        EditorBuffer a = buffer(project.resolve("a.txt"), "// TODO in a\n");
+        buffer(dir.resolve("b.txt"), "// TODO outside\n");
+        active = a;
+        fx(coordinator::runScan);
+        assertEquals(List.of("a.txt", "b.txt"), files(awaitPanel(o -> o.totalMatches() == 2)));
+    }
+
+    @Test
+    void withoutAProjectTheWindowIsOfferedOnlyForASavedTabWithTodos() throws Exception {
+        EditorBuffer none = buffer(dir.resolve("none.txt"), "plain text\n");
+        EditorBuffer some = buffer(dir.resolve("some.txt"), "// TODO here\n");
+        EditorBuffer untitled = buffer(null, "// TODO untitled\n");
+        awaitMarks(some, 1);
+        awaitMarks(untitled, 1);
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.availableFor(null)));
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.availableFor(none)));
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.availableFor(some)));
+        assertFalse(
+                FxTestSupport.callOnFx(() -> coordinator.availableFor(untitled)),
+                "the panel's scan skips untitled buffers");
+
+        projectRoot = dir;
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.availableFor(none)), "a project window always offers it");
+    }
+
+    @Test
+    void withoutAProjectTheCommandsSayThereIsNothingInsteadOfOpeningAnEmptyWindow() throws Exception {
+        active = buffer(dir.resolve("none.txt"), "plain text\n");
+        fx(() -> registry.run("tool.todo"));
+        fx(() -> registry.run("todo.refresh"));
+        assertEquals(List.of("status: " + tr("status.todo.none"), "status: " + tr("status.todo.none")), events);
+
+        events.clear();
+        toolWindowOpen = true; // already open (e.g. restored): the toggle still closes it
+        fx(() -> registry.run("tool.todo"));
+        assertEquals(List.of("toolWindow false"), events);
+    }
+
+    @Test
+    void withoutAProjectAnEditRescansTheOpenPanelOnlyWhenATodoLineChanged() throws Exception {
+        EditorBuffer b = buffer(dir.resolve("a.txt"), "// TODO one\nplain\n");
+        active = b;
+        awaitMarks(b, 1);
+        toolWindowOpen = true;
+        fx(coordinator::runScan);
+        awaitPanel(o -> o.totalMatches() == 1);
+
+        // Typing on a non-TODO line: the TODO lines are unchanged, so no re-scan is started.
+        TodoService.Outcome before = awaitPanel(o -> true);
+        events.clear();
+        fx(() -> coordinator.activeBufferTodosChanged(b));
+        FxTestSupport.drainFx();
+        assertTrue(before == FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.panel(), "lastOutcome")));
+
+        fx(() -> b.setContent("// TODO one\n// FIXME two\n"));
+        awaitMarks(b, 2);
+        fx(() -> coordinator.activeBufferTodosChanged(b));
+        awaitPanel(o -> o.totalMatches() == 2);
+        assertFalse(
+                events.stream().anyMatch(e -> e.startsWith("status: ")), "an automatic re-scan is quiet: " + events);
     }
 
     // --- the panel's edits ------------------------------------------------------------------------------
@@ -412,6 +522,7 @@ class TodoCoordinatorFxTest {
         });
         assertEquals(List.of(none), events, "with highlighting off there is nothing to jump to");
 
+        projectRoot = dir; // (without a project, a tab with no TODOs has no window to show)
         fx(() -> registry.run("tool.todo"));
         assertEquals("toolWindow true", events.getLast());
     }

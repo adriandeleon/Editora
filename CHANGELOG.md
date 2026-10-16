@@ -356,6 +356,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Without a project, the TODO window lists only the current tab.** It is hidden, stripe button included,
+  while that tab has no TODOs, and comes back by itself on a tab or edit that has some if it was open when it
+  was hidden. It follows edits as you type. Project windows still scan the whole project.
 - **Go to Definition works without a language server.** When LSP is off, no server handles the file, or the
   server finds nothing, it looks the name up in this file and then in the project's symbol index.
 - **The Run console draws colours** (ANSI codes become theme colours), a `\r` progress bar stays on one line,

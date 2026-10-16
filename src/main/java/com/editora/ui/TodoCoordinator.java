@@ -33,7 +33,7 @@ final class TodoCoordinator {
 
     /** Window hooks beyond {@link CoordinatorHost} (project root, open-in-editor, the TODO tool window). */
     interface Ops {
-        /** This window's project root, or {@code null} for the no-project window (scan open files only). */
+        /** This window's project root, or {@code null} for the no-project window (scan the active tab only). */
         Path projectRoot();
 
         /** Opens {@code file} and jumps to {@code line}/{@code col} (a clicked TODO result). */
@@ -177,19 +177,89 @@ final class TodoCoordinator {
         return panel;
     }
 
-    /** Sorts the TODO tree so the active file's group is on top (pass the normalized path; on tab switch). */
+    /** Sorts the TODO tree so the active file's group is on top (pass the normalized path; on tab switch).
+     *  In the no-project window the panel shows only the active tab, so a switch re-scans it instead. */
     void setActiveFile(java.nio.file.Path normalizedActive) {
         activeFile = normalizedActive;
         if (panel != null) {
             panel.setActiveFile(normalizedActive);
         }
+        if (activeTabOnly()) {
+            refreshScope();
+            refreshPanelIfOpenQuietly();
+        }
+    }
+
+    /** True in the no-project window, where the TODO tool window lists only the active tab's matches and
+     *  is hidden while that tab has none. A project window scans its whole tree and is always available. */
+    boolean activeTabOnly() {
+        return ops.projectRoot() == null;
+    }
+
+    /**
+     * Whether the TODO tool window should be offered for {@code b} (the active buffer): always in a project
+     * window; in the no-project window only for a saved buffer whose own TODO highlight found something
+     * (the panel's scan skips untitled buffers, so offering one would open an empty window).
+     */
+    boolean availableFor(EditorBuffer b) {
+        if (b == null) {
+            return false;
+        }
+        return !activeTabOnly() || (b.getPath() != null && !b.todoMarks().isEmpty());
+    }
+
+    /** The active tab's TODO lines (line + text) at the panel's last scan in the no-project window, so a
+     *  debounced edit that leaves them alone (typing elsewhere) does not rebuild the panel. */
+    private List<String> lastActiveTabKey;
+
+    private static List<String> todoLinesKey(EditorBuffer b) {
+        if (b == null) {
+            return List.of();
+        }
+        List<String> key = new ArrayList<>(b.todoMarks().size());
+        for (TodoMark m : b.todoMarks()) {
+            key.add(m.line() + ":" + m.lineText());
+        }
+        return key;
+    }
+
+    /**
+     * The active buffer's TODO highlight was re-scanned (the buffer's debounced pass). In the no-project
+     * window the open panel follows the tab's edits live — a one-file scan — but only when a TODO line was
+     * added, removed, moved or changed, and without the status-bar chatter of an explicit refresh.
+     */
+    void activeBufferTodosChanged(EditorBuffer b) {
+        if (!activeTabOnly() || !ops.isToolWindowOpen() || todoLinesKey(b).equals(lastActiveTabKey)) {
+            return;
+        }
+        runScan(true);
+    }
+
+    /** Re-scans the open panel without the status-bar messages of an explicit refresh. */
+    void refreshPanelIfOpenQuietly() {
+        if (ops.isToolWindowOpen()) {
+            runScan(true);
+        }
+    }
+
+    /** {@code tool.todo}: in the no-project window a tab without TODOs has no window to show — say so. */
+    private void toggleToolWindow() {
+        if (!ops.isToolWindowOpen() && activeTabOnly() && !availableFor(host.activeBuffer())) {
+            host.setStatus(tr("status.todo.none"));
+            return;
+        }
+        ops.toggleToolWindow();
     }
 
     void registerCommands(CommandRegistry registry) {
         this.registry = registry;
-        registry.register(Command.of("tool.todo", ops::toggleToolWindow));
+        registry.register(Command.of("tool.todo", this::toggleToolWindow));
         registry.register(Command.of("todo.refresh", () -> {
             if (!ops.isToolWindowOpen()) {
+                if (activeTabOnly() && !availableFor(host.activeBuffer())) {
+                    host.setStatus(tr("status.todo.none"));
+                    return;
+                }
                 ops.toggleToolWindow();
             }
             runScan();
@@ -288,8 +358,13 @@ final class TodoCoordinator {
     }
 
     /** Scans for TODO/highlight matches and fills the tool window: the open project's tree when a project
-     *  is open, else just the open buffers. Off-thread (TodoService); no-op when the feature is off. */
+     *  is open, else just the active tab. Off-thread (TodoService); no-op when the feature is off. */
     void runScan() {
+        runScan(false);
+    }
+
+    /** {@link #runScan()}; {@code quiet} (an automatic re-scan) leaves the status bar alone. */
+    private void runScan(boolean quiet) {
         refreshScope(); // keep the panel's "scanning in" label in step with what we scan
         Settings s = host.settings();
         if (!s.isTodoHighlight()) {
@@ -297,23 +372,36 @@ final class TodoCoordinator {
             return;
         }
         List<TodoPatterns.Compiled> compiled = TodoPatterns.compile(s.getTodoPatterns());
+        // Scope: THIS window's project tree (Ops.projectRoot) plus the open buffers' unsaved text, else (the
+        // "No Project" window) only the active tab — the global window must not inherit a project root from
+        // another window, and its panel lists the file being edited rather than every tab.
+        Path root = ops.projectRoot();
         Map<Path, String> open = new HashMap<>();
-        host.forEachBuffer(b -> {
-            if (b.getPath() != null) {
+        if (root == null) {
+            EditorBuffer b = host.activeBuffer();
+            lastActiveTabKey = todoLinesKey(b);
+            if (b != null && b.getPath() != null) {
                 open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
             }
-        });
-        // Scope: THIS window's project tree (Ops.projectRoot), else (the "No Project" window) only the open
-        // files — the global window must not inherit a project root from another window.
-        Path root = ops.projectRoot();
+        } else {
+            host.forEachBuffer(b -> {
+                if (b.getPath() != null) {
+                    open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
+                }
+            });
+        }
         service.setRespectGitignore(s.isSearchRespectGitignore()); // same "exclude .gitignore" setting as search
-        host.setStatus(tr("todo.scanning"));
+        if (!quiet) {
+            host.setStatus(tr("todo.scanning"));
+        }
         service.scan(compiled, root, open, outcome -> {
             panel().setResults(outcome);
-            host.setStatus(
-                    outcome.totalMatches() == 0
-                            ? tr("todo.none")
-                            : tr("todo.summary", outcome.totalMatches(), outcome.fileCount()));
+            if (!quiet) {
+                host.setStatus(
+                        outcome.totalMatches() == 0
+                                ? tr("todo.none")
+                                : tr("todo.summary", outcome.totalMatches(), outcome.fileCount()));
+            }
         });
     }
 
@@ -338,14 +426,21 @@ final class TodoCoordinator {
     }
 
     /** Pushes the current TODO scan scope to the panel's label: this window's project tree (when one is
-     *  open), else the open-files-only scope — matching what {@link #runScan} actually scans. */
+     *  open), else the active tab's file — matching what {@link #runScan} actually scans. */
     private void refreshScope() {
         if (panel == null) {
             return; // applied when the panel is built
         }
         Path root = ops.projectRoot();
         if (root == null) {
-            panel.setScope(tr("search.scopeOpenFiles"), null);
+            EditorBuffer b = host.activeBuffer();
+            Path file = b == null ? null : b.getPath();
+            if (file == null) {
+                panel.setScope(tr("todo.scopeCurrentFile"), null);
+            } else {
+                String full = file.toAbsolutePath().normalize().toString();
+                panel.setScope(ops.homeCollapsed(full), full);
+            }
             return;
         }
         String full = root.toString();

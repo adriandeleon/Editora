@@ -7713,6 +7713,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
+        // No-project window: the TODO window shows only the active tab and hides while it has no TODOs.
+        buffer.setOnTodoMarksChanged(() -> {
+            if (activeBuffer() == buffer) {
+                updateTodoToolWindow();
+                todoCoordinator.activeBufferTodosChanged(buffer);
+            }
+        });
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
         buffer.setOnRunnableChanged(() -> {
             if (activeBuffer() == buffer) {
@@ -8772,6 +8779,37 @@ public class MainController implements com.editora.mcp.McpBridge {
      * on); External Tools needs a buffer and to not be in Simple mode. Uses transient
      * {@code setAvailable} (never persisted), so the user's show/hide preference is preserved.
      */
+    /** Set when the no-project window hid an open TODO window because the active tab has no TODOs, so it
+     *  comes back (unfocused) on the next tab that has some; a user close clears it by never setting it. */
+    private boolean todoReopenWhenAvailable;
+
+    /**
+     * Gates the TODO window on the active buffer: any buffer in a project window; in the no-project window
+     * only a saved one with TODO matches (see {@link TodoCoordinator#availableFor}). Re-run on every tab
+     * switch and on the active buffer's TODO re-scans, so it hides and returns as TODOs come and go.
+     */
+    private void updateTodoToolWindow() {
+        if (todoToolWindow == null) {
+            return;
+        }
+        boolean available = todoCoordinator.availableFor(activeBuffer());
+        if (!available) {
+            if (toolWindows.isOpen(todoToolWindow)) {
+                todoReopenWhenAvailable = todoCoordinator.activeTabOnly();
+            }
+            toolWindows.setAvailable(todoToolWindow, false); // reconciles every call (see setAvailable)
+            return;
+        }
+        toolWindows.setAvailable(todoToolWindow, true);
+        if (todoReopenWhenAvailable) {
+            todoReopenWhenAvailable = false;
+            if (!toolWindows.isOpen(todoToolWindow)) {
+                toolWindows.open(todoToolWindow, false); // unfocused: the user is typing in or switching tabs
+                todoCoordinator.refreshPanelIfOpenQuietly();
+            }
+        }
+    }
+
     void updateBufferToolWindows() {
         EditorBuffer b = activeBuffer();
         boolean buffer = b != null;
@@ -8784,9 +8822,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (undoHistoryToolWindow != null) {
             toolWindows.setAvailable(undoHistoryToolWindow, buffer);
         }
-        if (todoToolWindow != null) {
-            toolWindows.setAvailable(todoToolWindow, buffer);
-        }
+        updateTodoToolWindow();
         previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
         indexCoordinator.backlinks.activeBufferChanged(b);
         if (externalToolToolWindow != null) {

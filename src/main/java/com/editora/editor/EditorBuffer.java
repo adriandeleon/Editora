@@ -2717,6 +2717,26 @@ public class EditorBuffer implements TabContent {
             todoStripe().setMarks(marks);
         }
         minimap.setTodoMarks(marks);
+        todoMarks = java.util.Collections.unmodifiableList(marks);
+        if (onTodoMarksChanged != null) {
+            onTodoMarksChanged.run();
+        }
+    }
+
+    /** The last applied TODO/highlight marks (empty when off, unscanned, or a huge file). */
+    private java.util.List<TodoMark> todoMarks = java.util.List.of();
+
+    private Runnable onTodoMarksChanged;
+
+    /** The TODO/highlight marks currently shown in this buffer (read-only; empty when the highlight is off). */
+    public java.util.List<TodoMark> todoMarks() {
+        return todoMarks;
+    }
+
+    /** Called on the FX thread after every TODO re-scan of this buffer is applied (on load, after debounced
+     *  edits, and when the patterns or the on/off setting change), whether or not the marks changed. */
+    public void setOnTodoMarksChanged(Runnable callback) {
+        this.onTodoMarksChanged = callback;
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
