@@ -6606,8 +6606,140 @@ public class SettingsWindow {
                     Category.LSP,
                     exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())),
                     srv.keywords());
+            if ("bash".equals(srv.id())) {
+                bashServerRows(c);
+            }
         }
         return p;
+    }
+
+    /** Words the Bash card's own rows are found by. */
+    private static final String BASH_KEYWORDS = "lsp bash shell shellcheck shfmt format lint bash-language-server ";
+
+    /**
+     * The Bash card's rows for bash-language-server's own settings (its {@code bashIde} section): ShellCheck and
+     * shfmt, their options, the background-analysis cap and explainshell. A project can override them in
+     * {@code .editora/settings.json}.
+     */
+    private void bashServerRows(Card c) {
+        bashPathRow(c, "shellcheckPath", Settings::getBashShellcheckPath, Settings::setBashShellcheckPath);
+        textRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shellcheckArguments",
+                "-x --severity=warning",
+                Settings::getBashShellcheckArguments,
+                Settings::setBashShellcheckArguments,
+                BASH_KEYWORDS + "arguments severity");
+        bashPathRow(c, "shfmtPath", Settings::getBashShfmtPath, Settings::setBashShfmtPath);
+        choiceRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtDialect",
+                true,
+                Settings.BASH_SHFMT_DIALECTS,
+                Settings::getBashShfmtDialect,
+                Settings::setBashShfmtDialect,
+                BASH_KEYWORDS + "dialect posix mksh bats");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtCaseIndent",
+                false,
+                Settings::isBashShfmtCaseIndent,
+                Settings::setBashShfmtCaseIndent,
+                BASH_KEYWORDS + "case indent");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtBinaryNextLine",
+                false,
+                Settings::isBashShfmtBinaryNextLine,
+                Settings::setBashShfmtBinaryNextLine,
+                BASH_KEYWORDS + "binary operator next line");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtFuncNextLine",
+                false,
+                Settings::isBashShfmtFuncNextLine,
+                Settings::setBashShfmtFuncNextLine,
+                BASH_KEYWORDS + "function brace next line");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtSpaceRedirects",
+                false,
+                Settings::isBashShfmtSpaceRedirects,
+                Settings::setBashShfmtSpaceRedirects,
+                BASH_KEYWORDS + "redirect space");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtSimplify",
+                false,
+                Settings::isBashShfmtSimplify,
+                Settings::setBashShfmtSimplify,
+                BASH_KEYWORDS + "simplify");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtKeepPadding",
+                false,
+                Settings::isBashShfmtKeepPadding,
+                Settings::setBashShfmtKeepPadding,
+                BASH_KEYWORDS + "keep padding align");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.shfmtIgnoreEditorconfig",
+                true,
+                Settings::isBashShfmtIgnoreEditorconfig,
+                Settings::setBashShfmtIgnoreEditorconfig,
+                BASH_KEYWORDS + "editorconfig");
+        intRow(
+                c,
+                Category.LSP,
+                "lsp.bash.backgroundAnalysisMaxFiles",
+                Settings.BASH_BACKGROUND_ANALYSIS_MAX,
+                100,
+                Settings::getBashBackgroundAnalysisMaxFiles,
+                Settings::setBashBackgroundAnalysisMaxFiles,
+                BASH_KEYWORDS + "background analysis files workspace symbols");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.bash.includeAllWorkspaceSymbols",
+                true,
+                Settings::isBashIncludeAllWorkspaceSymbols,
+                Settings::setBashIncludeAllWorkspaceSymbols,
+                BASH_KEYWORDS + "workspace symbols completion rename");
+        textRow(
+                c,
+                Category.LSP,
+                "lsp.bash.explainshellEndpoint",
+                "http://localhost:5000",
+                Settings::getBashExplainshellEndpoint,
+                Settings::setBashExplainshellEndpoint,
+                BASH_KEYWORDS + "explainshell hover flags");
+    }
+
+    /** A path-with-Browse row for one of the Bash server's tools; blank = Editora's installed copy, else PATH. */
+    private void bashPathRow(
+            Card c,
+            String key,
+            java.util.function.Function<Settings, String> get,
+            java.util.function.BiConsumer<Settings, String> set) {
+        TextField field = new TextField();
+        field.setPromptText(tr("settings.lsp.bash." + key + ".prompt"));
+        settingControls.put("lsp.bash." + key, field);
+        commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
+            set.accept(config.getSettings(), now);
+            apply();
+            refreshLspStatus();
+        });
+        cardRow(c, Category.LSP, exePathRow(tr("settings.lsp.bash." + key), field), BASH_KEYWORDS + "path");
+        settingSyncs.add(st -> field.setText(get.apply(st)));
     }
 
     /** A configurable LSP server's Settings row (data-driven so adding a server is one descriptor). */

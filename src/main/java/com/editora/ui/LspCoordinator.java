@@ -1048,6 +1048,7 @@ final class LspCoordinator {
         // when (and only when) its folder is trusted. Building this from the global settings alone meant a
         // committed override was shown in the status bar and Doctor but never run.
         lspManager.configure(on, effectiveCommands());
+        applyBashIde();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
         offerInterruptedEdits();
@@ -1328,7 +1329,25 @@ final class LspCoordinator {
 
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
-        return projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled);
+        List<String> requests = new java.util.ArrayList<>(
+                projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled));
+        requests.addAll(
+                com.editora.lsp.BashIdeConfig.trustRequests(projectSettings().getBashIde()));
+        return requests;
+    }
+
+    /**
+     * bash-language-server's settings for this window: the user's, the project's {@code bashIde} overrides laid
+     * over them (paths and the explainshell endpoint only in a trusted folder).
+     */
+    com.editora.lsp.BashIdeConfig bashIdeConfig() {
+        return com.editora.lsp.BashIdeConfig.of(host.settings())
+                .withProject(projectSettings().getBashIde(), projectTrusted());
+    }
+
+    /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
+    void applyBashIde() {
+        lspManager.setBashIde(bashIdeConfig());
     }
 
     /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
@@ -1498,7 +1517,7 @@ final class LspCoordinator {
                     .append(serverCommand(serverId))
                     .append('\n');
         }
-        return signature.toString();
+        return signature.append(bashIdeConfig()).toString();
     }
 
     /**
@@ -1510,6 +1529,7 @@ final class LspCoordinator {
         projectSettingsRoot = null;
         projectSettingsCache = EMPTY_PROJECT_SETTINGS;
         applyOnTypeFormatting();
+        applyBashIde();
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {

@@ -732,6 +732,23 @@ final class LanguageServerSession implements LanguageClient {
      */
     private volatile boolean javaOnTypeFormatting;
 
+    /** bash-language-server's {@code bashIde} section for this session (null until the manager sets it). */
+    private volatile BashIdeConfig bashIde;
+
+    /**
+     * Sets the {@code bashIde} section this session answers and pushes. A server on another host is told to look
+     * ShellCheck and shfmt up on that host's PATH ({@link BashIdeConfig#forRemote}). A running Bash server gets
+     * the change pushed; it re-reads its configuration and re-lints the open file.
+     */
+    void setBashIde(BashIdeConfig config) {
+        BashIdeConfig next = config == null ? null : com.editora.vfs.Vfs.isRemote(root) ? config.forRemote() : config;
+        boolean changed = !java.util.Objects.equals(bashIde, next);
+        bashIde = next;
+        if (changed && "bash".equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -746,7 +763,7 @@ final class LanguageServerSession implements LanguageClient {
      * settings for is sent nothing — see {@link LspServerSettings}.
      */
     private void pushConfiguration() {
-        java.util.Map<String, Object> settings = LspServerSettings.push(serverId, javaOnTypeFormatting);
+        java.util.Map<String, Object> settings = LspServerSettings.push(serverId, javaOnTypeFormatting, bashIde);
         if (settings == null) {
             return;
         }
@@ -2123,16 +2140,16 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * Answers {@code workspace/configuration} per server and section from {@link LspServerSettings}: Pyright's
-     * {@code python} / {@code python.analysis} objects, and an empty object for the CSS and HTML servers'
-     * own sections (they throw on {@code null}). Any other section returns null so the server keeps its
-     * own default.
+     * {@code python} / {@code python.analysis} objects, bash-language-server's {@code bashIde} section, and an
+     * empty object for the CSS and HTML servers' own sections (they throw on {@code null}). Any other section
+     * returns null so the server keeps its own default.
      */
     @Override
     public CompletableFuture<List<Object>> configuration(org.eclipse.lsp4j.ConfigurationParams params) {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(LspServerSettings.answer(serverId, item.getSection()));
+                out.add(LspServerSettings.answer(serverId, item.getSection(), bashIde));
             }
         }
         return CompletableFuture.completedFuture(out);
