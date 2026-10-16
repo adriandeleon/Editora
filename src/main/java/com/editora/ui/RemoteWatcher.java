@@ -53,7 +53,7 @@ final class RemoteWatcher {
             while :; do
               sleep @POLL@
               : > "$next"
-              find "$root" \\( -name .git -o -name node_modules \\) -prune -o -newer "$stamp" -print \\
+              find -H "$root" \\( -name .git -o -name node_modules \\) -prune -o -newer "$stamp" -print \\
                 | sed 's/^/CHANGED|/'
               mv -f "$next" "$stamp"
             done

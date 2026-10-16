@@ -1113,7 +1113,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * pipeline as a local watcher's.
      */
     private void ensureWatchOrStop() {
-        if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
+        if (root != null && !watchedOnTarget(root)) {
             stopRemoteWatch();
             ensureWatchService();
         } else {
@@ -1122,13 +1122,23 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Whether {@code dir} is watched where its tools run rather than by this machine's watcher: a remote
+     * folder, or a local one whose target says this machine is not told of its changes (a WSL distribution's,
+     * once its tools run there). No I/O.
+     */
+    static boolean watchedOnTarget(Path dir) {
+        return !com.editora.vfs.Vfs.isLocal(dir)
+                || !com.editora.process.ExecTargets.forPath(dir).localWatchSeesChanges();
+    }
+
     /** The watcher on the host of a remote root, and the root it watches. */
     private RemoteWatcher remoteWatcher;
 
     private Path remoteWatched;
 
     private void ensureRemoteWatch() {
-        if (root == null || disposed || com.editora.vfs.Vfs.isLocal(root)) {
+        if (root == null || disposed || !watchedOnTarget(root)) {
             stopRemoteWatch();
             return;
         }
@@ -1178,12 +1188,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Starts (or stops) watching a remote root on its host after what may run there changed — the user
-     * agreed to commands on that host, or switched remote commands on or off. No-op for a local root.
+     * Watches the root where it should be watched after what may run where changed — the user agreed to
+     * commands on a host or in a WSL distribution, or withdrew it, or switched remote commands on or off: a
+     * remote root on its host or not at all, a WSL one in the distribution or back on this machine's watcher.
      */
     public void refreshRemoteWatch() {
-        if (root != null && com.editora.vfs.Vfs.isRemote(root)) {
-            ensureRemoteWatch();
+        if (root != null && !disposed) {
+            ensureWatchOrStop();
+            syncWatches();
         }
     }
 
@@ -1216,6 +1228,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     private void syncWatches() {
         if (watchService == null) {
+            return;
+        }
+        if (root != null && watchedOnTarget(root)) {
+            cancelAllWatches(); // watched where its tools run: this machine's watcher would see nothing, or twice
             return;
         }
         java.util.Set<Path> desired = new java.util.HashSet<>();
