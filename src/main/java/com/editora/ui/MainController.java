@@ -7632,6 +7632,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 updateRunButton();
             }
         });
+        buffer.addLanguageListener(
+                () -> { // a picked language or a typed shebang: the status bar says so at once
+                    if (activeBuffer() == buffer) {
+                        statusBar.refresh();
+                    }
+                });
         buffer.setRunHandler(runCoordinator::runActiveFile); // "Run File" editor right-click item (runnable files)
         boolean local = isLocalBuffer(buffer);
         // A remote (SFTP) file runs on its host; whether that host may run commands is asked at launch, and a

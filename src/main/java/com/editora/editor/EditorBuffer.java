@@ -3494,6 +3494,7 @@ public class EditorBuffer implements TabContent {
         return "shell".equals(language);
     }
 
+    private final List<Runnable> languageListeners = new java.util.ArrayList<>(2); // see addLanguageListener
     /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
     public void setOnRunnableChanged(Runnable callback) {
         this.onRunnableChanged = callback == null ? () -> {} : callback;
@@ -7564,39 +7565,34 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Overrides the language/grammar for this buffer regardless of its file extension (e.g. chosen
-     * from the status bar). Pass {@link LanguageRegistry#plaintext()} to disable highlighting.
+     * Overrides the language/grammar regardless of the file's name (the status-bar picker); plain text turns
+     * highlighting off. The Run glyph is re-decided here; the controller hears it via {@link #addLanguageListener}.
      */
     public void setLanguageOverride(String name) {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
         languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
-        IGrammar g = GrammarRegistry.shared().forLanguageName(resolved);
-        applyLanguage(resolved, g);
+        applyLanguage(resolved, GrammarRegistry.shared().forLanguageName(resolved));
+        recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
+    }
+
+    /** Runs {@code listener} on the FX thread each time the language changes after it is added (a picked
+     *  language, a typed or loaded shebang, a Save As to another type): the status bar and LSP follow it. */
+    public void addLanguageListener(Runnable listener) {
+        languageListeners.add(listener);
     }
 
     /**
-     * When the file's extension resolves to plain text, promotes it to the language named by a
-     * first-line interpreter shebang (e.g. {@code #!/usr/bin/env python3} → Python; a
-     * {@code java --source N} shebang → Java compact source). Resolves the language + grammar
-     * through the normal {@code forFileName} path (via a synthetic {@code "shebang.<ext>"} name) so a
-     * shebang file behaves exactly like a real file of that type. No-op for a real extension, a
-     * user-overridden language, an empty buffer, or an unrecognized/absent shebang.
+     * Promotes a plain-text buffer to the language of its first-line shebang ({@code #!/usr/bin/env python3},
+     * or {@code java --source N} for a compact source), via a synthetic {@code "shebang.<ext>"} name so it
+     * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
     private void maybeApplyShebang() {
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        int len = area.getLength();
-        if (len < 2) {
-            return;
-        }
-        String head = area.getText(0, Math.min(len, 256));
-        int nl = head.indexOf('\n');
-        String firstLine = nl >= 0 ? head.substring(0, nl) : head;
-        if (!firstLine.startsWith("#!")) {
-            return;
-        }
-        Shebang.Result r = Shebang.parse(firstLine);
+        String head = area.getText(0, Math.min(area.getLength(), 256));
+        Shebang.Result r =
+                head.startsWith("#!") ? Shebang.parse(head.lines().findFirst().orElse("")) : null;
         if (r == null) {
             return;
         }
@@ -7622,6 +7618,7 @@ public class EditorBuffer implements TabContent {
     /** Applies a language name + grammar: updates fold strategy and re-highlights. */
     private void applyLanguage(String name, IGrammar g) {
         languageGen++; // supersede any in-flight deferred grammar load (see applyLanguageDeferred)
+        boolean changed = !name.equals(language);
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
@@ -7639,6 +7636,9 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
+        if (changed) {
+            languageListeners.forEach(Runnable::run);
+        }
     }
 
     /**

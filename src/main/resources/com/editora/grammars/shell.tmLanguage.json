@@ -127,6 +127,39 @@
 				}
 			]
 		},
+		"arithmetic_dollar": {
+			"patterns": [
+				{
+					"begin": "\\$\\(\\(",
+					"end": "\\)\\)",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.section.arithmetic.dollar.shell"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.section.arithmetic.dollar.shell"
+						}
+					},
+					"name": "meta.arithmetic.shell",
+					"patterns": [
+						{
+							"include": "#arithmetic_no_dollar"
+						},
+						{
+							"include": "#interpolation"
+						},
+						{
+							"include": "#math"
+						},
+						{
+							"include": "#string"
+						}
+					]
+				}
+			]
+		},
 		"arithmetic_double": {
 			"patterns": [
 				{
@@ -920,7 +953,7 @@
 					"patterns": []
 				},
 				{
-					"begin": "(?:((?<!<)(?:<<-))(?:[ \\t]*+)([^\"' \\t]+)(?=\\s|;|&|<|\"|')(.*))",
+					"begin": "(?:((?<!<)(?:<<-))(?:[ \\t]*+)(?:\\\\)?([^\"' \\t]+)(?=\\s|;|&|<|\"|')(.*))",
 					"end": "(?:(?:^\\t*)(?:\\2)(?=\\s|;|&|$))",
 					"beginCaptures": {
 						"1": {
@@ -959,7 +992,7 @@
 					]
 				},
 				{
-					"begin": "(?:((?<!<)(?:<<)(?!<))(?:[ \\t]*+)([^\"' \\t]+)(?=\\s|;|&|<|\"|')(.*))",
+					"begin": "(?:((?<!<)(?:<<)(?!<))(?:[ \\t]*+)(?:\\\\)?([^\"' \\t]+)(?=\\s|;|&|<|\"|')(.*))",
 					"end": "(?:^(?:\\2)(?=\\s|;|&|$))",
 					"beginCaptures": {
 						"1": {
@@ -1257,6 +1290,13 @@
 				}
 			]
 		},
+		"line_continuation_character": {
+			"patterns": [
+				{
+					"include": "#line_continuation"
+				}
+			]
+		},
 		"line_continuation": {
 			"match": "\\\\(?=\\n)",
 			"name": "constant.character.escape.line-continuation.shell"
@@ -1542,6 +1582,9 @@
 				},
 				{
 					"include": "#logical_expression_double"
+				},
+				{
+					"include": "#arithmetic_dollar"
 				},
 				{
 					"include": "#subshell_dollar"

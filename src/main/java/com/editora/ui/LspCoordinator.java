@@ -2080,6 +2080,11 @@ final class LspCoordinator {
             }
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
         }
+        // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
+        // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
+        if ("bash".equals(base) && com.editora.editor.ShellFiles.isZshStartupFile(fileName)) {
+            return null;
+        }
         return base;
     }
 
@@ -2339,6 +2344,9 @@ final class LspCoordinator {
                 this::rename,
                 this::gotoImplementation,
                 this::gotoTypeDefinition);
+        // A language that changes later — picked in the status bar, or a shebang typed into an extension-less
+        // file — moves the document to that language's server (or off any), as opening the file would.
+        buffer.addLanguageListener(() -> syncBufferWhenShown(buffer));
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }

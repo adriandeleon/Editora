@@ -75,6 +75,10 @@ public final class LanguageRegistry {
             Map.entry("hpp", "cpp"),
             Map.entry("hh", "cpp"),
             Map.entry("hxx", "cpp"),
+            Map.entry("c++", "cpp"),
+            Map.entry("h++", "cpp"),
+            Map.entry("ipp", "cpp"),
+            Map.entry("inl", "cpp"),
             Map.entry("rs", "rust"),
             Map.entry("go", "go"),
             Map.entry("kt", "kotlin"),
@@ -99,11 +103,10 @@ public final class LanguageRegistry {
             Map.entry("rb", "ruby"),
             Map.entry("rake", "ruby"),
             Map.entry("gemspec", "ruby"),
-            Map.entry("sh", "shell"),
-            Map.entry("bash", "shell"),
-            Map.entry("zsh", "shell"),
+            // Shell extensions come from ShellFiles (shared with GrammarRegistry), see forFileName.
             Map.entry("ps1", "powershell"),
             Map.entry("psm1", "powershell"),
+            Map.entry("psd1", "powershell"),
             Map.entry("bat", "batchfile"),
             Map.entry("cmd", "batchfile"),
             Map.entry("yaml", "yaml"),
@@ -196,7 +199,7 @@ public final class LanguageRegistry {
             return PLAINTEXT;
         }
         String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
-        return BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
+        return ShellFiles.isShellExtension(ext) ? "shell" : BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
     }
 
     public static String plaintext() {
@@ -205,6 +208,15 @@ public final class LanguageRegistry {
 
     /** Every language name an extension maps to (not the file-name rules of {@link ConfigFileType}). */
     public static java.util.Set<String> names() {
-        return new java.util.TreeSet<>(BY_EXTENSION.values());
+        java.util.Set<String> names = new java.util.TreeSet<>(BY_EXTENSION.values());
+        names.add("shell");
+        return names;
+    }
+
+    /** Every extension mapped to a language (lower case, no dot), the shell ones included. */
+    static java.util.Set<String> extensions() {
+        java.util.Set<String> all = new java.util.TreeSet<>(BY_EXTENSION.keySet());
+        all.addAll(ShellFiles.EXTENSIONS);
+        return all;
     }
 }
