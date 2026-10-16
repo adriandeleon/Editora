@@ -10,6 +10,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
 
 import com.editora.completion.Completion;
+import com.editora.snippet.Snippet;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -295,5 +296,38 @@ class CompletionAssistFxTest {
             stage[0].close();
             buffer.dispose();
         });
+    }
+
+    @Test
+    void inShellEnterAfterAWordThatIsAlsoASnippetEndsTheLine() throws Exception {
+        // B8: `else`, a pause (the popup offers the `else` snippet), then Enter inserted `else⏎\tcommand`.
+        EditorFx.onFx(() -> {
+            Stage[] stage = new Stage[1];
+            EditorBuffer buffer = shown("shell", "if true; then\n    echo\n    else", stage);
+            CodeArea area = buffer.getArea();
+            Snippet elseSnippet = new Snippet("else", "else", "else\n\t${0:command}", "else", "shell");
+            buffer.setCompletionProvider((snippetLang, dictLang, prefix, snippetPrefix, prose) ->
+                    List.of(Completion.ofSnippet(elseSnippet)));
+            buffer.setAutocomplete(true, true, true, true);
+            buffer.triggerCompletion();
+            assertTrue(buffer.completionShowing(), "the popup offers the else snippet");
+
+            area.fireEvent(key(KeyCode.ENTER, false, false));
+            assertFalse(buffer.completionShowing());
+            assertEquals("if true; then\n    echo\nelse\n    ", area.getText(), "a newline, and else de-indented");
+
+            // Tab still expands it.
+            area.replaceText("if true; then\n    echo\n    else");
+            area.moveTo(area.getLength());
+            buffer.triggerCompletion();
+            assertTrue(buffer.completionShowing());
+            area.fireEvent(key(KeyCode.TAB, false, false));
+            assertTrue(area.getText().contains("command"), area.getText());
+            stage[0].close();
+            buffer.dispose();
+        });
+        assertTrue(BufferCompletion.enterEndsTheLine("shell", "else", "    else"));
+        assertFalse(BufferCompletion.enterEndsTheLine("shell", "elseif", "    else"), "a longer row is still offered");
+        assertFalse(BufferCompletion.enterEndsTheLine("java", "else", "    else"), "only shell");
     }
 }

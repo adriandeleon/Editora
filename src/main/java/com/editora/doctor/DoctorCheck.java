@@ -33,7 +33,9 @@ public record DoctorCheck(
         /** {@code InstallCoordinator.installSupport(Lang.valueOf(installArg))} — a language bundle. */
         LANG,
         /** {@code InstallCoordinator.installTypstCli()} — the typst render CLI. */
-        TYPST_CLI
+        TYPST_CLI,
+        /** {@code InstallCoordinator.installTool(installArg)} — a pinned command-line tool (shellcheck, shfmt). */
+        TOOL
     }
 
     public DoctorCheck {

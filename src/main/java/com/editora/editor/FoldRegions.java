@@ -25,8 +25,11 @@ import com.editora.typst.TypstOutline;
  *   <li><b>Markdown</b>: fenced code blocks (backticks or tildes), front matter, multi-line HTML comments
  *       and heading sections, ATX or setext (a heading folds down to the line before the next heading of
  *       the same or higher level).</li>
- *   <li><b>Line/indentation-based languages</b> (python, ruby, shell, yaml, ini, sql, powershell,
- *       batch) and plaintext: no delimiter folding.</li>
+ *   <li><b>Shell</b>: its blocks as {@link com.editora.editops.ShellScan} reads them — functions and
+ *       {@code { }} groups, {@code if … fi}, loops, {@code case … esac} and each multi-line item, multi-line
+ *       {@code ( )} / {@code $( )}, and here-documents.</li>
+ *   <li><b>Line/indentation-based languages</b> (python, ruby, yaml, ini, sql, powershell, batch) and
+ *       plaintext: no delimiter folding.</li>
  * </ul>
  *
  * <p>Line indices are 0-based and correspond to {@code CodeArea} paragraph indices.
@@ -78,9 +81,22 @@ public final class FoldRegions {
                     "dot" -> braces(text, Syntax.of(language));
             case "typst" -> typst(text);
             case "http" -> http(text);
+            case "shell" -> shell(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };
+    }
+
+    /** Shell blocks that span lines, from the function/statement header to the closing line. */
+    static List<Region> shell(String text) {
+        List<Region> out = new ArrayList<>();
+        for (com.editora.editops.ShellScan.Block b :
+                com.editora.editops.ShellScan.scan(text).blocks()) {
+            if (b.closeLine() > b.headerLine()) {
+                out.add(new Region(b.headerLine(), b.closeLine()));
+            }
+        }
+        return canonicalOrder(out);
     }
 
     /** Languages whose block comments are {@code /* *}{@code /} — the same set {@link #detect} braces-folds. */

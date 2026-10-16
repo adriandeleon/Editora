@@ -1497,7 +1497,7 @@ A backlog of planned features and improvements. Unordered within each section.
       continuation on Enter, heading promote/demote, link helpers (Ctrl/Cmd-click to open), GFM table reflow
       + cell navigation (Tab/Shift-Tab, Enter adds a row), image paste/drag-drop, and smart link paste
 - [x] Run a file from a gutter ▶ — Java 25 compact source (`java <file>`), Python (`python3`), and shell
-      (`bash`, when the Bash LSP is enabled); streams output into a Run tool window (`M-9`); gated by LSP
+      (the interpreter its shebang names, else `bash`); streams output into a Run tool window (`M-9`)
 - [x] Print — native printing of code or the Markdown preview with a print-preview window (always light),
       reusing the PDF layout core (Settings → Editor → Export & Print); `editor.print` / `preview.print`
 - [x] Export to PDF — code (searchable, embedded font, syntax highlighting + optional line numbers,

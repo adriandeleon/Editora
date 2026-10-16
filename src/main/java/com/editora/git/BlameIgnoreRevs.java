@@ -53,10 +53,18 @@ public final class BlameIgnoreRevs {
 
         /** The {@code git blame} arguments for {@link #files}. */
         public List<String> args() {
+            return args(java.util.function.UnaryOperator.identity());
+        }
+
+        /**
+         * The {@code git blame} arguments for {@link #files}, each named by {@code forGit}: the files are this
+         * side's paths, and a git that runs elsewhere (a container, WSL) knows them by another name.
+         */
+        public List<String> args(java.util.function.UnaryOperator<String> forGit) {
             List<String> args = new ArrayList<>(files.size() * 2);
             for (String file : files) {
                 args.add("--ignore-revs-file");
-                args.add(file);
+                args.add(forGit.apply(file));
             }
             return args;
         }

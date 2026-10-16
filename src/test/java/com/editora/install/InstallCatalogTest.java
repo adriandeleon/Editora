@@ -446,4 +446,34 @@ class InstallCatalogTest {
         assertFalse(InstallCatalog.isTrustedDownloadUrl("not a url"));
         assertFalse(InstallCatalog.isTrustedDownloadUrl(null));
     }
+
+    /** ShellCheck and shfmt come from pinned, hash-checked upstream releases for every platform (C2). */
+    @org.junit.jupiter.api.Test
+    void theShellToolsArePinnedToTrustedReleaseAssetsWithHashes() {
+        for (String id : InstallCatalog.PINNED_TOOL_IDS) {
+            var tool = InstallCatalog.pinnedTool(id).orElseThrow();
+            for (InstallCatalog.Platform platform : InstallCatalog.Platform.values()) {
+                var asset = tool.assetFor(platform);
+                org.junit.jupiter.api.Assertions.assertNotNull(asset, id + " has a build for " + platform);
+                org.junit.jupiter.api.Assertions.assertTrue(
+                        InstallCatalog.isTrustedDownloadUrl(asset.url()), asset.url());
+                org.junit.jupiter.api.Assertions.assertTrue(
+                        asset.url().contains("v" + tool.version()), asset.url() + " is the pinned version");
+                org.junit.jupiter.api.Assertions.assertTrue(
+                        asset.sha256().matches("[0-9a-f]{64}"), id + "/" + platform + " has a SHA-256");
+            }
+            var steps = InstallCatalog.toolInstall(id).orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    InstallCatalog.Kind.PINNED_TOOL, steps.get(0).kind());
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.nio.file.Path.of("/cfg/plugins/tools/shfmt/shfmt"),
+                java.nio.file.Path.of("/cfg/plugins/tools/shfmt")
+                        .resolve(InstallCatalog.toolFileName("shfmt", InstallCatalog.Platform.LINUX_X64)));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "shellcheck.exe", InstallCatalog.toolFileName("shellcheck", InstallCatalog.Platform.WIN_X64));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                InstallCatalog.sha256Hex(new byte[0]));
+    }
 }

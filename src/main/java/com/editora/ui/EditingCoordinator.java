@@ -938,9 +938,23 @@ final class EditingCoordinator {
         }
         // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
         if (!buffer.toggleComment()) {
-            // With comment syntax available the only refusal left is a block comment that would nest.
-            host.setStatus(tr(buffer.supportsComments() ? "status.commentCannotNest" : "status.noCommentSyntax"));
+            // With comment syntax available the refusals left are a shebang line and a block comment that
+            // would nest.
+            host.setStatus(tr(
+                    !buffer.supportsComments()
+                            ? "status.noCommentSyntax"
+                            : onlyShebang(buffer) ? "status.commentShebang" : "status.commentCannotNest"));
         }
+    }
+
+    /** Whether the selection is just a {@code #!} line, which Toggle Comment leaves alone. */
+    private static boolean onlyShebang(EditorBuffer buffer) {
+        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        return com.editora.editops.Commenter.onlyShebang(
+                a.getText(),
+                a.getSelection().getStart(),
+                a.getSelection().getEnd(),
+                com.editora.editops.Commenter.styleFor(buffer.getLanguage()));
     }
 
     /** Applies an Emacs transpose (chars/words/lines) to the active editable buffer at the caret. */

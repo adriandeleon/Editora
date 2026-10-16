@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -176,6 +177,17 @@ class SnippetManagerTest {
         assertTrue(
                 m.bundledSnippets("java").stream().noneMatch(s -> "MyMain".equals(s.name())),
                 "bundledSnippets must not include user entries");
+    }
+
+    @Test
+    void theBundledShellCaseSnippetPutsSemicolonsAtBodyLevel(@TempDir Path dir) {
+        // adl's call (shfmt / Google style): ;; sits with its item's body, like the editor now types it.
+        Snippet c = manager(dir).byPrefix("shell", "case");
+        assertNotNull(c, "the bundled case snippet");
+        String text = SnippetParser.parse(c.body(), name -> null).text();
+        assertTrue(text.contains("\t1)\n\t\techo 1\n\t\t;;\n"), text);
+        assertTrue(text.contains("\t*)\n\t\techo default\n\t\t;;\nesac"), text);
+        assertFalse(text.contains("\n\t;;"), "no ;; at the pattern's level: " + text);
     }
 
     /**

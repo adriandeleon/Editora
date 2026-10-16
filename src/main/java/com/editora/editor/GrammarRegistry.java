@@ -234,7 +234,7 @@ public final class GrammarRegistry {
         // file extension -> scope name
         mapExtensions("source.java", "java");
         mapExtensions("text.xml", "xml", "xsd", "xsl", "xslt", "svg", "fxml", "pom", "rss", "wsdl");
-        mapExtensions("source.shell", "sh", "bash", "zsh", "ksh", "bashrc", "zshrc", "profile");
+        mapExtensions("source.shell", ShellFiles.EXTENSIONS.toArray(String[]::new)); // the table LanguageRegistry reads
         mapExtensions("source.powershell", "ps1", "psm1", "psd1");
         mapExtensions("source.batchfile", "bat", "cmd");
         mapExtensions("source.python", "py", "pyw", "pyi");
@@ -310,6 +310,13 @@ public final class GrammarRegistry {
         // dotenv (.env / .env.*), Caddyfile, crontab (.cron), git/ssh config, fstab, hosts, Makefile,
         // justfile, and .gitattributes are all name/location-determined and handled by ConfigFileType
         // (see scopeForFileName), not by extension.
+    }
+
+    /** Every extension with a bundled grammar, mapped to the grammar's language name (its resource name). */
+    java.util.Map<String, String> extensionLanguages() {
+        java.util.Map<String, String> out = new java.util.TreeMap<>();
+        extensionToScope.forEach((ext, scope) -> out.put(ext, scopeToResource.get(scope)));
+        return out;
     }
 
     private void mapExtensions(String scope, String... extensions) {

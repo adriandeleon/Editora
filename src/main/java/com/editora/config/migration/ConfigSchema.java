@@ -245,7 +245,11 @@ public enum ConfigSchema {
                     Map.entry(122, (Migration) ConfigMigrations::identity),
                     // v123→124: + httpScriptsEnabled / httpNodePath / httpScriptTimeoutSeconds (additive: handlers
                     // on, node on the PATH, 10 s).
-                    Map.entry(123, (Migration) ConfigMigrations::identity)),
+                    Map.entry(123, (Migration) ConfigMigrations::identity),
+                    // v124→125: + bash-language-server settings (bashShellcheckPath/Arguments, bashShfmt*,
+                    // bashBackgroundAnalysisMaxFiles, bashIncludeAllWorkspaceSymbols, bashExplainshellEndpoint),
+                    // additive: every default is the server's own default, so nothing changes until set.
+                    Map.entry(124, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -292,7 +296,10 @@ public enum ConfigSchema {
                     // v14→15: + markdownPreviewLayouts (additive; missing means 100% zoom, divider in the middle)
                     Map.entry(14, ConfigMigrations::identity),
                     // v15→16: + fileEncodings (additive; missing means every file's encoding is detected)
-                    Map.entry(15, ConfigMigrations::identity))),
+                    Map.entry(15, ConfigMigrations::identity),
+                    // v16→17: + RunConfiguration.interpreter / interpreterOptions (additive; blank means the
+                    // script's shebang decides)
+                    Map.entry(16, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

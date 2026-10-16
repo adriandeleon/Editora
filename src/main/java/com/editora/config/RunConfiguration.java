@@ -8,7 +8,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * projectName} (multi-module), program {@code args}, JVM {@code vmArgs}, an optional {@code workingDir}
  * (blank ⇒ the project root), and {@code env} — environment variables as quote-aware {@code KEY=VALUE} pairs
  * (see {@code run/EnvVars}). {@code jdkHome} optionally overrides the default JDK for this
- * configuration; blank inherits it.
+ * configuration; blank inherits it. A shell configuration's {@code interpreter} and {@code interpreterOptions}
+ * override what the script's shebang asks for (see {@code run/ShellCommand}); blank keeps the shebang.
  *
  * <p>{@code type} says <em>what</em> is launched — {@code java} (the {@code mainClass}, resolved through
  * jdtls) or a script type handled by {@code run/ScriptRunCommand}, whose {@code target} is the script path,
@@ -41,7 +42,9 @@ public record RunConfiguration(
         String workingDir,
         String env,
         String beforeLaunch,
-        String jdkHome) {
+        String jdkHome,
+        String interpreter,
+        String interpreterOptions) {
 
     /** Prefix of the synthetic per-configuration run commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
@@ -67,6 +70,24 @@ public record RunConfiguration(
         env = env == null ? "" : env;
         beforeLaunch = beforeLaunch == null ? "" : beforeLaunch;
         jdkHome = jdkHome == null ? "" : jdkHome;
+        interpreter = interpreter == null ? "" : interpreter;
+        interpreterOptions = interpreterOptions == null ? "" : interpreterOptions;
+    }
+
+    /** A configuration with no interpreter override — every shape saved before shell interpreters existed. */
+    public RunConfiguration(
+            String name,
+            String type,
+            String target,
+            String mainClass,
+            String projectName,
+            String args,
+            String vmArgs,
+            String workingDir,
+            String env,
+            String beforeLaunch,
+            String jdkHome) {
+        this(name, type, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch, jdkHome, "", "");
     }
 
     /**
