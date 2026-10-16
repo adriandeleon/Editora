@@ -313,7 +313,9 @@ class LspCoordinatorHooksFxTest {
      *  marks the edit cleared: they are put back from what is known. */
     @Test
     void aNetZeroEditRestoresTheDiagnosticsItCleared() throws Exception {
-        List<List<com.editora.editor.LspDiagnostic>> shown = new ArrayList<>();
+        // Written on the FX thread and read here, while the typing-pause timer may still add to it (about a
+        // quarter second after the edit): a plain ArrayList threw ConcurrentModificationException mid-read.
+        List<List<com.editora.editor.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
         HookedBuffer buffer = fx.open("A.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
             @Override
             public void setLspDiagnostics(List<com.editora.editor.LspDiagnostic> diagnostics) {
