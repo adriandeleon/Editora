@@ -37,7 +37,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * mvn test -Dtest=ContainerProbeFxTest -Dgroups=fx -Dcontainer.probe=podman -Dcontainer.probe.image=eclipse-temurin:25-jdk
  * </pre>
  *
- * The image needs {@code sh}, {@code sleep} and {@code ps}.
+ * The image needs {@code sh}, {@code sleep} and {@code ps}. A Java debug session in the container also needs a
+ * jdtls folder ({@code -Dcontainer.probe.jdtls=<its root>}, mounted read-only) and the java-debug plugin jar
+ * ({@code -Dcontainer.probe.javaDebug=<jar>}, which Editora copies into the container's cache), and an image with a
+ * JDK; without them that test is skipped.
  */
 @Tag("fx")
 @EnabledIfSystemProperty(named = "container.probe", matches = ".+")
@@ -63,23 +66,48 @@ class ContainerProbeFxTest {
         return ProcessRunner.run(null, Duration.ofSeconds(120), argv);
     }
 
+    /** jdtls's own launcher is a Python script; an image without Python runs the same JVM with this. */
+    private static final String JDTLS_WITHOUT_PYTHON = """
+            #!/bin/sh
+            # What jdtls's bin/jdtls (jdtls.py) runs, for an image with no python3.
+            exec java -Djdk.xml.maxGeneralEntitySizeLimit=0 -Djdk.xml.totalEntitySizeLimit=0 \\
+              -Declipse.application=org.eclipse.jdt.ls.core.id1 -Dosgi.bundles.defaultStartLevel=4 \\
+              -Declipse.product=org.eclipse.jdt.ls.core.product -Dosgi.checkConfiguration=true \\
+              -Dosgi.sharedConfiguration.area=/opt/jdtls/config_linux -Dosgi.sharedConfiguration.area.readOnly=true \\
+              -Dosgi.configuration.cascaded=true -Xms1G --add-modules=ALL-SYSTEM \\
+              --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED \\
+              -jar "$(ls /opt/jdtls/plugins/org.eclipse.equinox.launcher_*.jar | head -n 1)" "$@"
+            """;
+
+    private Path loose;
+
     @BeforeEach
     void setUp() throws Exception {
         engine = ContainerEngine.of(System.getProperty("container.probe"));
         folder = Files.createDirectories(dir.toRealPath().resolve("app"));
         Files.writeString(folder.resolve("a.txt"), "hola\n");
+        loose = Files.createDirectories(dir.toRealPath().resolve("loose"));
         name = "editora-probe-" + Long.toHexString(System.nanoTime());
-        ProcessRunner.Result run = engine(
+        List<String> run = new java.util.ArrayList<>(List.of(
                 "run",
                 "-d",
                 "--name",
                 name,
                 "-v",
                 folder + ":/workspaces/app:Z",
-                System.getProperty("container.probe.image", "eclipse-temurin:25-jdk"),
-                "sleep",
-                "infinity");
-        assertTrue(run.ok(), "the container did not start: " + run.message());
+                "-v",
+                loose + ":/workspaces/loose:Z"));
+        String jdtls = System.getProperty("container.probe.jdtls");
+        if (jdtls != null && !jdtls.isBlank()) {
+            Path bin = Files.createDirectories(dir.resolve("probe-bin"));
+            Path launcher = Files.writeString(bin.resolve("jdtls"), JDTLS_WITHOUT_PYTHON);
+            launcher.toFile().setExecutable(true, false);
+            // Read-only and not relabelled: it is the user's own jdtls install.
+            run.addAll(List.of("-v", jdtls + ":/opt/jdtls:ro", "-v", bin + ":/opt/editora-probe:ro"));
+        }
+        run.addAll(List.of(System.getProperty("container.probe.image", "eclipse-temurin:25-jdk"), "sleep", "infinity"));
+        ProcessRunner.Result started = engine(run.toArray(String[]::new));
+        assertTrue(started.ok(), "the container did not start: " + started.message());
         ContainerInfo info = engine.inspect(name);
         assertNotNull(info, "inspect");
         target = new ContainerExecTarget(engine, info);
@@ -195,6 +223,138 @@ class ContainerProbeFxTest {
         }
         assertFalse(left.stream().anyMatch(a -> a.startsWith("sleep 30")), "stopped with its group: " + left);
         assertFalse(ContainerExecTarget.reapOrphan(fields), "gone: nothing left to stop");
+    }
+
+    private static void await(String what, int seconds, java.util.function.BooleanSupplier done)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (!done.getAsBoolean()) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("timed out: " + what);
+            }
+            Thread.sleep(200);
+        }
+    }
+
+    /** Debugs {@code file} to a breakpoint on {@code line}, then lets it finish; what happened, for the report. */
+    private static String debugToBreakpoint(
+            com.editora.dap.DapManager dap, Path file, Path projectRoot, int line, String javaDebug) throws Exception {
+        List<List<com.editora.dap.DapModels.StackFrameInfo>> stops = new CopyOnWriteArrayList<>();
+        List<String> output = new CopyOnWriteArrayList<>();
+        List<String> errors = new CopyOnWriteArrayList<>();
+        onFx(() -> {
+            dap.configure(true, javaDebug);
+            dap.setProgramConsole(true);
+            dap.setListener(new com.editora.dap.DapManager.Listener() {
+                @Override
+                public void onState(com.editora.dap.DapManager.State state) {}
+
+                @Override
+                public void onStopped(
+                        int threadId, String reason, List<com.editora.dap.DapModels.StackFrameInfo> frames) {
+                    stops.add(frames);
+                }
+
+                @Override
+                public void onOutput(String text, String category) {
+                    output.add(text);
+                }
+
+                @Override
+                public void onError(String message) {
+                    errors.add(message);
+                }
+            });
+            dap.setBreakpointsSupplier(() -> List.of(new com.editora.dap.DapModels.FileBreakpoints(
+                    file, List.of(new com.editora.dap.DapModels.LineBreakpoint(line, null, null)))));
+            dap.startLaunch(file, "java", (options, chosen) -> chosen.accept(options.get(0)), "", projectRoot);
+        });
+        await("stopped at the breakpoint (errors " + errors + ")", 180, () -> !stops.isEmpty() || !errors.isEmpty());
+        assertEquals(List.of(), errors);
+        com.editora.dap.DapModels.StackFrameInfo top = stops.get(0).get(0);
+        assertEquals(file, top.file(), "the frame is this machine's file");
+        assertEquals(line, top.line(), "on the breakpoint's line");
+        onFx(dap::resume);
+        await(
+                "the program's output after Continue: " + output,
+                60,
+                () -> String.join("", output).contains("sum 2"));
+        return "stopped at " + file.getFileName() + ":" + (line + 1);
+    }
+
+    @Test
+    void aJavaProgramIsDebuggedInTheContainerByItsJdtls() throws Exception {
+        String jdtls = System.getProperty("container.probe.jdtls");
+        String javaDebug = System.getProperty("container.probe.javaDebug");
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                jdtls != null && javaDebug != null, "container.probe.jdtls / container.probe.javaDebug not given");
+        ExecTargets.setRemoteTools((id, tool) -> "lsp.java".equals(tool) ? "/opt/editora-probe/jdtls" : null);
+        Path src = Files.createDirectories(folder.resolve("src/main/java/demo"));
+        Files.writeString(
+                folder.resolve("pom.xml"),
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"
+                        + "<groupId>demo</groupId><artifactId>app</artifactId><version>1</version>"
+                        + "<properties><maven.compiler.release>17</maven.compiler.release></properties></project>\n");
+        String text = "package demo;\npublic class Main {\n  public static void main(String[] a) {\n    int x = 1;\n"
+                + "    System.out.println(\"sum \" + (x + 1));\n  }\n}\n";
+        Path main = Files.writeString(src.resolve("Main.java"), text);
+        ProcessRunner.Result javac = ProcessRunner.run(
+                folder,
+                Duration.ofSeconds(120),
+                List.of("javac", "-g", "--release", "17", "-d", "target/classes", "src/main/java/demo/Main.java"));
+        assertTrue(javac.ok(), "javac in the container: " + javac.message());
+
+        List<String> ready = new CopyOnWriteArrayList<>();
+        com.editora.lsp.LspManager lsp = new com.editora.lsp.LspManager((f, d) -> {}, (t, m) -> {
+            if ("ServiceReady".equals(t)) {
+                ready.add(t);
+            }
+        });
+        lsp.configure(true, Map.of());
+        lsp.setDebugBundles(List.of(javaDebug));
+        com.editora.dap.DapManager dap = new com.editora.dap.DapManager(lsp);
+        List<String> report = new java.util.ArrayList<>();
+        try {
+            onFx(() -> lsp.openDocument(main, folder, "java", text));
+            await("jdtls ready in the container", 300, () -> !ready.isEmpty());
+            Thread.sleep(3000);
+            report.add(debugToBreakpoint(dap, main, folder, 3, javaDebug));
+
+            // The plugin went into Editora's folder in the container, and so did jdtls's index.
+            String home = target.env().home();
+            ProcessRunner.Result cache = engine(
+                    "exec", name, "sh", "-c", "ls \"$0\"/java-debug \"$0\"/jdtls-workspaces", home + "/.cache/editora");
+            assertTrue(cache.ok() && cache.out().contains("com.microsoft.java.debug.plugin"), cache.message());
+
+            // A Java file in no project: compiled in the container's cache for the debugger, then debugged.
+            String looseText = "public class Loose {\n  public static void main(String[] a) {\n    int x = 1;\n"
+                    + "    System.out.println(\"sum \" + (x + 1));\n  }\n}\n";
+            Path looseFile = Files.writeString(loose.resolve("Loose.java"), looseText);
+            onFx(() -> lsp.openDocument(looseFile, loose, "java", looseText));
+            Thread.sleep(3000);
+            report.add(debugToBreakpoint(dap, looseFile, null, 2, javaDebug));
+            // The loose file's classes were compiled into the container's cache: gone with the session.
+            onFx(dap::shutdown);
+            String count = "?";
+            for (int k = 0; k < 100 && !count.equals("0"); k++) {
+                Thread.sleep(200);
+                count = engine(
+                                "exec",
+                                name,
+                                "sh",
+                                "-c",
+                                "ls -A \"$0\"/debug-classes 2>/dev/null | wc -l",
+                                home + "/.cache/editora")
+                        .out()
+                        .strip();
+            }
+            assertEquals("0", count, "the debug classes are removed in the container");
+            System.out.println("CONTAINER JAVA DEBUG: " + String.join(" | ", report));
+        } finally {
+            onFx(dap::shutdown);
+            lsp.shutdownAll();
+            ExecTargets.setRemoteTools(null);
+        }
     }
 
     @Test

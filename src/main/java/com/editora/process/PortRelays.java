@@ -20,9 +20,16 @@ public final class PortRelays {
         String p = String.valueOf(port);
         return switch (tool == null ? "" : tool.strip()) {
             case "nc" -> List.of("nc", host, p);
-            // The writer becomes the shell; the reader keeps stdout, so the port closing ends this side too.
+            // The writer becomes the shell; the reader keeps stdout, so the port closing ends this side too. dd, not
+            // cat: dd writes each read as it comes, while uutils' cat (Ubuntu 26.04's) holds what it reads from a
+            // socket until the socket closes, so an adapter's replies, on a connection that stays open, never came.
             case "bash" ->
-                List.of("bash", "-c", "exec 3<>\"/dev/tcp/$0/$1\" || exit 1; cat <&3 & exec cat >&3", host, p);
+                List.of(
+                        "bash",
+                        "-c",
+                        "exec 3<>\"/dev/tcp/$0/$1\" || exit 1; dd bs=65536 <&3 2>/dev/null & exec dd bs=65536 >&3 2>/dev/null",
+                        host,
+                        p);
             case "python3" ->
                 List.of(
                         "python3",
