@@ -1,0 +1,8 @@
+PROBE dirty-result-command: dirty=true toolbar-disabled=true baseline-matches=true request-after=baseA\nsame\ndraftB\n
+Sep 18, 2026 8:33:27 PM com.sun.javafx.application.PlatformImpl startup
+WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @74168d33'
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by com.sun.glass.utils.NativeLibLoader in an unnamed module (file:/home/adl/.m2/repository/org/openjfx/javafx-graphics/27/javafx-graphics-27-linux.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
