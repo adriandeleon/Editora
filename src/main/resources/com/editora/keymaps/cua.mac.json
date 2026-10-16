@@ -43,5 +43,8 @@
   "M-Cmd-S-enter": "http.runFile",
   "M-Cmd-k": "http.cancelRequest",
   "Cmd-S-t": "buffer.reopenClosed",
-  "M-S-i": "edit.addCaretsToLineEnds"
+  "M-S-i": "edit.addCaretsToLineEnds",
+  "Cmd-enter": "edit.insertLineBelow",
+  "Cmd-S-enter": "edit.insertLineAbove",
+  "Cmd-S-k": "edit.deleteLine"
 }

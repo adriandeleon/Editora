@@ -71,6 +71,11 @@ class ReadOnlyEditingFxTest {
             strings = {
                 "edit.cut",
                 "edit.paste",
+                "edit.insertLineBelow",
+                "edit.insertLineAbove",
+                "edit.deleteLine",
+                "edit.indentLines",
+                "edit.outdentLines",
                 "edit.deleteChar",
                 "edit.toggleComment",
                 "edit.transposeChars",
