@@ -35,7 +35,7 @@ public final class ExecTargets {
     /** Resolvers for folders of this machine's own filesystem whose tools run elsewhere; asked in order. */
     private static final Set<Resolver> MAPPED = new CopyOnWriteArraySet<>();
 
-    /** Whether commands may run anywhere but here: the user's {@code remoteExecution} setting. Off by default. */
+    /** Whether commands may run anywhere but here: the user's {@code remoteExecution} setting. On by default. */
     private static volatile BooleanSupplier remoteEnabled = () -> false;
 
     /** Whether the user has agreed to commands on one particular host, by {@link ExecTarget#id()}. */

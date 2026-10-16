@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `.http` files still do not run. Import cURL writes body lines the format would not send (from a `>`, `<>` or
     `###` line on) as comments, so a pasted command can never add a handler.
   - **Settings → Web:** turn handlers off, choose the Node.js to use, and set the timeout. The Doctor has a row
-    for it. Pre-request scripts (`< {% %}`) are still skipped with a warning.
+    for it.
 - **Emacs registers.** In the Emacs keymap:
   - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
   - `C-x r i` inserts a register's text, leaving the cursor before it.

@@ -2627,7 +2627,7 @@ public class SettingsWindow {
                 Category.EDITOR,
                 noteIndicatorsCheck,
                 null,
-                "personal notes gutter marker highlight indicators");
+                "personal notes highlight start marker indicators");
         checkRow(
                 display,
                 Category.EDITOR,
