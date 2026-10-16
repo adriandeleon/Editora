@@ -183,7 +183,11 @@ public final class DapManager implements DapClient.Host {
     private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
 
     private Supplier<List<DapModels.FileBreakpoints>> breakpointsSupplier = List::of;
-    private List<String> exceptionFilters = List.of();
+    /** The exception filters chosen per adapter language; a language with none starts with the adapter's defaults. */
+    private final Map<String, List<String>> exceptionChoices = new java.util.HashMap<>();
+    /** The adapter language of the current (or last) session: {@code java}, {@code python} or {@code javascript}. */
+    private String sessionLanguage = "java";
+
     private Runnable restartAction;
 
     public DapManager(LspManager lsp) {
@@ -199,11 +203,57 @@ public final class DapManager implements DapClient.Host {
         this.breakpointsSupplier = supplier == null ? List::of : supplier;
     }
 
-    public void setExceptionFilters(List<String> filters) {
-        this.exceptionFilters = filters == null ? List.of() : List.copyOf(filters);
-        if (client != null) {
-            client.setExceptionFilters(this.exceptionFilters);
+    /**
+     * Chooses {@code language}'s exception filters ({@code null}: back to the adapter's defaults). A live session
+     * of that language gets them at once; the next one starts with them.
+     */
+    public void setExceptionFilters(String language, List<String> filters) {
+        if (filters == null) {
+            exceptionChoices.remove(language);
+        } else {
+            exceptionChoices.put(language, List.copyOf(filters));
         }
+        if (client != null && language.equals(sessionLanguage)) {
+            client.setExceptionFilters(filters == null ? null : List.copyOf(filters));
+        }
+    }
+
+    /** The current session's exception filters ({@code null}: its adapter's defaults) — kept for callers that do
+     *  not name a language. */
+    public void setExceptionFilters(List<String> filters) {
+        setExceptionFilters(sessionLanguage, filters);
+    }
+
+    /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
+    private List<String> filtersFor(String language) {
+        sessionLanguage = language;
+        return exceptionChoices.get(language);
+    }
+
+    /** The language of the live (or last) session. */
+    public String sessionLanguage() {
+        return sessionLanguage;
+    }
+
+    /**
+     * The exception filters {@code language}'s adapter offers: the live session's own list when it is that
+     * language's, else what that adapter is known to offer ({@link ExceptionFilterCatalog}).
+     */
+    public List<DapModels.ExceptionFilterOption> exceptionFilterOptions(String language) {
+        DapClient c = client;
+        if (c != null && language.equals(sessionLanguage)) {
+            List<DapModels.ExceptionFilterOption> live = c.exceptionFilterOptions();
+            if (!live.isEmpty()) {
+                return live;
+            }
+        }
+        return ExceptionFilterCatalog.known(language);
+    }
+
+    /** The exception filters in force for {@code language}: the chosen ones, else the adapter's defaults. */
+    public List<String> exceptionFiltersFor(String language) {
+        List<String> chosen = exceptionChoices.get(language);
+        return chosen != null ? chosen : DapClient.defaultExceptionFilters(exceptionFilterOptions(language));
     }
 
     /**
@@ -340,13 +390,27 @@ public final class DapManager implements DapClient.Host {
      * on {@code PYTHONPATH}); delivers availability + caches it, on the FX thread.
      */
     public void detectPython(Consumer<Boolean> onResult) {
+        detectPython(onResult, false);
+    }
+
+    /**
+     * As {@link #detectPython}, but delivering whether debugpy is <em>installed</em> (importable by the
+     * configured interpreter) whatever the switches say — what Settings → Debugging shows. With debugging or
+     * Python debugging turned off it said "not found" about a debugpy that was there.
+     */
+    public void detectPythonInstalled(Consumer<Boolean> onResult) {
+        detectPython(onResult, true);
+    }
+
+    private void detectPython(Consumer<Boolean> onResult, boolean installedOnly) {
         io.submit(() -> {
             Path dir = DebugAdapterLocator.locateDebugpy("", home()).orElse(null);
-            boolean ok = enabled && pythonEnabled && probeDebugpy(dir);
+            boolean on = enabled && pythonEnabled;
+            boolean installed = (on || installedOnly) && probeDebugpy(dir);
             Platform.runLater(() -> {
                 this.debugpyDir = dir;
-                this.pythonAvailable = ok;
-                onResult.accept(ok);
+                this.pythonAvailable = on && installed;
+                onResult.accept(installedOnly ? installed : on && installed);
             });
         });
     }
@@ -378,6 +442,12 @@ public final class DapManager implements DapClient.Host {
         return Path.of(System.getProperty("user.home", ""));
     }
 
+    /** Test seam: debugpy found in {@code dir} (a folder holding a {@code debugpy} package), detection done. */
+    void setPythonAdapterForTest(Path dir) {
+        this.debugpyDir = dir;
+        this.pythonAvailable = true;
+    }
+
     /** Runs {@code <python> -c "import debugpy"} (debugpyDir on PYTHONPATH); true on a clean exit. */
     private boolean probeDebugpy(Path dir) {
         List<String> interp = DapServerRegistry.interpreterArgv("python", pythonCommand);
@@ -398,10 +468,16 @@ public final class DapManager implements DapClient.Host {
     /** Launches {@code argv} (PATH-augmented; {@code pythonPathDir} prepended to PYTHONPATH when non-null),
      *  discards its output, and returns whether it exits 0 within 5s. */
     private static boolean probe(List<String> argv, Path pythonPathDir) {
+        return probe(argv, pythonPathDir, Map.of());
+    }
+
+    /** As {@link #probe(List, Path)}, with {@code env} (a command's own {@code env NAME=value} prefix) applied. */
+    private static boolean probe(List<String> argv, Path pythonPathDir, Map<String, String> env) {
         try {
             List<String> cmd = ProcessRunner.resolveExecutable(argv);
             ProcessBuilder pb = new ProcessBuilder(cmd);
             ProcessRunner.applyStandardEnv(pb);
+            pb.environment().putAll(env);
             if (pythonPathDir != null) {
                 prependPythonPath(pb, pythonPathDir);
             }
@@ -497,6 +573,23 @@ public final class DapManager implements DapClient.Host {
     /** Sets the debuggee's JVM arguments; call before {@link #startLaunchMainClass}. "" clears them. */
     public void setVmArgs(String vmArgs) {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
+    }
+
+    /** The project a Python launch belongs to (null: none) — its venv, and its root on PYTHONPATH. */
+    private volatile Path pythonProjectRoot;
+
+    /** The interpreter picked for that project ("" when none was), relative paths taken from its root. */
+    private volatile String pythonProjectChoice = "";
+
+    /**
+     * Sets the project the next Python launch belongs to and the interpreter picked for it; call before
+     * {@link #startLaunch}. The program's interpreter is then resolved off the FX thread
+     * ({@link com.editora.run.PythonInterpreters}), and the project root (with {@code src/}) goes first on
+     * its {@code PYTHONPATH}.
+     */
+    public void setPythonProject(Path projectRoot, String projectChoice) {
+        this.pythonProjectRoot = projectRoot;
+        this.pythonProjectChoice = projectChoice == null ? "" : projectChoice;
     }
 
     /** Environment variables for the next launch (from a saved run configuration; empty otherwise). */
@@ -1213,7 +1306,7 @@ public final class DapManager implements DapClient.Host {
                 LaunchConfig.inClientConsole(args);
             }
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
-            c.setExceptionFilters(exceptionFilters);
+            c.setExceptionFilters(filtersFor("java"));
             if (!publishClient(epoch, c)) {
                 c.dispose();
                 return;
@@ -1276,6 +1369,15 @@ public final class DapManager implements DapClient.Host {
      * breakpoints on the FX thread, then spawns the adapter + connects + sends {@code launch} off it.
      */
     private void startProgram(Path file, String language) {
+        startProgram(file, language, null);
+    }
+
+    /**
+     * As {@link #startProgram(Path, String)}; for Python, {@code module} (non-null) runs {@code python -m} that
+     * module with its own arguments and folder instead of the file — a test under pytest. {@code file} still
+     * names the session, picks the interpreter and anchors the breakpoints.
+     */
+    private void startProgram(Path file, String language, PythonLaunch.Target module) {
         if (!readyProgram(file, language)) {
             return;
         }
@@ -1284,21 +1386,21 @@ public final class DapManager implements DapClient.Host {
             listener.onError("No debug adapter is configured for this file type.");
             return;
         }
-        restartAction = () -> startProgram(file, language);
+        restartAction = () -> startProgram(file, language, module);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
         // Snapshot UI state on the FX thread before going off it.
         List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
-        List<String> filters = exceptionFilters;
+        List<String> filters = filtersFor(language);
         startupTask = io.submit(() -> {
             try {
                 boolean remote = !com.editora.process.ExecTargets.runsHere(file);
                 if (spec.kind() == DapServerRegistry.Kind.STDIO) {
                     if (remote) {
-                        startRemoteStdio(file, spec, bps, filters, epoch);
+                        startRemoteStdio(file, spec, bps, filters, epoch, module);
                     } else {
-                        startStdio(file, spec, bps, filters, epoch);
+                        startStdio(file, spec, bps, filters, epoch, module);
                     }
                 } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
                     if (remote) {
@@ -1313,6 +1415,37 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, "Could not start the debugger: " + msg(e));
             }
         });
+    }
+
+    /**
+     * Debugs {@code python -m module args} in {@code cwd} — a pytest test, say — under {@code anchor}'s
+     * interpreter, with {@code anchor} naming the session. Restart repeats it.
+     */
+    /**
+     * Debugs a pytest run ({@code python -m pytest args}) in {@code cwd}, anchored at test file {@code anchor}.
+     * When the interpreter has no pytest, {@code unittestArgs} (non-empty) run under {@code python -m unittest}
+     * instead; otherwise the session ends saying pytest is missing for that interpreter.
+     */
+    public void startPythonTest(Path anchor, List<String> pytestArgs, List<String> unittestArgs, Path cwd) {
+        Path dir = cwd != null ? cwd : anchor.getParent();
+        String where = dir == null
+                ? null
+                : com.editora.process.ExecTargets.forPath(dir).toTargetPath(dir);
+        PythonLaunch.Target unittest = unittestArgs == null || unittestArgs.isEmpty()
+                ? null
+                : PythonLaunch.Target.module("unittest", unittestArgs, where);
+        startProgram(
+                anchor,
+                "python",
+                PythonLaunch.Target.module("pytest", pytestArgs, where).orElse(unittest));
+    }
+
+    public void startPythonModule(Path anchor, String module, List<String> args, Path cwd) {
+        Path dir = cwd != null ? cwd : anchor.getParent();
+        String where = dir == null
+                ? null
+                : com.editora.process.ExecTargets.forPath(dir).toTargetPath(dir);
+        startProgram(anchor, "python", PythonLaunch.Target.module(module, args, where));
     }
 
     private boolean readyProgram(Path file, String language) {
@@ -1346,41 +1479,98 @@ public final class DapManager implements DapClient.Host {
         return true;
     }
 
-    /** debugpy over stdio: spawn {@code <python> -m debugpy.adapter}, wire DAP to its streams, launch. */
+    /**
+     * debugpy over stdio: spawn {@code <python> -m debugpy.adapter}, wire DAP to its streams, launch. The
+     * program runs under the interpreter resolved for {@code file} (the project's venv, the picked one, …);
+     * the adapter runs under that one too when it can import debugpy, else under the Debugging setting's.
+     */
     private void startStdio(
             Path file,
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
             List<String> filters,
-            long epoch)
+            long epoch,
+            PythonLaunch.Target module)
             throws Exception {
-        List<String> argv = new ArrayList<>(DapServerRegistry.interpreterArgv("python", pythonCommand));
-        argv.addAll(spec.adapterArgs()); // -m debugpy.adapter
-        List<String> cmd = ProcessRunner.resolveExecutable(argv);
+        Path root = pythonRootFor(file);
+        com.editora.run.PythonInterpreters.PythonInterpreter resolved =
+                com.editora.run.PythonInterpreters.resolveLocal(file, root, "", pythonProjectChoice, pythonCommand);
+        HostPython parsed = HostPython.parse(resolved.command());
+        // debugpy is handed the program's interpreter by path: the adapter's PATH is not the one it was found on.
+        HostPython program = new HostPython(
+                ProcessRunner.resolveExecutable(List.of(parsed.executable())).getFirst(), parsed.args(), parsed.env());
+        HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), debugpyDir, program.env())
+                ? program
+                : HostPython.parse(DapServerRegistry.interpreterArgv("python", pythonCommand));
+        List<String> cmd = ProcessRunner.resolveExecutable(adapter.argv(spec.adapterArgs())); // -m debugpy.adapter
         ProcessBuilder pb = new ProcessBuilder(cmd);
         ProcessRunner.applyUserEnv(pb);
+        pb.environment().putAll(adapter.env());
         if (debugpyDir != null) {
             prependPythonPath(pb, debugpyDir);
         }
-        pb.redirectError(ProcessBuilder.Redirect.DISCARD); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+        if (module != null && "pytest".equals(module.module())) {
+            module = pytestOrFallback(module, program, epoch);
+            if (module == null) {
+                return; // reported
+            }
+        }
         Process proc = BusyExecutable.start(pb);
-        String interpExe = cmd.isEmpty() ? null : cmd.get(0);
-        attachStdio(
-                proc,
-                spec,
-                bps,
-                filters,
-                epoch,
-                DapPaths.LOCAL,
-                file.toString(),
-                cwdOf(file),
-                interpExe == null ? null : new HostPython(interpExe, List.of(), Map.of()));
+        AdapterStderr stderr = AdapterStderr.drain(proc); // DAP is on stdin/stdout; an undrained PIPE deadlocks
+        boolean console = programConsole;
+        PythonLaunch.Target target =
+                module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
+        String inherited = System.getenv("PYTHONPATH");
+        Map<String, Object> launch = PythonLaunch.request(
+                target,
+                program,
+                com.editora.run.PythonInterpreters.pythonPathEntries(root, Files::isDirectory),
+                inherited == null ? "" : inherited,
+                File.pathSeparator,
+                console);
+        attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
     }
 
     /**
-     * Wires a started stdio adapter ({@code proc}) to a new session and launches {@code program} in
-     * {@code cwd} with {@code interpreter} (null: the adapter's default) — named as the adapter's machine
-     * names them.
+     * A pytest run when {@code program} can import pytest; else its unittest fallback; else null, with the
+     * session ended saying which interpreter lacks pytest.
+     */
+    private PythonLaunch.Target pytestOrFallback(PythonLaunch.Target pytest, HostPython program, long epoch) {
+        if (!"pytest".equals(pytest.module())
+                || probe(program.argv(List.of("-c", "import pytest")), null, program.env())) {
+            return pytest;
+        }
+        if (pytest.fallback() != null) {
+            return pytest.fallback();
+        }
+        fail(
+                epoch,
+                "pytest is not installed for " + program.executable()
+                        + " — install it in that environment (python -m pip install pytest).");
+        return null;
+    }
+
+    /** The project root {@code file} belongs to (the window's project, when the file is inside it), else null. */
+    private Path pythonRootFor(Path file) {
+        Path root = pythonProjectRoot;
+        if (root == null || file == null) {
+            return null;
+        }
+        try {
+            return file.toAbsolutePath()
+                            .normalize()
+                            .startsWith(root.toAbsolutePath().normalize())
+                    ? root
+                    : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Wires a started stdio adapter ({@code proc}) to a new session and sends it {@code launch}, whose paths are
+     * named as the adapter's machine names them. With {@code runsDebuggee}, the adapter hands the program's
+     * command line back and Editora starts it (its standard input is then the Debug console's).
      */
     private void attachStdio(
             Process proc,
@@ -1389,9 +1579,9 @@ public final class DapManager implements DapClient.Host {
             List<String> filters,
             long epoch,
             DapPaths paths,
-            String program,
-            String cwd,
-            HostPython interpreter) {
+            Map<String, Object> launch,
+            boolean runsDebuggee,
+            AdapterStderr stderr) {
         if (!isCurrent(epoch)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             return;
@@ -1400,6 +1590,7 @@ public final class DapManager implements DapClient.Host {
         c.setPaths(paths);
         c.setBreakpoints(bps);
         c.setExceptionFilters(filters);
+        c.setRunsDebuggee(runsDebuggee);
         if (!publishClient(epoch, c)) {
             com.editora.process.ProcessRegistry.killTree(proc);
             c.dispose();
@@ -1407,29 +1598,16 @@ public final class DapManager implements DapClient.Host {
         }
         c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to debugpy: " + msg(e));
+                fail(epoch, "Could not connect to debugpy: " + msg(e) + AdapterStderr.suffix(stderr));
                 return;
             }
             if (!isCurrent(epoch)) {
                 c.dispose();
                 return;
             }
-            Map<String, Object> launch = new java.util.LinkedHashMap<>(LaunchConfig.program(
-                    spec.launchType(),
-                    program,
-                    cwd,
-                    interpreter == null ? null : interpreter.executable(),
-                    programArgs,
-                    false));
-            if (interpreter != null && !interpreter.args().isEmpty()) {
-                launch.put("pythonArgs", interpreter.args());
-            }
-            if (interpreter != null && !interpreter.env().isEmpty()) {
-                launch.put("env", interpreter.env()); // what the command set for itself, the program gets too
-            }
             c.launch(launch).whenComplete((v, le) -> {
                 if (le != null) {
-                    fail(epoch, "launch failed: " + msg(le));
+                    fail(epoch, launchFailure(le, launch) + AdapterStderr.suffix(stderr));
                 }
             });
             Platform.runLater(() -> {
@@ -1438,6 +1616,22 @@ public final class DapManager implements DapClient.Host {
                 }
             });
         });
+    }
+
+    /**
+     * What a failed Python launch says. A timeout is debugpy waiting for a program it could not start — an
+     * interpreter that does not run — rather than anything the user can read in a Java exception's name.
+     */
+    static String launchFailure(Throwable error, Map<String, Object> launch) {
+        Throwable t = error;
+        while (t.getCause() != null && !(t instanceof java.util.concurrent.TimeoutException)) {
+            t = t.getCause();
+        }
+        if (t instanceof java.util.concurrent.TimeoutException) {
+            return "debugpy did not start the program within " + DapClient.requestTimeoutSeconds()
+                    + " s — check that the Python interpreter runs: " + launch.get("python");
+        }
+        return "launch failed: " + msg(error);
     }
 
     /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
@@ -1504,7 +1698,7 @@ public final class DapManager implements DapClient.Host {
         long epoch = beginSession();
         setState(State.STARTING);
         List<DapModels.FileBreakpoints> bps = breakpointsSupplier.get();
-        List<String> filters = exceptionFilters;
+        List<String> filters = filtersFor("javascript");
         Map<String, Object> attach = LaunchConfig.nodeAttach(spec.launchType(), name, port, skipFiles);
         startupTask = io.submit(() -> {
             try {
@@ -1683,7 +1877,8 @@ public final class DapManager implements DapClient.Host {
             DapServerRegistry.DapServerSpec spec,
             List<DapModels.FileBreakpoints> bps,
             List<String> filters,
-            long epoch)
+            long epoch,
+            PythonLaunch.Target module)
             throws Exception {
         var target = com.editora.process.ExecTargets.forPath(file);
         Path dir = file.getParent();
@@ -1705,16 +1900,12 @@ public final class DapManager implements DapClient.Host {
                 com.editora.process.ExecSpec.of(argv, dir, python.env(), com.editora.process.ExecSpec.Locale.USER)
                         .withLongLived(true)
                         .withDiscardedOutput(false, true));
-        attachStdio(
-                proc,
-                spec,
-                bps,
-                filters,
-                epoch,
-                DapPaths.on(target, file.getFileSystem()),
-                target.toTargetPath(file),
-                target.toTargetPath(dir),
-                python);
+        PythonLaunch.Target what = module != null
+                ? module
+                : PythonLaunch.Target.script(target.toTargetPath(file), programArgs, target.toTargetPath(dir));
+        // The host's own PYTHONPATH is not known here (null): it is left as the host has it.
+        Map<String, Object> launch = PythonLaunch.request(what, python, List.of(), null, ":", false);
+        attachStdio(proc, spec, bps, filters, epoch, DapPaths.on(target, file.getFileSystem()), launch, false, null);
     }
 
     /**
@@ -2446,6 +2637,7 @@ public final class DapManager implements DapClient.Host {
             return;
         }
         killDebuggee(); // a session has one program
+        programStartedEpoch = epoch;
         Debuggee program = new Debuggee();
         try {
             // The adapter names the folder as its machine does: on a remote file's host, a path there.
@@ -2486,6 +2678,27 @@ public final class DapManager implements DapClient.Host {
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
         }
     }
+
+    /** The session whose program Editora started itself (its exit is reported by its own process). */
+    private long programStartedEpoch = -1;
+
+    /**
+     * The adapter reports the program exited: the console says with which code, after the program's last
+     * output. A program Editora started itself reports its own exit instead (see {@link #startDebuggee}).
+     */
+    private void onExited(long epoch, int exitCode) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch) || programStartedEpoch == epoch || exitReportedEpoch == epoch) {
+                return;
+            }
+            exitReportedEpoch = epoch;
+            outputPump.flush();
+            listener.onProgramExit(exitCode);
+        });
+    }
+
+    /** The session whose exit code was already reported (a child session may report it again). */
+    private long exitReportedEpoch = -1;
 
     /** Ends the session's own program, if it has one, and stops listening to it (FX thread). */
     private void killDebuggee() {
@@ -2605,6 +2818,11 @@ public final class DapManager implements DapClient.Host {
             @Override
             public void onNotice(String message, boolean error) {
                 DapManager.this.onNotice(epoch, message, error);
+            }
+
+            @Override
+            public void onExited(int exitCode) {
+                DapManager.this.onExited(epoch, exitCode);
             }
 
             @Override

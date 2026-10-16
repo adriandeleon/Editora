@@ -80,6 +80,16 @@ final class DebugCoordinator {
         /** The remembered program-arguments string for {@code path} (shared with the Run feature). */
         String programArgs(Path path);
 
+        /** This window's project root (null: none): a Python program's venv and {@code PYTHONPATH}. */
+        default Path projectRoot() {
+            return null;
+        }
+
+        /** The Python interpreter picked for this window's project ("" when none was). */
+        default String pythonInterpreterChoice() {
+            return "";
+        }
+
         /** A stack-trace location double-clicked in the Debug console: resolve + jump (shared resolver). */
         void openLink(StackTraceLinks.Link link);
 
@@ -152,8 +162,6 @@ final class DebugCoordinator {
     private final com.editora.run.RunService beforeLaunchService = new com.editora.run.RunService();
 
     private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(beforeLaunchService);
-
-    private final Set<String> exceptionFilters = new LinkedHashSet<>();
 
     /** The java-debug bundle jars last pushed to the LSP layer — restart jdtls only when this changes. */
     private List<String> appliedDebugBundles = List.of();
@@ -627,6 +635,15 @@ final class DebugCoordinator {
                         status.actualLine(),
                         new DapModels.BreakpointStatus(status.actualLine(), true, false, "", status.actualLine()));
                 host.setStatus(tr("status.debug.breakpointMoved", status.line() + 1, status.actualLine() + 1));
+            } else if (status.verified()
+                    && status.actualLine() >= 0
+                    && status.actualLine() != status.line()
+                    && buffer != null
+                    && buffer.getBreakpointManager().mergeDocumentLine(status.line(), status.actualLine())) {
+                // Bound onto a line that has a breakpoint already: one breakpoint, the one there (the re-send
+                // the removal causes leaves the adapter just that one, with its condition).
+                known.remove(status.line());
+                host.setStatus(tr("status.debug.breakpointMerged", status.line() + 1, status.actualLine() + 1));
             }
         }
         if (buffer != null) {
@@ -852,7 +869,7 @@ final class DebugCoordinator {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
             if (bp.enabled()) {
-                lines.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
+                lines.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
             }
         }
         return new DapModels.FileBreakpoints(buffer.getPath(), lines);
@@ -972,13 +989,15 @@ final class DebugCoordinator {
                         BreakpointManager.MAX_REANCHOR_SCAN);
                 for (Breakpoint bp : anchored.values()) {
                     if (bp.enabled()) {
-                        out2.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
+                        out2.add(new DapModels.LineBreakpoint(
+                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
                     }
                 }
             } else {
                 for (Breakpoint bp : bps) {
                     if (bp.enabled()) {
-                        out2.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage()));
+                        out2.add(new DapModels.LineBreakpoint(
+                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
                     }
                 }
             }
@@ -1415,7 +1434,7 @@ final class DebugCoordinator {
         }
         String language = b.getLanguage();
         if (!debugEffectiveFor(language, b.getPath())) {
-            host.setStatus(tr("status.debug.unavailable"));
+            host.setStatus(unavailableMessage(language, b.getPath()));
             return;
         }
         if ((b.isDirty() || b.getPath() == null) && !ops.saveBuffer(b)) {
@@ -1436,6 +1455,7 @@ final class DebugCoordinator {
         nameSession(b.getPath().getFileName().toString());
         dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
+        dapManager.setPythonProject(ops.projectRoot(), ops.pythonInterpreterChoice());
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
         boolean compactSource = "java".equals(language) && b.isCompactSource();
@@ -1457,6 +1477,128 @@ final class DebugCoordinator {
                 dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec, projectRoot);
             }
         });
+    }
+
+    /**
+     * Why {@code language} cannot be debugged here, as the user can act on it: Python or JavaScript debugging
+     * turned off, or its adapter not found (with the command that installs it). One message used to cover all
+     * of these, and every other reason too.
+     */
+    String unavailableMessage(String language, Path file) {
+        boolean local = file == null || com.editora.process.ExecTargets.runsHere(file);
+        if (!local || !debugSupportEnabled()) {
+            return tr("status.debug.unavailable");
+        }
+        var s = host.settings();
+        return switch (language == null ? "" : language) {
+            case "python" ->
+                !s.isPythonDebugEnabled()
+                        ? tr("status.debug.pythonOff")
+                        : tr(
+                                "status.debug.debugpyMissing",
+                                s.getPythonDebugCommand().isBlank()
+                                        ? com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER
+                                        : s.getPythonDebugCommand());
+            case "javascript" -> !s.isJsDebugEnabled() ? tr("status.debug.jsOff") : tr("status.debug.jsDebugMissing");
+            default -> tr("status.debug.unavailable");
+        };
+    }
+
+    /**
+     * Debug Test at Caret on a pytest file ({@code test_*.py}, {@code *_test.py}): the test at the caret (its class
+     * with {@code classLevel}, the whole file outside any test) runs under pytest in debugpy. False — nothing
+     * done — for any other buffer, which the caller then handles as before.
+     */
+    boolean debugPythonTestAtCaret(EditorBuffer b, boolean classLevel) {
+        if (b == null
+                || b.getPath() == null
+                || !b.isPython()
+                || !com.editora.test.PytestScanner.isTestFile(
+                        b.getPath().getFileName().toString())) {
+            return false;
+        }
+        int caret = b.getFocusedArea().getCurrentParagraph()
+                + b.getBreakpointManager().regionFirstLine();
+        com.editora.test.PytestScanner.TestTarget target = com.editora.test.PytestScanner.atLine(b.getContent(), caret);
+        if (classLevel && target != null && target.className() != null) {
+            target = new com.editora.test.PytestScanner.TestTarget(
+                    target.line(), target.endLine(), target.className(), null);
+        }
+        debugPythonTest(b, target);
+        return true;
+    }
+
+    /**
+     * Debugs {@code target} of pytest file {@code b} ({@code null}: the whole file): {@code python -m pytest
+     * <node id>} under debugpy, from the project root (the file's folder with no project), under the file's
+     * interpreter. Without pytest, a {@code unittest.TestCase} test runs under {@code python -m unittest}
+     * instead. Public for the per-test gutter ▶'s Debug entry (LEAD-WIRE: Fixer C's gutter calls this).
+     */
+    public void debugPythonTest(EditorBuffer b, com.editora.test.PytestScanner.TestTarget target) {
+        Path file = b == null ? null : b.getPath();
+        if (file == null) {
+            host.setStatus(tr("status.debug.saveFirst"));
+            return;
+        }
+        if (!debugEffectiveFor("python", file)) {
+            host.setStatus(unavailableMessage("python", file));
+            return;
+        }
+        if (b.isDirty() && !ops.saveBuffer(b)) {
+            return;
+        }
+        Path root = pythonRootOf(file);
+        Path cwd = root != null ? root : file.getParent();
+        String relative = cwd.relativize(file).toString().replace('\\', '/');
+        String nodeId = com.editora.test.PytestScanner.nodeId(relative, target);
+        List<String> unittest = unittestFallback(b.getContent(), relative, target);
+        ops.openToolWindow();
+        nameSession(file.getFileName() + (target == null ? "" : " :: " + target.displayName()));
+        dapManager.setProgramArgs(List.of());
+        dapManager.setPythonProject(root, ops.pythonInterpreterChoice());
+        relaunch = () -> debugPythonTest(b, target);
+        withClosedBreakpoints(() -> dapManager.startPythonTest(file, List.of(nodeId), unittest, cwd));
+    }
+
+    /** This window's project root when {@code file} is inside it, else null. */
+    private Path pythonRootOf(Path file) {
+        Path root = ops.projectRoot();
+        return root != null
+                        && file.toAbsolutePath()
+                                .normalize()
+                                .startsWith(root.toAbsolutePath().normalize())
+                ? root
+                : null;
+    }
+
+    /**
+     * Pure: the {@code python -m unittest} arguments that run {@code target} when pytest is missing — only for a
+     * {@code unittest.TestCase} class (or a method of one), named as a dotted path from the folder it runs in;
+     * empty when unittest cannot run it.
+     */
+    static List<String> unittestFallback(
+            String source, String relative, com.editora.test.PytestScanner.TestTarget target) {
+        if (target == null || target.className() == null || !relative.endsWith(".py")) {
+            return List.of();
+        }
+        String[] lines = source.split("\n", -1);
+        String header = target.line() < lines.length ? lines[target.line()] : "";
+        if (!header.contains("TestCase")) {
+            // the method's class header: the nearest "class Name" above
+            header = "";
+            for (int i = Math.min(target.line(), lines.length - 1); i >= 0; i--) {
+                if (lines[i].stripLeading().startsWith("class " + target.className())) {
+                    header = lines[i];
+                    break;
+                }
+            }
+        }
+        if (!header.contains("TestCase")) {
+            return List.of();
+        }
+        String module = relative.substring(0, relative.length() - 3).replace('/', '.');
+        return List.of(
+                module + "." + target.className() + (target.functionName() == null ? "" : "." + target.functionName()));
     }
 
     /** Restart of a session started from {@code file}'s tab: repeat it there, or plainly if the tab is gone. */
@@ -1920,6 +2062,9 @@ final class DebugCoordinator {
         condition.setPrefColumnCount(32);
         TextField logMessage = new TextField(bp.logMessage());
         logMessage.setPrefColumnCount(32);
+        TextField hitCondition = new TextField(bp.hitCondition());
+        hitCondition.setPrefColumnCount(32);
+        hitCondition.setPromptText(tr("dialog.debug.hitConditionPrompt"));
         CheckBox enabled = new CheckBox(tr("dialog.debug.breakpointEnabled"));
         enabled.setSelected(bp.enabled());
 
@@ -1930,8 +2075,10 @@ final class DebugCoordinator {
         grid.add(condition, 1, 0);
         grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
         grid.add(logMessage, 1, 1);
-        grid.add(enabled, 1, 2);
-        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 3);
+        grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 2);
+        grid.add(hitCondition, 1, 2);
+        grid.add(enabled, 1, 3);
+        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 4);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
 
@@ -1948,6 +2095,7 @@ final class DebugCoordinator {
                     }
                     mgr.setCondition(line, condition.getText().trim());
                     mgr.setLogMessage(line, logMessage.getText().trim());
+                    mgr.setHitCondition(line, hitCondition.getText().trim());
                     mgr.setEnabled(line, enabled.isSelected());
                 },
                 null,
@@ -1962,16 +2110,89 @@ final class DebugCoordinator {
         return l;
     }
 
-    /** Toggles the "uncaught exceptions" breakpoint filter. */
+    /**
+     * Debug: Exception Breakpoints — a picker over the filters the adapter offers (the live session's
+     * {@code exceptionBreakpointFilters}, else those that language's adapter is known to offer), each marked
+     * when on; choosing one turns it on or off. A language starts with its adapter's defaults (debugpy: uncaught
+     * exceptions), and a choice holds for that language's sessions from then on.
+     */
     void toggleExceptionBreakpoints() {
-        if (exceptionFilters.contains("uncaught")) {
-            exceptionFilters.remove("uncaught");
-        } else {
-            exceptionFilters.add("uncaught");
+        String language = exceptionLanguage();
+        List<DapModels.ExceptionFilterOption> options =
+                language == null ? List.of() : dapManager.exceptionFilterOptions(language);
+        if (options.isEmpty()) {
+            host.setStatus(tr("status.debug.exceptionsNoLanguage"));
+            return;
         }
-        dapManager.setExceptionFilters(new ArrayList<>(exceptionFilters));
-        host.setStatus(
-                tr(exceptionFilters.contains("uncaught") ? "status.debug.exceptionsOn" : "status.debug.exceptionsOff"));
+        QuickOpen<DapModels.ExceptionFilterOption> picker = new QuickOpen<>(
+                tr("command.debug.toggleExceptionBreakpoints"),
+                tr("debug.exceptions.prompt", debugAdapterLabel(language)),
+                () -> options,
+                o -> exceptionRow(language, o),
+                DapModels.ExceptionFilterOption::filter,
+                o -> {
+                    if (o != null) {
+                        toggleExceptionFilter(language, o.filter());
+                    }
+                });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /** A picker row: the filter's label, marked when it is on for {@code language}. */
+    String exceptionRow(String language, DapModels.ExceptionFilterOption o) {
+        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ") + o.label();
+    }
+
+    /** Turns {@code language}'s exception filter {@code filter} on or off (the picker's choice), and says so. */
+    void toggleExceptionFilter(String language, String filter) {
+        List<DapModels.ExceptionFilterOption> options = dapManager.exceptionFilterOptions(language);
+        List<String> next = toggledFilter(dapManager.exceptionFiltersFor(language), filter, options);
+        dapManager.setExceptionFilters(language, next);
+        host.setStatus(exceptionStatus(language, next, options));
+    }
+
+    /** The adapter language the exception picker is about: the live session's, else the active file's. */
+    private String exceptionLanguage() {
+        if (dapManager.isActive()) {
+            return dapManager.sessionLanguage();
+        }
+        EditorBuffer b = host.activeBuffer();
+        String language = b == null ? null : b.getLanguage();
+        return language != null && DapServerRegistry.isDebuggable(language) ? language : null;
+    }
+
+    /** Pure: {@code current} with {@code filter} turned on or off, in the order the adapter lists its filters. */
+    static List<String> toggledFilter(
+            List<String> current, String filter, List<DapModels.ExceptionFilterOption> options) {
+        Set<String> on = new LinkedHashSet<>(current);
+        if (!on.remove(filter)) {
+            on.add(filter);
+        }
+        List<String> out = new ArrayList<>();
+        for (DapModels.ExceptionFilterOption o : options) {
+            if (on.remove(o.filter())) {
+                out.add(o.filter());
+            }
+        }
+        out.addAll(on); // anything the adapter no longer lists stays, last
+        return out;
+    }
+
+    private String exceptionStatus(
+            String language, List<String> filters, List<DapModels.ExceptionFilterOption> options) {
+        if (filters.isEmpty()) {
+            return tr("status.debug.exceptionFiltersNone", debugAdapterLabel(language));
+        }
+        List<String> labels = new ArrayList<>();
+        for (String f : filters) {
+            labels.add(options.stream()
+                    .filter(o -> o.filter().equals(f))
+                    .map(DapModels.ExceptionFilterOption::label)
+                    .findFirst()
+                    .orElse(f));
+        }
+        return tr("status.debug.exceptionFilters", debugAdapterLabel(language), String.join(", ", labels));
     }
 
     // --- adapter pickers ---------------------------------------------------------------------------
@@ -2043,7 +2264,11 @@ final class DebugCoordinator {
                     if (id == null) {
                         return;
                     }
-                    host.promptText(debugAdapterLabel(id), tr("palette.setting.value"), debugAdapterPath(id), v -> {
+                    // Python's "path" is the interpreter that runs debugpy (and, when the project has none of
+                    // its own, the program): say so rather than ask for a debugpy path it is not.
+                    String label =
+                            "python".equals(id) ? tr("settings.debug.pythonCommand") : tr("palette.setting.value");
+                    host.promptText(debugAdapterLabel(id), label, debugAdapterPath(id), v -> {
                         String value = v.trim();
                         var s = host.settings();
                         switch (id) {
@@ -2075,6 +2300,9 @@ final class DebugCoordinator {
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
+        // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
+        buffer.setDebugFileHandler(
+                () -> launchBuffer(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
     }
 
     /** Focuses the Debug console's evaluate field ({@code debug.evaluate} command). */

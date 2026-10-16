@@ -44,6 +44,11 @@ final class TestNavigationCoordinator {
 
         RunCoordinator runCoordinator();
 
+        /** The window's debugger (Debug Test on a Python test). */
+        default DebugCoordinator debugCoordinator() {
+            return null;
+        }
+
         TestRunCoordinator testRunCoordinator();
 
         LspCoordinator lspCoordinator();
@@ -371,6 +376,10 @@ final class TestNavigationCoordinator {
     /** Runs/debugs a test method (or its whole class) at the caret. */
     void runTestAtCaret(boolean classLevel, boolean debug) {
         EditorBuffer b = host.activeBuffer();
+        // A pytest file's test at the caret is debugged with debugpy running pytest (Fixer D's hunk).
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
+            return;
+        }
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));

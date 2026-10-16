@@ -779,6 +779,10 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** "Run File" context-menu handler (compact source files); null hides the item. */
     private Runnable runHandler;
+    /** "Debug File" beside "Run File" (null: none); shown while {@link #debugFileShown} says it can debug. */
+    private Runnable debugFileHandler;
+
+    private java.util.function.BooleanSupplier debugFileShown = () -> false;
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
     private Runnable lspGotoDefinitionAction = () -> {};
 
@@ -1881,6 +1885,12 @@ public class EditorBuffer implements TabContent {
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
                 items.add(run);
+                if (debugFileHandler != null && debugFileShown.getAsBoolean()) {
+                    MenuItem debugFile = new MenuItem(tr("editmenu.debugFile"));
+                    debugFile.setGraphic(MenuIcons.debug());
+                    debugFile.setOnAction(ev -> debugFileHandler.run());
+                    items.add(debugFile);
+                }
                 items.add(new SeparatorMenuItem());
             } else {
                 // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
@@ -4370,7 +4380,7 @@ public class EditorBuffer implements TabContent {
                 var pos = a.offsetToPosition(
                         hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 String line = a.getParagraph(pos.getMajor()).getText();
-                String word = DebugIdentifiers.wordAt(line, pos.getMinor());
+                String word = DebugIdentifiers.expressionAt(line, pos.getMinor()); // self.x, not x
                 if (word == null) {
                     hideDebugTooltip();
                     return;
@@ -6911,6 +6921,12 @@ public class EditorBuffer implements TabContent {
     /** Sets the "Run File" context-menu handler (controller runs the compact source file); null disables it. */
     public void setRunHandler(Runnable handler) {
         this.runHandler = handler;
+    }
+
+    /** Sets the "Debug File" context-menu entry: shown beside "Run File" while {@code shown} holds. */
+    public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
+        this.debugFileHandler = handler;
+        this.debugFileShown = shown == null ? () -> false : shown;
     }
 
     /** Callback fired after any note change (for persistence + the Notes panel). */

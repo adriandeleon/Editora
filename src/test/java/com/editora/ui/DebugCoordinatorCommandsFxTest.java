@@ -836,21 +836,38 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     @Test
-    void uncaughtExceptionBreakpointsAreToggledForTheLiveSessionToo() throws Exception {
+    void exceptionBreakpointsArePickedPerFilterAndReachTheLiveSession() throws Exception {
         open("src/main/java/demo/Args.java");
         mainClasses("demo.Args");
         FakeDebugAdapter.Session session = launch();
-        assertEquals(0, session.exceptionBreakpoints.size(), "none by default");
+        assertEquals(0, session.exceptionBreakpoints.size(), "java-debug has none on by default");
+        var uncaught = new com.editora.dap.DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false);
+        assertEquals("    Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
 
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequest("setExceptionBreakpoints");
         assertEquals(
                 List.of("uncaught"), List.of(session.exceptionBreakpoints.get(0).getFilters()));
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        assertEquals("✓ Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequests("setExceptionBreakpoints", 2);
         assertEquals(List.of(), List.of(session.exceptionBreakpoints.get(1).getFilters()));
 
-        assertEquals(List.of(tr("status.debug.exceptionsOn"), tr("status.debug.exceptionsOff")), statuses());
+        assertEquals(
+                List.of(
+                        tr("status.debug.exceptionFilters", "Java", "Uncaught Exceptions"),
+                        tr("status.debug.exceptionFiltersNone", "Java")),
+                statuses());
+    }
+
+    @Test
+    void theExceptionFilterOrderIsTheAdapters() {
+        var options = com.editora.dap.ExceptionFilterCatalog.known("python");
+        assertEquals(List.of("uncaught"), DebugCoordinator.toggledFilter(List.of(), "uncaught", options));
+        assertEquals(
+                List.of("raised", "uncaught"), DebugCoordinator.toggledFilter(List.of("uncaught"), "raised", options));
+        assertEquals(
+                List.of("raised"), DebugCoordinator.toggledFilter(List.of("raised", "uncaught"), "uncaught", options));
     }
 
     @Test
