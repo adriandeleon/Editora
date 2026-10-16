@@ -237,6 +237,25 @@ jobs:
           docker version --format 'docker {{.Server.Version}}'
           docker pull --quiet eclipse-temurin:25-jdk
 
+      # A Java debug session in the container: the same pinned jdtls milestone (mounted read-only; the image has
+      # no python3 for its launcher script, so the probe mounts a sh one beside it) and the java-debug plugin,
+      # which Editora copies into the container's cache.
+      - name: Java tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          T="$RUNNER_TEMP/tools"
+          mkdir -p "$T/java-debug" "$T/jdtls"
+          version=$(sed -n 's/.*JDTLS_VERSION = "\(.*\)";/\1/p' src/main/java/com/editora/install/InstallCatalog.java)
+          build=$(sed -n 's/.*JDTLS_BUILD = "\(.*\)";/\1/p' src/main/java/com/editora/install/InstallCatalog.java)
+          curl -fsSL "https://download.eclipse.org/jdtls/milestones/$version/jdt-language-server-$version-$build.tar.gz" \
+            | tar xz -C "$T/jdtls"
+          vsix=$(curl -fsSL https://open-vsx.org/api/vscjava/vscode-java-debug/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["files"]["download"])')
+          curl -fsSL "$vsix" -o "$T/java-debug.vsix"
+          unzip -q -j "$T/java-debug.vsix" 'extension/server/com.microsoft.java.debug.plugin-*.jar' -d "$T/java-debug"
+          ls "$T/java-debug" "$T/jdtls/plugins" | grep -E 'java.debug.plugin|equinox.launcher_'
+
       - name: Probe
         shell: bash
         run: |
@@ -244,9 +263,11 @@ jobs:
             -Dtest=ContainerProbeFxTest \
             -Dcontainer.probe=docker \
             -Dcontainer.probe.image=eclipse-temurin:25-jdk \
+            -Dcontainer.probe.jdtls="$RUNNER_TEMP/tools/jdtls" \
+            -Dcontainer.probe.javaDebug="$(ls "$RUNNER_TEMP"/tools/java-debug/com.microsoft.java.debug.plugin-*.jar)" \
             test | tee probe.log
           status=${PIPESTATUS[0]}
-          { echo '### Probe report (container)'; echo '```'; grep -E 'Tests run:|FAIL|ERROR\]' probe.log | head -20; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### Probe report (container)'; echo '```'; grep -E 'Tests run:|FAIL|ERROR\]|CONTAINER JAVA DEBUG' probe.log | head -20; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
   # A folder inside a WSL distribution, reached from Windows as \\wsl.localhost\…: WslProbeTest on a Windows

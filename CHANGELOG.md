@@ -212,6 +212,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the distribution) now reach the Project tree, Git and the language servers: Windows cannot watch the
   share, so Editora watches the folder inside the distribution (with `inotifywait` when `inotify-tools` is
   installed, else by checking every few seconds).
+- **Debugging in a container or WSL distribution built on Ubuntu 26.04 no longer hangs at "Connecting".** Such
+  images (`eclipse-temurin:25` among them) ship the Rust coreutils, whose `cat` held the debug adapter's replies
+  until the connection closed; Editora's relay to a port inside now copies with `dd`. Java debugging in a
+  container is now tested end to end: jdtls and java-debug in the container, a breakpoint hit in a project's main
+  class and in a loose Java file.
 - **Programs left in a container by a crash are stopped.** A language server, debugger, build or run that
   Editora started in a container kept running there if Editora was killed, since ending Editora's side of the
   connection does not end it. The next launch now stops it, after checking it is still the same process. WSL
