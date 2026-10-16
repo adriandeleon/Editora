@@ -1,0 +1,114 @@
+# JavaScript response handlers run after the response arrives, on your own Node.js, and only from a trusted
+# folder (Editora asks once per run). Run All (http.runFile): tests show in the Tests block, client.log lines
+# under them. Requests go to httpbin.org.
+
+@host = https://httpbin.org
+
+### An inline handler: tests, jsonPath, the response and request objects, and a session variable
+POST {{host}}/anything
+Content-Type: application/json
+
+{ "user": { "id": 7, "name": "Ada" }, "token": "FAKE-TOKEN-5678", "items": [{ "id": 11 }, { "id": 12 }] }
+
+> {%
+  client.test("status is 200", () => {
+    client.assert(response.status === 200, "status " + response.status);
+  });
+  client.test("the body is JSON", () => {
+    client.assert(response.contentType.mimeType === "application/json", response.contentType.mimeType);
+  });
+  client.test("the echo has the user", () => {
+    client.assert(response.body.json.user.name === "Ada", "user " + response.body.json.user.name);
+  });
+  const second = jsonPath(response.body, "$.json.items[1].id");
+  client.log("second item:", second, "· server:", response.headers.valueOf("Server"));
+  client.log("charset:", response.contentType.charset, "· all Server headers:", response.headers.valuesOf("Server"));
+  client.log("sent:", request.method, request.url.tryGetSubstituted(), "· written:", request.url.getRaw());
+  client.log("Content-Type sent:", request.headers.findByName("Content-Type").value());
+  console.log("console.log works too");
+  client.global.set("token", response.body.json.token);
+%}
+
+### Sends the token the handler kept; the handler is the file scripts/check-auth.js
+GET {{host}}/bearer
+Authorization: Bearer {{token}}
+
+> ./scripts/check-auth.js
+
+### Cookies in a handler, and a global header for the requests that follow
+GET {{host}}/response-headers?Set-Cookie=flavour%3Doatmeal
+
+> {%
+  const cookie = response.cookiesByName("flavour")[0];
+  client.test("the cookie came back", () => {
+    client.assert(cookie && cookie.value === "oatmeal", JSON.stringify(response.cookies()));
+  });
+  client.global.headers.set("X-Flavour", cookie ? cookie.value : "none");
+%}
+
+### Carries the global header, then clears it
+GET {{host}}/headers
+
+> {%
+  client.test("X-Flavour was sent", () => {
+    client.assert(response.body.headers["X-Flavour"] === "oatmeal", JSON.stringify(response.body.headers));
+  });
+  client.global.headers.clear("X-Flavour");
+%}
+
+### …so this one goes without it
+GET {{host}}/headers
+
+> {%
+  client.test("X-Flavour is gone", () => {
+    client.assert(!("X-Flavour" in response.body.headers), JSON.stringify(response.body.headers));
+  });
+%}
+
+### A test can be async: a handler may make its own requests
+GET {{host}}/uuid
+
+> {%
+  client.test("a second call answers", async () => {
+    const r = await fetch("https://httpbin.org/status/204");
+    client.assert(r.status === 204, "status " + r.status);
+  });
+%}
+
+### client.exit() ends the handler early
+GET {{host}}/status/204
+
+> {%
+  if (response.status === 204) {
+    client.log("no content: nothing more to check");
+    client.exit();
+  }
+  client.test("never reached", () => client.assert(false, "ran past client.exit()"));
+%}
+
+### Session variables: get, isEmpty and clear; a session value also wins over the environment's
+GET {{host}}/uuid
+
+> {%
+  client.log("empty:", client.global.isEmpty(), "· token:", client.global.get("token"));
+  client.global.set("title", "from the session");
+  client.global.set("scratch", response.body.uuid);
+  client.global.clear("scratch");
+  client.log("scratch after clear:", client.global.get("scratch"));
+%}
+
+### {{title}} is now the session's value, not the dev environment's ("hello from dev")
+# @assert $.args.title == "from the session"
+GET {{host}}/anything?title={{title}}
+
+> {%
+  client.global.clearAll();
+%}
+
+### An error stops the handler, and the Tests block names its line in this file
+GET {{host}}/get
+
+> {%
+  client.log("about to fail");
+  const id = response.body.missing.id;
+%}

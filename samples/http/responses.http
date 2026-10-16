@@ -1,0 +1,45 @@
+# What the response view does with different responses. Run them one by one and look at the status line,
+# the headers (the protocol version comes first, or the error), the body, the Request section and the
+# warnings. Requests go to httpbin.org, except the last two.
+
+@host = https://httpbin.org
+
+### JSON is pretty-printed
+GET {{host}}/json
+
+### XML (one-line XML from other servers is indented)
+GET {{host}}/xml
+
+### HTML: each paragraph is one long line, so try Wrap
+GET {{host}}/html
+
+### An image is shown as a picture, and Save response saves the image
+GET {{host}}/image/png
+
+### Other binary bodies are summarised
+GET {{host}}/bytes/2048
+
+### gzip is decoded
+GET {{host}}/gzip
+
+### …and so is deflate
+GET {{host}}/deflate
+
+### The Request section shows the address a redirect ended at
+GET {{host}}/redirect/3
+
+### A redirect to another host that carried a custom header is in the warnings
+GET {{host}}/redirect-to?url=https%3A%2F%2Fexample.com%2F
+X-Api-Key: FAKE-KEY-do-not-use
+
+### Error statuses colour the status line
+GET {{host}}/status/404
+
+###
+GET {{host}}/status/503
+
+### Errors read as sentences: nothing listens on this port
+GET http://127.0.0.1:9/
+
+### …and this host does not exist
+GET https://no-such-host.invalid/

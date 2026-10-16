@@ -11,6 +11,6 @@ Content-Type: application/json
   "userId": 1
 }
 
-### Uses an env + a fake token (never a real secret)
-GET https://api.example.com/me
+### Uses an env + a fake token (never a real secret); httpbin.org echoes the token back
+GET https://httpbin.org/bearer
 Authorization: Bearer {{token}}

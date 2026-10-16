@@ -1,5 +1,5 @@
 # The .rest extension is the same format as .http. This file covers what requests.http leaves out:
-# in-file variables, named requests and chaining, dynamic variables, auth shorthand, an external
+# in-file variables, named requests and chaining, dynamic variables, Basic and Digest auth, an external
 # body, multipart, and per-request directives. Every request goes to httpbin.org, a public echo
 # service, so they need a network connection. Credentials here are fake.
 
@@ -10,7 +10,7 @@
 # @name create
 POST {{host}}/post
 Content-Type: application/json
-X-Request-Id: {{$uuid}}
+X-Sample-Id: {{$uuid}}
 
 {
   "item": "{{item}}",
@@ -22,9 +22,20 @@ X-Request-Id: {{$uuid}}
 GET {{host}}/get?item={{create.response.body.$.json.item}}&status={{create.response.status}}
 Accept: application/json
 
+### Fetch
+# Without a @name, a request is named by its ### title: this one is "Fetch".
+GET {{host}}/uuid
+
+### Chained by title, to a response header and a JSONPath value
+GET {{host}}/anything?uuid={{Fetch.response.body.$.uuid}}&type={{Fetch.response.headers.Content-Type}}
+
 ### Basic auth shorthand: "user password" is encoded for you
 GET {{host}}/basic-auth/ada/not-a-real-password
 Authorization: Basic ada not-a-real-password
+
+### Digest auth shorthand: answers the server's challenge (MD5, SHA-256 or SHA-512-256)
+GET {{host}}/digest-auth/auth/ada/not-a-real-password/SHA-256
+Authorization: Digest ada not-a-real-password
 
 ### External body: the request body is read from the file beside this one
 POST {{host}}/post
