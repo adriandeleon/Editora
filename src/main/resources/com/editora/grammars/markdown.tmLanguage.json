@@ -2898,7 +2898,7 @@
 			"name": "markup.bold.markdown",
 			"patterns": [
 				{
-					"applyEndPatternLast": 1,
+					"applyEndPatternLast": true,
 					"begin": "(?=<[^>]*?>)",
 					"end": "(?<=>)",
 					"patterns": [
@@ -3058,7 +3058,7 @@
 			"name": "markup.italic.markdown",
 			"patterns": [
 				{
-					"applyEndPatternLast": 1,
+					"applyEndPatternLast": true,
 					"begin": "(?=<[^>]*?>)",
 					"end": "(?<=>)",
 					"patterns": [
@@ -3315,7 +3315,7 @@
 				"2": {
 					"patterns": [
 						{
-							"applyEndPatternLast": 1,
+							"applyEndPatternLast": true,
 							"begin": "(?=<[^>]*?>)",
 							"end": "(?<=>)",
 							"patterns": [

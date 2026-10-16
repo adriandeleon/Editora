@@ -194,7 +194,7 @@
       "name": "comment.line.number-sign.graphql"
     },
     "graphql-directive": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*((@)\\s*([A-Z_a-z][0-9A-Z_a-z]*))",
       "beginCaptures": {
         "1": {
@@ -224,7 +224,7 @@
       ]
     },
     "graphql-directive-definition": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*\\b(directive)\\b\\s*(@[A-Z_a-z][0-9A-Z_a-z]*)",
       "beginCaptures": {
         "1": {
@@ -246,7 +246,7 @@
           "include": "#graphql-variable-definitions"
         },
         {
-          "applyEndPatternLast": 1,
+          "applyEndPatternLast": true,
           "begin": "\\s*\\b(on)\\b\\s*([A-Z_a-z]*)",
           "beginCaptures": {
             "1": {
@@ -446,7 +446,7 @@
       ]
     },
     "graphql-fragment-spread": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*(\\.\\.\\.)\\s*(?!\\bon\\b)([A-Z_a-z][0-9A-Z_a-z]*)",
       "captures": {
         "1": {
@@ -485,7 +485,7 @@
       "match": "\\s*"
     },
     "graphql-inline-fragment": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*(\\.\\.\\.)\\s*(?:\\b(on)\\b\\s*([A-Z_a-z][0-9A-Z_a-z]*))?",
       "captures": {
         "1": {
@@ -932,7 +932,7 @@
       ]
     },
     "graphql-type-interface": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*\\b(?:(extends?)?\\b\\s*\\b(type)|(interface)|(input))\\b\\s*([A-Z_a-z][0-9A-Z_a-z]*)?",
       "captures": {
         "1": {
@@ -1050,7 +1050,7 @@
       ]
     },
     "graphql-union": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s*\\b(union)\\b\\s*([A-Z_a-z][0-9A-Z_a-z]*)",
       "captures": {
         "1": {
@@ -1063,7 +1063,7 @@
       "end": "(?=.)",
       "patterns": [
         {
-          "applyEndPatternLast": 1,
+          "applyEndPatternLast": true,
           "begin": "\\s*(=)\\s*([A-Z_a-z][0-9A-Z_a-z]*)",
           "captures": {
             "1": {
@@ -1166,7 +1166,7 @@
       ]
     },
     "graphql-variable-assignment": {
-      "applyEndPatternLast": 1,
+      "applyEndPatternLast": true,
       "begin": "\\s(=)",
       "beginCaptures": {
         "1": {

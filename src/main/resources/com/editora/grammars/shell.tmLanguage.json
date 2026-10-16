@@ -878,7 +878,7 @@
 					"include": "#initial_context"
 				}
 			],
-			"applyEndPatternLast": 1
+			"applyEndPatternLast": true
 		},
 		"heredoc": {
 			"patterns": [
