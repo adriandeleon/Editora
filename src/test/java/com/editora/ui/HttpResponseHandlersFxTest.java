@@ -251,14 +251,11 @@ class HttpResponseHandlersFxTest {
         HttpClientPanel p = panel(b);
         String summary = FxTestSupport.callOnFx(p::runSummaryForTest);
         assertTrue(summary.endsWith(" · tests failed in 1 request"), summary);
-        // The run lands on the request whose tests failed? It lands on the first not-ok one, else the first.
-        FxTestSupport.runOnFx(() -> {
-            var history = p.controlsForTest().historyPicker();
-            history.setValue(history.getItems().stream()
-                    .filter(e -> "login".equals(e.name()))
-                    .findFirst()
-                    .orElseThrow());
-        });
+        // Both answered 200: the run lands on the request whose tests failed.
+        assertEquals(
+                "login",
+                FxTestSupport.callOnFx(
+                        () -> p.controlsForTest().historyPicker().getValue().name()));
         String block = FxTestSupport.callOnFx(p::testsForTest);
         assertTrue(block.startsWith("Tests: 2 passed, 1 failed"), block);
         assertTrue(block.contains("✗  $.id == 8  —  expected == 8, got 7"), block);

@@ -298,10 +298,18 @@ final class HttpStatusText {
         return compact ? "⚠ " + count : tr("httppanel.warnings", count);
     }
 
-    /** The exchange a Run All should land on: the first that did not succeed, else the first. -1 if none. */
+    /**
+     * The exchange a Run All should land on: the first that did not succeed, else the first whose tests failed, else
+     * the first. -1 if none.
+     */
     static int firstToShow(List<HttpExchange> exchanges) {
         for (int i = 0; i < exchanges.size(); i++) {
             if (!exchanges.get(i).result().ok()) {
+                return i;
+            }
+        }
+        for (int i = 0; i < exchanges.size(); i++) {
+            if (exchanges.get(i).result().tests().hasFailures()) {
                 return i;
             }
         }

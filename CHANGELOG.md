@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     environment variables (so `process.env` cannot read a token around the secrets prompt) and, on Node.js 20 or
     later, under its permission model: no file writes, no child processes, no workers. It is stopped after 10
     seconds. A secret the request read reaches the handler masked. Handlers may make network requests. Remote
-    `.http` files still do not run.
+    `.http` files still do not run. Import cURL writes body lines the format would not send (from a `>`, `<>` or
+    `###` line on) as comments, so a pasted command can never add a handler.
   - **Settings → Web:** turn handlers off, choose the Node.js to use, and set the timeout. The Doctor has a row
     for it. Pre-request scripts (`< {% %}`) are still skipped with a warning.
 - **Emacs registers.** In the Emacs keymap:
