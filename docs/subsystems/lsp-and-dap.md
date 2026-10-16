@@ -738,6 +738,18 @@ command/enable pair; adding a DAP adapter is one `Def` entry in `DapServerRegist
   machine can be given `file:` URIs of its own filesystem. `LspWireUriFxTest` runs the manager against a fake
   that uses different wire URIs and fails if a key reaches the server unconverted. Objects handed back to a
   server unchanged (hierarchy items, code actions, `jdt:` URIs) stay in wire form.
+- **Java scripts and their stand-ins.** jdtls makes a compilation unit only of a readable file named `.java`, so
+  a Java document with another name (an extensionless `java --source N` shebang script) is shown to it as a
+  stand-in: `LspManager.openDocument` writes `<temp>/editora-java-scripts-*/s*/<name>.java` and registers it with
+  `LanguageServerSession.alias`, which sits on top of the session's `WireUris` (`WireUris.aliasing`) — so every
+  request names the stand-in and every answer about it reads back as the script — and rewrites the text on the
+  wire (`JavaScriptShadow.wireText`): the shebang becomes a block comment of the same length, so positions do
+  not move and JDT inserts an import *after* it (above a `//` line it inserts at 0:0, ahead of the shebang). The
+  session's own copy of the text stays the editor's, since server edits are checked against it, and an aliased
+  document always syncs in full. `closeDocument` deletes the stand-in. java-debug finds a class's source through
+  jdtls, so a stack frame can name the stand-in: `DapManager` maps it back with `LspManager.scriptForStandIn`.
+  `JavaScriptShadowFxTest` guards the wire; `JdtlsJavaScriptShadowProbeTest` checks the import placement
+  against a real jdtls.
 - **Consoles.** The Run/Build pump delivers each drain inside a `process/OutputBatch`; `ui/ConsoleAppender`
   applies it as one append, one style application and one trim, and drains start at least 16 ms apart. The
   Java debuggee's console gets this through the Run pump.

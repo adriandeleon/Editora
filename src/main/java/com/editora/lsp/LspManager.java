@@ -427,7 +427,78 @@ public final class LspManager {
             sessionByDocUri.remove(uri, session);
             return;
         }
+        if (JavaScriptShadow.wanted(file, routeLanguageId) && com.editora.process.ExecTargets.runsHere(file)) {
+            Path shadow = javaScriptShadow(uri, file, text);
+            if (shadow != null) {
+                session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
+            }
+        }
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
+    }
+
+    /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
+    private Path javaScriptShadowRoot;
+
+    /** Each open Java script's stand-in file, by document key. */
+    private final Map<String, Path> javaScriptShadows = new ConcurrentHashMap<>();
+
+    /**
+     * Writes the stand-in jdtls is shown for the Java script {@code file} — outside the project, so nothing
+     * appears beside the script — or null when it can't be written, and the script is then shown as itself.
+     * jdtls reads the text from the open document; the file only has to exist and be named {@code .java}.
+     */
+    private Path javaScriptShadow(String uri, Path file, String text) {
+        try {
+            Path shadow = javaScriptShadows.get(uri);
+            if (shadow == null) {
+                synchronized (javaScriptShadows) {
+                    if (javaScriptShadowRoot == null || !Files.isDirectory(javaScriptShadowRoot)) {
+                        // Its real path: what jdtls and java-debug report back (macOS's /var is /private/var).
+                        javaScriptShadowRoot = Files.createTempDirectory("editora-java-scripts-")
+                                .toRealPath();
+                    }
+                    // A folder each: two scripts of one name, from different folders, are two files here.
+                    shadow = Files.createTempDirectory(javaScriptShadowRoot, "s")
+                            .resolve(JavaScriptShadow.fileName(file));
+                }
+            }
+            Files.writeString(shadow, JavaScriptShadow.wireText(text == null ? "" : text));
+            javaScriptShadows.put(uri, shadow);
+            return shadow;
+        } catch (java.io.IOException | RuntimeException unwritable) {
+            LOG.fine(() -> "no stand-in for " + file + ": " + unwritable);
+            return null;
+        }
+    }
+
+    /**
+     * The Java script whose stand-in {@code file} is ({@link JavaScriptShadow}), or null when it is none. A
+     * debugger's stack frame names the stand-in: java-debug finds the source of a class through jdtls.
+     */
+    public Path scriptForStandIn(Path file) {
+        if (file == null || javaScriptShadows.isEmpty()) {
+            return null;
+        }
+        for (var entry : javaScriptShadows.entrySet()) {
+            if (file.normalize().equals(entry.getValue())) {
+                return DocumentUris.toPath(entry.getKey());
+            }
+        }
+        return null;
+    }
+
+    /** Deletes a stand-in made by {@link #javaScriptShadow} (best effort). */
+    private static void deleteJavaScriptShadow(Path shadow) {
+        if (shadow == null) {
+            return;
+        }
+        DocumentUris.forget(shadow);
+        try {
+            Files.deleteIfExists(shadow);
+            Files.deleteIfExists(shadow.getParent());
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // a temporary file: the next one gets a folder of its own anyway
+        }
     }
 
     /**
@@ -468,6 +539,7 @@ public final class LspManager {
         latest.cancelAll(uri);
         DocumentUris.forget(file);
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
+        deleteJavaScriptShadow(javaScriptShadows.remove(uri));
         if (s != null) {
             s.didClose(uri);
             maybeScheduleEviction(s);
@@ -3801,6 +3873,15 @@ public final class LspManager {
         pendingEvictions.clear();
         detectExec.shutdown();
         startExec.shutdown();
+        synchronized (javaScriptShadows) {
+            if (javaScriptShadowRoot != null) {
+                try {
+                    Files.deleteIfExists(javaScriptShadowRoot);
+                } catch (java.io.IOException | RuntimeException ignored) {
+                    // a temporary folder
+                }
+            }
+        }
     }
 
     /** Whether {@link #close()} ran. */
@@ -3818,6 +3899,8 @@ public final class LspManager {
         latest.clear();
         diagnosticRequestGeneration.clear();
         pendingApplyExpected.clear();
+        javaScriptShadows.values().forEach(LspManager::deleteJavaScriptShadow);
+        javaScriptShadows.clear();
         for (Map.Entry<String, LanguageServerSession> entry : sessionsByRoot.entrySet()) {
             disposeDeliberately(entry.getKey(), entry.getValue());
         }
@@ -4213,9 +4296,9 @@ public final class LspManager {
      * (not {@code false}) when there's no session or the command fails, so the caller keeps its own answer
      * rather than treating "don't know" as "not a test".
      *
-     * <p>Only a {@code .java} file is asked about. jdtls also holds an extensionless {@code java --source N}
-     * shebang script, but it has no compilation unit for one and answers with an error whose stack trace
-     * lands in the Debug Log on every tab switch.
+     * <p>Only a {@code .java} file is asked about. Of any other name jdtls has no compilation unit and answers
+     * with an error whose stack trace lands in the Debug Log on every tab switch; a Java script is shown to it
+     * as a stand-in ({@link JavaScriptShadow}), but one outside every project, where nothing is a test.
      */
     public void isTestFile(Path file, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);

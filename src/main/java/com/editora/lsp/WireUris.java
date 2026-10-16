@@ -120,6 +120,35 @@ interface WireUris {
         };
     }
 
+    /**
+     * {@code base}, except for the documents in {@code aliases} (key → the {@code file:} URI the server is
+     * shown instead, see {@link JavaScriptShadow}): a request about one names its alias, and the alias in
+     * anything the server sends — however it spells the URI — reads back as the document. {@code base} is
+     * asked each time, since a session settles its own only once it starts.
+     */
+    static WireUris aliasing(java.util.function.Supplier<WireUris> base, java.util.Map<String, String> aliases) {
+        return new WireUris() {
+            @Override
+            public String toWire(String key) {
+                String alias = key == null ? null : aliases.get(key);
+                return alias != null ? alias : base.get().toWire(key);
+            }
+
+            @Override
+            public String toKey(String wireUri) {
+                if (!aliases.isEmpty() && wireUri != null && wireUri.startsWith("file:")) {
+                    Path named = DocumentUris.toPath(wireUri);
+                    for (var alias : aliases.entrySet()) {
+                        if (named != null && named.equals(DocumentUris.toPath(alias.getValue()))) {
+                            return alias.getKey();
+                        }
+                    }
+                }
+                return base.get().toKey(wireUri);
+            }
+        };
+    }
+
     String toWire(String key);
 
     String toKey(String wireUri);

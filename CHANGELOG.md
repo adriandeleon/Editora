@@ -548,6 +548,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java scripts get Java editing.** A file without the `.java` name that is Java — an extensionless
+  `#!/usr/bin/env -S java --source 25` script, or a file set to Java in the status bar — now gets completion
+  (with imports, added below the shebang line), hover, the outline and syntax errors from
+  jdtls. jdtls works only on files named `.java`, so it used to ignore such a script, and its test-gutter check
+  logged a stack trace in the Debug Log on every switch to the tab. Like any `.java` file outside a project, it
+  gets syntax errors only, not type errors. Debugging such a script is unchanged.
 - **Personal Notes indicators stay on the note's text, and cost less.**
   - The highlight and its corner marker are painted after the text is laid out, so they no longer sit where the
     text was for a frame (or more) when the line numbers gain a digit or are toggled, or the font changes.
