@@ -345,35 +345,36 @@
     -fx-font-size: 0.85em;
 }
 
-/* Bookmarks tool window: same look as the Structure panel. */
-.bookmarks-panel {
+/* Bookmarks and Personal Notes tool windows: one shared look (same as the Structure panel). Keep the two
+   panels in the same rules so their colours cannot drift apart again. */
+.bookmarks-panel, .notes-panel {
     -fx-background-color: -color-bg-default;
 }
-.bookmarks-tree {
+.bookmarks-tree, .notes-tree {
     -fx-background-color: transparent;
     -fx-border-width: 0;
 }
-.bookmarks-tree .tree-cell {
+.bookmarks-tree .tree-cell, .notes-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
-.bookmarks-tree .bookmark-label {
+.bookmarks-tree .bookmark-label, .notes-tree .note-label {
     -fx-fill: -color-fg-default;
 }
-.bookmarks-tree .bookmark-file-row {
+.bookmarks-tree .tree-cell.bookmark-file-row, .notes-tree .tree-cell.notes-file-row {
     -fx-text-fill: -color-fg-muted;
     -fx-font-weight: bold;
 }
-/* Project-group headers in the Bookmarks / Personal Notes trees (grouped by project). The current project's
-   header reads a touch stronger; the "Show all projects" scope toggle goes accent when active. */
-.bookmarks-tree .bookmark-project-row, .notes-tree .note-project-row {
+/* Project-group headers (grouped by project). The current project's header reads a touch stronger; the
+   "Show all projects" scope toggle goes accent when active. */
+.bookmarks-tree .tree-cell.bookmark-project-row, .notes-tree .tree-cell.note-project-row {
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
 .bookmarks-tree .bookmark-project-row .toolbar-icon, .notes-tree .note-project-row .toolbar-icon {
     -fx-fill: -color-accent-fg;
 }
-.bookmarks-tree .bookmark-project-current, .notes-tree .note-project-current {
+.bookmarks-tree .tree-cell.bookmark-project-current, .notes-tree .tree-cell.note-project-current {
     -fx-text-fill: -color-accent-emphasis;
 }
 .scope-toggle:selected {
@@ -381,22 +382,6 @@
 }
 .scope-toggle:selected .toolbar-icon {
     -fx-fill: -color-accent-fg;
-}
-
-/* Personal Notes tool window: same look as the Bookmarks/Structure panels. */
-.notes-panel {
-    -fx-background-color: -color-bg-default;
-}
-.notes-tree {
-    -fx-background-color: transparent;
-    -fx-border-width: 0;
-}
-.notes-tree .tree-cell {
-    -fx-text-fill: -color-fg-default;
-    -fx-padding: 1 4 1 4;
-}
-.notes-tree .note-label {
-    -fx-fill: -color-fg-default;
 }
 .notes-tree .tree-cell.note-resolved .note-label {
     -fx-fill: -color-fg-muted;
@@ -4181,11 +4166,6 @@
 .note-dialog-hint {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
-}
-
-/* Personal Notes: file-header rows bold (matching the Find-in-Files panel). */
-.notes-panel .tree-cell.notes-file-row {
-    -fx-font-weight: bold;
 }
 
 /* Local History window (IntelliJ-style): revision list on the left, live diff on the right. */
