@@ -3,17 +3,19 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
 import com.editora.http.HttpEnv;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * The one place that finds, reads and merges a {@code .http} file's environment files ({@code http-client.env.json}
- * and its private twin): the run, the environment picker, the {@code {{variable}}} marks and the secrets gate all
- * go through it, so they always see the same folder and the same values.
+ * and its private twin): the run, the environment picker and the {@code {{variable}}} marks all go through it (the
+ * FX thread through {@link HttpEnvCache}, which reads in the background), so they see the same folder and the same
+ * values.
  *
  * <p><b>Which folder.</b> The nearest folder, from the file's own up, that holds either env file — but only within
  * a boundary: the open project's root when the file is inside it; otherwise the root of the version-control
@@ -48,15 +50,19 @@ final class HttpEnvironments {
         }
 
         /**
-         * Every value of every environment of both files, per variable name (values of several environments joined
-         * by a newline) — any of them could be the one picked next, which is what the secrets gate looks through.
+         * One line per env file that exists but contributes nothing because it cannot be read as JSON ("{@code
+         * http-client.private.env.json} could not be read: line 3, column 5: …"), so the user hears about the file
+         * instead of every variable in it being reported as undefined. Empty when both files are usable.
          */
-        Map<String, String> everyValue() {
-            Map<String, String> out = new LinkedHashMap<>();
-            for (String json : new String[] {publicJson, privateJson}) {
-                for (String env : HttpEnv.environmentNames(json)) {
-                    HttpEnv.variables(json, env).forEach((k, v) -> out.merge(k, v, (a, b) -> a + "\n" + b));
-                }
+        List<String> problems() {
+            List<String> out = new java.util.ArrayList<>();
+            String pub = HttpEnv.problem(publicJson);
+            if (pub != null) {
+                out.add(tr("http.env.unreadable", HttpEnv.PUBLIC_FILE, pub));
+            }
+            String priv = HttpEnv.problem(privateJson);
+            if (priv != null) {
+                out.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, priv));
             }
             return out;
         }

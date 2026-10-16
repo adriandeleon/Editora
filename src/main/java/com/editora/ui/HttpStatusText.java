@@ -114,6 +114,9 @@ final class HttpStatusText {
 
     /** The response view's status line for {@code r}: {@code 200 OK · 32 ms · 44 B}, or "Request failed". */
     static String summary(HttpResult r) {
+        if (notSent(r)) {
+            return tr("httppanel.notSent"); // never sent: "Request failed" read as a server or network problem
+        }
         if (r.failed()) {
             return tr("httppanel.requestFailed");
         }
@@ -148,16 +151,40 @@ final class HttpStatusText {
         if (exchanges == null || exchanges.size() < 2) {
             return null;
         }
-        long failed = exchanges.stream().filter(ex -> !ex.result().ok()).count();
+        long unsent = exchanges.stream().filter(ex -> notSent(ex.result())).count();
+        long failed = exchanges.stream().filter(ex -> !ex.result().ok()).count() - unsent;
+        if (unsent > 0) {
+            return failed == 0
+                    ? tr("httppanel.runAllNotSent", unsent, exchanges.size())
+                    : tr("httppanel.runAllFailedNotSent", failed, unsent, exchanges.size());
+        }
         return failed == 0
                 ? tr("httppanel.runAllOk", exchanges.size())
                 : tr("httppanel.runAllFailed", failed, exchanges.size());
+    }
+
+    /**
+     * The response view's line after a Run All the user cancelled: how far it got and how the finished requests
+     * went ("Run All cancelled: 2 of 4 ran, 1 failed"). A cancelled run used to read "Run All: all 2 succeeded",
+     * which looked like a complete, green run. Pure.
+     */
+    static String runAllCancelledSummary(List<HttpExchange> finished, int total) {
+        int ran = finished == null ? 0 : finished.size();
+        long failed = finished == null
+                ? 0
+                : finished.stream().filter(ex -> !ex.result().ok()).count();
+        return tr("httppanel.runAllCancelled", ran, total, failed);
     }
 
     /** The status-bar message after a single request: what was sent, and how it went. */
     static String finished(HttpExchange ex) {
         String label = ex.label();
         HttpResult r = ex.result();
+        if (notSent(r)) {
+            // "GET … not sent: …", not "GET … failed: Not sent: …"
+            return tr(
+                    "status.http.notSentError", label, notSentReason(withoutUrl(firstLine(r.shownError()), ex.url())));
+        }
         if (r.failed()) {
             return tr("status.http.failedError", label, withoutUrl(firstLine(r.shownError()), ex.url()));
         }
@@ -168,10 +195,46 @@ final class HttpStatusText {
 
     /** The status-bar message after a Run All: "All 5 requests finished" / "2 of 5 requests failed". */
     static String finishedAll(List<HttpExchange> exchanges) {
-        long failed = exchanges.stream().filter(ex -> !ex.result().ok()).count();
+        long unsent = exchanges.stream().filter(ex -> notSent(ex.result())).count();
+        long failed = exchanges.stream().filter(ex -> !ex.result().ok()).count() - unsent;
+        if (unsent > 0) { // a refused or "save first" request did not fail: it was never sent
+            return failed == 0
+                    ? tr("status.http.someNotSent", unsent, exchanges.size())
+                    : tr("status.http.someFailedNotSent", failed, unsent, exchanges.size());
+        }
         return failed == 0
                 ? tr("status.http.allDone", exchanges.size())
                 : tr("status.http.someFailed", failed, exchanges.size());
+    }
+
+    /**
+     * Whether {@code r} is a request that was never sent — refused by the trust prompt, a body file that cannot be
+     * read, an untitled buffer's "save first": its error starts with the UI language's "Not sent:" prefix
+     * ({@code http.notSent.prefix}), which every such message in the six catalogs shares. Pure.
+     */
+    static boolean notSent(HttpResult r) {
+        return r != null && r.failed() && notSentReason(r.error()) != null;
+    }
+
+    /** {@code error} without its leading "Not sent:" prefix, or null when it has none. Pure. */
+    static String notSentReason(String error) {
+        if (error == null) {
+            return null;
+        }
+        String prefix = tr("http.notSent.prefix");
+        String e = error.strip();
+        if (!e.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return null;
+        }
+        return e.substring(prefix.length()).strip();
+    }
+
+    /**
+     * The warning badge's text: {@code "⚠ 11 warnings"}, or {@code "⚠ 11"} when {@code compact} — at a narrow width
+     * the full badge used to squeeze the status line itself to "200 O…117 B". Pure.
+     */
+    static String warningBadge(int count, boolean compact) {
+        return compact ? "⚠ " + count : tr("httppanel.warnings", count);
     }
 
     /** The exchange a Run All should land on: the first that did not succeed, else the first. -1 if none. */

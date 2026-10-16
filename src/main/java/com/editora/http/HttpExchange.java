@@ -37,6 +37,8 @@ public record HttpExchange(
      * @param httpVersion     the protocol version the request asked for ({@code HTTP/1.1}, {@code HTTP/2}), or null
      * @param finalUrl        the URL the response finally came from when redirects were followed, else null
      * @param noLog           the request carries {@code @no-log}: keep it out of any saved history
+     * @param secretValues    the values the run read from the process environment or {@code .env}, to be masked in
+     *                        whatever is kept of it; in memory only, never saved
      */
     public record Details(
             String bodyFile,
@@ -46,17 +48,58 @@ public record HttpExchange(
             boolean followRedirects,
             String httpVersion,
             String finalUrl,
-            boolean noLog) {
+            boolean noLog,
+            List<String> secretValues) {
 
         public static final Details NONE = new Details(null, List.of(), null, null, true, null, null, false);
 
         public Details {
             formParts = formParts == null ? List.of() : List.copyOf(formParts);
+            secretValues = secretValues == null ? List.of() : List.copyOf(secretValues);
+        }
+
+        /** Details with no secret values (an entry restored from disk, a request that read none). */
+        public Details(
+                String bodyFile,
+                List<FormPart> formParts,
+                String digestUser,
+                String digestPass,
+                boolean followRedirects,
+                String httpVersion,
+                String finalUrl,
+                boolean noLog) {
+            this(bodyFile, formParts, digestUser, digestPass, followRedirects, httpVersion, finalUrl, noLog, List.of());
         }
 
         /** A copy that records where the response finally came from. */
         public Details withFinalUrl(String url) {
-            return new Details(bodyFile, formParts, digestUser, digestPass, followRedirects, httpVersion, url, noLog);
+            return new Details(
+                    bodyFile,
+                    formParts,
+                    digestUser,
+                    digestPass,
+                    followRedirects,
+                    httpVersion,
+                    url,
+                    noLog,
+                    secretValues);
+        }
+
+        /**
+         * A copy that carries {@code values}: what the run read from {@code $processEnv}/{@code $env}/{@code $dotenv}
+         * ({@link HttpVars.Unresolved#secretValues()}), so whatever keeps the exchange (the saved history, the
+         * History label) can mask them. Held in memory only: never saved, and left out of {@link #toString()}.
+         */
+        public Details withSecretValues(List<String> values) {
+            return new Details(
+                    bodyFile, formParts, digestUser, digestPass, followRedirects, httpVersion, finalUrl, noLog, values);
+        }
+
+        @Override
+        public String toString() {
+            return "Details[bodyFile=" + bodyFile + ", formParts=" + formParts.size() + ", digestUser=" + digestUser
+                    + ", followRedirects=" + followRedirects + ", httpVersion=" + httpVersion + ", finalUrl="
+                    + finalUrl + ", noLog=" + noLog + ", secretValues=" + secretValues.size() + "]";
         }
     }
 

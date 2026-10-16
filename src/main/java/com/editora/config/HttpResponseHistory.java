@@ -52,8 +52,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public final class HttpResponseHistory {
 
-    /** v1 → v2: + protocol, charset and how the request was sent per response, + clearedAt (all additive). */
-    public static final int SCHEMA_VERSION = 2;
+    /**
+     * v1 → v2: + protocol, charset and how the request was sent per response, + clearedAt. v2 → v3: + when each
+     * response landed, its request's URL as written and a fingerprint of the request (all additive).
+     */
+    public static final int SCHEMA_VERSION = 3;
 
     /** Responses remembered per {@code .http} file (newest first). */
     public static final int MAX_RESPONSES = 10;
@@ -94,7 +97,9 @@ public final class HttpResponseHistory {
      * response. {@code bodyCut} marks a body cut to {@link #MAX_BODY_CHARS}; {@code binary} one that was not kept.
      * {@code protocol} is the version the response came in ({@code HTTP/1.1}), {@code charset} the one its body
      * was decoded with (so the bytes can be rebuilt), and {@code sent} how the request went out — all null in an
-     * entry saved by a version before schema 2.
+     * entry saved by a version before schema 2. {@code landedAt} is when the response arrived (0 before schema 3:
+     * {@code at} stands in), which a Clear is compared with; {@code urlTemplate} the request's URL as written
+     * ({@code {{…}}} kept) and {@code fingerprint} a digest of its text, by which Run finds it again.
      */
     public record Response(
             long at,
@@ -117,7 +122,60 @@ public final class HttpResponseHistory {
             boolean truncated,
             String protocol,
             String charset,
-            Sent sent) {
+            Sent sent,
+            long landedAt,
+            String urlTemplate,
+            String fingerprint) {
+
+        /** An entry without the schema-3 fields (as a version-2 file holds them). */
+        public Response(
+                long at,
+                String name,
+                int requestIndex,
+                String method,
+                String url,
+                List<Header> requestHeaders,
+                String requestBody,
+                int status,
+                List<Header> headers,
+                String body,
+                boolean bodyCut,
+                boolean binary,
+                String contentType,
+                long elapsedMs,
+                long sizeBytes,
+                String error,
+                List<String> warnings,
+                boolean truncated,
+                String protocol,
+                String charset,
+                Sent sent) {
+            this(
+                    at,
+                    name,
+                    requestIndex,
+                    method,
+                    url,
+                    requestHeaders,
+                    requestBody,
+                    status,
+                    headers,
+                    body,
+                    bodyCut,
+                    binary,
+                    contentType,
+                    elapsedMs,
+                    sizeBytes,
+                    error,
+                    warnings,
+                    truncated,
+                    protocol,
+                    charset,
+                    sent,
+                    0,
+                    null,
+                    null);
+        }
 
         /** An entry without the schema-2 fields (as a version-1 file holds them). */
         public Response(
@@ -160,7 +218,15 @@ public final class HttpResponseHistory {
                     truncated,
                     null,
                     null,
+                    null,
+                    0,
+                    null,
                     null);
+        }
+
+        /** When this response arrived: {@link #landedAt}, or {@link #at} for an entry saved before schema 3. */
+        public long landed() {
+            return landedAt > 0 ? landedAt : at;
         }
 
         /** This entry with {@code other}'s body: a window that dropped a body for memory must not blank it on disk. */
@@ -186,7 +252,53 @@ public final class HttpResponseHistory {
                     truncated,
                     protocol,
                     charset,
-                    sent);
+                    sent,
+                    landedAt,
+                    urlTemplate,
+                    fingerprint);
+        }
+
+        /** This entry with {@code requestHeaders} and {@code headers} masked again by today's rules. */
+        Response remasked() {
+            return new Response(
+                    at,
+                    name,
+                    requestIndex,
+                    method,
+                    url,
+                    remask(requestHeaders),
+                    requestBody,
+                    status,
+                    remask(headers),
+                    body,
+                    bodyCut,
+                    binary,
+                    contentType,
+                    elapsedMs,
+                    sizeBytes,
+                    error,
+                    warnings,
+                    truncated,
+                    protocol,
+                    charset,
+                    sent,
+                    landedAt,
+                    urlTemplate,
+                    fingerprint);
+        }
+
+        private static List<Header> remask(List<Header> headers) {
+            if (headers == null) {
+                return null;
+            }
+            List<Header> out = new ArrayList<>(headers.size());
+            for (Header h : headers) {
+                out.add(
+                        h != null && isCredentialHeader(h.name()) && !MASK.equals(h.value())
+                                ? new Header(h.name(), MASK)
+                                : h);
+            }
+            return out;
         }
     }
 
@@ -207,6 +319,10 @@ public final class HttpResponseHistory {
         @JsonIgnore
         public int skipped;
 
+        /** Where the file was copied before its unreadable entries go on the next save (not saved); null if none. */
+        @JsonIgnore
+        public Path damagedCopy;
+
         /** What could not be read as written when this was loaded (not saved); see {@link #load}. */
         @JsonIgnore
         public List<ConfigLoadProblem> problems = new ArrayList<>();
@@ -219,7 +335,11 @@ public final class HttpResponseHistory {
         public void readResponses(JsonNode node) {
             responses = new ArrayList<>();
             skipped = 0;
-            if (node == null || !node.isArray()) {
+            if (node == null || node.isNull()) {
+                return;
+            }
+            if (!node.isArray()) {
+                skipped = Math.max(1, node.size()); // not a list (a hand edit): nothing in it can be read
                 return;
             }
             for (JsonNode entry : node) {
@@ -248,6 +368,9 @@ public final class HttpResponseHistory {
 
     private final Map<Path, Integer> holders = new HashMap<>();
 
+    /** Waits for the reads and saves windows have queued for this store (see {@link #setPendingWork}). */
+    private volatile Runnable pendingWork = () -> {};
+
     /** A standalone history that writes on the calling thread (tests, tools). The app uses {@link SharedConfig}. */
     public HttpResponseHistory(Path configDir) {
         this(configDir, ConfigWriter.DIRECT, problem -> {});
@@ -257,6 +380,24 @@ public final class HttpResponseHistory {
         this.dir = configDir.resolve(DIR_NAME);
         this.sink = sink;
         this.problems = problems;
+    }
+
+    /**
+     * Who knows how to wait for the history work windows have queued but not yet handed to {@link #saveMerged}
+     * (the windows' background thread): {@link #awaitPendingWork} runs it before the app's config writer stops,
+     * so a save queued just before quitting still reaches the disk.
+     */
+    public void setPendingWork(Runnable awaitIdle) {
+        this.pendingWork = awaitIdle == null ? () -> {} : awaitIdle;
+    }
+
+    /** Blocks until the queued history work has run (shutdown, export). Never throws. */
+    public void awaitPendingWork() {
+        try {
+            pendingWork.run();
+        } catch (RuntimeException ignored) {
+            // a timeout or an interrupted wait: what was queued is lost either way, the rest still shuts down
+        }
     }
 
     /**
@@ -291,18 +432,37 @@ public final class HttpResponseHistory {
         clean.file = stored.file == null ? "" : stored.file;
         clean.environment = stored.environment == null ? "" : stored.environment;
         clean.clearedAt = stored.clearedAt;
+        boolean remasked = false;
         if (stored.responses != null) {
-            stored.responses.stream()
-                    .filter(r -> r != null && (clean.clearedAt == 0 || r.at() >= clean.clearedAt))
-                    .limit(MAX_RESPONSES)
-                    .forEach(clean.responses::add);
+            for (Response r : stored.responses) {
+                if (r == null || (clean.clearedAt != 0 && r.landed() < clean.clearedAt)) {
+                    continue;
+                }
+                if (clean.responses.size() == MAX_RESPONSES) {
+                    break;
+                }
+                // An older build masked fewer headers: what it left in clear is masked now, and saved so below.
+                Response masked = r.remasked();
+                remasked |= !masked.equals(r);
+                clean.responses.add(masked);
+            }
+        }
+        Path damagedCopy = null;
+        if (stored.skipped > 0) {
+            // The entries that cannot be read go on the next save: keep the file as it was, as a whole-file
+            // problem does, so a hand edit can still be recovered.
+            damagedCopy = ConfigMigrations.keepCopyOfDamaged(file);
         }
         Stored baseline = copy(clean);
         sink.loaded(file, () -> mapper.writeValueAsBytes(baseline));
         if (holders.containsKey(file)) {
             latest.put(file, copy(clean));
         }
+        if (remasked) {
+            save(httpFile, clean);
+        }
         clean.skipped = stored.skipped;
+        clean.damagedCopy = damagedCopy;
         clean.problems = List.copyOf(found);
         return clean;
     }
@@ -378,7 +538,9 @@ public final class HttpResponseHistory {
             }
         }
         if (out.clearedAt > 0) {
-            all.removeIf(r -> r.at() < out.clearedAt); // a run started in the Clear's own millisecond is after it
+            // By when each response arrived, not when its request started: a run in flight during the Clear (a
+            // slow request, a cancelled Run All's finished requests) lands after it and is kept, as it is shown.
+            all.removeIf(r -> r.landed() < out.clearedAt);
         }
         all.sort(java.util.Comparator.comparingLong(Response::at).reversed()); // stable: a Run All keeps its order
         out.responses = retain(all, MAX_RESPONSES);
@@ -398,11 +560,7 @@ public final class HttpResponseHistory {
         java.util.Set<String> requests = new java.util.HashSet<>();
         for (int i = 0; i < newestFirst.size() && chosen.size() < max; i++) {
             Response r = newestFirst.get(i);
-            String request = r.name() != null
-                    ? "name:" + r.name()
-                    : "url:" + (r.method() == null ? "" : r.method().toUpperCase(java.util.Locale.ROOT)) + " "
-                            + r.url();
-            if (requests.add(request)) {
+            if (requests.add(requestKey(r.name(), r.requestIndex(), r.method(), r.url()))) {
                 chosen.add(i);
             }
         }
@@ -419,11 +577,91 @@ public final class HttpResponseHistory {
     }
 
     /**
+     * Which request of the file an entry came from, for keeping each request's newest response: its name; else
+     * its position and method — an unnamed request whose URL varies ({@code {{id}}}, {@code {{$timestamp}}}) is
+     * still one request —; else, with no position known, its method and URL. Shared with {@code
+     * ui.HttpHistoryRetention}. Pure.
+     */
+    public static String requestKey(String name, int requestIndex, String method, String url) {
+        String m = method == null ? "" : method.toUpperCase(java.util.Locale.ROOT);
+        if (name != null && !name.isBlank()) {
+            return "name:" + name.strip();
+        }
+        return requestIndex >= 0 ? "index:" + requestIndex + " " + m : "url:" + m + " " + url;
+    }
+
+    /**
      * What tells two saved entries apart: when the run was, the request's position, name, method and URL (the
      * entries of one Run All share their time). Pure.
      */
     public static String entryKey(Response r) {
-        return r.at() + "\n" + r.requestIndex() + "\n" + r.name() + "\n" + r.method() + "\n" + r.url();
+        return entryKey(r.at(), r.requestIndex(), r.name(), r.method(), r.url());
+    }
+
+    /** {@link #entryKey(Response)} from its parts. Pure. */
+    public static String entryKey(long at, int requestIndex, String name, String method, String url) {
+        return at + "\n" + requestIndex + "\n" + name + "\n" + method + "\n" + url;
+    }
+
+    /**
+     * {@code from} was renamed or moved to {@code to} — a {@code .http} file, or a folder (then every history whose
+     * file was under it): each history is saved under its new path, merged with one already there, and the old one
+     * deleted. A history a window holds moves from what that window last saved, not from the disk, which may lag.
+     * Blocking: off the FX thread. Returns how many histories moved.
+     */
+    public int move(Path from, Path to) {
+        Path src = from.toAbsolutePath().normalize();
+        Path dst = to.toAbsolutePath().normalize();
+        if (!Files.isDirectory(dst)) {
+            return moveOne(src, dst) ? 1 : 0;
+        }
+        List<Path> candidates = new ArrayList<>();
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, "*.json")) {
+            files.forEach(candidates::add);
+        } catch (IOException | RuntimeException unreadable) {
+            return 0;
+        }
+        int moved = 0;
+        for (Path history : candidates) {
+            String recorded = recordedFile(history);
+            Path file;
+            try {
+                file = recorded == null || recorded.isBlank()
+                        ? null
+                        : Path.of(recorded).normalize();
+            } catch (RuntimeException notAPath) {
+                file = null;
+            }
+            if (file != null && file.isAbsolute() && file.startsWith(src) && history.equals(fileFor(file))) {
+                if (moveOne(file, dst.resolve(src.relativize(file)))) {
+                    moved++;
+                }
+            }
+        }
+        return moved;
+    }
+
+    private synchronized boolean moveOne(Path fromFile, Path toFile) {
+        Path oldHistory = fileFor(fromFile);
+        if (oldHistory.equals(fileFor(toFile))) {
+            return false;
+        }
+        Stored held = latest.get(oldHistory);
+        if (held == null && !Files.exists(oldHistory)) {
+            return false;
+        }
+        Stored mine = held != null ? copy(held) : load(fromFile);
+        Path newHistory = fileFor(toFile);
+        Stored base = latest.containsKey(newHistory)
+                ? latest.get(newHistory)
+                : Files.exists(newHistory) ? load(toFile) : new Stored();
+        Stored merged = merge(base, mine, Set.of());
+        if (merged.environment.isEmpty()) {
+            merged.environment = base.environment == null ? "" : base.environment;
+        }
+        save(toFile, merged);
+        delete(fromFile);
+        return true;
     }
 
     /** Forgets {@code httpFile}'s history: its pending write is dropped and its file deleted. */
@@ -532,10 +770,12 @@ public final class HttpResponseHistory {
     // --- what is kept ----------------------------------------------------------------------------------
 
     /**
-     * Whether {@code name} carries a credential, so its value must not be written to disk: {@code
-     * Authorization}, {@code Proxy-Authorization}, {@code Authentication}, {@code Cookie}, {@code Set-Cookie(2)},
-     * {@code X-Auth}, any header whose name mentions a token, a secret, a password, a session, a credential or a
-     * signature ({@code X-Auth-Token}, {@code X-Session-Id}, …), and any whose name ends in "key" ({@code X-Api-Key},
+     * Whether {@code name} carries a credential, so its value must not be written to disk: any header whose name
+     * mentions authorization ({@code Proxy-Authorization}, {@code X-Authorization}, {@code
+     * X-Forwarded-Authorization}) or a cookie ({@code Cookie2}, {@code Set-Cookie}), {@code Authentication}, {@code
+     * X-Auth}, any whose name mentions a token, a secret, a pass(word), a pwd, a session, a credential, a signature,
+     * a JWT, an assertion or OIDC data ({@code X-Auth-Token}, {@code X-Session-Id}, {@code X-JWT-Assertion},
+     * {@code X-Amzn-Oidc-Data}, …), and any whose name ends in "key" ({@code X-Api-Key},
      * Cloudflare's {@code X-Auth-Key}, Azure's {@code Ocp-Apim-Subscription-Key}, {@code X-Access-Key}) — except
      * an {@code Idempotency-Key}, which is a request id. Masking a harmless header costs a value in the saved
      * history; missing a key leaks it, so the test is broad.
@@ -548,17 +788,17 @@ public final class HttpResponseHistory {
         if (n.endsWith("idempotency-key")) {
             return false;
         }
-        return n.equals("authorization")
-                || n.equals("proxy-authorization")
+        return n.contains("authorization") // also X-Authorization, X-Forwarded-Authorization
                 || n.equals("authentication")
-                || n.equals("cookie")
-                || n.equals("set-cookie")
-                || n.equals("set-cookie2")
+                || n.contains("cookie") // Cookie, Cookie2, Set-Cookie, Set-Cookie2
                 || n.equals("x-auth")
+                || n.contains("jwt")
+                || n.contains("assertion") // X-JWT-Assertion, X-Goog-IAP-JWT-Assertion
+                || n.contains("oidc") // X-Amzn-Oidc-Data (a signed token)
+                || n.contains("pass") // X-Pass, password, passwd, passphrase
+                || n.contains("pwd")
                 || n.contains("token")
                 || n.contains("secret")
-                || n.contains("password")
-                || n.contains("passwd")
                 || n.contains("session")
                 || n.contains("credential")
                 || n.contains("signature")

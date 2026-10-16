@@ -12,14 +12,16 @@ import com.editora.markdown.MarkdownLint;
 /**
  * What a {@code .http} buffer asks of the window, injected once ({@link EditorBuffer#setHttpHooks}): run the request
  * at a line (its gutter ▶ and the editor menu), run every request, cancel the running one (its ■), the ▶ tooltip,
- * the unresolved-{@code {{variable}}} check and what {@code {{} completion offers. Any of them may be null (none).
+ * the unresolved-{@code {{variable}}} check and what {@code {{} completion offers. A null hook is replaced by one that
+ * does nothing, so every accessor is non-null; {@link #checksVariables} tells whether there is a real check.
  *
  * @param run             runs the request whose section holds the given 0-based line
  * @param runAll          runs every request of the file
  * @param cancel          cancels the buffer's running request
  * @param runTooltip      the ▶ hover text, built when hovered so it names the current chord (null = none)
- * @param variableLint    checks the text, then hands the marks to the callback (null = no marks)
- * @param variableContext the environment and folder {@code {{} completion resolves against (null = none)
+ * @param variableLint    checks the text, then hands the marks to the callback (null = no marks: {@link #NO_LINT})
+ * @param variableContext the environment and folder {@code {{} completion resolves against (null = none: it supplies
+ *     null)
  */
 public record HttpHooks(
         IntConsumer run,
@@ -29,6 +31,10 @@ public record HttpHooks(
         BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> variableLint,
         Supplier<HttpVariableIndex.Context> variableContext) {
 
+    /** The check of a buffer that has none: no marks are shown (see {@link #checksVariables}). */
+    public static final BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> NO_LINT =
+            (text, done) -> done.accept(List.of());
+
     /** No hooks: nothing runs, no tooltip, no marks, no completion context. */
     public static final HttpHooks NONE = new HttpHooks(null, null, null, null, null, null);
 
@@ -37,6 +43,13 @@ public record HttpHooks(
         runAll = runAll == null ? () -> {} : runAll;
         cancel = cancel == null ? () -> {} : cancel;
         runTooltip = runTooltip == null ? () -> null : runTooltip;
+        variableLint = variableLint == null ? NO_LINT : variableLint;
+        variableContext = variableContext == null ? () -> null : variableContext;
+    }
+
+    /** Whether the {@code {{variable}}} check is a real one (the marks are shown), not {@link #NO_LINT}. */
+    public boolean checksVariables() {
+        return variableLint != NO_LINT;
     }
 
     /** These hooks with the {@code {{variable}}} check and completion context replaced. */

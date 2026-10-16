@@ -57,9 +57,9 @@ class HttpRequestParseTest {
                 { "dev": { "host": "http://localhost", "token": "d" },
                   "prod": { "host": "https://api.test", "token": "p" } }
                 """;
-        assertEquals("https://api.test", HttpEnv.variables(json, "prod").get("host"));
-        assertEquals("d", HttpEnv.variables(json, "dev").get("token"));
-        assertTrue(HttpEnv.variables(json, "missing").isEmpty());
+        assertEquals("https://api.test", HttpEnv.merged(json, null, "prod").get("host"));
+        assertEquals("d", HttpEnv.merged(json, null, "dev").get("token"));
+        assertTrue(HttpEnv.merged(json, null, "missing").isEmpty());
     }
 
     @Test

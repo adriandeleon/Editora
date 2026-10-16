@@ -24,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the second HTTP Client review — a cancelled upload releases its file, a cancelled re-run keeps the chained
  * token, JDK failures read in plain words, and a hostile Content-Encoding is refused.
  */
+@Tag("fx") // posts results through the FX toolkit, like the other engine integration tests
 class HttpEngineRound2IntegrationTest {
 
     @TempDir
@@ -139,7 +141,7 @@ class HttpEngineRound2IntegrationTest {
 
     private HttpExchange run(String text, CapturedResponses session) throws Exception {
         CompletableFuture<HttpExchange> f = new CompletableFuture<>();
-        svc.run(request(text), Map.of(), dir, session, HttpClientService.SecretGate.UNCHECKED, f::complete);
+        svc.run(request(text), Map.of(), dir, session, SecretGate.UNCHECKED, f::complete);
         return f.get(30, TimeUnit.SECONDS);
     }
 
@@ -173,13 +175,8 @@ class HttpEngineRound2IntegrationTest {
             uploadStarted = new CountDownLatch(1);
             release = new CountDownLatch(1);
             CompletableFuture<HttpExchange> f = new CompletableFuture<>();
-            HttpClientService.Handle h = svc.run(
-                    request(text),
-                    Map.of(),
-                    dir,
-                    new CapturedResponses(),
-                    HttpClientService.SecretGate.UNCHECKED,
-                    f::complete);
+            HttpClientService.Handle h =
+                    svc.run(request(text), Map.of(), dir, new CapturedResponses(), SecretGate.UNCHECKED, f::complete);
             assertTrue(uploadStarted.await(10, TimeUnit.SECONDS));
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
             while (openHandles(file) == 0 && System.nanoTime() < deadline) {
@@ -203,7 +200,7 @@ class HttpEngineRound2IntegrationTest {
         assertEquals(200, run(login, session).result().status());
         CompletableFuture<HttpExchange> f = new CompletableFuture<>();
         HttpClientService.Handle again =
-                svc.run(request(login), Map.of(), dir, session, HttpClientService.SecretGate.UNCHECKED, f::complete);
+                svc.run(request(login), Map.of(), dir, session, SecretGate.UNCHECKED, f::complete);
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (received.stream().filter(s -> s.startsWith("/login")).count() < 2 && System.nanoTime() < deadline) {
             Thread.sleep(10);

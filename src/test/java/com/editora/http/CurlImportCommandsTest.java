@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Real-world curl commands — browsers' "Copy as cURL", shell one-liners — that used to import wrongly. */
@@ -117,6 +118,42 @@ class CurlImportCommandsTest {
                         "name=\"f\"; filename=\"b.json\"\nContent-Type: application/json\n\n< /work/a;b \"x\".json\n"),
                 out);
         assertTrue(out.contains("name=\"note\"\n\nhi\n"), out);
+    }
+
+    @Test
+    void aTypedOrNamedInlinePartRoundTrips() {
+        String exported = CurlExport.toCurl(
+                "POST",
+                "http://h/up",
+                List.<String[]>of(new String[] {"Content-Type", "multipart/form-data; boundary=BB"}),
+                "(multipart/form-data, 9 bytes)",
+                new HttpExchange.Details(
+                        null,
+                        List.of(
+                                new HttpExchange.FormPart("meta", "{\"k\": \"v; w\"}", null, null, "application/json"),
+                                new HttpExchange.FormPart("inline", "a,b", null, "in.csv", null),
+                                new HttpExchange.FormPart("plain", "@x", null, null, null)),
+                        null,
+                        null,
+                        true,
+                        null,
+                        null,
+                        false));
+        assertFalse(exported.contains("-X"), exported);
+        String out = http(exported);
+        assertTrue(out.startsWith("POST http://h/up\n"), out);
+        assertTrue(out.contains("name=\"meta\"\nContent-Type: application/json\n\n{\"k\": \"v; w\"}\n"), out);
+        assertTrue(out.contains("name=\"inline\"; filename=\"in.csv\"\n\na,b\n"), out);
+        assertTrue(out.contains("name=\"plain\"\n\n@x\n"), out);
+    }
+
+    @Test
+    void aBodyWithoutMethodOrTypeRoundTripsAsAnUntypedPost() {
+        String exported = CurlExport.toCurl("POST", "http://h/a", List.of(), "a=b", null);
+        assertTrue(exported.contains("-H 'Content-Type:'"), exported);
+        String out = http(exported);
+        assertTrue(out.startsWith("POST http://h/a\n"), out);
+        assertFalse(out.contains("Content-Type"), out);
     }
 
     @Test

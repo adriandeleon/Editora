@@ -30,11 +30,18 @@ import static com.editora.i18n.Messages.tr;
 public final class HttpVars {
 
     /**
-     * {@code {{ name }}} — no braces inside, so the scan is linear even on pathological input. This is the one
-     * scanner for {@code {{…}}} in the package: the trust gate, the editor marks and the "Running …" label use
-     * it too (through {@link #referencePattern()}), so they see exactly the references a run resolves.
+     * {@code {{ name }}} — no braces inside, so the scan is linear even on pathological input — unless it is
+     * escaped as {@code \{{}, which sends a literal {@code {{} (see {@link #ESCAPE}). This is the one scanner for
+     * {@code {{…}}} in the package: the trust gate, the editor marks and the "Running …" label use it too (through
+     * {@link #referencePattern()}), so they see exactly the references a run resolves, and none it does not.
      */
-    private static final Pattern VAR = Pattern.compile("\\{\\{([^{}]*)\\}\\}");
+    private static final Pattern VAR = Pattern.compile("(?<!\\\\)\\{\\{([^{}]*)\\}\\}");
+
+    /**
+     * The escape for a literal {@code {{}: {@code \{{} in a request is sent as {@code {{} and never resolved
+     * (Import cURL writes every {@code {{} of an imported command this way, so pasted text cannot read a variable).
+     */
+    public static final String ESCAPE = "\\{{";
 
     /** How deep environment values may refer to one another (a longer chain is reported as unresolved). */
     private static final int MAX_DEPTH = 32;
@@ -46,6 +53,16 @@ public final class HttpVars {
         return VAR;
     }
 
+    /** {@code text} with each {@link #ESCAPE} turned into the literal {@code {{} it stands for (what is sent). */
+    public static String unescape(String text) {
+        return text == null || text.indexOf(ESCAPE) < 0 ? text : text.replace(ESCAPE, "{{");
+    }
+
+    /** {@code text} with every {@code {{} written as {@link #ESCAPE}, so none of it is resolved as a reference. */
+    public static String escape(String text) {
+        return text == null || text.indexOf("{{") < 0 ? text : text.replace("{{", ESCAPE);
+    }
+
     /**
      * The references a substitution could not resolve, in first-seen order, each with a short reason. Not
      * thread-safe; one sink belongs to one request's resolution.
@@ -53,6 +70,9 @@ public final class HttpVars {
     public static final class Unresolved {
         private final Map<String, String> reasons = new LinkedHashMap<>();
         private final Set<String> secretReads = new LinkedHashSet<>();
+        private final Set<String> secretValues = new LinkedHashSet<>();
+        private final Set<String> responseReads = new LinkedHashSet<>();
+        private final Set<String> dynamicReads = new LinkedHashSet<>();
         private final boolean dry;
 
         public Unresolved() {
@@ -80,6 +100,9 @@ public final class HttpVars {
             if (other != null) {
                 other.reasons.forEach(this::add);
                 secretReads.addAll(other.secretReads);
+                secretValues.addAll(other.secretValues);
+                responseReads.addAll(other.responseReads);
+                dynamicReads.addAll(other.dynamicReads);
             }
         }
 
@@ -90,6 +113,27 @@ public final class HttpVars {
          */
         public List<String> secretReads() {
             return List.copyOf(secretReads);
+        }
+
+        /**
+         * The values those secret reads resolved to (never in a dry resolution; blank ones left out), so what is
+         * kept of the run — the saved history — can mask them. Never persist or log this list itself.
+         */
+        public List<String> secretValues() {
+            return List.copyOf(secretValues);
+        }
+
+        /**
+         * The {@code {{name.response…}}} references this resolution used, resolved or not, directly or through an
+         * {@code @var} line: text that comes from an earlier response (the trust gate cannot know such a host).
+         */
+        public List<String> responseReads() {
+            return List.copyOf(responseReads);
+        }
+
+        /** The other {@code {{$…}}} built-ins it used ({@code $uuid}, {@code $timestamp}): a fresh value each time. */
+        public List<String> dynamicReads() {
+            return List.copyOf(dynamicReads);
         }
 
         public boolean isEmpty() {
@@ -287,12 +331,15 @@ public final class HttpVars {
         }
         Unresolved out = sink == null ? new Unresolved() : sink;
         Matcher m = VAR.matcher(text);
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new StringBuilder(text.length());
+        int last = 0;
         while (m.find()) {
+            sb.append(unescape(text.substring(last, m.start()))); // an escaped \{{ goes out as a literal {{
             String name = m.group(1).strip();
-            m.appendReplacement(sb, Matcher.quoteReplacement(one(name, has, value, now, captured, dir, out)));
+            sb.append(one(name, has, value, now, captured, dir, out));
+            last = m.end();
         }
-        m.appendTail(sb);
+        sb.append(unescape(text.substring(last)));
         return sb.toString();
     }
 
@@ -312,10 +359,16 @@ public final class HttpVars {
             }
         }
         if (DynamicVars.isDynamic(name)) {
+            if (!DynamicVars.isSecretSource(name)) {
+                sink.dynamicReads.add(name);
+            }
             String v = DynamicVars.resolve(name, now, dir, reason);
             if (v == null) {
                 sink.add(ref(name), reason[0]);
                 return "";
+            }
+            if (DynamicVars.isSecretSource(name) && !v.isBlank()) {
+                sink.secretValues.add(v);
             }
             return v;
         }
@@ -324,6 +377,7 @@ public final class HttpVars {
             return v == null ? "" : v;
         }
         if (CapturedResponses.isResponseRef(name)) {
+            sink.responseReads.add(name);
             String v = captured == null ? null : captured.lookup(name, reason);
             if (v == null) {
                 String request = name.substring(0, name.indexOf(".response."));
