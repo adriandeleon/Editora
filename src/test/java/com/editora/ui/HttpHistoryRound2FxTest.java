@@ -20,7 +20,6 @@ import com.editora.config.HttpResponseHistory;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.sun.net.httpserver.HttpServer;
-import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -359,10 +358,10 @@ class HttpHistoryRound2FxTest {
         HttpClientCoordinator c = coordinator(host);
         EditorBuffer b = open(host, c, file, "GET " + url("/big") + "\n");
         HttpClientPanel p = c.panelForTest(b);
-        CodeArea body = p.bodyAreaForTest();
-        await(() -> body.getText().contains("saved history kept only"));
-        String shown = FxTestSupport.callOnFx(body::getText);
-        assertFalse(shown.contains("has the full body"), shown.substring(shown.length() - 300));
+        // The notes sit above the body since round 3 (X11).
+        await(() -> p.bodyNoteForTest() != null && p.bodyNoteForTest().contains("saved history kept only"));
+        String shown = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertFalse(shown.contains("has the full body"), shown);
         assertFalse(shown.contains("were downloaded"), "the whole response was downloaded");
     }
 

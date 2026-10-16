@@ -214,7 +214,9 @@ class HttpClientRunFlowFxTest {
                         + "\nX-Token: {{token}}\n\n### plain\nGET " + url("/json") + "\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
         String refused = host.awaitStatus(s -> s.contains("$processEnv.PATH"));
-        assertTrue(refused.contains(tr("status.http.secretsRefused", "$processEnv.PATH")), refused);
+        assertTrue(
+                refused.contains(HttpStatusText.notSentReason(tr("status.http.secretsRefused", "$processEnv.PATH"))),
+                refused);
         assertEquals(List.of(List.of("$processEnv.PATH")), ops.askedReads);
         assertEquals(List.of(List.of("127.0.0.1:" + port)), ops.askedHosts);
         assertFalse(coordinator.isRunningForTest(b), "the run is over");
@@ -226,7 +228,7 @@ class HttpClientRunFlowFxTest {
             host.active = b;
             coordinator.runFile();
         });
-        host.awaitStatus(s -> s.equals(tr("status.http.someFailed", 1, 2)));
+        host.awaitStatus(s -> s.equals(tr("status.http.someNotSent", 1, 2)));
         assertEquals(2, ops.askedReads.size());
         Thread.sleep(200);
         assertEquals(List.of("json null"), hits, "only the request without a secret was sent");
@@ -489,8 +491,8 @@ class HttpClientRunFlowFxTest {
         host.awaitStatus();
         String failed = host.awaitStatus();
         assertTrue(
-                failed.startsWith(tr("status.http.failedError", "POST " + url("/json"), "")),
-                "names the request and says it failed: " + failed);
+                failed.startsWith(tr("status.http.notSentError", "POST " + url("/json"), "")),
+                "names the request and says it was not sent: " + failed);
         FxTestSupport.runOnFx(coordinator::openActiveResponseInTab);
         assertEquals(tr("status.http.noResponseSelected"), host.last);
         assertEquals(List.of(), ops.opened);

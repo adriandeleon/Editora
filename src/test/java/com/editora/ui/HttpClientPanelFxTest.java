@@ -17,6 +17,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,7 +64,9 @@ class HttpClientPanelFxTest {
 
         assertTrue(shown.startsWith("line of response text\n"));
         assertTrue(shown.length() < body.length(), "the view is limited");
-        String marker = shown.substring(HttpClientPanel.MAX_BODY_CHARS);
+        // The note sits above the body (X11), where it is seen, not after 400 000 characters.
+        String marker = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertNotNull(marker, "the cut is announced above the body");
         assertTrue(marker.contains("400,000"), "the cut is announced, with the shown length: " + marker);
         assertTrue(marker.contains("660,000"), "…and the full length: " + marker);
 
@@ -119,7 +122,9 @@ class HttpClientPanelFxTest {
                 true);
         String shown = show(p, exchange("img", r));
         assertTrue(shown.contains("binary"), shown);
-        assertTrue(shown.contains("truncated"), "a size-capped response says so in the body pane: " + shown);
+        String note = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertTrue(
+                note != null && note.contains("truncated"), "a size-capped response says so above the body: " + note);
         String notes = FxTestSupport.callOnFx(p::notesForTest); // warnings sit apart from the headers (U4)
         assertTrue(notes.startsWith("⚠  response truncated at 50 MB"), notes);
         assertEquals(tr("httppanel.warnings", 1), FxTestSupport.callOnFx(p::warnBadgeForTest));
@@ -182,10 +187,12 @@ class HttpClientPanelFxTest {
         assertTrue(FxTestSupport.callOnFx(p::statusForTest)
                 .contains(tr("httppanel.runningOf", 2, 5, "GET http://x.test/b")));
         FxTestSupport.runOnFx(p::cancelled);
+        // X10: nothing is shown under "Cancelled" (the old response read as this one's); it is still in History.
+        assertEquals(null, FxTestSupport.callOnFx(p::getSelectedExchange));
+        assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
         assertEquals(
-                "old body",
-                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()),
-                "cancelling shows the last response again");
+                1,
+                FxTestSupport.callOnFx(() -> p.historyPickerForTest().getItems().size()));
     }
 
     @Test

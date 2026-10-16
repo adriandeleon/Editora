@@ -165,16 +165,17 @@ class HttpClientScratchFxTest {
                 + "?two\n\n>> out.json\n\n###\nGET " + url("/json") + "?three\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         String status = host.awaitStatus(s -> !s.startsWith("Running"));
-        assertTrue(status.contains(tr("httppanel.saveFirstToUse", "< ./body.json")), status);
+        assertTrue(
+                status.contains(HttpStatusText.notSentReason(tr("httppanel.saveFirstToUse", "< ./body.json"))), status);
         assertEquals(List.of(), hits, "nothing was sent");
 
         host.statuses.clear();
         FxTestSupport.runOnFx(coordinator::runFile);
-        assertEquals(tr("status.http.someFailed", 2, 3), host.awaitStatus(s -> !s.startsWith("Running")));
+        assertEquals(tr("status.http.someNotSent", 2, 3), host.awaitStatus(s -> !s.startsWith("Running")));
         assertEquals(List.of("/json?three"), hits, "the request that needs no folder still went out");
         HttpClientPanel p = coordinator.panelForTest(b);
-        assertEquals(
-                List.of(tr("httppanel.saveFirstToUse", "< ./body.json"), tr("httppanel.saveFirstToUse", ">> out.json")),
+        assertEquals( // newest first (round 3): the run's later request is listed above its earlier one
+                List.of(tr("httppanel.saveFirstToUse", ">> out.json"), tr("httppanel.saveFirstToUse", "< ./body.json")),
                 FxTestSupport.callOnFx(() -> p.history().stream()
                         .limit(3)
                         .map(e -> e.result().error())
@@ -222,8 +223,9 @@ class HttpClientScratchFxTest {
         EditorBuffer b = untitled("GET " + url("/json") + "?k={{$processEnv.HOME}}\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         // The gate is asked on the run's worker: the request is reported unsent, with why.
-        String refused = host.awaitStatus(s -> s.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")));
-        assertTrue(refused.contains(tr("status.http.secretsNeedFolder", "$processEnv.HOME")), "no project: not read");
+        String why = HttpStatusText.notSentReason(tr("status.http.secretsNeedFolder", "$processEnv.HOME"));
+        String refused = host.awaitStatus(s -> s.contains(why));
+        assertTrue(refused.contains(why), "no project: not read");
         assertEquals(List.of(), hits);
 
         ops.projectRoot = project;
