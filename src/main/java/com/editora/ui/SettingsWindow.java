@@ -2539,12 +2539,8 @@ public class SettingsWindow {
                 "rulers",
                 "80, 120",
                 st -> com.editora.editor.RulerColumns.format(st.getRulers()),
-                (st, v) -> {
-                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
-                    if (columns != null) {
-                        st.setRulers(columns);
-                    }
-                },
+                (st, v) -> st.setRulers(com.editora.editor.RulerColumns.parse(v)),
+                v -> rulerProblem(com.editora.editor.RulerColumns.problem(v)),
                 "rulers ruler columns column margin line length 80 100 120");
         textRow(
                 display,
@@ -2552,13 +2548,9 @@ public class SettingsWindow {
                 "languageRulers",
                 "java: 100; python: 79, 88",
                 st -> com.editora.editor.RulerColumns.formatByLanguage(st.getLanguageRulers()),
-                (st, v) -> {
-                    java.util.Map<String, java.util.List<Integer>> perLanguage =
-                            com.editora.editor.RulerColumns.parseByLanguage(v);
-                    if (perLanguage != null) {
-                        st.setLanguageRulers(perLanguage);
-                    }
-                },
+                (st, v) -> st.setLanguageRulers(com.editora.editor.RulerColumns.parseByLanguage(v)),
+                v -> rulerProblem(com.editora.editor.RulerColumns.byLanguageProblem(
+                        v, SpellFileTypesEditor.languageNames(config.getSettings()))),
                 "rulers per language ruler columns margin line length");
         switchRow(
                 display,
@@ -3234,18 +3226,65 @@ public class SettingsWindow {
             java.util.function.Function<Settings, String> get,
             java.util.function.BiConsumer<Settings, String> set,
             String keywords) {
+        textRow(card, cat, key, prompt, get, set, null, keywords);
+    }
+
+    /**
+     * As above, with {@code problem} saying why typed text cannot be kept (null when it can). Text it rejects
+     * is not saved: the field turns red with the reason as its tooltip and keeps the text until it is fixed.
+     */
+    private void textRow(
+            Card card,
+            Category cat,
+            String key,
+            String prompt,
+            java.util.function.Function<Settings, String> get,
+            java.util.function.BiConsumer<Settings, String> set,
+            java.util.function.Function<String, String> problem,
+            String keywords) {
         TextField field = new TextField();
         field.setPromptText(prompt);
         field.setPrefWidth(220);
         field.setAccessibleText(tr("settings." + key));
         settingControls.put(key, field);
         commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
+            String why = problem == null ? null : problem.apply(now);
+            showProblem(field, why);
+            if (why != null) {
+                return;
+            }
             set.accept(config.getSettings(), now);
             field.setText(get.apply(config.getSettings())); // as kept: a name that is not one reads as the default
             apply();
         });
         controlRow(card, cat, tr("settings." + key), tr("settings." + key + ".desc"), field, keywords);
-        settingSyncs.add(st -> field.setText(get.apply(st)));
+        settingSyncs.add(st -> {
+            field.setText(get.apply(st));
+            showProblem(field, null);
+        });
+    }
+
+    /** The field message for a typed ruler list that cannot be read, or null. */
+    private static String rulerProblem(com.editora.editor.RulerColumns.Problem problem) {
+        if (problem == null) {
+            return null;
+        }
+        return switch (problem.kind()) {
+            case NOT_A_COLUMN ->
+                tr(
+                        "settings.rulers.notAColumn",
+                        problem.part(),
+                        String.valueOf(com.editora.editor.RulerColumns.MAX_COLUMN));
+            case NO_LANGUAGE -> tr("settings.rulers.noLanguage", problem.part());
+            case UNKNOWN_LANGUAGE -> tr("settings.rulers.unknownLanguage", problem.part());
+        };
+    }
+
+    /** Marks {@code field} as holding text that is not kept ({@code why} != null), with the reason, or clears it. */
+    private static void showProblem(TextField field, String why) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
+        field.setTooltip(why == null ? null : new Tooltip(why));
+        field.setAccessibleHelp(why);
     }
 
     /**

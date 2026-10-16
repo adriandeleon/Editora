@@ -2,10 +2,12 @@ package com.editora.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
@@ -158,6 +160,53 @@ class SettingsContentPagesFxTest {
             boolean was = settings.isShowToolbar();
             show.setSelected(!was);
             assertEquals(!was, settings.isShowToolbar());
+        });
+    }
+
+    private static boolean flagged(TextField field) {
+        return field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER);
+    }
+
+    @Test
+    void rulerTextThatCannotBeReadIsFlaggedAndKeptUnsavedInsteadOfQuietlyReverted() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            rig.page("EDITOR");
+            Map<String, javafx.scene.control.Control> controls = rig.control("settingControls");
+            TextField rulers = (TextField) controls.get("rulers");
+            List<Integer> before = List.copyOf(settings.getRulers());
+
+            SettingsRig.typeAndEnter(rulers, "80; 120");
+            assertEquals(before, settings.getRulers(), "nothing saved");
+            assertEquals("80; 120", rulers.getText(), "the typed text stays to be fixed");
+            assertTrue(flagged(rulers));
+            assertTrue(
+                    rulers.getTooltip().getText().contains(";"),
+                    rulers.getTooltip().getText());
+
+            SettingsRig.typeAndEnter(rulers, "80, 120");
+            assertEquals(List.of(80, 120), settings.getRulers());
+            assertFalse(flagged(rulers));
+        });
+    }
+
+    @Test
+    void aLanguageRulerNameNoFileHasIsRefusedAndAnyCaseOfAKnownOneIsKeptLowerCased() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            rig.page("EDITOR");
+            Map<String, javafx.scene.control.Control> controls = rig.control("settingControls");
+            TextField perLanguage = (TextField) controls.get("languageRulers");
+
+            SettingsRig.typeAndEnter(perLanguage, "java: 100; bash: 61");
+            assertEquals(Map.of(), settings.getLanguageRulers(), "nothing saved");
+            assertTrue(flagged(perLanguage));
+            assertTrue(perLanguage.getTooltip().getText().contains("bash"));
+
+            SettingsRig.typeAndEnter(perLanguage, "Java: 100; Python: 79");
+            assertEquals(Map.of("java", List.of(100), "python", List.of(79)), settings.getLanguageRulers());
+            assertFalse(flagged(perLanguage));
+            assertEquals("java: 100; python: 79", perLanguage.getText());
         });
     }
 }
