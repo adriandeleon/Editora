@@ -79,6 +79,7 @@ class ChildLocalePolicyTest {
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("git/GitService.java", 1), // user-initiated commands: they run the user's hooks
             Map.entry("github/GitHubService.java", 1), // a failed CI log, streamed to keep its tail: shown, not parsed
+            Map.entry("http/NodeResponseScripts.java", 1), // an HTTP response handler: its log is shown (minimal env)
             Map.entry("install/InstallService.java", 5), // npm/pip/gem/… installs + tar extraction
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
             Map.entry("maven/MavenClasspathResolver.java", 1), // Maven on the user's project
@@ -94,6 +95,7 @@ class ChildLocalePolicyTest {
             "agent/AcpClient.java",
             "build/BuildService.java",
             "dap/DapManager.java",
+            "http/NodeResponseScripts.java", // applyUserEnv, then reduced to a minimal environment
             "lsp/LanguageServerSession.java",
             "process/DesktopActions.java",
             "process/LocalExecTarget.java", // what run() starts for a local working directory

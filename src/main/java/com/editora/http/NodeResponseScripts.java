@@ -388,6 +388,8 @@ public final class NodeResponseScripts implements ResponseScripts {
         if (dir != null) {
             pb.directory(dir.toFile());
         }
+        // The user's locale and the augmented PATH (a script's log is read by the user), then nothing else.
+        ProcessRunner.applyUserEnv(pb);
         Map<String, String> env = pb.environment();
         boolean windows =
                 System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");

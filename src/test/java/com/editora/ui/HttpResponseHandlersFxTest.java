@@ -186,7 +186,10 @@ class HttpResponseHandlersFxTest {
         assertTrue(block.contains("✗  ReferenceError: x is not defined\n    at /p/api.http:9:3"), block);
         assertTrue(FxTestSupport.callOnFx(p::testsExpandedForTest), "a failure opens the block");
         assertEquals("✓ 1 passed · ✗ 1 failed · ✗ handler error", FxTestSupport.callOnFx(p::testsBadgeForTest));
-        assertTrue(FxTestSupport.callOnFx(p::testsBadgeStyleForTest).contains("http-tests-failed"));
+        assertEquals(
+                List.of("✓ 1 passed = passed", "✗ 1 failed = failed", "✗ handler error = failed"),
+                FxTestSupport.callOnFx(p::testsBadgePartsForTest),
+                "the passing part is green, the failing parts red");
 
         // A response that ran no tests has no badge and no block.
         HttpResult plain = HttpFixtures.text(200, List.of(), "{}", "application/json", 3, 2, null);
@@ -223,7 +226,8 @@ class HttpResponseHandlersFxTest {
                             width + " px: " + FxTestSupport.callOnFx(p::testsBadgeForTest));
                     Thread.sleep(20);
                 }
-                assertTrue(FxTestSupport.callOnFx(p::testsBadgeStyleForTest).contains("http-tests-passed"));
+                assertEquals(
+                        List.of(want + " = passed"), FxTestSupport.callOnFx(p::testsBadgePartsForTest), width + " px");
             } finally {
                 FxTestSupport.runOnFx(stage::close);
             }
@@ -262,6 +266,9 @@ class HttpResponseHandlersFxTest {
         assertTrue(block.contains("✓  token present"), block);
         assertTrue(block.contains("stored"), block);
         assertEquals("✓ 2 passed · ✗ 1 failed", FxTestSupport.callOnFx(p::testsBadgeForTest));
+        assertEquals(
+                List.of("✓ 2 passed = passed", "✗ 1 failed = failed"),
+                FxTestSupport.callOnFx(p::testsBadgePartsForTest));
 
         // On disk: the test results are kept with the response.
         HttpHistorySync.awaitIdleForTest();

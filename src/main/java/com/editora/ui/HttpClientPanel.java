@@ -102,8 +102,13 @@ public final class HttpClientPanel extends VBox {
     private final Label status = new Label();
     /** "⚠ 11 warnings" beside the status line: a response can be 200 OK and still have been sent wrong. */
     private final Label warnBadge = new Label();
-    /** "✓ 3 passed · ✗ 1 failed" beside the status line: what the request's @assert checks and handlers found. */
-    private final Label testsBadge = new Label();
+    /**
+     * "✓ 3 passed · ✗ 1 failed" beside the status line: what the request's @assert checks and handlers found, the
+     * passing part green and the failing part red (one label per part).
+     */
+    private final HBox testsBadge = new HBox();
+    /** The tests badge's whole text, as shown (and read by a screen reader). */
+    private String testsBadgeText = "";
     /** The tests shown, so the badge can be shortened with the warnings badge. */
     private HttpTests shownTests = HttpTests.NONE;
     /** "Run All: 3 of 13 failed" under the status line after a Run All, until the next run. */
@@ -224,6 +229,7 @@ public final class HttpClientPanel extends VBox {
             }
         });
         testsBadge.getStyleClass().add("http-tests-badge");
+        testsBadge.setAlignment(Pos.CENTER_LEFT);
         testsBadge.setMinWidth(Region.USE_PREF_SIZE);
         testsBadge.setOnMouseClicked(e -> toggleTests());
         testsBadge.setFocusTraversable(true);
@@ -234,7 +240,7 @@ public final class HttpClientPanel extends VBox {
                 e.consume();
             }
         });
-        showBadge(testsBadge, null);
+        setTestsBadge(List.of(), false);
         runSummary.getStyleClass().add("http-run-summary");
         runSummary.setMinWidth(0);
         runSummary.setTextOverrun(OverrunStyle.ELLIPSIS);
@@ -1061,12 +1067,19 @@ public final class HttpClientPanel extends VBox {
 
     /** The tests badge's text, or null when hidden. Test accessor. */
     String testsBadgeForTest() {
-        return testsBadge.isVisible() ? testsBadge.getText() : null;
+        return testsBadge.isVisible() ? testsBadgeText : null;
     }
 
-    /** The style classes of the tests badge. Test accessor. */
-    List<String> testsBadgeStyleForTest() {
-        return List.copyOf(testsBadge.getStyleClass());
+    /** Each part of the tests badge as "text = style" (passed or failed), separators left out. Test accessor. */
+    List<String> testsBadgePartsForTest() {
+        List<String> out = new ArrayList<>();
+        for (Node part : testsBadge.getChildren()) {
+            if (part instanceof Label l && !l.getStyleClass().contains("http-tests-sep")) {
+                String style = l.getStyleClass().contains("http-tests-failed") ? "failed" : "passed";
+                out.add(l.getText() + " = " + style);
+            }
+        }
+        return out;
     }
 
     /**
@@ -1184,10 +1197,34 @@ public final class HttpClientPanel extends VBox {
         testsPane.setExpanded(t.hasFailures() || t.tests().size() + lines.size() <= 4);
         testsPane.setVisible(any);
         testsPane.setManaged(any);
-        testsBadge.getStyleClass().removeAll("http-tests-passed", "http-tests-failed");
-        testsBadge.getStyleClass().add(HttpStatusText.testsStyle(t));
-        showBadge(testsBadge, HttpStatusText.testsBadge(t, compactBadge));
+        setTestsBadge(HttpStatusText.testsBadgeParts(t, compactBadge), compactBadge);
         fitBadge();
+    }
+
+    /**
+     * Fills the tests badge with {@code parts}, each its own label coloured passed or failed, joined by " · " (by a
+     * space when {@code compact}); hides it when there are none.
+     */
+    private void setTestsBadge(List<HttpStatusText.BadgePart> parts, boolean compact) {
+        testsBadge.getChildren().clear();
+        List<String> texts = new ArrayList<>();
+        for (HttpStatusText.BadgePart part : parts) {
+            if (!testsBadge.getChildren().isEmpty()) {
+                Label sep = new Label(compact ? " " : HttpStatusText.BADGE_SEPARATOR);
+                sep.getStyleClass().addAll("http-tests-part", "http-tests-sep");
+                testsBadge.getChildren().add(sep);
+            }
+            Label l = new Label(part.text());
+            l.setMinWidth(Region.USE_PREF_SIZE);
+            l.getStyleClass().addAll("http-tests-part", part.failed() ? "http-tests-failed" : "http-tests-passed");
+            testsBadge.getChildren().add(l);
+            texts.add(part.text());
+        }
+        testsBadgeText = String.join(compact ? " " : HttpStatusText.BADGE_SEPARATOR, texts);
+        testsBadge.setAccessibleText(testsBadgeText);
+        boolean on = !parts.isEmpty();
+        testsBadge.setVisible(on);
+        testsBadge.setManaged(on);
     }
 
     /** A rough count of the extra rows long log lines wrap to, so a stack trace is not shown one line high. */
@@ -1240,7 +1277,7 @@ public final class HttpClientPanel extends VBox {
         }
         if (testsFull != null) {
             Text full = new Text(testsFull);
-            full.setFont(testsBadge.getFont());
+            full.setFont(warnBadge.getFont()); // the parts are bold, like the warnings badge
             badges += full.getLayoutBounds().getWidth() + 8;
         }
         double needed = runHost.prefWidth(-1) + status.prefWidth(-1) + badges + 8 + 12;
@@ -1253,8 +1290,8 @@ public final class HttpClientPanel extends VBox {
         }
         if (testsFull != null) {
             String t = HttpStatusText.testsBadge(shownTests, compact);
-            if (!testsBadge.getText().equals(t)) {
-                testsBadge.setText(t);
+            if (!testsBadgeText.equals(t)) {
+                setTestsBadge(HttpStatusText.testsBadgeParts(shownTests, compact), compact);
             }
         }
         compactBadge = compact;

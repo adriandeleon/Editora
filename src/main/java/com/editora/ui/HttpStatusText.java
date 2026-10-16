@@ -173,42 +173,55 @@ final class HttpStatusText {
         return n == 0 ? "" : " · " + tr("httppanel.runAllTestsFailed", n);
     }
 
+    /** One part of the tests badge: its text, and whether it reports a failure (red) or passes (green). */
+    record BadgePart(String text, boolean failed) {}
+
     /**
-     * The tests badge beside the status line — "✓ 3 passed · ✗ 1 failed", "✗ handler error" — or null when the
-     * response ran no tests and its handler stopped with no error. {@code compact} shortens it to "✓3 ✗1".
+     * The parts of the tests badge beside the status line — "✓ 3 passed", "✗ 1 failed", "✗ handler error" — each
+     * coloured on its own; empty when the response ran no tests and its handler stopped with no error. {@code compact}
+     * shortens them to "✓3", "✗1".
      */
-    static String testsBadge(HttpTests t, boolean compact) {
+    static List<BadgePart> testsBadgeParts(HttpTests t, boolean compact) {
+        List<BadgePart> parts = new java.util.ArrayList<>();
         if (t == null || (t.tests().isEmpty() && t.error() == null)) {
-            return null;
+            return parts;
         }
         int passed = t.passed();
         int failed = t.failed();
-        List<String> parts = new java.util.ArrayList<>();
         if (compact) {
             if (passed > 0) {
-                parts.add("✓" + passed);
+                parts.add(new BadgePart("✓" + passed, false));
             }
             if (failed > 0 || t.error() != null) {
-                parts.add("✗" + (failed + (t.error() != null ? 1 : 0)));
+                parts.add(new BadgePart("✗" + (failed + (t.error() != null ? 1 : 0)), true));
             }
-            return String.join(" ", parts);
+            return parts;
         }
         if (passed > 0) {
-            parts.add(tr("httppanel.testsPassed", passed));
+            parts.add(new BadgePart(tr("httppanel.testsPassed", passed), false));
         }
         if (failed > 0) {
-            parts.add(tr("httppanel.testsFailed", failed));
+            parts.add(new BadgePart(tr("httppanel.testsFailed", failed), true));
         }
         if (t.error() != null) {
-            parts.add(tr("httppanel.testsError"));
+            parts.add(new BadgePart(tr("httppanel.testsError"), true));
         }
-        return String.join(" · ", parts);
+        return parts;
     }
 
-    /** The style class of the tests badge: failed when a test failed or the handler stopped. */
-    static String testsStyle(HttpTests t) {
-        return t != null && t.hasFailures() ? "http-tests-failed" : "http-tests-passed";
+    /** The tests badge as one text ("✓ 3 passed · ✗ 1 failed", or "✓3 ✗1" compact), or null when there is none. */
+    static String testsBadge(HttpTests t, boolean compact) {
+        List<BadgePart> parts = testsBadgeParts(t, compact);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        return String.join(
+                compact ? " " : BADGE_SEPARATOR,
+                parts.stream().map(BadgePart::text).toList());
     }
+
+    /** What separates the full badge's parts. */
+    static final String BADGE_SEPARATOR = " · ";
 
     /** The Tests block's title: "Tests: 3 passed, 1 failed", or "Handler output" when it ran no test. */
     static String testsTitle(HttpTests t) {
