@@ -40,6 +40,16 @@ public record FileIdentity(String path, String canonicalPath, long size, long la
 
     /** Builds an identity for {@code p}, hashing its content when readable and within {@link #MAX_HASH_BYTES}. */
     public static FileIdentity of(Path p) {
+        FileIdentity id = unhashed(p);
+        return id.withHash(hashable(id.size) ? sha256(p) : "");
+    }
+
+    /**
+     * As {@link #of} without reading the file: path, canonical path, size and modification time, with an empty
+     * hash. For a lookup that needs the hash only in a rare case ({@code PathKeys.findKeyByIdentity}), with
+     * {@link #hashOf} computing it when it does.
+     */
+    public static FileIdentity unhashed(Path p) {
         if (p == null) {
             return new FileIdentity("", "", 0, 0, "");
         }
@@ -53,8 +63,28 @@ public record FileIdentity(String path, String canonicalPath, long size, long la
         } catch (IOException ignored) {
             // unreadable attributes ⇒ leave zero
         }
-        String hash = (size > 0 && size <= MAX_HASH_BYTES) ? sha256(p) : "";
-        return new FileIdentity(path, canonical, size, modified, hash);
+        return new FileIdentity(path, canonical, size, modified, "");
+    }
+
+    /** The content hash {@link #of} stores for {@code p}: {@code ""} when unreadable, empty or too large to hash. */
+    public static String hashOf(Path p) {
+        if (p == null) {
+            return "";
+        }
+        try {
+            return hashable(Files.size(p)) ? sha256(p) : "";
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    /** This identity with {@code hash} as its content hash. */
+    public FileIdentity withHash(String hash) {
+        return new FileIdentity(path, canonicalPath, size, lastModified, hash);
+    }
+
+    private static boolean hashable(long size) {
+        return size > 0 && size <= MAX_HASH_BYTES;
     }
 
     private static String canonicalize(Path p) {

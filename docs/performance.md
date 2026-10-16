@@ -340,8 +340,16 @@ diagnostics, …) follows one discipline:
   (notes, spelling); see rule 6 above
 - **inert while it has nothing to paint**: every `scheduleRedraw` returns on its `active` flag before any
   viewport call, and an overlay that is on for every buffer (the Personal-Notes highlight) also asks a cheap
-  gate (`NoteManager.hasActiveSpans`) before queueing its `runLater`, so a buffer without a note never does
+  gate (`NoteManager.hasActiveSpans`) before arming its paint, so a buffer without a note never does
   the visible-paragraph lookups — the same shape as the TODO overlay being off until it has marks
+- **painted after the pulse's layout** when it is placed from the laid-out text (`MarkdownLintOverlay`,
+  `NoteHighlightOverlay`, the indent guides): a `Platform.runLater` paint runs before the pulse that lays the
+  text out, and when the gutter then changes width (a 1,000th line, line numbers toggled, the font) that stale
+  frame is shown. A post-layout pulse listener paints, then looks again at where the first visible character
+  is for three pulses
+- **no gutter work for what the gutter does not show**: `recreateParagraphGraphic` builds a cell even for a
+  line far off screen, so a model that follows edits (Personal Notes, which are painted inline) must not ask
+  for gutter repaints per keystroke — notes did, two per note per moved line
 
 See the recipe in [extending.md](extending.md#add-a-canvas-overlay), and `SpellCheckOverlay` /
 `MarkdownLintOverlay` as references.

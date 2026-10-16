@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import com.editora.vfs.Vfs;
 
@@ -258,21 +259,46 @@ public final class PathKeys {
      */
     public static String findKeyByIdentity(
             Map<String, List<PersonalNote>> map, FileIdentity id, Predicate<String> stillExists) {
+        return findKeyByIdentity(map, id, id == null ? () -> "" : id::hash, stillExists);
+    }
+
+    /**
+     * As {@link #findKeyByIdentity(Map, FileIdentity, Predicate)}, with {@code id}'s content hash asked of
+     * {@code hash} (at most once) instead of read from {@code id}. Hashing reads the whole file, and almost every
+     * lookup — a file opened while notes exist for others — never needs it: it is asked for only when a stored
+     * note's file is gone and had the same size (equal bytes have equal sizes) and a hash to compare with.
+     */
+    public static String findKeyByIdentity(
+            Map<String, List<PersonalNote>> map,
+            FileIdentity id,
+            Supplier<String> hash,
+            Predicate<String> stillExists) {
         if (id == null) {
             return null;
         }
         String hashCandidate = null;
+        String ours = null;
         for (var entry : map.entrySet()) {
             for (PersonalNote n : entry.getValue()) {
-                FileIdentity.Match m = FileIdentity.match(n.file(), id);
-                if (m == FileIdentity.Match.CANONICAL_PATH) {
+                FileIdentity theirs = n.file();
+                if (theirs == null) {
+                    continue;
+                }
+                if (!theirs.canonicalPath().isBlank() && theirs.canonicalPath().equals(id.canonicalPath())) {
                     return entry.getKey(); // the same file — no ambiguity
                 }
-                if (m == FileIdentity.Match.CONTENT_HASH
-                        && hashCandidate == null
-                        && !stillExists.test(n.file().canonicalPath())
-                        && !stillExists.test(n.file().path())) {
-                    hashCandidate = entry.getKey(); // same bytes AND the original is gone ⇒ a rename
+                if (hashCandidate == null
+                        && !theirs.hash().isBlank()
+                        && theirs.size() == id.size()
+                        && !stillExists.test(theirs.canonicalPath())
+                        && !stillExists.test(theirs.path())) {
+                    if (ours == null) {
+                        String computed = hash.get();
+                        ours = computed == null ? "" : computed;
+                    }
+                    if (!ours.isBlank() && ours.equals(theirs.hash())) {
+                        hashCandidate = entry.getKey(); // same bytes AND the original is gone ⇒ a rename
+                    }
                 }
             }
         }

@@ -756,7 +756,7 @@ public class EditorBuffer implements TabContent {
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBreakpointClick =
             (buffer, line) -> buffer.toggleBreakpoint(line);
-    /** Personal Notes for this buffer (gutter marker + highlight + hover). */
+    /** Personal Notes for this buffer (inline marker + highlight + hover). */
     private final NoteManager notes = new NoteManager(area);
 
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
@@ -996,8 +996,9 @@ public class EditorBuffer implements TabContent {
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked);
         folds.setSplitViews(() -> focusedArea, () -> area2);
-        // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
-        notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
+        // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot): a change
+        // to the note set repaints the overlay, never the gutter (the overlay follows edits on its own).
+        notes.setOnSpansChanged(noteOverlay::refresh);
         gitLines.attach(folds); // change bars: slot reserved only while tracking is on; hunk text on hover
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
@@ -6914,12 +6915,10 @@ public class EditorBuffer implements TabContent {
         notes.setOnChanged(callback);
     }
 
-    /** Replaces this buffer's notes from persisted state and repaints the gutter. Returns true if any note
+    /** Replaces this buffer's notes from persisted state and repaints their highlight. Returns true if any note
      *  was re-anchored or (un)orphaned, so the caller can persist the self-healed state. */
     public boolean applyNotes(List<com.editora.config.PersonalNote> saved) {
-        boolean moved = notes.restore(saved);
-        refreshGutter();
-        return moved;
+        return notes.restore(saved); // repaints the note overlay; the gutter shows no notes, so it is left alone
     }
 
     /**
@@ -6977,7 +6976,7 @@ public class EditorBuffer implements TabContent {
         this.notesEnabled = on;
     }
 
-    /** Shows/hides the note gutter markers + highlight (the {@code showNoteIndicators} setting). */
+    /** Shows/hides the notes' inline markers + highlight (the {@code showNoteIndicators} setting). */
     public void setNoteIndicatorsVisible(boolean on) {
         if (noteIndicators == on) {
             return;
@@ -6987,7 +6986,6 @@ public class EditorBuffer implements TabContent {
         if (!on) {
             hideNoteTip();
         }
-        refreshGutter();
     }
 
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
@@ -7002,10 +7000,13 @@ public class EditorBuffer implements TabContent {
     /** Hover popup over a note's span shows its body (updated only when the hovered note changes). */
     private void installNoteHover(CodeArea a) {
         a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
-            if (!noteIndicators) {
+            // Every buffer has this filter and almost none has a note: without one on screen there is nothing to
+            // hit-test the pointer against.
+            if (!noteIndicators || !notes.hasActiveSpans()) {
                 hideNoteTip();
                 return;
             }
+            NOTE_HOVER_HITS_FOR_TEST.incrementAndGet();
             com.editora.config.PersonalNote n;
             try {
                 // MOUSE_MOVED bubbles from RichTextFX's paragraph/text nodes. MouseEvent#getX/Y are
@@ -7037,10 +7038,17 @@ public class EditorBuffer implements TabContent {
         // Clicking the inline note marker (the ~7px amber triangle at a note's start) opens the editor —
         // restoring the click-to-edit the gutter glyph used to give. A click elsewhere is untouched.
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (!noteIndicators || e.getButton() != MouseButton.PRIMARY || e.getClickCount() != 1) {
+            if (!noteIndicators
+                    || e.getButton() != MouseButton.PRIMARY
+                    || e.getClickCount() != 1
+                    || !notes.hasActiveSpans()) {
                 return;
             }
+            int[] window = visibleOffsets(a);
             for (int[] span : notes.activeSpans()) {
+                if (window == null || span[0] < window[0] || span[0] > window[1]) {
+                    continue; // its marker is off screen: no layout query for it
+                }
                 Bounds scr;
                 try {
                     scr = NoteHighlightOverlay.markerBoundsOnScreen(a, span[0]);
@@ -7063,6 +7071,22 @@ public class EditorBuffer implements TabContent {
                 }
             }
         });
+    }
+
+    /** Test seam: how many pointer moves were hit-tested against the notes. */
+    static final java.util.concurrent.atomic.AtomicInteger NOTE_HOVER_HITS_FOR_TEST =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** The document offsets {@code [first, last]} of the paragraphs {@code a} shows, or null mid-layout. */
+    private static int[] visibleOffsets(CodeArea a) {
+        try {
+            int total = a.getParagraphs().size();
+            int first = Math.max(0, a.firstVisibleParToAllParIndex());
+            int last = Math.min(total - 1, a.lastVisibleParToAllParIndex());
+            return new int[] {a.getAbsolutePosition(first, 0), a.getAbsolutePosition(last, a.getParagraphLength(last))};
+        } catch (RuntimeException midLayout) {
+            return null;
+        }
     }
 
     /** Sets the handler invoked when the user clicks a note's inline start marker (controller edits it). */

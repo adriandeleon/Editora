@@ -541,6 +541,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Personal Notes indicators stay on the note's text, and cost less.**
+  - The highlight and its corner marker are painted after the text is laid out, so they no longer sit where the
+    text was for a frame (or more) when the line numbers gain a digit or are toggled, or the font changes.
+  - A note that runs onto the next row of a wrapped line paints only its own text on each row, not both rows in
+    full. A note on a folded line is not painted, and scrolled sideways no highlight covers the line numbers.
+  - Typing in a file with notes no longer rebuilds the gutter of each note's line: an Enter above 200 notes
+    queued 400 gutter rebuilds (41 s of work in a headless probe, now 0.1 s). Opening a file and turning the
+    indicators on or off no longer rebuild the whole gutter either (12 ms to 1.5 ms per open).
+  - Opening a file while you have notes on other files no longer reads and hashes the whole file (up to 5 MB) to
+    look for a renamed file's notes; it is hashed only when a note's file is gone and had the same size.
+  - Moving the pointer over a buffer without notes no longer hit-tests it, and a click checks only the markers on
+    screen.
 - **Export Configuration leaves out the installed ShellCheck and shfmt** (`plugins/tools/`) and the Typst CLI
   (`plugins/typst/`), as it already did language servers and debug adapters. The zip no longer carries about
   20 MB of executables built for this machine's OS. A plugin can no longer take the id `tools`, so installing or

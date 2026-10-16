@@ -184,6 +184,46 @@ class PathKeysTest {
                 "the old path is gone and the bytes match — a rename; the notes must follow");
     }
 
+    /**
+     * Restoring notes asks this on every file open whenever any note exists, and hashing reads the whole file
+     * (up to 5 MB) on the FX thread. The hash is needed only to recognise a rename: a stored note whose file is
+     * gone and was the same size.
+     */
+    @Test
+    void theContentHashIsComputedOnlyForAGoneFileOfTheSameSize(@TempDir Path tmp) throws IOException {
+        Path annotated = Files.writeString(tmp.resolve("annotated.ts"), "export const a = 1;\n");
+        Path opened = Files.writeString(tmp.resolve("opened.ts"), "export const b = 22;\n");
+        Map<String, List<PersonalNote>> map = new java.util.LinkedHashMap<>();
+        map.put(
+                annotated.toString(),
+                List.of(PersonalNote.create(FileIdentity.of(annotated), NoteScope.LINE, null, "n", List.of())));
+        java.util.concurrent.atomic.AtomicInteger hashed = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.Supplier<String> hash = () -> {
+            hashed.incrementAndGet();
+            return FileIdentity.hashOf(opened);
+        };
+
+        assertNull(PathKeys.findKeyByIdentity(map, FileIdentity.unhashed(opened), hash, ON_DISK));
+        assertEquals(0, hashed.get(), "the annotated file is still on disk: no rename to look for");
+
+        Path renamed = tmp.resolve("renamed.ts");
+        Files.move(annotated, renamed);
+        assertNull(PathKeys.findKeyByIdentity(map, FileIdentity.unhashed(opened), hash, ON_DISK));
+        assertEquals(0, hashed.get(), "gone, but a different size: these cannot be the same bytes");
+
+        java.util.function.Supplier<String> renamedHash = () -> {
+            hashed.incrementAndGet();
+            return FileIdentity.hashOf(renamed);
+        };
+        assertEquals(
+                annotated.toString(),
+                PathKeys.findKeyByIdentity(map, FileIdentity.unhashed(renamed), renamedHash, ON_DISK),
+                "gone and the same size: hashed, matched, a rename");
+        assertEquals(1, hashed.get());
+        assertEquals(FileIdentity.of(renamed).hash(), FileIdentity.hashOf(renamed));
+        assertEquals(FileIdentity.of(renamed), FileIdentity.unhashed(renamed).withHash(FileIdentity.hashOf(renamed)));
+    }
+
     @Test
     void resolveUserInputHandlesAbsoluteRelativeHomeAndBlank() {
         Path base = Path.of("/home/me/project");
