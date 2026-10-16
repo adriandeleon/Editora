@@ -1,0 +1,54 @@
+package com.editora.editor;
+
+import com.editora.editor.ShellScripts.Problem;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** What a shell script's bytes must not be (CRLF, a BOM), and the EditorConfig rules it therefore ignores. */
+class ShellScriptsTest {
+
+    @Test
+    void onlyAShellScriptHasAProblemWithCrlfOrABom() {
+        assertEquals(Problem.CRLF, ShellScripts.problem("shell", "CRLF", "utf-8"));
+        assertEquals(Problem.CRLF, ShellScripts.problem("shell", "CR", "utf-8"));
+        assertEquals(Problem.BOM, ShellScripts.problem("shell", "LF", "utf-8-bom"));
+        assertEquals(Problem.CRLF_AND_BOM, ShellScripts.problem("shell", "CRLF", "utf-8-bom"));
+        assertEquals(Problem.NONE, ShellScripts.problem("shell", "LF", "utf-8"));
+        assertEquals(Problem.NONE, ShellScripts.problem("batchfile", "CRLF", "utf-8-bom"));
+        assertEquals(Problem.NONE, ShellScripts.problem(null, "CRLF", "utf-8"));
+    }
+
+    @Test
+    void aShellBufferKeepsLfAndNoBomWhateverEditorConfigSays() {
+        assertNull(ShellScripts.endOfLine("shell", "CRLF"));
+        assertNull(ShellScripts.endOfLine("shell", "CR"));
+        assertEquals("LF", ShellScripts.endOfLine("shell", "LF"));
+        assertEquals("CRLF", ShellScripts.endOfLine("powershell", "CRLF"));
+        assertNull(ShellScripts.charset("shell", "utf-8-bom"));
+        assertEquals("latin1", ShellScripts.charset("shell", "latin1"));
+        assertEquals("utf-8-bom", ShellScripts.charset("markdown", "utf-8-bom"));
+        var rules = new com.editora.editorconfig.EditorConfigProperties(
+                true, 2, null, "crlf", "utf-8-bom", true, true, 100);
+        var shell = ShellScripts.honoured("shell", rules);
+        assertNull(shell.endOfLine());
+        assertNull(shell.charset());
+        assertEquals(2, shell.indentSize(), "everything else still applies");
+        assertEquals(100, shell.maxLineLength());
+        assertEquals(rules, ShellScripts.honoured("python", rules));
+    }
+
+    @Test
+    void aShellScriptIsKnownByItsNameOrItsShebang() {
+        assertTrue(ShellScripts.isShellScript("deploy.sh", ""));
+        assertTrue(ShellScripts.isShellScript(".bashrc", ""));
+        assertTrue(ShellScripts.isShellScript("release", "#!/usr/bin/env bash\necho"));
+        assertTrue(ShellScripts.isShellScript("release", "#!/bin/sh"));
+        assertFalse(ShellScripts.isShellScript("release", "#!/usr/bin/env python3\n"));
+        assertFalse(ShellScripts.isShellScript("notes.txt", "hello"));
+        assertFalse(ShellScripts.isShellScript(null, null));
+    }
+}

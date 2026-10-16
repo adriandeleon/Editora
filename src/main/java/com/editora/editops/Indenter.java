@@ -146,6 +146,12 @@ public final class Indenter {
      */
     private static String suggestedIndent(
             String text, int lineStart, Style style, String unit, boolean html, int tabSize) {
+        if (style == Style.SHELL) {
+            String shell = ShellIndent.forLine(text, lineStart, unit, tabSize);
+            if (shell != null) {
+                return shell;
+            }
+        }
         String content = text.substring(lineStart, lineEnd(text, lineStart)).stripLeading();
         boolean closer = startsWithCloser(style, content);
         if (closer && style != Style.XML && isBracketCloser(content.charAt(0))) {
@@ -188,7 +194,7 @@ public final class Indenter {
         if (isBracketCloser(content.charAt(0))) {
             return true;
         }
-        if (style == Style.SHELL && content.startsWith(";;")) {
+        if (style == Style.SHELL && (content.startsWith(";;") || content.startsWith(";&"))) {
             return true;
         }
         int end = 0;
@@ -225,7 +231,7 @@ public final class Indenter {
         return line.substring(n);
     }
 
-    private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;");
+    private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;", ";&", ";;&");
     private static final Set<String> RUBY_CLOSERS = Set.of("end", "else", "elsif", "when", "rescue", "ensure");
     private static final Set<String> LUA_CLOSERS = Set.of("end", "else", "elseif", "until");
     private static final Set<String> PY_CLOSERS = Set.of("else", "elif", "except", "finally");
@@ -279,7 +285,8 @@ public final class Indenter {
     }
 
     /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
-     *  reads only the caret's own line of {@code text}. */
+     *  reads only the caret's own line of {@code text} — except in shell, whose blocks, quotes and here-docs
+     *  are read from the bounded stretch above it ({@link ShellIndent}). */
     static EnterEdit enterEdit(String text, int caret, String language, String unit) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
@@ -294,7 +301,9 @@ public final class Indenter {
             String body = indent + unit;
             return new EnterEdit("\n" + body + "\n" + indent, 1 + body.length());
         }
-        String newIndent = opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
+        String newIndent = style == Style.SHELL
+                ? ShellIndent.afterEnter(text, caret, unit)
+                : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
         return new EnterEdit("\n" + newIndent, 1 + newIndent.length());
     }
 
@@ -339,6 +348,16 @@ public final class Indenter {
      * is a block opener at the same indent (an empty block).
      */
     public static String closerAlignIndent(Style style, String text, int caret, int tabSize, String currentIndent) {
+        if (style == Style.SHELL) {
+            String shell = ShellIndent.closer(text, caret, (char) 0, currentIndent, null, tabSize);
+            if (shell != null) {
+                return shell;
+            }
+        }
+        return closerAlignByIndent(style, text, caret, tabSize, currentIndent);
+    }
+
+    private static String closerAlignByIndent(Style style, String text, int caret, int tabSize, String currentIndent) {
         int ls = lineStart(text, caret);
         int curWidth = width(leadingWhitespace(text.substring(ls, lineEnd(text, caret))), tabSize);
         int pos = ls;
@@ -371,14 +390,31 @@ public final class Indenter {
      */
     public static String closerAlignIndent(
             Style style, String text, int caret, int tabSize, String currentIndent, char typed) {
+        return closerAlignIndent(style, text, caret, tabSize, currentIndent, typed, null);
+    }
+
+    /**
+     * As {@link #closerAlignIndent(Style, String, int, int, String, char)}, knowing the document's indent
+     * {@code unit} (null: inferred near the caret) — a shell case item's {@code ;;} goes one unit past its
+     * pattern when the item has no body line to align with. In shell a typed keyword closer or here-doc
+     * delimiter is aligned by {@link ShellIndent}, which matches blocks instead of reading indentation.
+     */
+    public static String closerAlignIndent(
+            Style style, String text, int caret, int tabSize, String currentIndent, char typed, String unit) {
         int ls = lineStart(text, caret);
+        if (style == Style.SHELL) {
+            String shell = ShellIndent.closer(text, caret, typed, currentIndent, unit, tabSize);
+            if (shell != null) {
+                return shell;
+            }
+        }
         if (isBracketCloser(typed) && text.substring(ls, caret).isBlank()) {
             String opener = openerLineIndent(style, text, ls, typed);
             if (opener != null) {
                 return opener;
             }
         }
-        return closerAlignIndent(style, text, caret, tabSize, currentIndent);
+        return closerAlignByIndent(style, text, caret, tabSize, currentIndent);
     }
 
     /**
@@ -547,6 +583,12 @@ public final class Indenter {
         }
         if (closers.contains(rest)) {
             return true; // a symbolic closer (;;), complete as typed
+        }
+        if (style == Style.SHELL
+                && last == '\n'
+                && rest.length() > 1
+                && rest.strip().equals(rest.substring(0, rest.length() - 1))) {
+            return true; // one word then Enter: maybe a here-doc's delimiter, which ShellIndent judges in context
         }
         String word = rest.substring(0, rest.length() - 1);
         return !word.isEmpty() && isWordChar(word.charAt(word.length() - 1)) && closers.contains(word);

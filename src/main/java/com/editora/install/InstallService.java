@@ -186,8 +186,64 @@ public final class InstallService {
             case JVM_LSP_ZIP -> {
                 return installJvmLspZip(s, configDir);
             }
+            case PINNED_TOOL -> {
+                return installPinnedTool(s, configDir);
+            }
         }
         return null;
+    }
+
+    /** Where pinned-tool recipes come from ({@link InstallCatalog#pinnedTool}); a test supplies its own. */
+    private java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedTool>> pinnedTools =
+            InstallCatalog::pinnedTool;
+
+    /** Test seam for {@link #pinnedTools}: recipes whose hashes match a test's own small archives. */
+    void setPinnedToolsForTest(
+            java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedTool>> recipes) {
+        this.pinnedTools = recipes;
+    }
+
+    /**
+     * Downloads a pinned tool's asset for this platform, refuses it unless its SHA-256 is the one in the recipe,
+     * and puts the program at {@code <dest>/<binary>}, executable. Returns the program's path.
+     */
+    private String installPinnedTool(Step s, Path configDir) throws Exception {
+        InstallCatalog.PinnedTool tool = pinnedTools.apply(s.id()).orElse(null);
+        if (tool == null) {
+            throw new InstallException(s.id() + ": no recipe");
+        }
+        InstallCatalog.Platform platform = InstallCatalog.currentPlatform();
+        InstallCatalog.PinnedAsset asset = tool.assetFor(platform);
+        if (asset == null) {
+            throw new InstallException(s.id() + ": no prebuilt binary for this OS/architecture");
+        }
+        byte[] data = download(asset.url());
+        String actual = InstallCatalog.sha256Hex(data);
+        if (!actual.equalsIgnoreCase(asset.sha256())) {
+            throw new InstallException(s.id() + ": the download does not match its published checksum (expected "
+                    + asset.sha256() + ", got " + actual + ") — not installed");
+        }
+        String fileName = InstallCatalog.toolFileName(tool.id(), platform);
+        Path dest = configDir.resolve(s.destSubpath());
+        replaceInstall(dest, staged -> {
+            Path program = staged.resolve(fileName);
+            if (asset.packing() == InstallCatalog.Packing.RAW) {
+                Files.write(program, data);
+            } else {
+                Path unpacked = Files.createDirectory(staged.resolve(".unpacked"));
+                String suffix = asset.packing() == InstallCatalog.Packing.ZIP ? ".zip" : ".tar.gz";
+                extractArchive(s, suffix, data, unpacked);
+                Path found = findBinary(unpacked, tool.binaryName(), false);
+                if (found == null) {
+                    throw new InstallException(s.id() + ": '" + tool.binaryName() + "' not found in the download");
+                }
+                Files.copy(found, program);
+                deleteRecursively(unpacked);
+            }
+            makeExecutable(program);
+            return null;
+        });
+        return dest.resolve(fileName).toString();
     }
 
     /** Downloads the self-contained JVM LSP bundle ({@code directUrl}), extracts it into the config dir, and

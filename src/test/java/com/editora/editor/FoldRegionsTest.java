@@ -254,4 +254,42 @@ class FoldRegionsTest {
     void typstDoesNotFoldASingleLineRawBlock() {
         assertTrue(FoldRegions.detect("`x`\n", "typst").isEmpty());
     }
+
+    @Test
+    void shellFoldsItsBlocksFunctionsAndHereDocs() {
+        // B4: shell had no folding at all (bash-language-server sends none either).
+        String sh = """
+                #!/usr/bin/env bash
+                usage() {
+                    cat <<EOF
+                Usage: deploy HOST
+                EOF
+                }
+                if [ -n "$1" ]; then
+                    for h in "$@"; do
+                        echo "$h"
+                    done
+                fi
+                case "$1" in
+                    -h)
+                        usage
+                        ;;
+                esac
+                """;
+        List<Region> regions = FoldRegions.detect(sh, "shell");
+        assertTrue(hasRegion(regions, 1, 5), "function " + regions);
+        assertTrue(hasRegion(regions, 2, 4), "here-doc " + regions);
+        assertTrue(hasRegion(regions, 6, 10), "if … fi " + regions);
+        assertTrue(hasRegion(regions, 7, 9), "for … done " + regions);
+        assertTrue(hasRegion(regions, 11, 15), "case … esac " + regions);
+        assertTrue(hasRegion(regions, 12, 14), "a case item " + regions);
+        assertEquals(6, regions.size(), regions.toString());
+        assertEquals(FoldRegions.canonicalOrder(regions), regions, "innermost first, like the other detectors");
+    }
+
+    @Test
+    void shellKeywordsInStringsCommentsAndHereDocsFoldNothing() {
+        String sh = "echo \"if x; then\"\n# for a in b; do\ncat <<EOF\nif {\nEOF\n";
+        assertEquals(List.of(new Region(2, 4)), FoldRegions.detect(sh, "shell"));
+    }
 }

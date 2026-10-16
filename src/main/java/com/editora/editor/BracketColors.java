@@ -161,6 +161,11 @@ final class BracketColors {
             pos = end;
         }
 
+        /** Moves past {@code length} characters that hold no brackets, whatever they look like. */
+        void skip(int length) {
+            pos = Math.min(text.length(), pos + length);
+        }
+
         /** Nesting depth after everything fed so far. */
         int depth() {
             return depth;

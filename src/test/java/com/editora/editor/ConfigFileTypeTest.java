@@ -55,6 +55,32 @@ class ConfigFileTypeTest {
         assertEquals("caddyfile", ConfigFileType.resolve("site.caddyfile"));
     }
 
+    /**
+     * Shell files whose names end in "rc" must not fall to the generic "rc is INI" rule, where every {@code ;}
+     * starts a comment: direnv's .envrc (run by bash), Fedora's /etc/bashrc, zsh's /etc/zshrc and
+     * /etc/zsh/zshrc, mksh's .mkshrc.
+     */
+    @Test
+    void shellFilesEndingInRcAreShellNotIni() {
+        assertEquals("shell", ConfigFileType.resolve(".envrc"));
+        assertEquals("shell", ConfigFileType.resolve("/home/u/proj/.envrc"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/bashrc"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/zshrc"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/zsh/zshrc"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/zsh/zshenv"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/zprofile"));
+        assertEquals("shell", ConfigFileType.resolve(".mkshrc"));
+        // /etc/profile is shell; a file merely called "profile" elsewhere is left alone.
+        assertEquals("shell", ConfigFileType.resolve("/etc/profile"));
+        assertNull(ConfigFileType.resolve("/home/u/notes/profile"));
+        // Package recipes.
+        assertEquals("shell", ConfigFileType.resolve("/src/pkg/PKGBUILD"));
+        assertEquals("shell", ConfigFileType.resolve("APKBUILD"));
+        // The rc fallback itself is unchanged for real INI-style rc files.
+        assertEquals("ini", ConfigFileType.resolve(".inputrc"));
+        assertEquals("ini", ConfigFileType.resolve(".shellcheckrc"));
+    }
+
     @Test
     void fstabAndHostsCollisionGuard() {
         assertEquals("fstab", ConfigFileType.resolve("fstab"));

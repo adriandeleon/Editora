@@ -26,7 +26,7 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
  * <p><b>Deliberately a curated subset, not "any setting".</b> Overriding appearance, keymap or font from a
  * repository would let a checkout silently rearrange someone's editor, which is a different and much more
  * invasive thing than telling it which toolchain the project needs. What is here is toolchain configuration:
- * which language server to run, and whether to run it.
+ * which language server to run, whether to run it, and how the shell server checks and formats scripts.
  *
  * <p>Absent, unreadable or half-written ⇒ no overrides. A malformed file in someone's repository must not
  * stop the project opening, so every failure path yields empty rather than throwing.
@@ -48,6 +48,13 @@ public class ProjectSettings {
 
     /** Server id → whether to run it, overriding the global per-server enable. */
     private Map<String, Boolean> lspEnabled = new LinkedHashMap<>();
+
+    /**
+     * bash-language-server's own settings for this project, in the server's key names (its {@code bashIde}
+     * section: {@code shellcheckArguments}, {@code shfmt.caseIndent}, {@code backgroundAnalysisMaxFiles}, …),
+     * laid over the user's. The program paths and the explainshell endpoint need a trusted folder.
+     */
+    private Map<String, Object> bashIde = new LinkedHashMap<>();
 
     /** Where a project's overrides live. */
     public static Path fileFor(Path projectRoot) {
@@ -111,7 +118,7 @@ public class ProjectSettings {
     /** Whether this overrides anything at all — lets callers skip the resolution entirely. */
     @JsonIgnore
     public boolean isEmpty() {
-        return lspCommands.isEmpty() && lspEnabled.isEmpty();
+        return lspCommands.isEmpty() && lspEnabled.isEmpty() && bashIde.isEmpty();
     }
 
     /**
@@ -184,6 +191,14 @@ public class ProjectSettings {
 
     public void setLspCommands(Map<String, String> lspCommands) {
         this.lspCommands = lspCommands == null ? new LinkedHashMap<>() : new LinkedHashMap<>(lspCommands);
+    }
+
+    public Map<String, Object> getBashIde() {
+        return bashIde;
+    }
+
+    public void setBashIde(Map<String, Object> bashIde) {
+        this.bashIde = bashIde == null ? new LinkedHashMap<>() : new LinkedHashMap<>(bashIde);
     }
 
     public Map<String, Boolean> getLspEnabled() {

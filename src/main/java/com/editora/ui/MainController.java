@@ -774,6 +774,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
+        this.settingsWindow.setInstallToolActions(
+                id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
         this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
@@ -2596,6 +2598,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public boolean typstCliAvailable() {
                 return typst.isTypstCliAvailable();
+            }
+
+            @Override
+            public boolean toolAvailable(String toolId) {
+                return lspCoordinator.bashToolFound(toolId);
             }
 
             @Override
@@ -6233,11 +6240,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void refreshRunButton() {
-            updateRunButton();
-        }
-
-        @Override
         public com.editora.config.ConfigManager config() {
             return config;
         }
@@ -6549,6 +6551,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void installTypstCli(java.util.function.Consumer<Boolean> onDone) {
                     installCoordinator.installTypstCli(onDone);
+                }
+
+                @Override
+                public void installTool(String toolId, java.util.function.Consumer<Boolean> onDone) {
+                    installCoordinator.installTools(java.util.List.of(toolId), onDone);
+                }
+
+                @Override
+                public String bashTool(String toolId) {
+                    return lspCoordinator.bashToolCommand(toolId);
                 }
 
                 @Override
@@ -7663,12 +7675,19 @@ public class MainController implements com.editora.mcp.McpBridge {
                 updateRunButton();
             }
         });
+        buffer.addLanguageListener(
+                () -> { // a picked language or a typed shebang: the status bar says so at once
+                    // .editorconfig rules depend on the language (a shell script keeps LF and no BOM).
+                    editorSettings.applyEditorConfig(buffer);
+                    if (activeBuffer() == buffer) {
+                        statusBar.refresh();
+                    }
+                });
         buffer.setRunHandler(runCoordinator::runActiveFile); // "Run File" editor right-click item (runnable files)
         boolean local = isLocalBuffer(buffer);
         // A remote (SFTP) file runs on its host; whether that host may run commands is asked at launch, and a
         // refusal is reported then.
         buffer.setRunEnabled(local || com.editora.vfs.Vfs.isRemote(buffer.getPath()));
-        buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■

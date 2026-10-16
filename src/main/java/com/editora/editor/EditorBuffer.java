@@ -294,17 +294,14 @@ public class EditorBuffer implements TabContent {
     private Boolean writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
 
     /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
-     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
-     *  so {@code editor} stays decoupled from {@code install}/{@code ui}. */
-    private HBox installBar;
+     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. */
+    private NoticeBar installBar;
 
-    private Label installMessageLabel;
-    private Button installActionButton;
-    private Button installDismissButton;
-    private javafx.scene.control.ProgressIndicator installProgress;
-    private Runnable onInstallAction;
-    private Runnable onInstallDismiss;
     private boolean installBarShown;
+    /** A notice about the file itself (a shell script's CRLF/BOM), above the install banner; null until used. */
+    private NoticeBar fileNotice;
+
+    private boolean fileNoticeShown;
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
@@ -631,7 +628,6 @@ public class EditorBuffer implements TabContent {
     private boolean runFeatureEnabled = true;
     /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
      *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
-    private boolean shellRunEnabled;
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
     private boolean httpFeatureEnabled;
@@ -3494,6 +3490,7 @@ public class EditorBuffer implements TabContent {
         return "shell".equals(language);
     }
 
+    private final List<Runnable> languageListeners = new java.util.ArrayList<>(2); // see addLanguageListener
     /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
     public void setOnRunnableChanged(Runnable callback) {
         this.onRunnableChanged = callback == null ? () -> {} : callback;
@@ -3504,15 +3501,6 @@ public class EditorBuffer implements TabContent {
     public void setRunEnabled(boolean enabled) {
         if (enabled != runFeatureEnabled) {
             runFeatureEnabled = enabled;
-            recomputeRun();
-        }
-    }
-
-    /** Enables/disables the Run glyph for shell scripts (gated by the Bash LSP server toggle). Java/Python
-     *  runnability is unaffected — this only governs whether a {@code .sh}/bash file shows the glyph. */
-    public void setShellRunEnabled(boolean enabled) {
-        if (enabled != shellRunEnabled) {
-            shellRunEnabled = enabled;
             recomputeRun();
         }
     }
@@ -3810,7 +3798,6 @@ public class EditorBuffer implements TabContent {
                 mainGutterEnabled && small && "java".equals(language),
                 language,
                 path != null ? path.getFileName().toString() : displayName,
-                shellRunEnabled,
                 shebangJavaSource != null);
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
@@ -7564,39 +7551,34 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Overrides the language/grammar for this buffer regardless of its file extension (e.g. chosen
-     * from the status bar). Pass {@link LanguageRegistry#plaintext()} to disable highlighting.
+     * Overrides the language/grammar regardless of the file's name (the status-bar picker); plain text turns
+     * highlighting off. The Run glyph is re-decided here; the controller hears it via {@link #addLanguageListener}.
      */
     public void setLanguageOverride(String name) {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
         languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
-        IGrammar g = GrammarRegistry.shared().forLanguageName(resolved);
-        applyLanguage(resolved, g);
+        applyLanguage(resolved, GrammarRegistry.shared().forLanguageName(resolved));
+        recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
+    }
+
+    /** Runs {@code listener} on the FX thread each time the language changes after it is added (a picked
+     *  language, a typed or loaded shebang, a Save As to another type): the status bar and LSP follow it. */
+    public void addLanguageListener(Runnable listener) {
+        languageListeners.add(listener);
     }
 
     /**
-     * When the file's extension resolves to plain text, promotes it to the language named by a
-     * first-line interpreter shebang (e.g. {@code #!/usr/bin/env python3} → Python; a
-     * {@code java --source N} shebang → Java compact source). Resolves the language + grammar
-     * through the normal {@code forFileName} path (via a synthetic {@code "shebang.<ext>"} name) so a
-     * shebang file behaves exactly like a real file of that type. No-op for a real extension, a
-     * user-overridden language, an empty buffer, or an unrecognized/absent shebang.
+     * Promotes a plain-text buffer to the language of its first-line shebang ({@code #!/usr/bin/env python3},
+     * or {@code java --source N} for a compact source), via a synthetic {@code "shebang.<ext>"} name so it
+     * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
     private void maybeApplyShebang() {
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        int len = area.getLength();
-        if (len < 2) {
-            return;
-        }
-        String head = area.getText(0, Math.min(len, 256));
-        int nl = head.indexOf('\n');
-        String firstLine = nl >= 0 ? head.substring(0, nl) : head;
-        if (!firstLine.startsWith("#!")) {
-            return;
-        }
-        Shebang.Result r = Shebang.parse(firstLine);
+        String head = area.getText(0, Math.min(area.getLength(), 256));
+        Shebang.Result r =
+                head.startsWith("#!") ? Shebang.parse(head.lines().findFirst().orElse("")) : null;
         if (r == null) {
             return;
         }
@@ -7622,6 +7604,7 @@ public class EditorBuffer implements TabContent {
     /** Applies a language name + grammar: updates fold strategy and re-highlights. */
     private void applyLanguage(String name, IGrammar g) {
         languageGen++; // supersede any in-flight deferred grammar load (see applyLanguageDeferred)
+        boolean changed = !name.equals(language);
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
@@ -7639,6 +7622,9 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
+        if (changed) {
+            languageListeners.forEach(Runnable::run);
+        }
     }
 
     /**
@@ -7998,8 +7984,11 @@ public class EditorBuffer implements TabContent {
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
     private void refreshTopBars() {
         java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
+        if (fileNoticeShown && fileNotice != null) {
+            bars.add(fileNotice.node());
+        }
         if (installBarShown && installBar != null) {
-            bars.add(installBar);
+            bars.add(installBar.node());
         }
         if (viewModeBarVisible && viewModeBar != null) {
             bars.add(viewModeBar);
@@ -8022,12 +8011,9 @@ public class EditorBuffer implements TabContent {
      */
     public void setInstallPrompt(String message, String actionLabel, Runnable onInstall, Runnable onDismiss) {
         if (installBar == null) {
-            buildInstallBar();
+            installBar = new NoticeBar(tr("install.banner.dismiss"), "lsp-install-bar");
         }
-        installMessageLabel.setText(message);
-        installActionButton.setText(actionLabel);
-        this.onInstallAction = onInstall;
-        this.onInstallDismiss = onDismiss;
+        installBar.set(message, actionLabel, onInstall, onDismiss);
     }
 
     /** Shows or hides the install banner (no-op visual until {@link #setInstallPrompt} has set content). */
@@ -8042,44 +8028,27 @@ public class EditorBuffer implements TabContent {
 
     /** Reflects an in-progress install: spins the indicator + disables the buttons. */
     public void setInstallBarBusy(boolean busy) {
-        if (installBar == null) {
-            return;
+        if (installBar != null) {
+            installBar.setBusy(busy);
         }
-        installActionButton.setDisable(busy);
-        installDismissButton.setDisable(busy);
-        installProgress.setVisible(busy);
-        installProgress.setManaged(busy);
     }
 
-    private void buildInstallBar() {
-        installMessageLabel = new Label();
-        installMessageLabel.getStyleClass().add("lsp-install-title");
-        installMessageLabel.setWrapText(true);
-        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        installProgress = new javafx.scene.control.ProgressIndicator();
-        installProgress.setPrefSize(16, 16);
-        installProgress.setVisible(false);
-        installProgress.setManaged(false);
-        installActionButton = new Button();
-        installActionButton.getStyleClass().add("accent");
-        installActionButton.setOnAction(e -> {
-            if (onInstallAction != null) {
-                onInstallAction.run();
-            }
-        });
-        installDismissButton = new Button(tr("install.banner.dismiss"));
-        installDismissButton.getStyleClass().add("lsp-install-dismiss");
-        installDismissButton.setOnAction(e -> {
-            if (onInstallDismiss != null) {
-                onInstallDismiss.run();
-            }
-        });
-        HBox bar =
-                new HBox(10, installMessageLabel, spacer, installProgress, installActionButton, installDismissButton);
-        bar.getStyleClass().add("lsp-install-bar");
-        bar.setAlignment(Pos.CENTER_LEFT);
-        installBar = bar;
+    /** Shows a notice about the file above the editor, with one action; dismissing it only hides it. */
+    public void showFileNotice(String message, String actionLabel, String dismissLabel, Runnable onAction) {
+        fileNotice = new NoticeBar(dismissLabel, "lsp-install-bar", "file-notice-bar");
+        fileNotice.set(message, actionLabel, onAction, this::hideFileNotice);
+        fileNoticeShown = true;
+        refreshTopBars();
+    }
+
+    public void hideFileNotice() {
+        fileNoticeShown = false;
+        refreshTopBars();
+    }
+
+    /** The file notice's message while it is shown, else null. */
+    public String fileNoticeText() {
+        return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
     }
 
     private HBox buildViewModeBar() {
@@ -8274,7 +8243,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** The indent unit for this buffer: the EditorConfig override, else the document's own (cached). */
-    private String indentUnit() {
+    public String indentUnit() {
         return indentKeys.unit(tabSize, indentInsertSpacesOverride, indentSizeOverride);
     }
 
@@ -8681,7 +8650,8 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = IndentWindow.closerAlignIndent(style, IndentKeys.doc(a), caret, tabSize, currentIndent, c);
+        String aligned = IndentWindow.closerAlignIndent(
+                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit());
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent

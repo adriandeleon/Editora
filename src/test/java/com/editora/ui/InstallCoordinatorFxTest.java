@@ -250,6 +250,48 @@ class InstallCoordinatorFxTest {
         }
     }
 
+    /**
+     * Install: ShellCheck and shfmt (C2) downloads the pinned shfmt, checks its hash, re-applies the tool
+     * support, and from then on the Bash server is told to run that copy (a blank path setting = Editora's own).
+     */
+    @Test
+    void installingShfmtPointsTheBashServerAtTheInstalledCopy() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "shfmt");
+            byte[] program = "#!/bin/sh\necho v3.14.1\n".getBytes();
+            var real = InstallCatalog.pinnedTool("shfmt").orElseThrow();
+            var here = InstallCatalog.currentPlatform();
+            var asset = real.assetFor(here);
+            rig.web.serve(asset.url(), program);
+            InstallTestAccess.pinnedTools(
+                    rig.service,
+                    id -> java.util.Optional.of(new InstallCatalog.PinnedTool(
+                            id,
+                            real.version(),
+                            java.util.Map.of(
+                                    here,
+                                    new InstallCatalog.PinnedAsset(
+                                            asset.url(), InstallCatalog.sha256Hex(program), asset.packing())),
+                            real.binaryName())));
+            assertEquals(
+                    "shfmt",
+                    LspCoordinator.userBashIde(rig.host.settings, rig.window.configDir)
+                            .effectiveShfmt());
+
+            FxTestSupport.runOnFx(() -> rig.coordinator.installTools(List.of("shfmt"), rig.outcomes::add));
+            rig.settle();
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            assertEquals(1, rig.window.redetected);
+            assertEquals(
+                    InstallCatalog.installedToolPath(rig.window.configDir, "shfmt")
+                            .toString(),
+                    LspCoordinator.userBashIde(rig.host.settings, rig.window.configDir)
+                            .effectiveShfmt(),
+                    "the Bash server is pointed at the installed copy");
+        }
+    }
+
     @Test
     void aServerThatIsAlreadyThereIsNotDownloadedAgain() throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {

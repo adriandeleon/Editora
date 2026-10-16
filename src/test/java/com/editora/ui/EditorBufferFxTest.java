@@ -137,7 +137,7 @@ class EditorBufferFxTest {
         assertFalse(FxTestSupport.callOnFx(py::isCompactSource));
         assertTrue(FxTestSupport.callOnFx(py::isPython));
 
-        // A shell script needs BOTH the Run feature and the shell-run gate (the Bash LSP toggle).
+        // A shell script needs only the Run feature, like Python (no LSP or Bash-server condition).
         EditorBuffer sh = FxTestSupport.callOnFx(() -> {
             EditorBuffer buf = new EditorBuffer();
             buf.setLanguageOverride("shell");
@@ -146,9 +146,8 @@ class EditorBufferFxTest {
             return buf;
         });
         assertTrue(FxTestSupport.callOnFx(sh::isShell));
-        assertFalse(FxTestSupport.callOnFx(sh::isRunnable), "shell glyph gated off until shell-run enabled");
-        FxTestSupport.runOnFx(() -> sh.setShellRunEnabled(true));
-        assertTrue(FxTestSupport.callOnFx(sh::isRunnable), "shell glyph appears once enabled");
+        FxTestSupport.runOnFx(sh::settleRunScan);
+        assertTrue(FxTestSupport.callOnFx(sh::isRunnable), "a shell script is runnable with Run on");
 
         // Turning the Run feature off removes the glyph for every language.
         FxTestSupport.runOnFx(() -> py.setRunEnabled(false));

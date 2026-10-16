@@ -144,9 +144,6 @@ final class LspCoordinator {
          */
         StructurePanel structurePanel();
 
-        /** Refreshes the toolbar Run button after the shell Run gate changes. */
-        void refreshRunButton();
-
         /**
          * The window's configuration, or null in a test that has none. Read for the trusted-folder list
          * (project-supplied server commands run only in a trusted folder) and the config directory.
@@ -1038,7 +1035,6 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
-        var s = host.settings();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -1048,6 +1044,7 @@ final class LspCoordinator {
         // when (and only when) its folder is trusted. Building this from the global settings alone meant a
         // committed override was shown in the status bar and Doctor but never run.
         lspManager.configure(on, effectiveCommands());
+        applyBashIde();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
         offerInterruptedEdits();
@@ -1055,12 +1052,6 @@ final class LspCoordinator {
             noticeWithheldOverrides();
         }
         updateProblemsAvailability();
-        // Standalone file Run remains available without LSP. Shell Run still follows the Bash LSP toggle.
-        boolean shellRun = on && s.isBashLspEnabled();
-        host.forEachBuffer(b -> {
-            b.setShellRunEnabled(shellRun); // shell Run glyph gated by the Bash LSP toggle
-        });
-        ops.refreshRunButton();
         if (!on) {
             serverAvailable.clear();
             clearAllDiagnostics();
@@ -1328,7 +1319,64 @@ final class LspCoordinator {
 
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
-        return projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled);
+        List<String> requests = new java.util.ArrayList<>(
+                projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled));
+        requests.addAll(
+                com.editora.lsp.BashIdeConfig.trustRequests(projectSettings().getBashIde()));
+        return requests;
+    }
+
+    /**
+     * bash-language-server's settings for this window: the user's, the project's {@code bashIde} overrides laid
+     * over them (paths and the explainshell endpoint only in a trusted folder).
+     */
+    com.editora.lsp.BashIdeConfig bashIdeConfig() {
+        com.editora.config.ConfigManager config = ops.config();
+        return userBashIde(host.settings(), config == null ? null : config.getConfigDir())
+                .withProject(projectSettings().getBashIde(), projectTrusted());
+    }
+
+    /**
+     * The user's bash-language-server settings with a blank ShellCheck/shfmt path filled in from the copy Editora
+     * installed under {@code configDir} (null = none).
+     */
+    static com.editora.lsp.BashIdeConfig userBashIde(com.editora.config.Settings s, Path configDir) {
+        return com.editora.lsp.BashIdeConfig.of(s)
+                .withInstalledTools(
+                        com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shellcheck"),
+                        com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shfmt"));
+    }
+
+    /** Whether ShellCheck's absence has been pointed out in this window already. */
+    private boolean shellcheckNoticeShown;
+
+    /**
+     * Says once per window that ShellCheck is missing when a shell script is opened on the Bash server: the
+     * server then lints nothing and says so only in its log, so the script just looked clean.
+     */
+    private void noticeMissingShellcheck() {
+        if (!shellcheckNoticeShown && !bashToolFound("shellcheck")) {
+            shellcheckNoticeShown = true;
+            // After the opening finishes: the "Opened <file>" message is written later in the same pass and
+            // replaced this one before anyone could read it.
+            javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.bashNoShellcheck")));
+        }
+    }
+
+    /** Whether the command the Bash server runs for {@code toolId} resolves (a PATH/file lookup, no process). */
+    boolean bashToolFound(String toolId) {
+        return com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
+    }
+
+    /** The command the Bash server runs for {@code toolId} ({@code shellcheck}/{@code shfmt}) in this window. */
+    String bashToolCommand(String toolId) {
+        com.editora.lsp.BashIdeConfig c = bashIdeConfig();
+        return "shfmt".equals(toolId) ? c.effectiveShfmt() : c.effectiveShellcheck();
+    }
+
+    /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
+    void applyBashIde() {
+        lspManager.setBashIde(bashIdeConfig());
     }
 
     /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
@@ -1498,7 +1546,7 @@ final class LspCoordinator {
                     .append(serverCommand(serverId))
                     .append('\n');
         }
-        return signature.toString();
+        return signature.append(bashIdeConfig()).toString();
     }
 
     /**
@@ -1510,6 +1558,7 @@ final class LspCoordinator {
         projectSettingsRoot = null;
         projectSettingsCache = EMPTY_PROJECT_SETTINGS;
         applyOnTypeFormatting();
+        applyBashIde();
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
@@ -1990,6 +2039,9 @@ final class LspCoordinator {
             buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
+            if ("bash".equals(serverId) && !remote) {
+                noticeMissingShellcheck();
+            }
         } else {
             buffer.setLspActive(false);
             buffer.setLspTriggerChars(java.util.Set.of());
@@ -2011,6 +2063,12 @@ final class LspCoordinator {
                 lspManager.closeDocument(path);
                 clearDiagnostics(path);
             }
+        }
+        if (buffer == host.activeBuffer()) {
+            // The "LSP: <server>" segment and the Problems stripe follow whether the active file is managed,
+            // which only changes here. Every other refresh (a tab switch, a server detected) runs before a
+            // newly opened file reaches this point, so they stayed hidden until the user switched tabs.
+            updateStatusBar();
         }
     }
 
@@ -2079,6 +2137,11 @@ final class LspCoordinator {
                 return pomServer;
             }
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
+        }
+        // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
+        // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
+        if ("bash".equals(base) && com.editora.editor.ShellFiles.isZshStartupFile(fileName)) {
+            return null;
         }
         return base;
     }
@@ -2285,10 +2348,10 @@ final class LspCoordinator {
         // Tab re-indents the current line to the server's convention via range formatting (when supported).
         buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 buffer.sendLspChange(); // the didChange debounce may be pending: format the text on screen
                 lspManager.rangeFormatting(
-                        buffer.getPath(), sl, sc, el, ec, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+                        buffer.getPath(), sl, sc, el, ec, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -2297,7 +2360,7 @@ final class LspCoordinator {
         // command, so any other server (or language) drops out inside handlePasteEvent's capability gate.
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 lspManager.handlePasteEvent(
                         buffer.getPath(),
                         sl,
@@ -2305,8 +2368,8 @@ final class LspCoordinator {
                         el,
                         ec,
                         text,
-                        tabSize,
-                        buffer.detectInsertSpaces(tabSize),
+                        indent.tabSize(),
+                        indent.insertSpaces(),
                         stillValid,
                         applied -> {});
             }
@@ -2322,10 +2385,10 @@ final class LspCoordinator {
         // On-type formatting (#740): re-indent the line after a server-declared trigger character.
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
-                int tabSize = host.settings().getTabSize();
+                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 buffer.sendLspChange(); // the server must have the character that triggered this
                 lspManager.onTypeFormatting(
-                        buffer.getPath(), line, character, ch, tabSize, buffer.detectInsertSpaces(tabSize), cb);
+                        buffer.getPath(), line, character, ch, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -2339,6 +2402,9 @@ final class LspCoordinator {
                 this::rename,
                 this::gotoImplementation,
                 this::gotoTypeDefinition);
+        // A language that changes later — picked in the status bar, or a shebang typed into an extension-less
+        // file — moves the document to that language's server (or off any), as opening the file would.
+        buffer.addLanguageListener(() -> syncBufferWhenShown(buffer));
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }
@@ -2642,10 +2708,12 @@ final class LspCoordinator {
 
     private com.google.gson.JsonObject refactorEdit(
             JdtlsRefactor.Request request, com.google.gson.JsonArray arguments) {
-        int tabSize = host.settings().getTabSize();
         EditorBuffer buffer = activeLspBuffer();
-        boolean spaces = buffer == null || buffer.detectInsertSpaces(tabSize);
-        return JdtlsRefactor.refactorEditParams(request.name(), request.params(), tabSize, spaces, arguments);
+        com.editora.lsp.FormattingIndent indent = buffer == null
+                ? new com.editora.lsp.FormattingIndent(host.settings().getTabSize(), true)
+                : formattingIndent(buffer);
+        return JdtlsRefactor.refactorEditParams(
+                request.name(), request.params(), indent.tabSize(), indent.insertSpaces(), arguments);
     }
 
     /** Asks the server where {@code source} can move, lets the user choose, and moves it there. */
@@ -3438,6 +3506,11 @@ final class LspCoordinator {
         });
     }
 
+    /** The indentation a formatting request describes for {@code buffer} (see {@link com.editora.lsp.FormattingIndent}). */
+    private static com.editora.lsp.FormattingIndent formattingIndent(EditorBuffer buffer) {
+        return com.editora.lsp.FormattingIndent.of(buffer.indentUnit(), buffer.getTabSize());
+    }
+
     /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
      *  server is running and advertises formatting. Edits apply through the undoable buffer. */
     void formatDocument() {
@@ -3451,7 +3524,9 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return;
         }
-        int tabSize = host.settings().getTabSize();
+        // The document's own indentation, not the global tab size: a formatter given the global width
+        // re-indents every line of a file indented differently (shfmt -i=4 over a two-space script).
+        com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
         host.setStatus(tr("status.lsp.formatting"));
         // Sync the latest text first (like gotoDefinition/findReferences/showHover): the didChange debounce
         // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
@@ -3463,7 +3538,7 @@ final class LspCoordinator {
         // clamps + swallows, so a stale format silently corrupts the file (every line mis-formatted/shifted).
         // Snapshot the text and drop the reply if it changed, mirroring tryLspReindentLine's line guard.
         String snapshot = buffer.getContent();
-        lspManager.formatDocument(path, tabSize, buffer.detectInsertSpaces(tabSize), edits -> {
+        lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
             }
@@ -3472,7 +3547,11 @@ final class LspCoordinator {
                 return;
             }
             if (edits.isEmpty()) {
-                host.setStatus(tr("status.lsp.formatNoChange"));
+                // bash-language-server answers "no edits" when shfmt is missing, too: say which it is.
+                host.setStatus(
+                        "bash".equals(lspManager.managedServerId(path)) && !bashToolFound("shfmt")
+                                ? tr("status.lsp.bashNoShfmt")
+                                : tr("status.lsp.formatNoChange"));
                 return;
             }
             if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
@@ -5230,9 +5309,20 @@ final class LspCoordinator {
             label.setWrapText(true);
             content = label;
         }
-        VBox box = new VBox(content);
+        // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
+        // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it
+        // off screen and out of reach.
+        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(content);
+        scroll.getStyleClass().add("lsp-hover-scroll");
+        scroll.setFitToWidth(true); // prose wraps at the popup's width; code blocks scroll sideways themselves
+        scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setFocusTraversable(false);
+        scroll.setMaxWidth(HOVER_MAX_WIDTH);
+        scroll.setMaxHeight(hoverMaxHeight(area));
+        VBox box = new VBox(scroll);
         box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(560);
+        box.setMaxWidth(HOVER_MAX_WIDTH);
         box.getStylesheets()
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
@@ -5270,6 +5360,20 @@ final class LspCoordinator {
         } else {
             popup.show(area, 0, 0);
         }
+    }
+
+    /** Widest a hover popup's text column gets. */
+    static final double HOVER_MAX_WIDTH = 560;
+
+    /** The tallest a hover popup gets in a window {@code windowHeight} tall: part of it, within fixed bounds. */
+    static double hoverMaxHeight(double windowHeight) {
+        double share = windowHeight > 0 ? windowHeight * 0.45 : 400;
+        return Math.max(160, Math.min(480, share));
+    }
+
+    private static double hoverMaxHeight(CodeArea area) {
+        javafx.stage.Window w = area.getScene() == null ? null : area.getScene().getWindow();
+        return hoverMaxHeight(w == null ? 0 : w.getHeight());
     }
 
     /** Hides the LSP hover popup if one is showing. */

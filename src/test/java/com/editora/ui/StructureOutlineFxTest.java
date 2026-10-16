@@ -118,4 +118,35 @@ class StructureOutlineFxTest {
         });
         assertEquals(List.of("Repo@0", "load@1", "save@4", "main@7"), outline);
     }
+
+    @Test
+    void aRegionMarkerDoesNotEmptyTheOutline() throws Exception {
+        // B5: one `# region` marker made every function disappear from Structure.
+        List<List<String>> seen = FxTestSupport.callOnFx(() -> {
+            String sh =
+                    "#!/bin/bash\n# region helpers\nusage() {\n    echo usage\n}\n# endregion\nmain() {\n    usage\n}\n";
+            EditorBuffer shell = new EditorBuffer();
+            shell.setLanguageOverride("shell");
+            shell.setContent(sh);
+            setSymbols(shell, List.of(new Symbol(2, "usage", "function"), new Symbol(6, "main", "function")));
+            java.util.List<Region> regions =
+                    new java.util.ArrayList<>(com.editora.editor.FoldRegions.detect(sh, "shell"));
+            regions.addAll(com.editora.editor.FoldRegions.markers(sh, "shell"));
+            shell.getFoldManager().setServerRegions(regions);
+            StructurePanel panel = new StructurePanel();
+            panel.attach(shell);
+            List<String> first = outline(panel);
+
+            String py = "# region io\ndef load():\n    pass\n\ndef save():\n    pass\n# endregion\n";
+            EditorBuffer python = new EditorBuffer();
+            python.setLanguageOverride("python");
+            python.setContent(py);
+            setSymbols(python, List.of(new Symbol(1, "load", "function"), new Symbol(4, "save", "function")));
+            python.getFoldManager().setServerRegions(com.editora.editor.FoldRegions.markers(py, "python"));
+            panel.attach(python);
+            return List.of(first, outline(panel));
+        });
+        assertEquals(List.of("usage@2", "main@6"), seen.get(0));
+        assertEquals(List.of("load@1", "save@4"), seen.get(1));
+    }
 }

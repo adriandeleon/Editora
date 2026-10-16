@@ -4904,3 +4904,13 @@
 .tool-stripe-horizontal .tool-stripe-button:focus-visible {
     -fx-padding: 0 5 0 5;
 }
+
+/* The hover popup's text scrolls inside the card (a man page from bash-language-server is thousands of
+   pixels tall); the scroll pane itself draws nothing. */
+.lsp-hover-scroll,
+.lsp-hover-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+    -fx-border-width: 0;
+}

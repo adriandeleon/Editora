@@ -248,6 +248,29 @@ final class BufferCompletion {
         return line.substring(0, i);
     }
 
+    /**
+     * Whether Enter should close the popup and type a newline instead of accepting {@code label}: in shell,
+     * when the label is exactly the word just typed. Shell's snippets are named after its keywords
+     * ({@code else}, {@code break}, {@code case} …), so {@code else}, a pause, then Enter used to insert the
+     * {@code else} snippet with a {@code command} placeholder instead of ending the line — and skipped the
+     * {@code else} de-indent. Accepting a row that only repeats the typed word adds nothing else worth a
+     * keystroke; Tab still accepts it (and expands a snippet).
+     */
+    static boolean enterEndsTheLine(String language, String label, String lineBeforeCaret) {
+        if (!"shell".equals(language) || label == null || label.isEmpty()) {
+            return false;
+        }
+        int start = lineBeforeCaret.length();
+        while (start > 0 && isPrefixChar(lineBeforeCaret.charAt(start - 1))) {
+            start--;
+        }
+        return label.equals(lineBeforeCaret.substring(start));
+    }
+
+    private static String lineBeforeCaret(CodeArea a) {
+        return a.getParagraph(a.getCurrentParagraph()).getText().substring(0, a.getCaretColumn());
+    }
+
     static boolean isPrefixChar(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
     }
@@ -728,6 +751,12 @@ final class BufferCompletion {
                         return;
                     }
                     Completion sel = completionPopup.selected();
+                    if (sel != null
+                            && e.getCode() == KeyCode.ENTER
+                            && enterEndsTheLine(host.language(), sel.label(), lineBeforeCaret(a))) {
+                        hideCompletion(); // not consumed: Enter is a newline (and finishes a closer)
+                        return;
+                    }
                     if (sel != null) {
                         // A local row the typed text no longer matches is refused: the popup closes and the
                         // key is left alone, so Enter is a newline and Tab indents or expands the prefix.

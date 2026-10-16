@@ -85,9 +85,6 @@ class LspOpsStub implements LspCoordinator.Ops {
     }
 
     @Override
-    public void refreshRunButton() {}
-
-    @Override
     public Path jdtlsWorkspaceBase() {
         return null;
     }

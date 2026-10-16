@@ -166,7 +166,7 @@ public final class TemplateOutput {
         return new Target(
                 path,
                 dir.relativize(path).toString().replace('\\', '/'),
-                finish(rendered.text(), rules),
+                finish(rendered.text(), rules, path),
                 rendered.caret(),
                 rendered.hasCursor(),
                 Files.exists(path, LinkOption.NOFOLLOW_LINKS));
@@ -180,6 +180,24 @@ public final class TemplateOutput {
      * front of {@code ${cursor}} is where the caret is about to go.
      */
     public static String finish(String text, EditorConfigProperties rules) {
+        return finish(text, rules, null);
+    }
+
+    /**
+     * As {@link #finish(String, EditorConfigProperties)} for the file {@code target}: a shell script is always
+     * written with LF, whatever {@code end_of_line} says — bash cannot run a script with CRLF line endings.
+     */
+    public static String finish(String text, EditorConfigProperties rules, Path target) {
+        if (rules != null
+                && rules.endOfLine() != null
+                && !"lf".equals(rules.endOfLine())
+                && com.editora.editor.ShellScripts.isShellScript(
+                        target == null || target.getFileName() == null
+                                ? ""
+                                : target.getFileName().toString(),
+                        text)) {
+            rules = new EditorConfigProperties(null, null, null, "lf", null, null, rules.insertFinalNewline(), null);
+        }
         String out = text == null ? "" : text;
         Boolean finalNewline = rules == null ? null : rules.insertFinalNewline();
         if (!Boolean.FALSE.equals(finalNewline) && !out.isEmpty() && !out.endsWith("\n")) {
