@@ -543,7 +543,9 @@ final class MacroSettingsPane extends HBox {
         prompt.setWrapText(true);
         if (step.isKey()) {
             TextField capture = new TextField(keyLabel(step.value()));
-            capture.getStyleClass().add("macro-step-input");
+            // "shortcut-capture" tells the Settings window that Escape here is the field's own key, not a
+            // request to close the window (its scene filter sees the key before this field does).
+            capture.getStyleClass().addAll("macro-step-input", "shortcut-capture");
             capture.setEditable(false);
             capture.setPromptText(tr("settings.macro.pressKey"));
             HBox.setHgrow(capture, Priority.ALWAYS);
