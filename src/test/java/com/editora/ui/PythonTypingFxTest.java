@@ -100,4 +100,19 @@ class PythonTypingFxTest {
         assertEquals("x = foo(a,\n        b)", type("x = foo(a,", "\nb)"));
         assertEquals("x = foo(\n    a,\n    b,", type("x = foo(", "\na,\nb,"));
     }
+
+    @Test
+    void stringPrefixesAndTripleQuotesClose() throws Exception {
+        // A7: `f'` and `rb"` used to stay open, and `"""` had no closing triple quote.
+        assertEquals("name = f''", type("", "name = f'"));
+        assertEquals("pat = rb\"\"", type("", "pat = rb\""));
+        assertEquals("t = t''", type("", "t = t'"));
+        assertEquals("def f():\n    \"\"\"Doc.\"\"\"", type("def f():\n    ", "\"\"\"Doc."));
+        // Typing the closing triple quote over the auto-inserted one types over it.
+        assertEquals("s = \"\"\"a\"\"\"", type("", "s = \"\"\"a\"\"\""));
+        // A word that only ends like a prefix is a word: no pair after `elif'`, nor a contraction in a comment.
+        assertEquals("# it's elif'", type("", "# it's elif'"));
+        // Backticks are not Python: no pair.
+        assertEquals("# `x", type("", "# `x"));
+    }
 }

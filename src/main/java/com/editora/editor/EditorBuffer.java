@@ -8669,13 +8669,18 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();
-        char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
         char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
         boolean hasSel = a.getSelection().getLength() > 0;
-        AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
+        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+        AutoClose.Decision d = AutoClose.decide(c, a.getText(lineStart, caret), next, hasSel, language);
         switch (d.action()) {
             case INSERT_PAIR -> {
                 a.replaceText(caret, caret, "" + c + d.closer());
+                a.moveTo(caret + 1);
+                return true;
+            }
+            case INSERT_TRIPLE -> { // the third quote of a Python triple quote: close it too
+                a.replaceText(caret, caret, String.valueOf(c).repeat(4));
                 a.moveTo(caret + 1);
                 return true;
             }
