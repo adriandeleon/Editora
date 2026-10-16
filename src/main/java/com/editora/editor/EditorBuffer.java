@@ -1984,11 +1984,17 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
-     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF. Read on each right-click,
+     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
+     * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
      * so a toggle applies to the next one.
      */
     public void setSimpleMenu(boolean simple) {
         this.simpleMenu = simple;
+    }
+
+    /** Whether the right-click menus are trimmed for Simple UI mode (the preview menus read it too). */
+    boolean isSimpleMenu() {
+        return simpleMenu;
     }
 
     /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */

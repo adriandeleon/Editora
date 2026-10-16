@@ -17,8 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Add Personal Note are hidden.
   - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
     Manager.
+  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
+    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
+    hidden.
   - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
-    on all three. Turning Simple mode off brings every entry back.
+    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
 
 ## [0.22.0] - 2026-10-16
 
