@@ -436,9 +436,28 @@ public final class CurlImport {
             body = data;
         }
         if (body != null) {
-            sb.append('\n').append(body).append('\n');
+            sb.append('\n').append(inert(body)).append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * {@code body} with every line from the first one the format would not send as body — a {@code >} handler or
+     * redirect, a {@code <>} reference, a {@code ###} separator — turned into a {@code #} comment. Those lines were
+     * never sent; as comments they cannot become a response handler (code that runs), a pre-request script or a
+     * directive of another request either: pasted text never runs anything.
+     */
+    static String inert(String body) {
+        String[] lines = body.split("\n", -1);
+        boolean ended = false;
+        for (int i = 0; i < lines.length; i++) {
+            String t = lines[i].strip();
+            ended = ended || t.startsWith(">") || t.startsWith("<>") || HttpFile.isSeparator(t);
+            if (ended && !t.isEmpty()) {
+                lines[i] = "# " + lines[i];
+            }
+        }
+        return String.join("\n", lines);
     }
 
     /** The {@code -F} parts as a {@code .http} multipart body. */

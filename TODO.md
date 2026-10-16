@@ -1453,8 +1453,13 @@ A backlog of planned features and improvements. Unordered within each section.
       (`$random`/`$datetime` with date math/`$dotenv`), request chaining, multipart + external-file bodies,
       environment files (`http-client.env.json` + `$shared`), Basic/Digest auth, auto URL-encoding,
       response-to-file, per-request directives, run-whole-file
-- [ ] HTTP Client — JetBrains gaps left by the 2026-10 review (the review's 55 findings are fixed): response
-      assertions / capture (a small `# @assert` / `# @capture` DSL on `JsonPath` before any JavaScript engine),
+- [x] HTTP Client — JavaScript response handlers (`> {% %}`, `> ./check.js`) on the user's Node.js (trust gate,
+      minimal environment, permission model, timeout), a Tests block, `# @assert` / `# @capture`, and session
+      variables (`client.global`, `@capture`) as `{{name}}`; test results kept in History (phase 1)
+- [ ] HTTP Client — JavaScript phase 2: pre-request scripts (`< {% %}`, `< ./pre.js`), `request.variables.set`
+      in substitution with the secrets gate seeing every read, `client.global.headers`; then phase 3: Debug
+      Request (`node --inspect-brk` + js-debug; external files, then inline blocks through source maps)
+- [ ] HTTP Client — JetBrains gaps left by the 2026-10 review (the review's 55 findings are fixed):
       WebSocket / GraphQL / SSE streaming, OAuth 2.0 (`{{$auth.token}}`), TLS options (`SSLConfiguration`: skip
       verification, client certificates) and a proxy setting, a persistent cookie jar, compare with a previous
       response, Postman / OpenAPI import, and a headless `--http-run` for CI

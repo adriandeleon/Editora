@@ -33,7 +33,8 @@ public final class HttpFixtures {
                 body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8),
                 false,
                 List.of(),
-                null);
+                null,
+                HttpTests.NONE);
     }
 
     /** {@link #text} with no warnings. */

@@ -15,6 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The response view's status line and the status-bar words — no more "exit 404" (C3, C4, B15). */
 class HttpStatusTextTest {
 
+    @org.junit.jupiter.api.BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en"); // the "Not sent:" prefix is read from the catalog
+    }
+
     private static HttpExchange ex(HttpResult r) {
         return HttpFixtures.exchange("GET http://x.test/a", "GET", "http://x.test/a", List.of(), "", r);
     }

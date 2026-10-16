@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpTests;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -158,9 +159,76 @@ final class HttpStatusText {
                     ? tr("httppanel.runAllNotSent", unsent, exchanges.size())
                     : tr("httppanel.runAllFailedNotSent", failed, unsent, exchanges.size());
         }
-        return failed == 0
+        String line = failed == 0
                 ? tr("httppanel.runAllOk", exchanges.size())
                 : tr("httppanel.runAllFailed", failed, exchanges.size());
+        return line + testsFailedSuffix(exchanges);
+    }
+
+    /** " · tests failed in 2 requests" when some exchange's tests failed (or its handler stopped), else "". */
+    static String testsFailedSuffix(List<HttpExchange> exchanges) {
+        long n = exchanges.stream()
+                .filter(ex -> ex.result() != null && ex.result().tests().hasFailures())
+                .count();
+        return n == 0 ? "" : " · " + tr("httppanel.runAllTestsFailed", n);
+    }
+
+    /** One part of the tests badge: its text, and whether it reports a failure (red) or passes (green). */
+    record BadgePart(String text, boolean failed) {}
+
+    /**
+     * The parts of the tests badge beside the status line — "✓ 3 passed", "✗ 1 failed", "✗ handler error" — each
+     * coloured on its own; empty when the response ran no tests and its handler stopped with no error. {@code compact}
+     * shortens them to "✓3", "✗1".
+     */
+    static List<BadgePart> testsBadgeParts(HttpTests t, boolean compact) {
+        List<BadgePart> parts = new java.util.ArrayList<>();
+        if (t == null || (t.tests().isEmpty() && t.error() == null)) {
+            return parts;
+        }
+        int passed = t.passed();
+        int failed = t.failed();
+        if (compact) {
+            if (passed > 0) {
+                parts.add(new BadgePart("✓" + passed, false));
+            }
+            if (failed > 0 || t.error() != null) {
+                parts.add(new BadgePart("✗" + (failed + (t.error() != null ? 1 : 0)), true));
+            }
+            return parts;
+        }
+        if (passed > 0) {
+            parts.add(new BadgePart(tr("httppanel.testsPassed", passed), false));
+        }
+        if (failed > 0) {
+            parts.add(new BadgePart(tr("httppanel.testsFailed", failed), true));
+        }
+        if (t.error() != null) {
+            parts.add(new BadgePart(tr("httppanel.testsError"), true));
+        }
+        return parts;
+    }
+
+    /** The tests badge as one text ("✓ 3 passed · ✗ 1 failed", or "✓3 ✗1" compact), or null when there is none. */
+    static String testsBadge(HttpTests t, boolean compact) {
+        List<BadgePart> parts = testsBadgeParts(t, compact);
+        if (parts.isEmpty()) {
+            return null;
+        }
+        return String.join(
+                compact ? " " : BADGE_SEPARATOR,
+                parts.stream().map(BadgePart::text).toList());
+    }
+
+    /** What separates the full badge's parts. */
+    static final String BADGE_SEPARATOR = " · ";
+
+    /** The Tests block's title: "Tests: 3 passed, 1 failed", or "Handler output" when it ran no test. */
+    static String testsTitle(HttpTests t) {
+        if (t.tests().isEmpty()) {
+            return t.error() != null ? tr("httppanel.testsTitleError") : tr("httppanel.testsTitleLog");
+        }
+        return tr("httppanel.testsTitle", t.passed(), t.failed());
     }
 
     /**
@@ -188,9 +256,14 @@ final class HttpStatusText {
         if (r.failed()) {
             return tr("status.http.failedError", label, withoutUrl(firstLine(r.shownError()), ex.url()));
         }
-        return r.ok()
+        String line = r.ok()
                 ? tr("status.http.finished", label, statusWithReason(r.status()))
                 : tr("status.http.failedStatus", label, statusWithReason(r.status()));
+        HttpTests t = r.tests();
+        if (t.hasFailures()) {
+            line += " · " + (t.failed() > 0 ? tr("httppanel.testsFailed", t.failed()) : tr("httppanel.testsError"));
+        }
+        return line;
     }
 
     /** The status-bar message after a Run All: "All 5 requests finished" / "2 of 5 requests failed". */
@@ -202,9 +275,10 @@ final class HttpStatusText {
                     ? tr("status.http.someNotSent", unsent, exchanges.size())
                     : tr("status.http.someFailedNotSent", failed, unsent, exchanges.size());
         }
-        return failed == 0
+        String line = failed == 0
                 ? tr("status.http.allDone", exchanges.size())
                 : tr("status.http.someFailed", failed, exchanges.size());
+        return line + testsFailedSuffix(exchanges);
     }
 
     /**
@@ -237,10 +311,18 @@ final class HttpStatusText {
         return compact ? "⚠ " + count : tr("httppanel.warnings", count);
     }
 
-    /** The exchange a Run All should land on: the first that did not succeed, else the first. -1 if none. */
+    /**
+     * The exchange a Run All should land on: the first that did not succeed, else the first whose tests failed, else
+     * the first. -1 if none.
+     */
     static int firstToShow(List<HttpExchange> exchanges) {
         for (int i = 0; i < exchanges.size(); i++) {
             if (!exchanges.get(i).result().ok()) {
+                return i;
+            }
+        }
+        for (int i = 0; i < exchanges.size(); i++) {
+            if (exchanges.get(i).result().tests().hasFailures()) {
                 return i;
             }
         }

@@ -20,6 +20,8 @@ import static com.editora.i18n.Messages.tr;
  * no text form. {@code truncated} is set when the response was longer than the size cap and {@code rawBody}
  * holds just the first part. {@code written} lists what the request's {@code >>} redirects saved to disk, one
  * line per file — the response view shows them, so a file that was created or replaced is never a surprise.
+ * {@code tests} are what the request's {@code @assert} checks and response handlers found ({@link HttpTests#NONE}
+ * when it has none).
  */
 public record HttpResult(
         int status,
@@ -33,10 +35,35 @@ public record HttpResult(
         byte[] rawBody,
         boolean truncated,
         List<String> written,
-        String protocol) {
+        String protocol,
+        HttpTests tests) {
 
     public HttpResult {
         written = written == null ? List.of() : List.copyOf(written);
+        tests = tests == null ? HttpTests.NONE : tests;
+    }
+
+    /** This result with {@code tests} and {@code moreWarnings} added after its own warnings. */
+    public HttpResult withTests(HttpTests tests, List<String> moreWarnings) {
+        List<String> all = warnings;
+        if (moreWarnings != null && !moreWarnings.isEmpty()) {
+            all = new java.util.ArrayList<>(warnings == null ? List.of() : warnings);
+            all.addAll(moreWarnings);
+        }
+        return new HttpResult(
+                status,
+                headers,
+                body,
+                contentType,
+                elapsedMs,
+                sizeBytes,
+                error,
+                all,
+                rawBody,
+                truncated,
+                written,
+                protocol,
+                tests);
     }
 
     /** How far into the payload {@link #looksBinary} looks for a NUL byte (git's heuristic). */
@@ -71,12 +98,14 @@ public record HttpResult(
                 bytes,
                 truncated,
                 written,
-                protocol);
+                protocol,
+                HttpTests.NONE);
     }
 
     /** A request that never produced a response (not sent, connection failure, cancelled). */
     public static HttpResult failure(String error, List<String> warnings) {
-        return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings, new byte[0], false, List.of(), null);
+        return new HttpResult(
+                0, List.of(), "", "", 0, 0, error, warnings, new byte[0], false, List.of(), null, HttpTests.NONE);
     }
 
     /**

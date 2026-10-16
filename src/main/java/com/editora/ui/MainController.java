@@ -6308,6 +6308,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public boolean allowSecretReads(Path file, List<String> hosts, List<String> reads) {
                     return confirmHttpSecretReads(file, hosts, reads);
                 }
+
+                @Override
+                public boolean allowScripts(Path file) {
+                    return confirmHttpScripts(file);
+                }
+
+                @Override
+                public boolean isTrusted(Path file) {
+                    return file != null && config.getTrustStore().isTrusted(file);
+                }
+
+                @Override
+                public Path scriptCacheDir() {
+                    return config.getConfigDir().resolve("cache").resolve("http-scripts");
+                }
             });
 
     /** The {@code .http} editor's unresolved-variable marks and {@code {{} completion. */
@@ -6735,6 +6750,22 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
         TrustPrompts.Prompt prompt = TrustPrompts.httpSecrets(stage, root, reads, hosts);
+        if (prompt.alert().showAndWait().orElse(ButtonType.CANCEL) != prompt.trust()) {
+            return false;
+        }
+        config.getTrustStore().trust(root);
+        saveTrustDecision(); // durable: a security decision must survive a crash
+        return true;
+    }
+
+    /** Whether the response handlers of {@code file} may run: its folder is trusted, or the user trusts it now. */
+    private boolean confirmHttpScripts(Path file) {
+        Path dir = com.editora.config.PathKeys.canonical(file.toAbsolutePath().getParent());
+        if (config.getTrustStore().isTrusted(dir)) {
+            return true;
+        }
+        Path root = HttpSecretGate.trustRoot(file, projectRoot());
+        TrustPrompts.Prompt prompt = TrustPrompts.httpScripts(stage, root, file);
         if (prompt.alert().showAndWait().orElse(ButtonType.CANCEL) != prompt.trust()) {
             return false;
         }

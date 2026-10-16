@@ -115,7 +115,8 @@ public final class ConfigExporter {
                 || relative.startsWith("plugins/dap/")
                 || relative.startsWith("jdtls-workspaces/")
                 || relative.startsWith("history/")
-                || relative.startsWith("sync/")) {
+                || relative.startsWith("sync/")
+                || relative.startsWith("cache/")) { // rebuilt on demand (the HTTP response-handler runner)
             return false;
         }
         String name = relative.substring(relative.lastIndexOf('/') + 1);
