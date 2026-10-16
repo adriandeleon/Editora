@@ -169,6 +169,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Editora asks once per container; Containers: Run This Project's Tools Here goes back. Works with Docker and
   Podman (Settings → Remote → Container engine). A debugger listening on a port inside the container is
   reached from here, whatever the container's network.
+- **Tools in WSL (Windows).** A project inside a WSL distribution, opened as `\\wsl.localhost\Ubuntu\…`, can
+  have its git, builds, tests, language servers and debuggers run inside that distribution with its own Linux
+  tools, instead of Windows ones reading the files across the share. Editora asks once per distribution;
+  Containers: Run This Project's Tools Here goes back.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug

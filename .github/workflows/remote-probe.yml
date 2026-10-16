@@ -248,3 +248,40 @@ jobs:
           status=${PIPESTATUS[0]}
           { echo '### Probe report (container)'; echo '```'; grep -E 'Tests run:|FAIL|ERROR\]' probe.log | head -20; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+  # A folder inside a WSL distribution, reached from Windows as \\wsl.localhost\…: WslProbeTest on a Windows
+  # runner with a WSL 1 Ubuntu (hosted runners cannot run WSL 2): commands, git, Stop and a port, all inside.
+  wsl:
+    name: Probe (windows, WSL 1)
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: WSL
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: 1
+          additional-packages: git python3
+
+      - name: Probe
+        shell: bash
+        run: |
+          wsl.exe -l -v || true
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -DexcludedGroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=WslProbeTest -Dwsl.probe=Ubuntu-24.04 test
