@@ -266,7 +266,8 @@ class ResponseHandlersIntegrationTest {
                 "TMP",
                 "PATHEXT",
                 "ComSpec",
-                "COMSPEC");
+                "COMSPEC",
+                "__CF_USER_TEXT_ENCODING"); // macOS puts its text-encoding setting into every child's environment
         String keys = log.get(0).substring("env ".length());
         for (String k : keys.split(",")) {
             assertTrue(k.isEmpty() || allowed.contains(k), "Node saw " + k + " (" + keys + ")");
@@ -334,6 +335,29 @@ class ResponseHandlersIntegrationTest {
         assertEquals(
                 List.of(SecretMask.MASK, "{{$processEnv PATH}}"),
                 ex.result().tests().log());
+    }
+
+    @Test
+    void aShimFolderBehindALinkStillRuns(@TempDir Path elsewhere) throws Exception {
+        // macOS's temp and config folders sit under /var, a link to /private/var: Node under the permission model
+        // may not read that link, so the shim must be started by its real path.
+        assumeTrue(nodeAvailable(), "node is not installed");
+        Path link = elsewhere.resolve("linked-cache");
+        try {
+            Files.createSymbolicLink(link, cache);
+        } catch (java.io.IOException | UnsupportedOperationException noLinks) {
+            assumeTrue(false, "links cannot be made here");
+        }
+        ResponseScripts linked = new NodeResponseScripts(
+                new NodeResponseScripts.Settings(true, "node", Duration.ofSeconds(20), link),
+                trust(true),
+                dir.resolve("api.http"),
+                dir);
+        HttpExchange ex = one("GET " + base() + "/login\n\n> {% client.log('ran') %}\n", linked);
+        assertEquals(
+                List.of("ran"),
+                ex.result().tests().log(),
+                ex.result().tests() + " " + ex.result().warnings());
     }
 
     @Test
