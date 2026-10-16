@@ -228,6 +228,7 @@ final class HttpClientCoordinator {
         if (want && !has) {
             HttpClientPanel p = createPanelFor(buffer);
             panels.put(buffer, p);
+            gateRun(buffer, p);
             buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
             refreshEnvironments(buffer);
             history.attached(buffer, p);
@@ -245,7 +246,28 @@ final class HttpClientCoordinator {
             }
         } else if (want) {
             history.followPath(buffer); // a first Save of an untitled buffer, a Save As, a rename: history follows
+            gateRun(buffer, panelFor(buffer)); // …and a Save As to a remote folder blocks Run
         }
+    }
+
+    /** Disables the panel's Run for a remote file, with a tooltip saying why (adl, round 3: remote files don't run). */
+    private void gateRun(EditorBuffer buffer, HttpClientPanel p) {
+        if (p != null) {
+            p.setRunBlocked(host.isLocalBuffer(buffer) ? null : tr("httppanel.remoteRunTip"));
+        }
+    }
+
+    /**
+     * Whether {@code buffer} is a remote file, whose requests do not run from this machine (they would go to this
+     * machine's {@code localhost}, not the remote host's): says so and refuses. Every run entry point asks — the ▶ was
+     * hidden, but the chords, the palette and the panel's Run still sent the request.
+     */
+    private boolean refuseRemote(EditorBuffer buffer) {
+        if (buffer != null && !host.isLocalBuffer(buffer)) {
+            host.setStatus(tr("status.http.remoteBlocked"));
+            return true;
+        }
+        return false;
     }
 
     /** Re-target on tab switch: (re)evaluate the active buffer's preview attachment + environment list. */
@@ -394,6 +416,9 @@ final class HttpClientCoordinator {
 
     /** Runs request {@code index} (0-based, in file order) of {@code buffer}. */
     private void runIndex(EditorBuffer buffer, int index) {
+        if (refuseRemote(buffer)) {
+            return;
+        }
         String text = buffer.getContent();
         List<HttpFile.Request> requests = HttpFile.parse(text);
         if (index < 0 || index >= requests.size()) {
@@ -410,6 +435,7 @@ final class HttpClientCoordinator {
             List<String> needs = HttpScratch.needsFolder(parsed, vars);
             if (!needs.isEmpty()) {
                 HttpExchange unsent = notSent(parsed, needs);
+                revealResult(buffer); // in Editor mode the "save first" result was never seen
                 finishRun(
                         buffer,
                         List.of(parsed),
@@ -475,6 +501,9 @@ final class HttpClientCoordinator {
             host.setStatus(disabledMessage());
             return;
         }
+        if (refuseRemote(buffer)) {
+            return;
+        }
         if (entry == null) {
             runRequest(buffer, buffer.getArea().getCurrentParagraph());
             return;
@@ -491,7 +520,12 @@ final class HttpClientCoordinator {
             return;
         }
         runRequest(buffer, caret);
-        host.setStatus(tr("status.http.rerunAtCaret", ex.method() + " " + ex.url()));
+        String instead = tr("status.http.rerunAtCaret", ex.method() + " " + ex.url());
+        host.setStatus(instead);
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            p.showRunNotice(instead); // the status bar's message was replaced by the result within milliseconds
+        }
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
@@ -505,7 +539,11 @@ final class HttpClientCoordinator {
 
     /** {@code http.cancelRequest}: cancel the active {@code .http} buffer's in-flight request(s). */
     void cancelActiveRequest() {
-        ifHttp(() -> cancelRun(host.activeBuffer()));
+        ifHttp(() -> {
+            if (!refuseRemote(host.activeBuffer())) {
+                cancelRun(host.activeBuffer());
+            }
+        });
     }
 
     /** Cancels {@code buffer}'s in-flight run (the Cancel button and the command share this). */
@@ -557,6 +595,9 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
             }
+            if (refuseRemote(b)) {
+                return;
+            }
             String text = b.getContent();
             List<HttpFile.Request> blocks = HttpFile.parse(text);
             List<String> envProblems = envProblems(b);
@@ -593,6 +634,7 @@ final class HttpClientCoordinator {
             Arrays.fill(startedAt, System.currentTimeMillis());
             Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
+                revealResult(b);
                 finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
                 return;
             }
@@ -732,6 +774,10 @@ final class HttpClientCoordinator {
                 host.setStatus(tr("status.http.noResponseSelected"));
                 return;
             }
+            if (HttpStatusText.notSent(ex.result())) {
+                host.setStatus(tr("status.http.curlNotSent")); // its URL and headers may still be templates
+                return;
+            }
             copyAsCurl(ex);
         });
     }
@@ -799,6 +845,13 @@ final class HttpClientCoordinator {
     }
 
     // --- internals ---
+
+    /** Shows {@code buffer}'s response view (Editor → Split), as a run that is sent does on start. */
+    private void revealResult(EditorBuffer buffer) {
+        if (panelFor(buffer) != null) {
+            buffer.revealHttpPreview();
+        }
+    }
 
     /**
      * Shows the request as running in {@code buffer}'s response preview, revealing that preview (Editor →
@@ -884,6 +937,10 @@ final class HttpClientCoordinator {
         }
         long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
         finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1);
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null && total > 1) {
+            p.showRunSummary(HttpStatusText.runAllCancelledSummary(kept, total)); // not "Run All: all 2 succeeded"
+        }
         // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read oddly.
         host.setStatus(
                 total > 1 ? tr("status.http.cancelledAfter", kept.size(), total) : tr("status.http.cancelledTooLate"));

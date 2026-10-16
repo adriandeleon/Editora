@@ -154,8 +154,11 @@ class HttpSecretGateRound3FxTest {
             });
             String clip =
                     FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString());
-            assertTrue(clip != null && clip.startsWith("curl"), "copied: " + clip);
-            assertFalse(clip.contains(SECRET), "Copy as cURL copied the secret of a request that was not sent");
+            // A request that was not sent has no command to copy (Copy as cURL is disabled for it); whatever the
+            // clipboard holds, it must not be the secret.
+            assertFalse(
+                    clip != null && clip.contains(SECRET),
+                    "Copy as cURL copied the secret of a request that was not sent");
         }
     }
 

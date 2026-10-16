@@ -110,8 +110,9 @@ class HttpSecretGateWindowFxTest {
             FxTestSupport.runOnFx(() -> registry.run("http.copyAsCurl"));
             String clip =
                     FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString());
-            assertTrue(clip != null && clip.startsWith("curl"), "copied: " + clip);
-            assertFalse(clip.contains(SECRET), "Copy as cURL copied the secret");
+            // A request that was not sent has no command to copy (Copy as cURL is disabled for it); whatever the
+            // clipboard holds, it must not be the secret.
+            assertFalse(clip != null && clip.contains(SECRET), "Copy as cURL copied the secret");
 
             Path history = cfg.resolve("http-history");
             String saved = awaitSavedHistory(history, "/mb");
