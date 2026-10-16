@@ -336,6 +336,8 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+    /** Set while an edited site replaces its list entry; see the Remote form's commit. */
+    private boolean replacingRemote;
     /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
     private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
 
@@ -5274,7 +5276,15 @@ public class SettingsWindow {
             // What was decided for the host (may run commands, its tools) follows the connection when its host,
             // user or port is edited: it is kept by id, and the new id would otherwise start with none.
             config.renameRemoteHost(cur.id(), updated.id());
-            remoteItems.set(i, updated);
+            // Replacing the only item of a list clears its selection (JavaFX reads it as "all removed"), which
+            // greyed and emptied the form after every field. The form already shows what was typed: keep it.
+            replacingRemote = true;
+            try {
+                remoteItems.set(i, updated);
+                list.getSelectionModel().select(i);
+            } finally {
+                replacingRemote = false;
+            }
             list.refresh();
             persistRemote();
         };
@@ -5307,6 +5317,9 @@ public class SettingsWindow {
         };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (replacingRemote) {
+                return;
+            }
             loadingRemote = true;
             try {
                 form.setDisable(now == null);
