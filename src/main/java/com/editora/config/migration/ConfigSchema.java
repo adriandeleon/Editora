@@ -302,7 +302,9 @@ public enum ConfigSchema {
                     Map.entry(15, ConfigMigrations::identity),
                     // v16→17: + RunConfiguration.interpreter / interpreterOptions (additive; blank means the
                     // script's shebang decides)
-                    Map.entry(16, ConfigMigrations::identity))),
+                    Map.entry(16, ConfigMigrations::identity),
+                    // v17→18: + pythonInterpreter (additive; blank means the interpreter is detected)
+                    Map.entry(17, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
