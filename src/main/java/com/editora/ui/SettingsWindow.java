@@ -1913,7 +1913,9 @@ public class SettingsWindow {
                 apply();
             });
             TextField field = new TextField();
-            field.setPromptText(srv.defaultCommand());
+            // A server with no default command (Maven's pom.xml server) has only what Install… puts here.
+            field.setPromptText(
+                    srv.defaultCommand().isBlank() ? tr("settings.lsp.installedPrompt") : srv.defaultCommand());
             commitOnEnterOrBlur(field, srv.getCommand(), now -> {
                 srv.setCommand().accept(now);
                 apply();
@@ -2840,7 +2842,7 @@ public class SettingsWindow {
 
     /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
     private Region markdownPage() {
-        VBox p = page(tr("settings.cat.markdown"));
+        VBox p = page(tr("settings.cat.markdown"), tr("settings.markdown.subtitle"));
         Card editing = card(p, tr("settings.section.markdownEditing"));
         checkRow(
                 editing,
@@ -3934,7 +3936,7 @@ public class SettingsWindow {
 
     /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
     private VBox webPage() {
-        VBox p = page(tr("settings.cat.web"));
+        VBox p = page(tr("settings.cat.web"), tr("settings.web.subtitle"));
         Card preview = card(p, tr("settings.section.htmlPreview"));
         checkRow(
                 preview,
@@ -4464,7 +4466,7 @@ public class SettingsWindow {
     }
 
     private VBox mermaidPage() {
-        VBox p = page(tr("settings.cat.mermaid"));
+        VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
         dependsOn(p, mermaidCheck);
         Card c = card(p, null);
         mermaidStatusLabel = new Label(tr("settings.mermaid.checking"));
@@ -4509,7 +4511,7 @@ public class SettingsWindow {
 
     /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
     private VBox diagramsPage() {
-        VBox p = page(tr("settings.cat.diagrams"));
+        VBox p = page(tr("settings.cat.diagrams"), tr("settings.diagrams.subtitle"));
         dependsOn(p, diagramCheck);
         Card c = card(p, null);
         diagramStatusLabel = new Label(tr("settings.diagram.checking"));
@@ -4576,7 +4578,7 @@ public class SettingsWindow {
 
     /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
     private VBox typstPage() {
-        VBox p = page(tr("settings.cat.typst"));
+        VBox p = page(tr("settings.cat.typst"), tr("settings.typst.subtitle"));
         dependsOn(p, typstCheck);
         Card c = card(p, null);
         typstStatusLabel = new Label(tr("settings.typst.checking"));
@@ -4625,7 +4627,7 @@ public class SettingsWindow {
     }
 
     private VBox buildToolsPage() {
-        VBox p = page(tr("settings.cat.buildTools"));
+        VBox p = page(tr("settings.cat.buildTools"), tr("settings.buildTools.subtitle"));
         Card testCard = card(p, tr("settings.section.testRunner"));
         checkRow(
                 testCard,
@@ -5423,7 +5425,7 @@ public class SettingsWindow {
     }
 
     private VBox externalToolsPage() {
-        VBox p = page(tr("settings.cat.externalTools"));
+        VBox p = page(tr("settings.cat.externalTools"), tr("settings.externalTools.subtitle"));
         Card mainCard = card(p, null);
         cardRow(
                 mainCard,
@@ -5844,7 +5846,7 @@ public class SettingsWindow {
      * that lets an *external* agent drive Editora, not Editora calling out to AI.
      */
     private VBox aiGeneralPage() {
-        VBox p = page(tr("settings.cat.aiGeneral"));
+        VBox p = page(tr("settings.cat.aiGeneral"), tr("settings.aiGeneral.subtitle"));
         Card mainCard = card(p, null);
         checkRow(
                 mainCard,
@@ -5860,16 +5862,28 @@ public class SettingsWindow {
     }
 
     private VBox agentPage() {
-        VBox p = page(tr("settings.cat.agent"));
+        VBox p = page(tr("settings.cat.agent"), tr("settings.agent.subtitle"));
         dependsOn(p, aiMasterCheck);
         Card mainCard = card(p, null);
         SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
         checkRow(mainCard, Category.AGENT, agentCheck, null, "ai agent acp claude code chat enable assistant");
+        // What the agent is comes first, under its switch; each client's own setup note sits on its card.
+        cardRow(
+                mainCard,
+                Category.AGENT,
+                wrappedNote("settings.agent.hint"),
+                "ai agent acp install npm chat tool window");
         cardRow(
                 mainCard,
                 Category.AGENT,
                 labeledRow(tr("settings.agent.client"), agentClientCombo),
                 "ai agent acp active client switch gemini copilot codex qwen opencode claude");
+        checkRow(
+                mainCard,
+                Category.AGENT,
+                agentIncludeContextCheck,
+                null,
+                "ai agent acp context cursor line selection file attach prompt");
         // One (untitled) card per agent client, mirroring the Language Servers page: the command row
         // names the client, so a title would just repeat it in every locale.
         for (AgentClientUi a : agentClientUis()) {
@@ -5880,6 +5894,11 @@ public class SettingsWindow {
             status.setWrapText(true);
             status.setMaxWidth(340);
             agentStatusLabels.put(a.id(), status);
+            // The card of the client the combo picked says so.
+            Label active = new Label(tr("settings.agent.active"));
+            active.getStyleClass().addAll("settings-git-status", "settings-git-found");
+            active.visibleProperty().bind(agentClientCombo.valueProperty().isEqualTo(a.id()));
+            active.managedProperty().bind(active.visibleProperty());
             TextField field = agentCommandFields.get(a.id());
             field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
@@ -5889,27 +5908,26 @@ public class SettingsWindow {
                     null,
                     new HBox(6, field, browseButton(tr(a.commandLabelKey()), field)),
                     a.keywords());
-            controlRow(c, Category.AGENT, tr("settings.git.detected"), null, status, a.keywords());
+            controlRow(c, Category.AGENT, tr("settings.git.detected"), null, new HBox(8, active, status), a.keywords());
+            String setup =
+                    switch (a.id()) {
+                        case "codex" -> "settings.agent.codexHint";
+                        case "lmstudio" -> "settings.agent.lmstudioHint";
+                        default -> null;
+                    };
+            if (setup != null) {
+                cardRow(c, Category.AGENT, wrappedNote(setup), a.keywords() + " install login setup local model");
+            }
         }
-        checkRow(
-                mainCard,
-                Category.AGENT,
-                agentIncludeContextCheck,
-                null,
-                "ai agent acp context cursor line selection file attach prompt");
-        Label localHint = note(tr("settings.agent.lmstudioHint"));
-        localHint.setWrapText(true);
-        localHint.setMaxWidth(440);
-        cardRow(mainCard, Category.AGENT, localHint, "ai agent lm studio bionic local opencode model endpoint");
-        Label codexHint = note(tr("settings.agent.codexHint"));
-        codexHint.setWrapText(true);
-        codexHint.setMaxWidth(440);
-        cardRow(mainCard, Category.AGENT, codexHint, "agent codex acp install login setup");
-        Label hint = note(tr("settings.agent.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        cardRow(mainCard, Category.AGENT, hint, "ai agent acp claude code install npm chat tool window");
         return p;
+    }
+
+    /** A grey note row of {@code key}'s text, wrapped to the kit's description width. */
+    private static Label wrappedNote(String key) {
+        Label l = note(tr(key));
+        l.setWrapText(true);
+        l.setMaxWidth(440);
+        return l;
     }
 
     /** Injected by MainController: backs the AI Agent page's per-client PATH-detection rows + the active-
@@ -6103,7 +6121,7 @@ public class SettingsWindow {
     }
 
     private VBox aiPage() {
-        VBox p = page(tr("settings.cat.ai"));
+        VBox p = page(tr("settings.cat.ai"), tr("settings.ai.subtitle"));
         dependsOn(p, aiMasterCheck);
         Card mainCard = card(p, null);
         SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
@@ -6389,7 +6407,7 @@ public class SettingsWindow {
     }
 
     private VBox debugPage() {
-        VBox p = page(tr("settings.cat.debug"));
+        VBox p = page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
         Label experimental = note(tr("settings.debug.experimental"));
         experimental.getStyleClass().add("settings-experimental");
         experimental.setWrapText(true);
@@ -6434,7 +6452,22 @@ public class SettingsWindow {
                     null,
                     new HBox(6, field, browseButton(tr(dbg.commandLabelKey()), field)),
                     dbg.keywords());
-            controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status, dbg.keywords());
+            // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
+            Button install = new Button(tr("settings.install.button"));
+            install.getStyleClass().add("settings-install-button");
+            install.setOnAction(e -> {
+                if (onInstallSupport != null) {
+                    onInstallSupport.accept(dbg.id());
+                }
+            });
+            installButtons.put("debug:" + dbg.id(), install);
+            controlRow(
+                    c,
+                    Category.DEBUG,
+                    tr("settings.git.detected"),
+                    null,
+                    new HBox(8, status, install),
+                    dbg.keywords() + " install download");
         }
         return p;
     }
@@ -6469,10 +6502,15 @@ public class SettingsWindow {
                         null,
                         v -> config.getSettings().setJavaDebugPluginPath(v),
                         () -> config.getSettings().getJavaDebugPluginPath(),
-                        cb -> cb.accept(com.editora.dap.DebugAdapterLocator.locate(
-                                        config.getSettings().getJavaDebugPluginPath(),
-                                        java.nio.file.Path.of(System.getProperty("user.home", "")))
-                                .isPresent())),
+                        cb -> { // lists the VS Code / mason folders: off the FX thread, like the other probes
+                            String configured = config.getSettings().getJavaDebugPluginPath();
+                            Thread.ofVirtual().name("settings-java-debug-probe").start(() -> {
+                                boolean found = com.editora.dap.DebugAdapterLocator.locate(
+                                                configured, java.nio.file.Path.of(System.getProperty("user.home", "")))
+                                        .isPresent();
+                                javafx.application.Platform.runLater(() -> cb.accept(found));
+                            });
+                        }),
                 new DebugAdapterUi(
                         "python",
                         "settings.debug.python",
@@ -6512,7 +6550,7 @@ public class SettingsWindow {
     }
 
     private VBox lspPage() {
-        VBox p = page(tr("settings.cat.lsp"));
+        VBox p = page(tr("settings.cat.lsp"), tr("settings.lsp.subtitle"));
         Label experimental = note(tr("settings.lsp.experimental"));
         experimental.getStyleClass().add("settings-experimental");
         experimental.setWrapText(true);
@@ -6532,6 +6570,11 @@ public class SettingsWindow {
         // which it took real effort to see which status line belonged to which enable box. The card is
         // deliberately untitled: the server's own enable checkbox already names it in every locale, and a
         // derived title ("Enable Java (jdtls)" minus "Enable ") would not survive translation.
+        // The per-feature LSP switches (inlay hints, code lens, …) live with completion; say where.
+        Hyperlink features = new Hyperlink(tr("settings.lsp.featuresLink", Category.COMPLETION.display));
+        features.setWrapText(true);
+        features.setOnAction(e -> sidebar.getSelectionModel().select(Category.COMPLETION));
+        row(p, Category.LSP, null, features, "lsp inlay hints code lens semantic highlighting format on type imports");
         dependsOn(p, lspCheck);
         for (LspServerUi srv : lspServerUis()) {
             Card c = card(p, null);
@@ -6547,6 +6590,12 @@ public class SettingsWindow {
             status.setMaxWidth(440);
             lspStatusLabels.put(srv.id(), status);
             cardRow(c, Category.LSP, status, srv.keywords());
+            Label project = note("");
+            project.setVisible(false);
+            project.setWrapText(true);
+            project.managedProperty().bind(project.visibleProperty());
+            lspProjectLabels.put(srv.id(), project);
+            c.body().getChildren().add(project);
             String langKey = installLangForServer(srv.id());
             if (langKey != null) {
                 cardRow(c, Category.LSP, installButton(langKey), srv.keywords() + " install download");
@@ -7149,7 +7198,11 @@ public class SettingsWindow {
         mermaidStatusLabel.setText(tr("settings.mermaid.checking"));
         mermaidService.detect(a -> {
             String mmdcState = a.mmdc() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
-            String maidState = a.maid() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
+            // The default maid is run through npx, which fetches it on first use: npx is what was found.
+            boolean viaNpx = config.getSettings().getMaidPath().isBlank();
+            String maidState = !a.maid()
+                    ? tr("settings.mermaid.notFound")
+                    : tr(viaNpx ? "settings.mermaid.viaNpx" : "settings.mermaid.found");
             // Color the label green/red like the LSP/Git status labels: green only when both tools are
             // found, red when either is missing.
             mermaidStatusLabel
@@ -7293,12 +7346,28 @@ public class SettingsWindow {
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(
                         tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
+                updateInstallButton("debug:" + dbg.id(), found);
             });
         }
     }
 
+    /** Per LSP server card: what this window's project file overrides (hidden when it overrides nothing). */
+    private final Map<String, Label> lspProjectLabels = new java.util.HashMap<>();
+
+    private java.util.function.Function<String, String> lspProjectNotes = id -> null;
+
+    /** Injected by MainController: the project-override line for a server id, or null. */
+    void setLspProjectNotes(java.util.function.Function<String, String> notes) {
+        this.lspProjectNotes = notes;
+    }
+
     private void refreshLspStatus() {
         refreshBashToolStatus();
+        lspProjectLabels.forEach((id, label) -> {
+            String text = lspProjectNotes.apply(id);
+            label.setText(text == null ? "" : text);
+            label.setVisible(text != null);
+        });
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }

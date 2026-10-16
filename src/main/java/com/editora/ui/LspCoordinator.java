@@ -1332,6 +1332,30 @@ final class LspCoordinator {
                 && config.getTrustStore().isTrusted(root);
     }
 
+    /**
+     * The line Settings → LSP shows on {@code serverId}'s card when this window's project file
+     * ({@code .editora/settings.json}) overrides it — the global command shown there is then not the one that
+     * runs — or null when the project changes nothing for it.
+     */
+    String projectOverrideNote(String serverId) {
+        com.editora.config.ProjectSettings ps = projectSettings();
+        if (ps.isEmpty()) {
+            return null;
+        }
+        List<String> parts = new java.util.ArrayList<>();
+        String command = ps.getLspCommands().get(serverId);
+        if (command != null && !command.isBlank()) {
+            parts.add(tr(
+                    projectTrusted() ? "settings.lsp.project.command" : "settings.lsp.project.untrusted",
+                    command.strip()));
+        }
+        boolean global = globalServerEnabled(serverId);
+        if (serverEnabled(serverId) != global) {
+            parts.add(tr(global ? "settings.lsp.project.off" : "settings.lsp.project.on"));
+        }
+        return parts.isEmpty() ? null : String.join(" ", parts);
+    }
+
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
         List<String> requests = new java.util.ArrayList<>(

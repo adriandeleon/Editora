@@ -89,4 +89,71 @@ class SettingsLangsPagesFxTest {
             assertFalse(showsDependsNote(agentPage, ai.getText()), "the note goes once the switch is on");
         });
     }
+
+    /**
+     * Each Debugging card has an Install button keyed on its adapter: the LSP page's button says "Installed"
+     * as soon as the server is found, so a missing java-debug or debugpy had no button anywhere in Settings.
+     */
+    @Test
+    void eachDebugAdapterCardOffersItsInstall() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setDebugSupport(true);
+            java.util.List<String> asked = new java.util.ArrayList<>();
+            rig.window.setInstallActions(asked::add);
+            rig.show();
+            Map<String, javafx.scene.control.Button> installs = rig.control("installButtons");
+            installs.get("debug:python").fire();
+            installs.get("debug:javascript").fire();
+            org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("python", "javascript"), asked);
+            assertFalse(tr("settings.debug.note").contains("scripts/"), "no repository folder in the hint");
+        });
+    }
+
+    /**
+     * The AI Agent page leads with what the agent is, marks the card of the client in use, and keeps each
+     * client's setup note on that client's card; the LSP page names every server it has a card for.
+     */
+    @Test
+    void theAgentPageMarksTheClientInUseAndTheLspHintNamesEveryServer() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setAiEnabled(true);
+            rig.settings.setAgentClient("codex");
+            rig.show();
+            Region page = rig.page("AGENT");
+            java.util.List<Label> inUse = SettingsRig.all(page, Label.class).stream()
+                    .filter(l -> tr("settings.agent.active").equals(l.getText()) && l.isVisible())
+                    .toList();
+            org.junit.jupiter.api.Assertions.assertEquals(1, inUse.size(), "one card says In use");
+            Map<String, TextField> commands = rig.control("agentCommandFields");
+            assertTrue(isUnder(inUse.get(0), cardOf(commands.get("codex"))), "the Codex card");
+            assertTrue(
+                    SettingsRig.all(cardOf(commands.get("codex")), Label.class).stream()
+                            .anyMatch(l -> tr("settings.agent.codexHint").equals(l.getText())),
+                    "Codex's setup note is on its card");
+
+            Map<String, TextField> lsp = rig.control("lspCommandFields");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    tr("settings.lsp.installedPrompt"), lsp.get("maven-pom").getPromptText());
+            for (String name : java.util.List.of("Typst", "Astro", "pom.xml")) {
+                assertTrue(tr("settings.lsp.hint").contains(name), name);
+            }
+        });
+    }
+
+    private static javafx.scene.Node cardOf(javafx.scene.Node n) {
+        javafx.scene.Node c = n;
+        while (c != null && !c.getStyleClass().contains("settings-card")) {
+            c = c.getParent();
+        }
+        return c;
+    }
+
+    private static boolean isUnder(javafx.scene.Node n, javafx.scene.Node ancestor) {
+        for (javafx.scene.Node c = n; c != null; c = c.getParent()) {
+            if (c == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
