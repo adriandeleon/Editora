@@ -90,4 +90,22 @@ class ProcessRunnerTest {
                 java.util.List.of(dir.resolve("npm").toString(), "run"),
                 ProcessRunner.resolveExecutable(java.util.List.of("npm", "run"), path, false));
     }
+
+    /**
+     * Started from an activated environment, its bin folder leads the augmented PATH: the login shell's PATH
+     * (which went first) has lost the activation, so python3 meant the system Python (Python review B2).
+     */
+    @Test
+    void anActivatedEnvironmentsBinLeadsThePath() {
+        assertEquals(
+                java.util.List.of("/work/.venv/bin", "/opt/conda/bin"),
+                ProcessRunner.activatedEnvironmentBins(
+                        java.util.Map.of("VIRTUAL_ENV", "/work/.venv", "CONDA_PREFIX", "/opt/conda"), false));
+        assertEquals(
+                java.util.List.of("C:\\envs\\ml\\Scripts", "C:\\envs\\ml"),
+                ProcessRunner.activatedEnvironmentBins(java.util.Map.of("CONDA_PREFIX", "C:\\envs\\ml"), true));
+        assertEquals(
+                java.util.List.of(),
+                ProcessRunner.activatedEnvironmentBins(java.util.Map.of("VIRTUAL_ENV", " "), false));
+    }
 }
