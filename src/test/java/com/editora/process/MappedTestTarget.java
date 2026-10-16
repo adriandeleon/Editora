@@ -34,6 +34,19 @@ public final class MappedTestTarget implements ExecTarget, ExecTargets.Resolver 
         return target;
     }
 
+    private volatile boolean localWatch = true;
+
+    /** Says this machine's watcher is not told of the folder's changes, as a WSL distribution's share. */
+    public MappedTestTarget withoutLocalWatch() {
+        localWatch = false;
+        return this;
+    }
+
+    @Override
+    public boolean localWatchSeesChanges() {
+        return localWatch;
+    }
+
     public void unregister() {
         ExecTargets.unregisterMapped(this);
     }
