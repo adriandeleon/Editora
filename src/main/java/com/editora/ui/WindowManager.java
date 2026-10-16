@@ -943,13 +943,24 @@ public class WindowManager {
      * {@code secret}, which is wiped either way. The window that shows a remote folder must hold the
      * connection itself.
      */
-    void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
+    void openRemoteProject(
+            Project project,
+            com.editora.vfs.RemoteConnection conn,
+            com.editora.vfs.RemoteFileSystems.LiveConnection live,
+            char[] secret) {
         openOrFocus(project);
         MainController window = controllerOf(project);
-        if (window != null) {
+        if (window != null && live != null) {
+            window.remoteCoordinator().adoptForWindowProject(conn, live);
+        } else if (window != null) {
             window.remoteCoordinator().connectForWindowProject(conn, secret);
-        } else if (secret != null) {
-            java.util.Arrays.fill(secret, '\0');
+        } else {
+            if (live != null) {
+                live.close(); // no window to take it: don't leave a logged-in session behind
+            }
+            if (secret != null) {
+                java.util.Arrays.fill(secret, '\0');
+            }
         }
     }
 

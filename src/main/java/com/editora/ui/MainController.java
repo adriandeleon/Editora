@@ -2815,8 +2815,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
-                windowManager.openRemoteProject(project, conn, secret);
+            public void openRemoteProject(
+                    Project project,
+                    com.editora.vfs.RemoteConnection conn,
+                    com.editora.vfs.RemoteFileSystems.LiveConnection live,
+                    char[] secret) {
+                windowManager.openRemoteProject(project, conn, live, secret);
                 refreshProjectPanelList();
             }
 

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
 
+### Changed
+
+- **Remote: one login per connect.** Connecting to a remote folder from another window no longer logs in a
+  second time for the project's own window: that window takes over the session you just logged in with. A
+  password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
+  them. Closing the window you connected from leaves the project's window connected.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added
