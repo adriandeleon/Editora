@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Simple UI mode trims the tab right-click menu too**, as it already trimmed the menu bar. The menu keeps
-  Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File Manager, Copy Path and
-  Rename. Git, Local History, Compare With, Open in Diff Viewer, Open Terminal, Close Unmodified, Close to the
-  Left/Right and Pin are hidden while the mode is on. Unpin stays on a tab that was pinned before.
+- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
+  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
+    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
+  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
+    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
+    Add Personal Note are hidden.
+  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
+    Manager.
+  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
+    on all three. Turning Simple mode off brings every entry back.
 
 ## [0.22.0] - 2026-10-16
 
