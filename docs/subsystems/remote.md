@@ -52,6 +52,17 @@ readable ones with their caret and pin. There are no placeholder tabs while disc
 local or null directory, and otherwise the `vfs/SshExecTarget` of the connection that owns the path, but only
 while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its working directory.
 
+Where a command runs is the target's question, not the filesystem's (`ExecTargets.runsHere`,
+`ExecTarget.isLocal`). A folder of this machine can have its tools run elsewhere — bind-mounted into a
+container, inside a WSL distribution — through a *mapped* resolver (`ExecTargets.registerMapped`), asked
+about every local path without I/O. While the setting is off, or that target has not been allowed, such a
+folder's tools run here, as before: its files are local. So code that picks a tool, its environment or its
+arguments asks the target, and every path handed to a tool goes through `ExecTarget.toTargetPath` (an SFTP
+path's text happens to be the host's path; a mapped folder's is not). File-access decisions — whether reading
+a path is a network round trip — stay on the filesystem (`Vfs.isLocal`). Git follows this already
+(`GitService.isLocal` / `gitPath`, `GitHubService`, `RemoteExec.runsFor`); a test-only `MappedTestTarget`
+records any path handed to a tool by this machine's spelling (`GitMappedTargetFxTest`).
+
 - A command is one string built by `process/PosixShell`:
   `exec /bin/sh -c '<guard>' editora '<script>' '<argv>'…`, parsed once by the login shell. The script prints a
   pid line on stderr, sets directory and environment, and `exec`s the program. No PTY.
