@@ -104,4 +104,51 @@ class HttpHistoryEntryTest {
         assertEquals(8, back.result().sizeBytes());
         assertEquals(0, back.result().body().getBytes(StandardCharsets.UTF_8).length);
     }
+
+    @Test
+    void theSecretValuesARunReadAreMaskedInTheSavedHistory(@org.junit.jupiter.api.io.TempDir java.nio.file.Path config)
+            throws Exception {
+        String secret = "FAKE-SECRET-42";
+        String spaced = "fake secret/ü"; // goes out percent-encoded in the URL
+        String url = "http://x.test/u?key=" + secret + "&other=fake%20secret%2F%C3%BC";
+        HttpResult r = HttpFixtures.text(
+                200,
+                List.<String[]>of(new String[] {"X-Echo", secret}),
+                "{\"echo\":\"" + secret + "\"}",
+                "application/json",
+                5,
+                20,
+                null,
+                List.of("sent " + secret));
+        HttpExchange.Details details = new HttpExchange.Details(
+                null,
+                List.of(new HttpExchange.FormPart("f", "v=" + secret, null, null, null)),
+                null,
+                null,
+                true,
+                null,
+                null,
+                false);
+        HttpExchange ex = new HttpExchange(
+                "GET " + url,
+                "GET",
+                url,
+                List.<String[]>of(new String[] {"X-Trace", secret}),
+                "{\"s\":\"" + secret + "\"}",
+                r,
+                details);
+        HttpHistoryEntry e = new HttpHistoryEntry(ex, null, 0, 0, false, false, false);
+        HttpResponseHistory.Response stored = e.toStored(List.of(secret, spaced, "ab"));
+        com.editora.config.HttpResponseHistory store = new com.editora.config.HttpResponseHistory(config);
+        java.nio.file.Path file = config.resolve("s.http");
+        HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
+        state.responses.add(stored);
+        store.save(file, state);
+        String onDisk = java.nio.file.Files.readString(store.fileFor(file));
+        assertFalse(onDisk.contains(secret), onDisk);
+        assertFalse(onDisk.contains("fake%20secret%2F%C3%BC"), onDisk);
+        assertTrue(onDisk.contains("key=" + HttpResponseHistory.MASK), onDisk);
+        assertTrue(onDisk.contains("\"value\":\"v=" + HttpResponseHistory.MASK + "\""), onDisk);
+        assertTrue(HttpSecretMask.mask("a tab", List.of("ab")).equals("a tab"), "a value shorter than 4 is left alone");
+    }
 }

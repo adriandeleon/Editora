@@ -113,4 +113,12 @@ class HttpErrorsTest {
                 "h:443 closed the connection without answering",
                 msg(new java.io.EOFException("EOF reached while reading"), "https://h/"));
     }
+
+    @Test
+    void aUrlWithoutASchemeSaysSoInsteadOfJavasWording() {
+        // X13: an undefined {{host}} leaves "/xml", and Java's "URI with undefined scheme" told the user nothing.
+        assertEquals(
+                "The URL \"/xml\" does not start with http:// or https:// — is a variable in it not defined?",
+                msg(new IllegalArgumentException("URI with undefined scheme"), "/xml"));
+    }
 }

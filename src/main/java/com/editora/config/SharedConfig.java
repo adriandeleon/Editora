@@ -578,7 +578,10 @@ public class SharedConfig {
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
-        // First: the history worker finishes the records still in flight (the save made from the quit prompt)
+        // The HTTP Client's saves wait on its own thread before they reach the writer: let them through first, or
+        // a response that landed just before quitting (a Clear, an environment change) is never saved.
+        awaitHttpHistoryWork();
+        // Then: the history worker finishes the records still in flight (the save made from the quit prompt)
         // and hands them over, which queues the index — so the writer has to be running still.
         historyService.shutdown();
         boolean storesSaved = retryUnsavedStores(); // the last chance for a store whose write failed earlier
@@ -609,6 +612,9 @@ public class SharedConfig {
     }
 
     Path exportConfig(Path destinationDir, boolean includeHttpHistory) throws IOException {
+        if (includeHttpHistory) {
+            awaitHttpHistoryWork(); // the response that just landed belongs in the export too
+        }
         if (!writer.flush()) {
             throw new IOException("Timed out waiting for pending configuration writes");
         }
@@ -619,6 +625,14 @@ public class SharedConfig {
                 System.getProperty("user.name"),
                 java.time.LocalDateTime.now(),
                 includeHttpHistory);
+    }
+
+    /** Waits for the HTTP Client's history saves still queued in the windows (see {@link HttpResponseHistory}). */
+    private void awaitHttpHistoryWork() {
+        HttpResponseHistory history = httpHistory;
+        if (history != null) {
+            history.awaitPendingWork();
+        }
     }
 
     /** Whether the HTTP Client has saved responses, which an export leaves out unless the user asks. */

@@ -8,12 +8,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.editora.http.CapturedResponses;
 import com.editora.http.DynamicVars;
-import com.editora.http.HttpClientService;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpVars;
 import com.editora.http.Multipart;
+import com.editora.http.SecretApproval;
 
 /**
  * Two pure decisions about a request before it is sent. {@link #needsFolder} lists what an unsaved
@@ -32,7 +31,7 @@ final class HttpScratch {
     /**
      * What {@code request} reads or writes relative to its file's folder, one short description each (empty
      * when it can run from an unsaved buffer). The {@code $dotenv} reads come from the request's dry resolution
-     * against {@code envVars} (see {@link HttpClientService#preview}), so one behind an {@code @var} line or an
+     * against {@code envVars} (see {@link SecretApproval#preview}), so one behind an {@code @var} line or an
      * environment value is found exactly when the run would read it.
      */
     static List<String> needsFolder(HttpFile.Parsed request, Map<String, String> envVars) {
@@ -57,7 +56,7 @@ final class HttpScratch {
         }
         List<String> reads;
         try {
-            reads = HttpClientService.preview(request, envVars, null, null).reads();
+            reads = SecretApproval.preview(request, envVars, null, null).reads();
         } catch (RuntimeException unresolvable) {
             reads = List.of(); // the run reports it
         }
@@ -72,40 +71,41 @@ final class HttpScratch {
     /**
      * The request line as it will be sent — {@code GET http://localhost:8080/users/7} for {@code GET
      * {{host}}/users/{{id}}} — resolved with the scope the run uses. Dynamic {@code {{$…}}} values (a fresh
-     * {@code $uuid}, {@code $processEnv} secrets) and anything that does not resolve are left as written: the
-     * label must neither differ from what is sent nor show more than the response view will.
+     * {@code $uuid}, {@code $processEnv} secrets), references to an earlier response and anything that does not
+     * resolve are left as written: the label must neither differ from what is sent nor show more than the response
+     * view will. It is built on the FX thread for every run and for each request of a Run All, so it never evaluates a
+     * response reference (a JSONPath over a body of up to 4M characters, once per {@code @var} line).
      */
-    static String label(
-            HttpFile.Parsed request,
-            Map<String, String> envVars,
-            CapturedResponses captured,
-            Path dir,
-            ZonedDateTime now) {
+    static String label(HttpFile.Parsed request, Map<String, String> envVars, Path dir, ZonedDateTime now) {
         String url = request.url() == null ? "" : request.url();
         if (url.indexOf("{{") < 0) {
             return request.method() + " " + url;
         }
         HttpVars.Scope scope;
         try {
-            scope = HttpVars.scope(envVars, request.variables(), now, captured, dir, true); // secrets stay as written
+            // Dry (secrets stay as written) and without the captured responses (they stay as written too).
+            scope = HttpVars.scope(envVars, request.variables(), now, null, dir, true);
         } catch (RuntimeException e) {
             return request.method() + " " + url;
         }
         Matcher m = VAR.matcher(url);
         StringBuilder sb = new StringBuilder();
+        int last = 0;
         while (m.find()) {
+            sb.append(HttpVars.unescape(url.substring(last, m.start())));
             String name = m.group(1).strip();
             String replacement = m.group();
             if (!DynamicVars.isDynamic(name) && !dynamicDefinition(name, request.variables(), envVars)) {
                 HttpVars.Unresolved missing = HttpVars.Unresolved.dry();
-                String v = HttpVars.substitute(m.group(), scope, now, captured, dir, missing);
+                String v = HttpVars.substitute(m.group(), scope, now, null, dir, missing);
                 if (missing.isEmpty() && missing.secretReads().isEmpty()) {
                     replacement = v;
                 }
             }
-            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+            sb.append(replacement);
+            last = m.end();
         }
-        m.appendTail(sb);
+        sb.append(HttpVars.unescape(url.substring(last)));
         return request.method() + " " + sb;
     }
 

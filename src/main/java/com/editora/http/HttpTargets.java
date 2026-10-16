@@ -1,6 +1,5 @@
 package com.editora.http;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,7 +40,7 @@ public final class HttpTargets {
             String authority = host.endsWith(":443") ? host.substring(0, host.length() - 4) : host;
             return new Target(scheme + authority + (u.equals("*") ? "/" : u), without(headers, hostAt));
         }
-        if (host.equalsIgnoreCase(authority(u))) {
+        if (u.contains("://") && host.equalsIgnoreCase(HttpHosts.authority(u))) {
             return new Target(u, without(headers, hostAt)); // the client sends exactly this Host anyway
         }
         return new Target(u, headers);
@@ -63,19 +62,5 @@ public final class HttpTargets {
         List<String[]> out = new ArrayList<>(headers);
         out.remove(index);
         return out;
-    }
-
-    /** The {@code host[:port]} of an absolute URL, as the client would send it in {@code Host}; "" if none. */
-    private static String authority(String url) {
-        try {
-            String a = URI.create(url).getRawAuthority();
-            if (a == null) {
-                return "";
-            }
-            int at = a.lastIndexOf('@');
-            return at >= 0 ? a.substring(at + 1) : a;
-        } catch (RuntimeException e) {
-            return "";
-        }
     }
 }

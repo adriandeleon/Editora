@@ -91,6 +91,7 @@ class HttpSecretGateFxTest {
             coordinator.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -237,10 +238,9 @@ class HttpSecretGateFxTest {
         EditorBuffer b = httpBuffer(
                 dir.resolve("api.http"),
                 "POST " + url() + "/m\nContent-Type: text/plain\n\nhello {{" + " ".repeat(3000) + "\n");
-        long t0 = System.nanoTime();
+        // The old gate ran a cubic regex over this on the FX thread: well past awaitIdle's 30 s bound. Now the dry
+        // resolution runs on the worker, so the run ends (and its request arrives) — no wall-clock threshold needed.
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
-        long ms = (System.nanoTime() - t0) / 1_000_000;
-        assertTrue(ms < 2000, "pressing run held the FX thread for " + ms + " ms");
         awaitIdle(b);
         assertEquals(1, hits.size());
     }

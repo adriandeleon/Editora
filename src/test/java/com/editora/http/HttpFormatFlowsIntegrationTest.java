@@ -86,7 +86,7 @@ class HttpFormatFlowsIntegrationTest {
         HttpFile.Parsed req = HttpFile.parseRequest(HttpFile.parse(fileText).get(index));
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(req, env, dir, s, HttpClientService.SecretGate.UNCHECKED, ex -> {
+        svc.run(req, env, dir, s, SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -99,7 +99,7 @@ class HttpFormatFlowsIntegrationTest {
                 HttpFile.parse(fileText).stream().map(HttpFile::parseRequest).toList();
         AtomicReference<List<HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.runAll(reqs, env, dir, new CapturedResponses(), HttpClientService.SecretGate.UNCHECKED, null, all -> {
+        svc.runAll(reqs, env, dir, new CapturedResponses(), SecretGate.UNCHECKED, null, all -> {
             got.set(all);
             done.countDown();
         });

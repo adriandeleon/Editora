@@ -232,7 +232,8 @@ class HttpResponseHistoryTest {
         assertEquals(1, back.skipped);
         assertEquals(null, back.responses.get(0).sent(), "an old entry does not know how it was sent");
         store.save(file, back);
-        assertTrue(Files.readString(store.fileFor(file)).contains("\"schemaVersion\":2"));
+        assertTrue(Files.readString(store.fileFor(file))
+                .contains("\"schemaVersion\":" + HttpResponseHistory.SCHEMA_VERSION));
     }
 
     @Test

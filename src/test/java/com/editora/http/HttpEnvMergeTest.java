@@ -36,7 +36,7 @@ class HttpEnvMergeTest {
     void nestedObjectsArraysAndNull() {
         String json = "{\"dev\":{\"client\":{\"host\":{\"url\":\"http://n\"},\"a.b\":1},"
                 + "\"users\":[{\"name\":\"ada\"}],\"z\":null,\"n\":12,\"t\":true}}";
-        Map<String, String> m = HttpEnv.variables(json, "dev");
+        Map<String, String> m = HttpEnv.merged(json, null, "dev");
         assertEquals("http://n", m.get("client.host.url"));
         assertEquals("{\"url\":\"http://n\"}", m.get("client.host"));
         assertEquals("1", m.get("client['a.b']"));

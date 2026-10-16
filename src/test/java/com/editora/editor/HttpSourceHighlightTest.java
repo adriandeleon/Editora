@@ -128,4 +128,45 @@ class HttpSourceHighlightTest {
         assertEquals("tag", style("doc attr"));
         assertEquals("attribute", style("attr="));
     }
+
+    @Test
+    void aBrowserBoundaryWithLeadingDashesIsABoundary() {
+        String text = "POST http://h/form\nContent-Type: multipart/form-data; boundary=----WebKitFormBoundaryAb12\n\n"
+                + "------WebKitFormBoundaryAb12\nContent-Disposition: form-data; name=\"t\"\n\nhi\n"
+                + "------WebKitFormBoundaryAb12--\n";
+        StyleSpans<Collection<String>> spans =
+                TextMateHighlighter.compute(text, GrammarRegistry.shared().forFileName("api.http"));
+        int at = text.indexOf("------WebKit");
+        int pos = 0;
+        String style = "";
+        for (StyleSpan<Collection<String>> span : spans) {
+            if (at < pos + span.getLength()) {
+                style = String.join(" ", span.getStyle());
+                break;
+            }
+            pos += span.getLength();
+        }
+        assertEquals("heading", style);
+    }
+
+    @Test
+    void anEscapedBraceIsNotAVariable() {
+        String text = "GET http://h/x\nX-Tpl: \\{{name}} and {{real}}\n";
+        StyleSpans<Collection<String>> spans =
+                TextMateHighlighter.compute(text, GrammarRegistry.shared().forFileName("api.http"));
+        java.util.function.IntFunction<String> at = i -> {
+            int pos = 0;
+            for (StyleSpan<Collection<String>> span : spans) {
+                if (i < pos + span.getLength()) {
+                    return String.join(" ", span.getStyle());
+                }
+                pos += span.getLength();
+            }
+            return "";
+        };
+        assertEquals("operator", at.apply(text.indexOf("\\{{")));
+        assertTrue(!at.apply(text.indexOf("{{name")).equals("escape"), at.apply(text.indexOf("{{name")));
+        assertTrue(!at.apply(text.indexOf("name}}")).equals("escape"));
+        assertEquals("escape", at.apply(text.indexOf("{{real")));
+    }
 }

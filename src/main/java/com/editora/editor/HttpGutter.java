@@ -2,6 +2,7 @@ package com.editora.editor;
 
 import java.util.List;
 import java.util.function.IntFunction;
+import java.util.function.IntPredicate;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -19,6 +20,8 @@ final class HttpGutter {
     private int runningIndex = -1;
     /** The running request's method/URL line as it read when the run started: the ■ follows it. */
     private String runningText;
+    /** …and the lines after it (its headers), to tell it from another request to the same URL. */
+    private List<String> runningBlock = List.of();
 
     HttpHooks hooks() {
         return hooks;
@@ -47,6 +50,7 @@ final class HttpGutter {
         runningIndex = index;
         int after = runningLine();
         runningText = after >= 0 ? textOf.apply(after) : null;
+        runningBlock = after >= 0 ? HttpRunMark.blockAfter(after, textOf) : List.of();
         return before == after ? new int[] {-1, -1} : new int[] {before, after};
     }
 
@@ -65,10 +69,66 @@ final class HttpGutter {
     /** Takes the request lines of a new run scan; the ■ follows its request's line, or goes when it was edited. */
     void setRequestLines(List<Integer> now, IntFunction<String> textOf) {
         if (!now.equals(requestLines)) {
-            int follow = HttpRunMark.find(now, textOf, runningText, runningIndex);
+            int follow = HttpRunMark.find(now, textOf, runningText, runningBlock, runningIndex);
             runningIndex = runningIndex < 0 ? -1 : follow;
         }
         requestLines = now;
+    }
+
+    // --- folded requests: a request whose method line is folded away draws its glyph on the line that shows ---
+
+    /**
+     * The line that draws request line {@code requestLine}'s glyph: itself, or — when it is folded away
+     * ({@code hidden}) — the nearest shown line above it, the fold's {@code ###} header. Fold All used to leave a
+     * file with no ▶ at all.
+     */
+    static int glyphLine(int requestLine, IntPredicate hidden) {
+        int line = requestLine;
+        while (line > 0 && hidden.test(line)) {
+            line--;
+        }
+        return line;
+    }
+
+    /** Whether {@code line} draws a request glyph (its own, or a folded request's below it). */
+    boolean isGlyphLine(int line, IntPredicate hidden) {
+        return requestLineAt(line, hidden) >= 0;
+    }
+
+    /** The request line whose glyph {@code line} draws (the first, when a fold hides several), or -1. */
+    int requestLineAt(int line, IntPredicate hidden) {
+        if (hidden.test(line)) {
+            return -1;
+        }
+        if (requestLines.contains(line)) {
+            return line;
+        }
+        for (int r : requestLines) {
+            if (r > line) {
+                return hidden.test(r) && glyphLine(r, hidden) == line ? r : -1;
+            }
+        }
+        return -1;
+    }
+
+    /** The line that draws the running request's ■ (see {@link #glyphLine}), or -1. */
+    int runningGlyphLine(IntPredicate hidden) {
+        int running = runningLine();
+        return running < 0 ? -1 : glyphLine(running, hidden);
+    }
+
+    /** {@link #tooltip(int)} for the glyph drawn on {@code line}, which may be a folded request's. */
+    String tooltip(int line, IntPredicate hidden) {
+        int r = requestLineAt(line, hidden);
+        return r < 0 ? null : tooltip(r);
+    }
+
+    /** {@link #click(int)} on the glyph drawn on {@code line}, which may be a folded request's. */
+    void click(int line, IntPredicate hidden) {
+        int r = requestLineAt(line, hidden);
+        if (r >= 0) {
+            click(r);
+        }
     }
 
     /** The hover text of the glyph on {@code line}: "cancel" on the ■, the run tooltip on a ▶, else null. */

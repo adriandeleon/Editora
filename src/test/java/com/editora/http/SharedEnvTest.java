@@ -21,7 +21,7 @@ class SharedEnvTest {
 
     @Test
     void sharedVarsMergeUnderTheSelectedEnvironment() {
-        Map<String, String> dev = HttpEnv.variables(JSON, "dev");
+        Map<String, String> dev = HttpEnv.merged(JSON, null, "dev");
         assertEquals("https://dev", dev.get("host")); // specific overrides shared
         assertEquals("c", dev.get("common")); // shared-only key present
         assertEquals("d", dev.get("token"));
@@ -29,7 +29,7 @@ class SharedEnvTest {
 
     @Test
     void sharedIsNotListedAsASelectableEnvironment() {
-        List<String> names = HttpEnv.environmentNames(JSON);
+        List<String> names = HttpEnv.environmentNames(JSON, null);
         assertTrue(names.contains("dev"));
         assertFalse(names.contains("$shared"));
         assertEquals(1, names.size());

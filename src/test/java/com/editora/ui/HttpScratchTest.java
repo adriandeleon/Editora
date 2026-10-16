@@ -65,15 +65,26 @@ class HttpScratchTest {
                         "@id = 7\n@nonce = {{$uuid}}\nGET {{api}}/users/{{id}}?n={{nonce}}&r={{$random.integer}}&x={{missing}}\n"));
         assertEquals(
                 "GET http://127.0.0.1:8080/api/users/7?n={{nonce}}&r={{$random.integer}}&x={{missing}}",
-                HttpScratch.label(p, env, null, null, NOW));
+                HttpScratch.label(p, env, null, NOW));
         Map<String, String> secretEnv = Map.of("a", "{{$processEnv PATH}}", "b", "{{a}}");
         assertEquals(
                 "GET http://x.test/?k={{b}}",
-                HttpScratch.label(
-                        HttpFile.parseRequest(block("GET http://x.test/?k={{b}}\n")), secretEnv, null, null, NOW),
+                HttpScratch.label(HttpFile.parseRequest(block("GET http://x.test/?k={{b}}\n")), secretEnv, null, NOW),
                 "a variable that stands for a secret stays as written: the status bar never shows it");
         HttpFile.Parsed plain = HttpFile.parseRequest(block("POST http://x.test/a\n"));
-        assertEquals("POST http://x.test/a", HttpScratch.label(plain, Map.of(), null, null, NOW));
+        assertEquals("POST http://x.test/a", HttpScratch.label(plain, Map.of(), null, NOW));
+    }
+
+    @Test
+    void theRunningLabelLeavesResponseReferencesAndEscapesAsWrittenOrSent() {
+        // Built on the FX thread for every run and every request of a Run All: it never evaluates an earlier
+        // response (a JSONPath over up to 4M characters per @var line), so a reference to one stays as written.
+        HttpFile.Parsed p = HttpFile.parseRequest(
+                block("@base = {{login.response.body.$.next}}\nGET {{base}}/items/{{id}}?raw=\\{{literal}}\n"));
+        assertEquals(
+                "GET {{base}}/items/7?raw={{literal}}",
+                HttpScratch.label(p, Map.of("id", "7"), null, NOW),
+                "a response-derived value as written; an escaped \\{{ as the {{ it sends");
     }
 
     @Test

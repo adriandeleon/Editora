@@ -113,11 +113,7 @@ class HttpResponseViewFixesFxTest {
             stages.forEach(Stage::close);
             buffers.forEach(EditorBuffer::dispose);
         });
-        // A finished run queues its history save before it sets the status the test waits for, so the save can
-        // still be running when the test returns (1 to 3 of this class's 13 saves on a fast machine). Without this
-        // wait it raced JUnit deleting the config @TempDir, and when it wrote into http-history mid-delete the
-        // test failed with "Failed to delete temp directory" (macOS CI, 16 October 2026).
-        HttpHistorySync.awaitIdleForTest();
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private String url(String path) {
@@ -149,6 +145,7 @@ class HttpResponseViewFixesFxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -191,7 +188,7 @@ class HttpResponseViewFixesFxTest {
         hits.clear();
         // A DELETE inserted at the top: the "Missing" request is now third, and position 1 holds "Users".
         FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "### Danger\nDELETE " + url("/danger") + "\n\n"));
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         finished();
         assertEquals(List.of("GET /missing"), hits, "the server got the request the response came from");
@@ -206,7 +203,8 @@ class HttpResponseViewFixesFxTest {
         HttpClientCoordinator c = coordinator(new Ops(config));
         String text = "GET {{host}}/one\n\n###\nGET {{host}}/items/{{id}}\n";
         EditorBuffer b = open(c, work.resolve("t.http"), text);
-        javafx.scene.control.ComboBox<String> env = c.panelForTest(b).environmentPickerForTest();
+        javafx.scene.control.ComboBox<String> env =
+                c.panelForTest(b).controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("a"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         finished();
@@ -215,7 +213,7 @@ class HttpResponseViewFixesFxTest {
             env.setValue("b"); // the URL it sent no longer equals what the template gives now
         });
         hits.clear();
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         finished();
         assertEquals(List.of("GET /items/2"), hits);
@@ -233,7 +231,7 @@ class HttpResponseViewFixesFxTest {
             b.getArea().moveTo(1, 0);
         });
         hits.clear();
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         host.awaitStatus(s -> s.equals(tr("status.http.rerunAtCaret", "GET " + url("/gone"))));
         finished();
@@ -258,7 +256,7 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         finished();
         HttpClientPanel p = c.panelForTest(b);
-        TextArea headers = p.headersAreaForTest();
+        TextArea headers = p.controlsForTest().headersArea();
         String shown = FxTestSupport.callOnFx(headers::getText);
         assertTrue(shown.startsWith("HTTP"), "the headers box starts with the status line: " + shown);
         assertFalse(shown.contains("⚠"), "no warning sits among the headers");
@@ -315,6 +313,7 @@ class HttpResponseViewFixesFxTest {
             b.setPath(file);
             c.ensureHttpPreview(b); // what Save As does through ensurePreviewControls
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         String saved = awaitSaved(ops, file, s -> s.contains("/fine"));
         assertFalse(saved.contains("Needs file"), "a \"save the file first\" result is not history: " + saved);
     }
@@ -328,7 +327,7 @@ class HttpResponseViewFixesFxTest {
         HttpClientPanel p = c.panelForTest(b);
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
-        Timeline elapsed = p.elapsedForTest();
+        Timeline elapsed = p.controlsForTest().elapsed();
         assertEquals(Animation.Status.RUNNING, FxTestSupport.callOnFx(elapsed::getStatus));
         FxTestSupport.runOnFx(() -> c.onBufferClosed(b));
         assertEquals(Animation.Status.STOPPED, FxTestSupport.callOnFx(elapsed::getStatus));
@@ -350,7 +349,7 @@ class HttpResponseViewFixesFxTest {
         });
         FxTestSupport.drainFx();
         HttpClientPanel p = c.panelForTest(b);
-        javafx.scene.Node body = p.bodyAreaForTest();
+        javafx.scene.Node body = p.controlsForTest().bodyArea();
         await(() -> body.getScene() != null); // the panel's own SplitPane adds the body on its first layout
         FxTestSupport.runOnFx(() -> {
             body.requestFocus();
@@ -379,7 +378,7 @@ class HttpResponseViewFixesFxTest {
             st.show();
         });
         FxTestSupport.drainFx();
-        javafx.scene.control.ComboBox<?> history = p.historyPickerForTest();
+        javafx.scene.control.ComboBox<?> history = p.controlsForTest().historyPicker();
         double w = FxTestSupport.callOnFx(history::getWidth);
         assertTrue(w <= 280 - 60, "the History picker narrowed to the panel: " + w);
     }

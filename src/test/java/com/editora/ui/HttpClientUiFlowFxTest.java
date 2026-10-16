@@ -110,9 +110,7 @@ class HttpClientUiFlowFxTest {
         coordinators.forEach(HttpClientCoordinator::shutdown);
         server.stop(0);
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
-        // A run's history save can still be queued here; let it finish before JUnit deletes the @TempDir it
-        // writes to (see HttpResponseViewFixesFxTest.tearDown).
-        HttpHistorySync.awaitIdleForTest();
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private String url(String path) {
@@ -138,6 +136,7 @@ class HttpClientUiFlowFxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -161,7 +160,7 @@ class HttpClientUiFlowFxTest {
                 + "### Secret\n# @no-log\nGET " + url("/json") + "?secret\n";
         EditorBuffer b = open(first, file, text);
         HttpClientPanel panel = first.panelForTest(b);
-        ComboBox<String> env = panel.environmentPickerForTest();
+        ComboBox<String> env = panel.controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> first.runRequest(b, 1));
         host.awaitStatus(s -> !s.startsWith("Running"));
@@ -201,7 +200,7 @@ class HttpClientUiFlowFxTest {
         EditorBuffer b = open(c, work.resolve("b/b.http"), "GET " + url("/json") + "\n");
         assertEquals("dev", FxTestSupport.callOnFx(() -> c.panelForTest(a).getSelectedEnvironment()));
         assertEquals("", FxTestSupport.callOnFx(() -> c.panelForTest(b).getSelectedEnvironment()), "b has no dev");
-        ComboBox<String> envB = c.panelForTest(b).environmentPickerForTest();
+        ComboBox<String> envB = c.panelForTest(b).controlsForTest().environmentPicker();
         assertEquals(
                 List.of("", "staging", "local"),
                 FxTestSupport.callOnFx(() -> List.copyOf(envB.getItems())),
@@ -212,6 +211,7 @@ class HttpClientUiFlowFxTest {
             c.refreshEnvironments(a);
             c.refreshEnvironments(b);
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         assertEquals("dev", FxTestSupport.callOnFx(() -> c.panelForTest(a).getSelectedEnvironment()), "a is untouched");
         assertEquals("local", FxTestSupport.callOnFx(() -> c.panelForTest(b).getSelectedEnvironment()));
     }
@@ -223,7 +223,7 @@ class HttpClientUiFlowFxTest {
         ops.projectRoot = project;
         HttpClientCoordinator c = coordinator(ops);
         EditorBuffer b = open(c, project.resolve("api/v1/req.http"), "GET {{host}}/json\n");
-        ComboBox<String> env = c.panelForTest(b).environmentPickerForTest();
+        ComboBox<String> env = c.panelForTest(b).controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         assertEquals(
@@ -239,7 +239,7 @@ class HttpClientUiFlowFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         host.awaitStatus(s -> !s.startsWith("Running"));
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(0)); // the caret is on the other request
-        Button run = c.panelForTest(b).runButtonForTest();
+        Button run = c.panelForTest(b).controlsForTest().runButton();
         FxTestSupport.runOnFx(run::fire);
         assertEquals(
                 tr("status.http.finished", "GET " + url("/json") + "?two", "200 OK"),
