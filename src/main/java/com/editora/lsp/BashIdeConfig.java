@@ -58,7 +58,7 @@ public record BashIdeConfig(
         shellcheckPath = blankToEmpty(shellcheckPath);
         shellcheckArguments = blankToEmpty(shellcheckArguments);
         shfmtPath = blankToEmpty(shfmtPath);
-        shfmtDialect = DIALECTS.contains(shfmtDialect) ? shfmtDialect : "auto";
+        shfmtDialect = shfmtDialect != null && DIALECTS.contains(shfmtDialect) ? shfmtDialect : "auto";
         backgroundAnalysisMaxFiles = Math.clamp(backgroundAnalysisMaxFiles, 0, Settings.BASH_BACKGROUND_ANALYSIS_MAX);
         explainshellEndpoint = blankToEmpty(explainshellEndpoint);
     }

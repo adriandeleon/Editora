@@ -83,6 +83,13 @@ class BashIdeConfigTest {
         s.setBashShfmtDialect("fish");
         s.setBashBackgroundAnalysisMaxFiles(-3);
         assertEquals("auto", s.getBashShfmtDialect());
+        s.setBashShfmtDialect(null);
+        assertEquals("auto", s.getBashShfmtDialect());
+        assertEquals(
+                "auto",
+                BashIdeConfig.of(s)
+                        .withProject(java.util.Map.of("shfmt", java.util.Map.of()), true)
+                        .shfmtDialect());
         assertEquals(0, s.getBashBackgroundAnalysisMaxFiles());
         s.setBashBackgroundAnalysisMaxFiles(Integer.MAX_VALUE);
         assertEquals(Settings.BASH_BACKGROUND_ANALYSIS_MAX, s.getBashBackgroundAnalysisMaxFiles());

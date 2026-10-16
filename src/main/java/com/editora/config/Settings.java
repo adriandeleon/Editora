@@ -2898,11 +2898,11 @@ public class Settings {
     }
 
     public String getBashShfmtDialect() {
-        return BASH_SHFMT_DIALECTS.contains(bashShfmtDialect) ? bashShfmtDialect : "auto";
+        return bashShfmtDialect != null && BASH_SHFMT_DIALECTS.contains(bashShfmtDialect) ? bashShfmtDialect : "auto";
     }
 
     public void setBashShfmtDialect(String dialect) {
-        this.bashShfmtDialect = BASH_SHFMT_DIALECTS.contains(dialect) ? dialect : "auto";
+        this.bashShfmtDialect = dialect != null && BASH_SHFMT_DIALECTS.contains(dialect) ? dialect : "auto";
     }
 
     public boolean isBashShfmtSimplify() {
