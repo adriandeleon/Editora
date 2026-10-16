@@ -144,9 +144,6 @@ final class LspCoordinator {
          */
         StructurePanel structurePanel();
 
-        /** Refreshes the toolbar Run button after the shell Run gate changes. */
-        void refreshRunButton();
-
         /**
          * The window's configuration, or null in a test that has none. Read for the trusted-folder list
          * (project-supplied server commands run only in a trusted folder) and the config directory.
@@ -1038,7 +1035,6 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
-        var s = host.settings();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -1055,12 +1051,6 @@ final class LspCoordinator {
             noticeWithheldOverrides();
         }
         updateProblemsAvailability();
-        // Standalone file Run remains available without LSP. Shell Run still follows the Bash LSP toggle.
-        boolean shellRun = on && s.isBashLspEnabled();
-        host.forEachBuffer(b -> {
-            b.setShellRunEnabled(shellRun); // shell Run glyph gated by the Bash LSP toggle
-        });
-        ops.refreshRunButton();
         if (!on) {
             serverAvailable.clear();
             clearAllDiagnostics();

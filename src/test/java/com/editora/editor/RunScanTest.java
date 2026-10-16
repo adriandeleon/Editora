@@ -12,12 +12,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RunScanTest {
 
     private static RunScan.Inputs inputs(String language, String name) {
-        return new RunScan.Inputs(true, false, false, false, language, name, true, false);
+        return new RunScan.Inputs(true, false, false, false, language, name, false);
     }
 
     @Test
     void nothingIsScannedWhenNoFeatureApplies() {
-        RunScan.Inputs none = new RunScan.Inputs(false, false, false, false, "java", "A.java", true, false);
+        RunScan.Inputs none = new RunScan.Inputs(false, false, false, false, "java", "A.java", false);
         assertFalse(none.needsText());
         RunScan.Result r = RunScan.scan(none, "");
         assertFalse(r.runnable());
@@ -37,9 +37,12 @@ class RunScanTest {
     }
 
     @Test
-    void aShellScriptIsRunnableOnlyWhenShellRunIsOn() {
-        assertTrue(RunScan.scan(inputs("shell", "a.sh"), "echo hi\n").runnable());
-        RunScan.Inputs off = new RunScan.Inputs(true, false, false, false, "shell", "a.sh", false, false);
+    void aShellScriptIsRunnableWheneverRunIsOn() {
+        // No LSP or Bash-server condition any more: like Python, only the Run feature gates it.
+        RunScan.Result r = RunScan.scan(inputs("shell", "a.sh"), "echo hi\n");
+        assertTrue(r.runnable());
+        assertEquals(0, r.line(), "the whole script runs from the top");
+        RunScan.Inputs off = new RunScan.Inputs(false, false, false, false, "shell", "a.sh", false);
         assertFalse(RunScan.scan(off, "echo hi\n").runnable());
     }
 
@@ -61,7 +64,7 @@ class RunScanTest {
         assertFalse(RunScan.scan(inputs("java", "Hello.java"), "class A {}\n").runnable());
         // An extensionless script needs the java shebang to count.
         assertFalse(RunScan.scan(inputs("java", "hello"), "void main() {}\n").runnable());
-        RunScan.Inputs shebang = new RunScan.Inputs(true, false, false, false, "java", "hello", true, true);
+        RunScan.Inputs shebang = new RunScan.Inputs(true, false, false, false, "java", "hello", true);
         assertTrue(RunScan.scan(shebang, "#!/usr/bin/env -S java --source 25\nvoid main() {}\n")
                 .runnable());
     }
@@ -69,13 +72,13 @@ class RunScanTest {
     @Test
     void testAndMainGlyphsAreAdditive() {
         String test = "import org.junit.jupiter.api.Test;\nclass ATest {\n    @Test\n    void works() {}\n}\n";
-        RunScan.Inputs tests = new RunScan.Inputs(false, false, true, false, "java", "ATest.java", true, false);
+        RunScan.Inputs tests = new RunScan.Inputs(false, false, true, false, "java", "ATest.java", false);
         RunScan.Result r = RunScan.scan(tests, test);
         assertFalse(r.testLines().isEmpty());
         assertTrue(r.runnable(), "a file with tests is runnable even with the run feature off");
 
         String main = "class A {\n    public static void main(String[] args) {}\n}\n";
-        RunScan.Inputs mains = new RunScan.Inputs(false, false, false, true, "java", "A.java", true, false);
+        RunScan.Inputs mains = new RunScan.Inputs(false, false, false, true, "java", "A.java", false);
         RunScan.Result m = RunScan.scan(mains, main);
         assertFalse(m.mainLines().isEmpty());
         assertFalse(m.runnable(), "a project main does not make the file runnable as one file");

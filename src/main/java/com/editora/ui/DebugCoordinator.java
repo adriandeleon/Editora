@@ -1317,6 +1317,16 @@ final class DebugCoordinator {
     // --- debug commands ----------------------------------------------------------------------------
 
     /** Starts a launch debug session for the active file (saving first, like Run). */
+    /** Program arguments read as Run reads them; null after saying why when a quote is never closed. */
+    private List<String> debugArgs(String text) {
+        try {
+            return ProgramArgs.parse(text);
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.argsUnclosedQuote", String.valueOf(e.quote())));
+            return null;
+        }
+    }
+
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
         if (dapManager.isActive()) {
@@ -1356,10 +1366,14 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.needSource25", shebangSource));
             return;
         }
+        // The debuggee gets the same per-file program arguments the Run feature uses, read the same way.
+        List<String> fileArgs = debugArgs(ops.programArgs(b.getPath()));
+        if (fileArgs == null) {
+            return;
+        }
         ops.openToolWindow();
         nameSession(b.getPath().getFileName().toString());
-        // The debuggee gets the same per-file program arguments the Run feature uses.
-        dapManager.setProgramArgs(ProgramArgs.tokenize(ops.programArgs(b.getPath())));
+        dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
@@ -1464,7 +1478,18 @@ final class DebugCoordinator {
                 ? java.util.Map.of()
                 : com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath());
         java.util.LinkedHashMap<String, String> launchEnv = new java.util.LinkedHashMap<>(jdkEnv);
-        launchEnv.putAll(com.editora.run.EnvVars.parse(cfg.env()));
+        try {
+            launchEnv.putAll(com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(onHost)));
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        List<String> cfgArgs = debugArgs(cfg.args());
+        if (cfgArgs == null) {
+            ops.editConfiguration(cfg.name());
+            return;
+        }
         // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
         // the previous class files, where every breakpoint would sit on a stale line number.
         //
@@ -1492,7 +1517,7 @@ final class DebugCoordinator {
                 }
                 ops.openToolWindow();
                 nameSession(shortName(match.mainClass()));
-                dapManager.setProgramArgs(ProgramArgs.tokenize(cfg.args()));
+                dapManager.setProgramArgs(cfgArgs);
                 dapManager.setVmArgs(cfg.vmArgs());
                 dapManager.setEnv(launchEnv);
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd, javaExec));
@@ -1531,9 +1556,13 @@ final class DebugCoordinator {
                 if (opt == null) {
                     return;
                 }
+                List<String> mainArgs = debugArgs(programArgsForMain(opt));
+                if (mainArgs == null) {
+                    return;
+                }
                 ops.openToolWindow();
                 nameSession(shortName(opt.mainClass()));
-                dapManager.setProgramArgs(ProgramArgs.tokenize(programArgsForMain(opt)));
+                dapManager.setProgramArgs(mainArgs);
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
                 dapManager.setEnv(configuredJdkEnvironment(root, null));
                 lsp.ensureManaged(routing); // see above

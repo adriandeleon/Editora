@@ -157,10 +157,10 @@ class DoctorCoordinatorFxTest {
         DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
 
         List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
-        for (String id : List.of("run.java", "run.python", "run.make")) {
+        // Shell Run no longer depends on LSP, so its Bash row stays too.
+        for (String id : List.of("run.java", "run.python", "run.make", "run.shell")) {
             assertTrue(specs.stream().anyMatch(s -> s.placeholder().id().equals(id)), id);
         }
-        assertFalse(specs.stream().anyMatch(s -> s.placeholder().id().equals("run.shell")));
     }
 
     @Test

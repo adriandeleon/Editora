@@ -47,6 +47,9 @@ public final class RunService {
 
     private volatile Process current;
 
+    /** Whether the running program is a POSIX shell, whose input lines end in {@code \n} on every OS. */
+    private volatile boolean posixShell;
+
     /**
      * The bounded, batched stdout/stderr pump shared with {@code build.BuildService}. A program's console
      * drops its oldest queued lines when the UI cannot keep up (the newest output is what matters, and the
@@ -108,11 +111,8 @@ public final class RunService {
         }
         stdinWriter.execute(() -> {
             try {
-                // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8. A program on a
-                // remote (POSIX) host reads UTF-8 lines ending in \n, whatever this machine uses.
-                byte[] bytes = p instanceof com.editora.process.RemoteProcess
-                        ? (line + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)
-                        : ChildText.encodeInput(line + System.lineSeparator());
+                byte[] bytes = inputLine(
+                        line, p instanceof com.editora.process.RemoteProcess, posixShell, System.lineSeparator());
                 p.getOutputStream().write(bytes);
                 p.getOutputStream().flush();
             } catch (IOException ignored) {
@@ -289,6 +289,7 @@ public final class RunService {
             return;
         }
         current = process;
+        posixShell = isPosixShell(argv.get(0));
         listener.onStart(String.join(" ", command));
         OutputPump.Sink sink = new OutputPump.Sink() {
             @Override
@@ -324,6 +325,34 @@ public final class RunService {
                 "run-wait");
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    /**
+     * The bytes one console line is sent as. A program on a remote (POSIX) host reads UTF-8 lines ending in
+     * {@code \n}, whatever this machine uses. A local POSIX shell also gets {@code \n} on Windows: Git Bash's
+     * {@code read} keeps a {@code \r}, so every answer typed into the console came back as {@code y\r} and
+     * failed {@code [ "$ans" = y ]}. Anything else gets this machine's line separator in the encoding the
+     * child reads stdin in (see {@link ChildText}).
+     */
+    static byte[] inputLine(String line, boolean remote, boolean posixShell, String lineSeparator) {
+        if (remote) {
+            return (line + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        return ChildText.encodeInput(line + (posixShell ? "\n" : lineSeparator));
+    }
+
+    /** Whether {@code program} (a name or a path) is a POSIX shell: bash, sh, zsh, dash, ksh, ash. */
+    static boolean isPosixShell(String program) {
+        if (program == null) {
+            return false;
+        }
+        int slash = Math.max(program.lastIndexOf('/'), program.lastIndexOf('\\'));
+        String base = program.substring(slash + 1).toLowerCase(java.util.Locale.ROOT);
+        if (base.endsWith(".exe")) {
+            base = base.substring(0, base.length() - 4);
+        }
+        return java.util.Set.of("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh")
+                .contains(base);
     }
 
     /**

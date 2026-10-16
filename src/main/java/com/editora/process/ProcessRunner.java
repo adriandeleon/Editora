@@ -682,8 +682,20 @@ public final class ProcessRunner {
         String exe = command.get(0);
         String lower = exe.toLowerCase(java.util.Locale.ROOT);
         boolean hasWindowsExtension = WINDOWS_EXECUTABLE_EXTENSIONS.stream().anyMatch(lower::endsWith);
+        // A POSIX shell on Windows is Git Bash, never the WSL launcher in System32 (see WindowsShells).
+        boolean windowsShell = windows && WindowsShells.isPosixShell(exe);
+        if (windowsShell) {
+            String found = WindowsShells.find(
+                    exe,
+                    List.of(path.split(File.pathSeparator)),
+                    WindowsShells.installRoots(System::getenv),
+                    p -> isRegularFile(p));
+            if (found != null) {
+                return rewriteFirst(command, found);
+            }
+        }
         for (String dir : path.split(File.pathSeparator)) {
-            if (dir.isBlank()) {
+            if (dir.isBlank() || (windowsShell && WindowsShells.isSystemDir(dir))) {
                 continue;
             }
             if (windows && !hasWindowsExtension) {
@@ -701,6 +713,14 @@ public final class ProcessRunner {
             }
         }
         return command;
+    }
+
+    private static boolean isRegularFile(String path) {
+        try {
+            return Files.isRegularFile(Path.of(path));
+        } catch (java.nio.file.InvalidPathException e) {
+            return false;
+        }
     }
 
     private static List<String> rewriteFirst(List<String> command, String resolved) {

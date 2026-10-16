@@ -31,7 +31,6 @@ final class RunScan {
      * @param testEligible a Java file whose JUnit tests get gutter glyphs
      * @param mainEligible a Java file in a project whose {@code main} methods get gutter glyphs
      * @param name the file's name (a compact source file is recognized by it)
-     * @param shellRun whether shell scripts are runnable
      * @param javaShebang whether the file starts with a {@code java --source N} shebang
      */
     record Inputs(
@@ -41,7 +40,6 @@ final class RunScan {
             boolean mainEligible,
             String language,
             String name,
-            boolean shellRun,
             boolean javaShebang) {
 
         /** Whether any scan reads the text — otherwise the document need not be materialized at all. */
@@ -86,7 +84,9 @@ final class RunScan {
         } else if (in.eligible() && "python".equals(language)) {
             runnable = true;
             line = pythonRunLine(text); // the __main__ guard, else the first line
-        } else if (in.eligible() && in.shellRun() && "shell".equals(language)) {
+        } else if (in.eligible() && "shell".equals(language)) {
+            // Gated like Python, by the Run feature alone: shell Run used to also need LSP and the Bash server
+            // toggle (both off for a new user), so a .sh had no ▶ until someone found that out.
             runnable = true;
             line = 0; // run the whole script from the top (the shebang line, if any)
         } else if (in.eligible()

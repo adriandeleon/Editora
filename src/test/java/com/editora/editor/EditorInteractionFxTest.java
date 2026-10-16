@@ -309,14 +309,12 @@ class EditorInteractionFxTest {
             off.hide();
             stage.close();
 
-            // A shell script's glyph is gated separately (by the Bash server toggle).
+            // A shell script's glyph follows the Run feature alone, like Python's.
             EditorBuffer shell = buffer("shell", "#!/bin/sh\necho hi\n");
             shell.setRunEnabled(false);
-            shell.setRunEnabled(true);
             assertTrue(shell.isShell());
             assertFalse(shell.isRunnable());
-            shell.setShellRunEnabled(true);
-            shell.setShellRunEnabled(true);
+            shell.setRunEnabled(true);
             assertTrue(shell.isRunnable());
             http.dispose();
             make.dispose();

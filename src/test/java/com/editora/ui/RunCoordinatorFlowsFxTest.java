@@ -320,7 +320,6 @@ class RunCoordinatorFlowsFxTest {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
             EditorBuffer made = new EditorBuffer();
             made.setOnRunnableChanged(scanned::countDown);
-            made.setShellRunEnabled(true); // as the window does when shell scripts may be run
             made.setPath(file);
             made.setContent(source);
             made.markClean();
@@ -397,6 +396,196 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(run::rerunLast);
         awaitStatus(tr("status.run.exit", 4));
         assertEquals("hello world from " + project.getFileName() + "\n", console());
+    }
+
+    private void awaitConsole(String text) throws Exception {
+        await("console containing '" + text + "'", () -> {
+            try {
+                return console().contains(text);
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
+    private void type(String line) throws Exception {
+        TextField input = FxTestSupport.field(run.panel(), "input");
+        FxTestSupport.runOnFx(() -> {
+            input.setText(line);
+            input.fireEvent(new javafx.event.ActionEvent());
+        });
+    }
+
+    @Test
+    void theShebangsInterpreterAndFlagsAreHonoured() throws Exception {
+        // It always ran `bash <file>`: the -e here was dropped and the script went on past `false`.
+        open("strict.sh", "#!/usr/bin/env -S bash -e\nfalse\necho AFTER\n", true);
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.exit", 1));
+
+        assertEquals("", console());
+        assertTrue(panelStatus().contains(tr("run.exited", 1)), panelStatus());
+    }
+
+    @Test
+    void aShShebangRunsShAndAZshFileRunsZsh() throws Exception {
+        Path sh = Path.of("/bin/sh").toRealPath();
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                sh.getFileName().toString().contains("bash"), "/bin/sh is bash here: nothing to tell apart");
+        open("posix.sh", "#!/bin/sh\necho \"${BASH_VERSION:-not bash}\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("not bash\n", console());
+
+        // No shebang in a .zsh: zsh, whether or not it is installed (then the launch names it).
+        clearLog();
+        open("prompt.zsh", "echo \"zsh ${ZSH_VERSION:+yes}\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        await(
+                "the run to end",
+                () -> statuses().stream()
+                        .anyMatch(m -> m.startsWith(tr("status.run.ok"))
+                                || m.startsWith(tr("status.run.failed", "").strip())));
+        FxTestSupport.drainFx();
+        assertTrue(console().equals("zsh yes\n") || panelStatus().contains("zsh"), panelStatus() + " / " + console());
+    }
+
+    @Test
+    void readPromptsShowAndEndInputFinishesAReadLoop() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                new ProcessBuilder("bash", "-c", "exit 0").start().waitFor() == 0, "needs bash");
+        open(
+                "ask.sh",
+                "#!/usr/bin/env bash\nread -r -p \"Your name: \" n\necho \"hi [$n]\"\n"
+                        + "while read -r l; do echo \"got [$l]\"; done\necho \"loop ended\"\n",
+                true);
+
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitConsole("Your name: "); // bash prints nothing for read -p on a pipe: the user saw an empty console
+        type("Bob");
+        awaitConsole("hi [Bob]");
+        type("x");
+        awaitConsole("got [x]");
+        assertTrue(FxTestSupport.callOnFx(run::isRunning), "the loop waits for more input");
+
+        FxTestSupport.runOnFx(run::endInput); // what End Input and Ctrl+D on an empty line do
+        awaitStatus(tr("status.run.ok"));
+        assertTrue(console().endsWith("loop ended\n"), console());
+        TextField input = FxTestSupport.field(run.panel(), "input");
+        assertTrue(FxTestSupport.callOnFx(input::isDisabled));
+    }
+
+    @Test
+    void ctrlDOnAnEmptyInputLineEndsTheInput() throws Exception {
+        open("cat.sh", "#!/bin/sh\ncat\necho \"cat done\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        await("the run to start", () -> {
+            try {
+                return FxTestSupport.callOnFx(run::isRunning);
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+        type("one");
+        awaitConsole("one\none\n"); // the echo of what was typed, then cat's copy
+        TextField input = FxTestSupport.field(run.panel(), "input");
+        FxTestSupport.runOnFx(() -> input.fireEvent(new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                "",
+                "",
+                javafx.scene.input.KeyCode.D,
+                false,
+                true,
+                false,
+                false)));
+        awaitStatus(tr("status.run.ok"));
+        assertTrue(console().endsWith("cat done\n"), console());
+    }
+
+    @Test
+    void anUnclosedQuoteInTheArgumentsRunsNothingAndSaysWhy() throws Exception {
+        open("args.sh", "#!/bin/sh\nfor a in \"$@\"; do echo \"[$a]\"; done\n", true);
+        ops.programArgs.put("args.sh", "O'Brien tail");
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+        assertTrue(
+                statuses().contains(tr("status.run.argsUnclosedQuote", "'")),
+                statuses().toString());
+        assertFalse(FxTestSupport.callOnFx(run::isRunning));
+
+        clearLog();
+        ops.programArgs.put("args.sh", "O\\'Brien tail\\ x \"say \\\"hi\\\"\"");
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("[O'Brien]\n[tail x]\n[say \"hi\"]\n", console());
+    }
+
+    @Test
+    void aShellConfigurationsInterpreterOverridesTheShebang() throws Exception {
+        Files.createDirectories(project.resolve("sub"));
+        Files.writeString(project.resolve("sub/cfg.sh"), "#!/bin/sh\nfalse\necho \"AFTER in $(basename \"$PWD\")\"\n");
+        RunConfiguration cfg =
+                new RunConfiguration("Strict", "shell", "cfg.sh", "", "", "", "", "sub", "", "", "", "bash", "-e");
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.exit", 1));
+        assertEquals("", console(), "bash -e from the configuration stopped at `false`");
+
+        // Without the override the shebang's plain sh runs on; the relative directory is under the project.
+        clearLog();
+        RunConfiguration plain = new RunConfiguration("Plain", "shell", "cfg.sh", "", "", "", "", "sub", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(plain));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("AFTER in sub\n", console());
+    }
+
+    @Test
+    void aShellConfigurationNamesAMissingDirectoryOrScript() throws Exception {
+        RunConfiguration noDir = new RunConfiguration("NoDir", "shell", "x.sh", "", "", "", "", "nope", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(noDir));
+        FxTestSupport.drainFx();
+        assertEquals(
+                List.of(tr(
+                        "status.run.workingDirMissing",
+                        "NoDir",
+                        project.resolve("nope").toString())),
+                statuses());
+        assertEquals(List.of("NoDir"), ops.edited, "its form opens at what to fix");
+
+        clearLog();
+        RunConfiguration noScript =
+                new RunConfiguration("NoScript", "shell", "gone.sh", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(noScript));
+        FxTestSupport.drainFx();
+        assertEquals(
+                List.of(tr(
+                        "status.run.scriptMissing",
+                        "NoScript",
+                        project.resolve("gone.sh").toString())),
+                statuses());
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse), "nothing was launched");
+    }
+
+    @Test
+    void aShellConfigurationsEnvironmentExpandsInheritedVariables() throws Exception {
+        Files.writeString(
+                project.resolve("env.sh"), "echo \"$FOO|$GREETING\"\ncommand -v sh >/dev/null && echo found\n");
+        RunConfiguration cfg = new RunConfiguration(
+                "Env",
+                "shell",
+                "env.sh",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "PATH=/opt/none:$PATH FOO=$HOME GREETING='$HOME'",
+                "",
+                "");
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(System.getenv("HOME") + "|$HOME\nfound\n", console(), "PATH kept its real value after /opt/none");
     }
 
     @Test

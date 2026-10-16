@@ -631,7 +631,6 @@ public class EditorBuffer implements TabContent {
     private boolean runFeatureEnabled = true;
     /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
      *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
-    private boolean shellRunEnabled;
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
     private boolean httpFeatureEnabled;
@@ -3509,15 +3508,6 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Enables/disables the Run glyph for shell scripts (gated by the Bash LSP server toggle). Java/Python
-     *  runnability is unaffected — this only governs whether a {@code .sh}/bash file shows the glyph. */
-    public void setShellRunEnabled(boolean enabled) {
-        if (enabled != shellRunEnabled) {
-            shellRunEnabled = enabled;
-            recomputeRun();
-        }
-    }
-
     /** True for a {@code .http}/{@code .rest} buffer (drives the HTTP Client run glyphs + tool window). */
     public boolean isHttpFile() {
         return "http".equals(language);
@@ -3811,7 +3801,6 @@ public class EditorBuffer implements TabContent {
                 mainGutterEnabled && small && "java".equals(language),
                 language,
                 path != null ? path.getFileName().toString() : displayName,
-                shellRunEnabled,
                 shebangJavaSource != null);
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on

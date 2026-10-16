@@ -323,9 +323,8 @@ final class DoctorCoordinator {
         }));
         specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
-        if (ops.lspFeatureEnabled()) {
-            specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
-        }
+        // Shell Run no longer depends on LSP, so neither does the row that says whether it can work.
+        specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
 
         // Build tools (informational; the tool windows self-gate on project markers) --------------
         if (!simple) {

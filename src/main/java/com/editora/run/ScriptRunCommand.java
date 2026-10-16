@@ -53,6 +53,15 @@ public final class ScriptRunCommand {
      *     caller reports that rather than launching something arbitrary
      */
     public static List<String> build(String type, String target, List<String> args) {
+        return build(type, target, args, null);
+    }
+
+    /**
+     * As {@link #build(String, String, List)}, with a shell script's interpreter decided by
+     * {@link ShellCommand#launch} (its shebang, or the configuration's Interpreter). {@code null} — or any
+     * non-shell type — uses the default: {@code bash}, or {@code zsh} for a {@code .zsh} file.
+     */
+    public static List<String> build(String type, String target, List<String> args, ShellCommand.Launch shell) {
         String t = target == null ? "" : target.strip();
         List<String> argv = new ArrayList<>();
         switch (type == null ? "" : type) {
@@ -67,7 +76,7 @@ public final class ScriptRunCommand {
                 if (t.isEmpty()) {
                     return List.of();
                 }
-                argv.add("bash");
+                argv.addAll(shell == null ? List.of(ShellCommand.defaultInterpreter(t)) : shell.interpreter());
                 argv.add(t);
             }
             case MAKE -> {
