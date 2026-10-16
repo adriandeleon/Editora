@@ -473,7 +473,7 @@ class SettingsPagesFxTest {
             settings.setTodoPatterns(new ArrayList<>(List.of(new TodoPattern("FIXME", "\\bFIXME\\b", "", true, true))));
             rig.show();
             Region page = rig.page("TODO");
-            VBox rows = rig.control("todoPatternsBox");
+            VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
             assertEquals(1, rows.getChildren().size());
 
             SettingsRig.button(page, tr("settings.todo.add")).fire();
@@ -539,7 +539,7 @@ class SettingsPagesFxTest {
                     new TodoPattern("A", "A", "not-a-colour", true, true),
                     new TodoPattern("B", "B", "#0000FF", true, true))));
             rig.show();
-            VBox rows = rig.control("todoPatternsBox");
+            VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
             assertEquals(
                     Color.web("#E5C07B"),
                     ((ColorPicker) ((HBox) rows.getChildren().get(0))

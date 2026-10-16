@@ -302,12 +302,7 @@ public class SettingsWindow {
     private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
     private CheckBox todoHighlightCheck;
-    private javafx.scene.layout.VBox todoPatternsBox;
-    private javafx.scene.control.ColorPicker todoTagColorPicker;
-    private javafx.scene.control.ColorPicker todoCriticalColorPicker;
-    private javafx.scene.control.ColorPicker todoHighColorPicker;
-    private javafx.scene.control.ColorPicker todoMediumColorPicker;
-    private javafx.scene.control.ColorPicker todoLowColorPicker;
+    private TodoSettingsPane todoSettings;
     private VBox markdownLintRulesBox;
     /** Working copy of the External Tools list, edited live by the master-detail page. */
     /** The External Tools ListView, so {@link #reloadExternalTools} can restore the selection. */
@@ -3332,128 +3327,6 @@ public class SettingsWindow {
         }
     }
 
-    /** The TODO/highlight pattern editor: one row per pattern (enabled / name / regex / color / case) plus
-     *  an "Add" button. Edits write back to {@code Settings.todoPatterns} and apply live. */
-    private javafx.scene.Node todoPatternsEditor() {
-        todoPatternsBox = new VBox(4);
-        Button add = new Button(tr("settings.todo.add"));
-        add.setOnAction(e -> {
-            java.util.List<com.editora.todo.TodoPattern> list = mutableTodoPatterns();
-            list.add(new com.editora.todo.TodoPattern(
-                    tr("settings.todo.newName"),
-                    "\\bTODO\\b",
-                    com.editora.todo.TodoPatterns.DEFAULT_COLOR,
-                    false,
-                    true));
-            config.getSettings().setTodoPatterns(list);
-            rebuildTodoRows();
-            apply();
-        });
-        VBox box = new VBox(6, todoPatternsBox, add);
-        rebuildTodoRows();
-        return box;
-    }
-
-    private java.util.List<com.editora.todo.TodoPattern> mutableTodoPatterns() {
-        return new java.util.ArrayList<>(config.getSettings().getTodoPatterns());
-    }
-
-    private void rebuildTodoRows() {
-        if (todoPatternsBox == null) {
-            return;
-        }
-        todoPatternsBox.getChildren().clear();
-        int size = config.getSettings().getTodoPatterns().size();
-        for (int i = 0; i < size; i++) {
-            todoPatternsBox.getChildren().add(todoRow(i));
-        }
-    }
-
-    private javafx.scene.Node todoRow(int index) {
-        com.editora.todo.TodoPattern p = config.getSettings().getTodoPatterns().get(index);
-        CheckBox enabled = new CheckBox();
-        enabled.setSelected(p.isEnabled());
-        enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
-        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + p.getName());
-        TextField name = new TextField(p.getName());
-        name.setPromptText(tr("settings.todo.namePrompt"));
-        name.setPrefWidth(110);
-        TextField regex = new TextField(p.getPattern());
-        regex.setPromptText(tr("settings.todo.regexPrompt"));
-        HBox.setHgrow(regex, Priority.ALWAYS);
-        javafx.scene.control.ColorPicker color = new javafx.scene.control.ColorPicker(parseColor(p.getColor()));
-        color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
-        color.setPrefWidth(56);
-        CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
-        caseSensitive.setSelected(p.isCaseSensitive());
-        Button remove = new Button("✕");
-        remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
-        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + p.getName());
-
-        Runnable commit = () -> {
-            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
-            if (index >= cur.size()) {
-                return;
-            }
-            com.editora.todo.TodoPattern up = cur.get(index);
-            up.setEnabled(enabled.isSelected());
-            up.setName(name.getText());
-            // A malformed expression is skipped by TodoPatterns.compile, so saving it silently switched the
-            // keyword off. Flag the field and keep the stored pattern until the expression is valid.
-            String problem = com.editora.todo.TodoPatterns.syntaxProblem(regex.getText());
-            regex.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problem != null);
-            regex.setTooltip(problem == null ? null : new Tooltip(tr("settings.todo.regexInvalid", problem)));
-            if (problem == null) {
-                up.setPattern(regex.getText());
-            }
-            up.setColor(toHex(color.getValue()));
-            up.setCaseSensitive(caseSensitive.isSelected());
-            config.getSettings().setTodoPatterns(cur);
-            apply();
-        };
-        // Checkboxes + the color picker apply immediately; text fields commit on Enter / focus-loss.
-        enabled.selectedProperty().addListener((o, a, b) -> commit.run());
-        caseSensitive.selectedProperty().addListener((o, a, b) -> commit.run());
-        color.valueProperty().addListener((o, a, b) -> commit.run());
-        name.setOnAction(e -> commit.run());
-        regex.setOnAction(e -> commit.run());
-        java.util.function.Consumer<TextField> onBlur =
-                tf -> tf.focusedProperty().addListener((o, was, now) -> {
-                    if (!now) {
-                        commit.run();
-                    }
-                });
-        onBlur.accept(name);
-        onBlur.accept(regex);
-        remove.setOnAction(e -> {
-            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
-            if (index < cur.size()) {
-                cur.remove(index);
-            }
-            config.getSettings().setTodoPatterns(cur);
-            rebuildTodoRows();
-            apply();
-        });
-        HBox row = new HBox(6, enabled, name, regex, color, caseSensitive, remove);
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
-    }
-
-    private static javafx.scene.paint.Color parseColor(String web) {
-        try {
-            return javafx.scene.paint.Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
-        } catch (RuntimeException e) {
-            return javafx.scene.paint.Color.web("#E5C07B");
-        }
-    }
-
-    private static String toHex(javafx.scene.paint.Color c) {
-        return String.format(
-                "#%02X%02X%02X",
-                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
-                        Math.round(c.getBlue() * 255));
-    }
-
     private VBox spellPage() {
         VBox p = page(tr("settings.cat.spellCheck"));
         Card main = card(p, null);
@@ -3856,6 +3729,7 @@ public class SettingsWindow {
 
     /** EDITOR ▸ TODO: in-editor TODO/FIXME highlighting + the per-pattern editor. */
     private VBox todoPage() {
+        todoSettings = new TodoSettingsPane(config::getSettings, this::apply);
         VBox p = page(tr("settings.cat.todo"));
         Card todoHl = card(p, tr("settings.section.todo"));
         checkRow(
@@ -3864,77 +3738,20 @@ public class SettingsWindow {
                 todoHighlightCheck,
                 tr("settings.todoSyntax"),
                 "todo fixme highlight patterns tags comments annotations");
-        cardRow(todoHl, Category.TODO, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
+        cardRow(todoHl, Category.TODO, todoSettings.patternsEditor(), "todo fixme pattern regex color add remove edit");
         Card partColors = card(p, tr("settings.section.todoPartColors"));
         cardRow(
                 partColors,
                 Category.TODO,
-                todoPartColorsEditor(),
+                todoSettings.partColorsEditor(),
                 "todo tag priority critical high medium low part color");
         return p;
     }
 
-    /** The five per-part color pickers ({@code [tag]} + the four {@code (priority)} levels) for a structured
-     *  TODO comment; each writes its {@code Settings} field and applies live. */
-    private javafx.scene.Node todoPartColorsEditor() {
-        Settings s = config.getSettings();
-        todoTagColorPicker =
-                partColorPicker(s.getTodoTagColor(), c -> config.getSettings().setTodoTagColor(c));
-        todoCriticalColorPicker = partColorPicker(
-                s.getTodoPriorityCriticalColor(), c -> config.getSettings().setTodoPriorityCriticalColor(c));
-        todoHighColorPicker = partColorPicker(
-                s.getTodoPriorityHighColor(), c -> config.getSettings().setTodoPriorityHighColor(c));
-        todoMediumColorPicker = partColorPicker(
-                s.getTodoPriorityMediumColor(), c -> config.getSettings().setTodoPriorityMediumColor(c));
-        todoLowColorPicker = partColorPicker(
-                s.getTodoPriorityLowColor(), c -> config.getSettings().setTodoPriorityLowColor(c));
-        // A GridPane, not a row of HBoxes: the labels differ in width ("Tag" vs "Critical priority") and in
-        // every locale, so a per-row minimum width leaves the pickers ragged the moment one label outgrows
-        // it. A shared first column sizes itself to the widest label, whatever that turns out to be.
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(8);
-        grid.setVgap(6);
-        addPartColorRow(grid, 0, tr("settings.todo.part.tag"), todoTagColorPicker);
-        addPartColorRow(grid, 1, tr("settings.todo.part.critical"), todoCriticalColorPicker);
-        addPartColorRow(grid, 2, tr("settings.todo.part.high"), todoHighColorPicker);
-        addPartColorRow(grid, 3, tr("settings.todo.part.medium"), todoMediumColorPicker);
-        addPartColorRow(grid, 4, tr("settings.todo.part.low"), todoLowColorPicker);
-        return grid;
-    }
-
-    private javafx.scene.control.ColorPicker partColorPicker(String web, java.util.function.Consumer<String> setter) {
-        javafx.scene.control.ColorPicker cp = new javafx.scene.control.ColorPicker(parseColor(web));
-        cp.setPrefWidth(56);
-        cp.valueProperty().addListener((o, a, b) -> {
-            setter.accept(toHex(b));
-            apply();
-        });
-        return cp;
-    }
-
-    private static void addPartColorRow(
-            javafx.scene.layout.GridPane grid, int row, String label, javafx.scene.control.ColorPicker picker) {
-        Label l = new Label(label);
-        grid.add(l, 0, row);
-        grid.add(picker, 1, row);
-        javafx.scene.layout.GridPane.setValignment(l, javafx.geometry.VPos.CENTER);
-    }
-
     /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
     public void syncTodoPartColors() {
-        Settings s = config.getSettings();
-        quietly(() -> {
-            setPicker(todoTagColorPicker, s.getTodoTagColor());
-            setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
-            setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
-            setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
-            setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
-        });
-    }
-
-    private static void setPicker(javafx.scene.control.ColorPicker picker, String web) {
-        if (picker != null) {
-            picker.setValue(parseColor(web));
+        if (todoSettings != null) {
+            todoSettings.syncPartColors();
         }
     }
 
@@ -8639,7 +8456,7 @@ public class SettingsWindow {
             }
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
-            rebuildTodoRows();
+            todoSettings.load();
             rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
@@ -9339,7 +9156,7 @@ public class SettingsWindow {
             }
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
-            rebuildTodoRows();
+            todoSettings.rebuildRows();
             rebuildMarkdownLintRules();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
