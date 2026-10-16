@@ -637,6 +637,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public RegisterCommands registers() {
+        return mc.registers;
+    }
+
+    @Override
     public void saveAll() {
         mc.fileWorkflows.saveAll();
     }

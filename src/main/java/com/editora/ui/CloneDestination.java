@@ -16,6 +16,9 @@ import com.editora.config.PathKeys;
  * folder but not the folders above it, so a missing parent is created here; and git accepts a target that
  * exists as long as it is an empty folder, so that is accepted too.
  *
+ * <p>On a remote host the text is a path there ({@code base} is on the host's file system, {@code userHome}
+ * the account's home there), and checking or creating folders is SFTP: call it off the FX thread.
+ *
  * @param path the absolute target, or {@code null} when it cannot be used
  * @param errorKey the message key saying why not ({@code null} on success); its one argument is {@link #shown}
  * @param shown the path (or the raw text) to name in that message
@@ -29,7 +32,7 @@ record CloneDestination(Path path, String errorKey, String shown) {
     /** Resolves and validates the target without touching the disk beyond reading it. */
     static CloneDestination resolve(String text, Path base, String userHome) {
         String typed = text == null ? "" : text.strip();
-        Path target = PathKeys.resolveUserInput(typed, base, userHome);
+        Path target = PathKeys.resolveUserInputOn(typed, base, userHome);
         if (target == null || target.getParent() == null) {
             return new CloneDestination(null, "status.clone.invalidDest", typed);
         }

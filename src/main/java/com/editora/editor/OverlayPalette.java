@@ -23,6 +23,8 @@ final class OverlayPalette {
 
     /** Contrast a faint, decorative marker must reach to be visible at all without competing with text. */
     static final double SUBTLE = 3.0;
+    /** Contrast of a structural hint drawn across many lines (indent guides): there, but well behind text. */
+    static final double GUIDE = 1.45;
     /** Contrast of a non-text indicator (squiggle, match border). */
     static final double INDICATOR = 3.0;
     /** Contrast of text the user reads (inline debug values). */
@@ -37,7 +39,8 @@ final class OverlayPalette {
             Color info,
             Color searchMatch,
             Color searchActive,
-            Color searchActiveBorder) {}
+            Color searchActiveBorder,
+            Color indentGuide) {}
 
     private static Color cachedFor;
     private static Colors cached;
@@ -59,7 +62,8 @@ final class OverlayPalette {
                 reach(Color.web(dark ? "#5c9ce6" : "#2f73c9"), ground, INDICATOR),
                 Color.web("#ffd54f", dark ? 0.30 : 0.40),
                 Color.web("#ff9800", dark ? 0.45 : 0.55),
-                reach(Color.web(dark ? "#ff9800" : "#c2410c"), ground, INDICATOR));
+                reach(Color.web(dark ? "#ff9800" : "#c2410c"), ground, INDICATOR),
+                reach(ground.interpolate(ink(ground), 0.08), ground, GUIDE));
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */

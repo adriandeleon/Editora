@@ -18,6 +18,32 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /** Path identity + store-keying decisions (the bug-prone canonical-vs-normalized matching). */
 class PathKeysTest {
 
+    /**
+     * A folder typed for a remote host (the clone form, git init) is a path on that host's file system: an
+     * absolute one names the host's folder, not this machine's, and {@code ~} is the home there. A zip file
+     * system stands in for the host's.
+     */
+    @Test
+    void aPathTypedForAnotherFileSystemIsOnThatFileSystem(@TempDir Path tmp) throws IOException {
+        try (var zip = java.nio.file.FileSystems.newFileSystem(tmp.resolve("host.zip"), Map.of("create", "true"))) {
+            Path base = zip.getPath("/srv/projects");
+
+            Path absolute = PathKeys.resolveUserInputOn("/opt/app", base, "/home/ana");
+            Path relative = PathKeys.resolveUserInputOn("lib/../tool", base, "/home/ana");
+            Path home = PathKeys.resolveUserInputOn("~/src/x", base, "/home/ana");
+
+            assertEquals(zip, absolute.getFileSystem());
+            assertEquals("/opt/app", absolute.toString());
+            assertEquals("/srv/projects/tool", relative.toString());
+            assertEquals("/home/ana/src/x", home.toString());
+            assertNull(PathKeys.resolveUserInputOn("~/x", base, null), "no home known: no guess");
+            assertNull(PathKeys.resolveUserInputOn("  ", base, "/home/ana"));
+        }
+        // On this machine's file system it is resolveUserInput, unchanged.
+        assertEquals(
+                PathKeys.resolveUserInput("~/x", tmp, "/home/me"), PathKeys.resolveUserInputOn("~/x", tmp, "/home/me"));
+    }
+
     @Test
     void canonicalResolvesSymlinkSoServerDiagnosticsMatchTheBuffer(@TempDir Path tmp) throws IOException {
         // A language server reports diagnostics under the file's real path (e.g. /private/tmp/… for a

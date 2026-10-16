@@ -155,6 +155,7 @@ final class MenuBarModel {
                                 "edit.duplicateLine",
                                 "edit.moveLineUp",
                                 "edit.moveLineDown",
+                                "edit.deleteLine",
                                 SEPARATOR,
                                 "edit.stringOps",
                                 "edit.completion")),

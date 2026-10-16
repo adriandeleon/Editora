@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
 import org.eclipse.lsp4j.ClientCapabilities;
@@ -342,7 +343,7 @@ final class LanguageServerSession implements LanguageClient {
                 pb.directory(root.toFile());
                 ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
                 pb.command(JavaServerEnvironment.configure(serverId, pb.command(), pb.environment()));
-                process = pb.start();
+                process = BusyExecutable.start(pb);
             }
             if (disposed) {
                 // The session was disposed while we were forking (e.g. the window closed) — kill the just-forked

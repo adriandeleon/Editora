@@ -46,6 +46,7 @@ import com.editora.editops.Commenter;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
+import com.editora.editops.MultiTab;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
@@ -589,6 +590,8 @@ public class EditorBuffer implements TabContent {
     private final Minimap minimap = new Minimap(area);
     /** Lazily attached when "show whitespace" first turns on — see {@link #whitespace()}. */
     private WhitespaceOverlay whitespace;
+    /** Lazily attached when indent guides first turn on — see {@link #indentGuides()}. */
+    private IndentGuideOverlay indentGuides;
     /** Eager: spell checking is on by default for prose and for the comments and strings of code. */
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentTextSnapshot);
 
@@ -885,7 +888,12 @@ public class EditorBuffer implements TabContent {
     /** The file's own line ending: detected on load or chosen by a conversion. The document holds bare LF. */
     private String lineEnding = LineEndings.LF;
 
-    private Integer rulerColumnOverride; // null = default 80; EditorConfigProperties.OFF = hide
+    private Integer
+            rulerColumnOverride; // .editorconfig max_line_length: null = none; EditorConfigProperties.OFF = hide
+    /** The ruler columns from Settings (see {@link RulerColumns#resolve}): the global list and per-language lists. */
+    private List<Integer> rulerColumns = List.of(80);
+
+    private java.util.Map<String, List<Integer>> languageRulers = java.util.Map.of();
     private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
     private String charsetOverride; // EditorConfig charset to write; null = keep detected
     /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
@@ -1753,7 +1761,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private void installOverlays() {
-        columnRuler.endYProperty().bind(root.heightProperty());
+        columnRuler.heightProperty().bind(root.heightProperty());
         // Re-measure the ruler whenever the rendered text moves: horizontal scroll, and any layout
         // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
         // runLater so we never query character bounds synchronously inside the layout pass — doing
@@ -2256,6 +2264,28 @@ public class EditorBuffer implements TabContent {
             todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), OverlayLayer.TODO);
         }
         return todoOverlay;
+    }
+
+    private IndentGuideOverlay indentGuides() {
+        if (indentGuides == null) {
+            IndentGuideOverlay made = new IndentGuideOverlay(
+                    area,
+                    () -> "\t".equals(indentUnit()) ? tabSize : indentUnit().length(),
+                    () -> tabSize);
+            if (fontApplied) {
+                made.setFont(fontFamily, fontSize);
+            }
+            made.setSuppressed(largeFile);
+            indentGuides = attachLazyOverlay(made, OverlayLayer.INDENT_GUIDE);
+        }
+        return indentGuides;
+    }
+
+    /** Shows or hides the indent guides (VS Code's vertical lines at each indentation level). */
+    public void setIndentGuidesVisible(boolean visible) {
+        if (visible || indentGuides != null) { // turning them off on a buffer that never had them builds nothing
+            indentGuides().setActive(visible);
+        }
     }
 
     private WhitespaceOverlay whitespace() {
@@ -5274,6 +5304,83 @@ public class EditorBuffer implements TabContent {
         return carets != null && carets.undoLastCaret();
     }
 
+    /** The VS Code line commands ({@link com.editora.editops.LineCommands}). */
+    public enum LineCommand {
+        INSERT_BELOW,
+        INSERT_ABOVE,
+        DELETE,
+        SELECT,
+        INDENT,
+        OUTDENT
+    }
+
+    /**
+     * Runs a line command at every caret of the focused area — the primary and the extras — as one undoable
+     * edit. Collapsed folds on the lines it changes are opened first, so no hidden line is edited unseen.
+     * False when the area cannot take it (read-only, a huge file for the indent commands).
+     */
+    public boolean lineCommand(LineCommand command) {
+        CodeArea a = getFocusedArea();
+        if (command != LineCommand.SELECT && !a.isEditable()) {
+            return false;
+        }
+        MultiCarets carets = activeCarets();
+        if (command != LineCommand.SELECT && a == area) {
+            for (int[] sel :
+                    carets != null ? carets.selections() : List.of(new int[] {a.getAnchor(), a.getCaretPosition()})) {
+                folds.expandHeaderAt(Math.min(sel[0], sel[1]));
+                folds.expandHeaderAt(Math.max(sel[0], sel[1]));
+            }
+        }
+        return atEachCaret((text, s, e) -> switch (command) {
+            case INSERT_BELOW ->
+                com.editora.editops.LineCommands.insertBelow(
+                        text, s, e, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, indentUnit()));
+            case INSERT_ABOVE -> com.editora.editops.LineCommands.insertAbove(text, s, e);
+            case DELETE -> com.editora.editops.LineCommands.deleteLines(text, s, e);
+            case SELECT -> com.editora.editops.LineCommands.selectLine(text, s, e);
+            case INDENT, OUTDENT ->
+                com.editora.editops.LineCommands.indentLines(
+                        text, s, e, command == LineCommand.OUTDENT, (from, to, back) -> tabEdit(from, to, back));
+        });
+    }
+
+    /** One caret's edit: its change and its selection afterwards, given the text and the caret's selection. */
+    @FunctionalInterface
+    public interface CaretEdit {
+        Indenter.TabEdit edit(String text, int selStart, int selEnd);
+    }
+
+    /**
+     * Runs {@code edit} at every caret of the focused area — the primary and the extras, or the one caret when
+     * multiple cursors are off — as one undoable edit. False when {@code edit} declines a caret (returns null);
+     * an exception it throws propagates before anything changes.
+     */
+    public boolean atEachCaret(CaretEdit edit) {
+        CodeArea a = getFocusedArea();
+        MultiCarets carets = activeCarets();
+        String text = a.getText();
+        MultiTab.CaretEdits edits = (s, e, ignored) -> edit.edit(text, s, e);
+        boolean done;
+        if (carets != null) {
+            done = carets.applyAtEachCaret(edits, false);
+        } else { // multiple cursors off: the same plan for the one caret
+            MultiTab.Plan plan = MultiTab.plan(List.of(new int[] {a.getAnchor(), a.getCaretPosition()}), false, edits);
+            done = plan != null;
+            if (done) {
+                for (MultiTab.Change c : plan.changes()) {
+                    a.replaceText(c.from(), c.to(), c.replacement()); // at most one: a single caret
+                }
+                a.selectRange(
+                        plan.ranges().get(0).anchor(), plan.ranges().get(0).caret());
+            }
+        }
+        if (done) {
+            a.requestFollowCaret();
+        }
+        return done;
+    }
+
     /** Adds a caret on the line above the topmost caret. */
     public void addCaretAbove() {
         addCaretOnNextLine(false);
@@ -6325,6 +6432,9 @@ public class EditorBuffer implements TabContent {
         if (whitespace != null) {
             whitespace.setFont(family, size); // an overlay attached later takes the font from the fields
         }
+        if (indentGuides != null) {
+            indentGuides.setFont(family, size);
+        }
         spell.geometryChanged();
         if (inlineValues != null) {
             inlineValues.setFont(family, size);
@@ -6347,8 +6457,30 @@ public class EditorBuffer implements TabContent {
         if (visible) {
             markRulerInputsDirty();
         } else {
-            columnRuler.place(null, 0);
+            columnRuler.hide();
         }
+    }
+
+    /**
+     * The ruler columns Settings asks for: {@code global}, or the list {@code perLanguage} has for this buffer's
+     * language. An {@code .editorconfig} {@code max_line_length} still replaces the first (see
+     * {@link RulerColumns#resolve}). Re-measures only when they changed.
+     */
+    public void setRulerColumns(List<Integer> global, java.util.Map<String, List<Integer>> perLanguage) {
+        List<Integer> g = global == null ? List.of() : List.copyOf(global);
+        java.util.Map<String, List<Integer>> l =
+                perLanguage == null ? java.util.Map.of() : java.util.Map.copyOf(perLanguage);
+        if (g.equals(rulerColumns) && l.equals(languageRulers)) {
+            return; // runs for every buffer on every settings apply
+        }
+        rulerColumns = g;
+        languageRulers = l;
+        markRulerInputsDirty();
+    }
+
+    /** The columns the rulers stand at now (see {@link RulerColumns#resolve}). */
+    List<Integer> rulerColumnsInForce() {
+        return RulerColumns.resolve(rulerColumns, languageRulers, language, rulerColumnOverride);
     }
 
     /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
@@ -7185,10 +7317,11 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Positions the ruler at the 80-column boundary, drawn whether or not any text reaches column 80.
-     * The boundary is column 0's on-screen x plus 80 advances of the editor font (see {@link #columnRulerX}),
-     * so it is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
-     * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
+     * Positions the rulers at their columns (80 unless Settings or {@code .editorconfig} say otherwise), drawn
+     * whether or not any text reaches them. Each is column 0's on-screen x plus that many advances of the
+     * editor font (see {@link #columnZeroX}), so it is exact regardless of which glyphs are present; one
+     * measure serves them all. A ruler is hidden when its column falls outside the visible text width (the
+     * window is too narrow, or the text is scrolled past it).
      */
     /**
      * How many times the ruler has been measured, app-wide. A test seam, not state the editor reads: how
@@ -7203,17 +7336,16 @@ public class EditorBuffer implements TabContent {
     private void measureAndPlaceRuler() {
         RULER_MEASURES_FOR_TEST.incrementAndGet();
         lastRulerViewportWidth = area.getWidth();
-        if (!rulerVisible
-                || rulerColumnOverride != null
-                        && rulerColumnOverride == com.editora.editorconfig.EditorConfigProperties.OFF) {
-            columnRuler.place(null, 0);
+        List<Integer> columns = rulerColumnsInForce();
+        if (!rulerVisible || columns.isEmpty()) {
+            columnRuler.hide();
             rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
             return;
         }
         boolean inputsChanged = rulerInputsDirty;
-        Double x = columnRulerX();
+        Double x = columnZeroX();
         // Clear the pending flag only on a measure that actually produced a position. Before the area's
-        // first layout the geometry is unmeasurable and columnRulerX returns null; clearing the flag there
+        // first layout the geometry is unmeasurable and columnZeroX returns null; clearing the flag there
         // would leave the gate waiting for a viewport WIDTH change that may never come, and the ruler would
         // stay hidden for the life of the buffer.
         if (x != null) {
@@ -7222,7 +7354,7 @@ public class EditorBuffer implements TabContent {
                 confirmRulerAfterLayout();
             }
         }
-        columnRuler.place(x, scrollPane.getWidth());
+        columnRuler.place(x, columnAdvance.of(fontFamily, fontSize), columns, scrollPane.getWidth());
     }
 
     /**
@@ -7262,13 +7394,12 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Root-local x of column 80: where column 0 starts on screen (the left edge of the first character of any
-     * visible line — a property of the gutter and the horizontal scroll, not of the text) plus 80 columns of
-     * the editor font's own advance (see {@link ColumnAdvance}; never derived from the visible text, which a
-     * short line, a tab or a wide glyph skewed). Returns {@code null} when no visible line has a character.
+     * Root-local x of column 0: the left edge of the first character of any visible line — a property of the
+     * gutter and the horizontal scroll, not of the text. A ruler column is this plus that many advances of the
+     * editor font (see {@link ColumnAdvance}; never derived from the visible text, which a short line, a tab or
+     * a wide glyph skewed). Returns {@code null} when no visible line has a character.
      */
-    private Double columnRulerX() {
-        int col = rulerColumnOverride != null && rulerColumnOverride > 0 ? rulerColumnOverride : 80;
+    private Double columnZeroX() {
         try {
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
@@ -7278,7 +7409,7 @@ public class EditorBuffer implements TabContent {
                 }
                 Bounds start = caretBounds(p, 0);
                 if (start != null) {
-                    return start.getMinX() + col * columnAdvance.of(fontFamily, fontSize);
+                    return start.getMinX();
                 }
             }
         } catch (RuntimeException ignored) {
@@ -7495,6 +7626,9 @@ public class EditorBuffer implements TabContent {
         this.grammar = g;
         folds.setLanguage(language);
         wrap.languageChanged(language); // prose wraps by one preference, code by another
+        if (!languageRulers.isEmpty()) {
+            markRulerInputsDirty(); // the language may have rulers of its own
+        }
         // Which words are checked, which lines are code, and whether this language is checked at all all
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
         // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
@@ -7541,6 +7675,9 @@ public class EditorBuffer implements TabContent {
         TabStops.apply(viewHost, tabSize);
         minimap.setTabSize(tabSize);
         spell.geometryChanged();
+        if (indentGuides != null) {
+            indentGuides.refresh(); // where a tab's guides fall moved
+        }
     }
 
     public int getTabSize() {
@@ -7674,6 +7811,9 @@ public class EditorBuffer implements TabContent {
         spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
         if (whitespace != null) {
             whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
+        }
+        if (indentGuides != null) {
+            indentGuides.setSuppressed(large); // and the indent guides
         }
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();

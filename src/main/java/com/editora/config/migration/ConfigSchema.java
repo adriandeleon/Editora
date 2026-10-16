@@ -239,7 +239,10 @@ public enum ConfigSchema {
                     // v121→122: remoteExecution is on by default. Before, it was a switch with nothing behind
                     // it (never in a release), so a stored false is the old default, not a choice: it is
                     // turned on once. Each host is still asked before anything runs on it.
-                    Map.entry(121, (Migration) ConfigMigrations::remoteExecutionOn)),
+                    Map.entry(121, (Migration) ConfigMigrations::remoteExecutionOn),
+                    // v122→123: + rulers / languageRulers / showIndentGuides (additive). A missing rulers list
+                    // is the old single ruler at 80; indent guides are new and on.
+                    Map.entry(122, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

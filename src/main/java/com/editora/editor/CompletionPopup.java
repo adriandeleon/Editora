@@ -38,7 +38,11 @@ public final class CompletionPopup {
     private static final int VISIBLE_ROWS = 9;
     private static final double ROW_HEIGHT = 24;
     private static final double MIN_WIDTH = 360;
-    private static final double MAX_WIDTH = 760;
+    // A jdtls method row carries its whole parameter list in the label (CompletionMapper appends
+    // labelDetails.detail); the detail column is only the return type. Measured against real jdtls results,
+    // 760px cut off about one row in eleven (Files.find, Map.merge); 1100px fits all but the longest
+    // Collectors.toMap overloads.
+    private static final double MAX_WIDTH = 1100;
     private static final double DETAIL_MAX_WIDTH = 380;
     // Cell geometry used to size the popup to its widest row (icon + gaps + paddings + label↔detail gap).
     private static final double ICON_WIDTH = 18;
@@ -234,7 +238,7 @@ public final class CompletionPopup {
      * measured with the popup's font sizes (label 13px, detail 11px) plus geometry slack; beyond the cap
      * the detail Label ellipsizes.
      */
-    private static double contentWidth(List<Completion> items) {
+    static double contentWidth(List<Completion> items) {
         Font labelFont = Font.font(13);
         Font detailFont = Font.font(11);
         Text measure = new Text();

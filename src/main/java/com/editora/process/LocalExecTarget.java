@@ -40,7 +40,7 @@ final class LocalExecTarget implements ExecTarget {
         if (spec.discardStderr()) {
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         }
-        return pb.start();
+        return BusyExecutable.start(pb);
     }
 
     @Override

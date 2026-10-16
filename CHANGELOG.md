@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Emacs registers.** In the Emacs keymap:
+  - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
+  - `C-x r i` inserts a register's text, leaving the cursor before it.
+  - `C-x r SPC` saves the cursor's file and position in a register.
+  - `C-x r j` jumps back to that position, opening the file if it is closed.
+
+  Each command takes the register's name as the next key; Escape cancels. A saved position follows edits
+  to its file while the file is open. `Edit: List Registers` shows them all. Registers last for the
+  session, one set per window, and every command is also in the palette.
+- **More text tools, in the String Manipulation picker and the command palette.**
+  - **Encode and decode the selected text:** Base64, URL encoding, JSON string escapes, HTML entities, and
+    `\uXXXX` escapes. They work on every selection at once. A decode that cannot read one selection changes
+    nothing.
+  - **`Edit: Increment Number` / `Edit: Decrement Number`:** change the number at each cursor, or the next
+    one on its line. They handle negatives, zero padding (`007` → `008`) and hexadecimal (`0x0f` → `0x10`);
+    `C-u N` steps by N. In Emacs they are bound to `C-c =` and `C-c -`.
+  - **`Edit: Keep Lines Matching…` / `Edit: Remove Lines Matching…`:** filter lines with a regular
+    expression.
+  - **Two more sorts:** case-sensitive, and natural order with duplicates removed.
+- **Several rulers, rulers per language, and indent guides.** Settings → Editor now takes a list of ruler
+  columns (`80, 120`) and, per language, lists that replace it (`java: 100; python: 79, 88`; a language with
+  nothing after its colon has no rulers). The palette has `Editor: Set Rulers…` and `Editor: Set Rulers for
+  This Language…`. An `.editorconfig` `max_line_length` still sets the first ruler, and `off` still hides them.
+  **Indent guides** — faint vertical lines at each indentation level, carried through blank lines — are on by
+  default. Turn them off with `View: Toggle Indent Guides` or in Settings → Editor. They are hidden in Zen and
+  Simple UI and in large-file mode, follow the theme, and skip folded lines. The ruler toggle is now
+  `View: Toggle Rulers`.
+- **Line commands, at every cursor.**
+  - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
+    the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
+  - `Edit: Delete Line` (`Ctrl+Shift+K`, IntelliJ's `Ctrl+Y`) deletes the line or every selected line
+    without touching the clipboard or the kill ring. Emacs' Kill Whole Line is unchanged.
+  - `Edit: Select Line` (`Ctrl+L`) selects the line, and grows by a line each time.
+  - `Edit: Indent Lines` / `Edit: Outdent Lines` (`Ctrl+]` / `Ctrl+[`) shift the line or selection by the
+    file's indent unit, wherever the cursor is.
+
+  Each runs at every cursor as one undo step, opens a collapsed fold before changing it, and renumbers an
+  ordered Markdown list it changes. Keys are in the VS Code and Sublime keymaps, partly in CUA and IntelliJ
+  (`⌘` on macOS); Delete Line is also in the Edit menu.
 - **More ways to place multiple cursors.**
   - `Edit: Split Selection into Lines` turns each selected line into its own selection (Sublime's
     `Ctrl+Shift+L`; also in the Edit menu).
@@ -98,8 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blame, and staging (whole files or single hunks), committing, branches, stashes and fetch / pull / push. It
   is the host's own `git`, over the same SSH connection, with the host's credentials. Editora asks once per host
   before running anything there. The GitHub tool window and commands use the host's own `gh` for such a
-  repository, signed in there. Cloning onto a remote host and auto-fetch are not available for remote folders
-  yet.
+  repository, signed in there. Git: Clone in a remote project's window clones on that host, by its git, into a
+  folder next to the project (typed as the host names it, `~` its home), and Git: Init creates a repository
+  there. Auto-fetch is not available for remote folders yet.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers
@@ -213,6 +253,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Recent Files dropdown fits its names and asks before removing one.** The dropdown is as wide as the
+  longest file name, up to a limit, so names are no longer cut short. The project labels line up in one
+  column. Clicking a row's trash icon now asks before removing that file from the list, and the question
+  shows the full path, so two files with the same name are easy to tell apart.
 - **HTTP Client: what a request sends is closer to the JetBrains format.** Lines starting with `#` or `//`
   inside a request body are comments and are no longer sent (shell or Markdown bodies that need such lines can
   go in a `< ./file`). Directives (`# @no-redirect`, `# @timeout`) count only above the request line, and
@@ -328,6 +372,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Personal Notes colours match Bookmarks.** Project headers in the Personal Notes tree are accent-coloured
+  again and file headers are muted, as in Bookmarks. The two panels now share one set of style rules.
+- **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
+  long method signatures such as `Files.find(…)` or `Map.merge(…)` are no longer cut off. It still sizes itself to
+  the widest row, so short lists stay narrow.
+- **A program written a moment ago no longer fails to start with "Text file busy".** On Linux, running a script
+  you had just saved could fail when Editora happened to be starting another process while the file was being
+  written. The Run tool window then showed `error: 26 (Text file busy)`, and the Doctor and the tool checks
+  reported such a program as not installed. The same could stop a build through a wrapper script that had just
+  changed (`./gradlew`, `./mvnw`), or a language server, debug adapter or AI agent that had just been installed.
+  Editora now waits briefly and tries again.
 - **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
   whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
   to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and

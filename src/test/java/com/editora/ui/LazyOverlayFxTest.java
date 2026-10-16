@@ -45,6 +45,7 @@ class LazyOverlayFxTest {
             "aceJump",
             "snippetOverlay",
             "whitespace",
+            "indentGuides",
             "mdLintOverlay",
             "inlineValues",
             "todoOverlay",
@@ -171,6 +172,8 @@ class LazyOverlayFxTest {
             b.setTodoHighlightEnabled(false);
             b.setTodoHighlightEnabled(true);
             FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of()); // an empty scan result
+            b.setIndentGuidesVisible(false);
+            b.setTabSize(2); // refreshes the indent guides, if any
             b.setLargeFile(true); // suppresses whitespace markers — on an overlay that does not exist
             b.setLargeFile(false);
             b.setFont("Monospaced", 13); // re-fonts the whitespace and inline-value overlays, if any
@@ -190,6 +193,7 @@ class LazyOverlayFxTest {
             // Deliberately top-down and interleaved: the stack must not depend on this sequence.
             b.setInlineValues(Map.of("alpha", "1"), 0);
             b.setWhitespaceVisible(true);
+            b.setIndentGuidesVisible(true);
             b.setLspActive(true); // not an LSP language: stays off, so no squiggles and no stripe
             b.setSearchMatches(SearchMatches.of(0, 5), 0);
             FxTestSupport.call(b, "mdLintOverlay", new Class[] {});
@@ -208,6 +212,7 @@ class LazyOverlayFxTest {
         assertEquals(
                 List.of(
                         "VirtualizedScrollPane",
+                        "IndentGuideOverlay",
                         "NoteHighlightOverlay",
                         "SearchHighlightOverlay",
                         "OccurrenceHighlightOverlay",

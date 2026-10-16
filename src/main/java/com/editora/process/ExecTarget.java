@@ -51,6 +51,15 @@ public interface ExecTarget {
     }
 
     /**
+     * The account's home folder on this target, as Editora reaches it, for a typed {@code ~}; {@code null}
+     * when the target does not say (the local target: use {@code user.home}). May ask the target: call it off
+     * the FX thread.
+     */
+    default Path homeDir() throws IOException {
+        return null;
+    }
+
+    /**
      * The latest instant on this machine's clock that {@code targetMillis}, a time read from the target's
      * clock (a file's modification time), can stand for; {@code -1} when the target's clock is not known. A
      * caller asking "was this file written before that moment?" can trust a yes. The local target shares

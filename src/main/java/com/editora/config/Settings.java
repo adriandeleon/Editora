@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 122;
+    public static final int SCHEMA_VERSION = 123;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -126,6 +126,13 @@ public class Settings {
     private String uiLanguage = "";
 
     private boolean showColumnRuler = true;
+    /** The ruler columns (see {@code editor/RulerColumns}); {@code .editorconfig max_line_length} replaces the first. */
+    private java.util.List<Integer> rulers = new java.util.ArrayList<>(java.util.List.of(80));
+    /** Ruler columns per language id, used instead of {@link #rulers} for that language; an empty list = none. */
+    private java.util.Map<String, java.util.List<Integer>> languageRulers = new java.util.LinkedHashMap<>();
+    /** Faint vertical lines at each indentation level of the text. */
+    private boolean showIndentGuides = true;
+
     private boolean highlightCurrentLine = true;
     private boolean showLineNumbers = true;
     private boolean showMinimap = true;
@@ -1308,6 +1315,32 @@ public class Settings {
         } else {
             setAiCompletionModel(value);
         }
+    }
+
+    public java.util.List<Integer> getRulers() {
+        return rulers;
+    }
+
+    public void setRulers(java.util.List<Integer> rulers) {
+        this.rulers = rulers == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(rulers);
+    }
+
+    public java.util.Map<String, java.util.List<Integer>> getLanguageRulers() {
+        return languageRulers;
+    }
+
+    public void setLanguageRulers(java.util.Map<String, java.util.List<Integer>> languageRulers) {
+        this.languageRulers = languageRulers == null
+                ? new java.util.LinkedHashMap<>()
+                : new java.util.LinkedHashMap<>(languageRulers);
+    }
+
+    public boolean isShowIndentGuides() {
+        return showIndentGuides;
+    }
+
+    public void setShowIndentGuides(boolean showIndentGuides) {
+        this.showIndentGuides = showIndentGuides;
     }
 
     public boolean isShowColumnRuler() {

@@ -895,6 +895,22 @@ final class EditingCoordinator {
         return true;
     }
 
+    /**
+     * A line command — Insert Line Below / Above, Delete Line, Select Line, Indent / Outdent Lines — at every
+     * caret of the active buffer. An edit that changes a Markdown list numbered in sequence renumbers it.
+     */
+    void lineCommand(EditorBuffer.LineCommand command) {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (command == EditorBuffer.LineCommand.SELECT) {
+            buffer.lineCommand(command);
+        } else if (activeEditable()) {
+            renumberingList(() -> buffer.lineCommand(command));
+        }
+    }
+
     /** Manually opens the autocomplete popup for the active buffer (the {@code edit.completion} command). */
     void triggerCompletion() {
         EditorBuffer b = host.activeBuffer();
@@ -1911,69 +1927,28 @@ final class EditingCoordinator {
         }
         CodeArea area = buffer.getFocusedArea();
         host.setStatus(tr("status.zapToChar"));
-        new ZapSession(buffer, area).arm();
+        ReadCharSession.read(area, () -> host.setStatus(""), c -> zapTo(buffer, area, c));
     }
 
-    /**
-     * The node a modal key session (query-replace, zap-to-char) listens on: the area's parent. JavaFX runs
-     * <em>every</em> filter registered on one node, in registration order and whether or not an earlier one
-     * consumed the event, so a session filter added to the area itself ran after the buffer's own typing
-     * assists — auto-indent, smart Backspace/Tab and auto-close had already edited the document with the
-     * key the session meant to own. A filter on an ancestor runs first, and consuming there ends dispatch.
-     */
+    /** The node a modal key session (query-replace, zap-to-char) listens on; see {@link ReadCharSession}. */
     private static javafx.scene.Node keyHost(CodeArea area) {
-        return area.getParent() != null ? area.getParent() : area;
+        return ReadCharSession.keyHost(area);
     }
 
-    /** The armed half of {@code zap-to-char}: takes the next typed character, or stands down. */
-    private final class ZapSession implements javafx.event.EventHandler<javafx.scene.input.KeyEvent> {
-        private final EditorBuffer buffer;
-        private final CodeArea area;
-        private final javafx.scene.Node keyHost;
-        // Moving the caret or leaving the editor cancels, as any non-character key does in Emacs: an armed
-        // zap that survived navigation deleted text at the next ordinary keystroke, much later.
-        private final javafx.beans.InvalidationListener cancel = obs -> disarm();
-
-        ZapSession(EditorBuffer buffer, CodeArea area) {
-            this.buffer = buffer;
-            this.area = area;
-            this.keyHost = keyHost(area);
+    /** The second half of {@code zap-to-char}: kill up to and including the next {@code ch}. */
+    private void zapTo(EditorBuffer buffer, CodeArea area, char ch) {
+        com.editora.editops.EmacsEdits.Edit edit =
+                com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch);
+        if (edit == null) {
+            host.setStatus(tr("status.zapNotFound", String.valueOf(ch)));
+            return;
         }
-
-        void arm() {
-            keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-            area.caretPositionProperty().addListener(cancel);
-            area.focusedProperty().addListener(cancel);
-        }
-
-        private void disarm() {
-            keyHost.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-            area.caretPositionProperty().removeListener(cancel);
-            area.focusedProperty().removeListener(cancel);
-            host.setStatus("");
-        }
-
-        @Override
-        public void handle(javafx.scene.input.KeyEvent e) {
-            disarm();
-            e.consume();
-            String ch = e.getCharacter();
-            if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
-                return; // Escape / no printable character: cancel
-            }
-            com.editora.editops.EmacsEdits.Edit edit =
-                    com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
-            if (edit == null) {
-                host.setStatus(tr("status.zapNotFound", ch));
-                return;
-            }
-            boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
-            String killed = area.getText(edit.from(), edit.to());
-            area.replaceText(edit.from(), edit.to(), edit.replacement());
-            area.moveTo(edit.caret());
-            pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
-            deactivateMark();
-        }
+        boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
+        String killed = area.getText(edit.from(), edit.to());
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
+        deactivateMark();
     }
 
     /**
@@ -2078,7 +2053,23 @@ final class EditingCoordinator {
             "edit.shuffleLines",
             "edit.removeDuplicateLines",
             "edit.removeEmptyLines",
-            "edit.trimTrailingWhitespace");
+            "edit.trimTrailingWhitespace",
+            "edit.sortLinesCaseSensitive",
+            "edit.sortLinesUnique",
+            "edit.keepLines",
+            "edit.removeLines",
+            "edit.encode.base64",
+            "edit.decode.base64",
+            "edit.encode.url",
+            "edit.decode.url",
+            "edit.escape.json",
+            "edit.unescape.json",
+            "edit.escape.html",
+            "edit.unescape.html",
+            "edit.escape.unicode",
+            "edit.unescape.unicode",
+            "edit.incrementNumber",
+            "edit.decrementNumber");
 
     /**
      * Applies a pure token transform ({@link com.editora.editops.StringCase} — the case-style
@@ -2241,6 +2232,93 @@ final class EditingCoordinator {
         area.moveTo(Math.min(caret, area.getLength()));
         area.requestFollowCaret();
         host.setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));
+    }
+
+    /**
+     * Encodes, decodes or escapes the text of every selection ({@link com.editora.editops.TextCodecs}), as one
+     * undoable edit; a caret with nothing selected is left as it is. Text a decode cannot read changes
+     * nothing anywhere.
+     */
+    void selectionCodec(java.util.function.UnaryOperator<String> codec) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicBoolean selected = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            buffer.atEachCaret((text, s, e) -> {
+                if (s == e) {
+                    return new com.editora.editops.Indenter.TabEdit(s, s, "", s, e);
+                }
+                selected.set(true);
+                // A decode can produce '\r'; the document stores it as '\n'.
+                String after = com.editora.editor.LineEndings.toLf(codec.apply(text.substring(s, e)));
+                return new com.editora.editops.Indenter.TabEdit(s, e, after, s, s + after.length());
+            });
+        } catch (IllegalArgumentException unreadable) {
+            host.setStatus(tr("status.stringops.cannotDecode"));
+            return;
+        }
+        if (!selected.get()) {
+            host.setStatus(tr("status.stringops.selectFirst"));
+        }
+    }
+
+    /**
+     * Adds {@code delta} to the number at every caret ({@link com.editora.editops.NumberAtCaret}) as one
+     * undoable edit; with {@code C-u N} the command runs N times. A caret with no number on its line is left
+     * where it is.
+     */
+    void changeNumber(long delta) {
+        if (!activeEditable()) {
+            return;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        java.util.concurrent.atomic.AtomicBoolean found = new java.util.concurrent.atomic.AtomicBoolean();
+        buffer.atEachCaret((text, s, e) -> {
+            com.editora.editops.Indenter.TabEdit edit = com.editora.editops.NumberAtCaret.change(text, s, e, delta);
+            if (edit == null) {
+                return new com.editora.editops.Indenter.TabEdit(s, s, "", s, e);
+            }
+            found.set(true);
+            return edit;
+        });
+        if (!found.get()) {
+            host.setStatus(tr("status.stringops.noNumber"));
+        }
+    }
+
+    /**
+     * Keep Lines Matching ({@code keep}) / Remove Lines Matching: prompts for a regular expression, then keeps or
+     * removes the matching lines of the selection — or of the whole buffer — like the other line transforms.
+     */
+    void filterLines(boolean keep) {
+        EditorBuffer buffer = host.activeBuffer();
+        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
+        if (area == null || !activeEditable()) {
+            return;
+        }
+        String title = tr(keep ? "command.edit.keepLines" : "command.edit.removeLines");
+        host.promptText(title, tr("dialog.filterLines.label"), singleLineSelection(area), pattern -> {
+            if (pattern.isEmpty()) {
+                return;
+            }
+            String err = com.editora.editor.SearchMatcher.regexError(pattern);
+            if (err != null) {
+                host.setStatus(tr("find.badRegex", err));
+                return;
+            }
+            java.util.regex.Pattern compiled = java.util.regex.Pattern.compile(pattern);
+            lineTransform(text -> keep
+                    ? com.editora.editops.LineTransforms.keepMatching(text, compiled)
+                    : com.editora.editops.LineTransforms.removeMatching(text, compiled));
+        });
     }
 
     void lineTransform(java.util.function.UnaryOperator<String> op) {

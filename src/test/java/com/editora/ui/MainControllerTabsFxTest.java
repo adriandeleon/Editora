@@ -227,54 +227,47 @@ class MainControllerTabsFxTest {
         Path two = Files.writeString(dir.resolve("two.txt"), "2\n");
         SaveDecisionsFxTest.open(async, fx, one);
         SaveDecisionsFxTest.open(async, fx, two);
+        MenuButton recent = FxTestSupport.field(controller, "recentButton");
         FxTestSupport.runOnFx(() -> {
-            MenuButton recent = FxTestSupport.field(controller, "recentButton");
             FxTestSupport.invoke(controller, "rebuildRecentMenu");
-            List<CustomMenuItem> entries = recent.getItems().stream()
-                    .filter(CustomMenuItem.class::isInstance)
-                    .map(CustomMenuItem.class::cast)
-                    .toList();
             assertEquals(
                     List.of("two.txt", "one.txt"),
-                    entries.stream()
+                    recentEntries(recent).stream()
                             .map(e -> SettingsRig.texts(e.getContent()))
                             .filter(t -> !t.isEmpty())
                             .map(t -> t.get(0))
                             .toList(),
                     "most recent first: " + recent.getItems());
+        });
 
-            Button remove =
-                    SettingsRig.all(entries.get(0).getContent(), Button.class).get(0);
-            Event.fireEvent(
-                    remove,
-                    new MouseEvent(
-                            MouseEvent.MOUSE_PRESSED,
-                            0,
-                            0,
-                            0,
-                            0,
-                            MouseButton.PRIMARY,
-                            1,
-                            false,
-                            false,
-                            false,
-                            false,
-                            true,
-                            false,
-                            false,
-                            false,
-                            false,
-                            false,
-                            null));
+        // The trash icon asks first (after the dropdown closes); declining keeps the entry.
+        List<SettingsRig.Shown> asked = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            pressRemove(recentEntries(recent).get(0));
+            assertEquals(2, fx.shared.recentFiles().getList().size(), "nothing goes before the answer");
+            answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE, asked);
+        });
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(1, asked.size(), "asked once");
+            assertEquals(
+                    tr("dialog.removeRecent.header", "two.txt"), asked.get(0).header());
+            assertEquals(two.toString(), asked.get(0).content(), "the full path tells same-named files apart");
+            assertEquals(2, fx.shared.recentFiles().getList().size(), "declined");
+
+            pressRemove(recentEntries(recent).get(0));
+            answerNextDialog(ButtonBar.ButtonData.OTHER, asked);
+        });
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(2, asked.size());
             assertEquals(List.of(one), List.copyOf(fx.shared.recentFiles().getList()), "only that entry goes");
 
             MenuItem clear = recent.getItems().stream()
                     .filter(i -> tr("tooltip.clearRecent").equals(i.getText()))
                     .findFirst()
                     .orElseThrow();
-            List<SettingsRig.Shown> asked = SettingsRig.answering(ButtonBar.ButtonData.CANCEL_CLOSE, clear::fire);
-            assertEquals(1, asked.size());
-            assertEquals(tr("dialog.clearRecent.header"), asked.get(0).header());
+            List<SettingsRig.Shown> cleared = SettingsRig.answering(ButtonBar.ButtonData.CANCEL_CLOSE, clear::fire);
+            assertEquals(1, cleared.size());
+            assertEquals(tr("dialog.clearRecent.header"), cleared.get(0).header());
             assertEquals(1, fx.shared.recentFiles().getList().size(), "declined");
 
             SettingsRig.inDialog(
@@ -291,6 +284,64 @@ class MainControllerTabsFxTest {
                     SettingsRig.answering(
                             ButtonBar.ButtonData.CANCEL_CLOSE, () -> FxTestSupport.invoke(controller, "onClearRecent")),
                     "nothing to clear, nothing to ask");
+        });
+    }
+
+    private static List<CustomMenuItem> recentEntries(MenuButton recent) {
+        return recent.getItems().stream()
+                .filter(CustomMenuItem.class::isInstance)
+                .map(CustomMenuItem.class::cast)
+                .toList();
+    }
+
+    /** Presses an entry's trash icon the way the mouse does: the remove acts on press, not on release. */
+    private static void pressRemove(CustomMenuItem entry) {
+        Button remove = SettingsRig.all(entry.getContent(), Button.class).get(0);
+        Event.fireEvent(
+                remove,
+                new MouseEvent(
+                        MouseEvent.MOUSE_PRESSED,
+                        0,
+                        0,
+                        0,
+                        0,
+                        MouseButton.PRIMARY,
+                        1,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        null));
+    }
+
+    /**
+     * Answers the dialog the remove button opens. It is shown from a later FX pulse, so the answer is queued
+     * behind it and runs inside the dialog's own event loop.
+     */
+    private static void answerNextDialog(ButtonBar.ButtonData kind, List<SettingsRig.Shown> asked) {
+        javafx.application.Platform.runLater(() -> {
+            for (javafx.stage.Window window : List.copyOf(javafx.stage.Window.getWindows())) {
+                if (window.isShowing()
+                        && window.getScene() != null
+                        && window.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                    asked.add(new SettingsRig.Shown(
+                            window instanceof Stage s ? s.getTitle() : null,
+                            pane.getHeaderText(),
+                            pane.getContentText()));
+                    ((Button) pane.lookupButton(pane.getButtonTypes().stream()
+                                    .filter(type -> type.getButtonData() == kind)
+                                    .findFirst()
+                                    .orElseThrow()))
+                            .fire();
+                    return;
+                }
+            }
         });
     }
 

@@ -531,6 +531,14 @@ final class MultiCarets {
         if (tabEdits == null || !manager.hasExtras() || !area.isEditable()) {
             return false;
         }
+        return applyAtEachCaret(tabEdits, shift);
+    }
+
+    /**
+     * Runs {@code edits} — what one caret's command does to its selection — at every caret, the primary and
+     * the extras, as one undoable edit (see {@link MultiTab#plan}). False when {@code edits} declines a caret.
+     */
+    boolean applyAtEachCaret(MultiTab.CaretEdits edits, boolean shift) {
         syncAnchors();
         List<Extra> extras = extras();
         List<int[]> carets = new ArrayList<>(extras.size() + 1);
@@ -538,7 +546,7 @@ final class MultiCarets {
         for (Extra x : extras) {
             carets.add(new int[] {x.anchor(), x.caret()});
         }
-        MultiTab.Plan plan = MultiTab.plan(carets, shift, tabEdits);
+        MultiTab.Plan plan = MultiTab.plan(carets, shift, edits);
         if (plan == null) {
             return false;
         }

@@ -75,6 +75,10 @@
   "C-x r o": "edit.openRectangle",
   "C-x r t": "edit.stringRectangle",
   "C-x r S-n": "edit.numberRectangle",
+  "C-x r s": "edit.copyToRegister",
+  "C-x r i": "edit.insertRegister",
+  "C-x r space": "edit.pointToRegister",
+  "C-x r j": "edit.jumpToRegister",
   "C-x n n": "edit.narrowToRegion",
   "C-x n d": "edit.narrowToDefun",
   "C-x n f": "edit.narrowToFoldRegion",
@@ -208,5 +212,7 @@
   "C-c C-c": "http.runRequest",
   "C-c C-r": "http.runFile",
   "C-c C-k": "http.cancelRequest",
-  "C-x s": "file.saveAll"
+  "C-x s": "file.saveAll",
+  "C-c =": "edit.incrementNumber",
+  "C-c -": "edit.decrementNumber"
 }

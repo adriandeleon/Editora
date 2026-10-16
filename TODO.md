@@ -1310,9 +1310,11 @@ A backlog of planned features and improvements. Unordered within each section.
       length, reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). Each its own
       palette command; one filterable picker `Edit: String Manipulation…` (`C-c x`). Pure/unit-tested
       `editops/StringCase` + `editops/LineTransforms`; single undoable edit, result re-selected.
-      *Deferred (P2/P3): escape/unescape (Java/JSON/XML/HTML) + URL/Base64/unicode-escape encode/decode +
-      diacritics→ASCII, align-by-separator, keep/remove lines matching a pattern, increment numbers /
-      sequences across multi-carets, multi-caret fan-out.*
+      *Deferred (P2/P3): ~~JSON/HTML escape/unescape + URL/Base64/unicode-escape encode/decode~~ (done:
+      `editops/TextCodecs`, every selection), Java/XML string escapes, diacritics→ASCII, align-by-separator,
+      ~~keep/remove lines matching a pattern~~ (done: `edit.keepLines`/`edit.removeLines`), ~~increment numbers
+      across multi-carets~~ (done: `editops/NumberAtCaret`, `C-u N` repeats), number sequences, case-op
+      multi-caret fan-out.* Also added: case-sensitive and unique line sorts.
 - [x] Plain-text developer formats — syntax highlighting for unified diffs (`.diff`/`.patch`, green/red
       added/removed lines via new `.text.diff-*` semantic classes), Makefile (`Makefile`/`GNUmakefile`/`.mk`),
       justfile, Protocol Buffers (`.proto`), GraphQL (`.graphql`/`.gql`), and `.gitattributes`
@@ -1536,6 +1538,23 @@ A backlog of planned features and improvements. Unordered within each section.
       (`textDocument/formatting`, when it advertises formatting), undoable; palette + editor right-click.
       (GFM table reflow also exists.)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
+- [x] Emacs registers — `C-x r s` (copy; `C-u` cuts), `C-x r i` (insert, caret before), `C-x r SPC` (point),
+      `C-x r j` (jump, opens the file), `edit.viewRegisters` picker. Pure `editops/Registers` per window;
+      positions shift with edits (`MarkRing.shiftOne`) while their file is open; the one-key reader is
+      `ui/ReadCharSession`, shared with zap-to-char. *Deferred: number registers (`C-x r n` / `C-x r +`),
+      rectangle and window-configuration registers, persisting registers across restarts*
+- [x] Rulers and indent guides — `Settings.rulers` + `languageRulers` (schema 123; `editor/RulerColumns`
+      resolves language list → global, `.editorconfig max_line_length` replaces the first / `off` hides);
+      `ColumnRuler` is now one line per column from a single column-0 measure. `editor/IndentGuideOverlay`
+      (Canvas, lazy, on by default; hidden in Zen/Simple/large files): column 0 from one char-bounds query, a
+      paragraph-bounds query per visible indented line, blank lines from `editops/IndentLevels`, and a
+      frame key that skips repaints when nothing it draws changed (~13% of keystrokes repaint while typing).
+      *Deferred: highlighting the caret's own block guide; a structured per-language rulers editor*
+- [x] Line commands — `edit.insertLineBelow/Above`, `edit.deleteLine` (no kill ring), `edit.selectLine`
+      (grows by lines), `edit.indentLines/outdentLines` (caret anywhere). Pure `editops/LineCommands` per caret,
+      run at every caret through `MultiCarets.applyAtEachCaret` (Tab's `MultiTab.plan` fan-out), one undo step;
+      folds at the carets opened first; Markdown ordered lists renumbered.
+      *Deferred: Duplicate / Move Line at every caret (still the primary caret only)*
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
 - [x] Multi-caret extras — `edit.splitSelectionIntoLines` (Sublime: each line's selected part),

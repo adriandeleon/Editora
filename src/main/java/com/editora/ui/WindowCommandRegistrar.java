@@ -288,6 +288,9 @@ final class WindowCommandRegistrar {
         /** Buffer: Reopen with Encoding… / Save with Encoding… and the status bar's encoding chooser. */
         EncodingCommands encodings();
 
+        /** Emacs registers. */
+        RegisterCommands registers();
+
         /** File: Save All. */
         void saveAll();
 
@@ -806,6 +809,19 @@ final class WindowCommandRegistrar {
                         "install.typstCli", () -> host.installCoordinator().installTypstCli()));
         host.registry().register(Command.of("install.languageServer", host::chooseInstallServer));
         host.registry().register(Command.of("view.toggleColumnRuler", host.editorSettings()::toggleColumnRuler));
+        host.registry().register(Command.of("editor.setRulers", host.editorSettings()::promptRulers));
+        host.registry().register(Command.of("editor.setLanguageRulers", host.editorSettings()::promptLanguageRulers));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleIndentGuides",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "view.toggleIndentGuides",
+                                        () -> host.config().getSettings().isShowIndentGuides(),
+                                        host.config().getSettings()::setShowIndentGuides,
+                                        () -> host.editorSettings()
+                                                .applyViewSettingsToAllBuffers(
+                                                        host.config().getSettings()))));
         host.registry().register(Command.of("view.toggleToolStripe", host::toggleToolStripe));
         host.registry().register(Command.of("view.maximizeToolWindow", host::toggleMaximizedToolWindow));
         host.registry().register(Command.of("view.closeFocusedToolWindow", () -> {
@@ -2623,6 +2639,17 @@ final class WindowCommandRegistrar {
                         "edit.transposeLines",
                         () -> host.editing().transpose(com.editora.editops.Transposer::transposeLines)));
         host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
+        for (var line : java.util.Map.of(
+                        "edit.insertLineBelow", EditorBuffer.LineCommand.INSERT_BELOW,
+                        "edit.insertLineAbove", EditorBuffer.LineCommand.INSERT_ABOVE,
+                        "edit.deleteLine", EditorBuffer.LineCommand.DELETE,
+                        "edit.selectLine", EditorBuffer.LineCommand.SELECT,
+                        "edit.indentLines", EditorBuffer.LineCommand.INDENT,
+                        "edit.outdentLines", EditorBuffer.LineCommand.OUTDENT)
+                .entrySet()) {
+            host.registry()
+                    .register(Command.of(line.getKey(), () -> host.editing().lineCommand(line.getValue())));
+        }
         host.registry()
                 .register(Command.of(
                         "edit.duplicateLine",
@@ -2727,6 +2754,54 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.trimTrailingWhitespace",
                         () -> host.editing().lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
+        host.registry()
+                .register(
+                        Command.of("edit.copyToRegister", () -> host.registers().copyToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.insertRegister", () -> host.registers().insertRegister()));
+        host.registry()
+                .register(Command.of(
+                        "edit.pointToRegister", () -> host.registers().pointToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.jumpToRegister", () -> host.registers().jumpToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.viewRegisters", () -> host.registers().viewRegisters()));
+        host.registry()
+                .register(Command.of(
+                        "edit.sortLinesCaseSensitive",
+                        () -> host.editing().lineTransform(com.editora.editops.LineTransforms::sortCaseSensitive)));
+        host.registry()
+                .register(Command.of(
+                        "edit.sortLinesUnique",
+                        () -> host.editing().lineTransform(com.editora.editops.LineTransforms::sortUnique)));
+        host.registry()
+                .register(Command.of("edit.keepLines", () -> host.editing().filterLines(true)));
+        host.registry()
+                .register(Command.of("edit.removeLines", () -> host.editing().filterLines(false)));
+        for (var codec : java.util.Map.<String, java.util.function.UnaryOperator<String>>of(
+                        "edit.encode.base64", com.editora.editops.TextCodecs::base64Encode,
+                        "edit.decode.base64", com.editora.editops.TextCodecs::base64Decode,
+                        "edit.encode.url", com.editora.editops.TextCodecs::urlEncode,
+                        "edit.decode.url", com.editora.editops.TextCodecs::urlDecode,
+                        "edit.escape.json", com.editora.editops.TextCodecs::jsonEscape,
+                        "edit.unescape.json", com.editora.editops.TextCodecs::jsonUnescape,
+                        "edit.escape.html", com.editora.editops.TextCodecs::htmlEscape,
+                        "edit.unescape.html", com.editora.editops.TextCodecs::htmlUnescape,
+                        "edit.escape.unicode", com.editora.editops.TextCodecs::unicodeEscape,
+                        "edit.unescape.unicode", com.editora.editops.TextCodecs::unicodeUnescape)
+                .entrySet()) {
+            host.registry()
+                    .register(Command.of(codec.getKey(), () -> host.editing().selectionCodec(codec.getValue())));
+        }
+        host.registry()
+                .register(
+                        Command.of("edit.incrementNumber", () -> host.editing().changeNumber(1)));
+        host.registry()
+                .register(
+                        Command.of("edit.decrementNumber", () -> host.editing().changeNumber(-1)));
         host.registry().register(Command.of("edit.tabify", host.editing()::tabifyRegion));
         host.registry().register(Command.of("edit.untabify", host.editing()::untabifyRegion));
         host.registry()

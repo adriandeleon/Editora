@@ -23,6 +23,33 @@ public final class PathKeys {
     private PathKeys() {}
 
     /**
+     * {@link #resolveUserInput} for a path on {@code baseDir}'s own file system (a folder on a remote host,
+     * where an absolute {@code /srv/app} names the host's folder, not this machine's). {@code userHome} is
+     * the home folder there.
+     */
+    public static Path resolveUserInputOn(String input, Path baseDir, String userHome) {
+        if (baseDir == null || baseDir.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
+            return resolveUserInput(input, baseDir, userHome);
+        }
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String s = input.strip();
+        if (s.equals("~") || s.startsWith("~/")) {
+            if (userHome == null) {
+                return null;
+            }
+            s = userHome + s.substring(1);
+        }
+        try {
+            Path p = baseDir.getFileSystem().getPath(s);
+            return (p.isAbsolute() ? p : baseDir.resolve(p)).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
+    /**
      * Resolves a user-typed Save-As target (from the keyboard prompt) to an absolute path, or {@code null}
      * when it's blank or not a valid path. A leading {@code ~} (alone or {@code ~/…}) expands to
      * {@code userHome}; a relative path resolves against {@code baseDir} (the current file's folder, else the
