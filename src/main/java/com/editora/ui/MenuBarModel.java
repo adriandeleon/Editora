@@ -240,6 +240,7 @@ final class MenuBarModel {
                         List.of(
                                 "file.run",
                                 "file.runWithArgs",
+                                "run.trace",
                                 "run.rerun",
                                 "run.stop",
                                 SEPARATOR,

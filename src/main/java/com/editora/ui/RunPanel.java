@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
@@ -20,6 +21,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.run.AnsiText;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -69,6 +71,15 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     private final OutputStyle lineStyle = OutputStyle.console();
     private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
+    /** Colour state of each stream of the current run (SGR codes are read, drawn, and removed). */
+    private AnsiText.Parser stdoutAnsi = new AnsiText.Parser();
+
+    private AnsiText.Parser stderrAnsi = new AnsiText.Parser();
+    /**
+     * A carriage return was the last thing written: the next text replaces the current line, as a terminal
+     * draws a {@code \r} progress bar, instead of every frame becoming a line of its own.
+     */
+    private boolean overwriteLine;
 
     public RunPanel(Runnable onStop) {
         getStyleClass().add("run-panel");
@@ -267,11 +278,14 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     public void clearConsole() {
         appender.discard();
         output.clear();
+        overwriteLine = false;
     }
 
     /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
     public void started(String commandLine) {
         clearConsole();
+        stdoutAnsi = new AnsiText.Parser();
+        stderrAnsi = new AnsiText.Parser();
         status.setText(tr("run.running", commandLine));
         setRunning(true);
     }
@@ -287,31 +301,122 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     private void appendOutput(String line, boolean stderr, boolean completeLine) {
-        StyleSpans<Collection<String>> spans = null;
-        if (!line.isEmpty()) {
-            String styleClass = stderr ? "run-stderr" : lineStyle.styleClassFor(line);
-            StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
-            int offset = 0;
-            for (ConsoleUrls.Link link : ConsoleUrls.find(line)) {
-                if (link.start() > offset) {
-                    builder.add(styleClass == null ? List.of() : List.of(styleClass), link.start() - offset);
-                }
-                builder.add(
-                        styleClass == null ? List.of("console-url") : List.of(styleClass, "console-url"),
-                        link.end() - link.start());
-                offset = link.end();
+        AnsiText.Chunk chunk = (stderr ? stderrAnsi : stdoutAnsi).feed(line);
+        String text = chunk.text();
+        // A trace line goes to stderr too, but it is the run's own log, not an error: drawn muted, not red.
+        String base = stderr
+                ? (StackTraceLinks.isTraceLine(text) ? "run-trace" : "run-stderr")
+                : lineStyle.styleClassFor(text);
+        int from = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c != '\r' && c != AnsiText.CLEAR_SCREEN) {
+                continue;
             }
-            if (offset < line.length()) {
-                builder.add(styleClass == null ? List.of() : List.of(styleClass), line.length() - offset);
+            write(text, from, i, chunk.runs(), base);
+            if (c == '\r') {
+                overwriteLine = true;
+            } else {
+                clearConsole(); // `clear`, or an erase-screen sequence
             }
-            spans = builder.create();
+            from = i + 1;
         }
-        appender.append(line + (completeLine ? "\n" : ""), spans);
+        write(text, from, text.length(), chunk.runs(), base);
+        if (completeLine) {
+            overwriteLine = false; // "50%\r" then a newline: a terminal keeps the line and moves on
+            appender.append("\n", null);
+        }
+    }
+
+    /** Writes {@code text[from, to)} with its colours, replacing the current line after a carriage return. */
+    private void write(String text, int from, int to, List<AnsiText.Run> runs, String base) {
+        if (from >= to) {
+            return;
+        }
+        if (overwriteLine) {
+            appender.clearCurrentLine();
+            overwriteLine = false;
+        }
+        String piece = text.substring(from, to);
+        appender.append(piece, spans(piece, slice(runs, from, to), base));
+    }
+
+    /** The colour runs covering {@code [from, to)} of a chunk, re-based to start at 0. */
+    static List<AnsiText.Run> slice(List<AnsiText.Run> runs, int from, int to) {
+        List<AnsiText.Run> out = new ArrayList<>();
+        int pos = 0;
+        for (AnsiText.Run r : runs) {
+            int start = Math.max(pos, from);
+            int end = Math.min(pos + r.length(), to);
+            if (end > start) {
+                out.add(new AnsiText.Run(end - start, r.classes()));
+            }
+            pos += r.length();
+            if (pos >= to) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The styles of one piece of output: its line class ({@code base}: stderr, or a log level), the program's
+     * own colours from {@code runs}, and the URL links found in its text.
+     */
+    static StyleSpans<Collection<String>> spans(String piece, List<AnsiText.Run> runs, String base) {
+        java.util.TreeSet<Integer> cuts = new java.util.TreeSet<>(List.of(0, piece.length()));
+        int pos = 0;
+        for (AnsiText.Run r : runs) {
+            pos += r.length();
+            cuts.add(Math.min(pos, piece.length()));
+        }
+        List<ConsoleUrls.Link> urls = ConsoleUrls.find(piece);
+        for (ConsoleUrls.Link u : urls) {
+            cuts.add(u.start());
+            cuts.add(u.end());
+        }
+        StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
+        Integer prev = null;
+        for (int cut : cuts) {
+            if (prev != null && cut > prev) {
+                List<String> classes = new ArrayList<>();
+                if (base != null) {
+                    classes.add(base);
+                }
+                classes.addAll(classesAt(runs, prev));
+                for (ConsoleUrls.Link u : urls) {
+                    if (prev >= u.start() && prev < u.end()) {
+                        classes.add("console-url");
+                        break;
+                    }
+                }
+                builder.add(classes, cut - prev);
+            }
+            prev = cut;
+        }
+        return builder.create();
+    }
+
+    private static java.util.Set<String> classesAt(List<AnsiText.Run> runs, int offset) {
+        int pos = 0;
+        for (AnsiText.Run r : runs) {
+            if (offset < pos + r.length()) {
+                return r.classes();
+            }
+            pos += r.length();
+        }
+        return java.util.Set.of();
     }
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
     public void finished(int code) {
         status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
+        setRunning(false);
+    }
+
+    /** The program ended because Stop was pressed: says so, rather than "finished" with a signal's exit code. */
+    public void stopped() {
+        status.setText(tr("run.stopped"));
         setRunning(false);
     }
 

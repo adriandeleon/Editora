@@ -358,6 +358,8 @@ public class SettingsWindow {
     private Runnable onRunConfigsChanged = () -> {};
 
     private java.util.function.Supplier<String> runConfigSuggestion;
+    private java.util.function.Supplier<com.editora.config.RunConfiguration> runConfigScriptSuggestion;
+    private java.util.function.Supplier<java.nio.file.Path> runConfigProjectRoot;
     private RunConfigurationsWindow runConfigurationsWindow;
 
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
@@ -729,7 +731,11 @@ public class SettingsWindow {
     public void showRunConfigs(String selectName, Window owner) {
         if (runConfigurationsWindow == null) {
             runConfigurationsWindow = new RunConfigurationsWindow(
-                    config, () -> runConfigSuggestion == null ? null : runConfigSuggestion.get(), onRunConfigsChanged);
+                    config,
+                    () -> runConfigSuggestion == null ? null : runConfigSuggestion.get(),
+                    () -> runConfigScriptSuggestion == null ? null : runConfigScriptSuggestion.get(),
+                    () -> runConfigProjectRoot == null ? null : runConfigProjectRoot.get(),
+                    onRunConfigsChanged);
         }
         runConfigurationsWindow.show(selectName, owner);
     }
@@ -737,6 +743,17 @@ public class SettingsWindow {
     /** Supplies the active Java main class used to seed a newly added configuration. */
     public void setRunConfigSuggestion(java.util.function.Supplier<String> suggestion) {
         this.runConfigSuggestion = suggestion;
+    }
+
+    /**
+     * Supplies a configuration for the active Python or shell script (Add proposes it before a Java one) and
+     * the project root a browsed script is made relative to.
+     */
+    public void setRunConfigScriptSuggestion(
+            java.util.function.Supplier<com.editora.config.RunConfiguration> suggestion,
+            java.util.function.Supplier<java.nio.file.Path> projectRoot) {
+        this.runConfigScriptSuggestion = suggestion;
+        this.runConfigProjectRoot = projectRoot;
     }
 
     /**
