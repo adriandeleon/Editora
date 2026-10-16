@@ -21,13 +21,11 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -142,8 +140,7 @@ public final class HttpClientPanel extends VBox {
     private final TextArea headersArea = new TextArea();
     private final CodeArea bodyArea = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> bodyScroll = new VirtualizedScrollPane<>(bodyArea);
-    private final ImageView imageView = new ImageView();
-    private final ScrollPane imageScroll = new ScrollPane(imageView);
+    private final HttpImageView imageView = new HttpImageView();
     private final Button copyCurlButton = new Button();
     private final Button openTabButton = new Button();
     private final Button saveButton = new Button();
@@ -372,10 +369,8 @@ public final class HttpClientPanel extends VBox {
         // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
         installBodyContextMenu(); // RichTextFX has no default menu — add Copy / Select All for the response
-        imageView.setPreserveRatio(true);
-        imageScroll.setVisible(false);
-        imageScroll.getStyleClass().add("http-image");
-        StackPane bodyHost = new StackPane(bodyScroll, imageScroll);
+        imageView.setVisible(false);
+        StackPane bodyHost = new StackPane(bodyScroll, imageView);
         bodyNote.getStyleClass().add("http-body-note");
         bodyNote.setWrapText(true);
         bodyNote.setMaxWidth(Double.MAX_VALUE);
@@ -772,8 +767,8 @@ public final class HttpClientPanel extends VBox {
         showTests(HttpTests.NONE, false);
         showBodyNote(null);
         bodyArea.clear();
-        imageView.setImage(null);
-        imageScroll.setVisible(false);
+        imageView.clear();
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
     }
 
@@ -788,7 +783,7 @@ public final class HttpClientPanel extends VBox {
         CompletableFuture<Void> done = new CompletableFuture<>();
         bodyRender = done;
         bodyArea.replaceText(""); // never leave the previous response under the new status + headers
-        imageView.setImage(null);
+        imageView.clear();
         HttpBodyRendering.FORMAT.execute(() -> {
             if (generation != bodyGeneration) {
                 done.complete(null); // superseded while queued: stepping through History no longer queues renders
@@ -818,13 +813,13 @@ public final class HttpClientPanel extends VBox {
     private void applyBody(HttpHistoryEntry entry, HttpBodyRendering.Rendered rendered) {
         HttpResult r = entry.result();
         if (rendered.image() != null) {
-            imageView.setImage(rendered.image());
-            imageScroll.setVisible(true);
+            imageView.show(rendered.image(), r.contentType(), r.sizeBytes());
+            imageView.setVisible(true);
             bodyScroll.setVisible(false);
             bodyArea.replaceText("");
             return;
         }
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         HttpResponseFormat.BodyView view = rendered.view();
         StringBuilder text = new StringBuilder(rendered.text());
@@ -922,7 +917,11 @@ public final class HttpClientPanel extends VBox {
 
     /** Whether the body pane currently shows a picture. Test accessor. */
     boolean showsImageForTest() {
-        return imageScroll.isVisible() && imageView.getImage() != null;
+        return imageView.isVisible() && imageView.hasImage();
+    }
+
+    HttpImageView imageViewForTest() {
+        return imageView;
     }
 
     /** Whether the warnings block is open. Test accessor. */

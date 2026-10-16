@@ -79,8 +79,8 @@ class HttpClientPanelFxTest {
         HttpClientPanel p = panel();
         String raw = "{\"price\":10.50,\"n\":1e2,\"a\":1,\"a\":2}";
         String shown = show(p, exchange("json", ok(raw, "application/json", List.of())));
-        assertTrue(shown.contains("\"price\" : 10.50"), shown);
-        assertTrue(shown.contains("\"n\" : 1e2"), shown);
+        assertTrue(shown.contains("\"price\": 10.50"), shown);
+        assertTrue(shown.contains("\"n\": 1e2"), shown);
         assertEquals(raw, shown.replaceAll("\\s+", ""), "whitespace is the only change");
         String saved = FxTestSupport.callOnFx(() -> responseText(p));
         assertTrue(saved.contains("\n" + raw + "\n"), "the report holds the raw body: " + saved);
@@ -240,6 +240,10 @@ class HttpClientPanelFxTest {
                         "img",
                         HttpFixtures.bytes(200, List.of(), png.toByteArray(), "image/png", 2, List.of(), false)));
         assertTrue(FxTestSupport.callOnFx(p::showsImageForTest));
+        assertEquals(
+                "PNG · 4 × 3 · " + png.size() + " B",
+                FxTestSupport.callOnFx(() -> p.imageViewForTest().captionForTest()),
+                "the picture says what it is");
     }
 
     @Test
@@ -248,6 +252,22 @@ class HttpClientPanelFxTest {
         String raw = "<a><b id=\"1\">x</b><c/></a>";
         String shown = show(p, exchange("xml", ok(raw, "application/xml", List.of())));
         assertEquals("<a>\n  <b id=\"1\">x</b>\n  <c/>\n</a>", shown);
+        assertEquals(
+                raw,
+                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()));
+    }
+
+    @Test
+    void htmlIsIndentedInTheViewOnly() throws Exception {
+        HttpClientPanel p = panel();
+        String raw = "<html><head><title>404</title></head><body><h1>Not <b>Found</b></h1></body></html>";
+        String shown = show(p, exchange("html", ok(raw, "text/html; charset=utf-8", List.of())));
+        assertEquals(
+                "<html>\n  <head>\n    <title>404</title>\n  </head>\n  <body>\n    <h1>Not <b>Found</b></h1>\n"
+                        + "  </body>\n</html>",
+                shown);
+        String saved = FxTestSupport.callOnFx(() -> responseText(p));
+        assertTrue(saved.contains("\n" + raw + "\n"), "the report holds the raw body: " + saved);
         assertEquals(
                 raw,
                 FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()));
