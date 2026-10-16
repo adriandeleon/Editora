@@ -2,10 +2,14 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
+import javafx.stage.Popup;
+
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspTestHooks;
 import org.eclipse.lsp4j.FormattingOptions;
+import org.eclipse.lsp4j.Hover;
+import org.eclipse.lsp4j.MarkupContent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -14,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -80,5 +85,32 @@ class LspFormattingStatusHoverFxTest {
 
         assertFalse(fx.ops.statusBarLabels.isEmpty(), "the status bar was told about the server");
         assertEquals("jdtls", fx.ops.statusBarLabels.get(fx.ops.statusBarLabels.size() - 1));
+    }
+
+    @Test
+    void aManPageHoverScrollsInsideAPopupNoTallerThanPartOfTheWindow() throws Exception {
+        EditorBuffer b = fx.open("A.java", "class A {\n    void go() {}\n}\n");
+        fx.awaitHighlighted(b);
+        fx.caret(b, 1, 9);
+        StringBuilder man = new StringBuilder("```man\nNAME\n       ls - list directory contents\n");
+        for (int i = 0; i < 300; i++) {
+            man.append("       -").append(i).append("  an option described at some length on its own line\n");
+        }
+        man.append("```\n");
+        fx.server().hoverResponse = new Hover(new MarkupContent("markdown", man.toString()));
+
+        fx.run(() -> fx.coordinator.showHover());
+        fx.layout();
+        Popup popup = FxTestSupport.field(fx.coordinator, "hoverPopup");
+        assertNotNull(popup, "the documentation is shown");
+        double windowHeight = FxTestSupport.callOnFx(() -> fx.host.window().getHeight());
+        double height = FxTestSupport.callOnFx(
+                () -> popup.getScene().getRoot().getLayoutBounds().getHeight());
+        assertTrue(
+                height <= LspCoordinator.hoverMaxHeight(windowHeight) + 40,
+                "the popup is " + height + " px tall in a " + windowHeight + " px window");
+        assertNotNull(
+                FxTestSupport.callOnFx(() -> popup.getScene().getRoot().lookup(".scroll-pane")),
+                "the text scrolls inside the popup");
     }
 }

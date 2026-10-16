@@ -5245,9 +5245,20 @@ final class LspCoordinator {
             label.setWrapText(true);
             content = label;
         }
-        VBox box = new VBox(content);
+        // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
+        // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it
+        // off screen and out of reach.
+        javafx.scene.control.ScrollPane scroll = new javafx.scene.control.ScrollPane(content);
+        scroll.getStyleClass().add("lsp-hover-scroll");
+        scroll.setFitToWidth(true); // prose wraps at the popup's width; code blocks scroll sideways themselves
+        scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setFocusTraversable(false);
+        scroll.setMaxWidth(HOVER_MAX_WIDTH);
+        scroll.setMaxHeight(hoverMaxHeight(area));
+        VBox box = new VBox(scroll);
         box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(560);
+        box.setMaxWidth(HOVER_MAX_WIDTH);
         box.getStylesheets()
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
@@ -5285,6 +5296,20 @@ final class LspCoordinator {
         } else {
             popup.show(area, 0, 0);
         }
+    }
+
+    /** Widest a hover popup's text column gets. */
+    static final double HOVER_MAX_WIDTH = 560;
+
+    /** The tallest a hover popup gets in a window {@code windowHeight} tall: part of it, within fixed bounds. */
+    static double hoverMaxHeight(double windowHeight) {
+        double share = windowHeight > 0 ? windowHeight * 0.45 : 400;
+        return Math.max(160, Math.min(480, share));
+    }
+
+    private static double hoverMaxHeight(CodeArea area) {
+        javafx.stage.Window w = area.getScene() == null ? null : area.getScene().getWindow();
+        return hoverMaxHeight(w == null ? 0 : w.getHeight());
     }
 
     /** Hides the LSP hover popup if one is showing. */
