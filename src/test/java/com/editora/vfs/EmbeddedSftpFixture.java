@@ -64,6 +64,13 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     /** A command line containing this is never run: the connection drops as it arrives (see {@link #dropConnectionOnCommand}). */
     private final AtomicReference<String> dropOnCommand = new AtomicReference<>();
 
+    /** How many of the next commands get a channel that closes before they start (see {@link #closeBeforeStart}). */
+    private final java.util.concurrent.atomic.AtomicInteger closeBeforeStart =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** What those channels print on stderr before closing, or null for nothing. */
+    private volatile String closeBeforeStartSays;
+
     /** The account's home directory on the host (real-shell mode): commands run with {@code HOME} here. */
     private final Path home;
 
@@ -88,6 +95,11 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
                     // Off the server's own thread: closing the session from inside its command factory is not safe.
                     Thread.ofVirtual().start(this::dropConnection);
                     return new ShellCommand("sleep 30", home);
+                }
+                if (closeBeforeStart.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+                    String says = closeBeforeStartSays; // the channel closes before the command ran
+                    return new ShellCommand(
+                            says == null ? "exit 0" : "printf '%s\\n' '" + says + "' >&2; exit 1", home);
                 }
                 return new ShellCommand(command, home);
             });
@@ -209,6 +221,20 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
      */
     public void dropConnectionOnCommand(String needle) {
         dropOnCommand.set(needle);
+    }
+
+    /**
+     * The next {@code count} commands are not run: each one's channel closes at once, saying nothing — what
+     * dropbear 2022.82 to 2024.85 does now and then when channels open and close at the same time.
+     */
+    public void closeBeforeStart(int count) {
+        closeBeforeStart(count, null);
+    }
+
+    /** As {@link #closeBeforeStart(int)}, each channel first printing {@code says} on stderr (no quotes in it). */
+    public void closeBeforeStart(int count, String says) {
+        closeBeforeStartSays = says;
+        closeBeforeStart.set(count);
     }
 
     public Path reconnect() throws Exception {

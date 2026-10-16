@@ -46,6 +46,7 @@ import com.editora.editops.Commenter;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
+import com.editora.editops.MultiTab;
 import com.editora.logviewer.LogLevel;
 import com.editora.markdown.MarkdownInline;
 import com.editora.markdown.MarkdownLint;
@@ -5257,6 +5258,66 @@ public class EditorBuffer implements TabContent {
     public boolean undoLastCaret() {
         MultiCarets carets = activeCarets();
         return carets != null && carets.undoLastCaret();
+    }
+
+    /** The VS Code line commands ({@link com.editora.editops.LineCommands}). */
+    public enum LineCommand {
+        INSERT_BELOW,
+        INSERT_ABOVE,
+        DELETE,
+        SELECT,
+        INDENT,
+        OUTDENT
+    }
+
+    /**
+     * Runs a line command at every caret of the focused area — the primary and the extras — as one undoable
+     * edit. Collapsed folds on the lines it changes are opened first, so no hidden line is edited unseen.
+     * False when the area cannot take it (read-only, a huge file for the indent commands).
+     */
+    public boolean lineCommand(LineCommand command) {
+        CodeArea a = getFocusedArea();
+        if (command != LineCommand.SELECT && !a.isEditable()) {
+            return false;
+        }
+        MultiCarets carets = activeCarets();
+        if (command != LineCommand.SELECT && a == area) {
+            for (int[] sel :
+                    carets != null ? carets.selections() : List.of(new int[] {a.getAnchor(), a.getCaretPosition()})) {
+                folds.expandHeaderAt(Math.min(sel[0], sel[1]));
+                folds.expandHeaderAt(Math.max(sel[0], sel[1]));
+            }
+        }
+        String text = a.getText();
+        MultiTab.CaretEdits edits = (s, e, ignored) -> switch (command) {
+            case INSERT_BELOW ->
+                com.editora.editops.LineCommands.insertBelow(
+                        text, s, e, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, indentUnit()));
+            case INSERT_ABOVE -> com.editora.editops.LineCommands.insertAbove(text, s, e);
+            case DELETE -> com.editora.editops.LineCommands.deleteLines(text, s, e);
+            case SELECT -> com.editora.editops.LineCommands.selectLine(text, s, e);
+            case INDENT, OUTDENT ->
+                com.editora.editops.LineCommands.indentLines(
+                        text, s, e, command == LineCommand.OUTDENT, (from, to, back) -> tabEdit(from, to, back));
+        };
+        boolean done;
+        if (carets != null) {
+            done = carets.applyAtEachCaret(edits, false);
+        } else { // multiple cursors off: the same plan for the one caret
+            MultiTab.Plan plan = MultiTab.plan(List.of(new int[] {a.getAnchor(), a.getCaretPosition()}), false, edits);
+            done = plan != null;
+            if (done) {
+                for (MultiTab.Change c : plan.changes()) {
+                    a.replaceText(c.from(), c.to(), c.replacement()); // at most one: a single caret
+                }
+                a.selectRange(
+                        plan.ranges().get(0).anchor(), plan.ranges().get(0).caret());
+            }
+        }
+        if (done) {
+            a.requestFollowCaret();
+        }
+        return done;
     }
 
     /** Adds a caret on the line above the topmost caret. */

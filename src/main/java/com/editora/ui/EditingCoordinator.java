@@ -895,6 +895,22 @@ final class EditingCoordinator {
         return true;
     }
 
+    /**
+     * A line command — Insert Line Below / Above, Delete Line, Select Line, Indent / Outdent Lines — at every
+     * caret of the active buffer. An edit that changes a Markdown list numbered in sequence renumbers it.
+     */
+    void lineCommand(EditorBuffer.LineCommand command) {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return;
+        }
+        if (command == EditorBuffer.LineCommand.SELECT) {
+            buffer.lineCommand(command);
+        } else if (activeEditable()) {
+            renumberingList(() -> buffer.lineCommand(command));
+        }
+    }
+
     /** Manually opens the autocomplete popup for the active buffer (the {@code edit.completion} command). */
     void triggerCompletion() {
         EditorBuffer b = host.activeBuffer();

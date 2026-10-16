@@ -71,5 +71,11 @@
   "C-S-t": "buffer.reopenClosed",
   "M-S-i": "edit.addCaretsToLineEnds",
   "C-k C-d": "edit.skipOccurrence",
-  "C-u": "edit.undoLastCaret"
+  "C-u": "edit.undoLastCaret",
+  "C-enter": "edit.insertLineBelow",
+  "C-S-enter": "edit.insertLineAbove",
+  "C-S-k": "edit.deleteLine",
+  "C-l": "edit.selectLine",
+  "C-]": "edit.indentLines",
+  "C-[": "edit.outdentLines"
 }
