@@ -288,6 +288,9 @@ final class WindowCommandRegistrar {
         /** Buffer: Reopen with Encoding… / Save with Encoding… and the status bar's encoding chooser. */
         EncodingCommands encodings();
 
+        /** Emacs registers. */
+        RegisterCommands registers();
+
         /** File: Save All. */
         void saveAll();
 
@@ -2727,6 +2730,21 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.trimTrailingWhitespace",
                         () -> host.editing().lineTransform(com.editora.editops.LineTransforms::trimTrailing)));
+        host.registry()
+                .register(
+                        Command.of("edit.copyToRegister", () -> host.registers().copyToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.insertRegister", () -> host.registers().insertRegister()));
+        host.registry()
+                .register(Command.of(
+                        "edit.pointToRegister", () -> host.registers().pointToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.jumpToRegister", () -> host.registers().jumpToRegister()));
+        host.registry()
+                .register(
+                        Command.of("edit.viewRegisters", () -> host.registers().viewRegisters()));
         host.registry().register(Command.of("edit.tabify", host.editing()::tabifyRegion));
         host.registry().register(Command.of("edit.untabify", host.editing()::untabifyRegion));
         host.registry()

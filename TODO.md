@@ -1536,6 +1536,11 @@ A backlog of planned features and improvements. Unordered within each section.
       (`textDocument/formatting`, when it advertises formatting), undoable; palette + editor right-click.
       (GFM table reflow also exists.)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
+- [x] Emacs registers — `C-x r s` (copy; `C-u` cuts), `C-x r i` (insert, caret before), `C-x r SPC` (point),
+      `C-x r j` (jump, opens the file), `edit.viewRegisters` picker. Pure `editops/Registers` per window;
+      positions shift with edits (`MarkRing.shiftOne`) while their file is open; the one-key reader is
+      `ui/ReadCharSession`, shared with zap-to-char. *Deferred: number registers (`C-x r n` / `C-x r +`),
+      rectangle and window-configuration registers, persisting registers across restarts*
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
 - [x] Multi-caret extras — `edit.splitSelectionIntoLines` (Sublime: each line's selected part),
