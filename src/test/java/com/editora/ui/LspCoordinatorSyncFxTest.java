@@ -482,4 +482,54 @@ class LspCoordinatorSyncFxTest {
         sync(script);
         assertTrue(manager.isManaged(script.getPath()), "a .zsh script keeps the server (it skips linting itself)");
     }
+    /** A wired, active buffer for {@code name} holding {@code text}, with the Bash server available. */
+    private EditorBuffer wiredBuffer(String name, String text) throws Exception {
+        manager.configure(true, Map.of("java", "jdtls", "bash", "bash-language-server start"));
+        Path f = root.resolve(name);
+        Files.writeString(f, text);
+        return FxTestSupport.callOnFx(() -> {
+            coordinator.setServerAvailableForTest("bash", true);
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(f);
+            b.setContent(text);
+            host.buffers.add(b);
+            host.active = b;
+            coordinator.wireBuffer(b);
+            return b;
+        });
+    }
+
+    /**
+     * Picking Shell in the status bar for a file whose name says nothing (a script without an extension, a
+     * file Editora reads as something else) used to colour it and leave it off the Bash server until reopened.
+     */
+    @Test
+    void aLanguagePickedInTheStatusBarMovesTheDocumentToThatServer() throws Exception {
+        EditorBuffer b = wiredBuffer("notes", "echo $1\n");
+        sync(b);
+        assertFalse(manager.isManaged(b.getPath()), "plain text has no server");
+
+        FxTestSupport.runOnFx(() -> b.setLanguageOverride("shell"));
+
+        assertTrue(manager.isManaged(b.getPath()), "Shell picked: the document is opened on the Bash server");
+
+        FxTestSupport.runOnFx(() -> b.setLanguageOverride("plaintext"));
+        assertFalse(manager.isManaged(b.getPath()), "back to plain text: the server lets it go");
+    }
+
+    /** A shebang typed into an extension-less file makes it shell; the Bash server follows without a reopen. */
+    @Test
+    void aShebangTypedIntoAnExtensionlessFileOpensItOnTheBashServer() throws Exception {
+        EditorBuffer b = wiredBuffer("deploy", "\n");
+        sync(b);
+        assertFalse(manager.isManaged(b.getPath()));
+
+        FxTestSupport.runOnFx(() -> b.getArea().replaceText("#!/bin/bash\necho $1\n"));
+        for (int i = 0; i < 200 && !"shell".equals(FxTestSupport.callOnFx(b::getLanguage)); i++) {
+            Thread.sleep(25); // the shebang is read once the edit settles
+        }
+
+        assertEquals("shell", FxTestSupport.callOnFx(b::getLanguage));
+        assertTrue(manager.isManaged(b.getPath()), "the shebang made it shell, so it is on the Bash server");
+    }
 }

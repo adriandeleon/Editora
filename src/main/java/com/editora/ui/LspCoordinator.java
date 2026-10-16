@@ -2344,6 +2344,9 @@ final class LspCoordinator {
                 this::rename,
                 this::gotoImplementation,
                 this::gotoTypeDefinition);
+        // A language that changes later — picked in the status bar, or a shebang typed into an extension-less
+        // file — moves the document to that language's server (or off any), as opening the file would.
+        buffer.addLanguageListener(() -> syncBufferWhenShown(buffer));
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
     }
