@@ -108,7 +108,7 @@ record HttpHistoryEntry(
      * the History label (adl, 2026-10-15). Kept in memory only.
      */
     List<String> secretValues() {
-        return List.of(); // LEAD-WIRE: exchange.details().secretValues() — fixer G records them (never persisted)
+        return exchange.details() == null ? List.of() : exchange.details().secretValues();
     }
 
     /** The key this entry is saved under ({@link HttpResponseHistory#entryKey}), without building the stored form. */
