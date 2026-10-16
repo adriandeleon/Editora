@@ -5,6 +5,10 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.DialogPane;
+import javafx.stage.Window;
 
 import com.editora.command.CommandRegistry;
 import com.editora.editor.EditorBuffer;
@@ -16,7 +20,10 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Running a shell script in a real window, with a new user's settings. */
@@ -46,6 +53,15 @@ class ShellRunWindowFxTest {
         return output.getText();
     }
 
+    private static DialogPane showingDialog() {
+        for (Window w : Window.getWindows()) {
+            if (w.isShowing() && w.getScene() != null && w.getScene().getRoot() instanceof DialogPane pane) {
+                return pane;
+            }
+        }
+        return null;
+    }
+
     private static EditorBuffer open(MainController c, Path file) throws Exception {
         FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 1));
         await(
@@ -71,6 +87,52 @@ class ShellRunWindowFxTest {
             CommandRegistry registry = FxTestSupport.field(c, "registry");
             FxTestSupport.runOnFx(() -> registry.run("file.run"));
             await("the script's output", () -> console(c).contains("hello from sh\n"));
+        }
+    }
+
+    @Test
+    void aCrlfScriptIsConvertedBeforeItRunsWhenTheUserAgrees() throws Exception {
+        Path script = dir.resolve("crlf.sh");
+        Files.writeString(script, "#!/bin/sh\r\nif true; then\r\n  echo one\r\nfi\r\necho two\r\n");
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            MainController c = fx.controller;
+            EditorBuffer b = open(c, script);
+            assertEquals("CRLF", FxTestSupport.callOnFx(b::getLineEnding));
+            CommandRegistry registry = FxTestSupport.field(c, "registry");
+
+            FxTestSupport.runOnFx(() -> registry.run("file.run"));
+            await("the line-ending warning", () -> showingDialog() != null);
+            DialogPane pane = FxTestSupport.callOnFx(ShellRunWindowFxTest::showingDialog);
+            assertNotNull(pane);
+            assertTrue(FxTestSupport.callOnFx(pane::getContentText).contains("CRLF"));
+            assertFalse(FxTestSupport.callOnFx(c.runCoordinator::isRunning), "nothing runs before the answer");
+
+            Button convert = FxTestSupport.callOnFx(() -> pane.getButtonTypes().stream()
+                    .filter(t -> t.getText().equals(tr("run.shellWarning.fix")))
+                    .map(t -> (Button) pane.lookupButton(t))
+                    .findFirst()
+                    .orElseThrow());
+            FxTestSupport.runOnFx(convert::fire);
+            await("the converted script's output", () -> console(c).contains("one\ntwo\n"));
+            assertFalse(Files.readString(script).contains("\r"), "saved with LF before it ran");
+        }
+    }
+
+    @Test
+    void cancellingTheWarningRunsNothing() throws Exception {
+        Path script = dir.resolve("crlf.sh");
+        Files.writeString(script, "echo one\r\n");
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            MainController c = fx.controller;
+            open(c, script);
+            CommandRegistry registry = FxTestSupport.field(c, "registry");
+            FxTestSupport.runOnFx(() -> registry.run("file.run"));
+            await("the line-ending warning", () -> showingDialog() != null);
+            DialogPane pane = FxTestSupport.callOnFx(ShellRunWindowFxTest::showingDialog);
+            FxTestSupport.runOnFx(() -> ((Button) pane.lookupButton(ButtonType.CANCEL)).fire());
+            FxTestSupport.drainFx();
+            assertFalse(FxTestSupport.callOnFx(c.runCoordinator::consoleInUse));
+            assertTrue(Files.readString(script).contains("\r\n"), "the file is untouched");
         }
     }
 

@@ -20,6 +20,11 @@ public final class RunConfigFields {
         return !ScriptRunCommand.JAVA.equals(type);
     }
 
+    /** Whether {@code type} has an interpreter to override (a shell script's, normally from its shebang). */
+    public static boolean usesInterpreter(String type) {
+        return ScriptRunCommand.SHELL.equals(type);
+    }
+
     /** Whether {@code type} launches with the main class, module, VM arguments and JDK. */
     public static boolean usesJavaFields(String type) {
         return !ScriptRunCommand.isScript(type);

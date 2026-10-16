@@ -289,7 +289,10 @@ public enum ConfigSchema {
                     // v14→15: + markdownPreviewLayouts (additive; missing means 100% zoom, divider in the middle)
                     Map.entry(14, ConfigMigrations::identity),
                     // v15→16: + fileEncodings (additive; missing means every file's encoding is detected)
-                    Map.entry(15, ConfigMigrations::identity))),
+                    Map.entry(15, ConfigMigrations::identity),
+                    // v16→17: + RunConfiguration.interpreter / interpreterOptions (additive; blank means the
+                    // script's shebang decides)
+                    Map.entry(16, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
