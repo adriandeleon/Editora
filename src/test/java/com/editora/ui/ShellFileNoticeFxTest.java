@@ -123,6 +123,13 @@ class ShellFileNoticeFxTest {
             assertEquals('#', bytes[0], "no byte-order mark either");
             assertFalse(new String(bytes, StandardCharsets.UTF_8).contains("\r"), "a save keeps it LF");
 
+            // An extension-less script becomes shell only once its shebang is read, after the rules were applied
+            // on open: the language change re-applies them, so it is kept LF too.
+            Path bare = Files.writeString(dir.resolve("deploy"), "#!/bin/bash\necho hi\n");
+            EditorBuffer script = open(async, fx, bare);
+            assertEquals("shell", FxTestSupport.callOnFx(script::getLanguage));
+            assertEquals("LF", FxTestSupport.callOnFx(script::getLineEnding), "a shebang script is not made CRLF");
+
             // Other files still follow the rule.
             Path txt = Files.writeString(dir.resolve("a.txt"), "x\n");
             EditorBuffer other = open(async, fx, txt);

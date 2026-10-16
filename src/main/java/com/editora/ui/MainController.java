@@ -7629,6 +7629,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         buffer.addLanguageListener(
                 () -> { // a picked language or a typed shebang: the status bar says so at once
+                    // .editorconfig rules depend on the language (a shell script keeps LF and no BOM).
+                    editorSettings.applyEditorConfig(buffer);
                     if (activeBuffer() == buffer) {
                         statusBar.refresh();
                     }
