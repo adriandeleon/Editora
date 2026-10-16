@@ -131,6 +131,34 @@ class ContainerProbeFxTest {
     }
 
     @Test
+    void editorasWorkingFolderIsInTheContainersHome() throws Exception {
+        com.editora.process.TargetCache cache = target.cache();
+        String home = target.env().home();
+        Path jar = Files.writeString(dir.resolve("debug-0.53.jar"), "jar bytes");
+
+        String copy = cache.putFile("java-debug/debug-0.53.jar", jar);
+        String config = cache.putText("git-global-0011.config", "[core]\n\tpager = cat\n");
+        String workspace = cache.makeDirectories("jdtls-workspaces/abc123");
+
+        assertEquals(home + "/.cache/editora/java-debug/debug-0.53.jar", copy);
+        ProcessRunner.Result seen = engine(
+                "exec",
+                name,
+                "sh",
+                "-c",
+                "cat \"$0\"; cat \"$1\"; test -d \"$2\" && echo folder",
+                copy,
+                config,
+                workspace);
+        assertTrue(seen.ok(), seen.message());
+        assertEquals("jar bytes[core]\n\tpager = cat\nfolder\n", seen.out());
+
+        cache.delete("jdtls-workspaces");
+        ProcessRunner.Result gone = engine("exec", name, "test", "-e", home + "/.cache/editora/jdtls-workspaces");
+        assertFalse(gone.ok(), "removed in the container");
+    }
+
+    @Test
     void theContainersOwnPathAndLocaleAreUsed() throws Exception {
         ProcessRunner.Result r =
                 ProcessRunner.run(folder, Duration.ofSeconds(60), List.of("sh", "-c", "echo \"$PATH\""));

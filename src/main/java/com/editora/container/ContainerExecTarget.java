@@ -17,6 +17,8 @@ import com.editora.process.PortRelays;
 import com.editora.process.PosixShell;
 import com.editora.process.RelayPortForward;
 import com.editora.process.RemoteEnv;
+import com.editora.process.ShellTargetCache;
+import com.editora.process.TargetCache;
 
 /**
  * A running container whose bind-mounted folders of this machine have their tools run inside it, with
@@ -182,7 +184,14 @@ public final class ContainerExecTarget implements ExecTarget {
     @Override
     public String toTargetPath(Path path) {
         String inside = info.mounts().toContainer(path);
-        return inside != null ? inside : path.toAbsolutePath().normalize().toString();
+        if (inside != null) {
+            return inside;
+        }
+        if (path.getRoot() != null && !path.isAbsolute()) {
+            // A container's own file (toPath) on Windows, rooted but driveless: its name, not a drive's.
+            return path.normalize().toString().replace('\\', '/');
+        }
+        return path.toAbsolutePath().normalize().toString();
     }
 
     /**
@@ -193,6 +202,20 @@ public final class ContainerExecTarget implements ExecTarget {
     public Path toPath(String targetPath) {
         Path local = info.mounts().toLocal(targetPath);
         return local != null ? local : Path.of(targetPath);
+    }
+
+    /**
+     * {@code ~/.cache/editora} in the container's home, as its login shell reports it. This machine cannot see
+     * it (a container's home is in no mount, as a rule), so its files are written by commands in the container
+     * ({@link ShellTargetCache}). It lasts as long as the container does.
+     */
+    @Override
+    public TargetCache cache() throws IOException {
+        String home = env().home();
+        if (home == null || !home.startsWith("/")) {
+            throw new IOException("could not learn the home folder in " + info.name());
+        }
+        return new ShellTargetCache(this, (home.equals("/") ? "" : home) + "/.cache/editora");
     }
 
     /** Whether {@code local} is in one of the container's mounts. No I/O. */

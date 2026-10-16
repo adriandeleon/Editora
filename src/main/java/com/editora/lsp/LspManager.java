@@ -1049,24 +1049,15 @@ public final class LspManager {
             return List.of();
         }
         try {
-            var target = com.editora.process.ExecTargets.forPath(root);
-            Path cache = target.cacheDir();
+            com.editora.process.TargetCache cache =
+                    com.editora.process.ExecTargets.forPath(root).cache();
             if (cache == null) {
                 return List.of();
             }
-            Path dir = Files.createDirectories(cache.resolve("java-debug"));
             List<String> out = new ArrayList<>();
             for (String jar : localJars) {
                 Path source = Path.of(jar);
-                Path copy = dir.resolve(source.getFileName().toString());
-                if (!Files.isRegularFile(copy) || Files.size(copy) != Files.size(source)) {
-                    // Written aside and moved in, so a jdtls never loads half a jar.
-                    Path part = dir.resolve(copy.getFileName() + ".part");
-                    Files.copy(source, part, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    Files.deleteIfExists(copy);
-                    Files.move(part, copy);
-                }
-                out.add(target.toTargetPath(copy));
+                out.add(cache.putFile("java-debug/" + source.getFileName(), source));
             }
             return List.copyOf(out);
         } catch (java.io.IOException | RuntimeException e) {
@@ -1081,14 +1072,13 @@ public final class LspManager {
      */
     private static LspServerRegistry.ServerSpec withRemoteJdtlsWorkspace(LspServerRegistry.ServerSpec spec, Path root) {
         try {
-            var target = com.editora.process.ExecTargets.forPath(root);
-            Path cache = target.cacheDir();
+            com.editora.process.TargetCache cache =
+                    com.editora.process.ExecTargets.forPath(root).cache();
             if (cache == null) {
                 return spec;
             }
-            Path workspace = cache.resolve("jdtls-workspaces").resolve(LspServerRegistry.workspaceDirName(root));
-            Files.createDirectories(workspace);
-            return LspServerRegistry.withDataDir(spec, target.toTargetPath(workspace));
+            return LspServerRegistry.withDataDir(
+                    spec, cache.makeDirectories("jdtls-workspaces/" + LspServerRegistry.workspaceDirName(root)));
         } catch (java.io.IOException | RuntimeException e) {
             return spec;
         }

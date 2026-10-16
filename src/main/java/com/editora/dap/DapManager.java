@@ -170,6 +170,8 @@ public final class DapManager implements DapClient.Host {
     private volatile SourceAlias sourceAlias;
 
     private volatile Path compilationDirectory;
+    /** Removes {@link #compilationDirectory} on its target ({@code null}: a folder of this machine). */
+    private volatile Runnable compilationRemoval;
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
 
@@ -848,13 +850,24 @@ public final class DapManager implements DapClient.Host {
         Map<String, String> launchEnvironment = env;
         startupTask = io.submit(() -> {
             Path out = null;
+            Runnable removal = null;
             boolean retained = false;
             try {
-                out = remote ? hostCompilationDirectory(file) : Files.createTempDirectory("editora-dap-");
                 Path compileFile = file;
-                if (sourceVersion != null) {
-                    compileFile = out.resolve(file.getFileName() + ".java");
-                    Files.writeString(compileFile, withoutShebang(Files.readString(file)));
+                if (remote) {
+                    HostCompilation host = hostCompilation(
+                            file, sourceVersion == null ? null : withoutShebang(Files.readString(file)));
+                    out = host.directory();
+                    removal = host.removal();
+                    if (host.source() != null) {
+                        compileFile = host.source();
+                    }
+                } else {
+                    out = Files.createTempDirectory("editora-dap-");
+                    if (sourceVersion != null) {
+                        compileFile = out.resolve(file.getFileName() + ".java");
+                        Files.writeString(compileFile, withoutShebang(Files.readString(file)));
+                    }
                 }
                 String javaExec = remote
                         ? hostJava(file)
@@ -876,6 +889,7 @@ public final class DapManager implements DapClient.Host {
                         return;
                     }
                     compilationDirectory = out;
+                    compilationRemoval = removal;
                     if (sourceVersion != null) {
                         sourceAlias = new SourceAlias(epoch, file, compileFile);
                     }
@@ -907,7 +921,7 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
             } finally {
                 if (!retained && out != null) {
-                    removeCompilationDirectory(out);
+                    removeCompilation(out, removal);
                 }
             }
         });
@@ -937,16 +951,36 @@ public final class DapManager implements DapClient.Host {
     }
 
     /**
-     * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its host's cache, made
-     * over the connection. Removed when the session ends, like a local one's temporary folder.
+     * A remote file's compilation on its target: the folder for its classes, the copy of its source when one
+     * is compiled instead of the file ({@code null} otherwise), both named as Editora names the target's files
+     * ({@link com.editora.process.ExecTarget#toPath}), and how the folder is removed.
      */
-    private static Path hostCompilationDirectory(Path file) throws java.io.IOException {
-        Path cache = com.editora.process.ExecTargets.forPath(file).cacheDir();
+    private record HostCompilation(Path directory, Path source, Runnable removal) {}
+
+    /**
+     * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its target's cache, with
+     * {@code source} (when not {@code null}) written into it. Removed when the session ends, like a local one's
+     * temporary folder — on the target, which for a container is the only place it is.
+     */
+    private static HostCompilation hostCompilation(Path file, String source) throws java.io.IOException {
+        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(file);
+        com.editora.process.TargetCache cache = target.cache();
         if (cache == null) {
             throw new java.io.IOException("the host has no folder for Editora's files");
         }
-        return Files.createDirectories(cache.resolve("debug-classes")
-                .resolve(java.util.UUID.randomUUID().toString()));
+        String folder = "debug-classes/" + java.util.UUID.randomUUID();
+        Path directory = target.toPath(cache.makeDirectories(folder));
+        Runnable removal = () -> {
+            try {
+                cache.delete(folder);
+            } catch (java.io.IOException | RuntimeException e) {
+                LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
+            }
+        };
+        Path copy = source == null
+                ? null
+                : target.toPath(cache.putText(folder + "/" + file.getFileName() + ".java", source));
+        return new HostCompilation(directory, copy, removal);
     }
 
     /** {@code java} on a remote file's host: under its configured JDK ({@code jdk.home}), else its PATH's. */
@@ -996,10 +1030,21 @@ public final class DapManager implements DapClient.Host {
     /** Remove both the temporary source and compiled classes after the adapter releases them. */
     private void releaseCompilationDirectory() {
         Path directory = compilationDirectory;
+        Runnable removal = compilationRemoval;
         compilationDirectory = null;
+        compilationRemoval = null;
         sourceAlias = null;
         if (directory != null) {
-            java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilationDirectory(directory));
+            java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilation(directory, removal));
+        }
+    }
+
+    /** {@code removal} when the folder is a target's, else this machine's folder walked and deleted. */
+    private static void removeCompilation(Path directory, Runnable removal) {
+        if (removal != null) {
+            removal.run();
+        } else {
+            removeCompilationDirectory(directory);
         }
     }
 
