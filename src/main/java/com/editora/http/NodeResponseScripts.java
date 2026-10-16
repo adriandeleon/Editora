@@ -337,7 +337,11 @@ public final class NodeResponseScripts implements ResponseScripts {
         return v;
     }
 
-    /** The shim, copied into {@code dir} under a name that changes with its content. */
+    /**
+     * The shim, copied into {@code dir} under a name that changes with its content, by its <b>real</b> path: Node
+     * resolves the script it runs, and under the permission model reading a link on the way ({@code /var} on macOS, a
+     * linked home or config folder) is refused — the run fails before the shim starts.
+     */
     static Path shim(Path dir) throws IOException {
         if (dir == null) {
             throw new IOException(tr("http.warn.handlerShimNoFolder"));
@@ -359,7 +363,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         Path target = dir.resolve("http-handler-shim-" + hash + ".js");
         if (Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
                 && java.util.Arrays.equals(Files.readAllBytes(target), bytes)) {
-            return target;
+            return target.toRealPath();
         }
         // Written aside and moved in: two windows running a handler at once never run half a shim.
         Path part = Files.createTempFile(dir, "shim-", ".part");
@@ -371,7 +375,7 @@ public final class NodeResponseScripts implements ResponseScripts {
         } finally {
             Files.deleteIfExists(part);
         }
-        return target;
+        return target.toRealPath();
     }
 
     // --- launching ---------------------------------------------------------------------------------------------
