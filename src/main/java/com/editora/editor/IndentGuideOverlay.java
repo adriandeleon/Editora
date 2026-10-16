@@ -4,6 +4,7 @@ import java.util.function.IntSupplier;
 
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
+import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -16,12 +17,17 @@ import org.fxmisc.richtext.CodeArea;
  * Faint vertical lines at each indentation level of the visible lines (VS Code's indent guides), painted on a
  * {@link Canvas} over the text.
  *
- * <p>Cheap by construction: one character-bounds query per redraw finds column 0, the column width comes from
- * the font ({@link ColumnAdvance}), and each visible line costs one paragraph-bounds query for its height — so
- * a wrapped line's guides run its full height. A blank line takes the indentation of the block around it
- * ({@link IndentLevels#widths}), so guides do not break at every empty line. Folded lines are skipped; redraws
- * are coalesced to one per pulse; the canvas stays 1×1 while the guides are off, the tab is in the background,
- * or the buffer is in large-file mode.
+ * <p>Placed from the text as it is laid out: one character-bounds query per redraw finds column 0, and a
+ * repaint measures the width of one column of indentation on the most deeply indented visible line (the font's
+ * own metrics, {@link ColumnAdvance}, are only the fallback when no visible line is indented — they measure a
+ * digit, and in a proportional font a space is narrower). Each visible line costs one paragraph-bounds query for
+ * its height, so a wrapped line's guides run its full height, and a guide is stroked once per run of lines that
+ * carry it. A blank line takes the indentation of the block around it ({@link IndentLevels#widths}), so guides
+ * do not break at every empty line. Folded lines are skipped.
+ *
+ * <p>Redraws are coalesced to one per pulse and run <em>after</em> that pulse's layout (see
+ * {@link #scheduleRedraw}). The canvas stays 1×1 while the guides are off, the tab is in the background, or the
+ * buffer is in large-file mode.
  */
 final class IndentGuideOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
@@ -32,7 +38,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     static final java.util.concurrent.atomic.AtomicInteger REDRAWS_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
 
-    /** Test seam: when set, every guide painted is recorded here as {@code {x, top, bottom}}. */
+    /** Test seam: when set, the guides of the last frame painted are recorded here as {@code {x, top, bottom}}. */
     static java.util.List<double[]> guidesForTest;
 
     private final CodeArea area;
@@ -51,6 +57,14 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     private boolean active;
     private boolean rendering = true;
     private boolean redrawPending;
+    /** How many pulses after a paint the overlay looks again (cheaply, see {@link #frameKey}) for moved text. */
+    private static final int CHECKS_AFTER_PAINT = 3;
+
+    private final Runnable afterLayout = this::afterLayoutPulse;
+    /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
+    private Scene armed;
+
+    private int checksLeft;
     private IndentGuideOverlay follower;
 
     IndentGuideOverlay(CodeArea area, IntSupplier unitColumns, IntSupplier tabSize) {
@@ -109,6 +123,7 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
         }
         fontFamily = family;
         fontSize = size;
+        painted = 0; // a new column width: measured again by the next paint
         scheduleRedraw();
     }
 
@@ -169,22 +184,70 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
         return active && rendering;
     }
 
+    /**
+     * Asks for a repaint <em>after the next layout pass</em>. The guides are placed from the laid-out text, so a
+     * paint run before the pulse that lays it out ({@code Platform.runLater} does) is a paint for the old layout
+     * — and when the text then moves without anything the overlay listens to (the gutter widening a pulse
+     * after an edit takes the file to 1,000 lines, line numbers or a breakpoint strip toggled, the font
+     * changed), nothing asked for another and the guides stayed where the text had been. So the paint is tied
+     * to the pulse, and for a few pulses afterwards the overlay looks again; where the text starts is part of
+     * the frame key, so a look that finds nothing moved costs no layout query beyond that one.
+     */
     private void scheduleRedraw() {
         if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        arm();
     }
 
-    private void redraw() {
+    private void arm() {
+        Scene scene = getScene();
+        if (scene == null) {
+            Platform.runLater(afterLayout); // not in a window: there is no pulse to wait for
+            return;
+        }
+        if (armed != scene) {
+            disarm();
+            scene.addPostLayoutPulseListener(afterLayout);
+            armed = scene;
+        }
+        Platform.requestNextPulse();
+    }
+
+    private void disarm() {
+        if (armed != null) {
+            armed.removePostLayoutPulseListener(afterLayout);
+            armed = null;
+        }
+    }
+
+    /** Runs once the scene has been laid out: paints if asked to, else checks the last paint still fits. */
+    private void afterLayoutPulse() {
+        if (redrawPending) {
+            redrawPending = false;
+            redraw();
+            checksLeft = CHECKS_AFTER_PAINT;
+        } else if (checksLeft > 0) {
+            checksLeft--;
+            if (drawable() && redraw()) {
+                checksLeft = CHECKS_AFTER_PAINT; // the text had moved: keep looking until it settles
+            }
+        }
+        if (checksLeft > 0 && drawable() && armed != null) {
+            Platform.requestNextPulse();
+        } else {
+            checksLeft = 0;
+            disarm();
+        }
+    }
+
+    /** Repaints when anything the guides depend on changed; returns whether it painted a new frame. */
+    private boolean redraw() {
         if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             CanvasGuards.release(canvas);
             painted = 0;
-            return;
+            return false;
         }
         CanvasGuards.fit(this, canvas);
         GraphicsContext g = canvas.getGraphicsContext2D();
@@ -193,56 +256,95 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
         try {
             int total = area.getParagraphs().size();
             int unit = Math.max(1, unitColumns.getAsInt());
+            int tab = tabSize.getAsInt();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
             if (total == 0 || last < first) {
                 g.clearRect(0, 0, w, h);
                 painted = 0;
-                return;
+                return false;
             }
-            int[] widths = IndentLevels.widths(
-                    p -> area.getParagraph(p).getText(), total, first, last, tabSize.getAsInt(), LOOKAROUND);
+            int[] widths =
+                    IndentLevels.widths(p -> area.getParagraph(p).getText(), total, first, last, tab, LOOKAROUND);
+            double zero = columnZeroX(first, last);
             // Most keystrokes change no line's indentation and move nothing: the picture is the same, so the
-            // layout queries below are skipped. Everything the picture depends on is in the key.
-            long key = frameKey(first, last, widths, unit, w, h);
+            // per-line layout queries below are skipped. Everything the picture depends on is in the key —
+            // where the text starts included, which moves without a scroll or an edit when the gutter changes.
+            long key = frameKey(first, last, widths, unit, w, h, zero);
             if (key == painted) {
-                return;
+                return false;
             }
             g.clearRect(0, 0, w, h);
             painted = 0;
-            Double zero = columnZeroX(first, last);
-            if (zero == null) {
-                return;
+            if (Double.isNaN(zero)) {
+                return false;
             }
             REDRAWS_FOR_TEST.incrementAndGet();
+            if (guidesForTest != null) {
+                guidesForTest.clear();
+            }
             painted = key;
-            double cell = advance.of(fontFamily, fontSize);
+            double cell = columnWidth(first, last, tab, zero);
+            // Scrolled sideways, the text slides under the gutter, which stays put: a guide whose column went
+            // under it is not drawn over the line numbers. Column 0 at no scroll is where the text area begins.
+            double textLeft = Math.floor(zero + area.getEstimatedScrollX());
             g.setStroke(color);
             g.setLineWidth(1);
+            int deepest = 0;
+            for (int width : widths) {
+                deepest = Math.max(deepest, IndentLevels.guides(width, unit));
+            }
+            // Each guide column is stroked once per run of consecutive lines that carry it, not once per line.
+            double[] runTop = new double[deepest];
+            double[] runBottom = new double[deepest];
+            java.util.Arrays.fill(runTop, Double.NaN);
             for (int p = first; p <= last; p++) {
                 int guides = IndentLevels.guides(widths[p - first], unit);
-                if (guides == 0 || area.isFolded(p)) {
-                    continue;
-                }
-                Bounds box = area.getParagraphBoundsOnScreen(p)
-                        .map(canvas::screenToLocal)
-                        .orElse(null);
-                if (box == null) {
-                    continue;
-                }
-                for (int k = 0; k < guides; k++) {
-                    double x = Math.floor(zero + k * unit * cell) + 0.5; // a crisp one-pixel line
-                    if (x < 0 || x > w) {
+                Bounds box = guides == 0 || area.isFolded(p)
+                        ? null
+                        : area.getParagraphBoundsOnScreen(p)
+                                .map(canvas::screenToLocal)
+                                .orElse(null);
+                for (int k = 0; k < deepest; k++) {
+                    boolean carries = box != null && k < guides;
+                    if (carries && !Double.isNaN(runTop[k]) && Math.abs(box.getMinY() - runBottom[k]) <= 1) {
+                        runBottom[k] = box.getMaxY(); // the run goes on
                         continue;
                     }
-                    g.strokeLine(x, box.getMinY(), x, box.getMaxY());
-                    if (guidesForTest != null) {
-                        guidesForTest.add(new double[] {x, box.getMinY(), box.getMaxY()});
+                    if (!Double.isNaN(runTop[k])) {
+                        stroke(g, guideX(zero, cell, k, unit), runTop[k], runBottom[k], textLeft, w);
+                        runTop[k] = Double.NaN;
+                    }
+                    if (carries) {
+                        runTop[k] = box.getMinY();
+                        runBottom[k] = box.getMaxY();
                     }
                 }
             }
+            for (int k = 0; k < deepest; k++) {
+                if (!Double.isNaN(runTop[k])) {
+                    stroke(g, guideX(zero, cell, k, unit), runTop[k], runBottom[k], textLeft, w);
+                }
+            }
+            return true;
         } catch (RuntimeException ignored) {
             // Viewport mid-layout: skip this frame, a later event redraws.
+            return false;
+        }
+    }
+
+    /** A crisp one-pixel line at the left edge of guide {@code k}'s column. */
+    private static double guideX(double zero, double cell, int k, int unit) {
+        return Math.floor(zero + k * unit * cell) + 0.5;
+    }
+
+    private void stroke(GraphicsContext g, double x, double top, double bottom, double textLeft, double w) {
+        if (x < textLeft || x > w) {
+            return;
+        }
+        g.strokeLine(x, top, x, bottom);
+        if (guidesForTest != null) {
+            guidesForTest.add(new double[] {x, top, bottom});
         }
     }
 
@@ -250,12 +352,13 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
     private long painted;
 
     /**
-     * What the guides depend on: the visible lines and their indentation, the unit, the scroll position, the
-     * document's height (a line that wraps anew, an inlay row), the colour and font, the canvas size, and which
-     * lines are folded.
+     * What the guides depend on: where column 0 is, the visible lines and their indentation, the unit, the scroll
+     * position, the document's height (a line that wraps anew, an inlay row), the colour and font, the canvas
+     * size, and which lines are folded.
      */
-    private long frameKey(int first, int last, int[] widths, int unit, double w, double h) {
+    private long frameKey(int first, int last, int[] widths, int unit, double w, double h, double zero) {
         long key = 17;
+        key = 31 * key + Double.hashCode(zero);
         key = 31 * key + first;
         key = 31 * key + last;
         key = 31 * key + java.util.Arrays.hashCode(widths);
@@ -276,20 +379,63 @@ final class IndentGuideOverlay extends Region implements SecondaryPane.Followed,
         return key == 0 ? 1 : key;
     }
 
-    /** Canvas-local x of column 0, from the first character of a visible line; null when none has one. */
-    private Double columnZeroX(int first, int last) {
+    /** Canvas-local x of column 0, from the first character of a visible line; NaN when none has one. */
+    private double columnZeroX(int first, int last) {
         for (int p = first; p <= last; p++) {
             if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
                 continue;
             }
-            int abs = area.getAbsolutePosition(p, 0);
-            Bounds b = area.getCharacterBoundsOnScreen(abs, abs + 1)
-                    .map(canvas::screenToLocal)
-                    .orElse(null);
+            Bounds b = bounds(p, 0);
             if (b != null) {
                 return b.getMinX();
             }
         }
-        return null;
+        return Double.NaN;
+    }
+
+    /**
+     * The width of one column of indentation, read off the laid-out text: on the most deeply indented visible
+     * line, the first character after the indentation sits {@link IndentLevels#width} columns past column 0 (a
+     * tab reaching its tab stop, as the text lays it out). With no indented line on screen, or one whose
+     * indentation wraps, the font's metrics stand in.
+     */
+    private double columnWidth(int first, int last, int tab, double zero) {
+        int best = -1;
+        int bestWidth = 0;
+        for (int p = first; p <= last; p++) {
+            if (area.isFolded(p)) {
+                continue;
+            }
+            int width = IndentLevels.width(area.getParagraph(p).getText(), tab);
+            if (width > bestWidth) {
+                best = p;
+                bestWidth = width;
+            }
+        }
+        if (best >= 0) {
+            String text = area.getParagraph(best).getText();
+            int lead = 0;
+            while (text.charAt(lead) == ' ' || text.charAt(lead) == '\t') {
+                lead++;
+            }
+            Bounds after = bounds(best, lead);
+            // Unwrapped, the indentation is on the line's only row; wrapped, it may have run onto the next one.
+            Bounds start = area.isWrapText() ? bounds(best, 0) : after;
+            if (start != null && after != null && Math.abs(after.getMinY() - start.getMinY()) < 1) {
+                double cell = (after.getMinX() - zero) / bestWidth;
+                if (cell > 0) {
+                    return cell;
+                }
+            }
+        }
+        return advance.of(fontFamily, fontSize);
+    }
+
+    /** The canvas-local bounds of character {@code column} of {@code paragraph}, or null. */
+    private Bounds bounds(int paragraph, int column) {
+        int abs = area.getAbsolutePosition(paragraph, column);
+        return area.getCharacterBoundsOnScreen(abs, abs + 1)
+                .map(canvas::screenToLocal)
+                .orElse(null);
     }
 }

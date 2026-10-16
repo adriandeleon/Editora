@@ -283,9 +283,12 @@ let GPU-backed resources grow with the number of open files:
 - A plain buffer builds only what every buffer uses: the note and spell overlays (both on by default), the
   minimap and the column rulers (a `Group` with one `Line` per ruler column, all placed from a single
   column-0 measure). The indent guides are on by default but still attached lazily, when the settings apply
-  turns them on; their redraw skips every frame whose picture would not change (a frame key of the visible
-  lines' indentation, scroll, document height, size, colour and folds), so typing inside a line costs no
-  layout query. Every other overlay and stripe — whitespace, TODO (overlay and
+  turns them on; their redraw runs after the pulse's layout and skips every frame whose picture would not
+  change (a frame key of where column 0 is, the visible lines' indentation, scroll, document height, size,
+  colour and folds), so typing inside a line costs one character-bounds query (column 0; about 25 µs on a
+  100k-line file) and no per-line layout query. Column 0 is in the key because the gutter can widen with
+  nothing scrolled or edited; the column width is measured from the most indented visible line on a repaint
+  only. Every other overlay and stripe — whitespace, TODO (overlay and
   stripe, attached with the first non-empty scan result), Markdown lint (overlay and stripe), inline values,
   the LSP diagnostic stripe, search, occurrences, log, Mermaid lint, LSP squiggles, snippets, AceJump — is
   attached on first activation through `attachLazyOverlay` / `attachLazyStripe` at its `EditorBuffer.Layer`,

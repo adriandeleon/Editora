@@ -6720,6 +6720,9 @@ public class EditorBuffer implements TabContent {
     public void refreshGutter() {
         markRulerInputsDirty(); // the gutter's width is where column 0 starts
         noteOverlay.refresh();
+        if (indentGuides != null) {
+            indentGuides.refresh(); // and where the guides start: the new gutter is laid out in the next pulse
+        }
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
         if (area2 != null) { // the same gutter: fold chevrons, bookmark, breakpoint and run markers

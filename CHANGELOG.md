@@ -127,8 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This Language…`. An `.editorconfig` `max_line_length` still sets the first ruler, and `off` still hides them.
   **Indent guides** — faint vertical lines at each indentation level, carried through blank lines — are on by
   default. Turn them off with `View: Toggle Indent Guides` or in Settings → Editor. They are hidden in Zen and
-  Simple UI and in large-file mode, follow the theme, and skip folded lines. The ruler toggle is now
-  `View: Toggle Rulers`.
+  Simple UI and in large-file mode, follow the theme, and skip folded lines. They are placed from the text as
+  it is laid out, so they stay on their columns when the line numbers gain a digit or are toggled, when the
+  font changes, in a proportional font, and in a tab-indented file; scrolled sideways, they are not drawn over
+  the line numbers. The ruler toggle is now `View: Toggle Rulers`.
 - **Line commands, at every cursor.**
   - `Edit: Insert Line Below` (`Ctrl+Enter`) opens a new, indented line under the current one, wherever
     the cursor is on it. `Edit: Insert Line Above` (`Ctrl+Shift+Enter`) opens one above.
