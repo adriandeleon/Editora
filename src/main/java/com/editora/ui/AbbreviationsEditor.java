@@ -44,6 +44,10 @@ final class AbbreviationsEditor {
     /** Pushes the saved table to every window's open buffers (they hold a copy). */
     private final Runnable applied;
 
+    private final java.util.function.Consumer<String> warn;
+    /** Asks "Delete “x”?" (Cancel the default answer); true to go ahead. */
+    private final java.util.function.Predicate<String> confirmDelete;
+
     final ObservableList<Abbreviation> items = FXCollections.observableArrayList();
     final ListView<Abbreviation> list = new ListView<>(items);
     final TextField abbrev = new TextField();
@@ -51,9 +55,43 @@ final class AbbreviationsEditor {
     private boolean loading;
     private Supplier<PendingFormEdit> formEdit = PendingFormEdit::none;
 
-    AbbreviationsEditor(ConfigManager config, Runnable applied) {
+    AbbreviationsEditor(
+            ConfigManager config,
+            Runnable applied,
+            java.util.function.Consumer<String> warn,
+            java.util.function.Predicate<String> confirmDelete) {
         this.config = config;
         this.applied = applied;
+        this.warn = warn;
+        this.confirmDelete = confirmDelete;
+    }
+
+    /**
+     * The other entry whose key {@code key} would repeat, ignoring case and surrounding space — expansion looks
+     * keys up that way, so one of the two silently shadowed the other — or null. Pure.
+     */
+    static Abbreviation duplicateOf(String key, Abbreviation self, List<Abbreviation> all) {
+        String k = nz(key).strip();
+        if (k.isEmpty()) {
+            return null;
+        }
+        for (Abbreviation other : all) {
+            if (other != self && nz(other.getAbbreviation()).strip().equalsIgnoreCase(k)) {
+                return other;
+            }
+        }
+        return null;
+    }
+
+    /** The entries worth storing: one without a key expands nothing (an Add not filled in yet). Pure. */
+    static List<Abbreviation> keyed(List<Abbreviation> all) {
+        List<Abbreviation> out = new ArrayList<>();
+        for (Abbreviation a : all) {
+            if (!nz(a.getAbbreviation()).isBlank()) {
+                out.add(a);
+            }
+        }
+        return out;
     }
 
     /** Whether the form shows something other than {@code a} holds — i.e. whether a commit has anything to write. Pure. */
@@ -70,6 +108,11 @@ final class AbbreviationsEditor {
     Node node() {
         reload();
         list.setPrefSize(200, 380);
+        Label none = new Label(tr("settings.abbrev.empty"));
+        none.getStyleClass().add("settings-hint");
+        none.setWrapText(true);
+        none.setMaxWidth(170);
+        list.setPlaceholder(none);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(Abbreviation a, boolean empty) {
@@ -106,6 +149,19 @@ final class AbbreviationsEditor {
             if (loading || !edited(a, abbrev.getText(), expansion.getText())) {
                 return; // nothing selected, or a field merely lost focus: never rewrite the store for that
             }
+            Abbreviation twin = duplicateOf(abbrev.getText(), a, items);
+            if (twin != null) {
+                loading = true; // putting the key back is not an edit
+                try {
+                    abbrev.setText(a.getAbbreviation());
+                } finally {
+                    loading = false;
+                }
+                warn.accept(tr("settings.abbrev.duplicate", twin.getAbbreviation()));
+                if (!edited(a, abbrev.getText(), expansion.getText())) {
+                    return;
+                }
+            }
             a.setAbbreviation(abbrev.getText());
             a.setExpansion(expansion.getText());
             list.refresh();
@@ -122,6 +178,15 @@ final class AbbreviationsEditor {
                 commit.run();
             }
         });
+        // Live: the expansion applies once typing pauses; the key on Enter or leaving it (a half-typed key could
+        // briefly repeat another one).
+        PauseCommit.watch(
+                () -> {
+                    if (!abbrev.isFocused()) {
+                        commit.run();
+                    }
+                },
+                expansion.textProperty());
         formEdit = () -> {
             Abbreviation cur = list.getSelectionModel().getSelectedItem();
             return cur == null
@@ -144,8 +209,7 @@ final class AbbreviationsEditor {
         Button add = new Button(tr("settings.abbrev.add"));
         add.setOnAction(e -> {
             Abbreviation a = new Abbreviation("", "");
-            items.add(a);
-            persist();
+            items.add(a); // stored once it has a key
             list.getSelectionModel().select(a);
             abbrev.requestFocus();
         });
@@ -153,16 +217,12 @@ final class AbbreviationsEditor {
         remove.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                items.remove(i);
+            Abbreviation a = list.getSelectionModel().getSelectedItem();
+            if (a != null && (a.getAbbreviation().isBlank() || confirmDelete.test(a.getAbbreviation()))) {
+                items.remove(a);
                 persist();
             }
         });
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
 
         VBox left = new VBox(6, list);
         VBox.setVgrow(list, Priority.ALWAYS);
@@ -175,9 +235,7 @@ final class AbbreviationsEditor {
         HBox top = new HBox(12, left, right);
         top.setAlignment(Pos.TOP_LEFT);
         VBox.setVgrow(top, Priority.ALWAYS);
-        Region gap = new Region();
-        HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox buttons = new HBox(6, add, remove, gap, save);
+        HBox buttons = new HBox(6, add, remove);
         buttons.setAlignment(Pos.CENTER_LEFT);
         return new VBox(8, top, buttons);
     }
@@ -189,13 +247,15 @@ final class AbbreviationsEditor {
         form.add(l, 0, row);
         form.add(field, 1, row);
         field.setMinWidth(180);
+        field.setMaxWidth(Double.MAX_VALUE); // the fields take the card's width, not a fixed 190 px
+        GridPane.setHgrow(field, Priority.ALWAYS);
         if (field instanceof TextArea) {
             GridPane.setValignment(l, javafx.geometry.VPos.TOP);
         }
     }
 
     private void persist() {
-        config.setAbbreviations(new ArrayList<>(items));
+        config.setAbbreviations(keyed(items));
         config.saveAbbreviations();
         applied.run();
     }
@@ -205,7 +265,7 @@ final class AbbreviationsEditor {
      * into it but not committed yet.
      */
     void reload() {
-        if (same(items, config.getAbbreviations())) {
+        if (same(keyed(items), config.getAbbreviations())) {
             return;
         }
         Abbreviation selected = list.getSelectionModel().getSelectedItem();

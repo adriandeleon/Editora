@@ -84,6 +84,8 @@ final class MacroSettingsPane extends HBox {
     private final ListView<Macro> list = new ListView<>(macros);
     private final ListView<MacroStep> stepList = new ListView<>(steps);
     private final TextField name = new TextField();
+    /** Says that another macro already has the typed name (shown only then). */
+    private final Label nameClash = new Label();
     /** The key-binding row: a chord label and its buttons, or a capture field while recording a chord. */
     private final WrapRow keybinding = new WrapRow(8, 6);
 
@@ -172,10 +174,21 @@ final class MacroSettingsPane extends HBox {
         form.setHgap(8);
         form.setVgap(6);
         formRow(form, 0, tr("settings.macro.name"), name);
-        formRow(form, 1, tr("settings.macro.keybinding"), keybinding);
+        nameClash.getStyleClass().add("settings-hint");
+        nameClash.setWrapText(true);
+        nameClash.setVisible(false);
+        nameClash.setManaged(false);
+        form.add(nameClash, 1, 1);
+        formRow(form, 2, tr("settings.macro.keybinding"), keybinding);
         javafx.scene.layout.GridPane.setHgrow(name, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setHgrow(keybinding, Priority.ALWAYS);
-        name.textProperty().addListener((o, was, now) -> touched());
+        name.textProperty().addListener((o, was, now) -> {
+            touched();
+            Macro twin = namedLike(now, editingId, host.config().getMacroStore().macros);
+            nameClash.setText(twin == null ? "" : tr("settings.macro.nameExists", twin.name()));
+            nameClash.setVisible(twin != null);
+            nameClash.setManaged(twin != null);
+        });
 
         Label stepsLabel = new Label(tr("settings.macro.steps"));
         stepsLabel.getStyleClass().add("settings-section");
@@ -301,6 +314,23 @@ final class MacroSettingsPane extends HBox {
         }
     }
 
+    /**
+     * The other macro already named {@code name} (ignoring case and surrounding space), or null. Two macros of
+     * one name were two identical "Macro: …" rows in the palette and the key list. Pure.
+     */
+    static Macro namedLike(String name, String selfId, List<Macro> all) {
+        String n = name == null ? "" : name.strip();
+        if (n.isEmpty()) {
+            return null;
+        }
+        for (Macro m : all) {
+            if (!m.id().equals(selfId) && m.name().strip().equalsIgnoreCase(n)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
     private Macro find(String id) {
         for (Macro m : macros) {
             if (m.id().equals(id)) {
@@ -356,8 +386,9 @@ final class MacroSettingsPane extends HBox {
         }
         MacroStore store = host.config().getMacroStore();
         String newName = name.getText() == null ? "" : name.getText().strip();
-        if (newName.isEmpty() && !store.isPlaceholder(stored)) {
-            newName = stored.name(); // a macro keeps its name rather than lose it to an emptied field
+        if ((newName.isEmpty() && !store.isPlaceholder(stored))
+                || namedLike(newName, stored.id(), store.macros) != null) {
+            newName = stored.name(); // keeps its name rather than lose it to an emptied or a taken one
         }
         store.put(new Macro(stored.id(), newName, new ArrayList<>(steps)));
         host.config().saveMacros();
@@ -379,6 +410,8 @@ final class MacroSettingsPane extends HBox {
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
         confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
         confirm.setHeaderText(null);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
@@ -571,11 +604,10 @@ final class MacroSettingsPane extends HBox {
             capture.addEventFilter(KeyEvent.KEY_TYPED, KeyEvent::consume);
             prompt.setOnAction(
                     e -> replaceStep(index, MacroStep.key(steps.get(index).value(), prompt.isSelected())));
-            Label hint = new Label(tr("settings.macro.pressKey"));
-            hint.getStyleClass().add("settings-hint");
+            // The prompt text says how ("Click the field and press the key."); a hint under it said it again.
             HBox row = new HBox(8, kind, capture);
             row.setAlignment(Pos.CENTER_LEFT);
-            stepDetail.getChildren().addAll(row, hint, prompt);
+            stepDetail.getChildren().addAll(row, prompt);
             return;
         }
         // Multi-line: an Enter typed here is an Enter in the macro. (The single-line field this replaces

@@ -2132,7 +2132,7 @@ public class SettingsWindow {
     }
 
     private VBox keymapsPage() {
-        VBox p = page(tr("settings.cat.keymaps"));
+        VBox p = page(tr("settings.cat.keymaps"), tr("settings.keymaps.subtitle"));
         Card mainCard = card(p, null);
         controlRow(
                 mainCard,
@@ -2152,7 +2152,10 @@ public class SettingsWindow {
         ScrollPane scroll = new ScrollPane(shortcutListBox);
         shortcutScroll = scroll;
         scroll.setFitToWidth(true);
-        scroll.setPrefHeight(320);
+        // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
+        scroll.prefHeightProperty()
+                .bind(javafx.beans.binding.Bindings.max(
+                        320, stage.heightProperty().subtract(390)));
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
         note.setWrapText(true);
@@ -2179,15 +2182,8 @@ public class SettingsWindow {
 
     private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
         String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.template.removeConfirm", name, t.id() + ".json"),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("settings.template.remove"));
-        confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return confirmLoss.test(
+                tr("settings.template.remove"), tr("settings.template.removeConfirm", name, t.id() + ".json"));
     }
 
     /**
@@ -2532,7 +2528,7 @@ public class SettingsWindow {
     }
 
     private VBox macrosPage() {
-        VBox p = page(tr("settings.cat.macros"));
+        VBox p = page(tr("settings.cat.macros"), tr("settings.macros.subtitle"));
         Card mainCard = card(p, null);
         macroPane = new MacroSettingsPane(new MacroSettingsPane.Host() {
             @Override
@@ -4733,7 +4729,7 @@ public class SettingsWindow {
     }
 
     private VBox snippetsPage() {
-        VBox p = page(tr("settings.cat.snippets"));
+        VBox p = page(tr("settings.cat.snippets"), tr("settings.snippets.subtitle"));
         Card expansion = card(p, null);
         checkRow(
                 expansion,
@@ -4748,7 +4744,9 @@ public class SettingsWindow {
                         this::macroWarn,
                         this::confirmSnippetSave,
                         SettingsWindow::highlightSnippetBody,
-                        SettingsWindow::installEmacsKeys));
+                        SettingsWindow::installEmacsKeys,
+                        name -> confirmLoss.test(
+                                tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))));
         reloadSnippets = snippetsEditor::reload;
         cardRow(
                 mainCard,
@@ -4777,7 +4775,7 @@ public class SettingsWindow {
     }
 
     private VBox templatesPage() {
-        VBox p = page(tr("settings.cat.templates"));
+        VBox p = page(tr("settings.cat.templates"), tr("settings.templates.subtitle"));
         Card author = card(p, tr("settings.section.templates"));
         controlRow(
                 author,
@@ -4901,8 +4899,11 @@ public class SettingsWindow {
                 return;
             }
             com.editora.template.Template cur = templateItems.get(i);
-            if (cur.isMultiFile() || id.getText().trim().isEmpty()) {
-                return; // multi-file templates are read-only here; an id is required
+            if (cur.isMultiFile()) {
+                return; // multi-file templates are read-only here
+            }
+            if (id.getText().trim().isEmpty()) {
+                id.setText(cur.id()); // the id names the file: a blank one keeps the old, and the rest still saves
             }
             if (templateFormText.get().equals(templateFormLoaded.get())) {
                 return; // a field merely lost focus — a bundled template must not become a user override for that
@@ -4995,6 +4996,17 @@ public class SettingsWindow {
                 commit.run();
             }
         });
+        PauseCommit.watch( // live, but never a half-typed id (it is the file name)
+                () -> {
+                    if (!id.isFocused()) {
+                        commit.run();
+                    }
+                },
+                name.textProperty(),
+                description.textProperty(),
+                language.textProperty(),
+                fileName.textProperty(),
+                body.textProperty());
 
         list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
             int i = now == null ? -1 : now.intValue();
@@ -5102,14 +5114,6 @@ public class SettingsWindow {
         keepWidth(add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
-        // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        right.getChildren().add(1, saveRow); // between the form and the multi-file note
         VBox.setVgrow(form, Priority.ALWAYS);
 
         loadTemplates.run();
@@ -5692,7 +5696,7 @@ public class SettingsWindow {
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
     private VBox abbreviationsPage() {
-        VBox p = page(tr("settings.cat.abbreviations"));
+        VBox p = page(tr("settings.cat.abbreviations"), tr("settings.abbrev.subtitle"));
         Card mainCard = card(p, null);
         abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
         abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
@@ -5705,7 +5709,13 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.ABBREVIATIONS,
-                (abbreviationsEditor = new AbbreviationsEditor(config, this::apply)).node(),
+                (abbreviationsEditor = new AbbreviationsEditor(
+                                config,
+                                this::apply,
+                                this::macroWarn,
+                                name -> confirmLoss.test(
+                                        tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))))
+                        .node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;
     }
@@ -5791,6 +5801,10 @@ public class SettingsWindow {
     static void installEmacsKeys(CodeArea area) {
         installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            com.editora.command.KeymapManager keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+            if (keymap != null && !com.editora.command.KeymapManager.DEFAULT.equals(keymap.activeName())) {
+                return; // Emacs keys under the Emacs keymap only: under CUA, Ctrl+A selects all, Ctrl+D is not delete
+            }
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
             boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
             if (!ctrl && !alt) {

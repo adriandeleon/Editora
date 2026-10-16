@@ -359,7 +359,7 @@ class SettingsFollowUpsFxTest {
                             abbrevList.getSelectionModel().getSelectedItem().getAbbreviation());
                     assertEquals("by the way, ", expansion.getText(), "what was being typed is still there");
                     assertEquals(12, expansion.getCaretPosition());
-                    button(page(w, "ABBREVIATIONS"), tr("settings.save")).fire();
+                    editor.abbrev.fireEvent(new javafx.event.ActionEvent()); // Enter applies the form
                     assertTrue(fx.shared.getAbbreviations().stream()
                             .anyMatch(a -> a.getAbbreviation().equals("btw")
                                     && a.getExpansion().equals("by the way, ")));
@@ -414,7 +414,7 @@ class SettingsFollowUpsFxTest {
                     name.setText("Two Line  ");
                     name.fireEvent(new ActionEvent());
                     language.setText(" java");
-                    button(pg, tr("settings.save")).fire();
+                    language.fireEvent(new ActionEvent()); // Enter applies it (there is no Save button)
                     assertEquals(List.of(), names(dir), "whitespace the save trims away is not an edit");
                     java.util.Set<String> userIds = FxTestSupport.field(w, "templateUserIds");
                     assertFalse(userIds.contains("two-line"), "still a bundled template");
