@@ -120,6 +120,9 @@ class HttpHistoryRound2FxTest {
         coordinators.forEach(HttpClientCoordinator::shutdown);
         server.stop(0);
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
+        // A run's history save can still be queued here; let it finish before JUnit deletes the @TempDir it
+        // writes to (see HttpResponseViewFixesFxTest.tearDown).
+        HttpHistorySync.awaitIdleForTest();
     }
 
     private String url(String path) {
