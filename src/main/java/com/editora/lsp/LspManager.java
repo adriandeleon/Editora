@@ -4212,10 +4212,14 @@ public final class LspManager {
      * {@code test/JavaTestScanner} can only guess syntactically from annotations. Delivers {@code null}
      * (not {@code false}) when there's no session or the command fails, so the caller keeps its own answer
      * rather than treating "don't know" as "not a test".
+     *
+     * <p>Only a {@code .java} file is asked about. jdtls also holds an extensionless {@code java --source N}
+     * shebang script, but it has no compilation unit for one and answers with an error whose stack trace
+     * lands in the Debug Log on every tab switch.
      */
     public void isTestFile(Path file, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
-        if (s == null || file == null) {
+        if (s == null || file == null || !isJavaSourceName(file)) {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
@@ -4223,6 +4227,12 @@ public final class LspManager {
             Boolean answer = error != null ? null : asBoolean(result);
             cb.accept(answer);
         });
+    }
+
+    /** Pure: whether jdtls can make a compilation unit of {@code file} — it must be named {@code *.java}. */
+    static boolean isJavaSourceName(Path file) {
+        Path name = file.getFileName();
+        return name != null && name.toString().endsWith(".java");
     }
 
     /**
