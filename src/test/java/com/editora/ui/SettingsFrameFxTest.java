@@ -380,4 +380,37 @@ class SettingsFrameFxTest {
             FxTestSupport.runOnFx(() -> FxTestSupport.<Stage>field(a, "stage").hide());
         }
     }
+
+    /** Every visible label under {@code root} with exactly {@code text}. */
+    static List<javafx.scene.control.Label> labels(Node root, String text, List<javafx.scene.control.Label> out) {
+        if (root instanceof javafx.scene.control.Label l && text.equals(l.getText())) {
+            out.add(l);
+        }
+        if (root instanceof javafx.scene.Parent p) {
+            p.getChildrenUnmodifiable().forEach(c -> labels(c, text, out));
+        }
+        return out;
+    }
+
+    @Test
+    void theWindowSaysOnceThatChangesApplyAsTheyAreMade() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                Stage stage = FxTestSupport.field(window, "stage");
+                String live = com.editora.i18n.Messages.tr("settings.liveNote");
+                Node footer = stage.getScene().getRoot().lookup(".settings-footer");
+                assertEquals(
+                        1, labels(footer, live, new java.util.ArrayList<>()).size(), "in the footer, on every page");
+                java.util.Map<Object, javafx.scene.layout.Region> pages = FxTestSupport.field(window, "pages");
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                assertTrue(
+                        labels(pages.get(category(sidebar, "GIT")), live, new java.util.ArrayList<>())
+                                .isEmpty(),
+                        "not again on the Git page");
+                stage.hide();
+            });
+        }
+    }
 }

@@ -1054,7 +1054,10 @@ public class SettingsWindow {
         close.setOnAction(e -> stage.close());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox buttons = new HBox(8, footReset, spacer, close);
+        // Said once, for every page: there is nothing to confirm (it used to be a note on the Git page only).
+        Label live = new Label(tr("settings.liveNote"));
+        live.getStyleClass().add("settings-hint");
+        HBox buttons = new HBox(8, footReset, spacer, live, close);
         buttons.setAlignment(Pos.CENTER_LEFT);
         buttons.getStyleClass().add("settings-footer");
 
@@ -4457,7 +4460,6 @@ public class SettingsWindow {
                         new HBox(8, gitAutoFetchSpinner, autoFetchUnit, switchFor(gitAutoFetchCheck))),
                 "git fetch automatically auto background interval minutes remote prune");
 
-        row(p, Category.GIT, null, noteBox(tr("settings.liveNote")), "live apply ok palette command");
         return p;
     }
 
