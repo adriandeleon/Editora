@@ -48,7 +48,9 @@ public final class DiagnosticMapper {
                     severity(d.getSeverity()),
                     message(d),
                     code(d),
-                    d.getSource()));
+                    d.getSource(),
+                    href(d),
+                    d.getTags() != null && d.getTags().contains(org.eclipse.lsp4j.DiagnosticTag.Unnecessary)));
         }
         return out;
     }
@@ -82,6 +84,20 @@ public final class DiagnosticMapper {
         }
         MarkupContent mc = m.getRight();
         return mc == null || mc.getValue() == null ? "" : mc.getValue();
+    }
+
+    /**
+     * The rule's documentation page ({@code codeDescription.href}) when it is a web address — ShellCheck's
+     * diagnostics link each SC code to its wiki page — else null.
+     */
+    private static String href(Diagnostic d) {
+        String href =
+                d.getCodeDescription() == null ? null : d.getCodeDescription().getHref();
+        if (href == null) {
+            return null;
+        }
+        String lower = href.strip().toLowerCase(java.util.Locale.ROOT);
+        return lower.startsWith("https://") || lower.startsWith("http://") ? href.strip() : null;
     }
 
     /** The diagnostic code as a string (LSP code is an Either&lt;String,Integer&gt;), or null. */

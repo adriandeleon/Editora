@@ -64,6 +64,62 @@ interface WireUris {
         };
     }
 
+    /**
+     * A server for a folder of this machine whose tools run elsewhere ({@code target}: a container, WSL): a key
+     * is a {@code file:} URI of this machine, and the server knows the same file by the target's name for it
+     * ({@link com.editora.process.ExecTarget#toTargetPath}). A file outside the folders the target maps, and a
+     * URI of another scheme, pass through unchanged.
+     */
+    static WireUris mapped(com.editora.process.ExecTarget target) {
+        String id = target.id();
+        return new WireUris() {
+            @Override
+            public String toWire(String key) {
+                if (key == null || !key.startsWith("file:")) {
+                    return key;
+                }
+                Path local = DocumentUris.toPath(key);
+                if (local == null
+                        || !id.equals(
+                                com.editora.process.ExecTargets.forPath(local).id())) {
+                    return key;
+                }
+                try {
+                    String there = target.toTargetPath(local);
+                    if (key.endsWith("/") && !there.endsWith("/")) {
+                        there += "/"; // a folder stays a folder (DocumentUris.ofDirectory)
+                    }
+                    return new java.net.URI("file", "", there.startsWith("/") ? there : "/" + there, null, null)
+                            .toASCIIString();
+                } catch (java.net.URISyntaxException | RuntimeException notAPath) {
+                    return key;
+                }
+            }
+
+            @Override
+            public String toKey(String wireUri) {
+                if (wireUri == null || !wireUri.startsWith("file:")) {
+                    return wireUri;
+                }
+                try {
+                    String there = java.net.URI.create(wireUri).getPath();
+                    if (there == null) {
+                        return wireUri;
+                    }
+                    Path local = target.toPath(there);
+                    if (local == null
+                            || !id.equals(com.editora.process.ExecTargets.forPath(local)
+                                    .id())) {
+                        return wireUri;
+                    }
+                    return wireUri.endsWith("/") ? DocumentUris.ofDirectory(local) : DocumentUris.of(local);
+                } catch (IllegalArgumentException notAPath) { // also an InvalidPathException
+                    return wireUri;
+                }
+            }
+        };
+    }
+
     String toWire(String key);
 
     String toKey(String wireUri);

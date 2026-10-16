@@ -160,4 +160,98 @@ class ShellRunWindowFxTest {
             assertTrue(FxTestSupport.callOnFx(b::isRunnable), "a remote script runs on its host, like a remote .py");
         }
     }
+
+    private static String echo(MainController c) throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> ((javafx.scene.control.Label) FxTestSupport.field(c.statusBar, "echo")).getText());
+    }
+
+    private static FxWindowFixture debugWindow() throws Exception {
+        return FxWindowFixture.create(
+                Files.createTempDirectory("shell-debug-cfg"),
+                shared -> shared.getSettings().setDebugSupport(true));
+    }
+
+    @Test
+    void debuggingAShellScriptPointsAtRunWithTrace() throws Exception {
+        // It said "Debugging is unavailable for this file (check Settings → Debugging)" — no setting helps.
+        Path script = dir.resolve("deploy.sh");
+        Files.writeString(script, "#!/bin/sh\necho hi\n");
+        try (FxWindowFixture fx = debugWindow()) {
+            MainController c = fx.controller;
+            open(c, script);
+            CommandRegistry registry = FxTestSupport.field(c, "registry");
+            FxTestSupport.runOnFx(() -> registry.run("debug.start"));
+            FxTestSupport.drainFx();
+            assertEquals(tr("status.debug.shellNotDebuggable"), echo(c));
+
+            FxTestSupport.runOnFx(() -> c.debugCoordinator.debugConfig(
+                    new com.editora.config.RunConfiguration("D", "shell", "deploy.sh", "", "", "", "", "", "", "")));
+            assertEquals(tr("status.debug.shellNotDebuggable"), echo(c), "and for a shell configuration");
+            FxTestSupport.runOnFx(() -> c.debugCoordinator.debugConfig(
+                    new com.editora.config.RunConfiguration("P", "python", "tool.py", "", "", "", "", "", "", "")));
+            assertEquals(
+                    tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python")),
+                    echo(c),
+                    "the type's name, not its id");
+        }
+    }
+
+    @Test
+    void debuggingAnUntitledTextBufferDoesNotAskToSaveItFirst() throws Exception {
+        try (FxWindowFixture fx = debugWindow()) {
+            MainController c = fx.controller;
+            CommandRegistry registry = FxTestSupport.field(c, "registry");
+            FxTestSupport.runOnFx(() -> registry.run("file.new"));
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> registry.run("debug.start"));
+            FxTestSupport.drainFx();
+            OverlayHost overlay = FxTestSupport.field(c, "overlayHost");
+            assertFalse(FxTestSupport.callOnFx(overlay::isShowing), "no Save As prompt for a file nothing can debug");
+            assertEquals(tr("status.debug.languageNotDebuggable"), echo(c));
+        }
+    }
+
+    @Test
+    void aSourcedStartupFileHasNoRun() throws Exception {
+        Path xinitrc = dir.resolve(".xinitrc");
+        Files.writeString(xinitrc, "exec i3\n");
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            EditorBuffer b = open(fx.controller, xinitrc);
+            assertTrue(FxTestSupport.callOnFx(b::isShell));
+            assertFalse(FxTestSupport.callOnFx(b::isRunnable), "one stray click on its ▶ started a window manager");
+        }
+    }
+
+    @Test
+    void saveAsRunConfigurationSavesAShellScriptConfiguration() throws Exception {
+        Path script = dir.resolve("deploy.sh");
+        Files.writeString(script, "#!/bin/sh\necho hi\n");
+        try (FxWindowFixture fx = FxWindowFixture.create()) {
+            MainController c = fx.controller;
+            open(c, script);
+            CommandRegistry registry = FxTestSupport.field(c, "registry");
+            FxTestSupport.runOnFx(
+                    () -> registry.run("run.saveConfig")); // said "Open a Java file in the project first."
+            OverlayHost overlay = FxTestSupport.field(c, "overlayHost");
+            await("the name prompt", overlay::isShowing);
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.layout.StackPane root = FxTestSupport.field(overlay, "overlayRoot");
+                javafx.scene.Node card = root.getChildren().get(1);
+                assertEquals("deploy.sh", ((javafx.scene.control.TextField) card.lookup(".text-field")).getText());
+                card.lookupAll(".button").stream()
+                        .filter(n ->
+                                n instanceof Button button && tr("dialog.ok").equals(button.getText()))
+                        .map(n -> (Button) n)
+                        .findFirst()
+                        .orElseThrow()
+                        .fire();
+            });
+            java.util.List<com.editora.config.RunConfiguration> saved =
+                    FxTestSupport.callOnFx(() -> c.config.getWorkspaceState().getRunConfigurations());
+            assertEquals(1, saved.size());
+            assertEquals("shell", saved.get(0).type());
+            assertEquals(script.toString(), saved.get(0).target(), "no project: the absolute path");
+        }
+    }
 }

@@ -322,12 +322,11 @@ public final class LspManager {
     }
 
     /**
-     * Whether {@code file} can be served: a local file, or one on a remote host that may run commands (its
-     * server runs there).
+     * Whether {@code file} can be served: its tools run here, or where they run (a remote host, a container,
+     * WSL) can run commands now — its server runs there.
      */
     private static boolean servable(Path file) {
-        return com.editora.vfs.Vfs.isLocal(file)
-                || com.editora.process.ExecTargets.forPath(file).isAvailable();
+        return com.editora.process.ExecTargets.forPath(file).isAvailable();
     }
 
     /**
@@ -892,7 +891,12 @@ public final class LspManager {
                 root,
                 params -> onPublishDiagnostics(diagnosticSource[0], params),
                 (type, msg) -> Platform.runLater(() -> {
-                    onStatus.accept(type, msg);
+                    ServerStatusListener named = onServerStatus;
+                    if (named != null) {
+                        named.status(spec.serverId(), type, msg);
+                    } else {
+                        onStatus.accept(type, msg);
+                    }
                     if (announcesReady(type)) {
                         // Capabilities are known now (and jdtls says this again when it has finished
                         // importing): the gates and data of this session's documents are due a refresh.
@@ -937,9 +941,10 @@ public final class LspManager {
         // otherwise freeze the UI for the first open of a language. The session is already cached, so the caller's
         // didOpen queues (LanguageServerSession.whenReady) until the async initialize completes; a failed start
         // uncaches it so a later open retries.
-        boolean remote = com.editora.vfs.Vfs.isRemote(root);
-        // On a remote host: the host's server (its own command for it, else the default), and none of the
-        // local workspace and SDK discovery below, which reads this machine's disk.
+        boolean remote = !com.editora.process.ExecTargets.runsHere(root);
+        // Where the folder's tools run elsewhere (a remote host, a container, WSL): the server there (its own
+        // command for it, else the default), and none of the local workspace and SDK discovery below, which
+        // reads this machine's disk and names this machine's paths.
         LspServerRegistry.ServerSpec unresolvedSpec = remote
                 ? new LspServerRegistry.ServerSpec(serverId, remoteCommand(serverId, root), spec.rootMarkers())
                 : spec;
@@ -1106,6 +1111,23 @@ public final class LspManager {
     }
 
     /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
+    /** A server's status, with the id of the server it came from. */
+    @FunctionalInterface
+    public interface ServerStatusListener {
+        void status(String serverId, String type, String message);
+    }
+
+    /** When set, receives every server status instead of the constructor's callback, naming the server. */
+    private volatile ServerStatusListener onServerStatus;
+
+    /**
+     * Routes server statuses to {@code listener} with the server's id, so a message can say which server it
+     * is from — the constructor's callback has no way to (every one was shown as "Java LSP: …").
+     */
+    public void setOnServerStatus(ServerStatusListener listener) {
+        this.onServerStatus = listener;
+    }
+
     public void setOnSessionCrashed(BiConsumer<String, Path> callback) {
         this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
     }

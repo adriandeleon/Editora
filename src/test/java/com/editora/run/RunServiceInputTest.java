@@ -23,6 +23,7 @@ class RunServiceInputTest {
     void posixShellsAreRecognizedByNameOrPath() {
         assertTrue(RunService.isPosixShell("bash"));
         assertTrue(RunService.isPosixShell("/bin/sh"));
+        assertTrue(RunService.isPosixShell("/bin/busybox"), "#!/bin/busybox sh");
         assertTrue(RunService.isPosixShell("C:\\Program Files\\Git\\bin\\bash.exe"));
         assertFalse(RunService.isPosixShell("python3"));
         assertFalse(RunService.isPosixShell(null));

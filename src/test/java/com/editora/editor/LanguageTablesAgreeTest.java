@@ -59,5 +59,9 @@ class LanguageTablesAgreeTest {
         // Real files that used to be coloured as shell yet called plain text.
         assertEquals("shell", LanguageRegistry.forFileName("/etc/bash.bashrc"));
         assertEquals("shell", LanguageRegistry.forFileName("/home/u/bin/backup.ksh"));
+        // Bats test files and macOS .command scripts.
+        assertEquals("shell", LanguageRegistry.forFileName("test/install.bats"));
+        assertEquals("shell", LanguageRegistry.forFileName("/Users/u/Desktop/Start Server.command"));
+        assertEquals("source.shell", GRAMMARS.forFileName("x.bats").getScopeName());
     }
 }

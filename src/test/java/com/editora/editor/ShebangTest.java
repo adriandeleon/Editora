@@ -95,4 +95,29 @@ class ShebangTest {
         assertEquals("sh", ext("  #!/bin/bash  "));
         assertEquals("py", ext("#!  /usr/bin/env   python3"));
     }
+    /** env options that take the next word as their argument must not make that word the interpreter. */
+    @Test
+    void envOptionsWithAnArgumentAreSkipped() {
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env -u FOO bash"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env -S -u FOO bash -e"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env -C /tmp bash"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env --unset=FOO bash"));
+    }
+
+    /** `-S` glued to its string, and the long `--split-string=` form. */
+    @Test
+    void envSplitStringGluedOrLong() {
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env -Sbash -e"));
+        assertEquals("py", Shebang.extension("#!/usr/bin/env --split-string=python3 -u"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env --split-string bash -e"));
+    }
+
+    /** busybox runs the applet named after it; Bats test files are bash. */
+    @Test
+    void busyboxAppletAndBats() {
+        assertEquals("sh", Shebang.extension("#!/bin/busybox sh"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env busybox ash"));
+        assertNull(Shebang.extension("#!/bin/busybox"));
+        assertEquals("sh", Shebang.extension("#!/usr/bin/env bats"));
+    }
 }

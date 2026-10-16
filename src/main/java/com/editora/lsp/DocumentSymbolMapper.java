@@ -24,6 +24,7 @@ final class DocumentSymbolMapper {
         if (raw == null) {
             return out;
         }
+        List<SymbolInformation> flat = new ArrayList<>();
         for (Either<SymbolInformation, DocumentSymbol> e : raw) {
             if (e == null) {
                 continue;
@@ -33,14 +34,75 @@ final class DocumentSymbolMapper {
                 if (n != null) {
                     out.add(n);
                 }
-            } else if (e.isLeft()) {
-                SymbolNode n = fromSymbolInformation(e.getLeft());
-                if (n != null) {
-                    out.add(n);
-                }
+            } else if (e.isLeft() && e.getLeft() != null) {
+                flat.add(e.getLeft());
             }
         }
+        out.addAll(nest(flat));
         return out;
+    }
+
+    /**
+     * A flat {@link SymbolInformation} list as a tree: each symbol under the innermost other symbol whose range
+     * contains its own, and a name that repeats with the same kind in one scope listed once (its first
+     * occurrence). bash-language-server answers flat, listing every assignment: without this a function's
+     * locals sat at top level beside the functions and a loop's {@code total=…} appeared once per assignment.
+     */
+    static List<SymbolNode> nest(List<SymbolInformation> flat) {
+        record Item(SymbolInformation info, org.eclipse.lsp4j.Range range, List<Item> children) {}
+        List<Item> items = new ArrayList<>();
+        for (SymbolInformation s : flat) {
+            if (s.getName() != null
+                    && s.getLocation() != null
+                    && s.getLocation().getRange() != null) {
+                items.add(new Item(s, s.getLocation().getRange(), new ArrayList<>()));
+            }
+        }
+        // Document order; of two starting together, the wider one first, so it can hold the other.
+        items.sort((x, y) -> {
+            int c = compare(x.range().getStart(), y.range().getStart());
+            return c != 0 ? c : compare(y.range().getEnd(), x.range().getEnd());
+        });
+        List<Item> roots = new ArrayList<>();
+        java.util.ArrayDeque<Item> open = new java.util.ArrayDeque<>();
+        for (Item item : items) {
+            while (!open.isEmpty() && !strictlyContains(open.peek().range(), item.range())) {
+                open.pop();
+            }
+            (open.isEmpty() ? roots : open.peek().children()).add(item);
+            open.push(item);
+        }
+        java.util.function.Function<List<Item>, List<SymbolNode>> build = new java.util.function.Function<>() {
+            @Override
+            public List<SymbolNode> apply(List<Item> level) {
+                List<SymbolNode> nodes = new ArrayList<>();
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (Item item : level) {
+                    String kind = kindName(item.info().getKind());
+                    if (!seen.add(kind + '\u0000' + item.info().getName())) {
+                        continue; // the same name and kind again in this scope: a reassignment, not a symbol
+                    }
+                    int line = Math.max(0, item.range().getStart().getLine());
+                    int endLine = Math.max(line, item.range().getEnd().getLine());
+                    nodes.add(new SymbolNode(item.info().getName(), "", kind, line, endLine, apply(item.children())));
+                }
+                return nodes;
+            }
+        };
+        return build.apply(roots);
+    }
+
+    private static int compare(org.eclipse.lsp4j.Position a, org.eclipse.lsp4j.Position b) {
+        int byLine = Integer.compare(a.getLine(), b.getLine());
+        return byLine != 0 ? byLine : Integer.compare(a.getCharacter(), b.getCharacter());
+    }
+
+    /** Whether {@code outer} contains {@code inner} and is larger than it. */
+    private static boolean strictlyContains(org.eclipse.lsp4j.Range outer, org.eclipse.lsp4j.Range inner) {
+        boolean contains =
+                compare(outer.getStart(), inner.getStart()) <= 0 && compare(inner.getEnd(), outer.getEnd()) <= 0;
+        boolean same = compare(outer.getStart(), inner.getStart()) == 0 && compare(outer.getEnd(), inner.getEnd()) == 0;
+        return contains && !same;
     }
 
     private static SymbolNode fromDocumentSymbol(DocumentSymbol s) {
@@ -68,17 +130,6 @@ final class DocumentSymbolMapper {
         }
         String detail = s.getDetail() == null ? "" : s.getDetail();
         return new SymbolNode(s.getName(), detail, kind, Math.max(0, line), Math.max(line, endLine), children);
-    }
-
-    private static SymbolNode fromSymbolInformation(SymbolInformation s) {
-        if (s == null || s.getName() == null || s.getLocation() == null) {
-            return null;
-        }
-        var range = s.getLocation().getRange();
-        int line = range != null && range.getStart() != null ? range.getStart().getLine() : 0;
-        int endLine = range != null && range.getEnd() != null ? range.getEnd().getLine() : line;
-        return new SymbolNode(
-                s.getName(), "", kindName(s.getKind()), Math.max(0, line), Math.max(line, endLine), List.of());
     }
 
     /** Lowercased, stable kind id for the UI's icon/sort mapping; {@code "other"} for null/unknown. */

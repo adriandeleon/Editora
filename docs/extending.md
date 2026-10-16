@@ -94,6 +94,8 @@ JavaScript (vscode-js-debug) is a socket. Adapters are never bundled — they're
    Information), and to `FoldRegions`/`Indenter`/`Commenter` if it needs folding/indent/comment
    support. `LanguageTablesAgreeTest` fails when an extension has a grammar but no language, or the
    reverse. Shell extensions and names live in one table, `ShellFiles`, that all three read.
+   A plain-text buffer can still get a language from its content: a shebang (`Shebang`) or a vim/emacs
+   modeline (`Modeline`); add the interpreter or mode name there when a language should be reachable that way.
 4. A grammar that `include`s a `#rule` it never defines loses that construct silently (tm4e skips
    it, and `App` silences tm4e's warnings); `BundledGrammarIncludesTest` catches it.
 

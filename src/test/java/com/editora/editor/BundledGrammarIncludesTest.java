@@ -72,4 +72,36 @@ class BundledGrammarIncludesTest {
         }
         assertEquals(List.of(), problems, "includes of rules the grammar does not define");
     }
+
+    private static void collectApplyEndPatternLast(JsonNode node, List<String> nonBoolean, String name) {
+        if (node.isObject()) {
+            JsonNode flag = node.get("applyEndPatternLast");
+            if (flag != null && !flag.isBoolean()) {
+                nonBoolean.add(name + ": " + flag);
+            }
+            node.elements().forEachRemaining(child -> collectApplyEndPatternLast(child, nonBoolean, name));
+        } else if (node.isArray()) {
+            node.elements().forEachRemaining(child -> collectApplyEndPatternLast(child, nonBoolean, name));
+        }
+    }
+
+    /**
+     * {@code "applyEndPatternLast": 1}, as the upstream grammars write it, is read as <em>false</em> by tm4e (JSON
+     * numbers are not integers to it), so a rule whose end can match where it begins ends at once — the shell
+     * grammar's function bodies lost their scope that way. It must be the boolean {@code true}.
+     */
+    @Test
+    void applyEndPatternLastIsABoolean() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        List<String> names = new ArrayList<>(GrammarRegistry.shared().availableLanguageNames());
+        names.add("html-derivative");
+        List<String> nonBoolean = new ArrayList<>();
+        for (String name : names) {
+            try (InputStream in =
+                    GrammarRegistry.class.getResourceAsStream("/com/editora/grammars/" + name + ".tmLanguage.json")) {
+                collectApplyEndPatternLast(json.readTree(in), nonBoolean, name);
+            }
+        }
+        assertEquals(List.of(), nonBoolean);
+    }
 }

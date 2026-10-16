@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     written, so keep signing keys in `http-client.private.env.json`. When a request that reads a secret goes to a
     host made of a script's or an earlier response's value, the secrets prompt names "a host chosen by an earlier
     response or a script".
+- **Run with Trace for shell scripts.** `Run: Run with Trace` (palette, Run menu, and the editor's right-click
+  menu on a shell script) runs the script with `-x`, keeping its shebang's interpreter and flags. Under bash
+  each traced line names its file and line (`+/path/deploy.sh:12: cmd`) and is a link to that line; `sh` and
+  dash trace without locations, and zsh is not supported. Putting `-x` in a run configuration's Interpreter
+  options gives the same links. Trace lines are drawn muted, not as errors.
+- **Modelines set the language** of a file whose name says nothing: a vim modeline (`# vim: ft=sh`,
+  `vim: set filetype=bash :`) in the first or last five lines, or an emacs `-*- mode: sh -*-` line.
+- **Terminal sessions in Markdown.** ```` ```console ```` and ```` ```shell-session ```` blocks in the preview show
+  a muted prompt, a highlighted command and plain output. ```` ```shellscript ```` blocks are highlighted as shell.
+- **Problems rows show the rule code** (`[SC2086]`), with **Open Rule Documentation** and **Copy Code** in their
+  context menu.
 - **Shell scripts: ShellCheck and shfmt.** bash-language-server needs both for linting and formatting, and
   without them it silently did neither. Doctor and Settings → LSP (Bash) now show whether each one is found,
   with an **Install** button, and the palette has `Install: ShellCheck and shfmt`. Editora downloads the
@@ -327,6 +338,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Go to Definition works without a language server.** When LSP is off, no server handles the file, or the
+  server finds nothing, it looks the name up in this file and then in the project's symbol index.
+- **The Run console draws colours** (ANSI codes become theme colours), a `\r` progress bar stays on one line,
+  and a clear-screen code clears it. Shell runs get `TERM=xterm-256color` unless the configuration sets one.
+- **Stop says "Stopped"** instead of "Process finished with exit code 143".
+- **Shell snippets follow the shebang:** `if`, `elif`, `while` and `until` use `[ ]` in `#!/bin/sh` and dash
+  scripts. New triggers `elif` and `arith` (`$(( … ))`); `elseif` and `expr` still work. Loops and `function`
+  are laid out the usual way and no snippet adds a blank line after itself.
+- **File templates follow `.editorconfig` `indent_style` and `indent_size`.** New ▸ Zsh starts with the same strict
+  preamble as the Zsh Script template.
+- **Run Configurations suits scripts:** Add proposes the open shell or Python script, Save as Run Configuration
+  saves script configurations, Script / target has a Browse button, rows a type does not use are hidden, and
+  labels are no longer cut off.
+- **Language-server status messages name their server** ("bash-language-server: Analyzing workspace") instead of
+  always saying "Java LSP".
+- **Outlines from servers that send a flat symbol list** (bash-language-server among them) are nested under their
+  functions, and a variable assigned twice is listed once.
+- **Hints are drawn fainter than information**, and code a server marks as unused is faded.
 - **Shell scripts run with default settings.** The gutter ▶, Run File and the Run button used to appear for a
   shell script only when LSP support and the Bash server were both switched on, so a new user could not run
   one at all. Shell Run now works like Python Run, for local and remote files.
@@ -470,6 +499,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Startup files have no Run ▶:** `.bashrc`, `.profile`, `.zshrc`, `.xinitrc`, `.bash_logout`, `.envrc` and
+  the other rc, profile, login and session files. One stray click no longer runs them.
+- **Debug on a shell script says it cannot be debugged** and points to Run with Trace, instead of sending you to
+  Settings. An untitled buffer no debugger handles is told so before any Save As prompt.
+- **Bash and dash error lines in the Run console are links** (`deploy.sh: line 12: …`).
+- **Rerun and run configurations save the script they run**, not whichever tab is in front.
+- **Shebangs with `env -u NAME`, `env -C DIR`, `-Sbash`, `--split-string=…` or `#!/bin/busybox sh`** are recognised
+  and run correctly.
+- **More shell files are recognised:** `.bats`, `.command` and bash-completion scripts.
+- **Shell highlighting:** `$?` and `$#` look like other variables; `${x:+y}`, `${x^^}` and `${x,,}` operators are
+  coloured; the command in `${x:-$(cmd)}` and the regex after `=~` are coloured; `&>` is a redirection;
+  `for i in {1..10}`, `select … in` and `coproc` are right; zsh `{ cmd }` groups close. Function bodies now
+  highlight as in VS Code, which also tidies C++, GraphQL, Groovy and Markdown.
+- **Tab icons follow the file's detected language**, for shebang scripts and languages picked in the status bar.
+- **The symbol index for shell** finds `pkg::fn` and `lib.fn` functions and top-level `readonly`/`declare`/`export`
+  variables, ignores text inside here-docs and multi-line strings, and indexes extension-less `#!` scripts.
+- **Double-click in a shell script selects `--long-flag`, `a-b.sh` or `my-func` whole.**
+- **Toggle Comment leaves here-doc text alone** when a selection reaches into a here-doc without its first line.
+- **A script whose workspace is the home folder, the temp folder or a filesystem root** (`~/.bashrc`, `/tmp/x.sh`)
+  no longer makes bash-language-server scan that whole tree.
+- **Shell scripts are opened on the language server as `shellscript`**, the standard language id.
+- **Creating a script where the executable bit cannot be set** (Windows, FAT drives) now says so and how to fix it.
 - **Shell highlighting no longer runs to the end of the file** after `$((x << 2))` or a `<<\EOF` here-doc.
   `$(( … ))` is now coloured as arithmetic. Two tests now guard the bundled grammars.
 - **More files are recognised as shell scripts, everywhere at once:** `.envrc`, `/etc/bashrc`, `/etc/zshrc`

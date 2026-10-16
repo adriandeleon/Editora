@@ -186,14 +186,18 @@ final class TemplateCoordinator {
             return;
         }
         NewFileContent.Rendered rendered = NewFileContent.render(type, plan.baseName(), plan.packageName());
+        com.editora.editorconfig.EditorConfigProperties rules = editorConfigFor(target);
+        boolean executable;
         try {
-            TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), editorConfigFor(target), target));
+            executable = TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), rules, target));
         } catch (IOException e) {
             host.setError(tr("status.newfile.failed", e.getMessage()));
             return;
         }
-        String created = tr("status.newfile.created", plan.fileName());
-        openAndPlaceCaret(target, rendered.caret(), null, created);
+        String created = tr("status.newfile.created", plan.fileName())
+                + (executable ? "" : " " + tr("status.template.noExecBit", plan.fileName()));
+        openAndPlaceCaret(
+                target, TemplateOutput.caretAfterReindent(rendered.text(), rendered.caret(), rules), null, created);
         refreshTree();
         host.setStatus(created);
     }
@@ -814,6 +818,9 @@ final class TemplateCoordinator {
                     outcome.created().size(),
                     where,
                     outcome.skipped().size());
+        }
+        if (!outcome.notExecutable().isEmpty()) {
+            summary += " " + tr("status.template.noExecBit", names(outcome.notExecutable()));
         }
         reporter.done(); // close the form before the file takes the focus
         host.setStatus(summary);

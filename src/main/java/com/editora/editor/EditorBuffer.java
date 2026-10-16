@@ -53,7 +53,6 @@ import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownTable;
 import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
-import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSessions;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
@@ -1596,7 +1595,7 @@ public class EditorBuffer implements TabContent {
         // A collapsed header is commented together with its (then expanded) body.
         int[] span = folds.expandHeaderSpan(
                 a.getSelection().getStart(), a.getSelection().getEnd());
-        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], Commenter.styleFor(language));
+        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], language);
         if (edit == null) {
             return false;
         }
@@ -7576,9 +7575,9 @@ public class EditorBuffer implements TabContent {
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        String head = area.getText(0, Math.min(area.getLength(), 256));
+        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         Shebang.Result r =
-                head.startsWith("#!") ? Shebang.parse(head.lines().findFirst().orElse("")) : null;
+                Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len));
         if (r == null) {
             return;
         }
@@ -8899,8 +8898,7 @@ public class EditorBuffer implements TabContent {
 
     private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
         Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
-        ParsedSnippet parsed =
-                SnippetParser.parse(snippet.body(), SnippetTyping.variables(a, from, to, path, language, root));
+        ParsedSnippet parsed = SnippetTyping.parse(snippet, a, from, to, path, language, root);
         String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
         // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.

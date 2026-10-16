@@ -81,7 +81,17 @@ public final class TemplateOutput {
      * What a write did. {@code failedAt} non-null means it stopped there with {@code error}; everything in
      * {@code created} is on disk either way.
      */
-    public record Outcome(Path dir, List<Target> created, List<Target> skipped, Target failedAt, String error) {
+    public record Outcome(
+            Path dir,
+            List<Target> created,
+            List<Target> skipped,
+            Target failedAt,
+            String error,
+            List<Target> notExecutable) {
+
+        Outcome(Path dir, List<Target> created, List<Target> skipped, Target failedAt, String error) {
+            this(dir, created, skipped, failedAt, error, List.of());
+        }
 
         public boolean failed() {
             return failedAt != null;
@@ -167,7 +177,7 @@ public final class TemplateOutput {
                 path,
                 dir.relativize(path).toString().replace('\\', '/'),
                 finish(rendered.text(), rules, path),
-                rendered.caret(),
+                caretAfterReindent(rendered.text(), rendered.caret(), rules),
                 rendered.hasCursor(),
                 Files.exists(path, LinkOption.NOFOLLOW_LINKS));
     }
@@ -196,9 +206,17 @@ public final class TemplateOutput {
                                 ? ""
                                 : target.getFileName().toString(),
                         text)) {
-            rules = new EditorConfigProperties(null, null, null, "lf", null, null, rules.insertFinalNewline(), null);
+            rules = new EditorConfigProperties(
+                    rules.insertSpaces(),
+                    rules.indentSize(),
+                    rules.tabWidth(),
+                    "lf",
+                    null,
+                    null,
+                    rules.insertFinalNewline(),
+                    null);
         }
-        String out = text == null ? "" : text;
+        String out = reindent(text == null ? "" : text, rules);
         Boolean finalNewline = rules == null ? null : rules.insertFinalNewline();
         if (!Boolean.FALSE.equals(finalNewline) && !out.isEmpty() && !out.endsWith("\n")) {
             out += "\n";
@@ -210,6 +228,55 @@ public final class TemplateOutput {
                 out, new EditorConfigProperties(null, null, null, rules.endOfLine(), null, null, finalNewline, null));
     }
 
+    /** Indentation levels in the bundled template bodies: four spaces. */
+    private static final int TEMPLATE_INDENT = 4;
+
+    /**
+     * {@code text} indented the way {@code .editorconfig} asks: template bodies are written with four-space
+     * levels, and {@code indent_style = tab} or another {@code indent_size} turns each level into a tab or that
+     * many spaces. Leading spaces that make no whole level (a two-space YAML indent, the space before a
+     * Javadoc {@code *}) are kept, and a line that already starts with a tab is left alone. Unchanged without
+     * an indentation rule.
+     */
+    static String reindent(String text, EditorConfigProperties rules) {
+        if (text == null || rules == null || (rules.insertSpaces() == null && rules.indentSize() == null)) {
+            return text;
+        }
+        int size = rules.indentSize() != null && rules.indentSize() > 0 ? rules.indentSize() : TEMPLATE_INDENT;
+        String unit = Boolean.FALSE.equals(rules.insertSpaces()) ? "\t" : " ".repeat(size);
+        if (unit.equals(" ".repeat(TEMPLATE_INDENT))) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        while (i <= text.length()) {
+            int nl = text.indexOf('\n', i);
+            int end = nl < 0 ? text.length() : nl;
+            int spaces = 0;
+            while (i + spaces < end && text.charAt(i + spaces) == ' ') {
+                spaces++;
+            }
+            out.append(unit.repeat(spaces / TEMPLATE_INDENT))
+                    .append(" ".repeat(spaces % TEMPLATE_INDENT))
+                    .append(text, i + spaces, end);
+            if (nl < 0) {
+                break;
+            }
+            out.append('\n');
+            i = nl + 1;
+        }
+        return out.toString();
+    }
+
+    /** Where a caret at {@code caret} in a template's text lands once {@link #reindent} has run on it. */
+    public static int caretAfterReindent(String text, int caret, EditorConfigProperties rules) {
+        if (text == null) {
+            return caret;
+        }
+        int at = Math.clamp(caret, 0, text.length());
+        return reindent(text.substring(0, at), rules).length();
+    }
+
     /**
      * Creates the plan's missing files, in order, never overwriting. Stops at the first failure and says
      * exactly which files were created before it.
@@ -217,6 +284,7 @@ public final class TemplateOutput {
     public static Outcome write(Plan plan) {
         List<Target> created = new ArrayList<>();
         List<Target> skipped = new ArrayList<>();
+        List<Target> notExecutable = new ArrayList<>();
         if (plan.refused()) {
             return new Outcome(plan.dir(), created, skipped, null, null);
         }
@@ -226,7 +294,9 @@ public final class TemplateOutput {
                 continue;
             }
             try {
-                create(plan.dir(), t.path(), t.text());
+                if (!create(plan.dir(), t.path(), t.text())) {
+                    notExecutable.add(t);
+                }
                 created.add(t);
             } catch (FileAlreadyExistsException e) {
                 skipped.add(t); // appeared since the plan was made: still not ours to overwrite
@@ -235,15 +305,17 @@ public final class TemplateOutput {
                 return new Outcome(plan.dir(), created, skipped, t, reason);
             }
         }
-        return new Outcome(plan.dir(), created, skipped, null, null);
+        return new Outcome(plan.dir(), created, skipped, null, null, List.copyOf(notExecutable));
     }
 
     /**
      * Writes one new file (UTF-8) below {@code dir}, creating its parent folders. Refuses to overwrite, and
      * re-checks containment after the folders exist — a parent that turned out to be a symbolic link to
-     * somewhere else must not receive the file. A file that starts with {@code #!} is made executable.
+     * somewhere else must not receive the file. A file that starts with {@code #!} is made executable; returns
+     * false when it could not be — a file system without POSIX permissions (Windows, FAT, some network
+     * mounts), where the caller says so — and true otherwise.
      */
-    public static void create(Path dir, Path target, String text) throws IOException {
+    public static boolean create(Path dir, Path target, String text) throws IOException {
         Path parent = target.getParent();
         if (parent != null) {
             try {
@@ -259,13 +331,14 @@ public final class TemplateOutput {
         // Exclusive create — "never overwrite" must hold even when an earlier exists() was wrong.
         Files.write(
                 target, text.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-        if (text.startsWith("#!")) {
-            makeExecutable(target);
-        }
+        return !text.startsWith("#!") || makeExecutable(target);
     }
 
-    /** Adds the execute bit wherever the read bit is set (so the umask's choices carry over). POSIX only. */
-    static void makeExecutable(Path file) {
+    /**
+     * Adds the execute bit wherever the read bit is set (so the umask's choices carry over). POSIX only:
+     * returns false where the file system keeps no such bit.
+     */
+    static boolean makeExecutable(Path file) {
         try {
             Set<PosixFilePermission> perms = EnumSet.copyOf(Files.getPosixFilePermissions(file));
             perms.add(PosixFilePermission.OWNER_EXECUTE);
@@ -276,8 +349,9 @@ public final class TemplateOutput {
                 perms.add(PosixFilePermission.OTHERS_EXECUTE);
             }
             Files.setPosixFilePermissions(file, perms);
+            return true;
         } catch (UnsupportedOperationException | IOException e) {
-            // No POSIX permissions here (Windows, some network mounts): the shebang is all there is.
+            return false; // No POSIX permissions here (Windows, some network mounts): the shebang is all there is.
         }
     }
 }

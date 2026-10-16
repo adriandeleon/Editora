@@ -81,6 +81,16 @@ class ConfigFileTypeTest {
         assertEquals("ini", ConfigFileType.resolve(".shellcheckrc"));
     }
 
+    /** bash-completion scripts are bash, and most have no extension or shebang. */
+    @Test
+    void bashCompletionScriptsAreShell() {
+        assertEquals("shell", ConfigFileType.resolve("/usr/share/bash-completion/completions/git"));
+        assertEquals("shell", ConfigFileType.resolve("/etc/bash_completion.d/docker"));
+        assertEquals("shell", ConfigFileType.resolve("/usr/share/bash-completion/bash_completion"));
+        assertEquals("shell", ConfigFileType.resolve("/home/u/.bash_completion"));
+        assertNull(ConfigFileType.resolve("/home/u/completions/git"));
+    }
+
     @Test
     void fstabAndHostsCollisionGuard() {
         assertEquals("fstab", ConfigFileType.resolve("fstab"));

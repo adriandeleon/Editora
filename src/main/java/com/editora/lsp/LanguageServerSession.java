@@ -330,14 +330,16 @@ final class LanguageServerSession implements LanguageClient {
      */
     boolean start() {
         try {
-            if (com.editora.vfs.Vfs.isRemote(root)) {
-                // On the folder's host: its own server, its own PATH and locale, ended with the connection.
-                // It is told about documents by their paths on that host.
-                uris = WireUris.remote(com.editora.vfs.Vfs.authorityOf(root));
-                process = com.editora.process.ExecTargets.forPath(root)
-                        .start(com.editora.process.ExecSpec.of(
-                                        command, root, remoteEnvironment, com.editora.process.ExecSpec.Locale.USER)
-                                .withLongLived(true));
+            com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+            if (!target.isLocal()) {
+                // Where the folder's tools run (a remote host, a container, WSL): its own server, its own PATH
+                // and locale. It is told about documents by its own paths for them.
+                uris = com.editora.vfs.Vfs.isRemote(root)
+                        ? WireUris.remote(com.editora.vfs.Vfs.authorityOf(root))
+                        : WireUris.mapped(target);
+                process = target.start(com.editora.process.ExecSpec.of(
+                                command, root, remoteEnvironment, com.editora.process.ExecSpec.Locale.USER)
+                        .withLongLived(true));
             } else {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
                 pb.directory(root.toFile());
@@ -453,9 +455,9 @@ final class LanguageServerSession implements LanguageClient {
         InitializeParams ip = new InitializeParams();
         // Our pid means nothing on another machine; a server that watches its parent would exit at once.
         ip.setProcessId(
-                com.editora.vfs.Vfs.isRemote(root)
-                        ? null
-                        : (int) ProcessHandle.current().pid());
+                com.editora.process.ExecTargets.runsHere(root)
+                        ? (int) ProcessHandle.current().pid()
+                        : null);
         String uri = uris.toWire(DocumentUris.ofDirectory(root));
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));
@@ -749,6 +751,16 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /**
+     * The {@code bashIde} section this session sends: what it was given (else the server's defaults), with
+     * background analysis off when the workspace is a folder nobody should walk — home, the temp folder or a
+     * filesystem root, which is what a loose {@code ~/.bashrc} or {@code /tmp/x.sh} gets as its root.
+     */
+    private BashIdeConfig effectiveBashIde() {
+        BashIdeConfig base = bashIde == null ? BashIdeConfig.defaults() : bashIde;
+        return RootResolver.isBroadRoot(root) ? base.withBackgroundAnalysisMaxFiles(0) : base;
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -763,7 +775,8 @@ final class LanguageServerSession implements LanguageClient {
      * settings for is sent nothing — see {@link LspServerSettings}.
      */
     private void pushConfiguration() {
-        java.util.Map<String, Object> settings = LspServerSettings.push(serverId, javaOnTypeFormatting, bashIde);
+        java.util.Map<String, Object> settings =
+                LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde());
         if (settings == null) {
             return;
         }
@@ -2149,7 +2162,7 @@ final class LanguageServerSession implements LanguageClient {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(LspServerSettings.answer(serverId, item.getSection(), bashIde));
+                out.add(LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde()));
             }
         }
         return CompletableFuture.completedFuture(out);
