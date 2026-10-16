@@ -193,7 +193,8 @@ final class ToolbarSettingsPane {
     /** Where a new item goes: after the selected bar item, else at the end. */
     private int insertionIndex() {
         int at = current.getSelectionModel().getSelectedIndex();
-        return at < 0 ? currentItems.size() : at + 1;
+        // The selection can lag a list change by one event while a binding re-evaluates: stay in range.
+        return at < 0 ? currentItems.size() : Math.min(at + 1, currentItems.size());
     }
 
     private boolean isSeparatorNextTo(int at) {
