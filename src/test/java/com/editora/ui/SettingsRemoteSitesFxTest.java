@@ -87,7 +87,7 @@ class SettingsRemoteSitesFxTest {
             FxTestSupport.runOnFx(() -> fx.shared.putConnection(new RemoteConnection(
                     "old.example", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Box", "")));
             SettingsWindow w = showRemote(fx);
-            ListView<RemoteConnection> list = FxTestSupport.field(w, "remoteList");
+            ListView<RemoteConnection> list = FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
             List<TextField> f = formFields(w);
             FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
 

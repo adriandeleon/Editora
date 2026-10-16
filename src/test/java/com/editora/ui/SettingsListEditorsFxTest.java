@@ -139,7 +139,8 @@ class SettingsListEditorsFxTest {
 
                 shown(fx);
                 ObservableList<Abbreviation> abbrevs = FxTestSupport.field(w, "abbrevItems");
-                ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
+                ObservableList<RemoteConnection> sites =
+                        FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "items");
                 assertEquals(1, abbrevs.size(), "the page shows the abbreviation defined from the editor");
                 assertEquals(1, sites.size(), "the page shows the site Connect remembered");
 

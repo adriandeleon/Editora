@@ -331,19 +331,11 @@ public class SettingsWindow {
     private boolean loadingAbbrev = false;
     private CheckBox abbrevModeCheck;
 
-    /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
-    private final javafx.collections.ObservableList<com.editora.vfs.RemoteConnection> remoteItems =
-            javafx.collections.FXCollections.observableArrayList();
+    /** The Remote page's site editor; null until that page is built. */
+    private RemoteSitesPane remoteSites;
 
-    private boolean loadingRemote = false;
-    /** Set while an edited site replaces its list entry; see the Remote form's commit. */
-    private boolean replacingRemote;
-    /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
-    private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
-
+    /** The uncommitted text in the Abbreviations form, asked for before the list is re-read. */
     private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
-    /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
-    private ListView<com.editora.vfs.RemoteConnection> remoteList;
 
     /** Re-read the Snippets / Templates lists from disk, keeping the selected row (set when the page is built). */
     private Runnable reloadSnippets;
@@ -5095,7 +5087,7 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.REMOTE,
-                remoteConnectionsEditor(),
+                (remoteSites = new RemoteSitesPane(config, this::apply)).node(),
                 "remote sftp ssh connection host user key password saved site server");
         Label note = note(tr("settings.remote.note"));
         note.setWrapText(true);
@@ -5127,293 +5119,6 @@ public class SettingsWindow {
                 containerEngineField,
                 "container docker podman engine dev container devcontainer run tools");
         return p;
-    }
-
-    /** Master-detail editor for saved SFTP sites: a list on the left, a form for the selected site on the right. */
-    private javafx.scene.Node remoteConnectionsEditor() {
-        remoteItems.setAll(config.getConnections());
-
-        ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
-        remoteList = list;
-        list.setPrefSize(210, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.vfs.RemoteConnection c, boolean empty) {
-                super.updateItem(c, empty);
-                setText(empty || c == null ? null : c.displayLabel());
-            }
-        });
-
-        TextField label = new TextField();
-        TextField host = new TextField();
-        host.setPromptText(tr("remote.hostPrompt"));
-        TextField port = new TextField();
-        TextField user = new TextField();
-        ComboBox<com.editora.vfs.RemoteConnection.AuthMethod> auth =
-                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
-                        com.editora.vfs.RemoteConnection.AuthMethod.values()));
-        auth.setConverter(enumConverter(m -> switch (m) {
-            case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
-            case KEY -> tr("remote.auth.key");
-            case PASSWORD -> tr("remote.auth.password");
-        }));
-        TextField keyPath = new TextField();
-        keyPath.setPromptText(tr("remote.keyPrompt"));
-        keyPath.setMinWidth(160);
-        Button keyBrowse = new Button(tr("dialog.clone.browse"));
-        keyBrowse.setOnAction(e -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle(tr("remote.keyPrompt"));
-            java.io.File f = fc.showOpenDialog(keyBrowse.getScene().getWindow());
-            if (f != null) {
-                keyPath.setText(f.getAbsolutePath());
-            }
-        });
-        // Wraps: beside a wide (German) Browse button the field was left about 60px in a narrow window. The
-        // button now moves below the field instead, which then has the row to itself.
-        WrapRow keyRow = new WrapRow(6, 6, WrapRow.setGrow(keyPath), keyBrowse);
-        // The key-file row only applies to "Private key file" auth.
-        auth.valueProperty()
-                .addListener((o, a, b) -> keyRow.setDisable(b != com.editora.vfs.RemoteConnection.AuthMethod.KEY));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.remote.label"), label);
-        formRow(form, 1, tr("remote.host"), host);
-        formRow(form, 2, tr("remote.port"), port);
-        formRow(form, 3, tr("remote.user"), user);
-        formRow(form, 4, tr("remote.auth"), auth);
-        formRow(form, 5, tr("remote.key"), keyRow);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        // --- the selected site's host: may Editora run commands there, and with which tools ---
-        CheckBox hostAllowed = new CheckBox(tr("settings.remote.host.allowed"));
-        hostAllowed.setWrapText(true);
-        java.util.Map<String, TextField> toolFields = new java.util.LinkedHashMap<>();
-        // Each label above its field: beside them, the longer tool names widened the page past the smallest
-        // Settings window, which then scrolled sideways.
-        VBox toolsGrid = new VBox(2);
-        for (HostTools.Tool tool : HostTools.NAMED) {
-            TextField field = new TextField();
-            field.setPromptText(tr("settings.remote.tool.prompt"));
-            toolFields.put(tool.id(), field);
-            Label name = new Label(tr(tool.labelKey()));
-            VBox.setMargin(name, new javafx.geometry.Insets(4, 0, 0, 0));
-            toolsGrid.getChildren().addAll(name, field);
-        }
-        javafx.scene.control.TextArea servers = new javafx.scene.control.TextArea();
-        servers.setPromptText(tr("settings.remote.tool.servers.prompt"));
-        servers.setPrefRowCount(3);
-        servers.setPrefColumnCount(20);
-        servers.setWrapText(false);
-        Label serversName = new Label(tr("settings.remote.tool.servers"));
-        VBox.setMargin(serversName, new javafx.geometry.Insets(4, 0, 0, 0));
-        toolsGrid.getChildren().addAll(serversName, servers);
-        Label hostTitle = new Label(tr("settings.remote.host.title"));
-        hostTitle.getStyleClass().add("settings-card-title");
-        Label hostNote = note(tr("settings.remote.host.note"));
-        hostNote.setWrapText(true);
-        hostNote.setMaxWidth(460);
-        VBox hostBox = new VBox(6, new javafx.scene.control.Separator(), hostTitle, hostAllowed, toolsGrid, hostNote);
-        hostBox.disableProperty().bind(form.disabledProperty());
-        hostAllowed.setOnAction(e -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur != null && !loadingRemote) {
-                config.setRemoteExecAllowed(cur.id(), hostAllowed.isSelected());
-            }
-        });
-        Runnable commitTools = () -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur == null || loadingRemote) {
-                return;
-            }
-            java.util.Map<String, String> named = new java.util.LinkedHashMap<>();
-            toolFields.forEach((id, field) -> named.put(id, field.getText()));
-            java.util.Map<String, String> previous = config.remoteTools(cur.id());
-            java.util.Map<String, String> merged = HostTools.merge(previous, named, servers.getText());
-            if (!merged.equals(previous)) {
-                config.setRemoteTools(cur.id(), merged);
-            }
-        };
-        toolFields.values().forEach(field -> {
-            field.setOnAction(e -> commitTools.run());
-            field.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commitTools.run();
-                }
-            });
-        });
-        servers.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commitTools.run();
-            }
-        });
-
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur == null || i < 0 || loadingRemote) {
-                return;
-            }
-            int portNum;
-            try {
-                portNum = Integer.parseInt(port.getText().strip());
-            } catch (NumberFormatException ex) {
-                portNum = 0; // the record coerces <= 0 to the default SFTP port
-            }
-            com.editora.vfs.RemoteConnection updated = new com.editora.vfs.RemoteConnection(
-                    host.getText().strip(),
-                    portNum,
-                    user.getText().strip(),
-                    auth.getValue() == null
-                            ? com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS
-                            : auth.getValue(),
-                    keyPath.getText().strip(),
-                    label.getText().strip(),
-                    cur.lastPath()); // preserve the remembered path; not edited here
-            // What was decided for the host (may run commands, its tools) follows the connection when its host,
-            // user or port is edited: it is kept by id, and the new id would otherwise start with none.
-            config.renameRemoteHost(cur.id(), updated.id());
-            // Replacing the only item of a list clears its selection (JavaFX reads it as "all removed"), which
-            // greyed and emptied the form after every field. The form already shows what was typed: keep it.
-            replacingRemote = true;
-            try {
-                remoteItems.set(i, updated);
-                list.getSelectionModel().select(i);
-            } finally {
-                replacingRemote = false;
-            }
-            list.refresh();
-            persistRemote();
-        };
-        auth.valueProperty().addListener((o, a, b) -> commit.run());
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(label);
-        wire.accept(host);
-        wire.accept(port);
-        wire.accept(user);
-        wire.accept(keyPath);
-        remoteFormEdit = () -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            return cur == null
-                    ? PendingFormEdit.none()
-                    : PendingFormEdit.capture(
-                            List.of(label, host, port, user, keyPath),
-                            List.of(
-                                    nullToEmpty(cur.label()),
-                                    nullToEmpty(cur.host()),
-                                    String.valueOf(cur.port()),
-                                    nullToEmpty(cur.user()),
-                                    nullToEmpty(cur.keyPath())));
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            if (replacingRemote) {
-                return;
-            }
-            loadingRemote = true;
-            try {
-                form.setDisable(now == null);
-                label.setText(now == null ? "" : nullToEmpty(now.label()));
-                host.setText(now == null ? "" : nullToEmpty(now.host()));
-                port.setText(now == null ? "" : String.valueOf(now.port()));
-                user.setText(now == null ? "" : nullToEmpty(now.user()));
-                auth.setValue(now == null ? null : now.auth());
-                keyPath.setText(now == null ? "" : nullToEmpty(now.keyPath()));
-                keyRow.setDisable(now == null || now.auth() != com.editora.vfs.RemoteConnection.AuthMethod.KEY);
-                java.util.Map<String, String> tools = now == null ? java.util.Map.of() : config.remoteTools(now.id());
-                hostAllowed.setSelected(now != null && config.remoteExecAllowed(now.id()));
-                toolFields.forEach((id, field) -> field.setText(tools.getOrDefault(id, "")));
-                servers.setText(HostTools.serversText(tools));
-            } finally {
-                loadingRemote = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.remote.add"));
-        add.setOnAction(e -> {
-            com.editora.vfs.RemoteConnection c = new com.editora.vfs.RemoteConnection(
-                    "",
-                    com.editora.vfs.SftpUri.DEFAULT_PORT,
-                    System.getProperty("user.name", ""),
-                    com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS,
-                    "",
-                    tr("settings.remote.newName"),
-                    "");
-            remoteItems.add(c);
-            persistRemote();
-            list.getSelectionModel().select(c);
-        });
-        Button remove = new Button(tr("settings.remote.remove"));
-        remove.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                remoteItems.remove(i);
-                persistRemote();
-            }
-        });
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
-        keepWidth(add, remove, left, keyBrowse);
-
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow, hostBox);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        if (!remoteItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
-    }
-
-    private void persistRemote() {
-        config.setConnections(new java.util.ArrayList<>(remoteItems));
-        apply();
-    }
-
-    /** Re-reads the saved sites (Connect remembers one; the Remote Sites panel removes one), keeping the selection. */
-    private void reloadRemote() {
-        if (remoteItems.equals(config.getConnections())) {
-            return;
-        }
-        var selected =
-                remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
-        String selectedId = selected == null ? null : selected.id();
-        PendingFormEdit typing = remoteFormEdit.get(); // before the items change: that reloads the form
-        remoteItems.setAll(config.getConnections());
-        if (remoteList != null && selectedId != null) {
-            for (var c : remoteItems) {
-                if (selectedId.equals(c.id())) {
-                    remoteList.getSelectionModel().select(c);
-                    typing.restore(); // the site being edited is still there: what was typed stays typed
-                    break;
-                }
-            }
-        }
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
     }
 
     /** Opens Settings focused on the Remote page (the {@code remote.settings} command). */
@@ -8481,7 +8186,9 @@ public class SettingsWindow {
     private void reloadStoreBackedEditors() {
         reloadExternalTools();
         reloadAbbrevs();
-        reloadRemote();
+        if (remoteSites != null) {
+            remoteSites.reload();
+        }
     }
 
     /** Re-reads the Snippets and Templates pages after a settings sync wrote those files. */

@@ -232,8 +232,10 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow a = shown(fx.controller);
                 SettingsWindow b = shown(other);
                 try {
-                    ObservableList<RemoteConnection> sitesA = FxTestSupport.field(a, "remoteItems");
-                    ObservableList<RemoteConnection> sitesB = FxTestSupport.field(b, "remoteItems");
+                    ObservableList<RemoteConnection> sitesA =
+                            FxTestSupport.field(FxTestSupport.field(a, "remoteSites"), "items");
+                    ObservableList<RemoteConnection> sitesB =
+                            FxTestSupport.field(FxTestSupport.field(b, "remoteSites"), "items");
                     ObservableList<Abbreviation> abbrevsA = FxTestSupport.field(a, "abbrevItems");
 
                     // What a Connect that finishes while the user is on Settings > Remote does.
@@ -286,8 +288,10 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow w = shown(fx.controller);
                 try {
                     // --- Remote sites ---
-                    ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
-                    ListView<RemoteConnection> siteList = FxTestSupport.field(w, "remoteList");
+                    ObservableList<RemoteConnection> sites =
+                            FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "items");
+                    ListView<RemoteConnection> siteList =
+                            FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
                     siteList.getSelectionModel().select(0);
                     List<TextField> remote = all(
                             all(page(w, "REMOTE"), javafx.scene.layout.GridPane.class, new ArrayList<>())
