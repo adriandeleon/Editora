@@ -117,8 +117,8 @@ class SettingsListsFxTest {
             rig.window.setToolbarActions(toolbar);
             rig.show();
             Region page = rig.page("TOOLBAR");
-            List<String> currentItems = rig.control("toolbarCurrentItems");
-            List<String> availableItems = rig.control("toolbarAvailableItems");
+            List<String> currentItems = FxTestSupport.field(rig.<Object>control("toolbarSettings"), "currentItems");
+            List<String> availableItems = FxTestSupport.field(rig.<Object>control("toolbarSettings"), "availableItems");
             ListView<String> current = listOf(page, currentItems);
             ListView<String> available = listOf(page, availableItems);
             Button add = (Button) SettingsRig.button(page, tr("settings.toolbar.add"));
@@ -196,7 +196,7 @@ class SettingsListsFxTest {
         FxTestSupport.runOnFx(() -> {
             rig.show();
             Region page = rig.page("TOOLBAR");
-            List<String> currentItems = rig.control("toolbarCurrentItems");
+            List<String> currentItems = FxTestSupport.field(rig.<Object>control("toolbarSettings"), "currentItems");
             assertEquals(List.of(), currentItems);
             SettingsRig.button(page, tr("settings.toolbar.addSeparator")).fire();
             SettingsRig.button(page, tr("settings.toolbar.restoreDefault")).fire();

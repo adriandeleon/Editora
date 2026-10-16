@@ -311,11 +311,7 @@ public class SettingsWindow {
     private final javafx.collections.ObservableList<com.editora.externaltool.ExternalTool> externalToolItems =
             javafx.collections.FXCollections.observableArrayList();
 
-    // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
-    private final javafx.collections.ObservableList<String> toolbarCurrentItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private final javafx.collections.ObservableList<String> toolbarAvailableItems =
-            javafx.collections.FXCollections.observableArrayList();
+    private ToolbarSettingsPane toolbarSettings;
     private ToolbarActions toolbarActions; // → MainController/ToolbarCoordinator
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
@@ -7058,13 +7054,6 @@ public class SettingsWindow {
      * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
      */
     /** Names a ▲/▼ pair for a screen reader (and a tooltip): on their own they announce as the glyphs. */
-    private static void nameReorderButtons(Button up, Button down) {
-        up.setAccessibleText(tr("bookmarks.moveUp"));
-        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
-        down.setAccessibleText(tr("bookmarks.moveDown"));
-        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
-    }
-
     private static void keepWidth(Region... controls) {
         for (Region control : controls) {
             control.setMinWidth(Region.USE_PREF_SIZE);
@@ -7572,155 +7561,18 @@ public class SettingsWindow {
      */
     private Region toolbarPage() {
         VBox p = page(tr("settings.cat.toolbar"));
+        // The on/off switch for the bar itself, also on the Interface page: it is what people look for here.
+        checkRow(card(p, null), Category.TOOLBAR, toolbarCheck, null, "show hide toolbar buttons");
         Card sec = card(p, tr("settings.toolbar.section"));
-
         Label desc = note(tr("settings.toolbar.note"));
         desc.setWrapText(true);
         desc.setMaxWidth(560);
         cardRow(sec, Category.TOOLBAR, desc, "toolbar customize icons order add remove reorder drag");
-
-        ListView<String> available = new ListView<>(toolbarAvailableItems);
-        ListView<String> current = new ListView<>(toolbarCurrentItems);
-        available.setCellFactory(v -> toolbarCell());
-        current.setCellFactory(v -> toolbarCell());
-        // Tall enough for the default toolbar layout (~20 items) to be read without scrolling.
-        available.setPrefSize(260, 460);
-        current.setPrefSize(260, 460);
-
-        Label availLabel = new Label(tr("settings.toolbar.available"));
-        Label curLabel = new Label(tr("settings.toolbar.current"));
-        availLabel.getStyleClass().add("settings-section");
-        curLabel.getStyleClass().add("settings-section");
-        VBox availBox = new VBox(4, availLabel, available);
-        VBox curBox = new VBox(4, curLabel, current);
-        javafx.scene.layout.VBox.setVgrow(available, Priority.ALWAYS);
-        javafx.scene.layout.VBox.setVgrow(current, Priority.ALWAYS);
-
-        Button add = new Button(tr("settings.toolbar.add"));
-        Button remove = new Button(tr("settings.toolbar.remove"));
-        Button up = new Button("▲");
-        Button down = new Button("▼");
-        nameReorderButtons(up, down);
-        up.getStyleClass().addAll("flat", "reorder-button");
-        down.getStyleClass().addAll("flat", "reorder-button");
-        add.setMaxWidth(Double.MAX_VALUE);
-        remove.setMaxWidth(Double.MAX_VALUE);
-        Region midGap = new Region();
-        javafx.scene.layout.VBox.setVgrow(midGap, Priority.ALWAYS);
-        VBox mid = new VBox(6, add, remove, midGap, up, down);
-        mid.setAlignment(Pos.CENTER);
-        mid.setMinWidth(Region.USE_PREF_SIZE); // as wide as its (translated) buttons, never "Hinzufüg…"
-        keepWidth(availLabel, curLabel);
-
-        HBox lists = new HBox(10, availBox, mid, curBox);
-        HBox.setHgrow(availBox, Priority.ALWAYS);
-        HBox.setHgrow(curBox, Priority.ALWAYS);
-        cardRow(sec, Category.TOOLBAR, lists, "toolbar available current add remove up down move");
-
-        Button sepBtn = new Button(tr("settings.toolbar.addSeparator"));
-        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
-        HBox bottom = new HBox(6, sepBtn, spacer(), restore);
-        cardRow(sec, Category.TOOLBAR, bottom, "toolbar separator restore default reset");
-
-        Runnable refresh = () -> {
-            if (toolbarActions == null) {
-                return;
-            }
-            java.util.List<String> cur = toolbarActions.current();
-            toolbarCurrentItems.setAll(cur);
-            java.util.Set<String> used = new java.util.HashSet<>(cur);
-            java.util.List<String> avail = new java.util.ArrayList<>();
-            for (com.editora.toolbar.ToolbarCatalog.Item it : com.editora.toolbar.ToolbarCatalog.items()) {
-                if (!used.contains(it.id())) {
-                    avail.add(it.id());
-                }
-            }
-            toolbarAvailableItems.setAll(avail);
-        };
-        refreshToolbarLists = refresh;
-        refresh.run();
-
-        // Commit the working list, then re-read the effective (sanitized) layout and optionally reselect.
-        java.util.function.IntConsumer commit = reselect -> {
-            if (toolbarActions != null) {
-                toolbarActions.apply(new java.util.ArrayList<>(toolbarCurrentItems));
-            }
-            refresh.run();
-            if (reselect >= 0 && reselect < toolbarCurrentItems.size()) {
-                current.getSelectionModel().select(reselect);
-            }
-        };
-
-        add.setOnAction(e -> {
-            String sel = available.getSelectionModel().getSelectedItem();
-            if (sel == null) {
-                return;
-            }
-            int at = current.getSelectionModel().getSelectedIndex();
-            if (at < 0) {
-                toolbarCurrentItems.add(sel);
-            } else {
-                toolbarCurrentItems.add(at + 1, sel);
-            }
-            commit.accept(-1);
-        });
-        remove.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx < 0) {
-                return;
-            }
-            toolbarCurrentItems.remove(idx);
-            commit.accept(Math.min(idx, toolbarCurrentItems.size() - 1));
-        });
-        up.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx > 0) {
-                java.util.Collections.swap(toolbarCurrentItems, idx, idx - 1);
-                commit.accept(idx - 1);
-            }
-        });
-        down.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx >= 0 && idx < toolbarCurrentItems.size() - 1) {
-                java.util.Collections.swap(toolbarCurrentItems, idx, idx + 1);
-                commit.accept(idx + 1);
-            }
-        });
-        sepBtn.setOnAction(e -> {
-            int at = current.getSelectionModel().getSelectedIndex();
-            String s = com.editora.toolbar.ToolbarCatalog.SEPARATOR;
-            if (at < 0) {
-                toolbarCurrentItems.add(s);
-            } else {
-                toolbarCurrentItems.add(at + 1, s);
-            }
-            commit.accept(-1);
-        });
-        restore.setOnAction(e -> {
-            if (toolbarActions != null) {
-                toolbarActions.restoreDefault();
-            }
-            refresh.run();
-        });
-
+        toolbarSettings = new ToolbarSettingsPane(() -> toolbarActions);
+        refreshToolbarLists = toolbarSettings::refresh;
+        cardRow(sec, Category.TOOLBAR, toolbarSettings.lists(), "toolbar available current add remove up down move");
+        cardRow(sec, Category.TOOLBAR, toolbarSettings.bottomButtons(), "toolbar separator restore default reset");
         return p;
-    }
-
-    /** A ListView cell showing a toolbar item's icon + label (a divider label for the separator token). */
-    private ListCell<String> toolbarCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(String token, boolean empty) {
-                super.updateItem(token, empty);
-                if (empty || token == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                setText(ToolbarCoordinator.labelFor(token));
-                setGraphic(ToolbarCoordinator.iconFor(token));
-            }
-        };
     }
 
     // --- page helpers ---
