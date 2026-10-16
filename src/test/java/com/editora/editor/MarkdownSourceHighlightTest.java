@@ -149,6 +149,14 @@ class MarkdownSourceHighlightTest {
         assertEquals("code", style(text, "plain words"), "an unknown language is still code");
     }
 
+    /** VS Code's {@code shellscript} fence id is shell in the source view too. */
+    @Test
+    void shellscriptFencesAreShell() {
+        String text = "```shellscript\nif true; then echo hi; fi\n```\n";
+        assertEquals("keyword", style(text, "if"));
+        assertEquals("function", style(text, "echo"));
+    }
+
     // --- themes -----------------------------------------------------------------------------------------
 
     @Test

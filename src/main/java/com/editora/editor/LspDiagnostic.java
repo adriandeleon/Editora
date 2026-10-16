@@ -14,7 +14,27 @@ public record LspDiagnostic(
         Severity severity,
         String message,
         String code,
-        String source) {
+        String source,
+        String href,
+        boolean unnecessary) {
+
+    /**
+     * A diagnostic without a documentation link or tags.
+     *
+     * @see #href() the rule's documentation ({@code codeDescription.href}, e.g. ShellCheck's wiki page), or null
+     * @see #unnecessary() tagged {@code Unnecessary} (unused code), drawn faded
+     */
+    public LspDiagnostic(
+            int startLine,
+            int startCol,
+            int endLine,
+            int endCol,
+            Severity severity,
+            String message,
+            String code,
+            String source) {
+        this(startLine, startCol, endLine, endCol, severity, message, code, source, null, false);
+    }
 
     /** LSP severity levels (1..4), ordered most→least severe. */
     public enum Severity {

@@ -92,6 +92,26 @@ could be re-vendored, but it isn't needed now. See [testing.md](testing.md) and
 it and the agent never loads. Keep the `@{argLine}` token (first). See
 [testing.md](testing.md#the-surefire-config-that-makes-it-work) and [`pom.xml`](../pom.xml).
 
+## Test JVMs must not share JavaFX's native-library cache
+
+**Symptom:** one forked test JVM fails to boot the toolkit with `Loading library javafx_font from
+resource failed: java.lang.UnsatisfiedLinkError: Can't load library: ~/.openjfx/cache/<version>/<arch>/…`,
+and every later test in that fork errors with "Failed to build a window". Seen on a macOS CI shard that
+runs two forks (`-DforkCount=2`) on a fresh runner.
+
+**Why:** off the module path (tests, the fat jar, the jlink image, whose natives are module resources),
+JavaFX's `NativeLibLoader` extracts each native library into `~/.openjfx/cache/<version>/<arch>/`. Its
+`.lock` covers only the copy. The step before it, "the file exists, hash it, delete it if the hash
+differs", runs unlocked. So on a cold cache JVM B can hash the half-written file JVM A is still
+copying, find it wrong, and delete it; A then loads a path that no longer exists.
+
+**Fix:** surefire gives each fork its own cache,
+`javafx.cachedir=${project.build.directory}/openjfx-cache-${surefire.forkNumber}`, in
+`<systemPropertyVariables>`. It is a property rather than an `-D` in `<argLine>`, which surefire
+splits on whitespace. Keep it when adding forks or a second test plugin. The installed app still uses
+the shared cache. It writes the same bytes as every other user of that JavaFX version, so a warm cache
+is only hashed, never rewritten.
+
 ## `tab.getUserData()` is a `TabContent`, not always an `EditorBuffer`
 
 **Symptom:** a `ClassCastException` on the Welcome tab when code casts `tab.getUserData()` to

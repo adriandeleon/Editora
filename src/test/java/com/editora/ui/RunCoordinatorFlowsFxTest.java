@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -593,6 +594,133 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(() -> run.runConfig(cfg));
         awaitStatus(tr("status.run.ok"));
         assertEquals(System.getenv("HOME") + "|$HOME\nfound\n", console(), "PATH kept its real value after /opt/none");
+    }
+
+    @Test
+    void stopIsReportedAsStoppedNotAsAnExitCode() throws Exception {
+        open("wait.sh", "#!/bin/sh\necho started\nsleep 300\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitConsole("started\n");
+        clearLog();
+        FxTestSupport.runOnFx(run::stopRun);
+        // Once from Stop itself, once from the exit (which said "Run finished (exit code 143)").
+        await(
+                "the stopped exit",
+                () -> log.stream()
+                                .filter(e -> e.equals("status:" + tr("status.run.stopped")))
+                                .count()
+                        >= 2);
+        FxTestSupport.drainFx();
+        // It said "Process finished with exit code 143", and the status bar "Run finished (exit code 143)".
+        assertEquals(tr("run.stopped"), panelStatus());
+        assertEquals(
+                tr("status.run.stopped"),
+                statuses().get(statuses().size() - 1),
+                statuses().toString());
+    }
+
+    @Test
+    void runWithTraceLinksEveryTracedLineToItsSource() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                new ProcessBuilder("bash", "-c", "exit 0").start().waitFor() == 0, "needs bash");
+        EditorBuffer b = open("traced.sh", "#!/usr/bin/env bash\nx=1\necho \"x is $x\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFileWithTrace);
+        awaitStatus(tr("status.run.ok"));
+        String file = project.resolve("traced.sh").toString();
+        // stdout and stderr (where the trace goes) are two pipes: compare the lines, not their interleaving.
+        assertEquals(
+                Set.of("+" + file + ":2: x=1", "+" + file + ":3: echo 'x is 1'", "x is 1"),
+                Set.copyOf(console().lines().toList()),
+                console());
+        String traced =
+                console().lines().filter(l -> l.contains(":3: ")).findFirst().orElseThrow();
+        StackTraceLinks.Link link = StackTraceLinks.parse(traced);
+        assertEquals(file, link.file());
+        assertEquals(3, link.line());
+        assertTrue(FxTestSupport.callOnFx(() -> run.editorMenuItems(b)).stream()
+                .anyMatch(i -> i.getText().equals(tr("editmenu.runWithTrace"))));
+    }
+
+    @Test
+    void runWithTraceSaysWhenItCannotTrace() throws Exception {
+        open("prompt.zsh", "echo hi\n", true);
+        FxTestSupport.runOnFx(run::runActiveFileWithTrace);
+        assertEquals(List.of(tr("status.run.traceUnsupported", "prompt.zsh", "zsh")), statuses());
+        clearLog();
+        open("notes.txt", "x\n", false);
+        FxTestSupport.runOnFx(run::runActiveFileWithTrace);
+        assertEquals(List.of(tr("status.run.traceNotShell")), statuses());
+        assertFalse(FxTestSupport.callOnFx(run::consoleInUse));
+    }
+
+    @Test
+    void aShellRunGetsAColourTerminalType() throws Exception {
+        open("term.sh", "#!/bin/sh\necho \"TERM=$TERM\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("TERM=xterm-256color\n", console());
+    }
+
+    @Test
+    void aShellConfigurationWithXInItsOptionsTracesWithLinks() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                new ProcessBuilder("bash", "-c", "exit 0").start().waitFor() == 0, "needs bash");
+        Files.writeString(project.resolve("cfg.sh"), "echo hi\n");
+        RunConfiguration cfg =
+                new RunConfiguration("T", "shell", "cfg.sh", "", "", "", "", "", "", "", "", "bash", "-x");
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(
+                Set.of("+cfg.sh:1: echo hi", "hi"), Set.copyOf(console().lines().toList()));
+    }
+
+    @Test
+    void rerunSavesTheScriptItRerunsAsWellAsTheTabInFront() throws Exception {
+        EditorBuffer script = open("again.sh", "#!/bin/sh\necho one\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        FxTestSupport.runOnFx(() -> script.getFocusedArea().insertText(0, "# edited\n"));
+        EditorBuffer readme = open("README.md", "# readme\n", false);
+        FxTestSupport.runOnFx(() -> readme.getFocusedArea().insertText(0, "x"));
+        ops.saved.clear();
+        clearLog();
+
+        FxTestSupport.runOnFx(run::rerunLast);
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(List.of("again.sh", "README.md"), ops.saved, "it saved only README.md and ran the old again.sh");
+    }
+
+    @Test
+    void aScriptConfigurationSavesItsOwnScript() throws Exception {
+        EditorBuffer script = open("cfg2.sh", "#!/bin/sh\necho one\n", true);
+        FxTestSupport.runOnFx(() -> script.getFocusedArea().insertText(0, "# edited\n"));
+        EditorBuffer readme = open("README.md", "# readme\n", false);
+        FxTestSupport.runOnFx(() -> readme.getFocusedArea().insertText(0, "x"));
+        ops.saved.clear();
+        RunConfiguration cfg = new RunConfiguration("C", "shell", "cfg2.sh", "", "", "", "", "", "", "", "");
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals(List.of("cfg2.sh", "README.md"), ops.saved, "the script first, then the tab in front");
+    }
+
+    @Test
+    void theShebangsEnvUnsetAndChdirApply() throws Exception {
+        Files.createDirectories(project.resolve("sub"));
+        open("envopts.sh", "#!/usr/bin/env -u HOME -C sub sh\necho \"[${HOME-unset}] $(basename \"$PWD\")\"\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        awaitStatus(tr("status.run.ok"));
+        // `-u HOME` was taken for the interpreter: Run tried to start a program called HOME.
+        assertEquals("[unset] sub\n", console());
+
+        clearLog();
+        open("nodir.sh", "#!/usr/bin/env -C missing sh\necho hi\n", true);
+        FxTestSupport.runOnFx(run::runActiveFile);
+        FxTestSupport.drainFx();
+        assertEquals(
+                List.of(tr(
+                        "status.run.shebangDirMissing",
+                        project.resolve("missing").toString())),
+                statuses());
     }
 
     @Test

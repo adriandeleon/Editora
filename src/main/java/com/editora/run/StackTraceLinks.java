@@ -1,5 +1,6 @@
 package com.editora.run;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -8,6 +9,10 @@ import java.util.regex.Pattern;
  * stack-trace lines clickable. Recognizes the frame formats of the three runnable/debuggable languages:
  * Java ({@code at pkg.Cls.m(File.java:12)} — bare file name), Python ({@code File "/path/x.py", line 12}
  * — usually absolute), and Node ({@code at fn (/path/x.js:12:5)} or a bare {@code /path/x.js:12:5}).
+ *
+ * <p>Shell scripts too: bash's errors ({@code /path/x.sh: line 7: foo: command not found}), dash's
+ * ({@code /path/x.sh: 7: foo: not found}), and the lines of an execution trace, whose prompt Run with Trace sets
+ * to {@code +file:line: } ({@code ++/path/x.sh:12: echo hi}, one {@code +} per nesting level).
  */
 public final class StackTraceLinks {
 
@@ -37,6 +42,13 @@ public final class StackTraceLinks {
      */
     private static final Pattern NODE =
             Pattern.compile("(?<![^\\s():])((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d{1,9})(?!\\d)(?::\\d+)?");
+
+    /** bash: {@code path: line N: message} — the script path as it was run, then a 1-based line. */
+    private static final Pattern BASH_ERROR = Pattern.compile("^(.+?): line (\\d{1,9}): ");
+    /** dash / POSIX sh: {@code path: N: message}. */
+    private static final Pattern SH_ERROR = Pattern.compile("^([^:\\s][^:]*?): (\\d{1,9}): ");
+    /** A trace line under Run with Trace's {@code PS4}: {@code +path:N: command} (more {@code +} when nested). */
+    private static final Pattern TRACE = Pattern.compile("^\\++([^+\\s][^:]*?):(\\d{1,9}): ");
 
     /**
      * A Java frame's qualified class and file: {@code at [loader/module/]pkg.Outer$Inner.method(File.java:12)}.
@@ -74,6 +86,14 @@ public final class StackTraceLinks {
         return qualifiedClass.substring(0, lastDot).replace('.', '/') + "/" + m.group(2);
     }
 
+    /** Whether {@code line} is a trace line under Run with Trace's prompt ({@code +path:N: command}). */
+    public static boolean isTraceLine(String line) {
+        return line != null
+                && !line.isEmpty()
+                && line.charAt(0) == '+'
+                && TRACE.matcher(line).find();
+    }
+
     /** The first source location in {@code line}, or null when the line holds none. */
     public static Link parse(String line) {
         if (line == null || line.isEmpty()) {
@@ -90,6 +110,12 @@ public final class StackTraceLinks {
         m = NODE.matcher(line);
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        }
+        for (Pattern shell : List.of(TRACE, BASH_ERROR, SH_ERROR)) {
+            m = shell.matcher(line);
+            if (m.find()) {
+                return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+            }
         }
         return null;
     }

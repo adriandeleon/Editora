@@ -11,10 +11,14 @@ import java.util.TreeMap;
 
 import javafx.geometry.Insets;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
@@ -42,6 +46,9 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
 
         /** The user picked a scope in the selector. Default no-op keeps older callers compiling. */
         default void setProjectWide(boolean projectWide) {}
+
+        /** Opens a rule's documentation page (a diagnostic's {@code codeDescription.href}) in the browser. */
+        default void openUrl(String url) {}
     }
 
     /**
@@ -314,7 +321,44 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     }
 
     /** Renders a language header, a file header (name + count), or a diagnostic (severity glyph + line). */
-    private static final class RowCell extends TreeCell<Row> {
+    /**
+     * A diagnostic row's text after its glyph: the 1-based line, the message (one line, at most 200 characters)
+     * and the rule's code in brackets — {@code 3:  Double quote to prevent globbing…  [SC2086]} — which is what a
+     * {@code # shellcheck disable=} line or a search needs. Pure.
+     */
+    static String rowText(LspDiagnostic d) {
+        String msg = d.message() == null ? "" : d.message().replace('\n', ' ').strip();
+        if (msg.length() > 200) {
+            msg = msg.substring(0, 200) + "…";
+        }
+        String code = d.code() == null ? "" : d.code().strip();
+        return (d.startLine() + 1) + ":  " + msg + (code.isEmpty() ? "" : "  [" + code + "]");
+    }
+
+    /**
+     * The context menu of a diagnostic row: "Open Rule Documentation" when the server linked the rule (ShellCheck
+     * links every SC code to its wiki page), and "Copy Code" when it has one.
+     */
+    ContextMenu contextMenuFor(LspDiagnostic d) {
+        ContextMenu menu = new ContextMenu();
+        if (d.href() != null) {
+            MenuItem docs = new MenuItem(tr("problems.menu.openRuleDocs"));
+            docs.setOnAction(e -> actions.openUrl(d.href()));
+            menu.getItems().add(docs);
+        }
+        if (d.code() != null && !d.code().isBlank()) {
+            MenuItem copy = new MenuItem(tr("problems.menu.copyCode"));
+            copy.setOnAction(e -> {
+                ClipboardContent content = new ClipboardContent();
+                content.putString(d.code().strip());
+                Clipboard.getSystemClipboard().setContent(content);
+            });
+            menu.getItems().add(copy);
+        }
+        return menu.getItems().isEmpty() ? null : menu;
+    }
+
+    private final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
@@ -323,15 +367,13 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
                             "search-file-row", "problem-lang-row", "problem-error", "problem-warning", "problem-info");
             if (empty || row == null) {
                 setText(null);
+                setContextMenu(null);
                 return;
             }
+            setContextMenu(row.diag() == null ? null : contextMenuFor(row.diag()));
             if (row.diag() != null) {
                 LspDiagnostic d = row.diag();
-                String msg = d.message().replace('\n', ' ').strip();
-                if (msg.length() > 200) {
-                    msg = msg.substring(0, 200) + "…";
-                }
-                setText(glyph(d.severity()) + "  " + (d.startLine() + 1) + ":  " + msg);
+                setText(glyph(d.severity()) + "  " + rowText(d));
                 getStyleClass()
                         .add(
                                 switch (d.severity()) {

@@ -13935,7 +13935,7 @@
 					"include": "#comma"
 				}
 			],
-			"applyEndPatternLast": 1
+			"applyEndPatternLast": true
 		},
 		"the_this_keyword": {
 			"match": "((?:((?:\\s*+\\/\\*(?:[^\\*]++|\\*+(?!\\/))*+\\*\\/\\s*+)+)|(?:\\s++)|(?<=\\W)|(?=\\W)|^|(?:\\n?$)|\\A|\\Z))((?<!\\w)this(?!\\w))",

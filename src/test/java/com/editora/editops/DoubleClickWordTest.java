@@ -3,7 +3,9 @@ package com.editora.editops;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DoubleClickWordTest {
 
@@ -59,6 +61,9 @@ class DoubleClickWordTest {
         String css = "  margin-top: 4px;";
         assertEquals("margin-top", word(css, css.indexOf("top") + 1, false, true));
         assertEquals("top", word(css, css.indexOf("top") + 1, false, false));
+        assertTrue(DoubleClickWord.hyphenated("shell"));
+        assertTrue(DoubleClickWord.hyphenated("css"));
+        assertFalse(DoubleClickWord.hyphenated("python"), "a - is an operator there");
         assertEquals("b", word("a - b", 4, false, true));
     }
 

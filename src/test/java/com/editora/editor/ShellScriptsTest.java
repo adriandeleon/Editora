@@ -51,4 +51,18 @@ class ShellScriptsTest {
         assertFalse(ShellScripts.isShellScript("notes.txt", "hello"));
         assertFalse(ShellScripts.isShellScript(null, null));
     }
+
+    @Test
+    void aPosixShebangGetsSingleBracketTests() {
+        assertTrue(ShellScripts.isPosixShebang("#!/bin/sh"));
+        assertTrue(ShellScripts.isPosixShebang("#!/usr/bin/env dash"));
+        assertTrue(ShellScripts.isPosixShebang("#! /bin/ash -e"));
+        assertFalse(ShellScripts.isPosixShebang("#!/bin/bash"));
+        assertFalse(ShellScripts.isPosixShebang("#!/usr/bin/env zsh"));
+        assertFalse(ShellScripts.isPosixShebang("echo hi"));
+        String body = "if [[ ${1:condition} ]]; then\n\t${0}\nfi";
+        assertEquals("if [ ${1:condition} ]; then\n\t${0}\nfi", ShellScripts.snippetBody(body, "#!/bin/sh"));
+        assertEquals(body, ShellScripts.snippetBody(body, "#!/usr/bin/env bash"));
+        assertEquals(body, ShellScripts.snippetBody(body, ""), "no shebang: a .sh is run by bash");
+    }
 }

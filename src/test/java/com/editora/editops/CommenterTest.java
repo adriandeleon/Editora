@@ -107,4 +107,27 @@ class CommenterTest {
         assertEquals("echo\n!# x", apply("echo\n# !# x", 5, 5, "shell"));
         assertFalse(Commenter.onlyShebang("echo\n#!x", 6, 6, Commenter.styleFor("shell")));
     }
+
+    @Test
+    void aHereDocBodyIsNeverCommentedOnItsOwn() {
+        // A `#` put into a here-doc's body is output, not a comment: the script would print it.
+        String sh = "echo start\ncat <<EOF\nline one\n# kept\nEOF\necho end\n";
+        int body = sh.indexOf("line one");
+        assertNull(Commenter.toggle(sh, body, body, "shell"), "a body line");
+        assertNull(
+                Commenter.toggle(sh, sh.indexOf("# kept") + 1, sh.indexOf("# kept") + 1, "shell"), "nor uncommented");
+        assertNull(Commenter.toggle(sh, sh.indexOf("EOF\necho"), sh.indexOf("EOF\necho"), "shell"), "the delimiter");
+        assertNull(Commenter.toggle(sh, body, sh.length(), "shell"), "a selection starting inside one");
+        assertTrue(Commenter.intoHereDoc(sh, body, body, "shell"));
+        // The whole statement, its opening line included, is commented as a block — and uncommented again.
+        Edit all = Commenter.toggle(sh, sh.indexOf("cat"), sh.indexOf("echo end"), "shell");
+        String commented = sh.substring(0, all.from()) + all.replacement() + sh.substring(all.to());
+        assertEquals("echo start\n# cat <<EOF\n# line one\n# # kept\n# EOF\necho end\n", commented);
+        Edit back = Commenter.toggle(commented, commented.indexOf("# cat"), commented.indexOf("echo end"), "shell");
+        assertEquals(sh, commented.substring(0, back.from()) + back.replacement() + commented.substring(back.to()));
+        // Code around it, and other languages, are unaffected.
+        assertEquals(
+                "# echo start", apply(sh, 0, 0, "shell").lines().findFirst().orElseThrow());
+        assertFalse(Commenter.intoHereDoc("x = 1\n<<EOF\ny\n", 8, 8, "python"));
+    }
 }

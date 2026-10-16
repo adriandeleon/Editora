@@ -83,4 +83,25 @@ class RunScanTest {
         assertFalse(m.mainLines().isEmpty());
         assertFalse(m.runnable(), "a project main does not make the file runnable as one file");
     }
+
+    @Test
+    void aSourcedStartupFileHasNoRunGlyph() {
+        // One stray click on .xinitrc's ▶ started a window manager; .zshrc was run by bash.
+        for (String name : List.of(
+                ".bashrc",
+                ".bash_logout",
+                ".profile",
+                ".zshrc",
+                ".zlogout",
+                ".xinitrc",
+                ".envrc",
+                "work.bashrc",
+                "profile")) {
+            assertFalse(RunScan.scan(inputs("shell", name), "echo hi\n").runnable(), name);
+            assertTrue(ShellFiles.isStartupFile("/home/u/" + name), name);
+        }
+        assertTrue(RunScan.scan(inputs("shell", "deploy.sh"), "echo hi\n").runnable());
+        assertTrue(RunScan.scan(inputs("shell", "mvnw"), "echo hi\n").runnable(), "a wrapper script is run");
+        assertFalse(ShellFiles.isStartupFile("install.sh"));
+    }
 }

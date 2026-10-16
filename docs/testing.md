@@ -86,6 +86,9 @@ In `pom.xml`:
 - `--enable-native-access=ALL-UNNAMED` — JavaFX loads its test natives from that unnamed module;
   declaring the access keeps the JDK 27 lane free of restricted-native-access warnings.
 - headless system properties: `glass.platform=Headless`, `prism.order=sw`.
+- `javafx.cachedir=target/openjfx-cache-${surefire.forkNumber}`: each fork extracts JavaFX's native
+  libraries into its own directory. Forks sharing `~/.openjfx/cache` can delete a library another fork
+  is still writing (see [gotchas.md](gotchas.md#test-jvms-must-not-share-javafxs-native-library-cache)).
 - `<argLine>@{argLine} …</argLine>` — **the `@{argLine}` token is mandatory** so JaCoCo's injected
   coverage agent (set via the `argLine` property) survives. A plain `<argLine>` would clobber it.
 

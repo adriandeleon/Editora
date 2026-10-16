@@ -20,6 +20,11 @@ public final class RunConfigFields {
         return !ScriptRunCommand.JAVA.equals(type);
     }
 
+    /** Whether {@code type}'s target is a script file (Python or shell), which Browse can pick. */
+    public static boolean usesScriptFile(String type) {
+        return ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type);
+    }
+
     /** Whether {@code type} has an interpreter to override (a shell script's, normally from its shebang). */
     public static boolean usesInterpreter(String type) {
         return ScriptRunCommand.SHELL.equals(type);

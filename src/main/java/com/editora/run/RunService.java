@@ -352,7 +352,7 @@ public final class RunService {
         if (base.endsWith(".exe")) {
             base = base.substring(0, base.length() - 4);
         }
-        return java.util.Set.of("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh")
+        return java.util.Set.of("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh", "busybox")
                 .contains(base);
     }
 

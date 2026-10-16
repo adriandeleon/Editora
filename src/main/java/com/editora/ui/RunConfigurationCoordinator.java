@@ -63,6 +63,11 @@ final class RunConfigurationCoordinator {
 
         String suggestedMainClass();
 
+        /** A configuration for the active Python or shell script, or null. */
+        default com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+            return null;
+        }
+
         Path windowProjectRoot();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
@@ -460,6 +465,25 @@ final class RunConfigurationCoordinator {
 
     void saveRunConfig() {
         EditorBuffer b = host.activeBuffer();
+        // A Python or shell script saves as a script configuration (it used to say "Open a Java file").
+        com.editora.config.RunConfiguration script = host.suggestedScriptConfiguration();
+        if (script != null) {
+            String args = host.programArgsFor(b.getPath());
+            host.promptText(tr("run.config.saveTitle"), tr("run.config.saveName"), script.name(), name -> {
+                if (name == null || name.isBlank()) {
+                    return;
+                }
+                List<com.editora.config.RunConfiguration> list = new java.util.ArrayList<>(
+                        host.config().getWorkspaceState().getRunConfigurations());
+                list.add(new com.editora.config.RunConfiguration(
+                        name.strip(), script.type(), script.target(), "", "", args, "", "", "", "", ""));
+                host.config().getWorkspaceState().setRunConfigurations(list);
+                host.config().save();
+                refreshRunConfigs();
+                host.setStatus(tr("status.run.configSaved", name.strip()));
+            });
+            return;
+        }
         if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
             host.setStatus(tr("status.run.needJavaFile"));
             return;
