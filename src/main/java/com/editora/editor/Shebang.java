@@ -39,6 +39,7 @@ public final class Shebang {
             Map.entry("ksh", "sh"),
             Map.entry("ash", "sh"),
             Map.entry("mksh", "sh"),
+            Map.entry("bats", "sh"), // Bats test files are bash with @test blocks
             Map.entry("python", "py"),
             Map.entry("node", "js"),
             Map.entry("nodejs", "js"),
@@ -53,6 +54,10 @@ public final class Shebang {
             Map.entry("groovy", "groovy"),
             Map.entry("pwsh", "ps1"),
             Map.entry("powershell", "ps1"));
+
+    /** {@code env} options whose argument is the next word (GNU and BSD env). */
+    private static final java.util.Set<String> ENV_OPTIONS_WITH_ARGUMENT =
+            java.util.Set.of("-u", "--unset", "-C", "--chdir", "-P", "-a", "--argv0");
 
     private Shebang() {}
 
@@ -77,13 +82,30 @@ public final class Shebang {
         // `env` (with optional `-S`, flags, and VAR=value assignments) delegates to a real interpreter.
         if (interpreter.equals("env")) {
             idx++;
-            while (idx < tokens.length && (tokens[idx].startsWith("-") || isAssignment(tokens[idx]))) {
-                idx++;
+            while (idx < tokens.length) {
+                String t = tokens[idx];
+                if (ENV_OPTIONS_WITH_ARGUMENT.contains(t)) {
+                    idx += 2; // `-u NAME`, `-C DIR`: the next word is the option's, not the interpreter
+                } else if (t.startsWith("-S") && t.length() > 2) {
+                    tokens[idx] = t.substring(2); // `-Sbash -e`: the split string starts right after the flag
+                    break;
+                } else if (t.startsWith("--split-string=")) {
+                    tokens[idx] = t.substring("--split-string=".length());
+                    break;
+                } else if (t.startsWith("-") || isAssignment(t)) {
+                    idx++;
+                } else {
+                    break;
+                }
             }
-            if (idx >= tokens.length) {
+            if (idx >= tokens.length || tokens[idx].isEmpty()) {
                 return null;
             }
             interpreter = basename(tokens[idx]);
+        }
+        // `busybox sh`: the applet named after busybox is the interpreter.
+        if (interpreter.equals("busybox") && idx + 1 < tokens.length) {
+            interpreter = basename(tokens[++idx]);
         }
         String canonical = stripVersion(interpreter);
         // Java only counts as a launchable compact source file when a `--source N` follows.
