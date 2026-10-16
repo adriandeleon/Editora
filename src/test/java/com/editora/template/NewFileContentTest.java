@@ -222,6 +222,17 @@ class NewFileContentTest {
     }
 
     @Test
+    void theShellPreamblesKeepTheirGapBeforeTheCaretAndAgreeWithTheTemplates() {
+        // B14: the blank line before {cursor} was trimmed, leaving the caret right under `set -euo pipefail`.
+        NewFileContent.Rendered sh = NewFileContent.render(type("scripts.shell"), "tool", "");
+        assertEquals("#!/usr/bin/env bash\nset -euo pipefail\n\n", sh.text());
+        assertEquals(sh.text().length(), sh.caret(), "the caret is on the line after the gap");
+        // New ▸ Zsh had no strict mode while the "Zsh Script" template has one.
+        NewFileContent.Rendered zsh = NewFileContent.render(type("scripts.zsh"), "tool", "");
+        assertEquals("#!/usr/bin/env zsh\nemulate -L zsh\nsetopt errexit nounset pipefail\n\n", zsh.text());
+    }
+
+    @Test
     void anEmptyTemplateRendersAnEmptyFile() {
         NewFileContent.Rendered r = NewFileContent.render(NewFileCatalog.TEXT, "notes", "");
         assertEquals("", r.text());
@@ -237,7 +248,11 @@ class NewFileContentTest {
             assertFalse(r.text().contains("{package}"), t.id() + " kept its package token");
             if (!r.text().isEmpty()) {
                 assertTrue(r.text().endsWith("\n"), t.id() + " does not end with a newline");
-                assertFalse(r.text().endsWith("\n\n"), t.id() + " ends with a blank line");
+                // A blank line is kept only as the gap before a caret at the very end (the shell preamble's).
+                assertTrue(
+                        !r.text().endsWith("\n\n")
+                                || (r.caret() == r.text().length() && !r.text().endsWith("\n\n\n")),
+                        t.id() + " ends with a blank line");
             }
             assertTrue(r.caret() >= 0 && r.caret() <= r.text().length(), t.id() + " has an out-of-range caret");
         }

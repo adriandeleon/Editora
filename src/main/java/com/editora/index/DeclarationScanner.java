@@ -58,7 +58,9 @@ public final class DeclarationScanner {
         if (rules.isEmpty()) {
             return List.of();
         }
-        String src = SourceBlanker.blank(text, Commenter.styleFor(language));
+        String src = "shell".equals(language)
+                ? SourceBlanker.blankShell(text, Commenter.styleFor(language))
+                : SourceBlanker.blank(text, Commenter.styleFor(language));
         boolean braces = DeclarationRules.braceScoped(language);
 
         List<Symbol> out = new ArrayList<>();

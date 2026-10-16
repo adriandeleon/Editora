@@ -727,6 +727,10 @@ public final class TextMateHighlighter {
                 || scope.startsWith("support.class")) {
             return "type";
         }
+        // The shell's special parameters ($? $# $$ $! $* $-) are variables like $@ and $1, not keywords.
+        if (scope.startsWith("variable.language.special.shell")) {
+            return "variable";
+        }
         if (scope.startsWith("variable.language")) {
             return "keyword";
         }

@@ -34,6 +34,49 @@ public final class RunConfigDefaults {
     }
 
     /**
+     * A configuration for a Python or shell script — what Add and Save as Run Configuration propose when such
+     * a script is the active file, instead of an empty Java configuration. Named after the file; the target is
+     * its path relative to {@code projectRoot} when the script is inside it (a configuration's run resolves it
+     * against the project), else absolute. Null when {@code type} is not a script type or there is no script.
+     */
+    public static com.editora.config.RunConfiguration forScript(
+            String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
+        if (script == null
+                || !(ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type))
+                || script.getFileName() == null) {
+            return null;
+        }
+        String target = script.toString();
+        if (projectRoot != null
+                && script.getFileSystem() == projectRoot.getFileSystem()
+                && script.normalize().startsWith(projectRoot.normalize())) {
+            target = projectRoot.normalize().relativize(script.normalize()).toString();
+        }
+        return new com.editora.config.RunConfiguration(
+                script.getFileName().toString(), type, target, "", "", "", "", "", "", "", "");
+    }
+
+    /** {@code cfg} renamed with a {@link #uniqueName} among {@code existingNames}. */
+    public static com.editora.config.RunConfiguration uniquelyNamed(
+            com.editora.config.RunConfiguration cfg, Collection<String> existingNames) {
+        String name = uniqueName(cfg.name(), existingNames);
+        return new com.editora.config.RunConfiguration(
+                name,
+                cfg.type(),
+                cfg.target(),
+                cfg.mainClass(),
+                cfg.projectName(),
+                cfg.args(),
+                cfg.vmArgs(),
+                cfg.workingDir(),
+                cfg.env(),
+                cfg.beforeLaunch(),
+                cfg.jdkHome(),
+                cfg.interpreter(),
+                cfg.interpreterOptions());
+    }
+
+    /**
      * A name for a configuration launching {@code mainClass} — its simple name ({@code com.example.App} →
      * {@code App}), or {@code fallback} when there is nothing to name it after.
      *

@@ -102,6 +102,48 @@ class DocumentSymbolMapperTest {
         assertTrue(out.get(0).children().isEmpty());
     }
 
+    private static Either<SymbolInformation, DocumentSymbol> sym(
+            String name, SymbolKind kind, int sl, int sc, int el, int ec) {
+        return Either.forLeft(new SymbolInformation(
+                name, kind, new Location("file:///s.sh", new Range(new Position(sl, sc), new Position(el, ec)))));
+    }
+
+    private static String outline(List<SymbolNode> nodes) {
+        StringBuilder sb = new StringBuilder();
+        for (SymbolNode n : nodes) {
+            sb.append(n.name());
+            if (!n.children().isEmpty()) {
+                sb.append('[').append(outline(n.children())).append(']');
+            }
+            sb.append(' ');
+        }
+        return sb.toString().strip();
+    }
+
+    /**
+     * bash-language-server's outline is flat and lists every assignment. A function's locals now sit under the
+     * function, and a variable assigned twice in one scope is listed once (shell review C11).
+     */
+    @Test
+    void aFlatShellOutlineIsNestedByRangeAndReassignmentsAreListedOnce() {
+        List<SymbolNode> out = DocumentSymbolMapper.map(List.of(
+                sym("VERSION", SymbolKind.Variable, 1, 9, 1, 20),
+                sym("LOG_DIR", SymbolKind.Variable, 2, 0, 2, 17),
+                sym("log", SymbolKind.Function, 4, 0, 7, 1),
+                sym("level", SymbolKind.Variable, 5, 8, 5, 16),
+                sym("msg", SymbolKind.Variable, 5, 17, 5, 23),
+                sym("build", SymbolKind.Function, 9, 0, 16, 1),
+                sym("i", SymbolKind.Variable, 10, 8, 10, 9),
+                sym("total", SymbolKind.Variable, 12, 4, 12, 24),
+                sym("total", SymbolKind.Variable, 13, 4, 13, 24),
+                sym("total", SymbolKind.Variable, 18, 0, 18, 7)));
+
+        assertEquals("VERSION LOG_DIR log[level msg] build[i total] total", outline(out));
+        assertEquals(4, out.get(2).line());
+        assertEquals(7, out.get(2).endLine());
+        assertEquals(12, out.get(3).children().get(1).line(), "the first assignment is the one listed");
+    }
+
     @Test
     void nullAndEmptyAreSafe() {
         assertTrue(DocumentSymbolMapper.map(null).isEmpty());

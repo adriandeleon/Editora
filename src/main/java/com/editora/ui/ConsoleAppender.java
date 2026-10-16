@@ -77,6 +77,19 @@ final class ConsoleAppender {
         ConsoleNav.afterAppend(console, caretBefore, follow, maxChars);
     }
 
+    /**
+     * Empties the console's last line (everything after its last newline), applying pending text first — what
+     * a carriage return means before the text that follows it overwrites the line.
+     */
+    void clearCurrentLine() {
+        flush();
+        int lastParagraph = console.getParagraphs().size() - 1;
+        int start = console.getAbsolutePosition(lastParagraph, 0);
+        if (start < console.getLength()) {
+            console.deleteText(start, console.getLength());
+        }
+    }
+
     /** Drops text that has not been applied yet: the console is about to be cleared. */
     void discard() {
         text.setLength(0);

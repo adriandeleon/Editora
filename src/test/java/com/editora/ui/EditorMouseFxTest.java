@@ -391,6 +391,17 @@ class EditorMouseFxTest {
         assertEquals("3.14", doubleClick(area, js.indexOf("14")));
     }
 
+    @Test
+    void aDoubleClickInAShellScriptTakesHyphenatedWordsWhole() throws Exception {
+        // B13: `--long-flag` selected `long`, `a-b.sh` selected `b`, `my-func` selected `my`.
+        String sh = "my-func() { :; }\nls --long-flag ./a-b.sh\nmy-func\n";
+        EditorBuffer b = open("words.sh", sh);
+        CodeArea area = b.getArea();
+        assertEquals("long-flag", doubleClick(area, sh.indexOf("long") + 1));
+        assertEquals("a-b", doubleClick(area, sh.indexOf("a-b") + 2));
+        assertEquals("my-func", doubleClick(area, sh.lastIndexOf("my-func") + 1));
+    }
+
     // --- dropping an image -----------------------------------------------------------------------------
 
     @Test

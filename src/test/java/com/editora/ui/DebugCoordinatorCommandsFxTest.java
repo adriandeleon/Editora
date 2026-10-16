@@ -623,7 +623,7 @@ class DebugCoordinatorCommandsFxTest {
         });
         assertEquals(
                 List.of(
-                        tr("status.debug.configTypeUnsupported", "python"),
+                        tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type.python")),
                         tr("status.run.configNeedsMainClass", "Blank"),
                         tr("status.run.mainClassIsAFile", "src/main/java/demo/Args.java"),
                         tr("status.run.configNeedsJavaFile")),

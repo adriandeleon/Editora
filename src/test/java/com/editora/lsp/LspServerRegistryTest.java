@@ -263,5 +263,6 @@ class LspServerRegistryTest {
         assertEquals("xml", LspServerRegistry.protocolLanguageId("xml"));
         assertEquals("java", LspServerRegistry.protocolLanguageId("java"));
         assertEquals("javascript", LspServerRegistry.protocolLanguageId("javascript"));
+        assertEquals("shellscript", LspServerRegistry.protocolLanguageId("shell"), "LSP's id for shell scripts");
     }
 }

@@ -127,6 +127,49 @@ public final class Commenter {
         return new Edit(edit.from(), edit.to(), edit.replacement(), edit.from() + caret, edit.from() + caret);
     }
 
+    /**
+     * As {@link #toggle(String, int, int, CommentStyle)} for {@code language}'s comment style; in shell, null
+     * when the selection reaches into a here-document whose opening line it does not include
+     * ({@link #intoHereDoc}): those lines are data, and a {@code #} put there is output, not a comment.
+     */
+    public static Edit toggle(String text, int selStart, int selEnd, String language) {
+        if (intoHereDoc(text, selStart, selEnd, language)) {
+            return null;
+        }
+        return toggle(text, selStart, selEnd, styleFor(language));
+    }
+
+    /**
+     * Whether a shell selection touches a here-document body (or its delimiter) without the line that opens it.
+     * Commenting the whole statement — the {@code cat <<EOF} line, its body and delimiter — stays allowed: once
+     * the opening line is a comment the body is code again, and has to be commented with it.
+     */
+    public static boolean intoHereDoc(String text, int selStart, int selEnd, String language) {
+        if (!"shell".equals(language) || text == null || text.indexOf("<<") < 0) {
+            return false;
+        }
+        int a = Math.min(selStart, selEnd);
+        int b = Math.max(selStart, selEnd);
+        int effEnd = b > a && lineStart(text, b) == b ? b - 1 : b;
+        int first = lineIndex(text, a);
+        int last = lineIndex(text, effEnd);
+        ShellScan.Result r = ShellScan.scan(text.substring(0, lineEnd(text, effEnd)));
+        for (int line = first; line <= last && line < r.lineCount(); line++) {
+            if (r.startState(line) == ShellScan.IN_HEREDOC && r.heredocAt(line).headerLine() < first) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int lineIndex(String text, int offset) {
+        int n = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < offset; i = text.indexOf('\n', i + 1)) {
+            n++;
+        }
+        return n;
+    }
+
     /** Whether {@code selStart} is on a first-line {@code #!} shebang of a {@code #}-comment language. */
     public static boolean onShebang(String text, int selStart, CommentStyle style) {
         return "#".equals(style.line()) && text.startsWith("#!") && selStart <= lineEnd(text, 0);

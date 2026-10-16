@@ -379,6 +379,11 @@ final class LspCoordinator {
             }
 
             @Override
+            public void openUrl(String url) {
+                host.openExternalUrl(url); // through the window's link choke point
+            }
+
+            @Override
             public void setProjectWide(boolean projectWide) {
                 setProjectWideProblems(projectWide); // #743
             }
@@ -405,6 +410,7 @@ final class LspCoordinator {
             }
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
+        lspManager.setOnServerStatus(this::onServerStatus);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
@@ -2231,11 +2237,19 @@ final class LspCoordinator {
      * {@code language/status} type (or "Message"/"Error").
      */
     void onServerStatus(String type, String message) {
+        onServerStatus(null, type, message);
+    }
+
+    /**
+     * As {@link #onServerStatus(String, String)}, from the server {@code serverId} (null = unknown): the
+     * message is prefixed with that server's name — it used to read "Java LSP:" whichever server sent it.
+     */
+    void onServerStatus(String serverId, String type, String message) {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
         if (message != null && !message.isBlank()) {
-            host.setStatus(tr("status.lsp.server", message));
+            host.setStatus(tr("status.lsp.server", serverId == null ? "LSP" : serverLabel(serverId), message));
         }
         if (type != null) {
             String t = type.toLowerCase(Locale.ROOT);
@@ -3075,6 +3089,15 @@ final class LspCoordinator {
      * the answer has come back. It runs only on a jump that actually happened.
      */
     void gotoDefinition(Runnable afterJump) {
+        gotoDefinition(afterJump, null);
+    }
+
+    /**
+     * As {@link #gotoDefinition(Runnable)}; {@code noAnswer} runs when no server serves the file or the server
+     * finds nothing — the server-free index then gets its turn — and keeps this method's own status message
+     * when it returns false (it could not answer either).
+     */
+    void gotoDefinition(Runnable afterJump, java.util.function.BooleanSupplier noAnswer) {
         EditorBuffer active = host.activeBuffer();
         LibrarySource lib = active == null ? null : librarySources.get(active);
         if (lib != null) {
@@ -3083,6 +3106,9 @@ final class LspCoordinator {
         }
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
+            if (noAnswer != null) {
+                noAnswer.getAsBoolean();
+            }
             return;
         }
         CodeArea area = b.getFocusedArea();
@@ -3095,7 +3121,9 @@ final class LspCoordinator {
                 return;
             }
             if (targets.isEmpty()) {
-                host.setStatus(tr("status.lsp.noDefinition"));
+                if (noAnswer == null || !noAnswer.getAsBoolean()) {
+                    host.setStatus(tr("status.lsp.noDefinition"));
+                }
             } else {
                 LspManager.Target t = targets.get(0);
                 if (t.file() != null) {

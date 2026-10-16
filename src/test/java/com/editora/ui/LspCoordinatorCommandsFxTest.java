@@ -725,7 +725,7 @@ class LspCoordinatorCommandsFxTest {
     void serverStatusDrivesTheEchoAreaAndTheLoadingBar() throws Exception {
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.onServerStatus("Starting", "Init...");
-            assertEquals(tr("status.lsp.server", "Init..."), fx.host.lastStatus());
+            assertEquals(tr("status.lsp.server", "LSP", "Init..."), fx.host.lastStatus());
             assertTrue(fx.ops.loading.isEmpty(), "a plain status does not touch the loading bar");
 
             fx.coordinator.onServerStatus("Progress", "Indexing");
@@ -733,7 +733,7 @@ class LspCoordinatorCommandsFxTest {
             fx.coordinator.onServerStatus("ServiceReady", " ");
             fx.coordinator.onServerStatus("Error", "boom");
             assertEquals(List.of(true, false, false, false), fx.ops.loading);
-            assertEquals(tr("status.lsp.server", "boom"), fx.host.lastStatus());
+            assertEquals(tr("status.lsp.server", "LSP", "boom"), fx.host.lastStatus());
 
             int statuses = fx.host.statuses.size();
             fx.coordinator.onServerStatus(null, null);

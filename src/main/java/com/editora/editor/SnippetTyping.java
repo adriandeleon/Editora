@@ -93,6 +93,24 @@ final class SnippetTyping {
                 .withComments(comments.line(), comments.blockStart(), comments.blockEnd());
     }
 
+    /** Parses {@code snippet} for expansion over {@code [from, to)}: its {@link #body} with {@link #variables}. */
+    static com.editora.snippet.ParsedSnippet parse(
+            com.editora.snippet.Snippet snippet, CodeArea a, int from, int to, Path path, String language, Path root) {
+        return com.editora.snippet.SnippetParser.parse(
+                body(snippet, a, language), variables(a, from, to, path, language, root));
+    }
+
+    /**
+     * The body to expand for {@code snippet} in this buffer: a shell snippet follows the script's shebang
+     * ({@link ShellScripts#snippetBody}), every other one is used as written.
+     */
+    static String body(com.editora.snippet.Snippet snippet, CodeArea a, String language) {
+        if (!"shell".equals(language) || a.getParagraphs().isEmpty()) {
+            return snippet.body();
+        }
+        return ShellScripts.snippetBody(snippet.body(), a.getParagraph(0).getText());
+    }
+
     static int lineOf(CodeArea a, int offset) {
         return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();

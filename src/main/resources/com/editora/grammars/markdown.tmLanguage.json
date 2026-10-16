@@ -1,6 +1,6 @@
 {
 	"information_for_contributors": [
-		"Editora changes to the converted file: frontMatter is one begin/end rule whose body is a \\G begin/while (tm4e closed the original, an outer \\A look-ahead with the consuming rule nested in it, on its own opening line); fenced_code_block_kotlin/_toml/_mermaid are added for grammars Editora bundles. Re-apply both when updating from upstream; MarkdownSourceHighlightTest pins them.",
+		"Editora changes to the converted file: frontMatter is one begin/end rule whose body is a \\G begin/while (tm4e closed the original, an outer \\A look-ahead with the consuming rule nested in it, on its own opening line); fenced_code_block_kotlin/_toml/_mermaid are added for grammars Editora bundles; fenced_code_block_shell also takes VS Code's `shellscript` id; applyEndPatternLast is written `true` (tm4e reads `1` as false). Re-apply these when updating from upstream; MarkdownSourceHighlightTest pins them.",
 		"This file has been converted from https://github.com/microsoft/vscode-markdown-tm-grammar/blob/master/syntaxes/markdown.tmLanguage",
 		"If you want to provide a fix or improvement, please create a pull request against the original repository.",
 		"Once accepted there, we are happy to receive an update request."
@@ -1621,7 +1621,7 @@
 			]
 		},
 		"fenced_code_block_shell": {
-			"begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(shell|sh|bash|zsh|bashrc|bash_profile|bash_login|profile|bash_logout|.textmate_init|\\{\\.bash.+?\\})((\\s+|:|,|\\{|\\?)[^`]*)?$)",
+			"begin": "(^|\\G)(\\s*)(`{3,}|~{3,})\\s*(?i:(shell|sh|bash|zsh|shellscript|bashrc|bash_profile|bash_login|profile|bash_logout|.textmate_init|\\{\\.bash.+?\\})((\\s+|:|,|\\{|\\?)[^`]*)?$)",
 			"name": "markup.fenced_code.block.markdown",
 			"end": "(^|\\G)(\\2|\\s{0,3})(\\3)\\s*$",
 			"beginCaptures": {
@@ -2898,7 +2898,7 @@
 			"name": "markup.bold.markdown",
 			"patterns": [
 				{
-					"applyEndPatternLast": 1,
+					"applyEndPatternLast": true,
 					"begin": "(?=<[^>]*?>)",
 					"end": "(?<=>)",
 					"patterns": [
@@ -3058,7 +3058,7 @@
 			"name": "markup.italic.markdown",
 			"patterns": [
 				{
-					"applyEndPatternLast": 1,
+					"applyEndPatternLast": true,
 					"begin": "(?=<[^>]*?>)",
 					"end": "(?<=>)",
 					"patterns": [
@@ -3315,7 +3315,7 @@
 				"2": {
 					"patterns": [
 						{
-							"applyEndPatternLast": 1,
+							"applyEndPatternLast": true,
 							"begin": "(?=<[^>]*?>)",
 							"end": "(?<=>)",
 							"patterns": [

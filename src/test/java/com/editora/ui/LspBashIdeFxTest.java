@@ -74,4 +74,12 @@ class LspBashIdeFxTest {
         assertEquals(true, ((Map<String, Object>) section.get("shfmt")).get("caseIndent"));
         assertEquals("shellcheck", section.get("shellcheckPath"), "an untrusted project picks no program");
     }
+
+    /** The didOpen names the document's language the way LSP does: {@code shellscript}, not {@code shell} (C12). */
+    @Test
+    void aShellScriptOpensAsShellscript() {
+        assertEquals(
+                "shellscript",
+                FakeLanguageServer.last(fx.server().opened).getTextDocument().getLanguageId());
+    }
 }

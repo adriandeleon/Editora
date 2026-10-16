@@ -84,4 +84,46 @@ public final class ShellScripts {
         int nl = text.indexOf('\n');
         return "sh".equals(Shebang.extension(nl < 0 ? text : text.substring(0, nl)));
     }
+
+    /** POSIX shells without bash's {@code [[ ]]}: a script run by one of them needs {@code [ ]}. */
+    private static final java.util.Set<String> POSIX_SHELLS = java.util.Set.of("sh", "dash", "ash", "posh");
+
+    /**
+     * Whether {@code firstLine} is a shebang naming a POSIX shell that has no {@code [[ ]]} ({@code #!/bin/sh},
+     * {@code #!/usr/bin/env dash}, {@code #!/bin/ash}); false for bash, zsh, ksh and no shebang at all.
+     */
+    public static boolean isPosixShebang(String firstLine) {
+        if (firstLine == null) {
+            return false;
+        }
+        String line = firstLine.strip();
+        if (!line.startsWith("#!")) {
+            return false;
+        }
+        String[] tokens = line.substring(2).strip().split("\\s+");
+        int k = 0;
+        if (k < tokens.length && baseName(tokens[k]).equals("env")) {
+            k++;
+            while (k < tokens.length && (tokens[k].startsWith("-") || tokens[k].contains("="))) {
+                k++;
+            }
+        }
+        return k < tokens.length && POSIX_SHELLS.contains(baseName(tokens[k]));
+    }
+
+    /**
+     * A shell snippet body for a buffer whose first line is {@code firstLine}: under a POSIX {@code sh}/{@code dash}
+     * shebang, bash's {@code [[ … ]]} tests become {@code [ … ]} (dash says {@code [[: not found}).
+     */
+    public static String snippetBody(String body, String firstLine) {
+        if (body == null || !isPosixShebang(firstLine)) {
+            return body;
+        }
+        return body.replace("[[ ", "[ ").replace(" ]]", " ]");
+    }
+
+    private static String baseName(String token) {
+        int slash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+        return (slash >= 0 ? token.substring(slash + 1) : token).toLowerCase(java.util.Locale.ROOT);
+    }
 }

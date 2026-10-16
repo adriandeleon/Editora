@@ -32,6 +32,8 @@ public final class ReadPromptShim {
     /** The shim's text. */
     static final String SCRIPT = """
             # Editora Run: show `read -p` prompts, which bash prints only when stdin is a terminal.
+            # Not traced itself: a traced run (bash -x) starts with xtrace on while this file is sourced.
+            { __editora_xtrace=$-; set +x; } 2>/dev/null
             if [ -n "${EDITORA_USER_BASH_ENV:-}" ]; then . "$EDITORA_USER_BASH_ENV"; fi
             read() {
               { local __ed_x=$- __ed_i=1 __ed_a __ed_p=; set +x; } 2>/dev/null
@@ -58,6 +60,7 @@ public final class ReadPromptShim {
               case $__ed_x in *x*) set -x ;; esac
               builtin read "$@"
             }
+            case $__editora_xtrace in *x*) set -x ;; esac
             """;
 
     private static volatile Path written;

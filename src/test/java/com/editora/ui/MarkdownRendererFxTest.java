@@ -70,6 +70,50 @@ class MarkdownRendererFxTest {
         assertFalse(label, "known language ⇒ not the plain Label code block");
     }
 
+    /** VS Code's {@code shellscript} id highlights like {@code sh}. */
+    @Test
+    void shellscriptFenceIsHighlighted() throws Exception {
+        Node root = render("```shellscript\necho hi\n```\n");
+        assertTrue(collect(root, TextFlow.class).stream()
+                .anyMatch(f -> f.getStyleClass().contains("md-code-block")));
+    }
+
+    /**
+     * A {@code console} / {@code shell-session} block is a terminal session: the prompt is muted, the command after
+     * it is shell, and what it printed stays plain (it used to be one unhighlighted block).
+     */
+    @Test
+    void consoleBlocksHighlightCommandsButNotOutput() throws Exception {
+        for (String info : List.of("console", "shell-session")) {
+            Node root = render("```" + info + "\n$ echo \"hi\" | wc -c\n3\nuser@host:~$ ls -la\ntotal 0\n```\n");
+            TextFlow flow = collect(root, TextFlow.class).stream()
+                    .filter(f -> f.getStyleClass().contains("md-code-block"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(info + " renders as a highlightable code block"));
+            List<Text> runs = List.of();
+            for (int i = 0; i < 400; i++) { // the tokens land from a background thread
+                runs = FxTestSupport.callOnFx(() -> collect(flow, Text.class));
+                if (runs.size() > 1) {
+                    break;
+                }
+                Thread.sleep(10);
+            }
+            List<Text> found = runs;
+            java.util.function.Function<String, List<String>> classesOf = text -> found.stream()
+                    .filter(t -> t.getText().equals(text))
+                    .findFirst()
+                    .map(t -> List.copyOf(t.getStyleClass()))
+                    .orElseThrow(() -> new AssertionError(info + ": no run '" + text + "' in "
+                            + found.stream().map(Text::getText).toList()));
+            assertTrue(classesOf.apply("$ ").contains("comment"), info + ": the prompt is muted");
+            assertTrue(classesOf.apply("user@host:~$ ").contains("comment"), info + ": a user@host prompt too");
+            assertTrue(classesOf.apply("echo").contains("function"), info + ": the command is shell");
+            assertTrue(classesOf.apply("ls").contains("function"), info);
+            assertEquals(List.of("text"), classesOf.apply("3"), info + ": output stays plain");
+            assertEquals(List.of("text"), classesOf.apply("total 0"), info + ": output stays plain");
+        }
+    }
+
     @Test
     void fencedBlockWithoutLanguageStaysPlain() throws Exception {
         Node root = render("```\njust plain text\n```\n");

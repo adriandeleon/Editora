@@ -176,7 +176,14 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         if (d.endLine() < first || d.startLine() > last) {
             return; // entirely off-screen — skip before touching the GraphicsContext state
         }
-        g.setStroke(color(d.severity()));
+        Look look = lookOf(d);
+        Color stroke = color(d.severity());
+        g.setStroke(Color.color(stroke.getRed(), stroke.getGreen(), stroke.getBlue(), look.opacity()));
+        g.setFill(Color.color(
+                colors.ground().getRed(),
+                colors.ground().getGreen(),
+                colors.ground().getBlue(),
+                FADE_OPACITY));
         int from = Math.max(d.startLine(), first);
         int to = Math.min(d.endLine(), last);
         for (int p = from; p <= to; p++) {
@@ -197,8 +204,39 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
-            squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
+            if (look.faded()) {
+                g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight()); // unused code reads faded
+            }
+            if (look.dotted()) {
+                dots(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
+            } else {
+                squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
+            }
         }
+    }
+
+    /** How much of the editor background is laid over unused code to fade it. */
+    static final double FADE_OPACITY = 0.45;
+
+    /**
+     * How a diagnostic is drawn: a hint (ShellCheck's "style" level) as a faint dotted line rather than the same
+     * wavy underline as real information, and code tagged {@code Unnecessary} (an unused variable) faded.
+     */
+    record Look(boolean dotted, double opacity, boolean faded) {}
+
+    /** The {@link Look} of {@code d}. Pure. */
+    static Look lookOf(LspDiagnostic d) {
+        boolean hint = d.severity() == LspDiagnostic.Severity.HINT;
+        return new Look(hint, hint ? 0.6 : 1.0, d.unnecessary());
+    }
+
+    private void dots(GraphicsContext g, double x0, double x1, double y) {
+        g.beginPath();
+        for (double x = x0; x < x1; x += 2 * STEP) {
+            g.moveTo(x, y);
+            g.lineTo(Math.min(x + STEP, x1), y);
+        }
+        g.stroke();
     }
 
     /** Diagnostics whose range covers (paragraph, column) — for hover tooltips. */

@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.nio.file.Path;
 import java.util.Arrays;
 
+import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ListView;
 import javafx.stage.Stage;
@@ -217,6 +218,56 @@ class RunConfigurationsWindowFxTest {
         assertTrue(FxTestSupport.callOnFx(options::isDisabled));
         FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
         assertEquals("/opt/homebrew/bin/bash", FxTestSupport.callOnFx(interpreter::getText));
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    @Test
+    void addProposesTheActiveScriptAndTheFormShowsOnlyItsFields(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        Path root = dir.resolve("site");
+        RunConfiguration script =
+                com.editora.run.RunConfigDefaults.forScript("shell", root.resolve("bin/deploy.sh"), root);
+        RunConfigurationsWindow window = FxTestSupport.callOnFx(
+                () -> new RunConfigurationsWindow(config, () -> null, () -> script, () -> root, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show(null, null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        Button add = FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".button").stream()
+                .filter(n ->
+                        n instanceof Button b && tr("settings.runConfig.add").equals(b.getText()))
+                .map(n -> (Button) n)
+                .findFirst()
+                .orElseThrow());
+        FxTestSupport.runOnFx(add::fire);
+        FxTestSupport.drainFx();
+
+        // Add made an empty Java configuration and focused Main class, whatever was open.
+        RunConfiguration added = persisted(config, "deploy.sh");
+        assertEquals("shell", added.type());
+        assertEquals(Path.of("bin", "deploy.sh").toString(), added.target());
+        javafx.scene.Node mainClass = stage.getScene().lookup("#run-config-main-class");
+        javafx.scene.Node browse = stage.getScene().lookup("#run-config-browse");
+        assertFalse(FxTestSupport.callOnFx(mainClass::isVisible), "Java-only rows are hidden, not just greyed");
+        assertTrue(FxTestSupport.callOnFx(browse::isVisible), "a script can be browsed for");
+        // No label is cut short ("Program arg…", "Working dire…").
+        FxTestSupport.runOnFx(() -> {
+            stage.setWidth(760);
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+        });
+        java.util.List<String> cut =
+                FxTestSupport.callOnFx(() -> stage.getScene().getRoot().lookupAll(".label").stream()
+                        .filter(n -> n instanceof javafx.scene.control.Label l && l.isVisible() && l.isTextTruncated())
+                        .map(n -> ((javafx.scene.control.Label) n).getText())
+                        .toList());
+        assertEquals(java.util.List.of(), cut);
+
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+        FxTestSupport.runOnFx(() -> type.setValue("make"));
+        assertFalse(FxTestSupport.callOnFx(browse::isVisible), "a make target is a name, not a file");
+        assertEquals(
+                Path.of("tools", "x.py").toString(),
+                RunConfigurationsWindow.chosenTarget("python", root.resolve("tools/x.py"), root));
         FxTestSupport.runOnFx(stage::close);
     }
 
