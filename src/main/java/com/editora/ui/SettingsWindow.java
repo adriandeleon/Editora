@@ -417,7 +417,8 @@ public class SettingsWindow {
     private TextField aiEndpointField;
     private Label aiStatusLabel;
     /** Injected by MainController: runs a live connection check, delivering (ok, message) on the FX thread. */
-    private java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> aiConnectionProbe;
+    /** (fresh, onResult): a fresh check, or the last one when it is recent (see AiCoordinator.checkConnection). */
+    private java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> aiConnectionProbe;
     /** Coalesces rapid field edits into a single connection check (~600 ms after the last keystroke). */
     private final javafx.animation.PauseTransition aiStatusDebounce =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
@@ -1730,6 +1731,7 @@ public class SettingsWindow {
             config.getSettings().setAiEnabled(now);
             apply();
             updateAiSubEnablement(now); // the AI Agent / AI Actions checkboxes are only meaningful while on
+            scheduleAiStatus(); // the AI Actions status said "Connected" after AI was turned off
         });
 
         agentCheck = new CheckBox(tr("settings.agent.enable"));
@@ -1810,7 +1812,7 @@ public class SettingsWindow {
                 scheduleAiStatus();
             }
         });
-        aiStatusDebounce.setOnFinished(e -> refreshAiStatus());
+        aiStatusDebounce.setOnFinished(e -> refreshAiStatus(false));
         aiEndpointField = new TextField();
         aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
         commitOnEnterOrBlur(aiEndpointField, () -> config.getSettings().getAiEndpointFor(selectedAiProvider()), now -> {
@@ -5998,7 +6000,7 @@ public class SettingsWindow {
 
     /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
     public void setAiConnectionProbe(
-            java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> probe) {
+            java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
         this.aiConnectionProbe = probe;
     }
 
@@ -6009,14 +6011,18 @@ public class SettingsWindow {
         }
     }
 
-    /** Fires the live connection check now, showing a "checking…" state until the result lands. */
-    private void refreshAiStatus() {
-        if (aiStatusLabel == null || aiConnectionProbe == null) {
+    /**
+     * Checks the connection for the AI Actions page — only while that page is on screen, so opening Settings
+     * sends no request. Unless {@code fresh} (Test connection) a recent result for the same configuration is
+     * shown without a request. "Checking…" shows until the result lands.
+     */
+    private void refreshAiStatus(boolean fresh) {
+        if (aiStatusLabel == null || aiConnectionProbe == null || aiStatusLabel.getScene() == null) {
             return;
         }
         aiStatusLabel.getStyleClass().setAll("settings-git-status");
         aiStatusLabel.setText(tr("settings.ai.checking"));
-        aiConnectionProbe.accept(this::syncAiStatus);
+        aiConnectionProbe.accept(fresh, this::syncAiStatus);
     }
 
     /** Colors the AI status label green/red (the Git/Mermaid/LSP idiom): connected vs the error message. */
@@ -6099,7 +6105,14 @@ public class SettingsWindow {
         aiStatusLabel.getStyleClass().add("settings-git-status");
         aiStatusLabel.setWrapText(true);
         aiStatusLabel.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, aiStatusLabel, "ai connection status test green red working reachable");
+        Button test = new Button(tr("settings.ai.testConnection"));
+        test.setOnAction(e -> refreshAiStatus(true));
+        keepWidth(test);
+        HBox status = new HBox(8, aiStatusLabel, test);
+        status.setAlignment(Pos.CENTER_LEFT);
+        cardRow(mainCard, Category.AI, status, "ai connection status test green red working reachable");
+        p.parentProperty()
+                .addListener((o, was, now) -> javafx.application.Platform.runLater(() -> refreshAiStatus(false)));
         cardRow(
                 mainCard,
                 Category.AI,
@@ -6117,12 +6130,12 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.AI,
-                exePathRow(tr("settings.ai.model"), aiModelField),
+                labeledRow(tr("settings.ai.model"), aiModelField),
                 "ai model anthropic claude opus id");
         cardRow(
                 mainCard,
                 Category.AI,
-                exePathRow(tr("settings.ai.apiKey"), aiApiKeyField),
+                labeledRow(tr("settings.ai.apiKey"), aiApiKeyField),
                 "ai api key anthropic token credential");
         Label keyNote = note(tr("settings.ai.apiKeyNote"));
         keyNote.setWrapText(true);
@@ -6137,7 +6150,7 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.AI,
-                exePathRow(tr("settings.ai.completionModel"), aiCompletionModelField),
+                labeledRow(tr("settings.ai.completionModel"), aiCompletionModelField),
                 "ai inline completion model haiku fast latency");
         Label inlineNote = note(tr("settings.ai.inlineHint"));
         inlineNote.setWrapText(true);
@@ -8503,7 +8516,7 @@ public class SettingsWindow {
             aiProviderCombo.setValue(
                     com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
             syncAiProviderFields();
-            javafx.application.Platform.runLater(this::refreshAiStatus); // check once the fields are populated
+            javafx.application.Platform.runLater(() -> refreshAiStatus(false)); // only if the AI page is shown
             pluginCheck.setSelected(settings.isPluginSupport());
             if (pluginRequireSigCheck != null) {
                 pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());

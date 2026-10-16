@@ -60,6 +60,58 @@ class AiCoordinatorFxTest {
         }
     }
 
+    /**
+     * One request per check: a second caller joins the request in flight, a recent result answers a
+     * non-fresh check (the Settings page being shown) without a request, and only a fresh check (Test
+     * connection) asks again.
+     */
+    @Test
+    void connectionChecksShareOneRequestAndReuseARecentResult() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+            CountDownLatch release = new CountDownLatch(1);
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                requests.incrementAndGet();
+                exchange.getRequestBody().readAllBytes();
+                try {
+                    release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                exchange.sendResponseHeaders(200, 2);
+                try (var output = exchange.getResponseBody()) {
+                    output.write("{}".getBytes(StandardCharsets.UTF_8));
+                }
+            });
+            server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+            server.start();
+            scope.onClose(() -> server.stop(0));
+            Settings settings = enabled();
+            settings.setAiProvider("openai");
+            settings.setAiEndpointOpenai(
+                    "http://127.0.0.1:" + server.getAddress().getPort());
+            AiCoordinator coordinator = coordinator(settings, new Ops());
+            scope.onClose(() -> FxTestSupport.runOnFx(coordinator::shutdown));
+            CountDownLatch both = new CountDownLatch(2);
+            FxTestSupport.runOnFx(() -> {
+                coordinator.checkConnection(false, (ok, message) -> both.countDown());
+                coordinator.checkConnection(true, (ok, message) -> both.countDown());
+            });
+            release.countDown();
+            scope.await(both, "both callers answered");
+            assertEquals(1, requests.get(), "the second caller joined the first request");
+            CountDownLatch reused = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> coordinator.checkConnection(false, (ok, message) -> reused.countDown()));
+            scope.await(reused, "recent result");
+            assertEquals(1, requests.get(), "a recent result answers without a request");
+            CountDownLatch fresh = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> coordinator.checkConnection(true, (ok, message) -> fresh.countDown()));
+            scope.await(fresh, "fresh check");
+            assertEquals(2, requests.get(), "Test connection asks again");
+        }
+    }
+
     @Test
     void codexKeepsMasterGatesAndDoesNotLaunchInlineCompletions() throws Exception {
         Settings settings = enabled();
