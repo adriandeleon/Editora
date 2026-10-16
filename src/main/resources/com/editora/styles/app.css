@@ -1214,6 +1214,25 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* .http: the environment pill beside the view toggle ("● Env: dev ▾"), in every view mode and before any run — the
+   environment a run will use. Muted ("No environment", hollow dot) when none is selected. */
+.http-env-pill {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 4 10 4 9;
+    -fx-opacity: 0.92;
+    -fx-cursor: hand;
+}
+.http-env-pill:hover { -fx-opacity: 1; -fx-border-color: -color-border-default; }
+.http-env-pill .http-env-pill-text { -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: -state-accent; }
+.http-env-pill .http-env-pill-chevron { -fx-font-size: 10px; -fx-text-fill: -color-fg-muted; }
+.http-env-pill .http-env-dot { -fx-fill: -state-green; }
+.http-env-pill:none .http-env-pill-text { -fx-text-fill: -color-fg-muted; }
+.http-env-pill:none .http-env-dot { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 1; }
+.status-bar .status-http-env:none { -fx-text-fill: -color-fg-muted; }
+
 /* The log viewer's control bar (Follow / level / pattern / what is showing), docked above a log's text.
    A bar of its own, not a control floating over the corner: log lines are the longest the editor shows. */
 .log-controls {

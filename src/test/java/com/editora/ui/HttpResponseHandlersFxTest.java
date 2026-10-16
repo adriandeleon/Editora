@@ -281,7 +281,7 @@ class HttpResponseHandlersFxTest {
         // On disk: the test results are kept with the response.
         HttpHistorySync.awaitIdleForTest();
         String onDisk = Files.readString(ops.store.fileFor(file));
-        assertTrue(onDisk.contains("\"schemaVersion\" : 4") || onDisk.contains("\"schemaVersion\":4"), onDisk);
+        assertTrue(onDisk.contains("\"schemaVersion\" : 5") || onDisk.contains("\"schemaVersion\":5"), onDisk);
         assertTrue(onDisk.contains("token present"), onDisk);
         assertTrue(onDisk.contains("expected == 8, got 7"), onDisk);
         HttpResponseHistory.Stored stored = ops.store.load(file);

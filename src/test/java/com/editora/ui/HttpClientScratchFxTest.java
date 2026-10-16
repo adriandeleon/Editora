@@ -14,8 +14,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import javafx.scene.control.ComboBox;
-
 import com.editora.config.HttpResponseHistory;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
@@ -147,9 +145,8 @@ class HttpClientScratchFxTest {
         Files.writeString(project.resolve("http-client.env.json"), "{\"dev\":{\"host\":\"" + url("") + "\"}}");
         ops.projectRoot = project;
         EditorBuffer b = untitled("GET {{host}}/json?scratch\n");
-        ComboBox<String> env = coordinator.panelForTest(b).controlsForTest().environmentPicker();
-        assertEquals(List.of("", "dev"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
-        FxTestSupport.runOnFx(() -> env.setValue("dev"));
+        assertEquals(List.of("dev"), FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         assertEquals(
                 tr("status.http.running", "GET " + url("/json?scratch")),

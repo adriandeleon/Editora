@@ -374,6 +374,10 @@ public class EditorBuffer implements TabContent {
     private Node viewModeControl;
     /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
     private Node htmlPreviewControl;
+    /** The {@code .http} environment pill, kept beside the Editor/Split/Preview toggle in every mode. */
+    private Node httpEnvControl;
+    /** Holds the environment pill and the view toggle side by side over a preview (Split and Preview modes). */
+    private final HBox previewCornerRow = previewCornerRow();
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
     private Node logControl;
     /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
@@ -1874,6 +1878,11 @@ public class EditorBuffer implements TabContent {
                     debugRequest.setGraphic(MenuIcons.debug());
                     debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
                     items.add(debugRequest);
+                }
+                for (CodeAction fix : httpVariableFixesAt(a, at.offset())) { // "Use environment dev" on a mark
+                    MenuItem item = new MenuItem(fix.title(), MenuIcons.codeAction());
+                    item.setOnAction(ev -> ((Runnable) fix.token()).run());
+                    items.add(item);
                 }
                 items.add(new SeparatorMenuItem());
             } else if (runnable && runHandler != null && !isHttpFile()) {
@@ -3581,6 +3590,59 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
+    /**
+     * The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"),
+     * each action's token a {@link Runnable}; empty when there are none.
+     */
+    public java.util.List<CodeAction> httpVariableFixesAt(CodeArea view, int offset) {
+        if (!httpVariableMarks.enabled()) {
+            return java.util.List.of();
+        }
+        var pos = view.offsetToPosition(
+                Math.max(0, Math.min(offset, view.getLength())), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+        java.util.List<MarkdownLint.Diagnostic> marks = httpVariableMarks.at(pos.getMajor(), pos.getMinor());
+        return marks.isEmpty()
+                ? java.util.List.of()
+                : httpGutter.hooks().variableFixes().apply(marks);
+    }
+
+    /**
+     * The line the squiggle tooltip adds under unresolved-variable marks that have a quick fix — "Right-click: Use
+     * environment dev" — so the fix is found from the mark itself; null for other marks.
+     */
+    private String httpVariableFixHint(java.util.List<MarkdownLint.Diagnostic> hits) {
+        if (!httpVariableMarks.enabled()) {
+            return null;
+        }
+        java.util.List<CodeAction> fixes = httpGutter.hooks().variableFixes().apply(hits);
+        if (fixes.isEmpty()) {
+            return null;
+        }
+        java.util.List<String> titles = new java.util.ArrayList<>(fixes.size());
+        for (CodeAction fix : fixes) {
+            titles.add(fix.title());
+        }
+        return tr("http.fix.hint", String.join(" · ", titles));
+    }
+
+    /**
+     * Offers the quick fixes for the unresolved-variable mark at the caret in the code-action popup (the editor's
+     * Code Actions chord); false when there is none to offer.
+     */
+    public boolean showHttpVariableFixes() {
+        CodeArea view = getFocusedArea();
+        java.util.List<CodeAction> fixes = httpVariableFixesAt(view, view.getCaretPosition());
+        if (fixes.isEmpty()) {
+            return false;
+        }
+        showCodeActions(fixes, chosen -> {
+            if (chosen != null && chosen.token() instanceof Runnable apply) {
+                apply.run();
+            }
+        });
+        return true;
+    }
+
     /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
     public java.util.List<MarkdownLint.Diagnostic> httpVariableDiagnostics() {
         return httpVariableMarks.diagnostics();
@@ -4439,6 +4501,27 @@ public class EditorBuffer implements TabContent {
     /** Whether the floating HTML "open in browser" control is currently attached. */
     public boolean hasHtmlPreviewControl() {
         return htmlPreviewControl != null;
+    }
+
+    /**
+     * Overlays a {@code .http} file's environment pill beside the Editor/Split/Preview toggle — on the code pane in
+     * Editor mode, over the response view in Split and Preview, so it is there in every mode; {@code null} removes it.
+     */
+    public void setHttpEnvControl(Node control) {
+        if (httpEnvControl == control) {
+            return;
+        }
+        if (httpEnvControl != null) {
+            removeCornerControl(httpEnvControl);
+            previewCornerRow.getChildren().remove(httpEnvControl);
+        }
+        this.httpEnvControl = control;
+        rebuildViewHost();
+    }
+
+    /** Whether the {@code .http} environment pill is attached. */
+    public boolean hasHttpEnvControl() {
+        return httpEnvControl != null;
     }
 
     /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
@@ -5870,10 +5953,11 @@ public class EditorBuffer implements TabContent {
         Node content;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
             StackPane host = previewModeHost();
-            if (viewModeControl != null) {
-                StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
-                StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
-                host.getChildren().add(viewModeControl);
+            Node corner = previewCorner();
+            if (corner != null) {
+                StackPane.setAlignment(corner, Pos.TOP_RIGHT);
+                StackPane.setMargin(corner, new Insets(6, 10, 0, 0));
+                host.getChildren().add(corner);
             }
             content = host;
             if (markdownViewMode == MarkdownViewMode.SPLIT) {
@@ -6277,6 +6361,30 @@ public class EditorBuffer implements TabContent {
     private void detachViewModeControl() {
         removeCornerControl(viewModeControl);
         removeCornerControl(htmlPreviewControl);
+        removeCornerControl(httpEnvControl);
+        removeCornerControl(previewCornerRow);
+        previewCornerRow.getChildren().clear();
+    }
+
+    /**
+     * What sits at the top-right of a preview: the view toggle, with the {@code .http} environment pill to its left
+     * when the buffer has one (both in one row, so they never overlap).
+     */
+    private Node previewCorner() {
+        if (httpEnvControl == null) {
+            return viewModeControl;
+        }
+        previewCornerRow.getChildren().setAll(httpEnvControl);
+        if (viewModeControl != null) {
+            previewCornerRow.getChildren().add(viewModeControl);
+        }
+        return previewCornerRow;
+    }
+
+    private static HBox previewCornerRow() {
+        HBox row = cornerControlRow();
+        row.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE); // a StackPane overlay keeps its own size
+        return row;
     }
 
     private void removeCornerControl(Node control) {
@@ -6293,11 +6401,15 @@ public class EditorBuffer implements TabContent {
         if (csvPreviewHost != null) {
             csvPreviewHost.getChildren().remove(control);
         }
+        if (httpPreviewHost != null) {
+            httpPreviewHost.getChildren().remove(control);
+        }
     }
 
     /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
      *  They share one row ({@link #cornerControls}), so however many are present they sit side by side. */
     private void attachControlToCodePane() {
+        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? httpEnvControl : null);
         placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
         placeStickyScroll();
@@ -6994,7 +7106,10 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        MarkdownLintHover.install(a, () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null);
+        MarkdownLintHover.install(
+                a,
+                () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
+                this::httpVariableFixHint);
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);

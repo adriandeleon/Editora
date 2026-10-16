@@ -16,7 +16,6 @@ import java.util.function.Predicate;
 
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.input.ContextMenuEvent;
@@ -159,9 +158,7 @@ class HttpClientUiFlowFxTest {
         String text = "### Get json\nGET " + url("/json") + "\nAuthorization: Bearer {{t}}\n\n"
                 + "### Secret\n# @no-log\nGET " + url("/json") + "?secret\n";
         EditorBuffer b = open(first, file, text);
-        HttpClientPanel panel = first.panelForTest(b);
-        ComboBox<String> env = panel.controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("dev"));
+        FxTestSupport.runOnFx(() -> first.chooseEnvironment(b, "dev"));
         FxTestSupport.runOnFx(() -> first.runRequest(b, 1));
         host.awaitStatus(s -> !s.startsWith("Running"));
         FxTestSupport.runOnFx(() -> first.runRequest(b, 6));
@@ -183,7 +180,7 @@ class HttpClientUiFlowFxTest {
         HttpHistoryEntry entry = FxTestSupport.callOnFx(restored::getSelectedEntry);
         assertEquals("Get json", entry.name());
         assertEquals(200, entry.result().status());
-        assertEquals("dev", FxTestSupport.callOnFx(restored::getSelectedEnvironment));
+        assertEquals("dev", FxTestSupport.callOnFx(() -> second.selectedEnvironment(again)));
     }
 
     @Test
@@ -198,22 +195,21 @@ class HttpClientUiFlowFxTest {
         HttpClientCoordinator c = coordinator(ops);
         EditorBuffer a = open(c, work.resolve("a/a.http"), "GET " + url("/json") + "\n");
         EditorBuffer b = open(c, work.resolve("b/b.http"), "GET " + url("/json") + "\n");
-        assertEquals("dev", FxTestSupport.callOnFx(() -> c.panelForTest(a).getSelectedEnvironment()));
-        assertEquals("", FxTestSupport.callOnFx(() -> c.panelForTest(b).getSelectedEnvironment()), "b has no dev");
-        ComboBox<String> envB = c.panelForTest(b).controlsForTest().environmentPicker();
+        assertEquals("dev", FxTestSupport.callOnFx(() -> c.selectedEnvironment(a)));
+        assertEquals("", FxTestSupport.callOnFx(() -> c.selectedEnvironment(b)), "b has no dev");
         assertEquals(
-                List.of("", "staging", "local"),
-                FxTestSupport.callOnFx(() -> List.copyOf(envB.getItems())),
+                List.of("staging", "local"),
+                FxTestSupport.callOnFx(() -> c.environmentNamesForTest(b)),
                 "names from both env files");
 
-        FxTestSupport.runOnFx(() -> envB.setValue("local"));
+        FxTestSupport.runOnFx(() -> c.chooseEnvironment(b, "local"));
         FxTestSupport.runOnFx(() -> {
             c.refreshEnvironments(a);
             c.refreshEnvironments(b);
         });
         HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
-        assertEquals("dev", FxTestSupport.callOnFx(() -> c.panelForTest(a).getSelectedEnvironment()), "a is untouched");
-        assertEquals("local", FxTestSupport.callOnFx(() -> c.panelForTest(b).getSelectedEnvironment()));
+        assertEquals("dev", FxTestSupport.callOnFx(() -> c.selectedEnvironment(a)), "a is untouched");
+        assertEquals("local", FxTestSupport.callOnFx(() -> c.selectedEnvironment(b)));
     }
 
     @Test
@@ -223,8 +219,7 @@ class HttpClientUiFlowFxTest {
         ops.projectRoot = project;
         HttpClientCoordinator c = coordinator(ops);
         EditorBuffer b = open(c, project.resolve("api/v1/req.http"), "GET {{host}}/json\n");
-        ComboBox<String> env = c.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("dev"));
+        FxTestSupport.runOnFx(() -> c.chooseEnvironment(b, "dev"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         assertEquals(
                 tr("status.http.finished", "GET " + url("/json"), "200 OK"),

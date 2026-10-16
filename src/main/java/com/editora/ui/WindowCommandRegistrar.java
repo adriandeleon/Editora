@@ -2168,7 +2168,17 @@ final class WindowCommandRegistrar {
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
         host.registry()
                 .register(Command.of("lsp.formatDocument", () -> host.ifLsp(host.lspCoordinator()::formatDocument)));
-        host.registry().register(Command.of("lsp.codeActions", () -> host.ifLsp(host.lspCoordinator()::codeActions)));
+        // In a .http file the code actions are the {{variable}} fixes ("Use environment dev"), which need no server.
+        host.registry().register(Command.of("lsp.codeActions", () -> {
+            EditorBuffer active = host.activeBuffer();
+            if (active != null && active.isHttpFile() && host.httpClient().isEnabled()) {
+                if (!active.showHttpVariableFixes()) {
+                    host.setStatus(tr("status.lsp.noCodeActions"));
+                }
+                return;
+            }
+            host.ifLsp(host.lspCoordinator()::codeActions);
+        }));
         host.registry()
                 .register(Command.of(
                         "lsp.signatureHelp",

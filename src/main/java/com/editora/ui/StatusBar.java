@@ -72,6 +72,13 @@ public final class StatusBar extends HBox {
     /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
      *  the active buffer isn't served by LSP. */
     private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
+    /**
+     * The active {@code .http} file's environment ("Env: dev", "No environment"); clicking opens its environment menu
+     * above the segment. Hidden for every other buffer and while the HTTP Client is off.
+     */
+    private final Label httpEnv = new Label();
+    /** What clicking {@link #httpEnv} does (the controller opens the environment menu at the segment). */
+    private Runnable onHttpEnvClicked = () -> {};
     /** The active Markdown buffer's lint issue count; click opens the Markdown Lint tool window. */
     private final Label markdownLint = segment("tool.markdownLint", tr("statusbar.tip.markdownLint"));
     /** Indeterminate progress shown while a language server is starting/loading; hidden once ready. */
@@ -223,6 +230,12 @@ public final class StatusBar extends HBox {
         githubChecks.setVisible(false); // shown only when the current branch's PR has checks
         githubChecks.setManaged(false);
 
+        httpEnv.getStyleClass().addAll("status-segment", "status-segment-clickable", "status-http-env");
+        httpEnv.setTooltip(new Tooltip(tr("statusbar.tip.httpEnv")));
+        httpEnv.setOnMouseClicked(e -> onHttpEnvClicked.run());
+        httpEnv.setVisible(false); // shown only for an .http buffer with the HTTP Client on
+        httpEnv.setManaged(false);
+
         lsp.getStyleClass().add("status-lsp");
         lsp.setVisible(false); // shown only when the active file is served by a language server
         lsp.setManaged(false);
@@ -285,6 +298,7 @@ public final class StatusBar extends HBox {
                         githubChecks,
                         lsp,
                         markdownLint,
+                        httpEnv,
                         mcp,
                         readOnly,
                         zoomGroup(),
@@ -484,6 +498,28 @@ public final class StatusBar extends HBox {
             messageLogPopup.toggle(owner, echo, messageLog);
             markMessagesRead(); // opening the log is the user having had a chance to see them
         }
+    }
+
+    /**
+     * Shows the active {@code .http} file's environment ({@code text}: "Env: dev"; {@code none}: muted, as for "No
+     * environment"), or hides the segment ({@code text} null).
+     */
+    public void setHttpEnvironment(String text, boolean none) {
+        boolean shown = text != null;
+        httpEnv.setText(shown ? text : "");
+        httpEnv.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("none"), shown && none);
+        httpEnv.setVisible(shown);
+        httpEnv.setManaged(shown);
+    }
+
+    /** Sets what clicking the environment segment does. */
+    public void setOnHttpEnvironmentClicked(Runnable action) {
+        this.onHttpEnvClicked = action == null ? () -> {} : action;
+    }
+
+    /** The environment segment, so its menu can anchor to it. */
+    public Node httpEnvSegmentNode() {
+        return httpEnv;
     }
 
     /** The Git branch segment node, so the branch dropdown can anchor itself to it. */

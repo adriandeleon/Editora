@@ -29,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
   stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
   - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
-    3xx, amber 4xx, red 5xx and failures), the time and size, then History and the environment. Its tooltip has
-    the full status line and when the request was sent.
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
+    status line and when the request was sent.
   - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
     (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
     default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
@@ -40,8 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the request as sent, highlighted like a `.http` file and filling the tab.
   - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
     their shortcuts in the tooltips; Clear is in the **⋯** menu.
-  - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
-    to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
+    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
+- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
+  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
+  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
+  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
+  file no longer goes out without an environment because the response view was not open yet. The Environment
+  picker in the response view is gone; each file keeps the environment it had.
+  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
+    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
+    names the fix, and with another environment selected it says which ones define the variable.
+  - A variable sent empty is reported with the environments that define it. Each response in History records
+    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
+  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
 
 ## [0.22.0] - 2026-10-16
 
