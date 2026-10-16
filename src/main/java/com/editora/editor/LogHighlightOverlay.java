@@ -2,7 +2,6 @@ package com.editora.editor;
 
 import java.util.Map;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -50,6 +49,8 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     private final Canvas canvas = new Canvas(1, 1);
     private boolean active;
     private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
@@ -79,6 +80,14 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
      */
     LogHighlightOverlay(CodeArea area, LevelSource levels) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                () -> active && rendering);
         this.levels = levels;
         getStyleClass().add("log-highlight-overlay");
         setMouseTransparent(true);
@@ -165,10 +174,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     /** Pattern scans run since construction — the test seam for "a repaint of unchanged lines scans none". */

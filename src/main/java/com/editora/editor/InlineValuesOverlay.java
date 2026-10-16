@@ -3,7 +3,6 @@ package com.editora.editor;
 import java.util.List;
 import java.util.Map;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.geometry.VPos;
 import javafx.scene.canvas.Canvas;
@@ -40,6 +39,9 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     private int frameLine = -1;
 
     private boolean redrawPending;
+
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
@@ -49,6 +51,14 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
 
     InlineValuesOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         getStyleClass().add("inline-values-overlay");
         setMouseTransparent(true);
         setVisible(false);
@@ -153,10 +163,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void redraw() {

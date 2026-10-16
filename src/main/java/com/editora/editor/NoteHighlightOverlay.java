@@ -4,9 +4,7 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
-import javafx.application.Platform;
 import javafx.geometry.Bounds;
-import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -58,18 +56,8 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     private boolean rendering = true;
 
     private boolean redrawPending;
-    /** How many pulses after a paint the overlay checks that the text is still where it painted for. */
-    private static final int CHECKS_AFTER_PAINT = 3;
-
-    private final Runnable afterLayout = this::afterLayoutPulse;
-    /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
-    private Scene armed;
-
-    private int checksLeft;
-    /** Where the first visible character was when the highlights were last painted (NaN: nothing painted). */
-    private double paintedX = Double.NaN;
-
-    private double paintedY = Double.NaN;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** Test seam: when set, every highlight box painted by the last frame is recorded as {@code {x0, y0, x1, y1}}. */
     static List<double[]> boxesForTest;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
@@ -81,6 +69,14 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
 
     NoteHighlightOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         getStyleClass().add("note-highlight-overlay");
         setMouseTransparent(true);
         getChildren().add(canvas);
@@ -172,14 +168,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
-    /**
-     * Asks for a repaint <em>after the next layout pass</em>. The highlights are placed from the laid-out text,
-     * so a paint run before the pulse that lays it out ({@code Platform.runLater} does) is a paint for the old
-     * layout, and that frame is shown. When the text moves without anything the overlay listens to (the gutter
-     * widening a pulse after an edit takes the file to 1,000 lines, line numbers toggled, the font changed),
-     * nothing asked for another. So the paint is tied to the pulse, and for a few pulses afterwards the overlay
-     * looks again at where the text starts (the pattern of {@link MarkdownLintOverlay}).
-     */
+    /** Asks for a repaint after the next layout pass (see {@link AfterLayoutPaint}). */
     private void scheduleRedraw() {
         if (!active || !rendering || redrawPending) {
             return;
@@ -189,67 +178,12 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             return;
         }
         redrawPending = true;
-        arm();
-    }
-
-    private void arm() {
-        Scene scene = getScene();
-        if (scene == null) {
-            Platform.runLater(afterLayout); // not in a window: there is no pulse to wait for
-            return;
-        }
-        if (armed != scene) {
-            disarm();
-            scene.addPostLayoutPulseListener(afterLayout);
-            armed = scene;
-        }
-        Platform.requestNextPulse();
-    }
-
-    private void disarm() {
-        if (armed != null) {
-            armed.removePostLayoutPulseListener(afterLayout);
-            armed = null;
-        }
-    }
-
-    /** Runs once the scene has been laid out: paints if asked to, else checks the last paint still fits. */
-    private void afterLayoutPulse() {
-        if (redrawPending) {
-            redrawPending = false;
-            redraw();
-            checksLeft = CHECKS_AFTER_PAINT;
-        } else if (checksLeft > 0) {
-            checksLeft--;
-            if (drawable() && textMoved()) {
-                redraw();
-                checksLeft = CHECKS_AFTER_PAINT;
-            }
-        }
-        if (checksLeft > 0 && drawable() && armed != null) {
-            Platform.requestNextPulse();
-        } else {
-            checksLeft = 0;
-            disarm();
-        }
+        afterLayout.request();
     }
 
     /** Whether a repaint could put anything on the canvas. */
     private boolean drawable() {
         return active && rendering && hasContent;
-    }
-
-    /** Whether the first visible character is no longer where it was when the highlights were last painted. */
-    private boolean textMoved() {
-        try {
-            int total = area.getParagraphs().size();
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            Bounds now = firstCharacter(first, last);
-            return now != null && (now.getMinX() != paintedX || now.getMinY() != paintedY);
-        } catch (RuntimeException midLayout) {
-            return false;
-        }
     }
 
     /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
@@ -275,8 +209,6 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     private void redraw() {
-        paintedX = Double.NaN;
-        paintedY = Double.NaN;
         if (boxesForTest != null) {
             boxesForTest.clear();
         }
@@ -319,8 +251,6 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             // where column 0 sits at no scroll (where the text area begins), so no highlight covers the numbers.
             double textLeft = 0;
             if (origin != null) {
-                paintedX = origin.getMinX();
-                paintedY = origin.getMinY();
                 textLeft = Math.max(0, Math.floor(origin.getMinX() + area.getEstimatedScrollX()));
             }
             for (int[] span : visible) {

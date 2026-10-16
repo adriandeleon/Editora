@@ -1,6 +1,5 @@
 package com.editora.editor;
 
-import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.geometry.VPos;
@@ -62,6 +61,8 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
 
     private boolean suppressed;
     private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
 
@@ -71,6 +72,14 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
 
     WhitespaceOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         getStyleClass().add("whitespace-overlay");
         setMouseTransparent(true);
         // Inactive until "show whitespace" is on: stay hidden so the renderer composites nothing and the
@@ -192,10 +201,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void redraw() {

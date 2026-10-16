@@ -135,7 +135,8 @@ The discipline that keeps overlays off the hot path (see
 - a `final class MyOverlay extends Region` in `editor`, holding a `Canvas`, mouse-transparent,
   `setVisible(false)` until activated;
 - subscribe to `area.viewportDirtyEvents()`, `multiPlainChanges()`, and the scroll properties to
-  `scheduleRedraw()` (coalesced with a `redrawPending` flag + `Platform.runLater`);
+  `scheduleRedraw()` (coalesced with a `redrawPending` flag, painted through an `AfterLayoutPaint` so the
+  paint runs after the pulse's layout and follows a gutter that changes width);
 - `redraw()` clears, then iterates only `firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`,
   using `CanvasGuards` for dimension/paintability checks;
 - `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport

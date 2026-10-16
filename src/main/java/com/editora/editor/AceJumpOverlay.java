@@ -5,7 +5,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -41,6 +40,8 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
     private boolean awaitingChar;
     private String typed = "";
     private boolean redrawPending;
+    /** Runs the repaint after the layout pass, and looks again after it (see {@link AfterLayoutPaint}). */
+    private final AfterLayoutPaint afterLayout;
     /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
     private boolean rendering = true;
     /** The overlay of the split's second view; a jump started while that view has focus runs there. */
@@ -48,6 +49,14 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
 
     AceJumpOverlay(CodeArea area) {
         this.area = area;
+        this.afterLayout = new AfterLayoutPaint(
+                this,
+                area,
+                () -> {
+                    redrawPending = false;
+                    redraw();
+                },
+                this::drawable);
         getStyleClass().add("acejump-overlay");
         setMouseTransparent(true);
         setVisible(false);
@@ -291,10 +300,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
-            redrawPending = false;
-            redraw();
-        });
+        afterLayout.request();
     }
 
     private void redraw() {
