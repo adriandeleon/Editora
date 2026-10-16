@@ -214,9 +214,9 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
-        // Save the script being rerun, wherever its tab is; the active tab may be something else entirely (a
-        // README), and saving that instead let the edited script run as it was on disk.
-        if (!beginRunRequest() || !(lastRunScript != null ? saveOpenBuffer(lastRunScript) : saveActiveBuffer())) {
+        // Save the script being rerun, wherever its tab is (the tab in front may be something else, a README, and
+        // saving only that let the edited script run as it was on disk), then the tab in front as before.
+        if (!beginRunRequest() || !saveScriptAndActive(lastRunScript)) {
             return;
         }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
@@ -440,7 +440,7 @@ final class RunCoordinator {
         // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
         // without the edit on screen; a script configuration never saved at all.
         Path script = cfg.isJava() ? null : configScript(cfg);
-        if (!(script != null ? saveOpenBuffer(script) : saveActiveBuffer())) {
+        if (!saveScriptAndActive(script)) {
             return;
         }
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
@@ -458,6 +458,14 @@ final class RunCoordinator {
     private Path configScript(RunConfiguration cfg) {
         Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
         return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, cwd);
+    }
+
+    /**
+     * Saves the open tab of {@code script} (null = none) and then the tab in front: the script is what runs,
+     * and a before-launch step may read the file being edited in front. False when a save was refused.
+     */
+    private boolean saveScriptAndActive(Path script) {
+        return (script == null || saveOpenBuffer(script)) && saveActiveBuffer();
     }
 
     /**

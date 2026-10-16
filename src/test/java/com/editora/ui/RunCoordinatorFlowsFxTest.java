@@ -675,7 +675,7 @@ class RunCoordinatorFlowsFxTest {
     }
 
     @Test
-    void rerunSavesTheScriptItRerunsNotTheTabInFront() throws Exception {
+    void rerunSavesTheScriptItRerunsAsWellAsTheTabInFront() throws Exception {
         EditorBuffer script = open("again.sh", "#!/bin/sh\necho one\n", true);
         FxTestSupport.runOnFx(run::runActiveFile);
         awaitStatus(tr("status.run.ok"));
@@ -687,7 +687,7 @@ class RunCoordinatorFlowsFxTest {
 
         FxTestSupport.runOnFx(run::rerunLast);
         awaitStatus(tr("status.run.ok"));
-        assertEquals(List.of("again.sh"), ops.saved, "it saved README.md and ran the old again.sh");
+        assertEquals(List.of("again.sh", "README.md"), ops.saved, "it saved only README.md and ran the old again.sh");
     }
 
     @Test
@@ -700,7 +700,7 @@ class RunCoordinatorFlowsFxTest {
         RunConfiguration cfg = new RunConfiguration("C", "shell", "cfg2.sh", "", "", "", "", "", "", "", "");
         FxTestSupport.runOnFx(() -> run.runConfig(cfg));
         awaitStatus(tr("status.run.ok"));
-        assertEquals(List.of("cfg2.sh"), ops.saved);
+        assertEquals(List.of("cfg2.sh", "README.md"), ops.saved, "the script first, then the tab in front");
     }
 
     @Test
