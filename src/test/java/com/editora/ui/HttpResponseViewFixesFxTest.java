@@ -113,10 +113,10 @@ class HttpResponseViewFixesFxTest {
             stages.forEach(Stage::close);
             buffers.forEach(EditorBuffer::dispose);
         });
-        // A finished run queues its history save before it sets the status the test waits for, so the save
-        // usually starts after the test has returned. Without this wait it raced JUnit deleting the config
-        // @TempDir, and when it wrote into http-history mid-delete the test failed with "Failed to delete temp
-        // directory" (macOS CI, 16 October 2026).
+        // A finished run queues its history save before it sets the status the test waits for, so the save can
+        // still be running when the test returns (1 to 3 of this class's 13 saves on a fast machine). Without this
+        // wait it raced JUnit deleting the config @TempDir, and when it wrote into http-history mid-delete the
+        // test failed with "Failed to delete temp directory" (macOS CI, 16 October 2026).
         HttpHistorySync.awaitIdleForTest();
     }
 
