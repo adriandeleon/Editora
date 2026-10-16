@@ -141,4 +141,24 @@ class HttpSecretPreviewTest {
         String text = "GET http://h.test/\nContent-Type: text/plain\n\nx {{" + " ".repeat(200_000) + "\n";
         assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> preview(text));
     }
+
+    @Test
+    void thePreviewSaysWhetherTheRequestIsSentAndWhetherItsHostIsKnownBeforehand() {
+        HttpClientService.Preview plain = preview("GET http://h.test/?k={{$env PATH}}\n");
+        assertTrue(plain.sendable());
+        assertFalse(plain.hostFromResponse());
+        assertFalse(plain.hostUnfixed());
+        assertFalse(
+                preview("GRAPHQL http://h.test/?k={{$env PATH}}\n\nquery { a }\n")
+                        .sendable(),
+                "never sent");
+        HttpClientService.Preview chained =
+                preview("@base = {{login.response.body.$.next}}\nGET {{base}}?k={{$env PATH}}\n");
+        assertTrue(chained.hostFromResponse(), "a host an earlier response chooses, through an @var line");
+        assertTrue(chained.hostUnfixed());
+        assertTrue(preview("GET http://{{$env HOST}}/?k=1\n").hostUnfixed(), "a host made of a secret");
+        assertTrue(
+                preview("GET /p\nHost: {{$random.alphabetic(5)}}.h.test\n").hostUnfixed(), "a fresh value each time");
+        assertFalse(preview("GET http://h.test/{{login.response.body.$.id}}\n").hostUnfixed(), "only the path");
+    }
 }

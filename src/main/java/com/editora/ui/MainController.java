@@ -6719,19 +6719,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             return true;
         }
         Path root = HttpSecretGate.trustRoot(file, projectRoot());
-        Path name = root.getFileName();
-        ButtonType trust = new ButtonType(tr("dialog.httpTrust.accept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.WARNING,
-                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString())
-                        + "\n\n" + tr("dialog.httpTrust.redirects"),
-                ButtonType.CANCEL,
-                trust);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.trust.title"));
-        confirm.setHeaderText(tr("dialog.httpTrust.header", name == null ? root.toString() : name.toString()));
-        confirm.getDialogPane().setMinWidth(520);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != trust) {
+        TrustPrompts.Prompt prompt = TrustPrompts.httpSecrets(stage, root, reads, hosts);
+        if (prompt.alert().showAndWait().orElse(ButtonType.CANCEL) != prompt.trust()) {
             return false;
         }
         config.getTrustStore().trust(root);
@@ -6740,18 +6729,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private boolean confirmTrustFolder(java.nio.file.Path root, java.nio.file.Path wrapper) {
-        java.nio.file.Path name = root.getFileName();
-        ButtonType trust = new ButtonType(tr("dialog.trust.accept"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = new Alert(
-                Alert.AlertType.WARNING,
-                tr("dialog.trust.body", wrapper.getFileName().toString(), root.toString()),
-                ButtonType.CANCEL,
-                trust);
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.trust.title"));
-        confirm.setHeaderText(tr("dialog.trust.header", name == null ? root.toString() : name.toString()));
-        confirm.getDialogPane().setMinWidth(520);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == trust;
+        TrustPrompts.Prompt prompt = TrustPrompts.buildWrapper(stage, root, wrapper);
+        return prompt.alert().showAndWait().orElse(ButtonType.CANCEL) == prompt.trust();
     }
 
     /**

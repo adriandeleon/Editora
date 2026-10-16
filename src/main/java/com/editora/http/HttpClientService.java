@@ -208,14 +208,33 @@ public final class HttpClientService {
         SecretGate UNCHECKED = (reads, hosts) -> null;
 
         String check(List<String> reads, List<String> hosts);
+
+        /**
+         * As {@link #check(List, List)}, for a run that may be cancelled while the question waits: a gate that asks the
+         * user (a dialog on the FX thread) checks {@code cancelled} again just before asking, so a run cancelled or
+         * replaced meanwhile never puts up a prompt. The default asks unless already cancelled.
+         */
+        default String check(List<String> reads, List<String> hosts, java.util.function.BooleanSupplier cancelled) {
+            return cancelled.getAsBoolean() ? CANCELLED : check(reads, hosts);
+        }
     }
 
     /**
      * What a request would read and where it would go, from a dry resolution that runs the same code as a send
      * ({@link #prepare}) but keeps every secret source as written: the {@code reads} (see
      * {@link HttpVars.Unresolved#secretReads()}) and the {@code hosts} ({@code host:port}) it would contact.
+     * {@code hostFromResponse}: the host comes (directly or through an {@code @var} line) from an earlier response, so
+     * it is only known once that response is in; {@code hostUnfixed}: it may differ at the send (it also uses a secret
+     * or a {@code $…} built-in). {@code sendable}: false for a request that is never sent (GraphQL/WebSocket/gRPC, an
+     * unreadable body file), which therefore asks nothing.
      */
-    public record Preview(List<String> reads, List<String> hosts) {}
+    public record Preview(
+            List<String> reads, List<String> hosts, boolean hostFromResponse, boolean hostUnfixed, boolean sendable) {
+
+        public Preview(List<String> reads, List<String> hosts) {
+            this(reads, hosts, false, false, true);
+        }
+    }
 
     /**
      * The dry resolution of {@code request}: URL, headers, inline and {@code <@} bodies, multipart parts (their
@@ -229,7 +248,20 @@ public final class HttpClientService {
         HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
         Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
-        return new Preview(sink.secretReads(), List.of(hostOf(p.targetUrl())));
+        // What the host is made of: the request line up to its path, and a Host header (origin form).
+        HttpVars.Unresolved hostSink = HttpVars.Unresolved.dry();
+        HttpVars.substitute(hostPart(request.url()), scope, now, captured, baseDir, hostSink);
+        for (String[] h : request.headers()) {
+            if (h[0] != null && h[0].strip().equalsIgnoreCase("Host")) {
+                HttpVars.substitute(h[1], scope, now, captured, baseDir, hostSink);
+            }
+        }
+        boolean fromResponse = !hostSink.responseReads().isEmpty();
+        boolean unfixed = fromResponse
+                || !hostSink.secretReads().isEmpty()
+                || !hostSink.dynamicReads().isEmpty();
+        boolean sendable = request.error() == null && p.body().problem() == null;
+        return new Preview(sink.secretReads(), List.of(hostOf(p.targetUrl())), fromResponse, unfixed, sendable);
     }
 
     /**
@@ -237,13 +269,19 @@ public final class HttpClientService {
      * secret source as written — so neither the response view nor the saved history holds a value that was refused.
      */
     private static HttpExchange notSent(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured, String why) {
+            HttpFile.Parsed request,
+            Map<String, String> vars,
+            Path baseDir,
+            CapturedResponses captured,
+            String why,
+            List<String> extraWarnings) {
         ZonedDateTime now = ZonedDateTime.now();
         HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
         Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
         List<String> warnings = new ArrayList<>(p.warnings());
         warnings.addAll(sink.warnings());
+        warnings.addAll(extraWarnings);
         String url = p.targetUrl(); // not percent-encoded: the {{references}} read as written
         String label = p.method() + " " + (request.directives().noLog() ? withoutQueryValues(url) : url);
         return new HttpExchange(
@@ -254,6 +292,32 @@ public final class HttpClientService {
                 p.body().display(),
                 HttpResult.failure(why, warnings),
                 p.details());
+    }
+
+    /**
+     * The part of a request-line template that can decide its host: up to the first {@code /}, {@code ?} or
+     * {@code #} after the scheme, a {@code {{reference}}} counted whole (it may hold a scheme, a host or a userinfo).
+     * {@code GET {{base}}/x} gives {@code {{base}}}; {@code GET https://h.test/{{id}}} gives {@code https://h.test}.
+     */
+    static String hostPart(String template) {
+        String u = template == null ? "" : template.strip();
+        int scheme = u.indexOf("://");
+        int i = scheme < 0 ? 0 : scheme + 3;
+        while (i < u.length()) {
+            if (u.startsWith("{{", i)) {
+                int close = u.indexOf("}}", i + 2);
+                if (close < 0) {
+                    break;
+                }
+                i = close + 2;
+                continue;
+            }
+            if ("/?#".indexOf(u.charAt(i)) >= 0) {
+                break;
+            }
+            i++;
+        }
+        return u.substring(0, i);
     }
 
     /** {@code host[:port]} of {@code url}, read leniently (a {@code {{reference}}} kept in a dry host stays as is). */
@@ -274,13 +338,23 @@ public final class HttpClientService {
     }
 
     /**
-     * The secret reads a run may make: null for an unchecked run; else the approved ones (empty when none were, or
-     * the gate refused, with its {@code refusal}).
+     * What a run may read and where it may send it: null for an unchecked run; else the approved {@code reads} and the
+     * {@code hosts} the prompt named ({@code anyHost} when it said a host is only known at the send — chosen by an
+     * earlier response, or made of a secret or a {@code $…} value), or nothing with the gate's {@code refusal}.
      */
-    private record Approval(java.util.Set<String> reads, String refusal) {}
+    private record Approval(java.util.Set<String> reads, java.util.Set<String> hosts, boolean anyHost, String refusal) {
 
-    /** Asks {@code gate} once about every secret the {@code requests} would read; nothing is asked when none do. */
+        static Approval refused(String refusal) {
+            return new Approval(java.util.Set.of(), java.util.Set.of(), false, refusal);
+        }
+    }
+
+    /**
+     * Asks {@code gate} once about every secret the {@code requests} would read; nothing is asked when none do, for a
+     * request that is never sent, or once {@code handle} is cancelled (a run cancelled or replaced before its prompt).
+     */
     private static Approval approve(
+            Handle handle,
             SecretGate gate,
             List<HttpFile.Parsed> requests,
             Map<String, String> vars,
@@ -291,27 +365,63 @@ public final class HttpClientService {
         }
         java.util.Set<String> reads = new java.util.LinkedHashSet<>();
         java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
+        boolean fromResponse = false;
+        boolean anyHost = false;
         for (HttpFile.Parsed request : requests) {
             try {
                 Preview p = preview(request, vars, baseDir, captured);
-                if (!p.reads().isEmpty()) {
+                if (p.sendable() && !p.reads().isEmpty()) {
                     reads.addAll(p.reads());
-                    hosts.addAll(p.hosts());
+                    if (!p.hostFromResponse()) {
+                        hosts.addAll(p.hosts());
+                    }
+                    fromResponse |= p.hostFromResponse();
+                    anyHost |= p.hostUnfixed();
                 }
             } catch (Throwable unreadable) {
                 // nothing is approved for it: if its send does read a secret, the send is refused
             }
         }
         if (reads.isEmpty()) {
-            return new Approval(java.util.Set.of(), null);
+            return new Approval(java.util.Set.of(), java.util.Set.of(), false, null);
+        }
+        if (handle.isCancelled()) {
+            return Approval.refused(CANCELLED);
+        }
+        List<String> named = new ArrayList<>(hosts);
+        if (fromResponse) {
+            named.add(tr("dialog.httpTrust.dynamicHost")); // never a stale host from an earlier run's response
         }
         String refusal;
         try {
-            refusal = gate.check(List.copyOf(reads), List.copyOf(hosts));
+            refusal = gate.check(List.copyOf(reads), List.copyOf(named), handle::isCancelled);
         } catch (RuntimeException failure) {
             refusal = tr("status.http.secretsRefused", String.join(", ", reads));
         }
-        return refusal == null ? new Approval(reads, null) : new Approval(java.util.Set.of(), refusal);
+        return refusal == null ? new Approval(reads, hosts, anyHost, null) : Approval.refused(refusal);
+    }
+
+    /**
+     * Why a send that read {@code unresolved}'s secrets may not go out under {@code approval}, or null: a read the
+     * gate did not approve, or a host the prompt did not name.
+     */
+    private static String refusal(Approval approval, HttpVars.Unresolved unresolved, String targetUrl) {
+        if (approval == null || unresolved.secretReads().isEmpty()) {
+            return null;
+        }
+        if (approval.refusal() != null) {
+            return approval.refusal();
+        }
+        if (!approval.reads().containsAll(unresolved.secretReads())) {
+            List<String> unapproved = new ArrayList<>(unresolved.secretReads());
+            unapproved.removeAll(approval.reads());
+            return tr("status.http.secretsUnapproved", String.join(", ", unapproved));
+        }
+        String host = hostOf(targetUrl);
+        if (!approval.anyHost() && !approval.hosts().contains(host)) {
+            return tr("status.http.secretsHostUnapproved", String.join(", ", unresolved.secretReads()), host);
+        }
+        return null;
     }
 
     /**
@@ -369,7 +479,7 @@ public final class HttpClientService {
         exec.submit(() -> {
             HttpExchange ex;
             try (Session session = new Session(new CookieManager())) {
-                Approval approval = approve(gate, List.of(request), vars, baseDir, responses);
+                Approval approval = approve(handle, gate, List.of(request), vars, baseDir, responses);
                 ex = executeSafely(handle, request, vars, baseDir, responses, session, approval);
                 responses.put(request.name(), ex.result());
             } finally {
@@ -401,7 +511,7 @@ public final class HttpClientService {
         exec.submit(() -> {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
-                Approval approval = approve(gate, requests, vars, baseDir, captured);
+                Approval approval = approve(handle, gate, requests, vars, baseDir, captured);
                 for (HttpFile.Parsed req : requests) {
                     if (onStart != null) {
                         int index = out.size();
@@ -489,30 +599,29 @@ public final class HttpClientService {
         DigestAuth.Credentials digest = p.digest();
         String label = p.label();
         HttpExchange.Details details = p.details();
-        if (request.error() != null) {
-            // A GraphQL/WebSocket/gRPC request: sending it as plain HTTP would only produce a confusing error.
+        // May this send happen? The one check, before anything is sent or reported: a GraphQL/WebSocket/gRPC request
+        // (plain HTTP would only produce a confusing error), a body that cannot be read (sending without it would
+        // look like a server problem, or create an empty resource), a secret the gate did not approve, or a host the
+        // prompt did not name.
+        List<String> notSentWarnings =
+                request.error() == null && bc.problem() != null ? List.of(bc.problem()) : List.of();
+        String whyNot = request.error() != null
+                ? request.error()
+                : bc.problem() != null
+                        ? tr("http.request.notSent", bc.problem())
+                        : refusal(approval, unresolved, p.targetUrl());
+        if (whyNot != null) {
+            if (!unresolved.secretReads().isEmpty()) {
+                // Nothing goes out, so nothing it read is shown or kept: it is reported from the dry resolution, with
+                // every secret as written — in the panel, the status bar, History, the history file and Copy as cURL.
+                return notSent(request, vars, baseDir, captured, whyNot, notSentWarnings);
+            }
             warnings.addAll(unresolved.warnings());
-            HttpResult notSent = HttpResult.failure(request.error(), warnings);
+            warnings.addAll(notSentWarnings);
+            HttpResult notSent = HttpResult.failure(whyNot, warnings);
             return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
         }
-        if (bc.problem() != null) {
-            warnings.addAll(unresolved.warnings());
-            // The body the request names cannot be read. Sending the request without it would look like a
-            // server problem (and could create an empty resource), so it is not sent at all.
-            warnings.add(bc.problem());
-            HttpResult notSent = HttpResult.failure(tr("http.request.notSent", bc.problem()), warnings);
-            return new HttpExchange(label, method, url, headers, bc.display(), notSent, details);
-        }
-        if (approval != null && !approval.reads().containsAll(unresolved.secretReads())) {
-            // What this send resolved reads a secret the gate did not approve: refused before the first byte, and
-            // reported from the dry resolution, so the secret is not in the history either.
-            List<String> unapproved = new ArrayList<>(unresolved.secretReads());
-            unapproved.removeAll(approval.reads());
-            String why = approval.refusal() != null
-                    ? approval.refusal()
-                    : tr("status.http.secretsUnapproved", String.join(", ", unapproved));
-            return notSent(request, vars, baseDir, captured, why);
-        }
+        details = details.withSecretValues(unresolved.secretValues());
         if (handle.isCancelled()) {
             warnings.addAll(unresolved.warnings());
             return new HttpExchange(
@@ -601,7 +710,14 @@ public final class HttpClientService {
                     partial,
                     written,
                     HttpVersions.label(resp.version()));
-            return new HttpExchange(label, method, url, headers, bc.display(), result, details.withFinalUrl(finalUrl));
+            return new HttpExchange(
+                    label,
+                    method,
+                    url,
+                    headers,
+                    bc.display(),
+                    result,
+                    details.withFinalUrl(finalUrl).withSecretValues(unresolved.secretValues()));
         } catch (Exception e) {
             warnings.addAll(unresolved.warnings());
             String message = handle.isCancelled()

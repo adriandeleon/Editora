@@ -1,8 +1,10 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
@@ -38,13 +40,34 @@ final class HttpSecretGate {
         Path asFile = buffer.getPath() != null
                 ? buffer.getPath()
                 : project == null ? null : project.resolve(buffer.getDisplayName());
-        return (reads, hosts) -> {
-            String names = String.join(", ", reads);
-            if (asFile == null) {
-                return tr("status.http.secretsNeedFolder", names);
+        return new HttpClientService.SecretGate() {
+            @Override
+            public String check(List<String> reads, List<String> hosts) {
+                return check(reads, hosts, () -> false);
             }
-            boolean allowed = onFx(() -> ops.allowSecretReads(asFile, hosts, reads));
-            return allowed ? null : tr("status.http.secretsRefused", names);
+
+            @Override
+            public String check(List<String> reads, List<String> hosts, BooleanSupplier cancelled) {
+                String names = String.join(", ", reads);
+                if (asFile == null) {
+                    return tr("status.http.secretsNeedFolder", names);
+                }
+                boolean[] wasCancelled = new boolean[1];
+                boolean allowed = onFx(() -> {
+                    // Checked again on the FX thread, just before asking: Run pressed twice, or Run then Cancel,
+                    // cancels this run while its question waits in the queue — it must not put up a prompt (whose
+                    // "trust" would be remembered for a run that never happens).
+                    if (cancelled.getAsBoolean()) {
+                        wasCancelled[0] = true;
+                        return false;
+                    }
+                    return ops.allowSecretReads(asFile, hosts, reads);
+                });
+                if (wasCancelled[0] || cancelled.getAsBoolean()) {
+                    return HttpClientService.CANCELLED;
+                }
+                return allowed ? null : tr("status.http.secretsRefused", names);
+            }
         };
     }
 
