@@ -38,6 +38,10 @@ prototype platform's input/rendering limitations don't apply.
   package-private seam mirroring `buildWindow` — against a temp config dir. **If that boot path
   changes, the fixture/seam must track it.** Its idempotent `dispose` force-releases controller,
   plugin, shared-config, and temporary-file resources without opening user-facing close prompts.
+  It also points `SharedConfig.setExportDirectory` at a temp folder of its own (`fx.exportDir`), so
+  Export Configuration — which the command sweep runs — never writes a zip into the real home
+  directory. A test window must not write outside its temp folders; a new default destination under
+  `user.home` needs the same seam.
 - For tests with workers or deferred FX callbacks, own the fixture and any test threads with
   **`AsyncTestScope`**. Use its worker/Future, latch, and FX barriers instead of `Thread.sleep`; the
   scope reports exceptions from its threads and uncaught FX callbacks before closing every owned

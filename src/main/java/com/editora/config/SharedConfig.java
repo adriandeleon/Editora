@@ -154,6 +154,8 @@ public class SharedConfig {
     private byte[] appliedSettingsBytes;
     /** The export in progress, if any (see {@link #exportConfigAsync}). */
     private java.util.concurrent.CompletableFuture<Path> runningExport;
+    /** Where an export lands; {@code null} means the user's home directory (see {@link #exportDirectory}). */
+    private volatile Path exportDirectory;
 
     private Consumer<ConfigManager> onSettingsChanged = origin -> {};
     private volatile Runnable onStoreChanged = () -> {};
@@ -600,11 +602,26 @@ public class SharedConfig {
     }
 
     /**
-     * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
-     * and returns the created file. Backs up whichever config dir is in use.
+     * Zips the active config directory into a timestamped {@code .zip} in {@link #exportDirectory()} (the
+     * user's home directory) and returns the created file. Backs up whichever config dir is in use.
      */
     public Path exportConfig() throws IOException {
-        return exportConfig(Path.of(System.getProperty("user.home")));
+        return exportConfig(exportDirectory());
+    }
+
+    /** The folder an export is written to: the user's home directory unless {@link #setExportDirectory} moved it. */
+    public Path exportDirectory() {
+        Path dir = exportDirectory;
+        return dir != null ? dir : Path.of(System.getProperty("user.home"));
+    }
+
+    /**
+     * Sends later exports to {@code dir} (which must exist) instead of the home directory; {@code null} restores
+     * the default. A test window points this at its own temporary folder, so a test that runs the Export
+     * Configuration command never drops a zip into the real home directory.
+     */
+    public void setExportDirectory(Path dir) {
+        exportDirectory = dir;
     }
 
     Path exportConfig(Path destinationDir) throws IOException {
@@ -658,7 +675,7 @@ public class SharedConfig {
 
     /** As {@link #exportConfigAsync()}, with the HTTP response history when {@code includeHttpHistory}. */
     public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(boolean includeHttpHistory) {
-        return exportConfigAsync(Path.of(System.getProperty("user.home")), includeHttpHistory);
+        return exportConfigAsync(exportDirectory(), includeHttpHistory);
     }
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {
