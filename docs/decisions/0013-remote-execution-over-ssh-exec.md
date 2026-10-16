@@ -39,3 +39,6 @@ the system `ssh` client run once per command, or keeping a local mirror of the f
   and cached per host, and a connection is budgeted against the server's `MaxSessions`.
 - Not covered: Windows hosts, non-POSIX login shells (fish/csh), SSH agent forwarding, running a Java
   project's main class or debugging a loose Java file on a host.
+- *Later (before 0.22.0):* the last two were added. A Java project's main class runs on the host with the
+  class path its jdtls or Maven gives (`RunCoordinator`), and a Java file outside a project is compiled on the
+  host for the debugger (`DapManager.compileOnHost`). See [docs/subsystems/remote.md](../subsystems/remote.md).
