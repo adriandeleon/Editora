@@ -92,4 +92,19 @@ class FileIconsTest {
         assertEquals("generic", FileIcons.iconKeyFor("noextension"));
         assertEquals("generic", FileIcons.iconKeyFor(null));
     }
+    /**
+     * An open buffer's icon follows its resolved language when its name says nothing — an extension-less
+     * shebang script, a picked language — but a name that does decide (an image, a .log) keeps its own glyph.
+     */
+    @Test
+    void openBuffersUseTheirResolvedLanguage() {
+        assertEquals("generic", FileIcons.iconKeyFor("deploy"));
+        assertEquals("shell", FileIcons.iconKeyFor("deploy", "shell"));
+        assertEquals("python", FileIcons.iconKeyFor("tool", "python"));
+        assertEquals("generic", FileIcons.iconKeyFor("notes", "plaintext"));
+        assertEquals("generic", FileIcons.iconKeyFor("notes", null));
+        assertEquals("image", FileIcons.iconKeyFor("logo.png", "shell"));
+        assertEquals("text", FileIcons.iconKeyFor("app.log", "log"));
+        assertEquals("java", FileIcons.iconKeyFor("A.java", "java"));
+    }
 }

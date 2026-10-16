@@ -7651,6 +7651,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                     if (activeBuffer() == buffer) {
                         statusBar.refresh();
                     }
+                    Tab tab = tabFor(buffer);
+                    if (tab != null) {
+                        updateTabMeta(tab, buffer); // the tab's file-type icon follows the language
+                    }
                 });
         buffer.setRunHandler(runCoordinator::runActiveFile); // "Run File" editor right-click item (runnable files)
         boolean local = isLocalBuffer(buffer);
