@@ -73,6 +73,7 @@ public final class HttpVars {
         private final Set<String> secretValues = new LinkedHashSet<>();
         private final Set<String> responseReads = new LinkedHashSet<>();
         private final Set<String> dynamicReads = new LinkedHashSet<>();
+        private final Set<String> sessionReads = new LinkedHashSet<>();
         private final boolean dry;
 
         public Unresolved() {
@@ -103,6 +104,7 @@ public final class HttpVars {
                 secretValues.addAll(other.secretValues);
                 responseReads.addAll(other.responseReads);
                 dynamicReads.addAll(other.dynamicReads);
+                sessionReads.addAll(other.sessionReads);
             }
         }
 
@@ -129,6 +131,16 @@ public final class HttpVars {
          */
         public List<String> responseReads() {
             return List.copyOf(responseReads);
+        }
+
+        /**
+         * The variables it used, directly or through an {@code @var} line or an environment value, whose value a
+         * script or a response set: session variables ({@code client.global}, {@code @capture}) and a pre-request
+         * script's {@code request.variables}. Like {@link #responseReads()}, a host made of one is only known at the
+         * send.
+         */
+        public List<String> sessionReads() {
+            return List.copyOf(sessionReads);
         }
 
         /** The other {@code {{$…}}} built-ins it used ({@code $uuid}, {@code $timestamp}): a fresh value each time. */
@@ -196,7 +208,9 @@ public final class HttpVars {
      * layered on top in order (each resolved against what is in effect at its line, so a later {@code @var} may use
      * an earlier one, an environment or session variable, a dynamic built-in, or — given {@code captured} — an
      * earlier response). A session variable came from a response: its value is used as is, never resolved, so a
-     * response cannot make a request read a secret.
+     * response cannot make a request read a secret. A {@code fileVars} entry with a third element is a value a
+     * pre-request script set (already escaped, see {@link HttpFile.Parsed#withScriptVariables}). Every use of either
+     * is recorded in {@link Unresolved#sessionReads()}.
      */
     public static Scope scope(
             Map<String, String> envVars,
@@ -231,13 +245,16 @@ public final class HttpVars {
         if (fileVars != null) {
             fileVars.forEach(pair -> fileNames.add(pair[0]));
         }
-        EnvResolver env = new EnvResolver(raw, fileNames, values, missing, now, dir, dry);
+        EnvResolver env = new EnvResolver(raw, fileNames, values, missing, now, dir, dry, globals.keySet());
         for (String key : raw.keySet()) {
             env.resolve(key, new HashSet<>());
         }
         if (fileVars != null) {
             for (String[] pair : fileVars) {
                 Unresolved local = new Unresolved(dry);
+                if (pair.length > 2) {
+                    local.sessionReads.add(pair[0]); // set by a pre-request script
+                }
                 Scope current = new Scope(values, missing);
                 String v = expand(pair[1], current::has, current::value, now, captured, dir, local);
                 values.put(pair[0], v);
@@ -255,7 +272,8 @@ public final class HttpVars {
             Map<String, Unresolved> missing,
             ZonedDateTime now,
             Path dir,
-            boolean dry) {
+            boolean dry,
+            Set<String> session) {
 
         String resolve(String key, Set<String> inProgress) {
             if (values.containsKey(key)) {
@@ -267,6 +285,7 @@ public final class HttpVars {
             }
             if (rawValue.indexOf("{{") < 0) {
                 values.put(key, rawValue);
+                markSession(key);
                 return rawValue;
             }
             Unresolved local = new Unresolved(dry);
@@ -295,7 +314,17 @@ public final class HttpVars {
             inProgress.remove(key);
             values.put(key, v);
             missing.put(key, local);
+            markSession(key);
             return v;
+        }
+
+        /** A session variable's own entry records that it was read, so every value that uses it carries that on. */
+        private void markSession(String key) {
+            if (session.contains(key)) {
+                missing.computeIfAbsent(key, k -> new Unresolved(dry))
+                        .sessionReads
+                        .add(key);
+            }
         }
     }
 

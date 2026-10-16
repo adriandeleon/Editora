@@ -23,9 +23,9 @@ import static com.editora.i18n.Messages.tr;
  * ({@code # @no-redirect}, {@code # @no-cookie-jar}, {@code # @no-log}, {@code # @no-auto-encoding},
  * {@code # @timeout 2 m}, {@code # @connection-timeout 500 ms}, {@code # @name x}), and the response checks
  * {@code # @assert …} / {@code # @capture …} ({@link HttpChecks}). JavaScript response handlers
- * ({@code > {% … %}} / {@code > file.js}) are read into {@link Parsed#handlers()} for {@link ResponseScripts} to run;
- * pre-request scripts ({@code < {% … %}}) are recognized so they never become part of the request, but they are
- * not executed yet; the request reports that it was ignored.
+ * ({@code > {% … %}} / {@code > file.js}) are read into {@link Parsed#handlers()}, and pre-request scripts
+ * ({@code < {% … %}} / {@code < file.js} above the request line) into {@link Parsed#preScripts()}, for
+ * {@link ResponseScripts} to run.
  */
 public final class HttpFile {
 
@@ -101,7 +101,8 @@ public final class HttpFile {
      * it, in document order, outside any request body — so a later redeclaration applies from there on.
      * {@code sectionStart}/{@code sectionEnd} span the request's whole section (its {@code ###} line through the
      * line before the next separator), which is what a caret maps to. {@code warnings} are problems found in
-     * the lines above the request line (an unreadable timeout, an ignored pre-request script).
+     * the lines above the request line (an unreadable timeout, an unclosed script). {@code preScripts} are its
+     * pre-request scripts, in order, with their lines in the file.
      */
     public record Request(
             int startLine,
@@ -114,11 +115,13 @@ public final class HttpFile {
             List<String[]> variables,
             int sectionStart,
             int sectionEnd,
-            List<String> warnings) {
+            List<String> warnings,
+            List<Handler> preScripts) {
 
         public Request {
             variables = variables == null ? List.of() : List.copyOf(variables);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
+            preScripts = preScripts == null ? List.of() : List.copyOf(preScripts);
         }
     }
 
@@ -147,12 +150,79 @@ public final class HttpFile {
             List<String[]> variables,
             List<String> warnings,
             String error,
-            List<Handler> handlers) {
+            List<Handler> handlers,
+            List<Handler> preScripts) {
 
         public Parsed {
             variables = variables == null ? List.of() : List.copyOf(variables);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
             handlers = handlers == null ? List.of() : List.copyOf(handlers);
+            preScripts = preScripts == null ? List.of() : List.copyOf(preScripts);
+        }
+
+        /**
+         * This request with {@code pairs} — values a pre-request script set with {@code request.variables.set} —
+         * after its own {@code @name = value} lines, so they win over every other variable. Each value is written
+         * escaped ({@link HttpVars#escape}): it is inserted as is, never resolved, so a script cannot make the request
+         * read a secret.
+         */
+        public Parsed withScriptVariables(java.util.Map<String, String> pairs) {
+            if (pairs == null || pairs.isEmpty()) {
+                return this;
+            }
+            List<String[]> vars = new ArrayList<>(variables);
+            // The third element marks a script's value, so a host made of it is "chosen by a script" (sessionReads).
+            pairs.forEach((k, v) -> vars.add(new String[] {k, HttpVars.escape(v == null ? "" : v), "script"}));
+            return new Parsed(
+                    method,
+                    url,
+                    headers,
+                    body,
+                    name,
+                    bodyRef,
+                    redirects,
+                    directives,
+                    httpVersion,
+                    vars,
+                    warnings,
+                    error,
+                    handlers,
+                    preScripts);
+        }
+
+        /**
+         * This request with the session's global headers ({@code client.global.headers}) that it does not set itself,
+         * added after its own; each value escaped, so it is sent as is.
+         */
+        public Parsed withGlobalHeaders(java.util.Map<String, String> globalHeaders) {
+            if (globalHeaders == null || globalHeaders.isEmpty()) {
+                return this;
+            }
+            List<String[]> all = new ArrayList<>();
+            for (String[] h : headers) {
+                all.add(h);
+            }
+            globalHeaders.forEach((name, value) -> {
+                boolean own = headers.stream().anyMatch(h -> h[0] != null && h[0].equalsIgnoreCase(name));
+                if (!own) {
+                    all.add(new String[] {name, HttpVars.escape(value == null ? "" : value)});
+                }
+            });
+            return new Parsed(
+                    method,
+                    url,
+                    all,
+                    body,
+                    name,
+                    bodyRef,
+                    redirects,
+                    directives,
+                    httpVersion,
+                    variables,
+                    warnings,
+                    error,
+                    handlers,
+                    preScripts);
         }
 
         /** The {@code @assert}/{@code @capture} checks of this request. */
@@ -183,7 +253,8 @@ public final class HttpFile {
                     variables,
                     all,
                     error,
-                    handlers);
+                    handlers,
+                    preScripts);
         }
     }
 
@@ -218,6 +289,7 @@ public final class HttpFile {
             String referenceName = null;
             int reqLine = -1;
             List<String> warnings = new ArrayList<>();
+            List<Handler> preScripts = new ArrayList<>();
             for (int k = i; k < sectionEnd; k++) {
                 String t = lines[k].strip();
                 if (t.isEmpty()) {
@@ -236,8 +308,9 @@ public final class HttpFile {
                 }
                 if (isPreRequestScript(t)) {
                     // "< {% … %}" or "< ./script.js" above the request: JavaScript run before the request.
-                    warnings.add(tr("http.warn.preRequestScriptIgnored"));
-                    k = scriptEnd(lines, k, sectionEnd, t);
+                    int end = scriptEnd(lines, k, sectionEnd, t); // unclosed: the rest of the section
+                    preScripts.add(handler(lines, k, end));
+                    k = end;
                     continue;
                 }
                 reqLine = k;
@@ -264,7 +337,8 @@ public final class HttpFile {
                         declared,
                         sectionStart,
                         sectionEnd - 1,
-                        warnings));
+                        warnings,
+                        preScripts));
             }
             i = sectionEnd;
         }
@@ -292,14 +366,16 @@ public final class HttpFile {
     public static Parsed parseRequest(String block) {
         String[] lines = (block == null ? "" : block).split("\n", -1);
         List<String> warnings = new ArrayList<>();
+        List<Handler> preScripts = new ArrayList<>();
         int i = 0;
         while (i < lines.length) {
             String t = lines[i].strip();
             if (t.isEmpty() || isComment(t) || isVarDecl(t)) {
                 i++;
             } else if (isPreRequestScript(t)) {
-                warnings.add(tr("http.warn.preRequestScriptIgnored"));
-                i = scriptEnd(lines, i, lines.length, t) + 1;
+                int end = scriptEnd(lines, i, lines.length, t);
+                preScripts.add(handler(lines, i, end));
+                i = end + 1;
             } else {
                 break;
             }
@@ -318,7 +394,8 @@ public final class HttpFile {
                     List.of(),
                     List.of(),
                     null,
-                    List.of());
+                    List.of(),
+                    preScripts);
         }
         // URL continuation lines: indented, and not shaped like a header ("  ?a=1", "  &b=2", "  /api" — IntelliJ
         // splits long targets this way). An indented "Accept: x" right after the request line is a header.
@@ -431,7 +508,8 @@ public final class HttpFile {
                 List.of(),
                 warnings,
                 rl.error(),
-                handlers);
+                handlers,
+                preScripts);
     }
 
     /** Like {@link #parseRequest(String)} but carries the request's {@code name}, {@code directives},
@@ -453,7 +531,8 @@ public final class HttpFile {
                 req.variables(),
                 warnings,
                 p.error(),
-                p.handlers().stream().map(h -> h.shifted(req.startLine())).toList());
+                p.handlers().stream().map(h -> h.shifted(req.startLine())).toList(),
+                req.preScripts());
     }
 
     /**

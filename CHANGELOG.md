@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP Client: pre-request scripts.** A `< {% … %}` block or a `< ./sign.js` line above a request runs on
+  Node.js before the request is resolved and sent.
+  - **`request.variables.set(name, value)`** sets a variable for that request only. It wins over every other
+    variable, including the file's `@name = value` lines.
+  - **The request as far as it resolves:** `request.url`, `request.headers` and `request.body` (with
+    `tryGetSubstituted()` and `getRaw()`), and `request.environment.get`.
+  - **Signing:** the JetBrains `crypto` API (`crypto.sha256()`, `crypto.hmac.sha256().withTextSecret(…)`, md5,
+    sha1, sha384, sha512, sha3, then `updateWithText`/`updateWithHex`/`updateWithBase64` and
+    `digest().toHex()`/`toBase64()`), and `jwt.sign`/`verify`/`decode` (HS, RS, PS and ES algorithms with a
+    secret or a PEM key).
+  - **Global headers:** `client.global.headers.set(name, value)`, in a pre-request script or a response handler,
+    adds a header to later requests (and, from a pre-request script, to its own request). A request's own header
+    wins, a `Host` header is never set, and `clear(name)` removes one.
+  - A request whose pre-request script cannot run — an untrusted folder, no Node.js, an error, a timeout — is
+    **not sent**, and says why. The rest of a Run All still runs. `client.exit()` ends the script and sends the
+    request. The script's tests and log come first in the Tests block.
+  - **Secrets:** a script's values are sent as written, never resolved, so a script cannot make a request read
+    `$env`/`$dotenv`. Scripts don't see secrets either: `request.environment.get` returns environment values as
+    written, so keep signing keys in `http-client.private.env.json`. When a request that reads a secret goes to a
+    host made of a script's or an earlier response's value, the secrets prompt names "a host chosen by an earlier
+    response or a script".
 - **HTTP Client: response handlers, tests and checks.**
   - **JavaScript response handlers** — `> {% … %}` after a request, or `> ./check.js` — now run, on your own
     Node.js, once the response arrives. They use the JetBrains API: `client.test`, `client.assert`,

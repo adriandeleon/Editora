@@ -77,9 +77,9 @@ public final class HttpVariableIndex {
     /** At most this many problems are reported for one document (a file full of them needs no more). */
     public static final int MAX_PROBLEMS = 500;
 
-    /** {@code client.global.set("name"} with a literal name, in an inline handler. */
-    private static final Pattern GLOBAL_SET =
-            Pattern.compile("client\\.global\\.set\\(\\s*([\"'`])([A-Za-z_][A-Za-z0-9_.-]*)\\1");
+    /** {@code client.global.set("name"} or {@code request.variables.set("name"} with a literal name, in an inline script. */
+    private static final Pattern GLOBAL_SET = Pattern.compile(
+            "(?:client\\.global|request\\.variables)\\.set\\(\\s*([\"'`])([A-Za-z_][A-Za-z0-9_.-]*)\\1");
 
     /** The same {@code {{…}}} scanner a run uses, so a mark sits exactly where a reference is resolved. */
     private static final Pattern VAR = HttpVars.referencePattern();
@@ -123,8 +123,9 @@ public final class HttpVariableIndex {
     }
 
     /**
-     * The session variables the document sets when its requests run: the names of its {@code # @capture} lines and
-     * the literal names its inline handlers pass to {@code client.global.set}. A handler file is not read.
+     * The variables the document's scripts set when its requests run: the names of its {@code # @capture} lines and
+     * the literal names its inline scripts pass to {@code client.global.set} or {@code request.variables.set}. A script
+     * file is not read.
      */
     public static Set<String> sessionNames(String text) {
         Set<String> names = new TreeSet<>();
@@ -138,7 +139,7 @@ public final class HttpVariableIndex {
                 }
             }
         }
-        if (text.contains("client.global.set")) {
+        if (text.contains("client.global.set") || text.contains("request.variables.set")) {
             Matcher m = GLOBAL_SET.matcher(text);
             while (m.find()) {
                 names.add(m.group(2));

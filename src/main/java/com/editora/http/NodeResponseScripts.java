@@ -110,7 +110,8 @@ public final class NodeResponseScripts implements ResponseScripts {
     public void beforeRun(List<HttpFile.Parsed> requests, BooleanSupplier cancelled) {
         if (!settings.enabled()
                 || requests == null
-                || requests.stream().allMatch(r -> r.handlers().isEmpty())) {
+                || requests.stream()
+                        .allMatch(r -> r.handlers().isEmpty() && r.preScripts().isEmpty())) {
             return;
         }
         verdict(cancelled);
@@ -148,37 +149,63 @@ public final class NodeResponseScripts implements ResponseScripts {
         }
     }
 
-    private Result runAll(HttpFile.Parsed request, HttpExchange exchange, Input input) {
+    /** Why no script of this run can start, or {@code null} when they can. */
+    private enum Skip {
+        OFF,
+        NO_FOLDER,
+        UNTRUSTED,
+        CANCELLED,
+        NO_NODE,
+        SHIM
+    }
+
+    /** The Node and shim a script runs with, or why it cannot run ({@code skip}, with {@code detail}). */
+    private record Ready(Node node, Path shim, Skip skip, String detail) {}
+
+    private Ready ready(BooleanSupplier cancelled) {
         if (!settings.enabled()) {
-            return skipped(tr("http.warn.handlerOff"));
+            return new Ready(null, null, Skip.OFF, null);
         }
-        SecretGate.Verdict v = verdict(input.cancelled());
-        switch (v) {
+        switch (verdict(cancelled)) {
             case CANCELLED -> {
-                return Result.NONE;
+                return new Ready(null, null, Skip.CANCELLED, null);
             }
             case NO_FOLDER -> {
-                return skipped(tr("http.warn.handlerNoFolder"));
+                return new Ready(null, null, Skip.NO_FOLDER, null);
             }
             case REFUSED -> {
-                return skipped(tr("http.warn.handlerUntrusted"));
+                return new Ready(null, null, Skip.UNTRUSTED, null);
             }
             default -> {}
         }
+        Node node = node();
+        if (node.error() != null) {
+            return new Ready(node, null, Skip.NO_NODE, settings.node());
+        }
+        try {
+            return new Ready(node, shim(settings.shimDir()), null, null);
+        } catch (IOException | RuntimeException e) {
+            return new Ready(node, null, Skip.SHIM, String.valueOf(e.getMessage()));
+        }
+    }
+
+    private Result runAll(HttpFile.Parsed request, HttpExchange exchange, Input input) {
         String body = exchange.result().body();
+        Ready ready = ready(input.cancelled());
+        if (ready.skip() != null) {
+            return switch (ready.skip()) {
+                case CANCELLED -> Result.NONE;
+                case OFF -> skipped(tr("http.warn.handlerOff"));
+                case NO_FOLDER -> skipped(tr("http.warn.handlerNoFolder"));
+                case UNTRUSTED -> skipped(tr("http.warn.handlerUntrusted"));
+                case NO_NODE -> skipped(tr("http.warn.nodeMissing", ready.detail()));
+                case SHIM -> skipped(tr("http.warn.handlerShim", ready.detail()));
+            };
+        }
         if (body != null && body.length() > CapturedResponses.MAX_BODY_CHARS) {
             return skipped(tr("http.warn.handlerBodyTooLarge", body.length(), CapturedResponses.MAX_BODY_CHARS));
         }
-        Node node = node();
-        if (node.error() != null) {
-            return skipped(node.error());
-        }
-        Path shim;
-        try {
-            shim = shim(settings.shimDir());
-        } catch (IOException | RuntimeException e) {
-            return skipped(tr("http.warn.handlerShim", String.valueOf(e.getMessage())));
-        }
+        Node node = ready.node();
         HttpTests tests = HttpTests.NONE;
         List<GlobalChange> changes = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -197,7 +224,7 @@ public final class NodeResponseScripts implements ResponseScripts {
                 warnings.add(tr("http.warn.handlerFile", h.path(), e.getMessage()));
                 continue;
             }
-            String nonce = "\u0001editora-" + HexFormat.of().formatHex(nonceBytes()) + ":";
+            String nonce = nonce();
             String stdin = HttpScripts.input(
                     nonce,
                     script,
@@ -206,42 +233,151 @@ public final class NodeResponseScripts implements ResponseScripts {
                     input.environment(),
                     globals,
                     exchange.details().secretValues());
-            List<String> argv = new ArrayList<>();
-            argv.add(node.executable());
-            argv.addAll(HttpScripts.flags(node.guard(), shim));
-            argv.add(shim.toString());
-            Launch launch = launch(argv, workingDir(), stdin, settings.timeout(), input.cancelled());
+            Launch launch = launch(argv(ready), workingDir(), stdin, settings.timeout(), input.cancelled());
             if (launch.cancelled()) {
                 break;
             }
-            HttpTests one;
-            if (launch.timedOut()) {
-                one = new HttpTests(
-                        List.of(),
-                        List.of(),
-                        tr("http.script.timeout", settings.timeout().toSeconds()));
-            } else if (launch.startError() != null) {
+            if (launch.startError() != null) {
                 warnings.add(tr("http.warn.nodeStart", node.executable(), launch.startError()));
                 break;
-            } else {
-                HttpScripts.Output out = HttpScripts.parseOutput(launch.stdout(), nonce);
-                if (out == null) {
-                    one = new HttpTests(
-                            List.of(), List.of(), tr("http.script.crashed", launch.exit(), tail(launch.stderr())));
-                } else {
-                    one = new HttpTests(out.tests(), out.log(), out.error());
-                    for (GlobalChange c : out.changes()) {
-                        c.applyTo(globals);
-                        changes.add(c);
-                    }
+            }
+            HttpScripts.Output out = launch.timedOut() ? null : HttpScripts.parseOutput(launch.stdout(), nonce);
+            tests = tests.plus(outcome(launch, out));
+            if (out != null) {
+                for (GlobalChange c : out.changes()) {
+                    c.applyTo(globals);
+                    changes.add(c);
                 }
             }
-            tests = tests.plus(one);
         }
         if (node.guard() == HttpScripts.Guard.NONE) {
             warnings.add(tr("http.warn.nodeUnguarded", node.version()));
         }
         return new Result(tests, changes, warnings);
+    }
+
+    @Override
+    public PreResult runPre(HttpFile.Parsed request, PreInput input) {
+        if (request.preScripts().isEmpty()) {
+            return PreResult.NONE;
+        }
+        try {
+            return runPreScripts(request, input);
+        } catch (RuntimeException | OutOfMemoryError failed) {
+            return notRun(
+                    tr("http.preScript.why.failed", String.valueOf(failed)), HttpTests.NONE, List.of(), List.of());
+        }
+    }
+
+    /**
+     * Runs the pre-request scripts in order, each seeing the {@code request.variables} the ones before it set. Any that
+     * cannot run, or stops with an error, keeps the request unsent (adl, 2026-10-16): it was written expecting the
+     * script's values. {@code client.exit()} is not an error.
+     */
+    private PreResult runPreScripts(HttpFile.Parsed request, PreInput input) {
+        Ready ready = ready(input.cancelled());
+        if (ready.skip() != null) {
+            String why =
+                    switch (ready.skip()) {
+                        case CANCELLED -> null;
+                        case OFF -> tr("http.preScript.why.off");
+                        case NO_FOLDER -> tr("http.preScript.why.noFolder");
+                        case UNTRUSTED -> tr("http.preScript.why.untrusted");
+                        case NO_NODE -> tr("http.preScript.why.noNode", ready.detail());
+                        case SHIM -> tr("http.preScript.why.shim", ready.detail());
+                    };
+            return why == null ? cancelled() : notRun(why, HttpTests.NONE, List.of(), List.of());
+        }
+        Node node = ready.node();
+        HttpTests tests = HttpTests.NONE;
+        List<GlobalChange> changes = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        Map<String, String> globals = new LinkedHashMap<>(input.globals());
+        Map<String, String> variables = new LinkedHashMap<>();
+        for (HttpFile.Handler h : request.preScripts()) {
+            if (input.cancelled().getAsBoolean()) {
+                return cancelled();
+            }
+            if (h.source() != null && !h.closed()) {
+                return notRun(tr("http.preScript.why.unclosed"), tests, changes, warnings);
+            }
+            HttpScripts.Script script;
+            try {
+                script = script(h);
+            } catch (IOException | IllegalArgumentException e) {
+                return notRun(tr("http.preScript.why.file", h.path(), e.getMessage()), tests, changes, warnings);
+            }
+            String nonce = nonce();
+            String stdin = HttpScripts.preInput(nonce, script, request, input, variables, globals);
+            Launch launch = launch(argv(ready), workingDir(), stdin, settings.timeout(), input.cancelled());
+            if (launch.cancelled()) {
+                return cancelled();
+            }
+            if (launch.startError() != null) {
+                return notRun(
+                        tr("http.preScript.why.start", node.executable(), launch.startError()),
+                        tests,
+                        changes,
+                        warnings);
+            }
+            HttpScripts.Output out = launch.timedOut() ? null : HttpScripts.parseOutput(launch.stdout(), nonce);
+            tests = tests.plus(outcome(launch, out));
+            if (out != null) {
+                for (GlobalChange c : out.changes()) {
+                    c.applyTo(globals);
+                    changes.add(c);
+                }
+                variables.putAll(out.variables());
+            }
+            if (launch.timedOut()) {
+                return notRun(
+                        tr("http.preScript.why.timeout", settings.timeout().toSeconds()), tests, changes, warnings);
+            }
+            if (out == null) {
+                return notRun(tr("http.preScript.why.crashed", launch.exit()), tests, changes, warnings);
+            }
+            if (out.error() != null) {
+                return notRun(tr("http.preScript.why.error"), tests, changes, warnings);
+            }
+        }
+        if (node.guard() == HttpScripts.Guard.NONE) {
+            warnings.add(tr("http.warn.nodeUnguarded", node.version()));
+        }
+        return new PreResult(null, variables, tests, changes, warnings);
+    }
+
+    private static PreResult notRun(String why, HttpTests tests, List<GlobalChange> changes, List<String> warnings) {
+        return new PreResult(tr("status.http.preScriptNotRun", why), Map.of(), tests, changes, warnings);
+    }
+
+    private static PreResult cancelled() {
+        return new PreResult(HttpClientService.CANCELLED, Map.of(), HttpTests.NONE, List.of(), List.of());
+    }
+
+    /** What one launch reports as tests: its output, or the timeout or crash as the error. */
+    private HttpTests outcome(Launch launch, HttpScripts.Output out) {
+        if (launch.timedOut()) {
+            return new HttpTests(
+                    List.of(),
+                    List.of(),
+                    tr("http.script.timeout", settings.timeout().toSeconds()));
+        }
+        if (out == null) {
+            return new HttpTests(List.of(), List.of(), tr("http.script.crashed", launch.exit(), tail(launch.stderr())));
+        }
+        return new HttpTests(out.tests(), out.log(), out.error());
+    }
+
+    private static List<String> argv(Ready ready) {
+        List<String> argv = new ArrayList<>();
+        argv.add(ready.node().executable());
+        argv.addAll(HttpScripts.flags(ready.node().guard(), ready.shim()));
+        argv.add(ready.shim().toString());
+        return argv;
+    }
+
+    private static String nonce() {
+        return "\u0001editora-" + HexFormat.of().formatHex(nonceBytes()) + ":";
     }
 
     private static Result skipped(String why) {

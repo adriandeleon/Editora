@@ -315,6 +315,40 @@ class HttpResponseHandlersFxTest {
     }
 
     @Test
+    void aPreRequestScriptsVariableIsSentAndItsLogShown(@TempDir Path dir) throws Exception {
+        assumeTrue(nodeAvailable(), "node is not installed");
+        ops.trust = true;
+        EditorBuffer b = httpBuffer(
+                dir.resolve("api.http"),
+                "< {% request.variables.set('t', 'tok-1'); client.log('signed') %}\nGET " + url("/me")
+                        + "\nAuthorization: Bearer {{t}}\n");
+        runAllAndWait(b);
+        assertEquals(List.of("me Bearer tok-1"), hits);
+        String block = FxTestSupport.callOnFx(() -> panel(b).testsForTest());
+        assertTrue(block.contains("signed"), block);
+    }
+
+    @Test
+    void aPreRequestScriptThatCannotRunLeavesItsRequestUnsent(@TempDir Path dir) throws Exception {
+        assumeTrue(nodeAvailable(), "node is not installed");
+        ops.trust = false;
+        EditorBuffer b = httpBuffer(
+                dir.resolve("api.http"),
+                "< {% request.variables.set('t', 'tok-1') %}\nGET " + url("/me") + "\nAuthorization: Bearer {{t}}\n");
+        runAllAndWait(b);
+        Thread.sleep(200);
+        assertEquals(List.of(), hits, "nothing was sent");
+        HttpClientPanel p = panel(b);
+        assertEquals(
+                com.editora.i18n.Messages.tr("httppanel.notSent"),
+                FxTestSupport.callOnFx(() -> p.controlsForTest().statusLabel().getText()));
+        String error =
+                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().error());
+        assertTrue(error.contains("its folder is not trusted to run scripts"), error);
+        assertEquals(1, ops.scriptAsks.get());
+    }
+
+    @Test
     void handlersOffInSettingsAskNothing(@TempDir Path dir) throws Exception {
         host.settings.setHttpScriptsEnabled(false);
         EditorBuffer b =
