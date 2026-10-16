@@ -73,6 +73,12 @@ while `Settings.remoteExecution` is on. `ProcessRunner` dispatches on its workin
   variables (`SSH_*`, prompts, history, `SHLVL`, display, D-Bus, `EDITORA_*`), multi-line values and anything
   past 200 variables / 8 KB a value / 64 KB in all are left out.
 - Channels are budgeted against the server's `MaxSessions` (three short commands at once, five long-lived).
+- A command whose channel closes before its pid line, the host saying nothing, never ran, and is started again
+  (`SshExecProcess.START_ATTEMPTS`, three in all, while the connection is up). dropbear 2022.82 to 2024.85 —
+  Debian 12's and Ubuntu 24.04's — does this now and then when channels open and close at the same time (its
+  "failure on concurrent channel open/close", fixed in 2024.86): 3 of 120 short commands beside five long ones
+  against 2022.83, 0 of 360 with the retry. A host that printed something, or that Editora gave up on after
+  the start timeout, is not asked again.
   Short commands queue; a long-lived one waits up to 5 s for a place (the one a program just stopped frees
   when its channel closes, a moment after the stop), then is refused with a message.
 - `ExecTarget.forwardLocal` forwards a loopback port. Sessions send keep-alives every 30 s and give up after
@@ -226,13 +232,13 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   tree's per-path repository lookup, `blame.ignoreRevsFile` handling (left to the host's git).
 
 Checked against OpenSSH 10.0 and dropbear 2025.89, both with a dash `/bin/sh` (2026-10-15, unprivileged
-servers on localhost), and against macOS 15.7's own OpenSSH 9.9p2 with a bash login shell and no `setsid`
-(the `Remote probe` workflow, below):
+servers on localhost), and, in the `Remote probe` workflow below, against macOS 15.7's own OpenSSH 9.9p2 with
+a bash login shell and no `setsid`, and Ubuntu 24.04's dropbear 2022.83:
 `RealSshdProbeFxTest` is an opt-in end-to-end probe — run it with `-Dremote.probe=user@host:port`, a key and
 a scratch folder on the host (its Javadoc lists the options). It covers key login, the login-shell `PATH`,
 argument quoting, Git, ripgrep, Run with stdin, group kill, the channel budget, a tunnelled port, the
 outside-change watch, the host clock, pyright, jdtls with Java debugging, debugpy, js-debug, a frozen and a
-dropped connection, and ed25519 keys; all pass on all three. dropbear needed the group guard above: before it, Stop
+dropped connection, and ed25519 keys; all pass on all four (dropbear 2022.83 since the start retry above). dropbear needed the group guard above: before it, Stop
 left a program's children running and a dropped connection left the program itself. Its `authorized_keys`
 folder (`-D`) and every folder above it must not be group- or world-writable, so not under `/tmp`. The guard
 was also checked with BusyBox's `sh` and `setsid`.
