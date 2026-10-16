@@ -1,0 +1,59 @@
+# The request line and the rest of the format. Every request goes to httpbin.org, whose /anything echoes
+# back the method, URL, headers and body it received, so the response shows what was sent. Needs a
+# network connection.
+
+### The method can be any case: this one is sent as GET
+get https://httpbin.org/anything
+
+### A custom method is sent as written (httpbin answers 405 Method Not Allowed: it got a PROPFIND)
+PROPFIND https://httpbin.org/anything
+Depth: 1
+
+### A URL without a scheme gets http://
+httpbin.org/anything?scheme=none
+
+### A path alone takes its host from the Host header
+GET /anything?from=host-header
+Host: httpbin.org
+
+### A long query continues on indented lines starting with ? or &
+GET https://httpbin.org/anything
+    ?search=keyboard driven editor
+    &page=2
+    &sort=stars
+
+### HTTP/1.1 at the end of the line chooses the protocol (the response headers start with the version)
+GET https://httpbin.org/anything HTTP/1.1
+
+### HTTP/2
+GET https://httpbin.org/anything HTTP/2
+
+### A header value continues on an indented line
+GET https://httpbin.org/anything
+X-Long-Header: first part,
+  second part
+
+### Non-ASCII and emoji in the URL are percent-encoded for you
+GET https://httpbin.org/anything/café?q=日本語&emoji=🚀
+
+### @no-auto-encoding sends the URL exactly as written (already encoded here)
+# @no-auto-encoding
+GET https://httpbin.org/anything/caf%C3%A9?q=a%2Bb
+
+### Comment lines in a body are not sent, and \{{ sends a literal {{
+POST https://httpbin.org/anything
+Content-Type: text/plain
+
+Dear \{{name}}, this line is sent with its braces.
+# This line is a comment: it is not sent.
+// Nor is this one.
+The last line is sent.
+
+### Not supported: reported, and not sent
+GRAPHQL https://httpbin.org/anything
+
+### Nor are these
+WEBSOCKET wss://echo.websocket.org
+
+###
+GRPC grpcb.in:9000/grpcbin.GRPCBin/Index

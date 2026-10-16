@@ -1,0 +1,27 @@
+# Debugging scripts. HTTP: Debug Request at Caret (Debug Request in the right-click menu) sends the request at
+# the caret with its scripts under the JavaScript debugger. Turn JavaScript debugging on in Settings → Debugging
+# and install vscode-js-debug first. Set breakpoints on the lines inside {% %} below, or in
+# scripts/check-auth.js; elsewhere in a .http file there is nothing to stop at. Requests go to httpbin.org.
+
+### Step through a pre-request script, then the handler
+< {%
+  const started = Date.now();
+  const nonce = crypto.sha1().updateWithText(String(started)).digest().toHex();
+  request.variables.set("nonce", nonce);
+%}
+GET https://httpbin.org/anything?nonce={{nonce}}
+
+> {%
+  const echoed = response.body.args.nonce;
+  const same = echoed === request.variables.get("nonce");
+  client.test("the nonce came back", () => client.assert(same, echoed));
+%}
+
+### A breakpoint in a handler file (set one in scripts/check-auth.js)
+< {%
+  client.global.set("token", "FAKE-DEBUG-TOKEN");
+%}
+GET https://httpbin.org/bearer
+Authorization: Bearer {{token}}
+
+> ./scripts/check-auth.js

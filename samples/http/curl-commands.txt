@@ -1,0 +1,30 @@
+Commands for Import cURL (http.importCurl). Copy one command, all of its lines, then run Import cURL from
+the command palette: it lands in the active .http file, or in a new tab when no .http file is active.
+Copy as cURL (the response view's button) goes the other way; paste its output here to compare.
+
+A browser's "Copy as cURL (bash)". The {{ in the body becomes \{{, so it is sent as text:
+
+curl 'https://httpbin.org/anything?page=2' \
+  -H 'accept: application/json' \
+  -H 'content-type: application/json' \
+  -H 'authorization: Bearer FAKE-TOKEN-do-not-use' \
+  --data-raw '{"name":"Ada","template":"Hello {{name}}"}'
+
+Windows curl.exe in cmd, with ^ continuations:
+
+curl.exe "https://httpbin.org/anything" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"name\":\"Ada\"}"
+
+A line from a README, with its prompt, and Digest auth:
+
+$ curl --digest -u ada:not-a-real-password https://httpbin.org/digest-auth/auth/ada/not-a-real-password
+
+A multipart form with a file part (body.json is beside this file):
+
+curl -F 'note=hello' -F 'file=@body.json;type=application/json' https://httpbin.org/post
+
+A body with a line the format would read as a separator or a handler: from that line on, the body
+lines become comments, so a pasted command never adds a handler.
+
+curl https://httpbin.org/anything -H 'Content-Type: text/plain' --data-binary $'first line\n### not a separator\n> {% not a handler %}\nlast line'

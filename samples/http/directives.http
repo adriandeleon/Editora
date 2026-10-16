@@ -1,0 +1,34 @@
+# Directives: comment lines above a request line set options for that request. Run All (http.runFile)
+# to see the cookie requests work together. Every request but the last two goes to httpbin.org.
+
+@host = https://httpbin.org
+
+### Sets a cookie, then follows the redirect to /cookies, which shows it sent back
+GET {{host}}/cookies/set?flavour=oatmeal
+
+### Run All shares cookies between its requests: this one sends the cookie set above
+GET {{host}}/cookies
+
+### …but not this one
+# @no-cookie-jar
+GET {{host}}/cookies
+
+### Doesn't follow the redirect: the response is the 302 itself
+# @no-redirect
+GET {{host}}/redirect/1
+
+### Kept out of the saved History
+# @no-log
+GET {{host}}/anything?private=true
+
+### // works for directives too, and a @name wins over the ### title
+// @name echo
+GET {{host}}/anything?name=echo
+
+### Gives up: the server waits 5 s, this request only 2 s (timeouts take ms, s or m)
+# @timeout 2 s
+GET {{host}}/delay/5
+
+### Gives up connecting after 1.5 s: nothing answers at this address
+# @connection-timeout 1500 ms
+GET http://10.255.255.1/

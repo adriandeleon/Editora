@@ -64,3 +64,6 @@ Thumbs.db
 
 # Python caches from the script tests (scripts/, scripts/release, scripts/packaging, scripts/native)
 /scripts/**/__pycache__/
+
+# Files the HTTP Client samples write with >> (samples/http/save-response.http).
+samples/http/responses/

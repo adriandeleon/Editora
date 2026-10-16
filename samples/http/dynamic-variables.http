@@ -1,0 +1,42 @@
+# Dynamic variables are filled in each time a request is sent: run one twice and compare. Requests go to
+# httpbin.org's /anything, which echoes the body back.
+
+@host = https://httpbin.org
+
+### Identifiers, numbers and text
+POST {{host}}/anything
+Content-Type: application/json
+
+{
+  "uuid": "{{$uuid}}",
+  "randomInt": {{$randomInt}},
+  "oneToTen": {{$randomInt 1 10}},
+  "integer": {{$random.integer(1, 100)}},
+  "float": {{$random.float}},
+  "alphabetic": "{{$random.alphabetic(8)}}",
+  "alphanumeric": "{{$random.alphanumeric(8)}}",
+  "hexadecimal": "{{$random.hexadecimal(8)}}",
+  "email": "{{$random.email}}"
+}
+
+### Times: all in UTC except $localDatetime, which uses your time zone
+POST {{host}}/anything
+Content-Type: application/json
+
+{
+  "timestamp": {{$timestamp}},
+  "isoTimestamp": "{{$isoTimestamp}}",
+  "iso8601": "{{$datetime iso8601}}",
+  "rfc1123": "{{$datetime rfc1123}}",
+  "dayjs": "{{$datetime "YYYY-MM-DD [at] HH:mm"}}",
+  "java": "{{$datetime "yyyy-MM-dd 'at' HH:mm"}}",
+  "inTwoHours": "{{$datetime iso8601 2 h}}",
+  "yesterdayHere": "{{$localDatetime "DD-MM-YYYY" -1 d}}",
+  "lastWeekHere": "{{$localDatetime iso8601 -1 w}}"
+}
+
+### Your system: an environment variable and the .env file beside this one
+# Reading these is reading secrets: in a folder you haven't trusted, Editora asks before sending.
+# (USER is USERNAME on Windows.)
+GET {{host}}/anything?user={{$env.USER}}&alsoUser={{$processEnv USER}}&region={{$dotenv.REGION}}
+X-Api-Key: {{$dotenv API_KEY}}
