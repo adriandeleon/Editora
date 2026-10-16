@@ -226,7 +226,7 @@ class HttpEngineIntegrationTest {
         HttpFile.Parsed p = HttpFile.parseRequest(HttpFile.parse(fileText).get(0));
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        service.run(p, vars, dir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
+        service.run(p, vars, dir, null, SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -246,7 +246,7 @@ class HttpEngineIntegrationTest {
                 Map.of(),
                 dir,
                 null,
-                HttpClientService.SecretGate.UNCHECKED,
+                SecretGate.UNCHECKED,
                 null,
                 all -> {
                     got.set(all);

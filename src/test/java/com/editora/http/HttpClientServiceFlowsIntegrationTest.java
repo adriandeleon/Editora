@@ -156,7 +156,7 @@ class HttpClientServiceFlowsIntegrationTest {
             throws Exception {
         AtomicReference<com.editora.http.HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(request, vars, baseDir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
+        svc.run(request, vars, baseDir, null, SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -177,7 +177,7 @@ class HttpClientServiceFlowsIntegrationTest {
         AtomicReference<List<com.editora.http.HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
         HttpClientService.Handle handle =
-                svc.runAll(requests(fileText), vars, null, null, HttpClientService.SecretGate.UNCHECKED, null, all -> {
+                svc.runAll(requests(fileText), vars, null, null, SecretGate.UNCHECKED, null, all -> {
                     got.set(all);
                     done.countDown();
                 });
@@ -455,7 +455,7 @@ class HttpClientServiceFlowsIntegrationTest {
                 Map.of(),
                 null,
                 null,
-                HttpClientService.SecretGate.UNCHECKED,
+                SecretGate.UNCHECKED,
                 null,
                 all -> {
                     got.set(all);

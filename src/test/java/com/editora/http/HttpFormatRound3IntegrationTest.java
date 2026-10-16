@@ -88,7 +88,7 @@ class HttpFormatRound3IntegrationTest {
     private HttpExchange send(HttpFile.Parsed req, Map<String, String> env, Path dir) throws Exception {
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(req, env, dir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
+        svc.run(req, env, dir, null, SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });

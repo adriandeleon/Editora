@@ -1,30 +1,28 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
 
 import com.editora.config.PathKeys;
 import com.editora.editor.EditorBuffer;
-import com.editora.http.HttpClientService;
-
-import static com.editora.i18n.Messages.tr;
+import com.editora.http.SecretApproval;
+import com.editora.http.SecretGate;
 
 /**
  * The HTTP Client's trust gate for secrets, on the window side. A {@code .http} file is content — often one that
  * came with a cloned repository — and one click sends what it resolves to whatever host it names, so a request that
  * reads {@code $processEnv}/{@code $env}/{@code $dotenv} runs only from a trusted folder, or once the user trusts it.
  *
- * <p>What is asked about is not found here: {@link HttpClientService} works it out on the run's worker from a dry
+ * <p>What is asked about is not found here: {@link SecretApproval} works it out on the run's worker from a dry
  * resolution of the requests (the same code as a send, so every form the resolver reads is seen) and calls the
- * {@link HttpClientService.SecretGate} this class builds. That gate asks the window ({@link
+ * {@link SecretGate} this class builds. That gate asks the window ({@link
  * HttpClientCoordinator.WindowOps#allowSecretReads}) on the FX thread and waits for the answer, the way a
- * {@code >>!} redirect waits for Local History. Requests that read no secret are never asked about.
+ * {@code >>!} redirect waits for Local History; it answers a {@link SecretGate.Verdict}, which {@link SecretApproval}
+ * words. Requests that read no secret are never asked about.
  */
 final class HttpSecretGate {
 
@@ -35,39 +33,30 @@ final class HttpSecretGate {
      * is trusted as the project it was opened in, if any; without a project there is no folder to trust, so a secret
      * is never read (the safe choice).
      */
-    static HttpClientService.SecretGate forBuffer(EditorBuffer buffer, HttpClientCoordinator.WindowOps ops) {
+    static SecretGate forBuffer(EditorBuffer buffer, HttpClientCoordinator.WindowOps ops) {
         Path project = ops.projectRoot();
         Path asFile = buffer.getPath() != null
                 ? buffer.getPath()
                 : project == null ? null : project.resolve(buffer.getDisplayName());
-        return new HttpClientService.SecretGate() {
-            @Override
-            public String check(List<String> reads, List<String> hosts) {
-                return check(reads, hosts, () -> false);
+        return (reads, hosts, cancelled) -> {
+            if (asFile == null) {
+                return SecretGate.Verdict.NO_FOLDER;
             }
-
-            @Override
-            public String check(List<String> reads, List<String> hosts, BooleanSupplier cancelled) {
-                String names = String.join(", ", reads);
-                if (asFile == null) {
-                    return tr("status.http.secretsNeedFolder", names);
+            boolean[] wasCancelled = new boolean[1];
+            boolean allowed = onFx(() -> {
+                // Checked again on the FX thread, just before asking: Run pressed twice, or Run then Cancel, cancels
+                // this run while its question waits in the queue — it must not put up a prompt (whose "trust" would
+                // be remembered for a run that never happens).
+                if (cancelled.getAsBoolean()) {
+                    wasCancelled[0] = true;
+                    return false;
                 }
-                boolean[] wasCancelled = new boolean[1];
-                boolean allowed = onFx(() -> {
-                    // Checked again on the FX thread, just before asking: Run pressed twice, or Run then Cancel,
-                    // cancels this run while its question waits in the queue — it must not put up a prompt (whose
-                    // "trust" would be remembered for a run that never happens).
-                    if (cancelled.getAsBoolean()) {
-                        wasCancelled[0] = true;
-                        return false;
-                    }
-                    return ops.allowSecretReads(asFile, hosts, reads);
-                });
-                if (wasCancelled[0] || cancelled.getAsBoolean()) {
-                    return HttpClientService.CANCELLED;
-                }
-                return allowed ? null : tr("status.http.secretsRefused", names);
+                return ops.allowSecretReads(asFile, hosts, reads);
+            });
+            if (wasCancelled[0] || cancelled.getAsBoolean()) {
+                return SecretGate.Verdict.CANCELLED;
             }
+            return allowed ? SecretGate.Verdict.ALLOWED : SecretGate.Verdict.REFUSED;
         };
     }
 

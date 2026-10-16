@@ -63,7 +63,7 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Secrets: a request that reads the process environment or {@code .env} ({@link DynamicVars#isSecretSource}) asks
  * the run's {@link SecretGate} first, on the worker and before anything is sent. What it asks about comes from a
- * dry resolution of the request by the same code as the send ({@link #preview}), so no form or indirection the
+ * dry resolution of the request by the same code as the send ({@link SecretApproval#preview}), so no form or indirection the
  * resolver accepts can reach a server unasked; each send then refuses a read the gate did not approve.
  *
  * <p>A run always ends with a delivered result: anything thrown while preparing or sending a request — even an
@@ -82,7 +82,7 @@ public final class HttpClientService {
     private static final Duration DEFAULT_BODY_DEADLINE = Duration.ofMinutes(5);
 
     /** The JDK client's limit on the exchanges of one request (the original one plus the redirects followed). */
-    private static final int REDIRECT_LIMIT = Integer.getInteger("jdk.httpclient.redirects.retrylimit", 5);
+    static final int REDIRECT_LIMIT = Integer.getInteger("jdk.httpclient.redirects.retrylimit", 5);
 
     /**
      * The {@link HttpResult#error()} of a request the user cancelled: a marker compared as is (and saved so in the
@@ -197,218 +197,6 @@ public final class HttpClientService {
     }
 
     /**
-     * The trust gate for secrets: asked, on the run's worker and before anything is sent, whether the run may read
-     * {@code reads} (the secret sources its requests resolve, as written: {@code $env TOKEN}, {@code $dotenv KEY})
-     * and send what they resolve to {@code hosts}. It may block (a dialog on the FX thread). Returns null to allow,
-     * else the message the requests that read secrets are reported with, unsent.
-     */
-    @FunctionalInterface
-    public interface SecretGate {
-        /** Reads anything without asking (tests, tools; the editor always passes its own gate). */
-        SecretGate UNCHECKED = (reads, hosts) -> null;
-
-        String check(List<String> reads, List<String> hosts);
-
-        /**
-         * As {@link #check(List, List)}, for a run that may be cancelled while the question waits: a gate that asks the
-         * user (a dialog on the FX thread) checks {@code cancelled} again just before asking, so a run cancelled or
-         * replaced meanwhile never puts up a prompt. The default asks unless already cancelled.
-         */
-        default String check(List<String> reads, List<String> hosts, java.util.function.BooleanSupplier cancelled) {
-            return cancelled.getAsBoolean() ? CANCELLED : check(reads, hosts);
-        }
-    }
-
-    /**
-     * What a request would read and where it would go, from a dry resolution that runs the same code as a send
-     * ({@link #prepare}) but keeps every secret source as written: the {@code reads} (see
-     * {@link HttpVars.Unresolved#secretReads()}) and the {@code hosts} ({@code host:port}) it would contact.
-     * {@code hostFromResponse}: the host comes (directly or through an {@code @var} line) from an earlier response, so
-     * it is only known once that response is in; {@code hostUnfixed}: it may differ at the send (it also uses a secret
-     * or a {@code $…} built-in). {@code sendable}: false for a request that is never sent (GraphQL/WebSocket/gRPC, an
-     * unreadable body file), which therefore asks nothing.
-     */
-    public record Preview(
-            List<String> reads, List<String> hosts, boolean hostFromResponse, boolean hostUnfixed, boolean sendable) {
-
-        public Preview(List<String> reads, List<String> hosts) {
-            this(reads, hosts, false, false, true);
-        }
-    }
-
-    /**
-     * The dry resolution of {@code request}: URL, headers, inline and {@code <@} bodies, multipart parts (their
-     * {@code <@} files included), {@code >>} targets, the {@code @var} lines above it and the environment values they
-     * use — every secret source read on the way, and the host it would be sent to. No secret value is read into the
-     * result. Reads the request's body files, so call it off the FX thread.
-     */
-    public static Preview preview(
-            HttpFile.Parsed request, Map<String, String> vars, Path baseDir, CapturedResponses captured) {
-        ZonedDateTime now = ZonedDateTime.now();
-        HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
-        HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
-        Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
-        // What the host is made of: the request line up to its path, and a Host header (origin form).
-        HttpVars.Unresolved hostSink = HttpVars.Unresolved.dry();
-        HttpVars.substitute(hostPart(request.url()), scope, now, captured, baseDir, hostSink);
-        for (String[] h : request.headers()) {
-            if (h[0] != null && h[0].strip().equalsIgnoreCase("Host")) {
-                HttpVars.substitute(h[1], scope, now, captured, baseDir, hostSink);
-            }
-        }
-        boolean fromResponse = !hostSink.responseReads().isEmpty();
-        boolean unfixed = fromResponse
-                || !hostSink.secretReads().isEmpty()
-                || !hostSink.dynamicReads().isEmpty();
-        boolean sendable = request.error() == null && p.body().problem() == null;
-        return new Preview(
-                sink.secretReads(), List.of(HttpHosts.authority(p.targetUrl())), fromResponse, unfixed, sendable);
-    }
-
-    /**
-     * The report of a request refused for its secrets: what it would have sent, from the dry resolution — every
-     * secret source as written — so neither the response view nor the saved history holds a value that was refused.
-     */
-    private static HttpExchange notSent(
-            HttpFile.Parsed request,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses captured,
-            String why,
-            List<String> extraWarnings) {
-        ZonedDateTime now = ZonedDateTime.now();
-        HttpVars.Unresolved sink = HttpVars.Unresolved.dry();
-        HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir, true);
-        Prepared p = prepare(request, baseDir, s -> HttpVars.substitute(s, scope, now, captured, baseDir, sink));
-        List<String> warnings = new ArrayList<>(p.warnings());
-        warnings.addAll(sink.warnings());
-        warnings.addAll(extraWarnings);
-        String url = p.targetUrl(); // not percent-encoded: the {{references}} read as written
-        String label = p.method() + " " + (request.directives().noLog() ? withoutQueryValues(url) : url);
-        return new HttpExchange(
-                label,
-                p.method(),
-                url,
-                p.headers(),
-                p.body().display(),
-                HttpResult.failure(why, warnings),
-                p.details());
-    }
-
-    /**
-     * The part of a request-line template that can decide its host: up to the first {@code /}, {@code ?} or
-     * {@code #} after the scheme, a {@code {{reference}}} counted whole (it may hold a scheme, a host or a userinfo).
-     * {@code GET {{base}}/x} gives {@code {{base}}}; {@code GET https://h.test/{{id}}} gives {@code https://h.test}.
-     */
-    static String hostPart(String template) {
-        String u = template == null ? "" : template.strip();
-        int scheme = u.indexOf("://");
-        int i = scheme < 0 ? 0 : scheme + 3;
-        while (i < u.length()) {
-            if (u.startsWith("{{", i)) {
-                int close = u.indexOf("}}", i + 2);
-                if (close < 0) {
-                    break;
-                }
-                i = close + 2;
-                continue;
-            }
-            if ("/?#".indexOf(u.charAt(i)) >= 0) {
-                break;
-            }
-            i++;
-        }
-        return u.substring(0, i);
-    }
-
-    /**
-     * What a run may read and where it may send it: null for an unchecked run; else the approved {@code reads} and the
-     * {@code hosts} the prompt named ({@code anyHost} when it said a host is only known at the send — chosen by an
-     * earlier response, or made of a secret or a {@code $…} value), or nothing with the gate's {@code refusal}.
-     */
-    private record Approval(java.util.Set<String> reads, java.util.Set<String> hosts, boolean anyHost, String refusal) {
-
-        static Approval refused(String refusal) {
-            return new Approval(java.util.Set.of(), java.util.Set.of(), false, refusal);
-        }
-    }
-
-    /**
-     * Asks {@code gate} once about every secret the {@code requests} would read; nothing is asked when none do, for a
-     * request that is never sent, or once {@code handle} is cancelled (a run cancelled or replaced before its prompt).
-     */
-    private static Approval approve(
-            Handle handle,
-            SecretGate gate,
-            List<HttpFile.Parsed> requests,
-            Map<String, String> vars,
-            Path baseDir,
-            CapturedResponses captured) {
-        if (gate == null || gate == SecretGate.UNCHECKED) {
-            return null;
-        }
-        java.util.Set<String> reads = new java.util.LinkedHashSet<>();
-        java.util.Set<String> hosts = new java.util.LinkedHashSet<>();
-        boolean fromResponse = false;
-        boolean anyHost = false;
-        for (HttpFile.Parsed request : requests) {
-            try {
-                Preview p = preview(request, vars, baseDir, captured);
-                if (p.sendable() && !p.reads().isEmpty()) {
-                    reads.addAll(p.reads());
-                    if (!p.hostFromResponse()) {
-                        hosts.addAll(p.hosts());
-                    }
-                    fromResponse |= p.hostFromResponse();
-                    anyHost |= p.hostUnfixed();
-                }
-            } catch (Throwable unreadable) {
-                // nothing is approved for it: if its send does read a secret, the send is refused
-            }
-        }
-        if (reads.isEmpty()) {
-            return new Approval(java.util.Set.of(), java.util.Set.of(), false, null);
-        }
-        if (handle.isCancelled()) {
-            return Approval.refused(CANCELLED);
-        }
-        List<String> named = new ArrayList<>(hosts);
-        if (fromResponse) {
-            named.add(tr("dialog.httpTrust.dynamicHost")); // never a stale host from an earlier run's response
-        }
-        String refusal;
-        try {
-            refusal = gate.check(List.copyOf(reads), List.copyOf(named), handle::isCancelled);
-        } catch (RuntimeException failure) {
-            refusal = tr("status.http.secretsRefused", String.join(", ", reads));
-        }
-        return refusal == null ? new Approval(reads, hosts, anyHost, null) : Approval.refused(refusal);
-    }
-
-    /**
-     * Why a send that read {@code unresolved}'s secrets may not go out under {@code approval}, or null: a read the
-     * gate did not approve, or a host the prompt did not name.
-     */
-    private static String refusal(Approval approval, HttpVars.Unresolved unresolved, String targetUrl) {
-        if (approval == null || unresolved.secretReads().isEmpty()) {
-            return null;
-        }
-        if (approval.refusal() != null) {
-            return approval.refusal();
-        }
-        if (!approval.reads().containsAll(unresolved.secretReads())) {
-            List<String> unapproved = new ArrayList<>(unresolved.secretReads());
-            unapproved.removeAll(approval.reads());
-            return tr("status.http.secretsUnapproved", String.join(", ", unapproved));
-        }
-        String host = HttpHosts.authority(targetUrl);
-        if (!approval.anyHost() && !approval.hosts().contains(host)) {
-            return tr("status.http.secretsHostUnapproved", String.join(", ", unresolved.secretReads()), host);
-        }
-        return null;
-    }
-
-    /**
      * The clients of one run, one per directive set and version, so consecutive requests reuse connections;
      * all are shut down when the run ends.
      */
@@ -463,7 +251,8 @@ public final class HttpClientService {
         exec.submit(() -> {
             HttpExchange ex;
             try (Session session = new Session(new CookieManager())) {
-                Approval approval = approve(handle, gate, List.of(request), vars, baseDir, responses);
+                SecretApproval.Grant approval =
+                        SecretApproval.ask(gate, handle::isCancelled, List.of(request), vars, baseDir, responses);
                 ex = executeSafely(handle, request, vars, baseDir, responses, session, approval);
                 responses.put(request.name(), ex.result());
             } finally {
@@ -495,7 +284,8 @@ public final class HttpClientService {
         exec.submit(() -> {
             List<HttpExchange> out = new ArrayList<>();
             try (Session session = new Session(new CookieManager())) {
-                Approval approval = approve(handle, gate, requests, vars, baseDir, captured);
+                SecretApproval.Grant approval =
+                        SecretApproval.ask(gate, handle::isCancelled, requests, vars, baseDir, captured);
                 for (HttpFile.Parsed req : requests) {
                     if (onStart != null) {
                         int index = out.size();
@@ -527,7 +317,7 @@ public final class HttpClientService {
             Path baseDir,
             CapturedResponses captured,
             Session session,
-            Approval approval) {
+            SecretApproval.Grant approval) {
         HttpVars.Unresolved unresolved = new HttpVars.Unresolved();
         try {
             return execute(handle, request, vars, baseDir, captured, session, approval, unresolved);
@@ -563,7 +353,7 @@ public final class HttpClientService {
             Path baseDir,
             CapturedResponses captured,
             Session session,
-            Approval approval,
+            SecretApproval.Grant approval,
             HttpVars.Unresolved unresolved) {
         // The clock is a real instant in the user's zone: $timestamp/$isoTimestamp are UTC whatever the zone.
         ZonedDateTime now = ZonedDateTime.now();
@@ -572,7 +362,7 @@ public final class HttpClientService {
         // collected (in the caller's `unresolved`, so a failure still reports it) and never sent silently as "".
         HttpVars.Scope scope = HttpVars.scope(vars, request.variables(), now, captured, baseDir);
         Function<String, String> sub = s -> HttpVars.substitute(s, scope, now, captured, baseDir, unresolved);
-        Prepared p = prepare(request, baseDir, sub);
+        PreparedRequest p = PreparedRequest.of(request, baseDir, sub);
         String method = p.method();
         String url = p.url();
         List<String[]> headers = p.headers();
@@ -593,12 +383,12 @@ public final class HttpClientService {
                 ? request.error()
                 : bc.problem() != null
                         ? tr("http.request.notSent", bc.problem())
-                        : refusal(approval, unresolved, p.targetUrl());
+                        : SecretApproval.refusalFor(approval, unresolved, p.targetUrl());
         if (whyNot != null) {
             if (!unresolved.secretReads().isEmpty()) {
                 // Nothing goes out, so nothing it read is shown or kept: it is reported from the dry resolution, with
                 // every secret as written — in the panel, the status bar, History, the history file and Copy as cURL.
-                return notSent(request, vars, baseDir, captured, whyNot, notSentWarnings);
+                return SecretApproval.unsentReport(request, vars, baseDir, captured, whyNot, notSentWarnings);
             }
             warnings.addAll(unresolved.warnings());
             warnings.addAll(notSentWarnings);
@@ -668,7 +458,13 @@ public final class HttpClientService {
             }
             String finalUrl = resp.redirects().isEmpty() ? null : resp.uri().toString();
             warnings.addAll(RedirectNotes.warnings(
-                    url, resp, headers, !request.directives().noRedirect()));
+                    url,
+                    resp.uri(),
+                    resp.redirects(),
+                    resp.statusCode(),
+                    resp.headers(),
+                    headers,
+                    !request.directives().noRedirect()));
             boolean partial = resp.truncated() || resp.stopped() != null;
             List<String> written = new ArrayList<>();
             // Before the result is built: what the redirects saved (and refused to replace) is part of it.
@@ -715,92 +511,6 @@ public final class HttpClientService {
         }
     }
 
-    /**
-     * What a request resolves to before anything is sent: method, URL, headers, body, Digest credentials, the label
-     * and the details — every {@code {{…}}} of it substituted through {@code sub}, the {@code >>} targets included,
-     * so whatever the run reads (the secrets the trust gate asks about) is known before the first byte goes out.
-     * {@link #preview} runs exactly this with a dry {@code sub}.
-     */
-    private static Prepared prepare(HttpFile.Parsed request, Path baseDir, Function<String, String> sub) {
-        String method = request.method().isEmpty() ? "GET" : request.method();
-
-        // The URL first, then the headers: the unresolved-variable warnings follow the order of the file.
-        String requestUrl = sub.apply(request.url()).trim();
-        List<String[]> headers = new ArrayList<>();
-        for (String[] h : request.headers()) {
-            headers.add(new String[] {h[0], sub.apply(h[1])});
-        }
-        // "GET /path" + "Host: example.com" (origin form): the URL comes from the Host header; a target without
-        // a scheme is http:// (JetBrains).
-        HttpTargets.Target target = HttpTargets.resolve(requestUrl, headers);
-        String url = UrlEncoding.withScheme(target.url(), null);
-        headers = new ArrayList<>(target.headers());
-        if (!request.directives().noAutoEncoding()) {
-            url = UrlEncoding.encodeIllegal(url); // default auto-encoding (off under @no-auto-encoding)
-        }
-        headers = HttpAuth.normalizeHeaders(headers);
-        // Trim whitespace/newlines the JDK client would reject, and collect any header it still can't send —
-        // otherwise a header (a pasted Authorization with a trailing \r\n) is dropped silently and the request
-        // goes out unauthenticated. From here on `headers` is the sendable, trimmed set.
-        HttpHeaders.Partition hp = HttpHeaders.partition(headers);
-        headers = new ArrayList<>(hp.sendable());
-        List<String> warnings = new ArrayList<>();
-        // e.g. a body written without the required blank line before it, an ignored script, a bad @timeout
-        warnings.addAll(request.warnings());
-        warnings.addAll(hp.warnings());
-        String requestedVersion = request.httpVersion();
-        HttpVersions.Choice version = HttpVersions.choose(requestedVersion, url);
-        if (version.warning() != null) {
-            warnings.add(version.warning());
-        }
-        String contentType = headerValue(headers, "Content-Type");
-
-        RequestBodies.Content bc = RequestBodies.resolve(request, baseDir, sub, contentType, headers, warnings);
-        // Digest shorthand (Authorization: Digest user pass): send anonymously, then answer a 401 challenge.
-        DigestAuth.Credentials digest = digestCredentials(headers);
-        if (digest != null) {
-            headers.removeIf(h -> h[0].equalsIgnoreCase("Authorization"));
-        }
-        boolean noLog = request.directives().noLog();
-        String label = method + " " + (noLog ? withoutQueryValues(url) : url);
-        HttpExchange.Details details = new HttpExchange.Details(
-                bc.file() == null ? null : bc.file().toAbsolutePath().toString(),
-                bc.parts(),
-                digest == null ? null : digest.user(),
-                digest == null ? null : digest.pass(),
-                !request.directives().noRedirect(),
-                requestedVersion,
-                null,
-                noLog);
-        for (HttpFile.Redirect r : request.redirects()) {
-            sub.apply(r.path()); // resolved again when written; here so that what it reads is known up front
-        }
-        return new Prepared(
-                method,
-                url,
-                UrlEncoding.withScheme(target.url(), null),
-                headers,
-                warnings,
-                version,
-                bc,
-                digest,
-                label,
-                details);
-    }
-
-    /** {@link #prepare}'s result; {@code targetUrl} is the URL before auto-encoding (for showing its host). */
-    private record Prepared(
-            String method,
-            String url,
-            String targetUrl,
-            List<String[]> headers,
-            List<String> warnings,
-            HttpVersions.Choice version,
-            RequestBodies.Content body,
-            DigestAuth.Credentials digest,
-            String label,
-            HttpExchange.Details details) {}
-
     private static String megabytes(int bytes) {
         return bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)) + " MB" : bytes + " bytes";
     }
@@ -808,24 +518,6 @@ public final class HttpClientService {
     private static String seconds(Duration d) {
         long ms = d.toMillis();
         return ms % 1000 == 0 ? (ms / 1000) + " s" : ms + " ms";
-    }
-
-    /** The URL with each query value replaced by {@code …}: the history label of an {@code @no-log} request. */
-    static String withoutQueryValues(String url) {
-        int q = url.indexOf('?');
-        if (q < 0) {
-            return url;
-        }
-        StringBuilder sb = new StringBuilder(url.substring(0, q + 1));
-        String[] pairs = url.substring(q + 1).split("&", -1);
-        for (int i = 0; i < pairs.length; i++) {
-            if (i > 0) {
-                sb.append('&');
-            }
-            int eq = pairs[i].indexOf('=');
-            sb.append(eq < 0 ? pairs[i] : pairs[i].substring(0, eq + 1) + "…");
-        }
-        return sb.toString();
     }
 
     /** Why a body stopped arriving before its end. */
@@ -1005,95 +697,6 @@ public final class HttpClientService {
         }
     }
 
-    /** Warnings about where redirects led. Pure apart from the message catalog. */
-    static final class RedirectNotes {
-
-        /** Request headers that are not specific to one site, so their following a redirect is unremarkable. */
-        private static final Set<String> GENERIC = Set.of(
-                "accept",
-                "accept-language",
-                "accept-encoding",
-                "cache-control",
-                "content-type",
-                "user-agent",
-                "pragma",
-                "if-none-match",
-                "if-modified-since",
-                "origin",
-                "referer",
-                // stripped by the JDK client on a cross-host redirect
-                "authorization",
-                "cookie",
-                "proxy-authorization");
-
-        private RedirectNotes() {}
-
-        private static List<String> warnings(String url, Received resp, List<String[]> headers, boolean follow) {
-            return warnings(url, resp.uri(), resp.redirects(), resp.statusCode(), resp.headers(), headers, follow);
-        }
-
-        static List<String> warnings(
-                String url,
-                URI finalUri,
-                List<URI> redirects,
-                int status,
-                java.net.http.HttpHeaders responseHeaders,
-                List<String[]> requestHeaders,
-                boolean follow) {
-            List<String> out = new ArrayList<>();
-            URI start;
-            try {
-                start = URI.create(url);
-            } catch (RuntimeException e) {
-                return out;
-            }
-            if (!redirects.isEmpty() && !sameOrigin(start, finalUri)) {
-                List<String> carried = new ArrayList<>();
-                for (String[] h : requestHeaders) {
-                    if (!GENERIC.contains(h[0].toLowerCase(Locale.ROOT)) && !carried.contains(h[0])) {
-                        carried.add(h[0]);
-                    }
-                }
-                out.add(
-                        carried.isEmpty()
-                                ? tr("status.http.warn.redirectedHost", HttpHosts.authority(finalUri))
-                                : tr(
-                                        "status.http.warn.redirectedHostHeaders",
-                                        HttpHosts.authority(finalUri),
-                                        String.join(", ", carried)));
-            }
-            String location = responseHeaders.firstValue("Location").orElse(null);
-            if (follow && status >= 300 && status < 400 && location != null) {
-                // The client makes at most REDIRECT_LIMIT exchanges, so it follows REDIRECT_LIMIT - 1 redirects and
-                // hands back the next 3xx: the chain counts the followed ones, plus this one.
-                if (redirects.size() >= REDIRECT_LIMIT - 1) {
-                    out.add(tr("status.http.warn.redirectLimit", redirects.size() + 1));
-                } else if ("https".equalsIgnoreCase(finalUri.getScheme())
-                        && location.regionMatches(true, 0, "http:", 0, 5)) {
-                    out.add(tr("status.http.warn.redirectDowngrade", location));
-                }
-            }
-            return out;
-        }
-
-        private static boolean sameOrigin(URI a, URI b) {
-            return a.getScheme() != null
-                    && a.getScheme().equalsIgnoreCase(b.getScheme())
-                    && a.getHost() != null
-                    && a.getHost().equalsIgnoreCase(b.getHost())
-                    && HttpHosts.port(a) == HttpHosts.port(b);
-        }
-    }
-
-    private static DigestAuth.Credentials digestCredentials(List<String[]> headers) {
-        for (String[] h : headers) {
-            if (h[0].equalsIgnoreCase("Authorization")) {
-                return DigestAuth.shorthand(h[1]);
-            }
-        }
-        return null;
-    }
-
     /** The request target (path + query) for the Digest {@code uri} parameter. */
     private static String requestTarget(String url) {
         try {
@@ -1111,15 +714,6 @@ public final class HttpClientService {
     private static String randomHex() {
         return String.format(
                 "%016x", java.util.concurrent.ThreadLocalRandom.current().nextLong());
-    }
-
-    private static String headerValue(List<String[]> headers, String name) {
-        for (String[] h : headers) {
-            if (h[0].equalsIgnoreCase(name)) {
-                return h[1];
-            }
-        }
-        return "";
     }
 
     /** Stops the daemon worker (window close). Without this, each closed window leaks its http-client thread. */

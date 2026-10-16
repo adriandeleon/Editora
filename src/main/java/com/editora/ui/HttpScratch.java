@@ -9,10 +9,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.editora.http.DynamicVars;
-import com.editora.http.HttpClientService;
 import com.editora.http.HttpFile;
 import com.editora.http.HttpVars;
 import com.editora.http.Multipart;
+import com.editora.http.SecretApproval;
 
 /**
  * Two pure decisions about a request before it is sent. {@link #needsFolder} lists what an unsaved
@@ -31,7 +31,7 @@ final class HttpScratch {
     /**
      * What {@code request} reads or writes relative to its file's folder, one short description each (empty
      * when it can run from an unsaved buffer). The {@code $dotenv} reads come from the request's dry resolution
-     * against {@code envVars} (see {@link HttpClientService#preview}), so one behind an {@code @var} line or an
+     * against {@code envVars} (see {@link SecretApproval#preview}), so one behind an {@code @var} line or an
      * environment value is found exactly when the run would read it.
      */
     static List<String> needsFolder(HttpFile.Parsed request, Map<String, String> envVars) {
@@ -56,7 +56,7 @@ final class HttpScratch {
         }
         List<String> reads;
         try {
-            reads = HttpClientService.preview(request, envVars, null, null).reads();
+            reads = SecretApproval.preview(request, envVars, null, null).reads();
         } catch (RuntimeException unresolvable) {
             reads = List.of(); // the run reports it
         }
