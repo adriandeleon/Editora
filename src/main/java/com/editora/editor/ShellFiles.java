@@ -18,9 +18,12 @@ public final class ShellFiles {
 
     private ShellFiles() {}
 
-    /** File extensions (lower case, no dot) of shell scripts and startup files. */
-    public static final List<String> EXTENSIONS =
-            List.of("sh", "bash", "zsh", "ksh", "mksh", "bashrc", "zshrc", "profile", "ebuild", "eclass");
+    /**
+     * File extensions (lower case, no dot) of shell scripts and startup files. {@code .command} is macOS's
+     * double-clickable shell script; {@code .bats} a Bats test file (bash with {@code @test} blocks).
+     */
+    public static final List<String> EXTENSIONS = List.of(
+            "sh", "bash", "zsh", "ksh", "mksh", "bashrc", "zshrc", "profile", "ebuild", "eclass", "command", "bats");
 
     /**
      * Whole file names (lower case) that are shell. Bash, zsh, ksh and POSIX sh startup files all share sh
@@ -28,7 +31,8 @@ public final class ShellFiles {
      * {@code /etc/zsh}. {@code .bash_aliases} is sourced by Debian's default {@code .bashrc}; X session scripts
      * are sourced as sh; {@code .envrc} is direnv's, which runs it with bash; {@code mvnw}/{@code gradlew} are
      * the build wrappers (their {@code .cmd}/{@code .bat} siblings are batch files by extension); PKGBUILD and
-     * APKBUILD are Arch and Alpine package recipes written in bash.
+     * APKBUILD are Arch and Alpine package recipes written in bash; {@code bash_completion} is the completion
+     * library and {@code ~/.bash_completion} the user's own completions.
      */
     private static final Set<String> NAMES = Set.of(
             ".profile",
@@ -66,6 +70,8 @@ public final class ShellFiles {
             "mvnw",
             "gradlew",
             "pkgbuild",
+            "bash_completion",
+            ".bash_completion",
             "apkbuild");
 
     /**
@@ -96,13 +102,19 @@ public final class ShellFiles {
      * Whether a file is shell by its name or location, whatever its extension says: {@code lowerName} is the
      * lower-cased last path segment, {@code normalizedPath} the whole path with forward slashes (or just the
      * name). {@code /etc/profile} counts only under an {@code etc} directory; a file called {@code profile}
-     * elsewhere could be anything.
+     * elsewhere could be anything. Everything in a bash-completion directory is shell.
      */
     public static boolean isShellName(String lowerName, String normalizedPath) {
         if (NAMES.contains(lowerName)) {
             return true;
         }
-        return lowerName.equals("profile") && normalizedPath != null && ("/" + normalizedPath).contains("/etc/");
+        String path = normalizedPath == null ? "" : "/" + normalizedPath;
+        // bash-completion scripts: /usr/share/bash-completion/completions/git, /etc/bash_completion.d/foo. They
+        // are bash, and most carry no extension or shebang.
+        if (path.contains("/bash-completion/completions/") || path.contains("/bash_completion.d/")) {
+            return true;
+        }
+        return lowerName.equals("profile") && path.contains("/etc/");
     }
 
     /**

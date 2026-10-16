@@ -7576,9 +7576,9 @@ public class EditorBuffer implements TabContent {
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        String head = area.getText(0, Math.min(area.getLength(), 256));
+        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         Shebang.Result r =
-                head.startsWith("#!") ? Shebang.parse(head.lines().findFirst().orElse("")) : null;
+                Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len));
         if (r == null) {
             return;
         }

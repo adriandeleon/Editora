@@ -106,4 +106,15 @@ class LanguageChangeFxTest {
 
         assertTrue(FxTestSupport.callOnFx(b::isRunnable), "picked as Shell: the Run glyph shows straight away");
     }
+    /** An extension-less file that names its language in a vim or emacs modeline opens as that language. */
+    @Test
+    void aModelineInAnExtensionlessFileSetsTheLanguage() throws Exception {
+        fx = FxWindowFixture.create(dir.resolve("cfg"), shared -> {});
+        Path script = dir.resolve("setup-env");
+        Files.writeString(script, "# vim: ft=sh\nexport PATH=\"$HOME/bin:$PATH\"\n");
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(script, 1));
+        awaitLanguage("shell");
+        FxTestSupport.drainFx();
+        assertEquals("Shell", statusLanguage());
+    }
 }
