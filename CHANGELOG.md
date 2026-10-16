@@ -356,6 +356,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Run configurations belong to projects.** The No Project window has no run-configuration selector, Run or
+  Debug buttons, and its Save, Edit, Delete and Run/Debug Configuration commands say to open a project. There
+  you run a script or a compact Java file from its gutter ▶ or with Run File. A Maven or Gradle checkout opened
+  as loose files no longer shows the toolbar group either. Configurations the global session saved before are
+  kept in its state, not deleted; they are just not offered.
 - **Go to Definition works without a language server.** When LSP is off, no server handles the file, or the
   server finds nothing, it looks the name up in this file and then in the project's symbol index.
 - **The Run console draws colours** (ANSI codes become theme colours), a `\r` progress bar stays on one line,

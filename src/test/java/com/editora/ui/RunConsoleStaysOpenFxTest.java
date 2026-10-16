@@ -54,6 +54,7 @@ class RunConsoleStaysOpenFxTest {
 
         FxTestSupport.bootToolkit();
         fx = FxWindowFixture.create();
+        fx.useProject(); // these runs launch saved configurations, which only a project window has
         toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
         runWindow = FxTestSupport.field(fx.controller, "runToolWindow");
         run = FxTestSupport.field(fx.controller, "runCoordinator");

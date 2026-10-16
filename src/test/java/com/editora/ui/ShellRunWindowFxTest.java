@@ -228,6 +228,7 @@ class ShellRunWindowFxTest {
         Path script = dir.resolve("deploy.sh");
         Files.writeString(script, "#!/bin/sh\necho hi\n");
         try (FxWindowFixture fx = FxWindowFixture.create()) {
+            fx.useProject(); // a run configuration is a project's
             MainController c = fx.controller;
             open(c, script);
             CommandRegistry registry = FxTestSupport.field(c, "registry");
