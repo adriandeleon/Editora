@@ -189,11 +189,17 @@ final class SshExecTarget implements ExecTarget {
     /** {@code ~/.cache/editora} in the account's home, as the login shell reports it. */
     @Override
     public Path cacheDir() throws IOException {
+        return homeDir().resolve(".cache").resolve("editora");
+    }
+
+    /** The account's home, as the login shell reports it. */
+    @Override
+    public Path homeDir() throws IOException {
         String home = env().home();
         if (home == null || !home.startsWith("/")) {
             throw new IOException("could not learn the home folder on " + id);
         }
-        return fs.getPath(home, ".cache", "editora");
+        return fs.getPath(home);
     }
 
     /**

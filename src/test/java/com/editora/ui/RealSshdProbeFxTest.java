@@ -348,6 +348,19 @@ class RealSshdProbeFxTest {
             return "branch " + s.status().branch();
         });
 
+        step("clone onto the host (the host's git, from the host)", () -> {
+            // The repository above, cloned by the host into a new folder next to it: a URL only the host can
+            // reach (its own path) and a destination named as the host names it.
+            Path destination = work.resolve("cloned app");
+            com.editora.git.GitService git = new com.editora.git.GitService();
+            CompletableFuture<ProcessRunner.Result> cloned = new CompletableFuture<>();
+            onFx(() -> git.clone(hostWork + "/my app", destination, cloned::complete));
+            ProcessRunner.Result r = cloned.get(120, TimeUnit.SECONDS);
+            check(r.ok(), "cloned: " + r.message());
+            check(Files.readString(destination.resolve("README.md")).equals("hello\n"), "the committed README");
+            return null;
+        });
+
         step("ripgrep lists and searches on the host", () -> {
             Files.writeString(app.resolve("needle.txt"), "a needle here\n");
             if (!RemoteFiles.hasRipgrep(app)) {
