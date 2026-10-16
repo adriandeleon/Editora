@@ -68,8 +68,48 @@ public final class WslExecTarget implements ExecTarget {
     List<String> argv(List<String> inner) {
         List<String> argv = new ArrayList<>(launcher);
         argv.addAll(List.of("-d", distro, "--exec"));
-        argv.addAll(inner);
+        argv.addAll(windowsSafe(inner));
         return List.copyOf(argv);
+    }
+
+    /**
+     * Decodes its one argument ({@link #encode}) and runs it. No {@code "} and no {@code \}: on Windows an argv
+     * is joined into one command line that {@code wsl.exe} splits again, and Java does not escape an embedded
+     * {@code "}, so the launcher script would arrive in pieces. Globbing and splitting are off while the
+     * decoded text is handed to {@code eval}; the {@code exec}'d shell starts with neither setting.
+     */
+    static final String DECODE = "set -f; IFS=; eval $(printf %b $1)";
+
+    /** {@code inner} as an argv of the distribution's shell that survives Windows' command-line joining. */
+    static List<String> windowsSafe(List<String> inner) {
+        StringBuilder command = new StringBuilder("exec");
+        for (String word : inner) {
+            command.append(' ').append(PosixShell.quote(word));
+        }
+        return List.of("/bin/sh", "-c", DECODE, "editora", encode(command.toString()));
+    }
+
+    /**
+     * {@code text} for {@code printf %b}: letters, digits and {@code _./=,:+@} as they are, every other UTF-8 byte
+     * as {@code \0ooo}. The result has no space, quote or glob character, and never ends with {@code \}.
+     */
+    static String encode(String text) {
+        StringBuilder out = new StringBuilder(text.length() * 2);
+        for (byte b : text.getBytes(StandardCharsets.UTF_8)) {
+            int c = b & 0xff;
+            if ((c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || "_./=,:+@".indexOf(c) >= 0) {
+                out.append((char) c);
+            } else {
+                out.append("\\0")
+                        .append((char) ('0' + (c >> 6)))
+                        .append((char) ('0' + ((c >> 3) & 7)))
+                        .append((char) ('0' + (c & 7)));
+            }
+        }
+        return out.toString();
     }
 
     private static ProcessBuilder client(List<String> argv) {

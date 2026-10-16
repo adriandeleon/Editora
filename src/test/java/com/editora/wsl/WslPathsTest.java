@@ -62,7 +62,7 @@ class WslPathsTest {
         assertNull(targets.forPath(Path.of("C:\\Users\\Ana")), "a Windows folder runs its tools on Windows");
         assertTrue(WslTargets.isWslPath(folder));
         assertEquals(
-                List.of("wsl.exe", "-d", "Ubuntu", "--exec", "/bin/sh", "-c", "true"),
-                ((WslExecTarget) target).argv(List.of("/bin/sh", "-c", "true")));
+                List.of("wsl.exe", "-d", "Ubuntu", "--exec", "/bin/sh", "-c", WslExecTarget.DECODE, "editora"),
+                ((WslExecTarget) target).argv(List.of("/bin/sh", "-c", "true")).subList(0, 8));
     }
 }

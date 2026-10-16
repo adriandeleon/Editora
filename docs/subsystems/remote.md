@@ -112,7 +112,11 @@ container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `Co
 **WSL** (`wsl/`, Windows only). A folder inside a WSL distribution, opened from Windows as
 `\\wsl.localhost\<distro>\…` (or `\\wsl$\<distro>\…`), has its tools run inside that distribution:
 `WslExecTarget` runs `wsl.exe -d <distro> --exec /bin/sh -c <guard> editora <script> <argv>…`, the same script
-as a container's, so the pid line, Stop (a second `wsl.exe` running `kill`, `LauncherProcess`), the login
+as a container's. That argv does not reach `wsl.exe` as given: Windows joins it into one command line, Java
+does not escape an embedded `"`, and `wsl.exe` splits it again, so the whole command goes as one shell command
+line encoded for `printf %b` (letters and digits as they are, other bytes as `\0ooo`), which a fixed
+`set -f; IFS=; eval $(printf %b $1)` decodes inside (`WslExecTarget.windowsSafe`, `WslArgvTest` runs it
+through dash and bash). So the pid line, Stop (a second `wsl.exe` running `kill`, `LauncherProcess`), the login
 environment (`RemoteEnv`) and port relays (`PortRelays`, `RelayPortForward`) are shared. Paths are mapped by
 `WslPaths`: `\\wsl.localhost\<distro>\x` ↔ `/x`, and a Windows drive `C:\x` ↔ `/mnt/c/x` (a path elsewhere
 passes as it is). `WslTargets` is the mapped resolver `App` registers on Windows only; it recognises the share
