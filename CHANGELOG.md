@@ -311,8 +311,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A program written a moment ago no longer fails to start with "Text file busy".** On Linux, running a script
   you had just saved could fail when Editora happened to be starting another process while the file was being
   written. The Run tool window then showed `error: 26 (Text file busy)`, and the Doctor and the tool checks
-  reported such a program as not installed. The same could stop a language server or debug adapter Editora had
-  just installed from starting. Editora now waits briefly and tries again.
+  reported such a program as not installed. The same could stop a build through a wrapper script that had just
+  changed (`./gradlew`, `./mvnw`), or a language server or debug adapter Editora had just installed. Editora now
+  waits briefly and tries again.
 - **Tabs keep their theme colours when the minimap redraws.** Redrawing the minimap made JavaFX restyle the
   whole window outside its normal frame. Just after a tab was opened or marked modified, that restyle could fail
   to find the theme's colours: the debug log filled with `Could not resolve '-color-fg-default'` warnings, and
