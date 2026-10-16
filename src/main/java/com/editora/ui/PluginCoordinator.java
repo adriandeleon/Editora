@@ -376,6 +376,9 @@ final class PluginCoordinator {
             if (!browseSigned) {
                 host.setStatus(tr("status.plugins.unsignedAllowed"));
             }
+            if (settingsWindow != null) {
+                settingsWindow.hideForMainWindowPicker(); // it would cover the picker
+            }
             browsePalette.show(host.window());
         });
     }

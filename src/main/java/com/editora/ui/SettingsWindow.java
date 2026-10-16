@@ -6206,10 +6206,7 @@ public class SettingsWindow {
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
-                // The browse picker is an in-scene overlay in the MAIN window; hide Settings first so it
-                // isn't rendered behind this window (otherwise the click appears to do nothing).
-                stage.hide();
-                onBrowsePlugins.run();
+                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
             }
         });
         Button installFile = new Button(tr("settings.plugins.installFromFile"));
@@ -6236,7 +6233,20 @@ public class SettingsWindow {
         return p;
     }
 
+    /**
+     * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
+     * actually opens, so a registry that fails to load leaves Settings where it was, with the reason.
+     */
+    void hideForMainWindowPicker() {
+        if (built && stage.isShowing()) {
+            stage.hide();
+        }
+    }
+
     /** Rebuilds the per-plugin enable list from the shared {@link com.editora.plugin.PluginManager}. */
+    /** Each listed plugin's enabled state when this window first showed it: what the running code reflects. */
+    private final Map<String, Boolean> pluginStateAtStart = new HashMap<>();
+
     private void refreshPluginList() {
         if (pluginListBox == null) {
             return;
@@ -6256,6 +6266,12 @@ public class SettingsWindow {
             String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
             CheckBox cb = new CheckBox(label);
             cb.setSelected(config.getPluginStore().isEnabled(d.id()));
+            // Code is loaded at start: a row switched since then says it needs a restart.
+            boolean atStart = pluginStateAtStart.computeIfAbsent(d.id(), id -> cb.isSelected());
+            Label restartPill = new Label(tr("settings.plugins.restartPill"));
+            restartPill.getStyleClass().add("settings-git-status");
+            restartPill.visibleProperty().bind(atStart ? cb.selectedProperty().not() : cb.selectedProperty());
+            restartPill.managedProperty().bind(restartPill.visibleProperty());
             SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
             cb.selectedProperty().addListener((obs, was, now) -> {
                 if (loading) {
@@ -6278,7 +6294,7 @@ public class SettingsWindow {
                     onUninstallPlugin.accept(d.id());
                 }
             });
-            HBox header = new HBox(8, cb, spacer, remove);
+            HBox header = new HBox(8, cb, restartPill, spacer, remove);
             header.setAlignment(Pos.CENTER_LEFT);
             VBox entry = new VBox(2, header);
             if (d.loadError() != null) {

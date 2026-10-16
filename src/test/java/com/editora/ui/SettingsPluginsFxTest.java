@@ -51,7 +51,11 @@ class SettingsPluginsFxTest {
     }
 
     SettingsWindow showPlugins() throws Exception {
-        fx = FxWindowFixture.create(configWithPlugins(), shared -> {});
+        return showPlugins(shared -> {});
+    }
+
+    SettingsWindow showPlugins(java.util.function.Consumer<com.editora.config.SharedConfig> before) throws Exception {
+        fx = FxWindowFixture.create(configWithPlugins(), before);
         SettingsWindow w = fx.controller.settingsWindow;
         FxTestSupport.runOnFx(() -> w.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
         return w;
@@ -98,6 +102,49 @@ class SettingsPluginsFxTest {
             assertEquals(
                     "https://registry.example.invalid/index.json",
                     fx.shared.getSettings().getPluginRegistryUrlRaw());
+        });
+    }
+
+    /**
+     * Switching a plugin only takes effect at the next start, which the row did not say; and a broken
+     * plugin.json showed Jackson's internals ("Source: REDACTED (`StreamReadFeature…`").
+     */
+    @Test
+    void aSwitchedPluginSaysItNeedsARestartAndABrokenOneSaysWhereItBroke() throws Exception {
+        SettingsWindow w = showPlugins(shared -> {
+            shared.getSettings().setPluginSupport(true);
+            shared.getPluginStore().setEnabled("hello-fake", true);
+        });
+        FxTestSupport.runOnFx(() -> {
+            VBox list = FxTestSupport.field(w, "pluginListBox");
+            javafx.scene.control.Label pill =
+                    SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
+                            .filter(l ->
+                                    Messages.tr("settings.plugins.restartPill").equals(l.getText()))
+                            .findFirst()
+                            .orElseThrow();
+            CheckBox hello = pluginRows(w).stream()
+                    .filter(c -> c.getText().startsWith("Hello Fake"))
+                    .findFirst()
+                    .orElseThrow();
+            assertFalse(pill.isVisible() && pill.getParent() == hello.getParent(), "nothing switched yet");
+            hello.setSelected(false); // switching off asks nothing
+            assertFalse(fx.shared.getPluginStore().isEnabled("hello-fake"));
+            assertTrue(
+                    SettingsRemoteSitesFxTest.all(
+                                    hello.getParent(), javafx.scene.control.Label.class, new ArrayList<>())
+                            .stream()
+                            .anyMatch(l -> l.isVisible()
+                                    && Messages.tr("settings.plugins.restartPill")
+                                            .equals(l.getText())));
+            String error =
+                    SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
+                            .map(javafx.scene.control.Label::getText)
+                            .filter(t -> t != null && t.startsWith("Invalid plugin.json"))
+                            .findFirst()
+                            .orElseThrow();
+            assertFalse(error.contains("REDACTED") || error.contains("StreamReadFeature"), error);
+            assertTrue(error.contains("(line 1, column 3)"), error);
         });
     }
 }
