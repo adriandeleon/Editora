@@ -187,4 +187,17 @@ class RelayPortForwardTest {
         forward.close(); // twice is fine
         assertTrue(relays.get() >= 1);
     }
+
+    @Test
+    void thePortIsClosedWhenCloseReturns() throws Exception {
+        // close() on a server socket an accept thread waits on leaves the port open until that thread runs
+        for (int i = 0; i < 50; i++) {
+            RelayPortForward forward = RelayPortForward.open(SocketRelay::new);
+            int port = forward.localPort();
+            Thread.sleep(1); // the accept thread is waiting in accept()
+            forward.close();
+            assertThrows(
+                    IOException.class, () -> new Socket(InetAddress.getLoopbackAddress(), port).close(), "cycle " + i);
+        }
+    }
 }
