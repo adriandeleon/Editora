@@ -24,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the second HTTP Client review — a cancelled upload releases its file, a cancelled re-run keeps the chained
  * token, JDK failures read in plain words, and a hostile Content-Encoding is refused.
  */
+@Tag("fx") // posts results through the FX toolkit, like the other engine integration tests
 class HttpEngineRound2IntegrationTest {
 
     @TempDir
