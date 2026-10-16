@@ -945,6 +945,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
         }
         diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
+        httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the pickers and {{variable}} marks
     }
 
     // --- plugins ----------------------------------------------------------------------------------
