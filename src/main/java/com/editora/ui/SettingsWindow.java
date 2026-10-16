@@ -4036,7 +4036,17 @@ public class SettingsWindow {
         syncUrlField = new TextField();
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
         syncUrlField.setPrefWidth(REPO_URL_FIELD_WIDTH);
+        // A password or token in the URL would be stored in plain text: refused, with the reason, until removed.
+        syncUrlField.textProperty().addListener((o, was, now) -> {
+            boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
+            syncUrlField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, secret);
+            syncUrlField.setTooltip(secret ? new Tooltip(tr("settings.sync.repo.credentials")) : null);
+        });
         commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
+            if (com.editora.sync.SyncEngine.hasCredentials(text)) {
+                showSyncNotice(tr("settings.sync.repo.credentials"));
+                return;
+            }
             config.getSettings().setSyncRepoUrl(text);
             config.save();
             syncNotice = null;
@@ -4252,6 +4262,10 @@ public class SettingsWindow {
         syncNotice = null;
         Settings settings = config.getSettings();
         String url = settings.getSyncRepoUrl();
+        if (com.editora.sync.SyncEngine.hasCredentials(syncUrlField.getText())) {
+            showSyncNotice(tr("settings.sync.repo.credentials")); // the stored URL is not the one shown
+            return;
+        }
         String branch = settings.getSyncBranch();
         if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
             showSyncNotice(tr("status.sync.invalidRepository"));

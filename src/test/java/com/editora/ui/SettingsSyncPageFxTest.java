@@ -463,4 +463,30 @@ class SettingsSyncPageFxTest {
         });
         awaitIdle();
     }
+
+    /**
+     * A password or token pasted into the repository URL used to be saved as typed — in plain text in
+     * settings.json, its exports and the clone's .git/config. The field now refuses it and says why.
+     */
+    @Test
+    void aRepositoryUrlWithATokenIsRefusedWithTheReason() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            TextField url = FxTestSupport.field(window, "syncUrlField");
+            Label state = FxTestSupport.field(window, "syncStateLabel");
+            url.setText("https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git");
+            url.fireEvent(new javafx.event.ActionEvent());
+            assertEquals("", settings.getSyncRepoUrl(), "nothing is saved");
+            assertTrue(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(tr("settings.sync.repo.credentials"), url.getTooltip().getText());
+            assertEquals(tr("settings.sync.repo.credentials"), state.getText());
+            FxTestSupport.<Button>field(window, "syncConnectButton").fire();
+            assertFalse(settings.isSyncEnabled(), "Connect does not reach for the stored URL instead");
+
+            url.setText("git@github.com:me/editora-sync.git");
+            assertFalse(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            url.fireEvent(new javafx.event.ActionEvent());
+            assertEquals("git@github.com:me/editora-sync.git", settings.getSyncRepoUrl());
+        });
+    }
 }
