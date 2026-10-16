@@ -71,7 +71,10 @@ final class HttpClientCoordinator {
             return null;
         }
 
-        /** The window's project root, where the search for env files stops; null when there is no project. */
+        /**
+         * The window's project root, which bounds the search for env files (see {@link HttpEnvironments}); null when
+         * there is no project.
+         */
         default Path projectRoot() {
             return null;
         }
@@ -754,9 +757,9 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * Updates this buffer's environment picker from the env files that apply to it — the nearest folder, from
-     * the file's own up to the project root, holding {@code http-client.env.json} or its private twin — with
-     * the names of both files. Called when the preview is attached, on a tab switch and when the window regains focus.
+     * Updates this buffer's environment picker from the env files that apply to it ({@link HttpEnvironments} says
+     * which folder) with the names of both files, read in the background ({@link HttpEnvCache}) and applied on the
+     * FX thread. Called when the preview is attached, on a tab switch and when the window regains focus.
      */
     void refreshEnvironments(EditorBuffer buffer) {
         HttpClientPanel p = panelFor(buffer);

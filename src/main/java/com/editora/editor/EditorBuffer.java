@@ -3699,8 +3699,6 @@ public class EditorBuffer implements TabContent {
         return line == runLine;
     }
 
-    /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), a Makefile
-     *  target runner (with the clicked target's name), else the script run handler. */
     /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
     private String runGlyphTooltip(int line) {
         com.editora.run.MainMethodScanner.MainMethod m = mainLines.get(line);
@@ -3719,6 +3717,8 @@ public class EditorBuffer implements TabContent {
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
+    /** Dispatches a Run-glyph click: a JUnit or main ▶, a {@code .http} request (the clicked line), a Makefile
+     *  target (the clicked target's name), else the script run handler. */
     private void onRunGlyph(int line) {
         com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
         com.editora.run.MainMethodScanner.MainMethod mainTarget = mainLines.get(line);

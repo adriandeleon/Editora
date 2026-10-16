@@ -13,8 +13,9 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The one place that finds, reads and merges a {@code .http} file's environment files ({@code http-client.env.json}
- * and its private twin): the run, the environment picker, the {@code {{variable}}} marks and the secrets gate all
- * go through it, so they always see the same folder and the same values.
+ * and its private twin): the run, the environment picker and the {@code {{variable}}} marks all go through it (the
+ * FX thread through {@link HttpEnvCache}, which reads in the background), so they see the same folder and the same
+ * values.
  *
  * <p><b>Which folder.</b> The nearest folder, from the file's own up, that holds either env file — but only within
  * a boundary: the open project's root when the file is inside it; otherwise the root of the version-control
