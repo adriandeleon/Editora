@@ -9436,22 +9436,26 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
-        boolean includeHttpHistory = false;
-        if (config.shared().hasHttpHistory()) { // saved responses hold bodies and URLs: asked, off by default
-            java.util.Optional<Boolean> choice = ExportConfigDialog.ask(stage);
-            if (choice.isEmpty()) {
-                return;
-            }
-            includeHttpHistory = choice.get();
+        // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default.
+        boolean askHttp = config.shared().hasHttpHistory(),
+                askKeys = config.shared().hasApiKeys();
+        var choice = askHttp || askKeys
+                ? ExportConfigDialog.ask(stage, askHttp, askKeys)
+                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false));
+        if (choice.isEmpty()) {
+            return;
         }
+        boolean keysLeftOut = askKeys && !choice.get().includeApiKeys();
         BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
-                .exportConfigAsync(includeHttpHistory)
+                .exportConfigAsync(
+                        choice.get().includeHttpHistory(), choice.get().includeApiKeys())
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
-                    setStatus(tr(failure == null ? "status.config.exported" : "status.config.exportFailed", detail));
+                    String done = keysLeftOut ? "status.config.exportedNoKeys" : "status.config.exported";
+                    setStatus(tr(failure == null ? done : "status.config.exportFailed", detail));
                     Alert alert = new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
                     alert.initOwner(stage);
                     alert.setTitle(tr("dialog.exportConfig.title"));
