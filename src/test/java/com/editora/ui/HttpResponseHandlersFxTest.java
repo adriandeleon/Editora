@@ -24,6 +24,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpFixtures;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpScripts;
 import com.editora.http.HttpTests;
 import com.editora.http.NodeResponseScripts;
 import com.editora.process.ProcessRunner;
@@ -349,6 +350,66 @@ class HttpResponseHandlersFxTest {
     }
 
     @Test
+    void debugRequestSaysWhyItCannotRun(@TempDir Path dir) throws Exception {
+        EditorBuffer plain = httpBuffer(dir.resolve("plain.http"), "GET " + url("/login") + "\n");
+        host.statuses.clear();
+        FxTestSupport.runOnFx(coordinator::debugRequestAtCaret);
+        assertEquals(
+                com.editora.i18n.Messages.tr("status.http.debugNoScript"), host.statuses.poll(10, TimeUnit.SECONDS));
+        EditorBuffer scripted =
+                httpBuffer(dir.resolve("api.http"), "GET " + url("/login") + "\n\n> {% client.log(1) %}\n");
+        FxTestSupport.runOnFx(() -> host.active = scripted);
+        host.statuses.clear();
+        FxTestSupport.runOnFx(coordinator::debugRequestAtCaret);
+        assertEquals(
+                com.editora.i18n.Messages.tr("status.http.debugUnavailable"), host.statuses.poll(10, TimeUnit.SECONDS));
+        host.settings.setHttpScriptsEnabled(false);
+        host.statuses.clear();
+        FxTestSupport.runOnFx(coordinator::debugRequestAtCaret);
+        assertEquals(
+                com.editora.i18n.Messages.tr("status.http.debugScriptsOff"), host.statuses.poll(10, TimeUnit.SECONDS));
+        assertEquals(List.of(), hits, "nothing was sent");
+        assertTrue(plain != null);
+    }
+
+    @Test
+    void debugRequestHandsEachScriptsInspectorToTheDebugger(@TempDir Path dir) throws Exception {
+        assumeTrue(nodeAvailable(), "node is not installed");
+        ops.trust = true;
+        java.util.concurrent.BlockingQueue<String> attached = new java.util.concurrent.LinkedBlockingQueue<>();
+        java.util.concurrent.atomic.AtomicReference<String> unguardedSeen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ops.debugger = (port, label, shim, unguarded) -> {
+            unguardedSeen.set(String.valueOf(unguarded));
+            attached.add(port + " " + label + " " + shim.getFileName());
+        };
+        EditorBuffer b = httpBuffer(
+                dir.resolve("api.http"), "### login\nGET " + url("/login") + "\n\n> {% client.log('ran') %}\n");
+        FxTestSupport.runOnFx(coordinator::debugRequestAtCaret);
+        String call = attached.poll(30, TimeUnit.SECONDS);
+        assertNotNull(call, "the script never waited for a debugger");
+        String[] parts = call.split(" ", 2);
+        assertTrue(Integer.parseInt(parts[0]) > 0, call);
+        assertTrue(parts[1].startsWith("Response handler of login "), call);
+        assertTrue(parts[1].endsWith(".js"), "the shim is named, to be stepped over: " + call);
+        int[] v = NodeResponseScripts.version(
+                ProcessRunner.resolveExecutable(List.of("node")).get(0));
+        boolean keepsModel = HttpScripts.guardFor(v) == HttpScripts.Guard.NONE || HttpScripts.allowsInspector(v);
+        assertEquals(
+                keepsModel ? "null" : "v" + v[0] + "." + v[1] + "." + v[2],
+                unguardedSeen.get(),
+                "an older Node is debugged without its permission model, and says which Node");
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b)), "waiting for its debugger");
+        FxTestSupport.runOnFx(() -> coordinator.cancelRun(b)); // nobody attaches here: Cancel ends it
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+        while (FxTestSupport.callOnFx(() -> coordinator.isRunningForTest(b))) {
+            assertTrue(System.nanoTime() < deadline, "the run never ended");
+            Thread.sleep(30);
+        }
+        assertEquals(List.of("login"), hits, "the request itself went out");
+    }
+
+    @Test
     void handlersOffInSettingsAskNothing(@TempDir Path dir) throws Exception {
         host.settings.setHttpScriptsEnabled(false);
         EditorBuffer b =
@@ -433,6 +494,13 @@ class HttpResponseHandlersFxTest {
         final Path cache;
         volatile boolean trust;
         final AtomicInteger scriptAsks = new AtomicInteger();
+
+        volatile com.editora.http.NodeResponseScripts.Debugger debugger;
+
+        @Override
+        public com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+            return debugger;
+        }
 
         Ops(Path configDir) {
             store = new HttpResponseHistory(configDir);

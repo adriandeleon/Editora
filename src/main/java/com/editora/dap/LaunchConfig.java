@@ -220,6 +220,26 @@ public final class LaunchConfig {
         return m;
     }
 
+    /**
+     * An {@code attach} request body for vscode-js-debug ({@code type}, e.g. {@code pwa-node}) to a Node.js on this
+     * machine waiting on its inspector {@code port} (started with {@code --inspect-brk}): js-debug resumes it once the
+     * breakpoints are set ({@code continueOnAttach}), and steps over {@code skipFiles} (glob patterns or paths).
+     */
+    public static Map<String, Object> nodeAttach(String type, String name, int port, java.util.List<String> skipFiles) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", type);
+        m.put("name", notBlank(name) ? name : "Editora (Attach)");
+        m.put("request", "attach");
+        m.put("address", "127.0.0.1");
+        m.put("port", port);
+        m.put("continueOnAttach", true);
+        m.put("attachExistingChildren", false);
+        if (skipFiles != null && !skipFiles.isEmpty()) {
+            m.put("skipFiles", java.util.List.copyOf(skipFiles));
+        }
+        return m;
+    }
+
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
     }

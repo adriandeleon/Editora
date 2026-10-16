@@ -54,11 +54,34 @@ Inline scripts are compiled with `vm.Script` using the `.http` path as `filename
 offsets, so stack traces name the `.http` line. Phase 3 (debugging) builds on this: external files keep their
 own path; inline blocks will need a generated file with a source map.
 
+## Debug Request
+
+`HttpClientCoordinator.debugRequest` runs one request with `NodeResponseScripts.Settings.debugger` set (the
+window's `WindowOps.scriptDebugger()`, null when JavaScript debugging is unavailable). Each script then starts with
+`HttpScripts.debugFlags` (`--inspect-brk=127.0.0.1:0`, and `--allow-inspector` under the permission model, without
+which Node ignores `--inspect`); `NodeResponseScripts.DebugWatch` reads Node's stderr for the inspector port, hands
+it to the `Debugger`, and notes "Debugger attached". No script timeout applies while debugging; a debugger that has
+not attached after `ATTACH_DEADLINE` (30 s) stops the script. The window's debugger is
+`DebugCoordinator.attachHttpScript` → `DapManager.startJsAttach`: js-debug started as for a `.js` file and sent
+`LaunchConfig.nodeAttach` (`continueOnAttach`, `skipFiles` = the shim and Node internals). Restart is refused
+(`HTTP_SCRIPT_ATTACH`): it would send the request again.
+
+**Inline blocks need no source maps.** The shim compiles a `{% %}` block with `vm.Script`, the `.http` file as its
+`filename` and the block's line/column as offsets, so V8 reports — and js-debug binds breakpoints and names frames
+— in `.http` coordinates. `.http` buffers get the breakpoint gutter when JavaScript debugging is on
+(`DebugCoordinator.isDebuggableBuffer`), and a breakpoint goes only on a script line (`HttpScriptLines`;
+`breakpointAllowed`, for the gutter click and the toggle and edit commands).
+
 ## Safety rules (adl, 2026-10-15 and 2026-10-16)
 
 - A pre-request script that cannot run (off, untrusted, no folder, no Node, a file problem, an error, a timeout, a
   crash) keeps its request unsent: `status.http.preScriptNotRun` with an `http.preScript.why.*` reason.
   `client.exit()` is not an error. Scripts never see secrets (`request.environment.get` is the env file as written).
+- Debug Request only: `--allow-inspector` with the permission model kept (adl, 2026-10-16); the inspector listens
+  on a random 127.0.0.1 port while the session lasts. `--allow-inspector` exists from Node 24.12 / 25.0; before
+  that the permission model shuts the inspector for good, so a debugged script there runs without `--permission`
+  (`HttpScripts.launchFlags` / `allowsInspector`), and the debugger is told (`Debugger.attach(…, unguardedNode)`)
+  to say so in the Debug console and status bar; the response carries `http.warn.debugUnguarded`. Breakpoints in a `.http` file only on script lines.
 - Every path handed to Node is a real path: under the permission model Node may not read a link on the way
   (`/var` on macOS).
 
