@@ -160,8 +160,8 @@ class ColumnRulerFxTest {
     private double rulerX() throws Exception {
         settle(20);
         awaitRulerIdle();
-        Line ruler = FxTestSupport.field(buffer, "columnRuler");
-        return FxTestSupport.callOnFx(() -> ruler.isVisible() ? ruler.getStartX() : -1);
+        javafx.scene.Group ruler = FxTestSupport.field(buffer, "columnRuler");
+        return FxTestSupport.callOnFx(() -> firstShownX(ruler));
     }
 
     private void setSimple(boolean on) {
@@ -210,5 +210,18 @@ class ColumnRulerFxTest {
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** The x of the first ruler line shown, or -1 when none is. */
+    private static double firstShownX(javafx.scene.Group ruler) {
+        if (!ruler.isVisible()) {
+            return -1;
+        }
+        for (javafx.scene.Node n : ruler.getChildren()) {
+            if (n instanceof Line line && line.isVisible()) {
+                return line.getStartX();
+            }
+        }
+        return -1;
     }
 }

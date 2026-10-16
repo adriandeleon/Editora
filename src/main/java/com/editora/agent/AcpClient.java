@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRegistry;
 import com.editora.process.ProcessRunner;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -141,7 +142,7 @@ public final class AcpClient {
             return true;
         }
         try {
-            Process started = processBuilder(command, cwd, environment).start();
+            Process started = BusyExecutable.start(processBuilder(command, cwd, environment));
             process = started;
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             // An agent that has stopped reading altogether is killed once the backlog limit is reached; the

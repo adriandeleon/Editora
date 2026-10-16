@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import com.editora.process.BusyExecutable;
 import com.editora.process.OutputPump;
 import com.editora.process.ProcessRunner;
 
@@ -86,7 +87,7 @@ public final class BuildService {
             // A remote build runs on its host, long-lived so Stop and a lost connection end the whole tree.
             process = remote
                     ? com.editora.run.RunService.startRemote(workingDir, command, environment)
-                    : processBuilder(workingDir, command, environment).start();
+                    : BusyExecutable.start(processBuilder(workingDir, command, environment));
             com.editora.process.ProcessRegistry.track(process); // so the shutdown hook / reaper can kill it
 
         } catch (IOException e) {
