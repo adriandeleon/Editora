@@ -122,6 +122,20 @@ class ContainerProbeFxTest {
         ExecTargets.unregisterMapped(resolver);
         ExecTargets.unregisterMapped(ContainerBindings.shared());
         ExecTargets.setRemoteEnabled(null);
+        // Under Docker the container's root wrote into the mounts (javac's classes, jdtls's .settings) as root
+        // here too: hand them back to each mount folder's owner as the container sees it (under rootless Podman
+        // that is root, which is this user here), or the test cannot remove its own temporary folder.
+        engine(
+                "exec",
+                "-u",
+                "0",
+                name,
+                "sh",
+                "-c",
+                "for d; do chown -R \"$(stat -c %u:%g \"$d\")\" \"$d\"; done",
+                "sh",
+                "/workspaces/app",
+                "/workspaces/loose");
         engine("rm", "-f", name);
     }
 
