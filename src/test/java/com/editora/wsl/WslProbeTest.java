@@ -127,6 +127,58 @@ class WslProbeTest {
         assertEquals("0", left, "left running in the distribution");
     }
 
+    private String sleeps() {
+        return wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip();
+    }
+
+    @Test
+    void aProgramACrashedEditoraLeftInTheDistributionIsStoppedByTheNextOne() throws Exception {
+        com.editora.process.RemoteProcess p = (com.editora.process.RemoteProcess) ExecTargets.forPath(folder)
+                .start(ExecSpec.of(
+                                List.of("sh", "-c", "sleep 300 & sleep 301; wait"),
+                                folder,
+                                Map.of(),
+                                ExecSpec.Locale.PARSE_STABLE)
+                        .withLongLived(true));
+        List<String> record = p.orphanRecord();
+        assertEquals(WslExecTarget.ORPHAN_KIND, record.get(0), String.valueOf(record));
+        List<String> fields = record.subList(1, record.size());
+        Thread.sleep(1000);
+        assertEquals("2", sleeps(), "both sleeps running");
+
+        // The crash: wsl.exe here dies with Editora (the only one still running is the program's).
+        List<ProcessHandle> clients = ProcessHandle.current()
+                .children()
+                .filter(h -> h.info()
+                        .command()
+                        .orElse("")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .endsWith("wsl.exe"))
+                .toList();
+        assertFalse(clients.isEmpty(), "wsl.exe is a child of this process");
+        clients.forEach(ProcessHandle::destroyForcibly);
+        assertTrue(p.waitFor(20, TimeUnit.SECONDS), "the launcher ended");
+        Thread.sleep(1000);
+        String survived = sleeps();
+        System.out.println("WSL probe: after its launcher was killed, " + survived + " of 2 sleeps were left running");
+
+        if (!survived.equals("0")) {
+            List<String> other = new java.util.ArrayList<>(fields);
+            other.set(2, fields.get(2) + "1");
+            assertFalse(WslExecTarget.reapOrphan(other), "another start time: not that program");
+            assertEquals(survived, sleeps());
+
+            assertTrue(WslExecTarget.reapOrphan(fields));
+            String left = sleeps();
+            for (int i = 0; i < 50 && !left.equals("0"); i++) {
+                Thread.sleep(200);
+                left = sleeps();
+            }
+            assertEquals("0", left, "stopped with its group");
+        }
+        assertFalse(WslExecTarget.reapOrphan(fields), "gone: nothing left to stop");
+    }
+
     @Test
     void aPortInTheDistributionIsReachedFromHere() throws Exception {
         Process server = ExecTargets.forPath(folder)

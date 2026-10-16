@@ -80,7 +80,55 @@ public final class ContainerExecTarget implements ExecTarget {
         List<String> argv = engine.execArgv(
                 info.id(), info.user(), PosixShell.argv(spec, cwd, known.path(), known.locale(), known.profile()));
         Process client = client(argv).start();
-        return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal);
+        return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal, this::orphanRecord);
+    }
+
+    /** {@link #orphanRecord}'s kind, and the reaper {@code App} registers for it. */
+    public static final String ORPHAN_KIND = "container";
+
+    /**
+     * How the next Editora finds the program with {@code pid} again: the container, the user it runs as, the
+     * pid and its start time there ({@link PosixShell#startTimeArgv}), then the engine's command.
+     */
+    private List<String> orphanRecord(long pid) throws IOException {
+        String start = capture(PosixShell.startTimeArgv(pid)).strip();
+        if (!start.matches("\\d+")) {
+            throw new IOException("no start time for " + pid + " in " + info.name());
+        }
+        List<String> record = new java.util.ArrayList<>(
+                List.of(ORPHAN_KIND, info.id(), info.user() == null ? "" : info.user(), Long.toString(pid), start));
+        record.addAll(engine.command());
+        return record;
+    }
+
+    /**
+     * Stops a program a crashed Editora left in a container, from its {@link #orphanRecord} (kind removed): in
+     * that container, as that user, and only while the pid is still the process that started then. False when
+     * it was not there any more, or the container is gone (and the program with it).
+     */
+    public static boolean reapOrphan(List<String> fields) throws IOException {
+        if (fields.size() < 5) {
+            return false;
+        }
+        ContainerEngine engine = new ContainerEngine(fields.subList(4, fields.size()));
+        List<String> argv = engine.execArgv(
+                fields.get(0), fields.get(1), PosixShell.reapArgv(Long.parseLong(fields.get(2)), fields.get(3)));
+        Process p = client(argv)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        p.getOutputStream().close();
+        try {
+            if (!p.waitFor(START_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            p.destroyForcibly();
+            return false;
+        }
     }
 
     /**

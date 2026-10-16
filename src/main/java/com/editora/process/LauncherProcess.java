@@ -24,22 +24,41 @@ public final class LauncherProcess extends RemoteProcess {
         boolean signal(long pid, boolean force);
     }
 
+    /** {@link RemoteProcess#orphanRecord} for the program with {@code pid}, asked of its target. */
+    @FunctionalInterface
+    public interface Recorder {
+        java.util.List<String> record(long pid) throws IOException;
+    }
+
     private static final int MAX_NOISE = 64 * 1024;
 
     private final String targetId;
     private final Process client;
     private final long pid;
     private final Signaller signaller;
+    private final Recorder recorder;
 
-    private LauncherProcess(String targetId, Process client, long pid, Signaller signaller) {
+    private LauncherProcess(String targetId, Process client, long pid, Signaller signaller, Recorder recorder) {
         this.targetId = targetId;
         this.client = client;
         this.pid = pid;
         this.signaller = signaller;
+        this.recorder = recorder;
     }
 
-    /** Waits for the command's pid line, so a command that cannot even begin fails here, saying why. */
+    /** {@link #start(String, Process, Duration, Signaller, Recorder)} with no orphan record. */
     public static LauncherProcess start(String targetId, Process client, Duration timeout, Signaller signaller)
+            throws IOException {
+        return start(targetId, client, timeout, signaller, null);
+    }
+
+    /**
+     * Waits for the command's pid line, so a command that cannot even begin fails here, saying why.
+     *
+     * @param recorder how the next Editora finds the program after a crash ({@link #orphanRecord}), or null
+     */
+    public static LauncherProcess start(
+            String targetId, Process client, Duration timeout, Signaller signaller, Recorder recorder)
             throws IOException {
         AtomicBoolean started = new AtomicBoolean();
         Thread.ofVirtual().name("launcher-start-timeout").start(() -> {
@@ -55,7 +74,7 @@ public final class LauncherProcess extends RemoteProcess {
         try {
             long pid = readPidLine(client.getErrorStream());
             started.set(true);
-            return new LauncherProcess(targetId, client, pid, signaller);
+            return new LauncherProcess(targetId, client, pid, signaller, recorder);
         } catch (IOException | RuntimeException e) {
             started.set(true);
             client.destroyForcibly();
@@ -113,6 +132,40 @@ public final class LauncherProcess extends RemoteProcess {
     @Override
     public boolean connectionLost() {
         return false;
+    }
+
+    /**
+     * Ending the launcher here does not end the program there, so a crashed Editora would leave it running:
+     * the recorder says how the next one finds it ({@link ProcessRegistry#reapOrphans}).
+     */
+    @Override
+    public java.util.List<String> orphanRecord() {
+        if (recorder == null || !client.isAlive()) {
+            return null;
+        }
+        try {
+            return recorder.record(pid);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void signalTreeNow(boolean force, long millis) {
+        if (!client.isAlive()) {
+            return;
+        }
+        Thread signal = Thread.ofVirtual().name("launcher-kill").unstarted(() -> {
+            if (!signaller.signal(pid, force) && force) {
+                client.destroyForcibly();
+            }
+        });
+        signal.start();
+        try {
+            signal.join(Duration.ofMillis(Math.max(1, millis)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

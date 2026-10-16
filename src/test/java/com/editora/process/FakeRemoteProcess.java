@@ -66,6 +66,14 @@ final class FakeRemoteProcess extends RemoteProcess {
         return false;
     }
 
+    /** What {@link #orphanRecord} answers: null, as for an SSH host, unless a test sets one. */
+    volatile List<String> record;
+
+    @Override
+    public List<String> orphanRecord() {
+        return record;
+    }
+
     @Override
     public OutputStream getOutputStream() {
         return stdin;

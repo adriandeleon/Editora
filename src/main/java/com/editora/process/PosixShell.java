@@ -105,6 +105,44 @@ public final class PosixShell {
         return java.util.List.copyOf(argv);
     }
 
+    /**
+     * Prints the start time of process {@code $1} (field 22 of {@code /proc/<pid>/stat}: clock ticks since the
+     * kernel booted), which with the pid names one process for as long as that kernel runs. Everything before
+     * the last {@code ") "} is the pid and the command name, which may hold spaces and parentheses.
+     */
+    static final String START_TIME = "sed 's/.*) //' \"/proc/$1/stat\" | cut -d' ' -f20";
+
+    /**
+     * Kills the group process {@code $1} leads, but only while {@code $1} is still the process that started at
+     * {@code $2} ({@link #START_TIME}); exits 3, touching nothing, when it is not (gone, or the pid reused).
+     */
+    static final String REAP = "s=$(sed 's/.*) //' \"/proc/$1/stat\" 2>/dev/null | cut -d' ' -f20)\n"
+            + "[ -n \"$s\" ] && [ \"$s\" = \"$2\" ] || exit 3\n"
+            + "kill -s KILL -- \"-$1\" 2>/dev/null || kill -s KILL \"$1\"";
+
+    /** {@link #START_TIME} of {@code pid} as arguments, for a launcher that takes them one by one. */
+    public static java.util.List<String> startTimeArgv(long pid) {
+        return java.util.List.of("/bin/sh", "-c", START_TIME, "editora", Long.toString(checkedPid(pid)));
+    }
+
+    /**
+     * {@link #REAP} for {@code pid} started at {@code startTime}, as arguments: what the next Editora runs on a
+     * target to stop a program a crashed one left there.
+     */
+    public static java.util.List<String> reapArgv(long pid, String startTime) {
+        if (startTime == null || !startTime.matches("\\d+")) {
+            throw new IllegalArgumentException("not a start time: " + startTime);
+        }
+        return java.util.List.of("/bin/sh", "-c", REAP, "editora", Long.toString(checkedPid(pid)), startTime);
+    }
+
+    private static long checkedPid(long pid) {
+        if (pid <= 1) {
+            throw new IllegalArgumentException("not a process to signal: " + pid);
+        }
+        return pid;
+    }
+
     /** {@link #killCommandLine} as arguments, for a launcher that takes them one by one. */
     public static java.util.List<String> killArgv(long pid, boolean force) {
         if (pid <= 1) {

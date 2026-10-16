@@ -196,6 +196,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have its git, builds, tests, language servers and debuggers run inside that distribution with its own Linux
   tools, instead of Windows ones reading the files across the share. Editora asks once per distribution;
   Containers: Run This Project's Tools Here goes back.
+- **Programs left in a container by a crash are stopped.** A language server, debugger, build or run that
+  Editora started in a container kept running there if Editora was killed, since ending Editora's side of the
+  connection does not end it. The next launch now stops it, after checking it is still the same process. WSL
+  distributions get the same check (WSL 1 already ends such programs along with Editora). On a normal quit,
+  the last stop request is no longer lost to the exiting app.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug

@@ -91,6 +91,13 @@ public class App extends Application {
         // before any window builds (which can start servers) so we don't race a fresh server's startup.
         // Only a dead owner's children are reaped: a live second instance's servers are left alone.
         com.editora.process.ProcessRegistry.setLedgerFile(shared.getConfigDir().resolve("spawned-servers.txt"));
+        // Programs a crashed run left in a container or a WSL distribution: ending the launcher here did not end
+        // them there. Each row says how to reach them; the target checks the pid is still the one recorded.
+        com.editora.process.ProcessRegistry.registerOrphanReaper(
+                com.editora.container.ContainerExecTarget.ORPHAN_KIND,
+                com.editora.container.ContainerExecTarget::reapOrphan);
+        com.editora.process.ProcessRegistry.registerOrphanReaper(
+                com.editora.wsl.WslExecTarget.ORPHAN_KIND, com.editora.wsl.WslExecTarget::reapOrphan);
         com.editora.process.ProcessRegistry.reapOrphans();
         // Commands for a remote folder run on its host only while the user's setting allows it.
         com.editora.process.ExecTargets.setRemoteEnabled(
