@@ -2417,6 +2417,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         hierarchyToolWindow =
                 toolWindow("hierarchy", ToolWindow.Side.BOTTOM, Icons::structure, lspCoordinator::hierarchyPanel);
         runToolWindow = toolWindow("run", ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel);
+        runToolWindow.busyProperty().bind(runCoordinator.runningProperty()); // spinner badge on its stripe button
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
@@ -6704,22 +6705,23 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads}
-     * ({@code $processEnv.X} / {@code $dotenv.X}) runs only from a trusted folder, the same trust store as build
-     * wrappers. Asked about the open project when the file is inside it, else the file's own folder.
+     * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads} (the secret
+     * sources it resolves, as written — {@code $env TOKEN}, {@code $dotenv KEY}) runs only from a trusted folder,
+     * the same trust store as build wrappers. Asked about the open project when the file is inside it, else the
+     * file's own folder — both canonical, the way the trust store compares them (see {@link HttpSecretGate#trustRoot}).
      */
     private boolean confirmHttpSecretReads(Path file, List<String> hosts, List<String> reads) {
-        Path dir = file.toAbsolutePath().getParent();
+        Path dir = com.editora.config.PathKeys.canonical(file.toAbsolutePath().getParent());
         if (config.getTrustStore().isTrusted(dir)) {
             return true;
         }
-        Path project = projectRoot();
-        Path root = project != null && dir.startsWith(project.toAbsolutePath()) ? project.toAbsolutePath() : dir;
+        Path root = HttpSecretGate.trustRoot(file, projectRoot());
         Path name = root.getFileName();
         ButtonType trust = new ButtonType(tr("dialog.httpTrust.accept"), ButtonBar.ButtonData.OK_DONE);
         Alert confirm = new Alert(
                 Alert.AlertType.WARNING,
-                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString()),
+                tr("dialog.httpTrust.body", String.join(", ", reads), String.join(", ", hosts), root.toString())
+                        + "\n\n" + tr("dialog.httpTrust.redirects"),
                 ButtonType.CANCEL,
                 trust);
         confirm.initOwner(stage);
@@ -6814,7 +6816,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
-    /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-r", with the keymap's chords. */
+    /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-enter", with the keymap's chords. */
     static String httpRunTooltip(com.editora.command.KeymapManager keymap) {
         String run = keymap == null ? null : keymap.displayChord("http.runRequest");
         String all = keymap == null ? null : keymap.displayChord("http.runFile");
@@ -7641,10 +7643,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
-        buffer.setHttpRunHandler(line -> httpClient.runRequest(buffer, line)); // .http request ▶
-        buffer.setHttpRunAllHandler(httpClient::runFile); // .http editor menu → Run All Requests (active buffer)
-        buffer.setHttpRunTooltip(() -> httpRunTooltip(keymap));
-        buffer.setHttpCancelHandler(() -> httpClient.cancelRun(buffer)); // the running request's ■
+        // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■
+        buffer.setHttpHooks(new com.editora.editor.HttpHooks(
+                line -> httpClient.runRequest(buffer, line),
+                httpClient::runFile,
+                () -> httpClient.cancelRun(buffer),
+                () -> httpRunTooltip(keymap),
+                null,
+                null));
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
@@ -9228,10 +9234,18 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
+        boolean includeHttpHistory = false;
+        if (config.shared().hasHttpHistory()) { // saved responses hold bodies and URLs: asked, off by default
+            java.util.Optional<Boolean> choice = ExportConfigDialog.ask(stage);
+            if (choice.isEmpty()) {
+                return;
+            }
+            includeHttpHistory = choice.get();
+        }
         BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
-                .exportConfigAsync()
+                .exportConfigAsync(includeHttpHistory)
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());

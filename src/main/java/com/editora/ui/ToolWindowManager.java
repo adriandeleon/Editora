@@ -20,6 +20,7 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.ClipboardContent;
@@ -29,6 +30,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
@@ -324,7 +326,7 @@ public class ToolWindowManager {
         byId.put(tw.getId(), tw);
         ensureInOrder(tw.getId());
         Button button = new Button();
-        button.setGraphic(tw.createIcon());
+        button.setGraphic(stripeIcon(tw));
         button.getStyleClass().addAll("tool-stripe-button", "flat");
         button.setTooltip(new Tooltip(tooltipFor(tw)));
         button.accessibleTextProperty().bind(tw.titleProperty()); // the tooltip also carries the chord
@@ -347,6 +349,30 @@ public class ToolWindowManager {
             addButtonOrdered(tw, button);
         }
         updateStripeVisibility();
+    }
+
+    /**
+     * The stripe button's icon, with a small spinner badged on its lower-right corner while the tool window is
+     * {@linkplain ToolWindow#busyProperty busy}: a run keeps showing it is alive with its window closed or
+     * another one open in its place, and on a vertical rail, where the button is the icon alone, too. The
+     * badge is laid over the icon rather than beside it so the button keeps its size.
+     */
+    private static Node stripeIcon(ToolWindow tw) {
+        StackPane icon = new StackPane(tw.createIcon());
+        ProgressIndicator badge = RunPanel.busySpinner();
+        badge.getStyleClass().add("tool-stripe-busy");
+        badge.setMinSize(12, 12);
+        badge.setPrefSize(12, 12);
+        badge.setMaxSize(12, 12);
+        badge.setMouseTransparent(true);
+        badge.setTranslateX(5);
+        badge.setTranslateY(5);
+        StackPane.setAlignment(badge, Pos.BOTTOM_RIGHT);
+        icon.getChildren().add(badge);
+        // Managed, so the stack lays it out; only its visibility follows busy (hidden, it stops animating).
+        badge.setManaged(true);
+        badge.visibleProperty().bind(tw.busyProperty());
+        return icon;
     }
 
     /**

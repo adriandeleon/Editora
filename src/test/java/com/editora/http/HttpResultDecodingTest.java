@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HttpResultDecodingTest {
 
     private static HttpResult result(byte[] bytes, String contentType) {
-        return HttpResult.ofBytes(200, List.of(), bytes, contentType, 1, List.of(), false);
+        return HttpFixtures.bytes(200, List.of(), bytes, contentType, 1, List.of(), false);
     }
 
     @Test

@@ -43,7 +43,6 @@ public final class ConfigWriter {
     }
 
     /** Where a store hands the snapshot it wants persisted: the shared queue, or {@link #DIRECT}. */
-    @FunctionalInterface
     interface Sink {
         void write(Path file, BytesSupplier bytes);
 
@@ -53,6 +52,15 @@ public final class ConfigWriter {
          * another process has changed since. Ignored by default.
          */
         default void loaded(Path file, BytesSupplier bytes) {}
+
+        /** Deletes {@code file}, dropping a write of it still queued. By default on the calling thread. */
+        default void delete(Path file) {
+            try {
+                java.nio.file.Files.deleteIfExists(file);
+            } catch (IOException e) {
+                Logger.getLogger(ConfigWriter.class.getName()).log(Level.WARNING, "Failed to delete " + file, e);
+            }
+        }
     }
 
     /** A {@link BytesSupplier} result: the file already holds this snapshot, so no write was attempted. */

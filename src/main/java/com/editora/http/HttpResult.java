@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * The outcome of a built-in HTTP request: the {@code status} code, response {@code headers}
  * ({@code [name, value]}), the {@code body} text, the {@code contentType}, timing/size, an {@code error}
@@ -37,116 +39,14 @@ public record HttpResult(
         written = written == null ? List.of() : List.copyOf(written);
     }
 
-    /**
-     * A result with the files its redirects saved and no known protocol version. {@code protocol} is the version the
-     * response arrived over ({@code HTTP/1.1}, {@code HTTP/2}), or null when unknown.
-     */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings,
-            byte[] rawBody,
-            boolean truncated,
-            List<String> written) {
-        this(
-                status,
-                headers,
-                body,
-                contentType,
-                elapsedMs,
-                sizeBytes,
-                error,
-                warnings,
-                rawBody,
-                truncated,
-                written,
-                null);
-    }
-
-    /** A result whose request saved nothing to disk. */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings,
-            byte[] rawBody,
-            boolean truncated) {
-        this(status, headers, body, contentType, elapsedMs, sizeBytes, error, warnings, rawBody, truncated, List.of());
-    }
-
     /** How far into the payload {@link #looksBinary} looks for a NUL byte (git's heuristic). */
     private static final int SNIFF_BYTES = 8000;
 
-    /** A text result (tests, errors): the raw bytes are the UTF-8 form of {@code body}. */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error,
-            List<String> warnings) {
-        this(
-                status,
-                headers,
-                body,
-                contentType,
-                elapsedMs,
-                sizeBytes,
-                error,
-                warnings,
-                body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8),
-                false);
-    }
-
-    /** A result with no request-side warnings (the common case). */
-    public HttpResult(
-            int status,
-            List<String[]> headers,
-            String body,
-            String contentType,
-            long elapsedMs,
-            long sizeBytes,
-            String error) {
-        this(status, headers, body, contentType, elapsedMs, sizeBytes, error, List.of());
-    }
-
-    /** A completed response built from its raw bytes; the display text is decoded with the response charset. */
-    public static HttpResult ofBytes(
-            int status,
-            List<String[]> headers,
-            byte[] raw,
-            String contentType,
-            long elapsedMs,
-            List<String> warnings,
-            boolean truncated) {
-        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, List.of());
-    }
-
-    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean)}, with the files the redirects saved. */
-    public static HttpResult ofBytes(
-            int status,
-            List<String[]> headers,
-            byte[] raw,
-            String contentType,
-            long elapsedMs,
-            List<String> warnings,
-            boolean truncated,
-            List<String> written) {
-        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, written, null);
-    }
-
-    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean, List)}, with the protocol version. */
+    /**
+     * A completed response built from its raw bytes; the display text is decoded with the response charset.
+     * {@code written} lists what its {@code >>} redirects saved; {@code protocol} is the version it arrived over
+     * ({@code HTTP/1.1}, {@code HTTP/2}), or null when unknown.
+     */
     public static HttpResult ofBytes(
             int status,
             List<String[]> headers,
@@ -176,7 +76,15 @@ public record HttpResult(
 
     /** A request that never produced a response (not sent, connection failure, cancelled). */
     public static HttpResult failure(String error, List<String> warnings) {
-        return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings);
+        return new HttpResult(0, List.of(), "", "", 0, 0, error, warnings, new byte[0], false, List.of(), null);
+    }
+
+    /**
+     * {@link #error()} as shown to the user: the marker of a cancelled run ({@link HttpClientService#CANCELLED},
+     * compared as is) reads in the UI language.
+     */
+    public String shownError() {
+        return HttpClientService.CANCELLED.equals(error) ? tr("http.request.cancelled") : error;
     }
 
     public boolean failed() {
@@ -191,6 +99,11 @@ public record HttpResult(
     /** True when the payload has no text form (an image, an archive, …), so viewers show a note instead. */
     public boolean binary() {
         return rawBody != null && looksBinary(rawBody, contentType);
+    }
+
+    /** The charset this response's text was decoded with (see {@link #charsetOf(String, byte[])}). */
+    public String bodyCharset() {
+        return charsetOf(contentType, rawBody).name();
     }
 
     /** The {@code charset=} of a Content-Type, defaulting to UTF-8 when absent or unknown. */

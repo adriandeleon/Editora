@@ -56,7 +56,7 @@ class HttpHeaderDropIntegrationTest {
         HttpFile.Parsed parsed = HttpFile.parseRequest(requestText);
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.run(parsed, vars, baseDir, ex -> {
+        svc.run(parsed, vars, baseDir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });

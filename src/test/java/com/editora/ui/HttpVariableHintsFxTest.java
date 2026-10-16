@@ -109,6 +109,7 @@ class HttpVariableHintsFxTest {
 
     @Test
     void theMarksFollowTheEnvironmentAndItsFiles(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve(".git")); // one repository: its root's env files apply below it
         Path api = Files.createDirectories(root.resolve("api"));
         Files.writeString(root.resolve("http-client.env.json"), "{\"dev\":{\"host\":\"http://h\"},\"prod\":{}}");
         Files.writeString(api.resolve(".env"), "KEY=v\n");
@@ -117,7 +118,7 @@ class HttpVariableHintsFxTest {
         await(() -> !b.httpVariableDiagnostics().isEmpty());
         assertEquals(List.of("{{host}}", "{{token}}"), marked(b), "no environment chosen yet");
 
-        ComboBox<String> env = FxTestSupport.field(coordinator.panelForTest(b), "envCombo");
+        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         await(() -> b.httpVariableDiagnostics().size() == 1);
         assertEquals(List.of("{{token}}"), marked(b), "the env file of the parent folder applies");

@@ -387,6 +387,17 @@ public class SharedConfig {
             }
 
             @Override
+            public void delete(Path file) {
+                cancelPendingWrite(file); // a queued write must not bring it back
+                try {
+                    Files.deleteIfExists(file);
+                } catch (IOException e) {
+                    java.util.logging.Logger.getLogger(SharedConfig.class.getName())
+                            .log(java.util.logging.Level.WARNING, "Failed to delete " + file, e);
+                }
+            }
+
+            @Override
             public void loaded(Path file, ConfigWriter.BytesSupplier bytes) {
                 try {
                     sync.loaded(file, bytes.get());
@@ -405,6 +416,13 @@ public class SharedConfig {
         if (!loadProblems.contains(problem)) { // a session file is read at bootstrap and again by its window
             loadProblems.add(problem);
         }
+        if (problem.mustNotOverwrite()) {
+            writeProtected.add(problem.file());
+        }
+    }
+
+    /** Write-protects the file of {@code problem} when it must not be overwritten; the caller reports it. */
+    void protectIfMustNotOverwrite(ConfigLoadProblem problem) {
         if (problem.mustNotOverwrite()) {
             writeProtected.add(problem.file());
         }
@@ -587,6 +605,10 @@ public class SharedConfig {
     }
 
     Path exportConfig(Path destinationDir) throws IOException {
+        return exportConfig(destinationDir, false);
+    }
+
+    Path exportConfig(Path destinationDir, boolean includeHttpHistory) throws IOException {
         if (!writer.flush()) {
             throw new IOException("Timed out waiting for pending configuration writes");
         }
@@ -595,7 +617,18 @@ public class SharedConfig {
                 destinationDir,
                 com.editora.AppInfo.VERSION,
                 System.getProperty("user.name"),
-                java.time.LocalDateTime.now());
+                java.time.LocalDateTime.now(),
+                includeHttpHistory);
+    }
+
+    /** Whether the HTTP Client has saved responses, which an export leaves out unless the user asks. */
+    public boolean hasHttpHistory() {
+        Path dir = configDir.resolve(HttpResponseHistory.DIR_NAME);
+        try (Stream<Path> files = Files.list(dir)) {
+            return files.anyMatch(f -> f.getFileName().toString().endsWith(".json"));
+        } catch (IOException | RuntimeException none) {
+            return false;
+        }
     }
 
     /**
@@ -606,10 +639,20 @@ public class SharedConfig {
      * be named for the same second).
      */
     public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync() {
-        return exportConfigAsync(Path.of(System.getProperty("user.home")));
+        return exportConfigAsync(false);
+    }
+
+    /** As {@link #exportConfigAsync()}, with the HTTP response history when {@code includeHttpHistory}. */
+    public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(boolean includeHttpHistory) {
+        return exportConfigAsync(Path.of(System.getProperty("user.home")), includeHttpHistory);
     }
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {
+        return exportConfigAsync(destinationDir, false);
+    }
+
+    synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
+            Path destinationDir, boolean includeHttpHistory) {
         if (runningExport != null && !runningExport.isDone()) {
             return runningExport;
         }
@@ -618,7 +661,7 @@ public class SharedConfig {
         Thread thread = new Thread(
                 () -> {
                     try {
-                        export.complete(exportConfig(destinationDir));
+                        export.complete(exportConfig(destinationDir, includeHttpHistory));
                     } catch (IOException | RuntimeException e) {
                         export.completeExceptionally(e);
                     }
@@ -798,7 +841,11 @@ public class SharedConfig {
     /** The HTTP Client's per-{@code .http}-file history (environment + last responses), shared by every window. */
     public HttpResponseHistory httpHistory() {
         if (httpHistory == null) {
-            httpHistory = new HttpResponseHistory(configDir, sinkFor(ConfigSchema.HTTP_HISTORY), this::onLoadProblem);
+            // A history is read when its file is opened, long after startup: the window that read it reports
+            // what could not be read (Stored.problems), so it is only write-protected here, not queued for the
+            // next window to show.
+            httpHistory = new HttpResponseHistory(
+                    configDir, sinkFor(ConfigSchema.HTTP_HISTORY), this::protectIfMustNotOverwrite);
         }
         return httpHistory;
     }

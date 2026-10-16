@@ -52,11 +52,13 @@ class RunPanelFxTest {
 
         FxTestSupport.runOnFx(() -> p.started("python long_script.py"));
         assertTrue(spinnerShown(p), "spinner while the program runs");
+        assertTrue(FxTestSupport.callOnFx(() -> p.runningProperty().get()), "the stripe badge's source follows it");
         FxTestSupport.runOnFx(() -> p.appendOutput("still going", false));
         assertTrue(spinnerShown(p), "output does not stop the spinner");
 
         FxTestSupport.runOnFx(() -> p.finished(0));
         assertFalse(spinnerShown(p), "spinner gone after exit");
+        assertFalse(FxTestSupport.callOnFx(() -> p.runningProperty().get()), "not running after exit");
 
         FxTestSupport.runOnFx(() -> p.started("python again.py"));
         FxTestSupport.runOnFx(() -> p.finished(-1));

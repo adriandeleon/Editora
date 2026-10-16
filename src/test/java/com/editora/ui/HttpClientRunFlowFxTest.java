@@ -120,6 +120,14 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
     }
 
+    private void awaitHits(int n) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+        while (hits.size() < n) {
+            assertTrue(System.nanoTime() < deadline, "the server got " + hits);
+            Thread.sleep(20);
+        }
+    }
+
     private String url(String path) {
         return "http://127.0.0.1:" + port + path;
     }
@@ -146,7 +154,7 @@ class HttpClientRunFlowFxTest {
     }
 
     private String panelStatus(EditorBuffer b) throws Exception {
-        Label status = FxTestSupport.field(panel(b), "status");
+        Label status = panel(b).statusLabelForTest();
         return FxTestSupport.callOnFx(status::getText);
     }
 
@@ -168,7 +176,7 @@ class HttpClientRunFlowFxTest {
         assertFalse(coordinator.isRunningForTest(b));
         HttpExchange shown = FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange());
         assertEquals(200, shown.result().status());
-        assertTrue(FxTestSupport.callOnFx(() -> panel(b).getResponseText()).contains("{\"ok\":true}"));
+        assertTrue(FxTestSupport.callOnFx(() -> responseText(panel(b))).contains("{\"ok\":true}"));
         assertTrue(panelStatus(b).startsWith("200 OK  ·  "), "status, reason, timing and size: " + panelStatus(b));
         assertTrue(panelStatus(b).endsWith("11 B"), panelStatus(b));
         assertTrue(FxTestSupport.callOnFx(b::hasHttpPreview));
@@ -179,7 +187,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.failedStatus", "GET " + url("/missing"), "404 Not Found"), host.awaitStatus());
         assertTrue(panelStatus(b).startsWith("404 Not Found"), panelStatus(b));
         // Both are in the history, newest first, named after their ### title.
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(
                 List.of(404, 200),
                 FxTestSupport.callOnFx(() -> history.getItems().stream()
@@ -205,34 +213,35 @@ class HttpClientRunFlowFxTest {
                 "@token = {{$processEnv.PATH}}\n\n### leak\nGET " + url("/json")
                         + "\nX-Token: {{token}}\n\n### plain\nGET " + url("/json") + "\n");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
-        String refused = host.awaitStatus();
-        assertTrue(refused.contains("$processEnv.PATH"), refused);
+        String refused = host.awaitStatus(s -> s.contains("$processEnv.PATH"));
+        assertTrue(refused.contains(tr("status.http.secretsRefused", "$processEnv.PATH")), refused);
         assertEquals(List.of(List.of("$processEnv.PATH")), ops.askedReads);
         assertEquals(List.of(List.of("127.0.0.1:" + port)), ops.askedHosts);
-        assertFalse(coordinator.isRunningForTest(b), "nothing was started");
+        assertFalse(coordinator.isRunningForTest(b), "the run is over");
         Thread.sleep(200);
         assertEquals(List.of(), hits, "nothing was sent");
 
-        // Run All asks too: the file holds a request that reads the secret.
+        // Run All asks once too; the request that reads no secret still goes out.
         FxTestSupport.runOnFx(() -> {
             host.active = b;
             coordinator.runFile();
         });
-        host.awaitStatus();
+        host.awaitStatus(s -> s.equals(tr("status.http.someFailed", 1, 2)));
         assertEquals(2, ops.askedReads.size());
-        assertEquals(List.of(), hits);
+        Thread.sleep(200);
+        assertEquals(List.of("json null"), hits, "only the request without a secret was sent");
 
         // A request that reads no secret is never asked about.
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 7));
         host.awaitStatus(s -> s.equals(tr("status.http.finished", "GET " + url("/json"), "200 OK")));
         assertEquals(2, ops.askedReads.size());
-        assertEquals(List.of("json null"), hits);
+        assertEquals(List.of("json null", "json null"), hits);
 
         // Trusted: it is sent, with the value filled in.
         ops.trust = true;
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
         host.awaitStatus(s -> s.equals(tr("status.http.finished", "GET " + url("/json"), "200 OK")));
-        assertEquals("json " + System.getenv("PATH"), hits.get(1));
+        assertEquals("json " + System.getenv("PATH"), hits.get(2));
     }
 
     @Test
@@ -278,7 +287,7 @@ class HttpClientRunFlowFxTest {
                 dir.resolve("all.http"),
                 "### one\nGET {{base}}/json\nX-Token: {{token}}\n\n### two\nGET {{base}}/missing\n");
 
-        ComboBox<String> env = FxTestSupport.field(panel(b), "envCombo");
+        ComboBox<String> env = panel(b).environmentPickerForTest();
         assertEquals(List.of("", "dev", "prod"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
         assertEquals("dev", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
         assertFalse(
@@ -289,7 +298,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(tr("status.http.running", "all.http"), host.awaitStatus());
         assertEquals(tr("status.http.someFailed", 1, 2), host.awaitStatus(), "one of the two requests failed");
         assertEquals(List.of("json private", "missing"), hits);
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(2, FxTestSupport.callOnFx(() -> history.getItems().size()));
         assertEquals(
                 404,
@@ -299,8 +308,10 @@ class HttpClientRunFlowFxTest {
 
         // Choosing another environment in the picker is remembered for this file.
         FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        HttpHistorySync.awaitIdleForTest(); // saved off the FX thread
         assertEquals("prod", ops.store.load(dir.resolve("all.http")).environment);
         FxTestSupport.runOnFx(() -> env.setValue(null));
+        HttpHistorySync.awaitIdleForTest();
         assertEquals("", ops.store.load(dir.resolve("all.http")).environment);
         assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
 
@@ -311,6 +322,35 @@ class HttpClientRunFlowFxTest {
                 List.of("", "only", "dev"),
                 FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())),
                 "the public file's names, then those only the private file defines");
+    }
+
+    /**
+     * F4/S5: a file opened on its own (no project) must not pick up a private env file from a parent folder the
+     * user never associated with it — only from inside its own repository.
+     */
+    @Test
+    void aPrivateEnvFileAboveTheFilesRepositoryIsNeverSent(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("http-client.private.env.json"), "{\"dev\":{\"token\":\"parent-value\"}}");
+        Path sub = Files.createDirectories(dir.resolve("downloaded"));
+        ops.saved = "dev";
+        String text = "GET " + url("/json") + "\nX-Token: {{token}}\n";
+        EditorBuffer b = httpBuffer(sub.resolve("api.http"), text);
+        assertEquals(
+                List.of(""),
+                FxTestSupport.callOnFx(
+                        () -> List.copyOf(panel(b).environmentPickerForTest().getItems())),
+                "no environments offered");
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
+        awaitHits(1);
+        assertFalse(hits.get(0).contains("parent-value"), "the parent folder's private value was sent: " + hits);
+
+        // The same layout inside one repository: the env file at its root applies.
+        Files.createDirectories(dir.resolve(".git"));
+        FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b));
+        FxTestSupport.runOnFx(() -> panel(b).environmentPickerForTest().setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
+        awaitHits(2);
+        assertEquals("json parent-value", hits.get(1), "the repository root's env file is used");
     }
 
     @Test
@@ -333,7 +373,7 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         assertTrue(slowStarted.await(WAIT_SECONDS, TimeUnit.SECONDS));
         assertTrue(coordinator.isRunningForTest(b));
-        Button cancel = FxTestSupport.field(panel(b), "runButton");
+        Button cancel = panel(b).runButtonForTest();
         assertEquals(tr("httppanel.cancel"), FxTestSupport.callOnFx(cancel::getText), "Run turns into Cancel");
 
         FxTestSupport.runOnFx(cancel::fire); // the panel's own Cancel
@@ -358,7 +398,7 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 3));
         assertEquals(tr("status.http.running", "GET " + url("/json")), host.awaitStatus());
         assertEquals(tr("status.http.finished", "GET " + url("/json"), "200 OK"), host.awaitStatus());
-        ComboBox<HttpHistoryEntry> history = FxTestSupport.field(panel(b), "historyCombo");
+        ComboBox<HttpHistoryEntry> history = panel(b).historyPickerForTest();
         assertEquals(
                 List.of(url("/json")),
                 FxTestSupport.callOnFx(() ->
@@ -413,8 +453,8 @@ class HttpClientRunFlowFxTest {
         assertEquals("response.json", FxTestSupport.callOnFx(tab::getTitle));
 
         // The panel's own buttons do the same for the response on show.
-        Button openInTab = FxTestSupport.field(panel(b), "openTabButton");
-        Button copyCurl = FxTestSupport.field(panel(b), "copyCurlButton");
+        Button openInTab = panel(b).openTabButtonForTest();
+        Button copyCurl = panel(b).copyCurlButtonForTest();
         FxTestSupport.runOnFx(() -> {
             openInTab.fire();
             copyCurl.fire();
@@ -434,10 +474,10 @@ class HttpClientRunFlowFxTest {
         assertEquals(2, ops.opened.size());
 
         // Clear empties the viewer and its actions.
-        Button clear = FxTestSupport.field(panel(b), "clearButton");
+        Button clear = panel(b).clearButtonForTest();
         FxTestSupport.runOnFx(clear::fire);
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
-        assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getResponseText()));
+        assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
         assertTrue(FxTestSupport.callOnFx(copyCurl::isDisabled));
         assertEquals(tr("httppanel.idle"), panelStatus(b));
     }
@@ -657,5 +697,11 @@ class HttpClientRunFlowFxTest {
             askedHosts.add(hosts);
             return trust;
         }
+    }
+
+    /** The selected response as the full text report Save writes ("" when nothing is selected). */
+    private static String responseText(HttpClientPanel p) {
+        com.editora.http.HttpExchange ex = p.getSelectedExchange();
+        return ex == null ? "" : com.editora.http.HttpResponseFormat.render(ex.result());
     }
 }

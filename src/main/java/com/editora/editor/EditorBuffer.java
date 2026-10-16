@@ -610,7 +610,8 @@ public class EditorBuffer implements TabContent {
     private final HttpVariableMarks httpVariableMarks = new HttpVariableMarks(
             this::mdLintOverlay,
             this::documentTextSnapshot,
-            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile);
+            () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile,
+            () -> this.markdownLintEnabled);
 
     private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
@@ -632,18 +633,8 @@ public class EditorBuffer implements TabContent {
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
     private boolean httpFeatureEnabled;
-    /** The 0-based start lines of each request in a {@code .http} buffer (each gets a Run glyph). */
-    private java.util.List<Integer> httpRequestLines = java.util.List.of();
-    /** Fired with the clicked request's start line when a {@code .http} Run glyph is clicked. */
-    private java.util.function.IntConsumer httpRunHandler = i -> {};
-    /** Runs every request of this {@code .http} buffer (the editor menu's "Run All Requests"). */
-    private Runnable httpRunAllHandler = () -> {};
-    /** Hover text for a {@code .http} request ▶ (built by the controller, so it can name the current chord). */
-    private java.util.function.Supplier<String> httpRunTooltip = () -> null;
-    /** The request (index in file order) whose ▶ shows as running — a ■ that cancels it; -1 = none. */
-    private int httpRunningIndex = -1;
-    /** Cancels this buffer's running request (a click on the running ■). */
-    private Runnable httpCancelHandler = () -> {};
+    /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
+    private final HttpGutter httpGutter = new HttpGutter();
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -1866,9 +1857,9 @@ public class EditorBuffer implements TabContent {
                 // A .http file runs requests, never "Run File" (which launched `java requests.http`).
                 MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
                 runRequest.setGraphic(FoldManager.runGlyph());
-                runRequest.setOnAction(ev -> httpRunHandler.accept(at.line()));
+                runRequest.setOnAction(ev -> httpGutter.hooks().run().accept(at.line()));
                 MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
-                runAll.setOnAction(ev -> httpRunAllHandler.run());
+                runAll.setOnAction(ev -> httpGutter.hooks().runAll().run());
                 items.addAll(java.util.List.of(runRequest, runAll));
                 items.add(new SeparatorMenuItem());
             } else if (runnable && runHandler != null && !isHttpFile()) {
@@ -3262,7 +3253,8 @@ public class EditorBuffer implements TabContent {
     public void setMarkdownLintEnabled(boolean on) {
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
         if (this.markdownLintEnabled || mdLintOverlay != null) {
-            mdLintOverlay().setActive(this.markdownLintEnabled);
+            // The overlay is shared with a .http buffer's {{variable}} marks: keep it on while they are.
+            mdLintOverlay().setActive(this.markdownLintEnabled || httpVariableMarks.enabled());
         }
         minimap.setLintEnabled(this.markdownLintEnabled);
         updateMarkdownLintStripe();
@@ -3496,6 +3488,11 @@ public class EditorBuffer implements TabContent {
         return "http".equals(language);
     }
 
+    /** Whether the HTTP Client is enabled for this buffer (its request ▶s show). */
+    public boolean isHttpEnabled() {
+        return httpFeatureEnabled;
+    }
+
     /** Enables/disables the HTTP Client Run glyphs for a {@code .http} buffer (gated by the feature, Simple UI
      *  mode and a local file). */
     public void setHttpEnabled(boolean enabled) {
@@ -3506,11 +3503,19 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
-    /** Injects the {@code .http} unresolved-variable check ({@code accept(text, diagnostics -> …)}); null: off. */
-    public void setHttpVariableLint(
-            java.util.function.BiConsumer<String, java.util.function.Consumer<java.util.List<MarkdownLint.Diagnostic>>>
-                    validator) {
-        httpVariableMarks.setValidator(validator);
+    /**
+     * Injects what this {@code .http} buffer asks of the window ({@link HttpHooks}): running, Run All, cancel, the ▶
+     * tooltip, the {@code {{variable}}} check and the {@code {{} completion context. Null clears them.
+     */
+    public void setHttpHooks(HttpHooks hooks) {
+        httpGutter.setHooks(hooks);
+        httpVariableMarks.setValidator(httpGutter.hooks().variableLint());
+        completionActions.setHttpVariables(httpGutter.hooks().variableContext());
+    }
+
+    /** The hooks injected by {@link #setHttpHooks} ({@link HttpHooks#NONE} until then). */
+    public HttpHooks httpHooks() {
+        return httpGutter.hooks();
     }
 
     /** Checks the {@code {{variables}}} again (the environment or the env files changed). */
@@ -3523,54 +3528,35 @@ public class EditorBuffer implements TabContent {
         return httpVariableMarks.diagnostics();
     }
 
-    /** Injects what {@code {{} completion offers in a {@code .http} buffer (the environment, the file's folder). */
-    public void setHttpVariableContext(java.util.function.Supplier<com.editora.http.HttpVariableIndex.Context> c) {
-        completionActions.setHttpVariables(c);
-    }
-
-    /** Injects the handler run with a request's start line when its {@code .http} gutter ▶ is clicked. */
-    public void setHttpRunHandler(java.util.function.IntConsumer handler) {
-        this.httpRunHandler = handler == null ? i -> {} : handler;
-    }
-
-    /** Injects "run every request in this file" (the {@code .http} editor menu's Run All Requests). */
-    public void setHttpRunAllHandler(Runnable handler) {
-        this.httpRunAllHandler = handler == null ? () -> {} : handler;
-    }
-
-    /** Injects what a click on a running request's ■ does: cancel that run. */
-    public void setHttpCancelHandler(Runnable handler) {
-        this.httpCancelHandler = handler == null ? () -> {} : handler;
-    }
-
     /**
      * Shows request {@code index} (file order; -1 = none) as running: its ▶ becomes a ■ that cancels the run.
      * Cleared by the caller when the run ends, and here when the requests move (the mark would be stale).
      */
     public void setHttpRunning(int index) {
-        int before = httpRunningLine();
-        httpRunningIndex = index;
-        int after = httpRunningLine();
-        if (before != after) {
-            if (before >= 0) {
-                refreshGutterLine(before);
-            }
-            if (after >= 0) {
-                refreshGutterLine(after);
+        for (int line : httpGutter.setRunning(index, this::paragraphTextOrNull)) {
+            if (line >= 0) {
+                refreshGutterLine(line);
             }
         }
     }
 
-    /** The line of the running request's glyph, or -1. */
-    public int httpRunningLine() {
-        return httpRunningIndex >= 0 && httpRunningIndex < httpRequestLines.size()
-                ? httpRequestLines.get(httpRunningIndex)
-                : -1;
+    /**
+     * As {@link #setHttpRunning(int)} for request {@code index} of the text a run started with, whose method/URL
+     * line read {@code requestLine}: when the requests moved since, the one with that line is marked.
+     */
+    public void setHttpRunning(int index, String requestLine) {
+        setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
     }
 
-    /** Injects the hover text of a {@code .http} request ▶ (evaluated on hover; null = no tooltip). */
-    public void setHttpRunTooltip(java.util.function.Supplier<String> tooltip) {
-        this.httpRunTooltip = tooltip == null ? () -> null : tooltip;
+    private String paragraphTextOrNull(int line) {
+        return line >= 0 && line < area.getParagraphs().size()
+                ? area.getParagraph(line).getText()
+                : null;
+    }
+
+    /** The line of the running request's glyph, or -1. */
+    public int httpRunningLine() {
+        return httpGutter.runningLine();
     }
 
     /** True for a GNU Makefile buffer — each rule target line then shows a Run glyph ({@code make <target>}),
@@ -3691,7 +3677,7 @@ public class EditorBuffer implements TabContent {
             return true;
         }
         if (httpFeatureEnabled && isHttpFile()) {
-            return httpRequestLines.contains(line);
+            return httpGutter.isRequestLine(line);
         }
         if (isMakefile()) {
             return makeTargets.containsKey(line);
@@ -3709,11 +3695,8 @@ public class EditorBuffer implements TabContent {
         }
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
-            if (httpFeatureEnabled && isHttpFile() && line == httpRunningLine()) {
-                return tr("editmenu.cancelHttpRequest.tip"); // the running request's ■ cancels it
-            }
-            if (httpFeatureEnabled && isHttpFile() && httpRequestLines.contains(line)) {
-                return httpRunTooltip.get(); // "Run request (chord)": the ▶ is the request's run button
+            if (httpFeatureEnabled && isHttpFile()) {
+                return httpGutter.tooltip(line); // the ■ cancels, a ▶ runs its request (and names the chord)
             }
             return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
@@ -3730,11 +3713,7 @@ public class EditorBuffer implements TabContent {
         } else if (mainTarget != null) {
             mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
         } else if (httpFeatureEnabled && isHttpFile()) {
-            if (line == httpRunningLine()) {
-                httpCancelHandler.run(); // the ■ of the request in flight
-            } else {
-                httpRunHandler.accept(line);
-            }
+            httpGutter.click(line); // the ■ of the request in flight cancels it; a ▶ runs its request
         } else if (isMakefile()) {
             String target = makeTargets.get(line);
             if (target != null) {
@@ -3812,17 +3791,14 @@ public class EditorBuffer implements TabContent {
 
     private void applyRunScan(RunScan.Result now) {
         boolean changed = now.runnable() != runnable;
-        boolean linesChanged = !now.httpLines().equals(httpRequestLines)
+        boolean linesChanged = !now.httpLines().equals(httpGutter.requestLines())
                 || !now.makeTargets().equals(makeTargets)
                 || !now.testLines().equals(testLines)
                 || !now.mainLines().equals(mainLines);
         int oldLine = runLine;
-        if (!now.httpLines().equals(httpRequestLines)) {
-            httpRunningIndex = -1; // the requests moved: a running mark would now sit on the wrong one
-        }
         runnable = now.runnable();
         runLine = now.line();
-        httpRequestLines = now.httpLines();
+        httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
         makeTargets = now.makeTargets();
         testLines = now.testLines();
         mainLines = now.mainLines();

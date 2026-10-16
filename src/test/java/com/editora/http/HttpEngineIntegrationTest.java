@@ -226,7 +226,7 @@ class HttpEngineIntegrationTest {
         HttpFile.Parsed p = HttpFile.parseRequest(HttpFile.parse(fileText).get(0));
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        service.run(p, vars, dir, ex -> {
+        service.run(p, vars, dir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -241,15 +241,37 @@ class HttpEngineIntegrationTest {
     private List<HttpExchange> runAll(String fileText, Path dir) throws Exception {
         AtomicReference<List<HttpExchange>> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        svc.runAll(HttpFile.parse(fileText).stream().map(HttpFile::parseRequest).toList(), Map.of(), dir, all -> {
-            got.set(all);
-            done.countDown();
-        });
+        svc.runAll(
+                HttpFile.parse(fileText).stream().map(HttpFile::parseRequest).toList(),
+                Map.of(),
+                dir,
+                null,
+                HttpClientService.SecretGate.UNCHECKED,
+                null,
+                all -> {
+                    got.set(all);
+                    done.countDown();
+                });
         assertTrue(done.await(30, TimeUnit.SECONDS), "the run should have completed");
         return got.get();
     }
 
     // --- B3: a run always finishes ---------------------------------------------------------------------------
+
+    @Test
+    void aRunThatBreaksStillReportsWhatDidNotResolve(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("out.txt"), "previous");
+        svc.setRedirectGuard(target -> {
+            throw new AssertionError("guard exploded");
+        });
+        List<HttpExchange> all =
+                runAll("### first\nGET " + url("/dump") + "?n=1\nX-Missing: {{missing}}\n\n>>! out.txt\n", dir);
+        HttpResult r = all.get(0).result();
+        assertTrue(r.failed(), "the request failed unexpectedly");
+        assertTrue(
+                r.warnings().stream().anyMatch(w -> w.contains("{{missing}}")),
+                "the unresolved variable is still reported: " + r.warnings());
+    }
 
     @Test
     void anErrorThrownDuringARunIsReportedAndRunAllCarriesOn(@TempDir Path dir) throws Exception {
@@ -454,11 +476,11 @@ class HttpEngineIntegrationTest {
         HttpExchange ex = run(svc, "POST " + url("/dump") + "\n" + FORM, vars, dir);
 
         assertEquals(200, ex.result().status(), String.valueOf(ex.result().error()));
-        byte[] expected = Multipart.build(
+        byte[] expected = HttpFixtures.form(
                 Multipart.parse(HttpFile.parseRequest("POST /x\n" + FORM).body(), "XX"),
                 "XX",
                 dir,
-                t -> HttpVars.substitute(t, vars, java.time.LocalDateTime.now()));
+                t -> HttpFixtures.substitute(t, vars, java.time.ZonedDateTime.now()));
         assertArrayEquals(expected, lastBody.get(), "the streamed body is byte for byte the form");
         String saw = seen.get(0);
         assertTrue(saw.contains("content-length: " + expected.length + "\n"), saw);

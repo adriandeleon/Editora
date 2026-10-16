@@ -261,9 +261,9 @@ advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block 
 track record there.
 
 Remote development is checked against real SSH servers by `RealSshdProbeFxTest`, an opt-in probe that CI
-skips. The `Remote probe` workflow runs it on `macos-15` against that runner's own sshd, by hand or on a push
-to a `probe/**` branch; on Linux, run it against a private `sshd` or dropbear on localhost
-([remote](subsystems/remote.md)).
+skips. The `Remote probe` workflow runs it against macOS's own sshd on `macos-15` and against dropbear on
+`ubuntu-latest`, by hand or on a push to a `probe/**` branch; locally, run it against a private `sshd` or
+dropbear on localhost ([remote](subsystems/remote.md)).
 
 On Linux the suite runs as four shards, each on its own runner (the `tests` job in `ci.yml`), because in
 one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/shard_tests.py` deals
@@ -278,6 +278,14 @@ applies the coverage floors with `mvn -DskipTests verify`. To run one shard loca
 python3 scripts/shard_tests.py list 2 4 > target/shard-includes.txt
 mvn -Dsurefire.includesFile=target/shard-includes.txt test
 ```
+
+Dependencies come from the Maven cache that `actions/setup-java` restores, so a run should fetch little from
+Maven Central. A cache is saved once per key, by the first job to finish, so the Format job (which needs only
+Spotless) keeps a key of its own: the jobs that build and test hash `.mvn/maven.config` along with the poms
+(`cache-dependency-path`). When it shared their key it saved 20 MB of the 77 MB they need, and every Linux test
+job fetched the rest on every run. What is still fetched is retried: `.mvn/maven.config` gives Maven
+Resolver five tries and adds 500, 502 and 504 to the answers worth retrying (429 and 503 by default); a
+connection reset or closed before an answer is retried already. A transfer cut off mid-body is not.
 
 A plain `mvn verify` still runs everything in one JVM. Two consequences for a test: it must not depend on
 another class having run before it in the same JVM (which classes share a JVM changes whenever a test

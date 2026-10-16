@@ -347,6 +347,9 @@ public class App extends Application {
         System.setProperty("java.awt.headless", "true");
         // A .http request may set its own Host header (a virtual host tested by IP). The JDK reads this once, when
         // its HTTP classes first load — before any window exists — so it must be set here, ahead of everything.
+        // The property is process-wide: every java.net.http client in Editora (plugins, updates, GitHub) could now
+        // send a Host header. Only the HTTP Client takes headers from user content; RestrictedHostHeaderTest keeps
+        // every other caller from setting Host.
         com.editora.http.HttpClientService.allowHostHeader();
         com.editora.perf.Startup.mark(com.editora.perf.Startup.MAIN);
         // Capture java.util.logging output + uncaught exceptions in-memory so a packaged build (no

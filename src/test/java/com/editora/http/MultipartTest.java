@@ -47,7 +47,7 @@ class MultipartTest {
     void buildSubstitutesInlineAndSlurpsFiles(@TempDir Path dir) throws IOException {
         Files.writeString(dir.resolve("a.txt"), "FILE-CONTENT");
         List<Multipart.Part> parts = Multipart.parse(BODY, "X");
-        byte[] bytes = Multipart.build(parts, "X", dir, t -> t.replace("{{who}}", "world"));
+        byte[] bytes = HttpFixtures.form(parts, "X", dir, t -> t.replace("{{who}}", "world"));
         String wire = new String(bytes, StandardCharsets.UTF_8);
         assertTrue(wire.contains("--X\r\n"), wire);
         assertTrue(wire.contains("hello world"), wire);
@@ -61,7 +61,7 @@ class MultipartTest {
         String body = "--X\nContent-Disposition: form-data; name=\"{{field}}\"; filename=\"{{fname}}\"\n\n"
                 + "< ./{{fname}}\n--X--";
         String wire = new String(
-                Multipart.build(
+                HttpFixtures.form(
                         Multipart.parse(body, "X"),
                         "X",
                         dir,
@@ -113,7 +113,7 @@ class MultipartTest {
         assertEquals(body.length(), body.publisher().contentLength(), "Content-Length stays known");
         // The wire form is the one build() always produced.
         org.junit.jupiter.api.Assertions.assertArrayEquals(
-                Multipart.build(Multipart.parse(BODY, "X"), "X", dir, t -> t.replace("{{who}}", "world")), all);
+                HttpFixtures.form(Multipart.parse(BODY, "X"), "X", dir, t -> t.replace("{{who}}", "world")), all);
         String head = new String(all, 0, 120, StandardCharsets.ISO_8859_1);
         assertTrue(head.contains("hello world"), head);
     }
@@ -143,7 +143,7 @@ class MultipartTest {
                 Multipart.parse(form, "X"),
                 "X",
                 dir,
-                t -> HttpVars.substitute(t, vars, java.time.LocalDateTime.now()),
+                t -> HttpFixtures.substitute(t, vars, java.time.ZonedDateTime.now()),
                 new java.util.ArrayList<>());
         assertEquals("form-data; name=\"meta\"", body.parts().get(0).headers().get("Content-Disposition"));
         assertEquals("{\"who\":\"ada\"}", body.parts().get(0).text());

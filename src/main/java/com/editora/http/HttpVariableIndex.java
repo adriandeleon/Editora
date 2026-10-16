@@ -62,7 +62,8 @@ public final class HttpVariableIndex {
     /** At most this many problems are reported for one document (a file full of them needs no more). */
     public static final int MAX_PROBLEMS = 500;
 
-    private static final Pattern VAR = Pattern.compile("\\{\\{([^{}]*)\\}\\}");
+    /** The same {@code {{…}}} scanner a run uses, so a mark sits exactly where a reference is resolved. */
+    private static final Pattern VAR = HttpVars.referencePattern();
 
     /** The dynamic built-ins offered after {@code {{}, in the form they are usually written. */
     private static final List<String> DYNAMIC = List.of(

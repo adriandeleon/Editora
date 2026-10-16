@@ -5,6 +5,8 @@ import java.net.http.HttpRequest;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Prepares request headers for the JDK {@link HttpRequest} client, which is strict about what a header may
  * contain. Two problems this closes, both of which used to fail <em>silently</em> — the header was skipped
@@ -49,7 +51,7 @@ public final class HttpHeaders {
                 HttpRequest.newBuilder(PROBE).header(name, value); // the client's own validation
                 sendable.add(new String[] {name, value});
             } catch (IllegalArgumentException rejected) {
-                warnings.add("Header \"" + name + "\" was not sent: " + reason(rejected));
+                warnings.add(tr("http.header.notSent", name, reason(rejected)));
             }
         }
         return new Partition(sendable, warnings);
@@ -59,14 +61,14 @@ public final class HttpHeaders {
     private static String reason(IllegalArgumentException e) {
         String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase(java.util.Locale.ROOT);
         if (m.contains("restricted header name")) {
-            return "the HTTP client does not allow setting this header";
+            return tr("http.header.restricted");
         }
         if (m.contains("invalid header name")) {
-            return "the name contains an illegal character";
+            return tr("http.header.badName");
         }
         if (m.contains("invalid header value")) {
-            return "the value contains a control character or line break";
+            return tr("http.header.badValue");
         }
-        return "the header is not valid";
+        return tr("http.header.invalid");
     }
 }

@@ -64,7 +64,7 @@ class HttpRequestParseTest {
 
     @Test
     void rendererKeepsTheBodyAsReceivedAndAddsStatusFooter() {
-        HttpResult r = new HttpResult(
+        HttpResult r = HttpFixtures.text(
                 200,
                 java.util.List.<String[]>of(new String[] {"content-type", "application/json"}),
                 "{\"a\":1.50}",
@@ -83,7 +83,7 @@ class HttpRequestParseTest {
 
     @Test
     void rendererShowsErrorForFailedRequest() {
-        HttpResult r = new HttpResult(0, java.util.List.of(), "", "", 0, 0, "Connection refused");
+        HttpResult r = HttpFixtures.text(0, java.util.List.of(), "", "", 0, 0, "Connection refused");
         assertTrue(HttpResponseFormat.render(r).contains("Connection refused"));
     }
 
@@ -101,8 +101,8 @@ class HttpRequestParseTest {
         assertEquals("Content-Type", p.headers().get(0)[0]);
         assertEquals("", p.body(), "no body without the blank separator (spec-compliant)");
         assertTrue(
-                p.warning() != null && p.warning().contains("blank line"),
-                "the malformed shape is surfaced, not silently dropped: " + p.warning());
+                firstWarning(p) != null && firstWarning(p).contains("blank line"),
+                "the malformed shape is surfaced, not silently dropped: " + firstWarning(p));
     }
 
     // --- bodies that start with '<' (XML / HTML / SOAP) ----------------------------------------------
@@ -170,7 +170,7 @@ class HttpRequestParseTest {
         assertEquals(2, p.headers().size(), "only the two real headers");
         assertEquals("Accept", p.headers().get(0)[0]);
         assertEquals("X-Api-Key", p.headers().get(1)[0]);
-        assertNull(p.warning(), "a comment is not a malformed header");
+        assertNull(firstWarning(p), "a comment is not a malformed header");
     }
 
     @Test
@@ -181,7 +181,7 @@ class HttpRequestParseTest {
 
                 {"a": 1}""");
         assertEquals("{\"a\": 1}", p.body());
-        assertNull(p.warning());
+        assertNull(firstWarning(p));
     }
 
     @Test
@@ -195,6 +195,10 @@ class HttpRequestParseTest {
                 """);
         assertEquals(2, p.headers().size());
         assertEquals("https://x/y:8080", p.headers().get(1)[1]);
-        assertNull(p.warning());
+        assertNull(firstWarning(p));
+    }
+
+    private static String firstWarning(HttpFile.Parsed p) {
+        return p.warnings().isEmpty() ? null : p.warnings().get(0);
     }
 }

@@ -146,9 +146,19 @@ final class RunCoordinator {
         this.ops = ops;
     }
 
+    /** Follows the panel's run state once the panel exists (built on the first run, or the window's first open). */
+    private final javafx.beans.property.ReadOnlyBooleanWrapper running =
+            new javafx.beans.property.ReadOnlyBooleanWrapper(this, "running");
+
+    /** True while the Run console shows a live program or before-launch step — the tool window's busy badge. */
+    javafx.beans.property.ReadOnlyBooleanProperty runningProperty() {
+        return running.getReadOnlyProperty();
+    }
+
     RunPanel panel() {
         if (panel == null) {
             panel = new RunPanel(this::stopRun);
+            running.bind(panel.runningProperty());
             panel.setOnInput(service::sendInput); // stdin field → the running process
             panel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             panel.setOnUrl(ops::openUrl); // single-clicked HTTP(S) URL → browser

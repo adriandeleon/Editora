@@ -19,9 +19,14 @@ import java.util.zip.InflaterInputStream;
  * caller can say why the body looks the way it does. Pure, so it is unit-tested.
  *
  * <p>The size cap and the deadline apply to the <em>decoded</em> stream, so a small compressed body that
- * expands to gigabytes is still cut at the cap.
+ * expands to gigabytes is still cut at the cap. At most {@link #MAX_LAYERS} codings are undone: a header listing
+ * thousands of {@code gzip} codings would otherwise build that many nested decoders, and the first read would
+ * recurse through all of them. Closing the decoded stream ends every decoder's native inflater.
  */
 public final class ContentDecoding {
+
+    /** The most codings undone; a longer list is passed through undecoded (no real server stacks more than two). */
+    public static final int MAX_LAYERS = 4;
 
     private ContentDecoding() {}
 
@@ -39,8 +44,16 @@ public final class ContentDecoding {
         }
     }
 
-    /** The decoded stream, and the encoding left undecoded (null when everything was decoded). */
-    public record Decoded(InputStream stream, String undecoded) {}
+    /**
+     * The decoded stream, and the encoding left undecoded (null when everything was decoded); {@code tooManyLayers}
+     * when it was left undecoded because it lists more than {@link #MAX_LAYERS} codings.
+     */
+    public record Decoded(InputStream stream, String undecoded, boolean tooManyLayers) {
+
+        public Decoded(InputStream stream, String undecoded) {
+            this(stream, undecoded, false);
+        }
+    }
 
     /** Wraps {@code in} with decoders for {@code contentEncoding} (a header value, may be null). */
     public static Decoded decode(InputStream in, String contentEncoding) {
@@ -52,6 +65,9 @@ public final class ContentDecoding {
                     codings.add(t);
                 }
             }
+        }
+        if (codings.size() > MAX_LAYERS) {
+            return new Decoded(in, String.join(", ", codings), true);
         }
         for (String c : codings) {
             if (!supported(c)) {
@@ -89,7 +105,19 @@ public final class ContentDecoding {
             }
             p.unread(b0);
             boolean zlib = b1 >= 0 && (b0 & 0x0F) == 8 && ((b0 << 8) | b1) % 31 == 0;
-            return new InflaterInputStream(p, new Inflater(!zlib), 16 * 1024);
+            Inflater inflater = new Inflater(!zlib);
+            // An InflaterInputStream does not end an Inflater it was handed: end it here, or its native memory is
+            // held until the Inflater is collected.
+            return new InflaterInputStream(p, inflater, 16 * 1024) {
+                @Override
+                public void close() throws IOException {
+                    try {
+                        super.close();
+                    } finally {
+                        inflater.end();
+                    }
+                }
+            };
         }
         p.unread(b0);
         return new GZIPInputStream(p, 16 * 1024);
@@ -122,7 +150,11 @@ public final class ContentDecoding {
 
             @Override
             public void close() throws IOException {
-                in.close();
+                if (decoder != null) {
+                    decoder.close(); // ends its inflater, and closes the stream below it
+                } else {
+                    in.close();
+                }
             }
         };
     }

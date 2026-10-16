@@ -92,4 +92,34 @@ class ContentDecodingTest {
         d.stream().read();
         assertEquals(1, reads[0]);
     }
+
+    @Test
+    void atMostFourLayersAreUndoneAndALongerListIsPassedThrough() throws IOException {
+        byte[] four = gzip(gzip(gzip(gzip(TEXT))));
+        assertArrayEquals(TEXT, read(four, "gzip, gzip, gzip, gzip"));
+        InputStream in = new ByteArrayInputStream(gzip(four));
+        ContentDecoding.Decoded d = ContentDecoding.decode(in, "gzip, " + "gzip, ".repeat(3_000) + "gzip");
+        assertSame(in, d.stream(), "no nested decoders are built for a hostile header");
+        assertEquals(true, d.tooManyLayers());
+        assertEquals(false, ContentDecoding.decode(in, "gzip, gzip").tooManyLayers());
+    }
+
+    @Test
+    void closingTheDecodedStreamClosesTheDecoderAndTheBody() throws IOException {
+        for (String encoding : new String[] {"gzip", "deflate"}) {
+            boolean[] closed = {false};
+            byte[] body = encoding.equals("gzip") ? gzip(TEXT) : deflate(TEXT, true);
+            InputStream raw = new ByteArrayInputStream(body) {
+                @Override
+                public void close() {
+                    closed[0] = true;
+                }
+            };
+            InputStream decoded = ContentDecoding.decode(raw, encoding).stream();
+            assertEquals(TEXT[0], decoded.read());
+            decoded.close();
+            assertEquals(true, closed[0], encoding + ": the body under the decoder is closed");
+            assertThrows(Exception.class, decoded::read, encoding + ": the decoder (and its inflater) is done");
+        }
+    }
 }

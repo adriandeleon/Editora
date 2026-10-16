@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Reads the HTTP Client environment files ({@code http-client.env.json} and the git-ignored
@@ -55,11 +56,32 @@ public final class HttpEnv {
         }
         JsonNode pub = read(publicJson);
         JsonNode priv = read(privateJson);
-        putEnv(out, pub == null ? null : pub.get(SHARED));
-        putEnv(out, priv == null ? null : priv.get(SHARED));
-        putEnv(out, pub == null ? null : pub.get(environment));
-        putEnv(out, priv == null ? null : priv.get(environment));
+        // Merge the four layers as JSON first (nested objects key by key), then flatten once: a nested object's
+        // own {{name}} is then the merged object, the same one its {{name.key}} members come from.
+        ObjectNode merged = MAPPER.createObjectNode();
+        mergeInto(merged, pub == null ? null : pub.get(SHARED));
+        mergeInto(merged, priv == null ? null : priv.get(SHARED));
+        mergeInto(merged, pub == null ? null : pub.get(environment));
+        mergeInto(merged, priv == null ? null : priv.get(environment));
+        for (Map.Entry<String, JsonNode> e : merged.properties()) {
+            flatten(out, e.getKey(), e.getValue(), 0);
+        }
         return out;
+    }
+
+    /** Lays {@code layer}'s members over {@code target}: objects merge member by member, anything else replaces. */
+    private static void mergeInto(ObjectNode target, JsonNode layer) {
+        if (layer == null || !layer.isObject()) {
+            return;
+        }
+        for (Map.Entry<String, JsonNode> e : layer.properties()) {
+            JsonNode existing = target.get(e.getKey());
+            if (existing instanceof ObjectNode existingObject && e.getValue().isObject()) {
+                mergeInto(existingObject, e.getValue());
+            } else {
+                target.set(e.getKey(), e.getValue().deepCopy());
+            }
+        }
     }
 
     private static JsonNode read(String json) {
@@ -71,14 +93,6 @@ public final class HttpEnv {
             return root != null && root.isObject() ? root : null;
         } catch (Exception e) {
             return null; // malformed → contributes nothing (non-fatal)
-        }
-    }
-
-    private static void putEnv(Map<String, String> out, JsonNode env) {
-        if (env != null && env.isObject()) {
-            for (Map.Entry<String, JsonNode> e : env.properties()) {
-                flatten(out, e.getKey(), e.getValue(), 0);
-            }
         }
     }
 

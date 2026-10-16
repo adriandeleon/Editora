@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -47,6 +49,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private final Label status = new Label();
     /** Spins while a program (or a before-launch step) is running, so a quiet long run still looks alive. */
     private final ProgressIndicator busy = busySpinner();
+    /** Whether a program (or before-launch step) is alive — the Run tool window's stripe button follows it. */
+    private final ReadOnlyBooleanWrapper running = new ReadOnlyBooleanWrapper(this, "running");
 
     private final CodeArea output = AreaUndo.none(new CodeArea());
     private final TextField input = new TextField();
@@ -283,6 +287,12 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         stopButton.setDisable(!running);
         input.setDisable(!running);
         showSpinner(busy, running);
+        this.running.set(running);
+    }
+
+    /** True from {@link #started} until {@link #finished}, {@link #failed} or {@link #idle}. */
+    public ReadOnlyBooleanProperty runningProperty() {
+        return running.getReadOnlyProperty();
     }
 
     @Override
