@@ -23,7 +23,8 @@ public final class RunConfigToolbar {
     /**
      * Whether to show the run-configuration group.
      *
-     * <p>Hidden in Simple UI mode, which strips the toolbar to essentials regardless of the context.
+     * <p>Hidden in Simple UI mode, which strips the toolbar to essentials regardless of the context, and
+     * outside a project, where {@link #launchable} is false and the caller counts no saved configurations.
      *
      * <p><b>Saved configurations always win.</b> Anything already saved must stay reachable, or the gate
      * strands it: a plain Java folder with no build file at all can hold a run configuration (saving one only
@@ -48,13 +49,10 @@ public final class RunConfigToolbar {
      * under the project root, or a makefile at the root itself. A folder of notes is not launchable just
      * because a sibling checkout above it has a {@code pom.xml}.
      *
-     * <p>With no project, any detected marker counts — the build tool's own notion of context is the best
-     * available when there is nothing to anchor to, and it is already what the build tool windows gate on.
-     * (This was originally justified by the Projects feature being off by default; it now ships on, but the
-     * branch still carries the no-project window, {@code --single-window}/{@code --no-session} launches and
-     * anyone who opens a Maven checkout as loose files rather than as a project, where the group is exactly
-     * what they want. It is the one path by which the group can appear for a folder that is not itself a
-     * project: a build file <em>above</em> the open file is enough.)
+     * <p>With no project, never. Run configurations belong to projects, so the No Project window launches
+     * only from the gutter ▶ (a script, a compact Java file). It used to count any build marker detected
+     * above the open file, which put a Maven checkout opened as loose files in reach of the group — and with
+     * it a global list of configurations that no project owned.
      *
      * @param projectRoot the window's project root, or null when it has none
      * @param markerRoot where a build tool's marker file was detected, or null when none was
@@ -62,7 +60,7 @@ public final class RunConfigToolbar {
      */
     public static boolean launchable(Path projectRoot, Path markerRoot, boolean makefileAtProjectRoot) {
         if (projectRoot == null) {
-            return markerRoot != null;
+            return false;
         }
         return makefileAtProjectRoot || withinProject(projectRoot, markerRoot);
     }

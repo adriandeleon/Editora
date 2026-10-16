@@ -93,6 +93,7 @@ class ComboItemsMutationFxTest {
     void theRunConfigSelectorRebuildsItsRowsInOneAssignment() throws Exception {
         FxWindowFixture fx = FxWindowFixture.create();
         try {
+            fx.useProject(); // the selector is a project window's
             ComboBox<RunConfiguration> combo = FxTestSupport.field(fx.controller, "runConfigCombo");
             java.util.List<Integer> sizes = new java.util.ArrayList<>();
             FxTestSupport.runOnFx(

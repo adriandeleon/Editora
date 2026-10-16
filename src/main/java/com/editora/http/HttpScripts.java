@@ -98,6 +98,60 @@ public final class HttpScripts {
         };
     }
 
+    /**
+     * The flags that make Node wait for a debugger on a free 127.0.0.1 port: {@code --inspect-brk}, and under the
+     * permission model {@code --allow-inspector}, without which Node ignores it (adl, 2026-10-16: Debug Request only) —
+     * with the security warning that flag prints silenced where Node can ({@code --disable-warning}: 20.11+, 21.3+), so
+     * the Debug console does not open on it.
+     */
+    public static List<String> debugFlags(Guard guard, int[] version) {
+        if (guard == Guard.NONE) {
+            return List.of("--inspect-brk=127.0.0.1:0");
+        }
+        List<String> flags = new ArrayList<>(List.of("--allow-inspector"));
+        if (disablesWarnings(version)) {
+            flags.add("--disable-warning=SecurityWarning");
+        }
+        flags.add("--inspect-brk=127.0.0.1:0");
+        return flags;
+    }
+
+    /**
+     * Whether Node {@code version} lets a debugger in under its permission model: {@code --allow-inspector} exists from
+     * 24.12 (and 25.0). Before that the permission model shuts the inspector with no way to open it, so a debugged
+     * script runs without the permission model there (adl, 2026-10-16), and says so.
+     */
+    public static boolean allowsInspector(int[] version) {
+        if (version == null || version.length < 2) {
+            return false;
+        }
+        return version[0] >= 25 || (version[0] == 24 && version[1] >= 12);
+    }
+
+    /**
+     * Every flag a script's Node gets before the shim: the permission model for {@code guard} letting it read only
+     * {@code shim}, and for a {@code debug} run the inspector flags — on a Node that cannot let a debugger in under its
+     * permission model ({@link #allowsInspector}), without the permission model (adl, 2026-10-16).
+     */
+    public static List<String> launchFlags(Guard guard, int[] version, Path shim, boolean debug) {
+        Guard g = debug && guard != Guard.NONE && !allowsInspector(version) ? Guard.NONE : guard;
+        List<String> out = new ArrayList<>(flags(g, shim));
+        if (debug) {
+            out.addAll(debugFlags(g, version));
+        }
+        return out;
+    }
+
+    /** Whether Node {@code version} takes {@code --disable-warning} (20.11+, 21.3+, 22+). */
+    static boolean disablesWarnings(int[] version) {
+        if (version == null || version.length < 2) {
+            return false;
+        }
+        int major = version[0];
+        int minor = version[1];
+        return major >= 22 || (major == 21 && minor >= 3) || (major == 20 && minor >= 11);
+    }
+
     /** The environment Node is started with: {@code inherited} reduced to {@link #KEPT}, with {@code path} as PATH. */
     public static Map<String, String> environment(Map<String, String> inherited, String path, boolean windows) {
         Map<String, String> env = new LinkedHashMap<>();

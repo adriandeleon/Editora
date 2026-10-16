@@ -80,6 +80,33 @@ final class RunConfigurationCoordinator {
     }
 
     /**
+     * Whether this window can have run configurations at all: only a project window can.
+     *
+     * <p>A run configuration is a project's launch — its build, its working folder, its shared
+     * {@code .editora/run-configurations.json}. The No Project window has none of that, so there a launch is
+     * the gutter ▶ on a script or a compact Java file and nothing more: no toolbar group, no saved list, no
+     * per-configuration commands. Configurations the global session saved before this rule stay in its state
+     * untouched; they are only not offered.
+     */
+    boolean available() {
+        return host.windowProjectRoot() != null;
+    }
+
+    /** This window's saved run configurations — none outside a project (see {@link #available()}). */
+    List<com.editora.config.RunConfiguration> savedConfigs() {
+        return available() ? List.copyOf(host.config().getWorkspaceState().getRunConfigurations()) : List.of();
+    }
+
+    /** True, after saying why, when this window has no project to hold run configurations. */
+    private boolean refuseWithoutProject() {
+        if (available()) {
+            return false;
+        }
+        host.setStatus(tr("status.run.configsNeedProjectWindow"));
+        return true;
+    }
+
+    /**
      * The dropdown's trailing "Edit Configurations…" row.
      *
      * <p>A sentinel item rather than a fifth toolbar button: the dropdown is where you already are when you
@@ -149,6 +176,9 @@ final class RunConfigurationCoordinator {
 
     /** {@code run.config}: pick a saved configuration and run it. */
     void runSavedConfig() {
+        if (refuseWithoutProject()) {
+            return;
+        }
         if (host.config().getWorkspaceState().getRunConfigurations().isEmpty()) {
             host.setStatus(tr("status.run.noConfigs"));
             return;
@@ -170,6 +200,9 @@ final class RunConfigurationCoordinator {
 
     /** {@code debug.config}: pick a saved configuration and debug it — the same entries, the other verb. */
     void debugSavedConfig() {
+        if (refuseWithoutProject()) {
+            return;
+        }
         if (host.config().getWorkspaceState().getRunConfigurations().isEmpty()) {
             host.setStatus(tr("status.run.noConfigs"));
             return;
@@ -260,8 +293,7 @@ final class RunConfigurationCoordinator {
      * Settings page edits the same list).
      */
     void refreshRunConfigs() {
-        List<com.editora.config.RunConfiguration> configs =
-                List.copyOf(host.config().getWorkspaceState().getRunConfigurations());
+        List<com.editora.config.RunConfiguration> configs = savedConfigs(); // none in the No Project window
 
         // Drop stale synthetic commands before re-registering, or a renamed configuration would leave its old
         // id behind in the palette pointing at something that no longer exists. Both prefixes: missing one
@@ -345,7 +377,7 @@ final class RunConfigurationCoordinator {
         boolean show = com.editora.run.RunConfigToolbar.visible(
                 host.chrome().simpleModeActive(),
                 isLaunchableContext(),
-                host.config().getWorkspaceState().getRunConfigurations().size());
+                savedConfigs().size());
         for (Node n : new Node[] {
             host.runConfigCombo(), host.runConfigRunButton(), host.runConfigDebugButton(), host.runConfigStopButton()
         }) {
@@ -431,6 +463,9 @@ final class RunConfigurationCoordinator {
      * nothing selected it opens the page, which is also how you create the first configuration.
      */
     void editRunConfigs() {
+        if (refuseWithoutProject()) {
+            return;
+        }
         com.editora.config.RunConfiguration selected =
                 host.runConfigCombo() == null ? null : host.runConfigCombo().getValue();
         String name = selected == null || selected == EDIT_CONFIGS_ROW ? null : selected.name();
@@ -464,6 +499,9 @@ final class RunConfigurationCoordinator {
     }
 
     void saveRunConfig() {
+        if (refuseWithoutProject()) {
+            return;
+        }
         EditorBuffer b = host.activeBuffer();
         // A Python or shell script saves as a script configuration (it used to say "Open a Java file").
         com.editora.config.RunConfiguration script = host.suggestedScriptConfiguration();
@@ -566,6 +604,9 @@ final class RunConfigurationCoordinator {
 
     /** {@code run.deleteConfig}: pick a saved run configuration and remove it. */
     void deleteRunConfig() {
+        if (refuseWithoutProject()) {
+            return;
+        }
         if (host.config().getWorkspaceState().getRunConfigurations().isEmpty()) {
             host.setStatus(tr("status.run.noConfigs"));
             return;

@@ -116,6 +116,14 @@ final class HttpClientCoordinator {
         default Path scriptCacheDir() {
             return null;
         }
+
+        /**
+         * The window's JavaScript debugger for Debug Request (it attaches to a script waiting on an inspector port),
+         * or null when JavaScript debugging is not available here — not enabled, or js-debug not installed.
+         */
+        default com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+            return null;
+        }
     }
 
     private final CoordinatorHost host;
@@ -386,8 +394,63 @@ final class HttpClientCoordinator {
         runIndex(buffer, index);
     }
 
+    /**
+     * {@code http.debugRequest}: runs the request at the caret with its pre-request scripts and response handlers
+     * under the JavaScript debugger — each script waits for it, and stops at the breakpoints set in the {@code .http}
+     * file's script lines or in a script file. Says why when there is nothing to debug or no debugger to use.
+     */
+    void debugRequestAtCaret() {
+        ifHttp(() -> {
+            EditorBuffer b = host.activeBuffer();
+            if (b == null || !b.isHttpFile()) {
+                host.setStatus(tr("status.http.noRequest"));
+                return;
+            }
+            debugRequest(b, b.getArea().getCurrentParagraph());
+        });
+    }
+
+    /** Debug Request for the request whose section holds 0-based {@code line} of {@code b} (the editor menu). */
+    void debugRequest(EditorBuffer b, int line) {
+        ifHttp(() -> {
+            if (!isEnabled()) {
+                host.setStatus(disabledMessage());
+                return;
+            }
+            if (refuseRemote(b)) {
+                return;
+            }
+            int index = HttpFile.requestIndexAt(b.getContent(), line);
+            if (index < 0) {
+                host.setStatus(tr("status.http.noRequest"));
+                return;
+            }
+            HttpFile.Parsed parsed =
+                    HttpFile.parseRequest(HttpFile.parse(b.getContent()).get(index));
+            if (parsed.handlers().isEmpty() && parsed.preScripts().isEmpty()) {
+                host.setStatus(tr("status.http.debugNoScript"));
+                return;
+            }
+            if (!host.settings().isHttpScriptsEnabled()) {
+                host.setStatus(tr("status.http.debugScriptsOff"));
+                return;
+            }
+            com.editora.http.NodeResponseScripts.Debugger debugger = ops.scriptDebugger();
+            if (debugger == null) {
+                host.setStatus(tr("status.http.debugUnavailable"));
+                return;
+            }
+            runIndex(b, index, debugger);
+        });
+    }
+
     /** Runs request {@code index} (0-based, in file order) of {@code buffer}. */
     private void runIndex(EditorBuffer buffer, int index) {
+        runIndex(buffer, index, null);
+    }
+
+    /** As {@link #runIndex(EditorBuffer, int)}, its scripts under {@code debugger} when it is not null. */
+    private void runIndex(EditorBuffer buffer, int index, com.editora.http.NodeResponseScripts.Debugger debugger) {
         if (refuseRemote(buffer)) {
             return;
         }
@@ -430,7 +493,7 @@ final class HttpClientCoordinator {
                 baseDir,
                 session,
                 HttpSecretGate.forBuffer(buffer, ops),
-                HttpScriptGate.forBuffer(buffer, ops, host.settings()),
+                HttpScriptGate.forBuffer(buffer, ops, host.settings(), debugger),
                 ex -> {
                     if (running.remove(buffer, run[0])) {
                         finishRun(
@@ -641,7 +704,7 @@ final class HttpClientCoordinator {
                     baseDir,
                     session,
                     HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
-                    HttpScriptGate.forBuffer(b, ops, host.settings()), // so is the folder, if any has a handler
+                    HttpScriptGate.forBuffer(b, ops, host.settings(), null), // so is the folder, if any has a script
                     i -> {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {

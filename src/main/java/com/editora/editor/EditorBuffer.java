@@ -1867,6 +1867,13 @@ public class EditorBuffer implements TabContent {
                 MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
                 runAll.setOnAction(ev -> httpGutter.hooks().runAll().run());
                 items.addAll(java.util.List.of(runRequest, runAll));
+                if (httpDebugHandler != null
+                        && com.editora.http.HttpScriptLines.requestHasScripts(getContent(), at.line())) {
+                    MenuItem debugRequest = new MenuItem(tr("editmenu.debugHttpRequest"));
+                    debugRequest.setGraphic(MenuIcons.debug());
+                    debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
+                    items.add(debugRequest);
+                }
                 items.add(new SeparatorMenuItem());
             } else if (runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -2717,6 +2724,26 @@ public class EditorBuffer implements TabContent {
             todoStripe().setMarks(marks);
         }
         minimap.setTodoMarks(marks);
+        todoMarks = java.util.Collections.unmodifiableList(marks);
+        if (onTodoMarksChanged != null) {
+            onTodoMarksChanged.run();
+        }
+    }
+
+    /** The last applied TODO/highlight marks (empty when off, unscanned, or a huge file). */
+    private java.util.List<TodoMark> todoMarks = java.util.List.of();
+
+    private Runnable onTodoMarksChanged;
+
+    /** The TODO/highlight marks currently shown in this buffer (read-only; empty when the highlight is off). */
+    public java.util.List<TodoMark> todoMarks() {
+        return todoMarks;
+    }
+
+    /** Called on the FX thread after every TODO re-scan of this buffer is applied (on load, after debounced
+     *  edits, and when the patterns or the on/off setting change), whether or not the marks changed. */
+    public void setOnTodoMarksChanged(Runnable callback) {
+        this.onTodoMarksChanged = callback;
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -3528,6 +3555,14 @@ public class EditorBuffer implements TabContent {
      * Injects what this {@code .http} buffer asks of the window ({@link HttpHooks}): running, Run All, cancel, the ▶
      * tooltip, the {@code {{variable}}} check and the {@code {{} completion context. Null clears them.
      */
+    /** Debug Request for the request at a 0-based line (the editor menu); null when there is none to offer. */
+    private java.util.function.IntConsumer httpDebugHandler;
+
+    /** Sets what the editor menu's Debug Request does with the request at a line (null removes the item). */
+    public void setHttpDebugHandler(java.util.function.IntConsumer handler) {
+        this.httpDebugHandler = handler;
+    }
+
     public void setHttpHooks(HttpHooks hooks) {
         httpGutter.setHooks(hooks);
         HttpHooks set = httpGutter.hooks();
@@ -4245,7 +4280,9 @@ public class EditorBuffer implements TabContent {
     public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
         java.util.Map<String, String> shown = hugeFile ? null : values;
         if ((shown != null && !shown.isEmpty()) || inlineValues != null) {
-            inlineValues().setValues(shown, frameLine);
+            // In a .http file only its script lines are the script's; a request body's "user" is not that variable.
+            java.util.BitSet script = isHttpFile() ? com.editora.http.HttpScriptLines.of(getContent()) : null;
+            inlineValues().setValues(shown, frameLine, script == null ? null : script::get);
         }
     }
 

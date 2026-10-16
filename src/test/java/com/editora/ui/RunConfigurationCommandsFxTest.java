@@ -400,6 +400,7 @@ class RunConfigurationCommandsFxTest {
             coordinator = new RunConfigurationCoordinator(new Host());
             coordinator.runConfigEditor = name -> opened.add("editor:" + name);
         });
+        projectRoot = Files.createDirectories(dir.resolve("proj")); // run configurations are a project's
     }
 
     @AfterEach
@@ -490,6 +491,37 @@ class RunConfigurationCommandsFxTest {
 
         String none = tr("status.run.noConfigs");
         assertEquals(List.of(none, none, none), statuses);
+    }
+
+    /**
+     * The No Project window has no run configurations: every command that would list, save, edit or delete one
+     * says so instead — even with a list in the global session's state, which is kept, not shown and not
+     * dropped. Launching a file from the gutter is the whole story there.
+     */
+    @Test
+    void withoutAProjectEveryConfigurationCommandSaysItNeedsOne() throws Exception {
+        configurations(script("Deploy"));
+        projectRoot = null;
+        buffer(dir.resolve("src/demo/Server.java"), "package demo;\nclass Server {}\n");
+        suggested = "demo.Server";
+        promptAnswer = "Server";
+        FxTestSupport.runOnFx(() -> {
+            coordinator.refreshRunConfigs();
+            coordinator.runSavedConfig();
+            coordinator.debugSavedConfig();
+            coordinator.deleteRunConfig();
+            coordinator.saveRunConfig();
+            coordinator.editRunConfigs();
+            assertNull(picker(), "no picker is shown");
+        });
+
+        String needs = tr("status.run.configsNeedProjectWindow");
+        assertEquals(List.of(needs, needs, needs, needs, needs), statuses);
+        assertEquals(List.of(), prompts, "nothing asked for a name");
+        assertEquals(List.of(), opened, "the Run Configurations window stays shut");
+        assertEquals(List.of("Deploy"), names(), "the saved list is untouched");
+        assertTrue(registry.get(RunConfiguration.commandIdFor("Deploy")).isEmpty(), "and has no commands here");
+        assertEquals(List.of(), FxTestSupport.callOnFx(coordinator::savedConfigs));
     }
 
     @Test
@@ -637,6 +669,7 @@ class RunConfigurationCommandsFxTest {
 
     @Test
     void exportAndImportNeedAProjectAndSomethingToMove() throws Exception {
+        projectRoot = null;
         FxTestSupport.runOnFx(() -> {
             coordinator.exportRunConfigs();
             coordinator.importRunConfigs();

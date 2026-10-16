@@ -1223,9 +1223,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             // After whoever opened this window has had the chance to hand it credentials of its own.
             Platform.runLater(() -> remoteCoordinator.promptReconnectIfNeeded());
         }
-        // This window now knows its project, which is half of what gates the run-config group; the other
-        // half (marker detection) re-runs on the tab-selection and focus-regain paths.
-        runConfigurations.refreshRunConfigToolbar();
+        // This window now knows its project, which decides whether it has run configurations at all (the
+        // selector, its per-configuration commands) and half of what gates the toolbar group; the other half
+        // (marker detection) re-runs on the tab-selection and focus-regain paths.
+        runConfigurations.refreshRunConfigs();
     }
 
     /**
@@ -2466,6 +2467,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void openToolWindow() {
                         toolWindows.open(debugToolWindow);
+                    }
+
+                    @Override
+                    public void debugHttpRequest() {
+                        httpClient.debugRequestAtCaret();
                     }
 
                     @Override
@@ -5989,7 +5995,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public List<com.editora.config.RunConfiguration> runConfigurations() {
-            return List.copyOf(config.getWorkspaceState().getRunConfigurations());
+            return runConfigurations.savedConfigs(); // none in the No Project window: the gutter ▶ runs plain
         }
 
         @Override
@@ -6368,6 +6374,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public Path scriptCacheDir() {
                     return config.getConfigDir().resolve("cache").resolve("http-scripts");
+                }
+
+                @Override
+                public com.editora.http.NodeResponseScripts.Debugger scriptDebugger() {
+                    if (debugCoordinator == null || !debugCoordinator.debugEffectiveFor("javascript")) {
+                        return null;
+                    }
+                    // Told on a launcher thread once the script waits; the session starts on the FX thread.
+                    return (port, label, shim, unguarded) ->
+                            Platform.runLater(() -> debugCoordinator.attachHttpScript(port, label, shim, unguarded));
                 }
             });
 
@@ -7713,6 +7729,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)
+        // No-project window: the TODO window shows only the active tab and hides while it has no TODOs.
+        buffer.setOnTodoMarksChanged(() -> {
+            if (activeBuffer() == buffer) {
+                updateTodoToolWindow();
+                todoCoordinator.activeBufferTodosChanged(buffer);
+            }
+        });
         // Refresh the Run button when this buffer's runnable status flips (only acts if it's active).
         buffer.setOnRunnableChanged(() -> {
             if (activeBuffer() == buffer) {
@@ -7746,6 +7769,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> httpRunTooltip(keymap),
                 null,
                 null));
+        buffer.setHttpDebugHandler(line -> httpClient.debugRequest(buffer, line)); // editor menu → Debug Request
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
@@ -8772,6 +8796,37 @@ public class MainController implements com.editora.mcp.McpBridge {
      * on); External Tools needs a buffer and to not be in Simple mode. Uses transient
      * {@code setAvailable} (never persisted), so the user's show/hide preference is preserved.
      */
+    /** Set when the no-project window hid an open TODO window because the active tab has no TODOs, so it
+     *  comes back (unfocused) on the next tab that has some; a user close clears it by never setting it. */
+    private boolean todoReopenWhenAvailable;
+
+    /**
+     * Gates the TODO window on the active buffer: any buffer in a project window; in the no-project window
+     * only a saved one with TODO matches (see {@link TodoCoordinator#availableFor}). Re-run on every tab
+     * switch and on the active buffer's TODO re-scans, so it hides and returns as TODOs come and go.
+     */
+    private void updateTodoToolWindow() {
+        if (todoToolWindow == null) {
+            return;
+        }
+        boolean available = todoCoordinator.availableFor(activeBuffer());
+        if (!available) {
+            if (toolWindows.isOpen(todoToolWindow)) {
+                todoReopenWhenAvailable = todoCoordinator.activeTabOnly();
+            }
+            toolWindows.setAvailable(todoToolWindow, false); // reconciles every call (see setAvailable)
+            return;
+        }
+        toolWindows.setAvailable(todoToolWindow, true);
+        if (todoReopenWhenAvailable) {
+            todoReopenWhenAvailable = false;
+            if (!toolWindows.isOpen(todoToolWindow)) {
+                toolWindows.open(todoToolWindow, false); // unfocused: the user is typing in or switching tabs
+                todoCoordinator.refreshPanelIfOpenQuietly();
+            }
+        }
+    }
+
     void updateBufferToolWindows() {
         EditorBuffer b = activeBuffer();
         boolean buffer = b != null;
@@ -8784,9 +8839,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (undoHistoryToolWindow != null) {
             toolWindows.setAvailable(undoHistoryToolWindow, buffer);
         }
-        if (todoToolWindow != null) {
-            toolWindows.setAvailable(todoToolWindow, buffer);
-        }
+        updateTodoToolWindow();
         previews.activeBufferChanged(b); // the Markdown Lint window follows the active tab
         indexCoordinator.backlinks.activeBufferChanged(b);
         if (externalToolToolWindow != null) {
