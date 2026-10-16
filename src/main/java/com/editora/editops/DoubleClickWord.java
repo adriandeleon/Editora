@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
  *   <li>a decimal point between two numbers ({@code 3.14}) — in every language;
  *   <li>an apostrophe between two letters ({@code don't}, {@code l’été}) — in prose only, where it is not a
  *       quote character;
- *   <li>a hyphen between two word runs ({@code margin-top}) — only where the language's identifiers contain
- *       hyphens.
+ *   <li>a hyphen between two word runs ({@code margin-top}, a shell {@code --long-flag}, {@code a-b.sh} or
+ *       {@code my-func}) — only where the language's words contain hyphens ({@link #hyphenated}).
  * </ul>
  */
 public final class DoubleClickWord {
@@ -23,6 +23,11 @@ public final class DoubleClickWord {
     private static final Pattern RUN = Pattern.compile("\\w+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private DoubleClickWord() {}
+
+    /** Whether {@code language}'s words take hyphens: CSS properties, and shell names, flags and file names. */
+    public static boolean hyphenated(String language) {
+        return "css".equals(language) || "shell".equals(language);
+    }
 
     /**
      * @param line       the paragraph text
