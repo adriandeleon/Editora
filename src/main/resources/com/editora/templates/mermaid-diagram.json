@@ -1,0 +1,15 @@
+{
+  "name": "Mermaid Diagram",
+  "description": "A Mermaid flowchart to start from (the preview renders it as you type)",
+  "language": "mermaid",
+  "fileName": "${baseName:diagram}.mmd",
+  "body": [
+    "flowchart TD",
+    "    start([Start]) --> check{Does it work?}",
+    "    check -- Yes --> done([Done])",
+    "    check -- No --> fix[Fix it]",
+    "    fix --> check${cursor}",
+    "",
+    "%% Other diagram types: sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap"
+  ]
+}

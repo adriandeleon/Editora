@@ -1,0 +1,18 @@
+{
+  "name": "Blog Post",
+  "description": "A dated Markdown post with YAML front matter (Astro, Hugo, Jekyll and similar)",
+  "language": "markdown",
+  "fileName": "${date}-${slug:my-post}.md",
+  "body": [
+    "---",
+    "title: \"${title:Post title}\"",
+    "description: \"${description:A one-sentence summary for previews and feeds.}\"",
+    "date: ${date}",
+    "author: \"${author}\"",
+    "tags: []",
+    "draft: true",
+    "---",
+    "",
+    "${cursor}"
+  ]
+}

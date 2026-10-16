@@ -77,6 +77,567 @@ main() {
 
 main "$@"
 --- end
+=== java-junit-test
+--- Widget.java caret=151
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class Widget {
+
+    @Test
+    void works() {
+        assertEquals(2, 1 + 1);
+    }
+}
+--- end
+=== java-script
+--- sample caret=142
+#!/usr/bin/env -S java --source 25
+// Sum
+// Run it as ./sample [arguments] — no compile step, no build file.
+
+void main(String[] args) {
+    IO.println("Hello from sample");
+}
+--- end
+=== python-test
+--- sample.py caret=151
+"""Tests for Sum."""
+
+import pytest
+
+
+@pytest.fixture
+def numbers() -> list[int]:
+    return [1, 2, 3]
+
+
+def test_sum(numbers: list[int]) -> None:
+    assert sum(numbers) == 6
+--- end
+=== typst-document
+--- sample.typ caret=283
+#set document(title: "My Title", author: "Ada")
+#set page(paper: "a4", margin: 2.5cm, numbering: "1")
+#set text(size: 11pt)
+#set heading(numbering: "1.")
+#set par(justify: true)
+
+#align(center)[
+  #text(18pt, weight: "bold")[My Title]
+  #v(4pt)
+  Ada · 2026-01-02
+]
+
+= Introduction
+
+
+--- end
+=== mermaid-diagram
+--- sample.mmd caret=140
+flowchart TD
+    start([Start]) --> check{Does it work?}
+    check -- Yes --> done([Done])
+    check -- No --> fix[Fix it]
+    fix --> check
+
+%% Other diagram types: sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap
+--- end
+=== markwhen-timeline
+--- sample.mw caret=373
+---
+title: My Title
+#Milestone: #F44336
+#Work: #2196F3
+---
+
+// One event per line: a date or a range (start / end), a colon, then the text. #Tags colour events.
+
+# First half
+2026-01-15: Kick-off #Milestone
+2026-02 / 2026-04: Design and prototype #Work
+2026-05 / 2026-06: Build the first version #Work
+
+# Second half
+2026-07-01: First release #Milestone
+2026-08 / 2026-11: Next phase #Work
+2026-12-15: Year-end review #Milestone
+--- end
+=== dockerfile
+--- Dockerfile caret=642
+# syntax=docker/dockerfile:1
+
+# Build stage: resolve dependencies first (cached while pom.xml is unchanged), then package.
+FROM maven:3-eclipse-temurin-25 AS build
+WORKDIR /src
+COPY pom.xml .
+RUN mvn -B -q dependency:go-offline
+COPY src ./src
+RUN mvn -B -q package -DskipTests
+
+# Runtime stage: only the JRE and the application jar, run as an unprivileged user.
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+RUN useradd --system --uid 10001 app
+# The jar Maven builds: set <finalName>app</finalName> in pom.xml, or change the name here.
+COPY --from=build /src/target/app.jar app.jar
+USER app
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+--- end
+=== readme
+--- README.md caret=119
+# Proj
+
+Desc
+
+## Getting started
+
+What to install, and how to build and run the project for the first time.
+
+## Usage
+
+
+
+## Contributing
+
+Pull requests are welcome. For a large change, please open an issue first to discuss it.
+
+## License
+
+See [LICENSE](LICENSE).
+--- end
+=== changelog
+--- CHANGELOG.md caret=279
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- 
+
+### Changed
+
+### Fixed
+--- end
+=== adr
+--- sample.md caret=91
+# My Title
+
+- **Status:** Proposed
+- **Date:** 2026-01-02
+- **Deciders:** Ada
+
+## Context
+
+What problem or force makes a decision necessary now?
+
+## Decision
+
+What we will do.
+
+## Consequences
+
+What becomes easier, what becomes harder, and what we will have to watch.
+
+## Alternatives considered
+
+- Option — why it was not chosen.
+--- end
+=== blog-post
+--- 2026-01-02-my-post.md caret=99
+---
+title: "My Title"
+description: "Desc"
+date: 2026-01-02
+author: "Ada"
+tags: []
+draft: true
+---
+
+
+--- end
+=== meeting-notes
+--- 2026-01-02-meeting.md caret=79
+# My Title — 2026-01-02
+
+- **Time:** 03:04
+- **Attendees:** Ada
+
+## Agenda
+
+1. 
+
+## Notes
+
+## Decisions
+
+## Action items
+
+- [ ] Who — what — by when
+--- end
+=== license-mit
+--- LICENSE caret=1059
+MIT License
+
+Copyright (c) 2026 Ada
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--- end
+=== license-apache
+--- LICENSE caret=11357
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+--- end
+=== gitignore-java
+--- .gitignore caret=354
+# Build output
+target/
+build/
+out/
+*.class
+
+# Packaged artifacts (the Gradle wrapper jar stays tracked)
+*.jar
+*.war
+*.ear
+!gradle/wrapper/gradle-wrapper.jar
+
+# Gradle
+.gradle/
+
+# Logs and JVM crash files
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# Editors and OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+--- end
+=== gitignore-python
+--- .gitignore caret=365
+# Bytecode and native extensions
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments and local settings
+.venv/
+venv/
+.env
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test, type-check and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors and OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+--- end
+=== gitignore-node
+--- .gitignore caret=287
+# Dependencies
+node_modules/
+
+# Build output and caches
+dist/
+build/
+coverage/
+.cache/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Editors and OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+--- end
+=== editorconfig
+--- .editorconfig caret=387
+# EditorConfig — https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,toml,html,css,scss,js,jsx,ts,tsx,vue}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[{Makefile,*.mk,go.mod,*.go}]
+indent_style = tab
+
+[*.{bat,cmd}]
+end_of_line = crlf
+--- end
 === html-bundle
 --- sample.html
 <!doctype html>
@@ -162,4 +723,268 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+--- end
+=== http-requests
+--- sample.http
+# Pick dev or prod in the HTTP Client's Environment box before running a request.
+# {{host}} comes from http-client.env.json and {{token}} from http-client.private.env.json,
+# which holds secrets and must stay out of Git.
+
+### List items
+# @assert status == 200
+GET {{host}}/items
+Accept: application/json
+
+### Create an item and keep its id
+# @assert status == 201
+# @capture itemId = $.id
+POST {{host}}/items
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "example"
+}
+
+### Read the item created above
+GET {{host}}/items/{{itemId}}
+Accept: application/json
+--- end
+--- http-client.env.json
+{
+  "dev": {
+    "host": "http://localhost:8080"
+  },
+  "prod": {
+    "host": "https://api.example.com"
+  }
+}
+--- end
+--- http-client.private.env.json
+{
+  "dev": {
+    "token": "dev-token-change-me"
+  },
+  "prod": {
+    "token": ""
+  }
+}
+--- end
+=== typst-with-template
+--- template.typ
+// Page setup and title block shared by every document that imports it:
+//   #import "template.typ": conf
+//   #show: conf.with(title: "…", author: "…")
+#let conf(title: "", author: "", date: none, doc) = {
+  set document(title: title, author: author)
+  set page(paper: "a4", margin: 2.5cm, numbering: "1")
+  set text(size: 11pt)
+  set heading(numbering: "1.")
+  set par(justify: true)
+
+  align(center)[
+    #text(18pt, weight: "bold", title)
+    #v(4pt)
+    #author
+    #if date != none [ · #date]
+  ]
+  v(1em)
+
+  doc
+}
+--- end
+--- sample.typ
+#import "template.typ": conf
+
+#show: conf.with(
+  title: "My Title",
+  author: "Ada",
+  date: "2026-01-02",
+)
+
+= Introduction
+
+
+--- end
+=== docker-compose
+--- Dockerfile
+# syntax=docker/dockerfile:1
+
+# Build stage: resolve dependencies first (cached while pom.xml is unchanged), then package.
+FROM maven:3-eclipse-temurin-25 AS build
+WORKDIR /src
+COPY pom.xml .
+RUN mvn -B -q dependency:go-offline
+COPY src ./src
+RUN mvn -B -q package -DskipTests
+
+# Runtime stage: only the JRE and the application jar, run as an unprivileged user.
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+RUN useradd --system --uid 10001 app
+# The jar Maven builds: set <finalName>app</finalName> in pom.xml, or change the name here.
+COPY --from=build /src/target/app.jar app.jar
+USER app
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+--- end
+--- compose.yaml
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+--- end
+--- .dockerignore
+.git/
+target/
+.idea/
+.vscode/
+*.iml
+*.log
+Dockerfile
+compose.yaml
+--- end
+=== node-typescript-project
+--- package.json
+{
+  "name": "pkg",
+  "version": "0.1.0",
+  "description": "Desc",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node dist/index.js",
+    "test": "tsc && node --test \"dist/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.0"
+  }
+}
+--- end
+--- tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "dist",
+    "strict": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
+--- end
+--- src/greet.ts
+export function greet(name: string): string {
+  return `Hello, ${name}!`;
+}
+--- end
+--- src/index.ts
+import { greet } from "./greet.js";
+
+console.log(greet("pkg"));
+--- end
+--- src/greet.test.ts
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { greet } from "./greet.js";
+
+test("greet says hello", () => {
+  assert.equal(greet("Ada"), "Hello, Ada!");
+});
+--- end
+--- README.md
+# pkg
+
+Desc
+
+## Run
+
+```bash
+npm install
+npm start
+```
+
+## Test
+
+```bash
+npm test
+```
+
+---
+
+Created by Ada on 2026-01-02.
+--- end
+--- .gitignore
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+.env
+--- end
+=== github-templates
+--- .github/ISSUE_TEMPLATE/bug_report.md
+---
+name: Bug report
+about: Something does not work as expected
+title: ""
+labels: bug
+assignees: ""
+---
+
+## What happened
+
+## What you expected to happen
+
+## Steps to reproduce
+
+1. 
+2. 
+3. 
+
+## Environment
+
+- Version:
+- Operating system:
+
+## Logs or screenshots
+--- end
+--- .github/ISSUE_TEMPLATE/feature_request.md
+---
+name: Feature request
+about: Suggest an idea or an improvement
+title: ""
+labels: enhancement
+assignees: ""
+---
+
+## The problem
+
+What are you trying to do, and what gets in the way?
+
+## The solution you would like
+
+## Alternatives you have considered
+--- end
+--- .github/pull_request_template.md
+## Summary
+
+
+
+## Why
+
+## How it was tested
+
+- [ ] Tests added or updated
+- [ ] Documentation updated
+
+Closes #
 --- end
