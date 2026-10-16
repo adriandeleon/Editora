@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Shell scripts: ShellCheck and shfmt.** bash-language-server needs both for linting and formatting, and
+  without them it silently did neither. Doctor and Settings → LSP (Bash) now show whether each one is found,
+  with an **Install** button, and the palette has `Install: ShellCheck and shfmt`. Editora downloads the
+  official release binary for your platform, checks it against a SHA-256 hash built into Editora, and points
+  the Bash server at it; a path you set yourself still wins. Opening a script without ShellCheck says so once,
+  and Format Document without shfmt says shfmt is missing instead of "Already formatted". The server's own
+  warnings now reach the Debug Log.
+- **bash-language-server settings.** The Bash card in Settings → LSP sets ShellCheck's path and arguments
+  (for example `--severity=warning` or `-x`), shfmt's path, dialect and style switches, the number of files
+  the server analyses in the background (500 by default), workspace-wide symbols, and an explainshell
+  endpoint for option hovers (empty by default). A project's `.editora/settings.json` can override them with
+  a `bashIde` object that uses the server's own key names; paths and the explainshell endpoint need a trusted
+  folder.
+- **Shell run configurations have Interpreter and Interpreter options fields**, which override the
+  interpreter the script's shebang names.
+- **End Input for a running program.** The Run console has an End Input button, and Ctrl+D on an empty
+  input line does the same, so a `while read` loop or `cat` can finish without Stop.
+- **Folding for shell scripts:** functions, `{ }`, `if … fi`, loops, `case … esac` and each multi-line case
+  item, multi-line `( )` and `$( )`, and here-docs. Sticky scroll now pins shell functions and blocks too.
+- **A notice for shell scripts with Windows line endings or a byte-order mark**, which bash cannot run, with
+  a Convert to LF (or Remove BOM) action. Running such a script first asks whether to convert it.
 - **Emacs registers.** In the Emacs keymap:
   - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
   - `C-x r i` inserts a register's text, leaving the cursor before it.
@@ -256,6 +277,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Shell scripts run with default settings.** The gutter ▶, Run File and the Run button used to appear for a
+  shell script only when LSP support and the Bash server were both switched on, so a new user could not run
+  one at all. Shell Run now works like Python Run, for local and remote files.
+- **Run uses the interpreter the shebang names, with its flags.** It used to run every shell script with
+  `bash`: a `#!/bin/sh` script ran under bash, a `.zsh` file ran under bash, and a `-e` or `-u` in the
+  shebang was dropped, so a script relying on `-e` kept going after a failing step. `#!/usr/bin/env -S bash -e`
+  works. With no shebang, `.zsh` files run with `zsh` and other shell files with `bash`.
+- **Program arguments and environment variables are read like a shell reads them.** Backslash escapes work
+  (`tail\ x`, `"say \"hi\""`), an unclosed quote is reported instead of silently swallowing the rest of the
+  line, and environment values expand `$NAME` and `${NAME}` (`PATH=/opt/x/bin:$PATH`). This applies to Run,
+  run configurations and Debug.
+- **A relative working directory in a run configuration is relative to the project**, or to the script's
+  folder when there is no project, never to the folder Editora was started from. A missing directory or
+  script is named in the error.
+- **`;;` in a shell `case` statement is typed at the body's level**, as shfmt and Google's style guide place
+  it, and the bundled `case` snippet matches.
+- **Shell command arguments and options are plain text**, no longer string-coloured or spell-checked, so
+  `set -euo pipefail` or `apt-get install libssl-dev` no longer gets red squiggles. Quoted strings, comments
+  and here-doc text are still checked.
+- **Shell scripts keep LF line endings and no byte-order mark** even when `.editorconfig` asks for CRLF or
+  `utf-8-bom`; new shell files from New ▸ and templates are written that way.
+- **Format Document sends the file's own indentation** (from `.editorconfig` or what the file uses) to the
+  language server instead of the global tab size, so shfmt no longer re-indents a 2-space script to 4.
 - **Recent Files dropdown fits its names and asks before removing one.** The dropdown is as wide as the
   longest file name, up to a limit, so names are no longer cut short. The project labels line up in one
   column. Clicking a row's trash icon now asks before removing that file from the list, and the question
@@ -375,6 +419,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shell highlighting no longer runs to the end of the file** after `$((x << 2))` or a `<<\EOF` here-doc.
+  `$(( … ))` is now coloured as arithmetic. Two tests now guard the bundled grammars.
+- **More files are recognised as shell scripts, everywhere at once:** `.envrc`, `/etc/bashrc`, `/etc/zshrc`
+  and the other system zsh files, `/etc/profile`, `.ksh`, `*.bashrc`, `*.profile` (so `/etc/bash.bashrc`),
+  `.mkshrc`, `PKGBUILD`, `APKBUILD`, `.ebuild` and `.eclass`. Some used to open as INI, where every `;` started a
+  comment; others were coloured as shell but had no comment toggling, Run or language server.
+- **A language picked in the status bar, or a shebang typed into a new file, reaches the language server and
+  Run straight away**, and the status bar shows it. Before, only the colours changed.
+- **zsh startup files (`.zshrc`, `.zprofile`, `/etc/zsh/zshenv` …) are no longer checked as bash**, which showed
+  false errors on valid zsh.
+- **`case` patterns no longer upset bracket-pair colours** (the pattern's `)` showed as unmatched and threw
+  off the enclosing function's braces).
+- **Typing shell code indents correctly:** the body of a `case` item is indented under its pattern, `esac`,
+  `fi` and `done` line up with the line that opened them, and a here-doc's closing delimiter is no longer
+  indented (bash did not recognise it, so the rest of the script became here-doc text). Nothing re-indents
+  inside a here-doc, and `done=false` is no longer taken for `done`.
+- **Toggle Comment never comments out or breaks a script's `#!` line.**
+- **A `# region` marker no longer empties the Structure panel** for shell, Python, Ruby and other languages
+  without block folding.
+- **Enter after `else` or `break` in a shell script types a new line** instead of expanding the snippet of the
+  same name. Tab still expands it.
+- **Long hovers scroll.** A man page shown for a shell command made a popup thousands of pixels tall; the
+  popup is now capped at about half the window and scrolls.
+- **The status bar's LSP segment and the Problems button appear as soon as a file is opened on a server**,
+  not only after switching tabs.
+- **`read -p` prompts show in the Run console.** Bash prints them only to a terminal, so a script waiting for
+  an answer showed nothing.
+- **Windows: Run finds Git Bash** and no longer picks WSL's `bash.exe`, which cannot open a Windows path.
+  Typed input reaches a shell with Unix line endings.
 - **Personal Notes colours match Bookmarks.** Project headers in the Personal Notes tree are accent-coloured
   again and file headers are muted, as in Bookmarks. The two panels now share one set of style rules.
 - **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
