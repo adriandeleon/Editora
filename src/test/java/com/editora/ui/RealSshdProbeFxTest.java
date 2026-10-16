@@ -434,9 +434,11 @@ class RealSshdProbeFxTest {
                             ProcessRunner.run(app, Duration.ofSeconds(60), List.of("sh", "-c", "sleep 1; echo ok"))));
                 }
                 for (var s : shorts) {
+                    ProcessRunner.Result r = s.get(90, TimeUnit.SECONDS);
                     check(
-                            s.get(90, TimeUnit.SECONDS).out().strip().equals("ok"),
-                            "a short command ran beside five long ones");
+                            r.out().strip().equals("ok"),
+                            "a short command ran beside five long ones: exit " + r.exit() + ", out [" + r.out()
+                                    + "], err [" + r.err() + "]");
                 }
                 return refusal;
             } finally {
