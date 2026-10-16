@@ -6156,7 +6156,14 @@ public class SettingsWindow {
 
         Card installed = card(p, tr("settings.plugins.installed"));
         pluginListBox = new VBox(8);
-        cardRow(installed, Category.PLUGINS, pluginListBox, "plugins installed list enable disable");
+        cardRow(
+                installed,
+                Category.PLUGINS,
+                new VBox(
+                        6,
+                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
+                        pluginListBox),
+                "plugins installed list enable disable");
         refreshPluginList();
         return p;
     }
@@ -6175,14 +6182,13 @@ public class SettingsWindow {
             pluginListBox.getChildren().add(empty);
             return;
         }
-        boolean master = config.getSettings().isPluginSupport();
         for (com.editora.plugin.PluginDescriptor d : ds) {
             String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
             String ver = d.manifest().version == null ? "" : d.manifest().version;
             String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
             CheckBox cb = new CheckBox(label);
             cb.setSelected(config.getPluginStore().isEnabled(d.id()));
-            cb.setDisable(!master);
+            SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
             cb.selectedProperty().addListener((obs, was, now) -> {
                 if (loading) {
                     return;
