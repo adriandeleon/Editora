@@ -248,10 +248,12 @@ jobs:
     # (12-13 October 2026). It stays visible without failing the run until it holds green; delete this line
     # then. A macOS failure fails the run.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    # macOS on pull requests only (see `fx-tests` below for why); Windows on every run. A job's `if` cannot see
+    # its matrix, so the list itself depends on the event.
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest", "macos-15"]') || fromJSON('["windows-latest"]') }}
 
     steps:
       - name: Check out repository
@@ -315,8 +317,14 @@ jobs:
   # of test class; `-Dgroups=fx` then keeps the FX tests among them, so the three lists together cover the
   # FX suite whatever a class is called. Three, not four: the account runs five macOS jobs at a time, and
   # with the pure lane this makes four per run.
+  #
+  # The macOS jobs run on pull requests only, not again on master after the merge: the change was tested on
+  # macOS in its pull request. Running them twice, with several merges an hour, kept 29 macOS jobs waiting
+  # for the five runners on 16 October 2026, and the account's 20 concurrent jobs then held back the Linux
+  # shards behind the required check too.
   fx-tests:
     name: FX tests (macos-15, shard ${{ matrix.shard }} of 3)
+    if: github.event_name == 'pull_request'
     runs-on: macos-15
     timeout-minutes: 30
     continue-on-error: true
