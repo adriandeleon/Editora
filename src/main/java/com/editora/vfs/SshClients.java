@@ -66,6 +66,8 @@ final class SshClients {
                         : engine.defaultKeys().loadKeys(session);
             });
             c.setFilePasswordProvider(Passphrases.INSTANCE);
+            // The user's SSH agent, for an Automatic login; never forwarded to a server.
+            c.setAgentFactory(AgentFactory.INSTANCE);
             // The login's questions (passwords, 2FA codes), put by the window that owns the session.
             c.setUserInteraction(LoginInteraction.INSTANCE);
             // RemoteFileSystems times a login out itself, leaving out the time a person spends answering; MINA's

@@ -254,6 +254,20 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         return defaultKeys;
     }
 
+    /** Where this engine's SSH setup is (the agent is found through its environment). */
+    SshEnvironment sshEnvironment() {
+        return ssh;
+    }
+
+    /** This engine's answering clock (an agent's signature may wait for a person too). */
+    PromptClock promptClock() {
+        return promptClock;
+    }
+
+    /** How a session logs in: only an Automatic login ({@code DEFAULT_KEYS}) asks the SSH agent. */
+    static final AttributeRepository.AttributeKey<RemoteConnection.AuthMethod> AUTH =
+            new AttributeRepository.AttributeKey<>();
+
     /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
     boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
         return serverKeyVerifier.verifyServerKey(session, address, key);
@@ -559,6 +573,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
         session.setAttribute(LoginQuestions.SUBJECT, conn.id());
+        session.setAttribute(AUTH, conn.auth());
         String passwordIdentity = null;
         try {
             switch (conn.auth()) {
@@ -576,8 +591,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                     key.setPasswordFinder(Passphrases.INSTANCE);
                     session.setKeyIdentityProvider(key);
                 }
-                // What MINA put together for the session stays: ~/.ssh/config's IdentityFile keys, then the
-                // default keys (the shared client's, from this engine's ~/.ssh) unless IdentitiesOnly says no.
+                // The SSH agent's keys first (AgentFactory), then what MINA put together for the session:
+                // ~/.ssh/config's IdentityFile keys, then the default keys (the shared client's, from this
+                // engine's ~/.ssh) unless IdentitiesOnly says no — ssh's order.
                 case DEFAULT_KEYS -> givePassphrase(session, secret);
             }
             awaitAuthExcludingPrompt(session, session.auth(), timeout, promptElapsedNanos);
