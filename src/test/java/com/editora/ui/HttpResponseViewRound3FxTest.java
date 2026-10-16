@@ -404,7 +404,12 @@ class HttpResponseViewRound3FxTest {
         showIn(p, exchange("n", ok("{\"x\":1}", List.of(), eleven)));
         await(() -> p.warnBadgeForTest() != null && p.warnBadgeForTest().equals("⚠ 11"));
         Label status = p.controlsForTest().statusLabel();
-        String shown = FxTestSupport.callOnFx(() -> ((Text) status.lookup(".text")).getText());
+        // The label's skin copies its text into the Text node on a layout pass: lay out before reading it.
+        String shown = FxTestSupport.callOnFx(() -> {
+            p.applyCss();
+            p.layout();
+            return ((Text) status.lookup(".text")).getText();
+        });
         assertEquals(FxTestSupport.callOnFx(status::getText), shown, "the status line is not ellipsized");
     }
 

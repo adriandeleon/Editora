@@ -228,12 +228,14 @@ final class HttpClientCoordinator {
      */
     void onFileMoved(Path from, Path to) {
         history.moved(from, to);
+        Path target = to.toAbsolutePath().normalize();
         host.forEachBuffer(b -> {
-            if (b.getPath() != null
-                    && b.getPath()
-                            .toAbsolutePath()
-                            .normalize()
-                            .startsWith(to.toAbsolutePath().normalize())) {
+            Path path = b.getPath();
+            // A remote tab's path is on another file system: comparing it with a local one throws, and it is never
+            // under a local folder anyway.
+            if (path != null
+                    && path.getFileSystem().equals(target.getFileSystem())
+                    && path.toAbsolutePath().normalize().startsWith(target)) {
                 ensureHttpPreview(b);
             }
         });
