@@ -142,7 +142,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there. Fetch automatically fetches a remote repository on its host too, by the host's git, under the same
   rules as a local one (a trusted folder, or one you have fetched in yourself), leaving an ssh command the
   host's login profile exports alone. In a remote project that holds another repository (nested, a submodule,
-  a worktree), the Project tree's Git actions on its files act on that repository, as they do locally.
+  a worktree), the Project tree's Git actions on its files act on that repository, as they do locally. Blame
+  of a remote file uses the repository's `.git-blame-ignore-revs`, and a `blame.ignoreRevsFile` in the host's
+  global config that the repository lacks no longer stops blame there.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers

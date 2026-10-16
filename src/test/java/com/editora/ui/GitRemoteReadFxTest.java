@@ -173,4 +173,56 @@ class GitRemoteReadFxTest {
         assertEquals(before, sftp.commands().size());
         assertFalse(service.gitAvailable(file));
     }
+
+    private String head() {
+        ProcessRunner.Result r = ProcessRunner.run(repo, Duration.ofSeconds(30), List.of("git", "rev-parse", "HEAD"));
+        assertTrue(r.ok(), r.message());
+        return r.out().strip();
+    }
+
+    /**
+     * A {@code .git-blame-ignore-revs} at the root of a repository on a host is used without any
+     * configuration, as for a local one: the reformat it lists is looked through.
+     */
+    @Test
+    void theIgnoreRevsFileOfARemoteRepositoryIsUsed() throws Exception {
+        String first = head();
+        git("commit", "-q", "-am", "the big reformat");
+        String reformat = head();
+        Files.writeString(repo.resolve(".git-blame-ignore-revs"), "# reformatting\n" + reformat + "\n");
+        Path file = remoteRepo.resolve("a.txt");
+        GitService.RepoState state = await(cb -> service.refresh(file, file, cb));
+
+        List<BlameParser.BlameLine> blame = await(cb -> service.blame(state.root(), file, cb));
+
+        assertEquals(3, blame.size());
+        assertEquals(first, blame.get(1).hash(), "the reformat is looked through on the host");
+    }
+
+    /**
+     * The host's global config naming an ignore-revs file this repository does not have — the common
+     * {@code blame.ignoreRevsFile = .git-blame-ignore-revs} in {@code ~/.gitconfig} — makes git blame fail
+     * outright. Blame runs with a copy of that config without the key, written once on the host.
+     */
+    @Test
+    void aMissingIgnoreRevsFileInTheHostsGlobalConfigDoesNotBreakBlame() throws Exception {
+        Files.writeString(
+                sftp.home().resolve(".gitconfig"),
+                "[blame]\n\tignoreRevsFile = .git-blame-ignore-revs\n[diff]\n\talgorithm = histogram\n");
+        Path file = remoteRepo.resolve("a.txt");
+        GitService.RepoState state = await(cb -> service.refresh(file, file, cb));
+
+        List<BlameParser.BlameLine> blame = await(cb -> service.blame(state.root(), file, cb));
+
+        assertEquals(3, blame.size(), "blamed, not failed: " + service.blameIgnoreRevsProblem());
+        Path cache = sftp.home().resolve(".cache/editora");
+        try (var copies = Files.list(cache)) {
+            List<Path> configs = copies.filter(p -> p.getFileName().toString().startsWith("git-global-"))
+                    .toList();
+            assertEquals(1, configs.size(), "the stand-in global config, on the host: " + configs);
+            String copy = Files.readString(configs.get(0));
+            assertFalse(copy.contains("ignoreRevsFile"), copy);
+            assertTrue(copy.contains("algorithm = \"histogram\""), "the rest of the user's config is kept: " + copy);
+        }
+    }
 }
