@@ -2196,7 +2196,13 @@ public class SettingsWindow {
      */
     private boolean confirmResetAllShortcuts() {
         Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
+                Alert.AlertType.CONFIRMATION,
+                tr(
+                        "dialog.shortcut.resetAll.body",
+                        com.editora.command.KeymapManager.displayName(com.editora.command.KeymapManager.resolveName(
+                                config.getSettings().getKeymap()))),
+                ButtonType.OK,
+                ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
         confirm.setHeaderText(null);

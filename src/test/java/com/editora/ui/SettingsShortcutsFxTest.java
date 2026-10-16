@@ -283,6 +283,35 @@ class SettingsShortcutsFxTest {
         }
     }
 
+    /** "Reset all" said "every custom shortcut" but only reset the keymap in use. */
+    @Test
+    void resetAllNamesTheKeymapItResets() throws Exception {
+        try (var fx = cua()) {
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx, "KEYMAPS");
+                List<String> asked = new ArrayList<>();
+                Platform.runLater(() -> {
+                    for (Window win : List.copyOf(Window.getWindows())) {
+                        if (win.getScene() != null && win.getScene().getRoot() instanceof DialogPane pane) {
+                            asked.add(pane.getContentText());
+                            win.hide();
+                        }
+                    }
+                });
+                Map<?, ?> pages = FxTestSupport.field(w, "pages");
+                Node page = pages.entrySet().stream()
+                        .filter(e -> e.getKey().toString().equals("KEYMAPS"))
+                        .map(e -> (Node) e.getValue())
+                        .findFirst()
+                        .orElseThrow();
+                button(page, tr("settings.shortcuts.resetAll")).fire();
+                assertEquals(1, asked.size());
+                assertTrue(asked.get(0).contains(KeymapManager.displayName("cua")), asked.get(0));
+                stage(w).hide();
+            });
+        }
+    }
+
     static void setField(Object target, String name, Object value) {
         try {
             java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
