@@ -25,6 +25,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
+import com.editora.i18n.Messages;
 
 /**
  * Owns the set of top-level editor windows and the shared config behind them. In single-window terms
@@ -1228,6 +1229,26 @@ public class WindowManager {
             }
         }
         shared.markSettingsApplied();
+    }
+
+    /**
+     * {@code settings.json} was saved in an editor tab: re-reads it into the shared settings and applies it in
+     * every window (theme, keymap, view settings, open Settings windows). Returns the status line saying so.
+     */
+    public String settingsFileSaved() {
+        List<com.editora.config.SettingsFileCheck.Issue> issues = shared.reloadSettings();
+        if (issues == null) {
+            return Messages.tr("status.settings.reloadFailed");
+        }
+        javafx.application.Application.setUserAgentStylesheet(
+                Themes.stylesheetFor(shared.getSettings().getTheme()));
+        reloadSharedKeymap(); // rebuilds the keymap the file may name, and re-applies everything everywhere
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncAll();
+        }
+        return issues.isEmpty()
+                ? Messages.tr("status.settings.reloaded")
+                : Messages.tr("status.settings.reloadedIssues", issues.size());
     }
 
     /**

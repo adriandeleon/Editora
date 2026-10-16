@@ -172,6 +172,8 @@ public class SettingsWindow {
 
     private String pushedShortcutQuery = ""; // the search last carried into the Keymaps shortcut filter
 
+    private final SettingsFileNotes fileNotes = new SettingsFileNotes(); // Advanced: hand edits of settings.json
+
     private Label searchEmpty; // "no settings match …", shown in place of the page
 
     private final ConfigManager config;
@@ -7736,6 +7738,7 @@ public class SettingsWindow {
         HBox fileRow = new HBox(6, pathLabel, link);
         fileRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(fileSection, Category.ADVANCED, fileRow, "settings file path toml config location");
+        cardRow(fileSection, Category.ADVANCED, fileNotes.node(), "hand edit json reload apply restart unknown key");
 
         Path sessionLog = DebugLog.sessionFile(config.getConfigDir());
         Hyperlink sessionLink = new Hyperlink(displaySettingsPath(sessionLog));
@@ -8712,6 +8715,7 @@ public class SettingsWindow {
         }
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
         updatePreviewFont();
+        fileNotes.show(config.shared().settingsFileIssues());
         probeGit(); // re-check git availability each time Settings opens
     }
 

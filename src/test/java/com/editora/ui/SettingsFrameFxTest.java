@@ -6,11 +6,13 @@ import java.util.Set;
 import javafx.scene.Node;
 import javafx.scene.control.ListView;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Spinner;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
 
+import com.editora.editor.EditorBuffer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -259,5 +261,53 @@ class SettingsFrameFxTest {
         return System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .contains("mac");
+    }
+
+    /** Polls {@code condition} on the FX thread until it holds (10 s at most). */
+    static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
+        long end = System.nanoTime() + 10_000_000_000L;
+        while (!FxTestSupport.callOnFx(condition)) {
+            if (System.nanoTime() > end) {
+                throw new AssertionError("timed out waiting for " + what);
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    @Test
+    void savingSettingsJsonInAnEditorTabAppliesItAndSaysWhatWasNotUsed() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(() -> config.shared().saveSettings());
+            java.nio.file.Path file = config.getSettingsFile();
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(file);
+                workflows.loadInto(b, file);
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, b, true);
+                return b;
+            });
+            await(() -> buffer.getContent().contains("tabSize"), "the file to load");
+            FxTestSupport.runOnFx(() -> {
+                String text = buffer.getContent()
+                        .replaceFirst("\"tabSize\"\\s*:\\s*\\d+", "\"tabSize\" : 7")
+                        .replaceFirst("\\{", "{ \"tabsize\" : 2,");
+                buffer.getArea().replaceText(text);
+                fx.controller.registry.run("file.save");
+            });
+            await(() -> config.getSettings().getTabSize() == 7, "the saved file to be applied");
+            Spinner<Integer> tabSize = FxTestSupport.field(window, "tabSizeSpinner");
+            await(() -> tabSize.getValue() == 7, "the open Settings window to show it");
+            SettingsFileNotes notes = FxTestSupport.field(window, "fileNotes");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.Label issues = FxTestSupport.field(notes, "issues");
+                assertTrue(issues.isVisible() && issues.getText().contains("tabsize"), issues.getText());
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
     }
 }

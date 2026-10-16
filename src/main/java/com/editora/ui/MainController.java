@@ -4508,6 +4508,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void fileSaved(Path file) {
             snippetCoordinator.fileSaved(file);
+            if (windowManager != null
+                    && file.toAbsolutePath()
+                            .normalize()
+                            .equals(config.getSettingsFile().toAbsolutePath().normalize())) {
+                MainController.this.setStatus(
+                        windowManager.settingsFileSaved()); // a hand edit applies on save, not at the next start
+            }
         }
 
         @Override

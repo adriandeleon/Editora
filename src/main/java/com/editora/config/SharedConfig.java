@@ -279,7 +279,11 @@ public class SharedConfig {
         // discard what it reported.
         projects.loadProblems().forEach(this::onLoadProblem);
         appliedSettings = null; // a reload replaces the Settings object; the next window pair re-baselines
+        List<String> skipped = new ArrayList<>();
+        int before = loadProblems.size();
         settings = loadSettings();
+        loadProblems.subList(before, loadProblems.size()).forEach(p -> skipped.addAll(p.skipped()));
+        settingsFileIssues = checkSettingsFile(skipped);
         sync.loaded(getSettingsFile(), settingsBytes());
         loadBookmarks();
         loadBreakpoints();
@@ -291,6 +295,61 @@ public class SharedConfig {
         loadMacros();
         loadAbbreviations();
         loadUserDictionary();
+    }
+
+    /** What {@code settings.json} says that the loaded settings do not use; see {@link SettingsFileCheck}. */
+    private List<SettingsFileCheck.Issue> settingsFileIssues = List.of();
+
+    public List<SettingsFileCheck.Issue> settingsFileIssues() {
+        return settingsFileIssues;
+    }
+
+    /** The issues of the settings file as it is now on disk; none when it is unreadable or of another schema. */
+    private List<SettingsFileCheck.Issue> checkSettingsFile(List<String> skipped) {
+        try {
+            JsonNode written = json.readTree(getSettingsFile().toFile());
+            if (written == null || written.path("schemaVersion").asInt(-1) != Settings.SCHEMA_VERSION) {
+                return List.of(); // migrated keys are renamed on purpose, not "unknown"
+            }
+            return SettingsFileCheck.issues(written, json.readTree(settingsBytes()), skipped);
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Re-reads {@code settings.json} — saved by hand in the editor — into the live {@link Settings}, which every
+     * window holds, and returns its issues. A file that cannot be read (half-typed JSON, a newer schema) leaves
+     * the settings as they are and returns null; its problem is reported like one found at startup.
+     */
+    public List<SettingsFileCheck.Issue> reloadSettings() {
+        Path file = getSettingsFile();
+        List<ConfigLoadProblem> problems = new ArrayList<>();
+        try {
+            if (!json.readTree(file.toFile()).isObject()) {
+                return null;
+            }
+        } catch (IOException e) {
+            return null; // not JSON (yet): nothing to apply, and the file is the user's to fix
+        }
+        Settings read =
+                ConfigMigrations.readVersioned(file, json, new Settings(), ConfigSchema.SETTINGS, problems::add);
+        List<String> skipped = new ArrayList<>();
+        for (ConfigLoadProblem p : problems) {
+            if (p.kind() != ConfigLoadProblem.Kind.VALUES_SKIPPED) {
+                onLoadProblem(p);
+                return null;
+            }
+            skipped.addAll(p.skipped());
+        }
+        try {
+            json.readerForUpdating(settings).readValue(json.writeValueAsBytes(read));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to apply " + file.getFileName(), e);
+        }
+        settingsFileIssues = checkSettingsFile(skipped);
+        sync.loaded(file, settingsBytes()); // what is on disk now is this process's own state
+        return settingsFileIssues;
     }
 
     /**
