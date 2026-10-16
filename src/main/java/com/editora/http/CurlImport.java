@@ -214,7 +214,8 @@ public final class CurlImport {
                 flag(c, opt);
             }
         }
-        return render(c);
+        // Pasted text never reads a variable: every {{ of the command is written as the \{{ escape, sent as {{.
+        return HttpVars.escape(render(c));
     }
 
     private static boolean takesValue(String longOpt) {

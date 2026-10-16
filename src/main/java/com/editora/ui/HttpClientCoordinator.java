@@ -402,7 +402,7 @@ final class HttpClientCoordinator {
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
-        String label = HttpScratch.label(parsed, vars, session, baseDir, ZonedDateTime.now());
+        String label = HttpScratch.label(parsed, vars, baseDir, ZonedDateTime.now());
         startRun(buffer, label);
         buffer.setHttpRunning(index);
         long startedAt = System.currentTimeMillis();
@@ -600,7 +600,7 @@ final class HttpClientCoordinator {
                             p.progress(
                                     index,
                                     reqs.size(),
-                                    HttpScratch.label(reqs.get(index), vars, session, baseDir, ZonedDateTime.now()));
+                                    HttpScratch.label(reqs.get(index), vars, baseDir, ZonedDateTime.now()));
                         }
                     },
                     exchanges -> {
@@ -677,18 +677,20 @@ final class HttpClientCoordinator {
                 return;
             }
             String request = CurlImport.toHttpRequest(clip.strip());
+            // Every {{ of the command was written as \{{ (sent as {{, never read as a variable): say so.
+            boolean escaped = clip.contains("{{");
             EditorBuffer b = host.activeBuffer();
             if (b != null && b.isHttpFile() && b.isEditable()) {
                 String snippet = (b.getArea().getLength() == 0 ? "" : "\n") + "###\n" + request + "\n";
                 b.getArea().insertText(b.getArea().getLength(), snippet);
                 b.getArea().moveTo(b.getArea().getLength());
-                host.setStatus(tr("status.http.curlImported"));
+                host.setStatus(tr(escaped ? "status.http.curlImportedEscaped" : "status.http.curlImported"));
             } else {
                 EditorBuffer nb = new EditorBuffer();
                 nb.setDisplayName("requests.http");
                 ops.openTab(nb);
                 nb.setContent(request);
-                host.setStatus(tr("status.http.curlImportedNew"));
+                host.setStatus(tr(escaped ? "status.http.curlImportedNewEscaped" : "status.http.curlImportedNew"));
             }
         });
     }
