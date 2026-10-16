@@ -179,7 +179,7 @@ class SettingsContentPagesFxTest {
     void rulerTextThatCannotBeReadIsFlaggedAndKeptUnsavedInsteadOfQuietlyReverted() throws Exception {
         FxTestSupport.runOnFx(() -> {
             rig.show();
-            rig.page("EDITOR");
+            rig.window.showDoctorTarget("editor", rig.owner); // opens the Editor page
             Map<String, javafx.scene.control.Control> controls = rig.control("settingControls");
             TextField rulers = (TextField) controls.get("rulers");
             List<Integer> before = List.copyOf(settings.getRulers());
@@ -202,7 +202,7 @@ class SettingsContentPagesFxTest {
     void aLanguageRulerNameNoFileHasIsRefusedAndAnyCaseOfAKnownOneIsKeptLowerCased() throws Exception {
         FxTestSupport.runOnFx(() -> {
             rig.show();
-            rig.page("EDITOR");
+            rig.window.showDoctorTarget("editor", rig.owner); // opens the Editor page
             Map<String, javafx.scene.control.Control> controls = rig.control("settingControls");
             TextField perLanguage = (TextField) controls.get("languageRulers");
 
@@ -391,6 +391,53 @@ class SettingsContentPagesFxTest {
             assertEquals(
                     tr("settings.editorTheme.auto", EditorThemes.defaultFor("Editora Dark")),
                     editorTheme.getButtonCell().getText());
+        });
+    }
+
+    /**
+     * The page of a category, by name. ("EDITOR" is also a sidebar group, which {@link SettingsRig#page} finds
+     * first.)
+     */
+    private Region categoryPage(String name) {
+        Map<Object, Region> pages = rig.control("pages");
+        return pages.entrySet().stream()
+                .filter(e -> ((Enum<?>) e.getKey()).name().equals(name))
+                .findFirst()
+                .orElseThrow()
+                .getValue();
+    }
+
+    private static List<String> cardTitles(Region page) {
+        return SettingsRig.all(page, javafx.scene.control.Label.class).stream()
+                .filter(l -> l.getStyleClass().contains("settings-card-title"))
+                .map(javafx.scene.control.Label::getText)
+                .toList();
+    }
+
+    @Test
+    void theEditorPageGroupsDisplayEditingAndClipboardAndPutsSavingRightAfterIndentation() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            List<String> titles = cardTitles(categoryPage("EDITOR"));
+            assertEquals(
+                    List.of(
+                            tr("settings.section.display"),
+                            tr("settings.section.editing"),
+                            tr("settings.section.clipboard"),
+                            tr("settings.section.indentation"),
+                            tr("settings.section.saving")),
+                    titles.subList(0, 5));
+            List<String> texts = SettingsRig.texts(categoryPage("EDITOR"));
+            assertTrue(
+                    texts.indexOf(tr("settings.multiCaret")) > texts.indexOf(tr("settings.section.editing")),
+                    "multiple cursors is editing, not display");
+            assertTrue(texts.indexOf(tr("settings.copyLineWhenNoSelection"))
+                    > texts.indexOf(tr("settings.section.clipboard")));
+            assertTrue(texts.contains(tr("settings.adminSave.note")), "the admin-save note is its row's description");
+
+            assertTrue(
+                    cardTitles(rig.page("COMPLETION")).contains(tr("settings.section.lspFeatures")),
+                    "the language-server card says what it is");
         });
     }
 }

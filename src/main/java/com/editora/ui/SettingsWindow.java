@@ -2542,14 +2542,8 @@ public class SettingsWindow {
                 display,
                 Category.EDITOR,
                 stickyScrollCheck,
-                null,
+                tr("settings.stickyScroll.desc"),
                 "sticky scroll pinned scope headers class method context");
-        checkRow(
-                display,
-                Category.EDITOR,
-                symbolIndexCheck,
-                null,
-                "symbol index go to symbol project declarations without language server");
         checkRow(
                 display,
                 Category.EDITOR,
@@ -2571,6 +2565,13 @@ public class SettingsWindow {
                 Settings::isTypewriterMode,
                 Settings::setTypewriterMode,
                 "typewriter mode centre center caret line middle scrolling focus writing");
+        checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        checkRow(
+                display,
+                Category.EDITOR,
+                noteIndicatorsCheck,
+                tr("settings.showNoteIndicators.desc"),
+                "personal notes highlight start marker indicators");
         switchRow(
                 display,
                 Category.EDITOR,
@@ -2579,49 +2580,50 @@ public class SettingsWindow {
                 Settings::isStatusBarWordCount,
                 Settings::setStatusBarWordCount,
                 "status bar word count words reading time markdown plain text");
-        checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        Card editing = card(p, tr("settings.section.editing"));
         checkRow(
-                display,
-                Category.EDITOR,
-                noteIndicatorsCheck,
-                null,
-                "personal notes highlight start marker indicators");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 multiCaretCheck,
                 null,
                 "multiple cursors carets column box selection alt drag vs code");
         checkRow(
-                display,
-                Category.EDITOR,
-                copyLineNoSelectionCheck,
-                null,
-                "copy cut whole current line empty no selection clipboard vs code");
-        checkRow(
-                display,
-                Category.EDITOR,
-                copyWithHighlightingCheck,
-                null,
-                "copy syntax highlighting html colors paste slack document rich text vs code");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 autoRenameTagCheck,
                 null,
                 "auto rename tag html xml paired close mirror vs code");
         checkRow(
-                display,
-                Category.EDITOR,
-                autoFillCheck,
-                null,
-                "auto fill mode break wrap prose lines fill column emacs");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 autoCloseTagsCheck,
                 null,
                 "auto close tags html xml closing tag insert body vs code");
+        checkRow(
+                editing,
+                Category.EDITOR,
+                autoFillCheck,
+                tr("settings.autoFill.desc"),
+                "auto fill mode break wrap prose lines fill column emacs");
+        checkRow(
+                editing,
+                Category.EDITOR,
+                symbolIndexCheck,
+                tr("settings.symbolIndex.desc"),
+                "symbol index go to symbol project declarations without language server");
+        Card clipboard = card(p, tr("settings.section.clipboard"));
+        checkRow(
+                clipboard,
+                Category.EDITOR,
+                copyLineNoSelectionCheck,
+                null,
+                "copy cut whole current line empty no selection clipboard vs code");
+        checkRow(
+                clipboard,
+                Category.EDITOR,
+                copyWithHighlightingCheck,
+                null,
+                "copy syntax highlighting html colors paste slack document rich text vs code");
         Card indent = card(p, tr("settings.section.indentation"));
         controlRow(
                 indent,
@@ -2636,7 +2638,7 @@ public class SettingsWindow {
                 indent,
                 Category.EDITOR,
                 tr("settings.fillColumn"),
-                null,
+                tr("settings.fillColumn.desc"),
                 fillColumnSpinner,
                 "fill column wrap paragraph reflow emacs m-q width");
         checkRow(
@@ -2645,6 +2647,24 @@ public class SettingsWindow {
                 editorConfigCheck,
                 null,
                 "editorconfig indent style size charset end of line trailing whitespace final newline");
+        Card saving = card(p, tr("settings.section.saving"));
+        Label delayLabel = note(tr("settings.autoSave.delay"));
+        delayLabel.setLabelFor(autoSaveDelaySpinner);
+        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
+        autoSaveBox.setAlignment(Pos.CENTER_LEFT);
+        controlRow(
+                saving,
+                Category.EDITOR,
+                tr("settings.autoSave"),
+                null,
+                autoSaveBox,
+                "auto save autosave delay inactivity focus");
+        checkRow(
+                saving,
+                Category.EDITOR,
+                adminSaveCheck,
+                tr("settings.adminSave.note"),
+                "save administrator root sudo pkexec permission etc linux polkit");
         Card performance = card(p, tr("settings.section.performance"));
         HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
         largeFileBox.setAlignment(Pos.CENTER_LEFT);
@@ -2700,28 +2720,6 @@ public class SettingsWindow {
                 pomPreviewCheck,
                 null,
                 "maven pom xml preview dependencies plugins properties versions summary");
-        Card saving = card(p, tr("settings.section.saving"));
-        Label delayLabel = note(tr("settings.autoSave.delay"));
-        delayLabel.setLabelFor(autoSaveDelaySpinner);
-        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
-        autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        controlRow(
-                saving,
-                Category.EDITOR,
-                tr("settings.autoSave"),
-                null,
-                autoSaveBox,
-                "auto save autosave delay inactivity focus");
-        checkRow(
-                saving,
-                Category.EDITOR,
-                adminSaveCheck,
-                null,
-                "save administrator root sudo pkexec permission etc linux");
-        Label adminSaveNote = note(tr("settings.adminSave.note"));
-        adminSaveNote.setWrapText(true);
-        adminSaveNote.setMaxWidth(440);
-        cardRow(saving, Category.EDITOR, adminSaveNote, "save administrator root permission linux pkexec");
         Card pdf = card(p, tr("settings.section.pdf"));
         checkRow(
                 pdf,
@@ -3564,18 +3562,7 @@ public class SettingsWindow {
     private VBox workspacePage() {
         VBox p = page(tr("settings.cat.workspace"));
         Card features = card(p, tr("settings.section.features"));
-        // The projects toggle keeps its "ⓘ" detail tooltip beside the switch.
-        Label projectsInfo = new Label("ⓘ");
-        projectsInfo.getStyleClass().add("info-badge");
-        Tooltip projectsTip = new Tooltip(tr("settings.projects.tip"));
-        projectsTip.setWrapText(true);
-        projectsTip.setMaxWidth(380);
-        Tooltip.install(projectsInfo, projectsTip);
-        cardRow(
-                features,
-                Category.WORKSPACE,
-                settingRow(projectsCheck.getText(), null, new HBox(8, projectsInfo, switchFor(projectsCheck))),
-                "projects workspace folder");
+        checkRow(features, Category.WORKSPACE, projectsCheck, tr("settings.projects.tip"), "projects workspace folder");
         checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
         checkRow(features, Category.WORKSPACE, notesCheck, null, "personal notes annotations enable feature");
         checkRow(
@@ -3683,7 +3670,7 @@ public class SettingsWindow {
                 completionDocCheck,
                 null,
                 "completion documentation quick doc popup javadoc ctrl q");
-        Card lsp = card(p, null);
+        Card lsp = card(p, tr("settings.section.lspFeatures"));
         checkRow(
                 lsp,
                 Category.COMPLETION,
