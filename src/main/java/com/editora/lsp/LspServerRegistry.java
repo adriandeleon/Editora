@@ -319,7 +319,7 @@ public final class LspServerRegistry {
         }
         String configured = commands == null ? null : commands.get(d.id);
         String cmd = configured == null || configured.isBlank() ? d.defaultCommand : configured;
-        return new ServerSpec(d.id, tokenize(cmd), d.rootMarkers);
+        return new ServerSpec(d.id, com.editora.run.ProgramArgs.commandLine(cmd), d.rootMarkers);
     }
 
     /**
@@ -349,7 +349,7 @@ public final class LspServerRegistry {
         if (def.isEmpty() && (configured == null || configured.isBlank())) {
             return List.of();
         }
-        return tokenize(configured == null || configured.isBlank() ? def : configured);
+        return com.editora.run.ProgramArgs.commandLine(configured == null || configured.isBlank() ? def : configured);
     }
 
     /**

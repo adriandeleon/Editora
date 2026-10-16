@@ -2231,7 +2231,7 @@ final class LspCoordinator {
         String cmd = configured == null || configured.isBlank()
                 ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)
                 : configured;
-        List<String> toks = com.editora.lsp.LspServerRegistry.tokenize(cmd);
+        List<String> toks = com.editora.run.ProgramArgs.commandLine(cmd);
         String exe = toks.isEmpty() ? serverId : toks.get(0);
         try {
             return Path.of(exe).getFileName().toString();

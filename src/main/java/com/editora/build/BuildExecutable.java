@@ -29,7 +29,7 @@ public final class BuildExecutable {
             return List.copyOf(wrapperArgv);
         }
         if (override != null && !override.isBlank()) {
-            return ProgramArgs.tokenize(override);
+            return ProgramArgs.commandLine(override);
         }
         return List.of(defaultCommand);
     }
