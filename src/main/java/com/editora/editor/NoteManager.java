@@ -1,14 +1,12 @@
 package com.editora.editor;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.TreeSet;
 import java.util.UUID;
-import java.util.function.Consumer;
 
 import com.editora.config.NoteScope;
 import com.editora.config.NoteStatus;
@@ -24,10 +22,12 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * its {@code selectedText} ({@link NoteAnchors#relocate}) — or marked {@link NoteStatus#ORPHANED} when it
  * can't be found. The pure math lives in {@link NoteAnchors}; this class is the live glue over the editor.
  *
- * <p>Mirrors {@link BookmarkManager}: a cheap {@code isNoted} test for the gutter, {@code onLinesRepaint}
- * when an edit moves a marker, and {@code snapshot}/{@code restore} for persistence. Edit-driven shifts do
+ * <p>Mirrors {@link BookmarkManager}'s {@code snapshot}/{@code restore} for persistence. Edit-driven shifts do
  * <b>not</b> fire {@code onChanged} (no per-keystroke persistence) — the controller persists positions on
- * save/tab-switch via {@link #snapshot()}; only explicit mutations fire {@code onChanged}.
+ * save/tab-switch via {@link #snapshot()}; only explicit mutations fire {@code onChanged}. Notes have no gutter
+ * glyph (their marker is painted inline by {@link NoteHighlightOverlay}, which follows edits on its own), so an
+ * edit costs one range shift per note and nothing else; {@code onSpansChanged} tells the overlay when the set
+ * itself changes.
  */
 public final class NoteManager implements LineMarks.Carrier {
 
@@ -36,7 +36,7 @@ public final class NoteManager implements LineMarks.Carrier {
     private final Map<UUID, Tracked> tracked = new LinkedHashMap<>();
 
     private Runnable onChanged = () -> {};
-    private Consumer<Collection<Integer>> onLinesRepaint = c -> {};
+    private Runnable onSpansChanged = () -> {};
     private boolean restoring;
     /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
     private boolean swapping;
@@ -73,21 +73,15 @@ public final class NoteManager implements LineMarks.Carrier {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
 
-    public void setOnLinesRepaint(Consumer<Collection<Integer>> cb) {
-        this.onLinesRepaint = cb == null ? c -> {} : cb;
+    /**
+     * Called when the set of highlighted spans changes other than by an edit (a note added, changed, removed,
+     * (un)orphaned, restored, or carried across a narrow/widen) — the highlight overlay repaints then.
+     */
+    public void setOnSpansChanged(Runnable onSpansChanged) {
+        this.onSpansChanged = onSpansChanged == null ? () -> {} : onSpansChanged;
     }
 
-    // ---- queries (for the gutter, hover, navigation) ----
-
-    /** True if a non-orphaned note's anchor sits on {@code line} (drives the gutter marker). */
-    public boolean isNoted(int line) {
-        for (Tracked t : tracked.values()) {
-            if (t.positioned() && t.note.status() != NoteStatus.ORPHANED && lineOf(t.start) == line) {
-                return true;
-            }
-        }
-        return false;
-    }
+    // ---- queries (for hover and navigation) ----
 
     /** The notes anchored on {@code line} (non-orphaned), in insertion order. */
     public List<PersonalNote> notesOnLine(int line) {
@@ -189,12 +183,14 @@ public final class NoteManager implements LineMarks.Carrier {
         }
         tracked.put(note.id(), place(note));
         fireChanged();
+        onSpansChanged.run();
     }
 
     public void update(PersonalNote note) {
         if (note != null && tracked.containsKey(note.id())) {
             tracked.put(note.id(), place(note));
             fireChanged();
+            onSpansChanged.run();
         }
     }
 
@@ -202,9 +198,7 @@ public final class NoteManager implements LineMarks.Carrier {
         Tracked t = tracked.remove(id);
         if (t != null) {
             fireChanged();
-            if (t.positioned()) {
-                onLinesRepaint.accept(List.of(lineOf(t.start)));
-            }
+            onSpansChanged.run();
         }
     }
 
@@ -213,9 +207,7 @@ public final class NoteManager implements LineMarks.Carrier {
         if (t != null && status != null) {
             t.note = t.note.withStatus(status);
             fireChanged();
-            if (t.positioned()) {
-                onLinesRepaint.accept(List.of(lineOf(t.start)));
-            }
+            onSpansChanged.run();
         }
     }
 
@@ -223,6 +215,7 @@ public final class NoteManager implements LineMarks.Carrier {
         if (!tracked.isEmpty()) {
             tracked.clear();
             fireChanged();
+            onSpansChanged.run();
         }
     }
 
@@ -267,6 +260,7 @@ public final class NoteManager implements LineMarks.Carrier {
             return moved;
         } finally {
             restoring = false;
+            onSpansChanged.run();
         }
     }
 
@@ -318,7 +312,7 @@ public final class NoteManager implements LineMarks.Carrier {
 
     /**
      * Carries the notes across the narrowing swap: a note inside the region is rebased onto it; the others
-     * are unpositioned (no gutter marker, no highlight) with their whole-document range held for
+     * are unpositioned (no highlight) with their whole-document range held for
      * {@link #widen}.
      */
     @Override
@@ -341,7 +335,7 @@ public final class NoteManager implements LineMarks.Carrier {
         held = outside;
         heldStart = start;
         heldEnd = end;
-        onLinesRepaint.accept(activeLines());
+        onSpansChanged.run();
     }
 
     /** Moves the region's notes back to whole-document offsets and re-positions the held ones around them. */
@@ -363,7 +357,7 @@ public final class NoteManager implements LineMarks.Carrier {
             }
         }
         held = null;
-        onLinesRepaint.accept(activeLines());
+        onSpansChanged.run();
     }
 
     private void runSwap(Runnable swap) {
@@ -385,12 +379,13 @@ public final class NoteManager implements LineMarks.Carrier {
         if (removed == 0 && inserted == 0) {
             return;
         }
-        java.util.Set<Integer> affected = new java.util.HashSet<>();
+        // Only the offsets move: no line lookups here. They used to find the lines whose gutter to rebuild — two
+        // offsetToPosition calls per note per keystroke and a gutter graphic rebuilt for each moved line, for a
+        // glyph notes no longer have (an Enter above 200 notes queued 400 rebuilds).
         for (Tracked t : tracked.values()) {
             if (!t.positioned()) {
                 continue;
             }
-            int oldLine = lineOf(t.start);
             int[] shifted = NoteAnchors.shiftRange(t.start, t.end, pos, removed, inserted);
             if (inserted > 0 && t.start >= pos && t.end <= pos + removed && t.end - t.start < removed) {
                 // The note sat inside a replaced span (Replace All, a formatter edit, a history restore):
@@ -404,14 +399,6 @@ public final class NoteManager implements LineMarks.Carrier {
             }
             t.start = shifted[0];
             t.end = shifted[1];
-            int newLine = lineOf(t.start);
-            if (oldLine != newLine) {
-                affected.add(oldLine);
-                affected.add(newLine);
-            }
-        }
-        if (!affected.isEmpty()) {
-            onLinesRepaint.accept(affected);
         }
     }
 

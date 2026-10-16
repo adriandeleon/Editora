@@ -8,6 +8,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
+import javafx.scene.Scene;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.stage.Stage;
 
 import com.editora.config.FileIdentity;
 import com.editora.config.NoteScope;
@@ -90,6 +95,93 @@ class NoteOverlayInertFxTest {
                 buffer.dispose();
             }
         });
+    }
+
+    /**
+     * Every buffer hit-tests the pointer against its notes on each move; one without a positioned note has
+     * nothing to find, so it must not ask the layout where the pointer is.
+     */
+    @Test
+    void aBufferWithoutNotesDoesNotHitTestThePointer() throws Exception {
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            Stage stage = new Stage();
+            try {
+                buffer.setInitialContent("alpha beta\ngamma\n");
+                stage.setScene(new Scene(buffer.getNode(), 500, 300));
+                stage.show();
+                buffer.getNode().applyCss();
+                buffer.getNode().layout();
+                CodeArea area = buffer.getArea();
+                Bounds box = area.getCharacterBoundsOnScreen(6, 7).orElseThrow();
+                EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.set(0);
+                for (int i = 0; i < 20; i++) {
+                    area.fireEvent(moved(box.getCenterX() + i, box.getCenterY()));
+                }
+                assertEquals(0, EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.get(), "no note: no hit-test");
+
+                buffer.getNoteManager()
+                        .add(PersonalNote.create(
+                                null,
+                                NoteScope.WORD,
+                                new TextAnchor(0, 6, 0, 10, "beta", "alpha ", "\n", 4),
+                                "a note",
+                                List.of()));
+                area.fireEvent(moved(box.getCenterX(), box.getCenterY()));
+                assertEquals(1, EditorBuffer.NOTE_HOVER_HITS_FOR_TEST.get(), "with one, the pointer is hit-tested");
+            } finally {
+                stage.close();
+                buffer.dispose();
+            }
+        });
+    }
+
+    /** The overlay follows edits by itself; the note manager signals it only when the set of notes changes. */
+    @Test
+    void editsDoNotSignalTheOverlayButChangesToTheNotesDo() throws Exception {
+        runOnFx(() -> {
+            CodeArea area = new CodeArea("alpha beta\ngamma\n");
+            NoteManager notes = new NoteManager(area);
+            AtomicInteger signals = new AtomicInteger();
+            notes.setOnSpansChanged(signals::incrementAndGet);
+            PersonalNote note = PersonalNote.create(
+                    null, NoteScope.WORD, new TextAnchor(0, 6, 0, 10, "beta", "alpha ", "\n", 4), "a note", List.of());
+            notes.add(note);
+            assertEquals(1, signals.get(), "added");
+            for (int i = 0; i < 10; i++) {
+                area.insertText(0, i % 2 == 0 ? "\n" : "x");
+            }
+            assertEquals(1, signals.get(), "edits move the note without a signal");
+            assertEquals(
+                    List.of(6 + 10, 10 + 10),
+                    List.of(notes.activeSpans().get(0)[0], notes.activeSpans().get(0)[1]));
+            notes.setStatus(note.id(), com.editora.config.NoteStatus.RESOLVED);
+            notes.remove(note.id());
+            notes.restore(List.of(note));
+            assertEquals(4, signals.get(), "resolved, removed, restored");
+        });
+    }
+
+    private static MouseEvent moved(double screenX, double screenY) {
+        return new MouseEvent(
+                MouseEvent.MOUSE_MOVED,
+                0,
+                0,
+                screenX,
+                screenY,
+                MouseButton.NONE,
+                0,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                null);
     }
 
     private static boolean redrawPending(Object overlay) {

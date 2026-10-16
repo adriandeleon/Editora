@@ -6,6 +6,7 @@ import java.util.function.Supplier;
 
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
+import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
@@ -17,8 +18,12 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
 /**
  * A transparent overlay that paints a soft highlight behind each Personal Note's anchored span, on top of
  * the editor without touching the document or its style spans. Modeled on {@link SpellCheckOverlay}: a
- * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse) on
- * scroll/edit/resize/fold, only for visible spans. Off in large-file mode / when indicators are hidden.
+ * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse, after that pulse's
+ * layout — see {@link #scheduleRedraw}) on scroll/edit/resize/fold, only for visible spans. Each visual row of a
+ * span is painted on its own, folded lines are skipped, and nothing is painted over the gutter when the text is
+ * scrolled sideways under it. Off when indicators are hidden (the {@code showNoteIndicators} setting) and inert
+ * while the buffer has no positioned note; it stays on in large-file mode, where it costs nothing until a note
+ * is on screen and the notes are the user's own.
  */
 final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
@@ -53,6 +58,20 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     private boolean rendering = true;
 
     private boolean redrawPending;
+    /** How many pulses after a paint the overlay checks that the text is still where it painted for. */
+    private static final int CHECKS_AFTER_PAINT = 3;
+
+    private final Runnable afterLayout = this::afterLayoutPulse;
+    /** The scene whose post-layout pulses {@link #afterLayout} is listening to, or null. */
+    private Scene armed;
+
+    private int checksLeft;
+    /** Where the first visible character was when the highlights were last painted (NaN: nothing painted). */
+    private double paintedX = Double.NaN;
+
+    private double paintedY = Double.NaN;
+    /** Test seam: when set, every highlight box painted by the last frame is recorded as {@code {x0, y0, x1, y1}}. */
+    static List<double[]> boxesForTest;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private NoteHighlightOverlay follower;
     // Whether the last redraw had visible note spans to paint. When false the canvas is shrunk to 1x1 to
@@ -153,6 +172,14 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         }
     }
 
+    /**
+     * Asks for a repaint <em>after the next layout pass</em>. The highlights are placed from the laid-out text,
+     * so a paint run before the pulse that lays it out ({@code Platform.runLater} does) is a paint for the old
+     * layout, and that frame is shown. When the text moves without anything the overlay listens to (the gutter
+     * widening a pulse after an edit takes the file to 1,000 lines, line numbers toggled, the font changed),
+     * nothing asked for another. So the paint is tied to the pulse, and for a few pulses afterwards the overlay
+     * looks again at where the text starts (the pattern of {@link MarkdownLintOverlay}).
+     */
     private void scheduleRedraw() {
         if (!active || !rendering || redrawPending) {
             return;
@@ -162,10 +189,67 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             return;
         }
         redrawPending = true;
-        Platform.runLater(() -> {
+        arm();
+    }
+
+    private void arm() {
+        Scene scene = getScene();
+        if (scene == null) {
+            Platform.runLater(afterLayout); // not in a window: there is no pulse to wait for
+            return;
+        }
+        if (armed != scene) {
+            disarm();
+            scene.addPostLayoutPulseListener(afterLayout);
+            armed = scene;
+        }
+        Platform.requestNextPulse();
+    }
+
+    private void disarm() {
+        if (armed != null) {
+            armed.removePostLayoutPulseListener(afterLayout);
+            armed = null;
+        }
+    }
+
+    /** Runs once the scene has been laid out: paints if asked to, else checks the last paint still fits. */
+    private void afterLayoutPulse() {
+        if (redrawPending) {
             redrawPending = false;
             redraw();
-        });
+            checksLeft = CHECKS_AFTER_PAINT;
+        } else if (checksLeft > 0) {
+            checksLeft--;
+            if (drawable() && textMoved()) {
+                redraw();
+                checksLeft = CHECKS_AFTER_PAINT;
+            }
+        }
+        if (checksLeft > 0 && drawable() && armed != null) {
+            Platform.requestNextPulse();
+        } else {
+            checksLeft = 0;
+            disarm();
+        }
+    }
+
+    /** Whether a repaint could put anything on the canvas. */
+    private boolean drawable() {
+        return active && rendering && hasContent;
+    }
+
+    /** Whether the first visible character is no longer where it was when the highlights were last painted. */
+    private boolean textMoved() {
+        try {
+            int total = area.getParagraphs().size();
+            int first = Math.max(0, area.firstVisibleParToAllParIndex());
+            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
+            Bounds now = firstCharacter(first, last);
+            return now != null && (now.getMinX() != paintedX || now.getMinY() != paintedY);
+        } catch (RuntimeException midLayout) {
+            return false;
+        }
     }
 
     /** Grows the canvas to the viewport (only when there's content to paint) and clears it. */
@@ -191,6 +275,11 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     private void redraw() {
+        paintedX = Double.NaN;
+        paintedY = Double.NaN;
+        if (boxesForTest != null) {
+            boxesForTest.clear();
+        }
         if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
             releaseCanvas();
             return;
@@ -225,9 +314,17 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             GraphicsContext g = canvas.getGraphicsContext2D();
             double w = canvas.getWidth();
             double h = canvas.getHeight();
-            g.setLineWidth(1);
+            Bounds origin = firstCharacter(Math.max(0, firstVisible), lastVis);
+            // Scrolled sideways, the text slides under the gutter, which stays put: nothing is painted left of
+            // where column 0 sits at no scroll (where the text area begins), so no highlight covers the numbers.
+            double textLeft = 0;
+            if (origin != null) {
+                paintedX = origin.getMinX();
+                paintedY = origin.getMinY();
+                textLeft = Math.max(0, Math.floor(origin.getMinX() + area.getEstimatedScrollX()));
+            }
             for (int[] span : visible) {
-                paintSpan(g, span[0], span[1], firstVisible, lastVisible, w, h);
+                paintSpan(g, span[0], span[1], Math.max(0, firstVisible), lastVis, w, h, textLeft);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — a later event will redraw.
@@ -235,12 +332,21 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     /**
-     * Paints a highlight that follows the document's text shape: a multi-line span is drawn as one
-     * rounded box <b>per line</b> (clamped to the visible paragraphs), mirroring how the editor renders a
-     * multi-line selection — rather than a single bounding rectangle over the whole range.
+     * Paints a highlight that follows the document's text shape, like the editor's selection: one flat box per
+     * <b>visual row</b> (clamped to the visible, unfolded paragraphs). The bounds of a range that wraps are the
+     * box around all of its rows, so a note that crossed a row boundary used to paint those rows in full; such a
+     * range is split until each piece is one row (see {@link #rows}). A line of a multi-line note other than its
+     * last fills to the right edge on its last row — the included line break, as a selection paints it.
      */
     private void paintSpan(
-            GraphicsContext g, int start, int end, int firstVisible, int lastVisible, double w, double h) {
+            GraphicsContext g,
+            int start,
+            int end,
+            int firstVisible,
+            int lastVisible,
+            double w,
+            double h,
+            double textLeft) {
         int total = area.getLength();
         start = clamp(start, 0, total);
         end = clamp(end, 0, total);
@@ -248,41 +354,100 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         var endPos = area.offsetToPosition(Math.max(end, start), Bias.Backward);
         int startLine = startPos.getMajor();
         int endLine = endPos.getMajor();
-        boolean single = startLine == endLine;
         int from = Math.max(startLine, firstVisible);
         int to = Math.min(endLine, lastVisible);
         for (int line = from; line <= to; line++) {
+            if (area.isFolded(line)) {
+                continue;
+            }
             int paraLen = area.getParagraph(line).getText().length();
             boolean lastLine = line == endLine;
-            int c0 = (line == startLine) ? startPos.getMinor() : 0;
-            int c1 = lastLine ? endPos.getMinor() : paraLen;
-            int o0 = area.getAbsolutePosition(line, clamp(c0, 0, paraLen));
-            int o1 = area.getAbsolutePosition(line, clamp(c1, 0, paraLen));
-            // Query a non-empty range so the bounds (left edge, baseline, height) are well-defined.
-            Bounds b = toLocal(
-                    area.getCharacterBoundsOnScreen(o0, Math.max(o1, o0 + 1)).orElse(null));
-            if (b == null) {
-                continue;
+            int c0 = clamp((line == startLine) ? startPos.getMinor() : 0, 0, paraLen);
+            int c1 = clamp(lastLine ? endPos.getMinor() : paraLen, 0, paraLen);
+            int o0 = area.getAbsolutePosition(line, c0);
+            if (o0 >= total) {
+                continue; // the very end of the document: no character to take a box from
             }
-            double x = b.getMinX();
-            // Intermediate lines of a multi-line note fill to the right edge — matching how a text
-            // selection paints the included line break; the last (and single) line stops at the caret.
-            double right = (!single && !lastLine) ? w : b.getMaxX();
-            if (right < 0 || x > w || b.getMaxY() < 0 || b.getMinY() > h) {
-                continue;
-            }
-            // Flat, square fill so adjacent lines join seamlessly (like a selection), not separate pills.
-            g.setFill(FILL);
-            g.fillRect(x, b.getMinY(), Math.max(1, right - x), b.getHeight());
-            // The inline note marker: a small corner triangle at the very start of the note's span (drawn
-            // once, on the note's first line, when that line is visible).
-            if (line == startLine) {
-                double gx = Math.max(0, x);
-                double gy = b.getMinY();
-                g.setFill(GLYPH);
-                g.fillPolygon(new double[] {gx, gx + GLYPH_SIZE, gx}, new double[] {gy, gy, gy + GLYPH_SIZE}, 3);
+            // A non-empty range keeps the bounds (left edge, top, height) well-defined; on an empty line (or at
+            // a line's end) that is the line break.
+            List<double[]> rows = new java.util.ArrayList<>(2);
+            rows(o0, o0 + Math.max(c1 - c0, 1), 0, rows);
+            for (int r = 0; r < rows.size(); r++) {
+                double[] row = rows.get(r);
+                double x = row[0];
+                double right = (!lastLine && r == rows.size() - 1) ? w : row[1];
+                double top = row[2];
+                double bottom = row[3];
+                if (right < 0 || x > w || bottom < 0 || top > h) {
+                    continue;
+                }
+                double left = Math.max(x, textLeft);
+                if (right > left) {
+                    // Flat, square fill so adjacent rows join seamlessly (like a selection), not separate pills.
+                    g.setFill(FILL);
+                    g.fillRect(left, top, Math.max(1, right - left), bottom - top);
+                    if (boxesForTest != null) {
+                        boxesForTest.add(new double[] {left, top, right, bottom});
+                    }
+                }
+                // The inline note marker: a small corner triangle at the very start of the note's span (drawn
+                // once, on the note's first row, while that character is not scrolled under the gutter).
+                if (line == startLine && r == 0 && x >= textLeft - 0.5) {
+                    g.setFill(GLYPH);
+                    g.fillPolygon(new double[] {x, x + GLYPH_SIZE, x}, new double[] {top, top, top + GLYPH_SIZE}, 3);
+                }
             }
         }
+    }
+
+    /**
+     * Appends the visual rows of the offsets {@code [o0, o1)} of one line to {@code out}, each as {@code {x0, x1,
+     * top, bottom}}, in order. Unwrapped text has one row per line, so that is one bounds query. A wrapped range
+     * taller than its first character spans rows: it is halved until each piece is one row, and pieces on the
+     * same row are joined into one box (two abutting translucent fills would show a seam).
+     */
+    private void rows(int o0, int o1, int depth, List<double[]> out) {
+        Bounds b = bounds(o0, o1);
+        if (b == null) {
+            return;
+        }
+        if (o1 - o0 > 1 && depth < 32 && area.isWrapText()) {
+            Bounds one = bounds(o0, o0 + 1);
+            if (one != null && b.getHeight() > one.getHeight() * 1.5) {
+                int mid = (o0 + o1) >>> 1;
+                rows(o0, mid, depth + 1, out);
+                rows(mid, o1, depth + 1, out);
+                return;
+            }
+        }
+        if (!out.isEmpty()) {
+            double[] prev = out.get(out.size() - 1);
+            if (Math.abs(prev[2] - b.getMinY()) < 0.5) {
+                prev[0] = Math.min(prev[0], b.getMinX());
+                prev[1] = Math.max(prev[1], b.getMaxX());
+                return;
+            }
+        }
+        out.add(new double[] {b.getMinX(), b.getMaxX(), b.getMinY(), b.getMaxY()});
+    }
+
+    /** The canvas-local bounds of the first character of the first visible, unfolded line that has one. */
+    private Bounds firstCharacter(int first, int last) {
+        for (int p = first; p <= last; p++) {
+            if (area.getParagraph(p).getText().isEmpty() || area.isFolded(p)) {
+                continue;
+            }
+            int abs = area.getAbsolutePosition(p, 0);
+            Bounds b = bounds(abs, abs + 1);
+            if (b != null) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    private Bounds bounds(int start, int end) {
+        return toLocal(area.getCharacterBoundsOnScreen(start, end).orElse(null));
     }
 
     /**

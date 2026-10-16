@@ -252,7 +252,6 @@ final class NotesCoordinator {
             }
             open.getNoteManager()
                     .add(PersonalNote.create(open.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
-            open.refreshGutter();
             return;
         }
         String key = noteStoreKey(file);
@@ -297,7 +296,6 @@ final class NotesCoordinator {
         EditorBuffer open = ops.bufferForPath(file);
         if (open != null) {
             open.getNoteManager().update(note.withBody(body.strip()));
-            open.refreshGutter();
             refreshViews();
             return;
         }
@@ -460,8 +458,11 @@ final class NotesCoordinator {
         List<PersonalNote> saved = map.get(key);
         boolean rekeyed = false;
         if (saved == null && !map.isEmpty()) {
-            // The file may have been renamed/moved outside Editora — match by content hash and re-key.
-            String matchKey = findNoteKeyByIdentity(map, buffer.fileIdentity());
+            // The file may have been renamed/moved outside Editora — match by content hash and re-key. The hash
+            // reads the whole file (up to 5 MB, on this thread), so it is computed only if some stored note's
+            // file is gone and had this file's size; opening a file with no notes usually never reads it.
+            Path file = buffer.getPath();
+            String matchKey = findNoteKeyByIdentity(map, FileIdentity.unhashed(file), () -> FileIdentity.hashOf(file));
             if (matchKey != null) {
                 saved = map.remove(matchKey);
                 map.put(key, saved);
@@ -521,10 +522,11 @@ final class NotesCoordinator {
         }
     }
 
-    private static String findNoteKeyByIdentity(Map<String, List<PersonalNote>> map, FileIdentity id) {
+    private static String findNoteKeyByIdentity(
+            Map<String, List<PersonalNote>> map, FileIdentity id, java.util.function.Supplier<String> hash) {
         // A content-hash match only means "same bytes" — it is trusted only when the note's own file is gone
         // from disk (a rename). Otherwise opening a copy of an annotated file stole its notes; see PathKeys.
-        return PathKeys.findKeyByIdentity(map, id, path -> {
+        return PathKeys.findKeyByIdentity(map, id, hash, path -> {
             try {
                 return !path.isBlank() && java.nio.file.Files.exists(java.nio.file.Path.of(path));
             } catch (RuntimeException e) {
@@ -548,7 +550,6 @@ final class NotesCoordinator {
                     buffer.getNoteManager()
                             .add(PersonalNote.create(
                                     buffer.fileIdentity(), draft.scope(), draft.anchor(), body, List.of()));
-                    buffer.refreshGutter();
                 },
                 null);
     }
@@ -631,7 +632,6 @@ final class NotesCoordinator {
     private void editOpenBufferNote(EditorBuffer buffer, PersonalNote note) {
         showNoteDialog(note.body(), body -> buffer.getNoteManager().update(note.withBody(body)), () -> {
             buffer.getNoteManager().remove(note.id());
-            buffer.refreshGutter();
         });
     }
 
@@ -677,7 +677,6 @@ final class NotesCoordinator {
             return;
         }
         b.getNoteManager().remove(ns.get(0).id());
-        b.refreshGutter();
     }
 
     void jumpNote(boolean forward) {
@@ -782,7 +781,6 @@ final class NotesCoordinator {
         EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             open.getNoteManager().remove(note.id());
-            open.refreshGutter();
         } else {
             updateBucketNotes(projectKey, fileKey, list -> list.removeIf(n -> n.id().equals(note.id())));
         }
@@ -792,7 +790,6 @@ final class NotesCoordinator {
         EditorBuffer open = isActiveBucket(projectKey) ? ops.bufferForKey(fileKey) : null;
         if (open != null) {
             open.getNoteManager().clear();
-            open.refreshGutter();
         } else {
             Map<String, List<PersonalNote>> bucket = bucketFor(projectKey);
             if (bucket != null && bucket.remove(fileKey) != null) {
