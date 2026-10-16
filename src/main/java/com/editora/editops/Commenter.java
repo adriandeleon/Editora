@@ -87,8 +87,22 @@ public final class Commenter {
         };
     }
 
-    /** Computes the toggle edit for the selection {@code [selStart, selEnd]}, or null if unsupported. */
+    /**
+     * Computes the toggle edit for the selection {@code [selStart, selEnd]}, or null if unsupported.
+     *
+     * <p>A {@code #!} shebang on the first line of a {@code #}-comment language is never toggled: it is not a
+     * comment, and removing its {@code #} breaks the script ({@code !/usr/bin/env bash}). A selection that
+     * covers it toggles the lines after it; the shebang line alone toggles nothing.
+     */
     public static Edit toggle(String text, int selStart, int selEnd, CommentStyle style) {
+        if (onShebang(text, selStart, style)) {
+            int next = lineEnd(text, 0) + 1;
+            int end = Math.max(selStart, selEnd);
+            if (next > text.length() || end < next) {
+                return null; // only the shebang line
+            }
+            return toggle(text, next, end, style);
+        }
         // A selection ending exactly at a line start doesn't include that trailing line.
         int effEnd = selEnd > selStart && lineStart(text, selEnd) == selEnd ? selEnd - 1 : selEnd;
         boolean multi = lineStart(text, selStart) != lineStart(text, effEnd);
@@ -111,6 +125,16 @@ public final class Commenter {
         // the next typed character (or Enter) replaced it.
         int caret = caretAfter(text.substring(edit.from(), edit.to()), edit.replacement(), selStart - edit.from());
         return new Edit(edit.from(), edit.to(), edit.replacement(), edit.from() + caret, edit.from() + caret);
+    }
+
+    /** Whether {@code selStart} is on a first-line {@code #!} shebang of a {@code #}-comment language. */
+    public static boolean onShebang(String text, int selStart, CommentStyle style) {
+        return "#".equals(style.line()) && text.startsWith("#!") && selStart <= lineEnd(text, 0);
+    }
+
+    /** Whether the selection is the shebang line alone, which {@link #toggle} leaves untouched. */
+    public static boolean onlyShebang(String text, int selStart, int selEnd, CommentStyle style) {
+        return onShebang(text, selStart, style) && Math.max(selStart, selEnd) <= lineEnd(text, 0);
     }
 
     /**

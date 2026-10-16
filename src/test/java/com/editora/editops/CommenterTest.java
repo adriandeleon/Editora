@@ -5,7 +5,9 @@ import com.editora.editops.Commenter.Edit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure comment toggle engine. */
 class CommenterTest {
@@ -86,5 +88,23 @@ class CommenterTest {
     void blankLinesSkippedWhenCommenting() {
         String text = "a\n\nb";
         assertEquals("# a\n\n# b", apply(text, 0, text.length(), "python")); // blank line untouched
+    }
+
+    @Test
+    void aShebangIsNeverToggled() {
+        // B3: Ctrl+/ on line 1 turned `#!/usr/bin/env bash` into `!/usr/bin/env bash`.
+        String sh = "#!/usr/bin/env bash\n# usage: x\necho hi\n";
+        assertNull(Commenter.toggle(sh, 3, 3, Commenter.styleFor("shell")), "the shebang line alone");
+        assertNull(Commenter.toggle(sh, 0, 19, Commenter.styleFor("shell")));
+        assertTrue(Commenter.onlyShebang(sh, 3, 3, Commenter.styleFor("shell")));
+        // A selection over it toggles the lines after it only: the header comment is uncommented …
+        assertEquals("#!/usr/bin/env bash\nusage: x\necho hi\n", apply(sh, 0, 30, "shell"));
+        // … and select-all comments the code without touching the shebang.
+        assertEquals("#!/usr/bin/env bash\n# # usage: x\n# echo hi\n", apply(sh, 0, sh.length(), "shell"));
+        String py = "#!/usr/bin/env python3\nx = 1";
+        assertEquals("#!/usr/bin/env python3\n# x = 1", apply(py, 0, py.length(), "python"));
+        // Not a shebang: a `#!` anywhere else, or in a language whose comments are not `#`.
+        assertEquals("echo\n!# x", apply("echo\n# !# x", 5, 5, "shell"));
+        assertFalse(Commenter.onlyShebang("echo\n#!x", 6, 6, Commenter.styleFor("shell")));
     }
 }
