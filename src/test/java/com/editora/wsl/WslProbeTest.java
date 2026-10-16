@@ -41,9 +41,11 @@ class WslProbeTest {
     private String inside;
     private final WslTargets targets = new WslTargets(List.of("wsl.exe"));
 
+    /** {@code script} run inside {@code distro}, carried as {@link WslExecTarget} carries its own commands. */
     private static ProcessRunner.Result wsl(String distro, String script) {
-        return ProcessRunner.run(
-                null, Duration.ofSeconds(120), List.of("wsl.exe", "-d", distro, "--exec", "sh", "-c", script));
+        List<String> argv = new java.util.ArrayList<>(List.of("wsl.exe", "-d", distro, "--exec"));
+        argv.addAll(WslExecTarget.windowsSafe(List.of("sh", "-c", script)));
+        return ProcessRunner.run(null, Duration.ofSeconds(120), argv);
     }
 
     @BeforeEach
@@ -109,14 +111,14 @@ class WslProbeTest {
                                 ExecSpec.Locale.PARSE_STABLE)
                         .withLongLived(true));
         Thread.sleep(2000);
-        assertTrue(wsl(distro, "pgrep -f 'sleep 30[01]' | wc -l").out().strip().equals("2"));
+        assertEquals("2", wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip(), "both sleeps running");
 
         ProcessRegistry.killTree(p);
 
         assertTrue(p.waitFor(30, TimeUnit.SECONDS), "the program did not end");
         String left = "";
         for (int i = 0; i < 50; i++) {
-            left = wsl(distro, "pgrep -f 'sleep 30[01]' | wc -l").out().strip();
+            left = wsl(distro, "pgrep -f '^sleep 30[01]$' | wc -l").out().strip();
             if (left.equals("0")) {
                 break;
             }
