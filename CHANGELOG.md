@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTP Client: response handlers, tests and checks.**
+  - **JavaScript response handlers** — `> {% … %}` after a request, or `> ./check.js` — now run, on your own
+    Node.js, once the response arrives. They use the JetBrains API: `client.test`, `client.assert`,
+    `client.log`, `client.global`, `client.exit`, `response.body` (parsed JSON), `response.status`,
+    `response.headers.valueOf`, `response.contentType`, `response.cookies()`, the request as sent
+    (`request.url`, `request.headers`, `request.body`), `request.environment.get` and `jsonPath(…)`.
+  - **A Tests block** in the response view lists each test with ✓ or ✗ and why it failed, then the handler's log
+    and any error, with its line in the `.http` file. A `✓ 3 passed · ✗ 1 failed` badge sits beside the status
+    line, Run All's summary counts the requests whose tests failed, and History rows carry a ✓ or ✗. Test
+    results are kept in the saved history.
+  - **Checks without JavaScript:** `# @assert status == 200`, `# @assert $.items[0].id == 7`,
+    `# @assert header Content-Type contains json`, `# @assert $.token exists` (also `!=`, `<`, `<=`, `>`, `>=`,
+    `matches`, `!exists`, and `time`/`body` subjects), and `# @capture token = $.token`. They need neither
+    Node.js nor a trusted folder.
+  - **Session variables:** what `client.global.set` or `@capture` stores is used by later requests as
+    `{{name}}` — after a Run All's earlier request, or a single run of it. It wins over the environment and loses
+    to the file's own `@name = value`, is inserted as is (never resolved), and is cleared when the environment
+    changes. The editor no longer marks `{{name}}` unresolved when the file sets it this way.
+  - **Safety:** a handler is code from the folder, so it runs only from a trusted folder (the same trust as build
+    scripts and secrets), asked once per run with Cancel as the default button. Node.js is started without your
+    environment variables (so `process.env` cannot read a token around the secrets prompt) and, on Node.js 20 or
+    later, under its permission model: no file writes, no child processes, no workers. It is stopped after 10
+    seconds. A secret the request read reaches the handler masked. Handlers may make network requests. Remote
+    `.http` files still do not run.
+  - **Settings → Web:** turn handlers off, choose the Node.js to use, and set the timeout. The Doctor has a row
+    for it. Pre-request scripts (`< {% %}`) are still skipped with a warning.
 - **Emacs registers.** In the Emacs keymap:
   - `C-x r s` copies the selection into a register; with `C-u`, it cuts it.
   - `C-x r i` inserts a register's text, leaving the cursor before it.

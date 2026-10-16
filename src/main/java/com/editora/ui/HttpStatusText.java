@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpTests;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -158,9 +159,63 @@ final class HttpStatusText {
                     ? tr("httppanel.runAllNotSent", unsent, exchanges.size())
                     : tr("httppanel.runAllFailedNotSent", failed, unsent, exchanges.size());
         }
-        return failed == 0
+        String line = failed == 0
                 ? tr("httppanel.runAllOk", exchanges.size())
                 : tr("httppanel.runAllFailed", failed, exchanges.size());
+        return line + testsFailedSuffix(exchanges);
+    }
+
+    /** " · tests failed in 2 requests" when some exchange's tests failed (or its handler stopped), else "". */
+    static String testsFailedSuffix(List<HttpExchange> exchanges) {
+        long n = exchanges.stream()
+                .filter(ex -> ex.result() != null && ex.result().tests().hasFailures())
+                .count();
+        return n == 0 ? "" : " · " + tr("httppanel.runAllTestsFailed", n);
+    }
+
+    /**
+     * The tests badge beside the status line — "✓ 3 passed · ✗ 1 failed", "✗ handler error" — or null when the
+     * response ran no tests and its handler stopped with no error. {@code compact} shortens it to "✓3 ✗1".
+     */
+    static String testsBadge(HttpTests t, boolean compact) {
+        if (t == null || (t.tests().isEmpty() && t.error() == null)) {
+            return null;
+        }
+        int passed = t.passed();
+        int failed = t.failed();
+        List<String> parts = new java.util.ArrayList<>();
+        if (compact) {
+            if (passed > 0) {
+                parts.add("✓" + passed);
+            }
+            if (failed > 0 || t.error() != null) {
+                parts.add("✗" + (failed + (t.error() != null ? 1 : 0)));
+            }
+            return String.join(" ", parts);
+        }
+        if (passed > 0) {
+            parts.add(tr("httppanel.testsPassed", passed));
+        }
+        if (failed > 0) {
+            parts.add(tr("httppanel.testsFailed", failed));
+        }
+        if (t.error() != null) {
+            parts.add(tr("httppanel.testsError"));
+        }
+        return String.join(" · ", parts);
+    }
+
+    /** The style class of the tests badge: failed when a test failed or the handler stopped. */
+    static String testsStyle(HttpTests t) {
+        return t != null && t.hasFailures() ? "http-tests-failed" : "http-tests-passed";
+    }
+
+    /** The Tests block's title: "Tests: 3 passed, 1 failed", or "Handler output" when it ran no test. */
+    static String testsTitle(HttpTests t) {
+        if (t.tests().isEmpty()) {
+            return t.error() != null ? tr("httppanel.testsTitleError") : tr("httppanel.testsTitleLog");
+        }
+        return tr("httppanel.testsTitle", t.passed(), t.failed());
     }
 
     /**
@@ -188,9 +243,14 @@ final class HttpStatusText {
         if (r.failed()) {
             return tr("status.http.failedError", label, withoutUrl(firstLine(r.shownError()), ex.url()));
         }
-        return r.ok()
+        String line = r.ok()
                 ? tr("status.http.finished", label, statusWithReason(r.status()))
                 : tr("status.http.failedStatus", label, statusWithReason(r.status()));
+        HttpTests t = r.tests();
+        if (t.hasFailures()) {
+            line += " · " + (t.failed() > 0 ? tr("httppanel.testsFailed", t.failed()) : tr("httppanel.testsError"));
+        }
+        return line;
     }
 
     /** The status-bar message after a Run All: "All 5 requests finished" / "2 of 5 requests failed". */
@@ -202,9 +262,10 @@ final class HttpStatusText {
                     ? tr("status.http.someNotSent", unsent, exchanges.size())
                     : tr("status.http.someFailedNotSent", failed, unsent, exchanges.size());
         }
-        return failed == 0
+        String line = failed == 0
                 ? tr("status.http.allDone", exchanges.size())
                 : tr("status.http.someFailed", failed, exchanges.size());
+        return line + testsFailedSuffix(exchanges);
     }
 
     /**

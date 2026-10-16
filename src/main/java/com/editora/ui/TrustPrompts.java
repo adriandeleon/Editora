@@ -13,8 +13,8 @@ import javafx.stage.Window;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The folder-trust prompts: trusting a folder to send its secrets from a {@code .http} request, and to run its build
- * wrapper. Both open by themselves while the user may still be typing (the HTTP one after the run has started), and
+ * The folder-trust prompts: trusting a folder to send its secrets from a {@code .http} request, to run the response
+ * handlers of its {@code .http} files, and to run its build wrapper. Both open by themselves while the user may still be typing (the HTTP one after the run has started), and
  * trusting is remembered, so <b>Cancel is the default and focused button</b>: a stray Enter or Space never trusts a
  * folder. Built here, on the FX thread, so a test can check the real dialog without showing a window of its own.
  */
@@ -37,6 +37,24 @@ final class TrustPrompts {
                 trust);
         confirm.setTitle(tr("dialog.trust.title"));
         confirm.setHeaderText(tr("dialog.httpTrust.header", name == null ? root.toString() : name.toString()));
+        return finish(confirm, owner, trust);
+    }
+
+    /** The prompt for running the JavaScript response handlers of {@code file}, in {@code root}, on Node.js. */
+    static Prompt httpScripts(Window owner, Path root, Path file) {
+        Path name = root.getFileName();
+        ButtonType trust = new ButtonType(tr("dialog.httpScripts.accept"), ButtonBar.ButtonData.OK_DONE);
+        Path fileName = file.getFileName();
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING,
+                tr(
+                        "dialog.httpScripts.body",
+                        fileName == null ? file.toString() : fileName.toString(),
+                        root.toString()),
+                ButtonType.CANCEL,
+                trust);
+        confirm.setTitle(tr("dialog.trust.title"));
+        confirm.setHeaderText(tr("dialog.httpScripts.header", name == null ? root.toString() : name.toString()));
         return finish(confirm, owner, trust);
     }
 

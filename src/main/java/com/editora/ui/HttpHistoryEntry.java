@@ -210,8 +210,8 @@ record HttpHistoryEntry(
 
     /**
      * {@link #toStored()} with {@code secrets} — the values the run read from the environment or {@code .env} —
-     * masked wherever they appear: the URL, the header values, the bodies, the form values, the error and the
-     * warnings.
+     * masked wherever they appear: the URL, the header values, the bodies, the form values, the error, the
+     * warnings, and the test results and handler log.
      */
     HttpResponseHistory.Response toStored(List<String> secrets) {
         HttpResult r = exchange.result();
@@ -263,7 +263,50 @@ record HttpHistoryEntry(
                 sent,
                 landedAt,
                 urlTemplate,
-                fingerprint);
+                fingerprint,
+                storedTests(r.tests(), secrets));
+    }
+
+    /** {@code tests} as saved, with {@code secrets} masked in every text; null when nothing ran. */
+    static HttpResponseHistory.Tests storedTests(HttpTests tests, List<String> secrets) {
+        if (tests == null || tests.isEmpty()) {
+            return null;
+        }
+        List<HttpResponseHistory.TestResult> results = new ArrayList<>();
+        for (HttpTests.Test t : tests.tests()) {
+            results.add(new HttpResponseHistory.TestResult(
+                    HttpSecretMask.mask(t.name(), secrets), t.passed(), HttpSecretMask.mask(t.message(), secrets)));
+        }
+        List<String> log = new ArrayList<>();
+        for (String line : tests.log()) {
+            log.add(HttpSecretMask.mask(line, secrets));
+        }
+        return new HttpResponseHistory.Tests(
+                List.copyOf(results), List.copyOf(log), HttpSecretMask.mask(tests.error(), secrets));
+    }
+
+    /** Saved test results back in memory; {@link HttpTests#NONE} for none (or an entry from before schema 4). */
+    static HttpTests restoredTests(HttpResponseHistory.Tests stored) {
+        if (stored == null) {
+            return HttpTests.NONE;
+        }
+        List<HttpTests.Test> tests = new ArrayList<>();
+        if (stored.tests() != null) {
+            for (HttpResponseHistory.TestResult t : stored.tests()) {
+                if (t != null) {
+                    tests.add(new HttpTests.Test(t.name(), t.passed(), t.message()));
+                }
+            }
+        }
+        List<String> log = new ArrayList<>();
+        if (stored.log() != null) {
+            for (String line : stored.log()) {
+                if (line != null) {
+                    log.add(line);
+                }
+            }
+        }
+        return new HttpTests(tests, log, stored.error());
     }
 
     /**
@@ -289,7 +332,7 @@ record HttpHistoryEntry(
                 s.truncated(), // as received; a body cut by the history is bodyCut, not "not downloaded"
                 List.of(),
                 s.protocol(),
-                HttpTests.NONE);
+                restoredTests(s.tests()));
         String method = s.method() == null ? "GET" : s.method();
         String url = s.url() == null ? "" : s.url();
         HttpExchange ex = new HttpExchange(

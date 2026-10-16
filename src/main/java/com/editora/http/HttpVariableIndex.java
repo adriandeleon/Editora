@@ -23,7 +23,9 @@ import static com.editora.i18n.Messages.tr;
  * environment (both env files, already merged into {@link Context#environment()}), the {@code @var} lines
  * above the reference, the dynamic built-ins (an environment variable must be set in this process, a
  * {@code $dotenv} key must be in the {@code .env} beside the file), and {@code {{name.response…}}} when the
- * file has a request called {@code name} — whether it has run yet is not known here, so it is not marked.
+ * file has a request called {@code name} — whether it has run yet is not known here, so it is not marked. Nor is
+ * a name the file sets as a session variable ({@link #sessionNames}: a {@code # @capture} line, or an inline
+ * handler's {@code client.global.set("name", …)}), which resolves once that request has run.
  * Comment lines and JavaScript handler/pre-request scripts are not looked at, as the run does not send them.
  * Pure apart from reading the {@code .env} file for {@code $dotenv}.
  */
@@ -75,6 +77,10 @@ public final class HttpVariableIndex {
     /** At most this many problems are reported for one document (a file full of them needs no more). */
     public static final int MAX_PROBLEMS = 500;
 
+    /** {@code client.global.set("name"} with a literal name, in an inline handler. */
+    private static final Pattern GLOBAL_SET =
+            Pattern.compile("client\\.global\\.set\\(\\s*([\"'`])([A-Za-z_][A-Za-z0-9_.-]*)\\1");
+
     /** The same {@code {{…}}} scanner a run uses, so a mark sits exactly where a reference is resolved. */
     private static final Pattern VAR = HttpVars.referencePattern();
 
@@ -117,12 +123,39 @@ public final class HttpVariableIndex {
     }
 
     /**
+     * The session variables the document sets when its requests run: the names of its {@code # @capture} lines and
+     * the literal names its inline handlers pass to {@code client.global.set}. A handler file is not read.
+     */
+    public static Set<String> sessionNames(String text) {
+        Set<String> names = new TreeSet<>();
+        if (text == null || text.isEmpty()) {
+            return names;
+        }
+        for (HttpFile.Request r : HttpFile.parse(text)) {
+            for (HttpChecks.Check c : r.directives().checks()) {
+                if (c.isCapture()) {
+                    names.add(c.captureName());
+                }
+            }
+        }
+        if (text.contains("client.global.set")) {
+            Matcher m = GLOBAL_SET.matcher(text);
+            while (m.find()) {
+                names.add(m.group(2));
+            }
+        }
+        return names;
+    }
+
+    /**
      * The variable names a reference on {@code line} can use: the environment's, then the {@code @var} lines
-     * declared above it (outside request bodies), sorted, without repeats.
+     * declared above it (outside request bodies), and the session variables the document sets, sorted, without
+     * repeats.
      */
     public static List<String> variablesAt(String text, int line, Context ctx) {
         Set<String> names =
                 new TreeSet<>(ctx == null ? Set.of() : ctx.environment().keySet());
+        names.addAll(sessionNames(text));
         Walk walk = new Walk(text);
         for (int k = 0; k < walk.lines.length && k < line; k++) {
             String t = walk.lines[k].strip();
@@ -143,6 +176,7 @@ public final class HttpVariableIndex {
         ZonedDateTime clock = now == null ? ZonedDateTime.now() : now;
         Walk walk = new Walk(text);
         Set<String> requests = new LinkedHashSet<>(requestNames(text));
+        Set<String> session = sessionNames(text);
         List<String[]> declared = new ArrayList<>();
         HttpVars.Scope scope = null;
         int scopeSize = -1;
@@ -169,7 +203,7 @@ public final class HttpVariableIndex {
                 scopeSize = declared.size();
             }
             boolean declaration = walk.request(k) == null && HttpFile.isVarDecl(t);
-            check(k, line, declaration ? line.indexOf('=') + 1 : 0, scope, requests, c, clock, out);
+            check(k, line, declaration ? line.indexOf('=') + 1 : 0, scope, requests, session, c, clock, out);
             if (declaration) {
                 declared.add(HttpFile.varPair(t));
             }
@@ -183,6 +217,7 @@ public final class HttpVariableIndex {
             int from,
             HttpVars.Scope scope,
             Set<String> requests,
+            Set<String> session,
             Context ctx,
             ZonedDateTime now,
             List<Problem> out) {
@@ -191,7 +226,7 @@ public final class HttpVariableIndex {
         while (m.find() && out.size() < MAX_PROBLEMS) {
             String name = m.group(1).strip();
             String ref = "{{" + name + "}}";
-            String reason = reasonFor(name, scope, requests, ctx, now);
+            String reason = reasonFor(name, scope, requests, session, ctx, now);
             if (reason != null) {
                 out.add(new Problem(lineNo, m.start(), m.end() - m.start(), ref, reason));
             }
@@ -200,7 +235,12 @@ public final class HttpVariableIndex {
 
     /** Why {@code name} cannot resolve, or {@code null} when it can. */
     private static String reasonFor(
-            String name, HttpVars.Scope scope, Set<String> requests, Context ctx, ZonedDateTime now) {
+            String name,
+            HttpVars.Scope scope,
+            Set<String> requests,
+            Set<String> session,
+            Context ctx,
+            ZonedDateTime now) {
         String[] why = new String[1];
         if (name.isEmpty()) {
             return tr("http.unresolved.reason.undefined");
@@ -217,6 +257,9 @@ public final class HttpVariableIndex {
                 if (CapturedResponses.isResponseRef(innerName) && requests.contains(requestOf(innerName))) {
                     continue; // a response of a request in this file: resolved when that request has run
                 }
+                if (session.contains(innerName.strip())) {
+                    continue; // set by a request of this file when it runs
+                }
                 String innerWhy = undefined.equals(e.getValue()) ? undefined(innerName.strip(), ctx) : e.getValue();
                 return tr("http.lint.uses", e.getKey(), innerWhy);
             }
@@ -225,6 +268,9 @@ public final class HttpVariableIndex {
         if (CapturedResponses.isResponseRef(name)) {
             String request = requestOf(name);
             return requests.contains(request) ? null : tr("http.unresolved.reason.noRequest", request);
+        }
+        if (session.contains(name)) {
+            return null; // a @capture or client.global.set of this file sets it when its request runs
         }
         return undefined(name, ctx);
     }

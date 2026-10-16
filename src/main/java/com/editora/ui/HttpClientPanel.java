@@ -49,6 +49,7 @@ import com.editora.command.TextInputKeymap;
 import com.editora.http.HttpExchange;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
+import com.editora.http.HttpTests;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 
@@ -101,6 +102,10 @@ public final class HttpClientPanel extends VBox {
     private final Label status = new Label();
     /** "⚠ 11 warnings" beside the status line: a response can be 200 OK and still have been sent wrong. */
     private final Label warnBadge = new Label();
+    /** "✓ 3 passed · ✗ 1 failed" beside the status line: what the request's @assert checks and handlers found. */
+    private final Label testsBadge = new Label();
+    /** The tests shown, so the badge can be shortened with the warnings badge. */
+    private HttpTests shownTests = HttpTests.NONE;
     /** "Run All: 3 of 13 failed" under the status line after a Run All, until the next run. */
     private final Label runSummary = new Label();
     /** The Run All summary, and a note about the last run (Run sent the caret's request instead), until the next run. */
@@ -120,6 +125,11 @@ public final class HttpClientPanel extends VBox {
     private final TitledPane requestPane = new TitledPane();
     /** The response's warnings and the files a {@code >>} wrote, apart from the headers they used to bury. */
     private final TextArea notesArea = new TextArea();
+    /** The Tests block: one row per test (✓/✗, name, why it failed), then the handlers' log and error. */
+    private final VBox testRows = new VBox(2);
+
+    private final TextArea testsLog = new TextArea();
+    private final TitledPane testsPane = new TitledPane();
 
     private final TitledPane notesPane = new TitledPane();
     private final TextArea headersArea = new TextArea();
@@ -213,13 +223,25 @@ public final class HttpClientPanel extends VBox {
                 e.consume();
             }
         });
+        testsBadge.getStyleClass().add("http-tests-badge");
+        testsBadge.setMinWidth(Region.USE_PREF_SIZE);
+        testsBadge.setOnMouseClicked(e -> toggleTests());
+        testsBadge.setFocusTraversable(true);
+        testsBadge.setAccessibleRole(AccessibleRole.BUTTON);
+        testsBadge.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
+                toggleTests();
+                e.consume();
+            }
+        });
+        showBadge(testsBadge, null);
         runSummary.getStyleClass().add("http-run-summary");
         runSummary.setMinWidth(0);
         runSummary.setTextOverrun(OverrunStyle.ELLIPSIS);
         runSummary.setWrapText(true);
         showBadge(warnBadge, null);
         showBadge(runSummary, null);
-        HBox top = new HBox(8, runHost, status, warnBadge);
+        HBox top = new HBox(8, runHost, status, testsBadge, warnBadge);
         top.setAlignment(Pos.CENTER_LEFT);
 
         envCombo.getStyleClass().add("http-env");
@@ -317,12 +339,23 @@ public final class HttpClientPanel extends VBox {
         });
         showNotes(List.of(), List.of());
 
+        testRows.getStyleClass().add("http-test-rows");
+        testsLog.setEditable(false);
+        testsLog.setWrapText(true);
+        testsLog.getStyleClass().add("http-tests-log");
+        VBox testsBox = new VBox(4, testRows, testsLog);
+        testsPane.setContent(testsBox);
+        testsPane.setAnimated(false);
+        testsPane.getStyleClass().add("http-tests-pane");
+        testsPane.expandedProperty().addListener((o, a, b) -> fitHead());
+        showTests(HttpTests.NONE);
+
         headersArea.setEditable(false);
         headersArea.setWrapText(true);
         headersArea.getStyleClass().add("http-headers");
         headersArea.setPrefRowCount(5);
         VBox.setVgrow(headersArea, Priority.ALWAYS);
-        head = new VBox(4, requestPane, notesPane, headersArea);
+        head = new VBox(4, requestPane, testsPane, notesPane, headersArea);
 
         bodyArea.getStyleClass().addAll("editor-area", "http-body");
         bodyArea.setEditable(false);
@@ -397,16 +430,22 @@ public final class HttpClientPanel extends VBox {
         // The configured keymap in the read-only response areas: the panel owns its keys, so the editor-context
         // chords (Emacs M-w copy, C-n/C-p, C-v/M-v, M-</M->) are left to the focused area, which had none of them.
         ConsoleNav.installShared(bodyArea);
-        for (TextArea area : List.of(requestArea, notesArea, headersArea)) {
+        for (TextArea area : List.of(requestArea, testsLog, notesArea, headersArea)) {
             TextInputKeymap.installSharedReadOnly(area);
         }
-        traverse(requestArea, () -> requestPane, () -> notesPane.isVisible() ? notesPane : headersArea);
+        traverse(
+                requestArea,
+                () -> requestPane,
+                () -> testsPane.isVisible() ? testsPane : notesPane.isVisible() ? notesPane : headersArea);
+        traverse(testsLog, () -> testsPane, () -> notesPane.isVisible() ? notesPane : headersArea);
         traverse(notesArea, () -> notesPane, () -> headersArea);
         traverse(
                 headersArea,
                 () -> notesPane.isVisible()
                         ? notesPane.isExpanded() ? notesArea : notesPane
-                        : requestPane.isExpanded() ? requestArea : requestPane,
+                        : testsPane.isVisible()
+                                ? testsPane.isExpanded() && testsLog.isVisible() ? testsLog : testsPane
+                                : requestPane.isExpanded() ? requestArea : requestPane,
                 () -> bodyArea);
         traverse(bodyArea, () -> headersArea, () -> runButton);
     }
@@ -429,6 +468,7 @@ public final class HttpClientPanel extends VBox {
         headersArea.setStyle(fontStyle);
         requestArea.setStyle(fontStyle);
         notesArea.setStyle(fontStyle);
+        testsLog.setStyle(fontStyle);
     }
 
     /**
@@ -653,6 +693,7 @@ public final class HttpClientPanel extends VBox {
         requestArea.setText(requestText(ex));
         requestArea.positionCaret(0);
         showNotes(r.warnings(), r.written()); // an unsent header, a truncated body…; the files a ">>" wrote
+        showTests(r.tests());
         StringBuilder head = new StringBuilder();
         if (r.failed()) {
             head.append("⚠  ").append(r.shownError());
@@ -720,6 +761,7 @@ public final class HttpClientPanel extends VBox {
         headersArea.clear();
         requestArea.clear();
         showNotes(List.of(), List.of());
+        showTests(HttpTests.NONE);
         showBodyNote(null);
         bodyArea.clear();
         imageView.setImage(null);
@@ -1017,6 +1059,41 @@ public final class HttpClientPanel extends VBox {
         return headersArea.getText();
     }
 
+    /** The tests badge's text, or null when hidden. Test accessor. */
+    String testsBadgeForTest() {
+        return testsBadge.isVisible() ? testsBadge.getText() : null;
+    }
+
+    /** The style classes of the tests badge. Test accessor. */
+    List<String> testsBadgeStyleForTest() {
+        return List.copyOf(testsBadge.getStyleClass());
+    }
+
+    /**
+     * The Tests block as text — its title, one "✓ name" / "✗ name — why" line per test, then the log and error —
+     * or "" when it is hidden. Test accessor.
+     */
+    String testsForTest() {
+        if (!testsPane.isVisible()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(testsPane.getText());
+        for (Node row : testRows.getChildren()) {
+            if (row instanceof Label l) {
+                sb.append('\n').append(l.getText());
+            }
+        }
+        if (testsLog.isVisible()) {
+            sb.append('\n').append(testsLog.getText());
+        }
+        return sb.toString();
+    }
+
+    /** Whether the Tests block is expanded. Test accessor. */
+    boolean testsExpandedForTest() {
+        return testsPane.isExpanded();
+    }
+
     /** The Run All summary, or null when hidden. Test accessor. */
     String runSummaryForTest() {
         return runSummary.isVisible() ? runSummary.getText() : null;
@@ -1068,6 +1145,64 @@ public final class HttpClientPanel extends VBox {
         notesPane.setExpanded(!notesPane.isExpanded());
     }
 
+    /**
+     * Shows what the request's {@code @assert} checks and response handlers found in the Tests block: a ✓ or ✗ row
+     * per test with why it failed, then the handlers' {@code client.log} lines and the error a handler stopped with.
+     * Open when something failed (or there is little to show), closed when a long list all passed.
+     */
+    private void showTests(HttpTests tests) {
+        HttpTests t = tests == null ? HttpTests.NONE : tests;
+        shownTests = t;
+        testRows.getChildren().clear();
+        for (HttpTests.Test test : t.tests()) {
+            String text = (test.passed() ? "✓  " : "✗  ")
+                    + test.name()
+                    + (test.passed() || test.message().isEmpty() ? "" : "  —  " + test.message());
+            Label row = new Label(text);
+            row.setWrapText(true);
+            row.setMaxWidth(Double.MAX_VALUE);
+            row.getStyleClass().addAll("http-test", test.passed() ? "http-test-passed" : "http-test-failed");
+            testRows.getChildren().add(row);
+        }
+        testRows.setVisible(!t.tests().isEmpty());
+        testRows.setManaged(!t.tests().isEmpty());
+        List<String> lines = new ArrayList<>(t.log());
+        if (t.error() != null) {
+            if (!lines.isEmpty()) {
+                lines.add("");
+            }
+            lines.add("✗  " + t.error());
+        }
+        boolean logged = !lines.isEmpty();
+        testsLog.setText(String.join("\n", lines));
+        testsLog.positionCaret(0);
+        testsLog.setPrefRowCount(Math.max(1, Math.min(8, lines.size() + countWraps(lines))));
+        testsLog.setVisible(logged);
+        testsLog.setManaged(logged);
+        boolean any = !t.isEmpty();
+        testsPane.setText(any ? HttpStatusText.testsTitle(t) : "");
+        testsPane.setExpanded(t.hasFailures() || t.tests().size() + lines.size() <= 4);
+        testsPane.setVisible(any);
+        testsPane.setManaged(any);
+        testsBadge.getStyleClass().removeAll("http-tests-passed", "http-tests-failed");
+        testsBadge.getStyleClass().add(HttpStatusText.testsStyle(t));
+        showBadge(testsBadge, HttpStatusText.testsBadge(t, compactBadge));
+        fitBadge();
+    }
+
+    /** A rough count of the extra rows long log lines wrap to, so a stack trace is not shown one line high. */
+    private static int countWraps(List<String> lines) {
+        int extra = 0;
+        for (String l : lines) {
+            extra += l.length() / 100;
+        }
+        return extra;
+    }
+
+    private void toggleTests() {
+        testsPane.setExpanded(!testsPane.isExpanded());
+    }
+
     private void showBodyNote(String text) {
         boolean on = text != null && !text.isBlank();
         bodyNote.setText(on ? text : "");
@@ -1089,24 +1224,40 @@ public final class HttpClientPanel extends VBox {
         return probe.getLayoutBounds().getWidth() / 10;
     }
 
-    /** Shortens the badge to "⚠ 11" when the full one would squeeze the status line itself. */
+    /**
+     * Shortens the badges to "⚠ 11" and "✓3 ✗1" when the full ones would squeeze the status line itself.
+     */
     private void fitBadge() {
-        if (warnCount <= 0 || getWidth() <= 0) {
+        String testsFull = HttpStatusText.testsBadge(shownTests, false);
+        if ((warnCount <= 0 && testsFull == null) || getWidth() <= 0) {
             return;
         }
-        Text full = new Text(HttpStatusText.warningBadge(warnCount, false));
-        full.setFont(warnBadge.getFont());
-        double needed = runHost.prefWidth(-1)
-                + status.prefWidth(-1)
-                + full.getLayoutBounds().getWidth()
-                + 16
-                + 12;
+        double badges = 0;
+        if (warnCount > 0) {
+            Text full = new Text(HttpStatusText.warningBadge(warnCount, false));
+            full.setFont(warnBadge.getFont());
+            badges += full.getLayoutBounds().getWidth() + 8;
+        }
+        if (testsFull != null) {
+            Text full = new Text(testsFull);
+            full.setFont(testsBadge.getFont());
+            badges += full.getLayoutBounds().getWidth() + 8;
+        }
+        double needed = runHost.prefWidth(-1) + status.prefWidth(-1) + badges + 8 + 12;
         boolean compact =
                 needed > getWidth() - getInsets().getLeft() - getInsets().getRight();
-        if (compact != compactBadge || !warnBadge.getText().equals(HttpStatusText.warningBadge(warnCount, compact))) {
-            compactBadge = compact;
+        if (warnCount > 0
+                && (compact != compactBadge
+                        || !warnBadge.getText().equals(HttpStatusText.warningBadge(warnCount, compact)))) {
             warnBadge.setText(HttpStatusText.warningBadge(warnCount, compact));
         }
+        if (testsFull != null) {
+            String t = HttpStatusText.testsBadge(shownTests, compact);
+            if (!testsBadge.getText().equals(t)) {
+                testsBadge.setText(t);
+            }
+        }
+        compactBadge = compact;
     }
 
     /**

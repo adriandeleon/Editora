@@ -419,4 +419,44 @@ class DoctorCatalogFxTest {
         FxTestSupport.runOnFx(() -> actions.openSettings("lsp"));
         assertEquals("lsp", ops.openedSettings);
     }
+
+    @Test
+    void theHttpHandlersRowFollowsItsSettingAndJudgesTheNodeVersion(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        host.settings.setHttpClientSupport(true);
+        host.settings.setHttpScriptsEnabled(false);
+        DoctorService.CheckSpec off = spec(specs(host, new Ops()), "http.scripts");
+        assertEquals(DoctorStatus.DISABLED, off.placeholder().status());
+        assertEquals("web", off.placeholder().settingsKey());
+
+        host.settings.setHttpScriptsEnabled(true);
+        String noNode = dir.resolve("no-node").toString();
+        host.settings.setHttpNodePath(noNode);
+        DoctorCheck missing =
+                spec(specs(host, new Ops()), "http.scripts").probe().get();
+        assertEquals(DoctorStatus.MISSING, missing.status());
+        assertEquals("doctor.tip.httpNode", missing.tipKey());
+        assertEquals(List.of(noNode), missing.tipArgs());
+
+        if (!System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win")) {
+            Path old = executable(dir.resolve("old/node"), "#!/bin/sh\necho v18.19.0\n");
+            host.settings.setHttpNodePath(old.toString());
+            DoctorCheck warn =
+                    spec(specs(host, new Ops()), "http.scripts").probe().get();
+            assertEquals(DoctorStatus.WARN, warn.status());
+            assertEquals("doctor.tip.httpNodeOld", warn.tipKey());
+
+            Path fresh = executable(dir.resolve("new/node"), "#!/bin/sh\necho v24.1.0\n");
+            host.settings.setHttpNodePath(fresh.toString());
+            DoctorCheck ok =
+                    spec(specs(host, new Ops()), "http.scripts").probe().get();
+            assertEquals(DoctorStatus.OK, ok.status());
+            assertTrue(ok.detail().contains("v24.1.0"), ok.detail());
+        }
+
+        host.settings.setHttpClientSupport(false);
+        assertFalse(has(specs(host, new Ops()), "http.scripts"), "no HTTP Client, no row");
+    }
 }

@@ -54,9 +54,10 @@ public final class HttpResponseHistory {
 
     /**
      * v1 → v2: + protocol, charset and how the request was sent per response, + clearedAt. v2 → v3: + when each
-     * response landed, its request's URL as written and a fingerprint of the request (all additive).
+     * response landed, its request's URL as written and a fingerprint of the request (all additive). v3 → v4: + what
+     * each response's {@code @assert} checks and response handlers found ({@link Tests}; additive).
      */
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     /** Responses remembered per {@code .http} file (newest first). */
     public static final int MAX_RESPONSES = 10;
@@ -91,6 +92,16 @@ public final class HttpResponseHistory {
             String httpVersion,
             String finalUrl) {}
 
+    /** One test of a response: its name, whether it passed, and why not. */
+    public record TestResult(String name, boolean passed, String message) {}
+
+    /**
+     * What a response's {@code @assert} checks and response handlers found: the tests in the order they ran, the
+     * handlers' log lines, and the error a handler stopped with (null when none did). Null in an entry that ran none,
+     * and in every entry saved before schema 4.
+     */
+    public record Tests(List<TestResult> tests, List<String> log, String error) {}
+
     /**
      * One remembered exchange: when it ran ({@code at}, epoch millis), the request's {@code name} (its
      * {@code # @name} or {@code ###} title, may be null) and position in the file, the resolved request, and the
@@ -99,7 +110,8 @@ public final class HttpResponseHistory {
      * was decoded with (so the bytes can be rebuilt), and {@code sent} how the request went out — all null in an
      * entry saved by a version before schema 2. {@code landedAt} is when the response arrived (0 before schema 3:
      * {@code at} stands in), which a Clear is compared with; {@code urlTemplate} the request's URL as written
-     * ({@code {{…}}} kept) and {@code fingerprint} a digest of its text, by which Run finds it again.
+     * ({@code {{…}}} kept) and {@code fingerprint} a digest of its text, by which Run finds it again. {@code tests}
+     * are what its checks and handlers found (null when it ran none, and before schema 4).
      */
     public record Response(
             long at,
@@ -125,7 +137,62 @@ public final class HttpResponseHistory {
             Sent sent,
             long landedAt,
             String urlTemplate,
-            String fingerprint) {
+            String fingerprint,
+            Tests tests) {
+
+        /** An entry without test results (as a version-3 file holds them). */
+        public Response(
+                long at,
+                String name,
+                int requestIndex,
+                String method,
+                String url,
+                List<Header> requestHeaders,
+                String requestBody,
+                int status,
+                List<Header> headers,
+                String body,
+                boolean bodyCut,
+                boolean binary,
+                String contentType,
+                long elapsedMs,
+                long sizeBytes,
+                String error,
+                List<String> warnings,
+                boolean truncated,
+                String protocol,
+                String charset,
+                Sent sent,
+                long landedAt,
+                String urlTemplate,
+                String fingerprint) {
+            this(
+                    at,
+                    name,
+                    requestIndex,
+                    method,
+                    url,
+                    requestHeaders,
+                    requestBody,
+                    status,
+                    headers,
+                    body,
+                    bodyCut,
+                    binary,
+                    contentType,
+                    elapsedMs,
+                    sizeBytes,
+                    error,
+                    warnings,
+                    truncated,
+                    protocol,
+                    charset,
+                    sent,
+                    landedAt,
+                    urlTemplate,
+                    fingerprint,
+                    null);
+        }
 
         /** An entry without the schema-3 fields (as a version-2 file holds them). */
         public Response(
@@ -174,6 +241,7 @@ public final class HttpResponseHistory {
                     sent,
                     0,
                     null,
+                    null,
                     null);
         }
 
@@ -221,6 +289,7 @@ public final class HttpResponseHistory {
                     null,
                     0,
                     null,
+                    null,
                     null);
         }
 
@@ -255,7 +324,8 @@ public final class HttpResponseHistory {
                     sent,
                     landedAt,
                     urlTemplate,
-                    fingerprint);
+                    fingerprint,
+                    tests);
         }
 
         /** This entry with {@code requestHeaders} and {@code headers} masked again by today's rules. */
@@ -284,7 +354,8 @@ public final class HttpResponseHistory {
                     sent,
                     landedAt,
                     urlTemplate,
-                    fingerprint);
+                    fingerprint,
+                    tests);
         }
 
         private static List<Header> remask(List<Header> headers) {
