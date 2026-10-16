@@ -3190,6 +3190,12 @@
 .settings-row {
     -fx-padding: 13 0 13 0;
 }
+/* A row whose title or description shows what was searched for: a visible reason for the hit. */
+.settings-row:search-hit {
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-insets: 3 -10 3 -10;
+    -fx-background-radius: 6;
+}
 /* The kit's one-line page subtitle under a Settings heading, saying what the page is for. */
 .settings-page-subtitle {
     -fx-font-size: 12.5px;

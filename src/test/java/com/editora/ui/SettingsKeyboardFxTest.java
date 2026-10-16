@@ -366,9 +366,9 @@ class SettingsKeyboardFxTest {
                 assertFalse(hidden.contains(cat), name);
                 assertSame(cat, sidebar.getSelectionModel().getSelectedItem(), name + " is opened");
             }
-            assertTrue(SettingsWindow.namesPage(" tool w", "Tool Windows"));
-            assertFalse(SettingsWindow.namesPage("to", "Tool Windows"), "too short to name a page");
-            assertFalse(SettingsWindow.namesPage("windows", "Tool Windows"));
+            assertTrue(SettingsSearch.namesPage(" tool w", "Tool Windows"));
+            assertFalse(SettingsSearch.namesPage("to", "Tool Windows"), "too short to name a page");
+            assertFalse(SettingsSearch.namesPage("windows", "Tool Windows"));
 
             // Escape: first the query, then the window.
             javafx.event.Event.fireEvent(search, press(KeyCode.ESCAPE));

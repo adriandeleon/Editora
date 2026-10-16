@@ -6,7 +6,6 @@ import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -168,11 +167,10 @@ public class SettingsWindow {
         }
     }
 
-    /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
-    private record SettingRow(Category category, Node node, String keywords, Label section, VBox card) {}
+    /** Finds and filters the rows below (built with the pages); see {@link SettingsSearch}. */
+    private SettingsSearch search;
 
-    /** Lazily built search text per row (keywords + shown text); identity-keyed, rows are never removed. */
-    private final java.util.Map<SettingRow, String> searchIndex = new java.util.IdentityHashMap<>();
+    private String pushedShortcutQuery = ""; // the search last carried into the Keymaps shortcut filter
 
     private Label searchEmpty; // "no settings match …", shown in place of the page
 
@@ -533,7 +531,7 @@ public class SettingsWindow {
     private ScrollPane contentScroll;
     private TextField searchField;
     private final Map<Category, Region> pages = new EnumMap<>(Category.class);
-    private final List<SettingRow> rows = new ArrayList<>();
+    private final List<SettingsSearch.Row> rows = new ArrayList<>();
     private final List<Label> sectionLabels = new ArrayList<>();
     /** Card containers (UI Kit v1), hidden by the search filter once all of their rows are. */
     private final List<VBox> cards = new ArrayList<>();
@@ -937,6 +935,12 @@ public class SettingsWindow {
         buildControls();
         buildPreview();
         buildPages();
+        search =
+                new SettingsSearch(rows, sectionLabels, cards, List.of(Category.values()), c -> ((Category) c).display);
+        if (shortcutFilter != null) {
+            search.setListSource(
+                    new SettingsSearch.ListSource(Category.KEYMAPS, shortcutFilter, this::shortcutMatches));
+        }
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
@@ -986,7 +990,30 @@ public class SettingsWindow {
                 // that fits, silently nowhere at all. Deferred: the new content has not been laid out
                 // yet, and setting vvalue before that is undone when the scroll range is recomputed.
                 contentScroll.setVvalue(0);
-                javafx.application.Platform.runLater(() -> contentScroll.setVvalue(0));
+                javafx.application.Platform.runLater(() -> {
+                    contentScroll.setVvalue(0);
+                    // A command or a search can pick a page far down the list: keep its row in view.
+                    revealSidebarRow(sidebar.getSelectionModel().getSelectedIndex());
+                });
+            }
+        });
+        // Typing a letter on the sidebar searches; Down in the search box goes on to the pages.
+        sidebar.addEventHandler(javafx.scene.input.KeyEvent.KEY_TYPED, e -> {
+            String ch = e.getCharacter();
+            if (!e.isControlDown()
+                    && !e.isMetaDown()
+                    && !e.isAltDown()
+                    && ch.codePoints().allMatch(Character::isLetterOrDigit)
+                    && !ch.isEmpty()) {
+                searchField.requestFocus();
+                searchField.appendText(ch);
+                e.consume();
+            }
+        });
+        searchField.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.DOWN) {
+                sidebar.requestFocus();
+                e.consume();
             }
         });
 
@@ -1041,6 +1068,12 @@ public class SettingsWindow {
         // sidebar, where the focus usually is) swallows Escape — so what really uses the key is exempted
         // by name in escapeIsTaken. An open combo popup or context menu takes the key before the scene.
         scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.F && e.isShortcutDown() && !e.isAltDown()) {
+                e.consume(); // Ctrl/Cmd+F: the search box, wherever the focus is
+                searchField.requestFocus();
+                searchField.selectAll();
+                return;
+            }
             if (e.getCode() != javafx.scene.input.KeyCode.ESCAPE
                     || e.isShortcutDown()
                     || e.isAltDown()
@@ -1084,6 +1117,9 @@ public class SettingsWindow {
 
     /** Scrolls the sidebar just far enough to show row {@code index} (the keyboard moved the selection). */
     private void revealSidebarRow(int index) {
+        if (index < 0) {
+            return;
+        }
         if (sidebar.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
             javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
             javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
@@ -2151,7 +2187,7 @@ public class SettingsWindow {
                 tr("settings.keymap"),
                 tr("settings.keymap.note"),
                 keymapCombo,
-                "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
+                "keymap keybindings shortcuts emacs cua sublime vscode intellij");
 
         // --- Customize shortcuts: searchable list of every command + its current chord ---
         Card sec = card(p, tr("settings.shortcuts.title"));
@@ -7950,7 +7986,7 @@ public class SettingsWindow {
 
     private void row(VBox page, Category cat, Label section, Node node, String keywords) {
         page.getChildren().add(node);
-        rows.add(new SettingRow(cat, node, keywords, section, null));
+        rows.add(new SettingsSearch.Row(cat, node, keywords, section, null));
     }
 
     // --- card rows (UI Kit v1) ---------------------------------------------------------------------
@@ -7997,7 +8033,7 @@ public class SettingsWindow {
             row = h;
         }
         card.body().getChildren().add(row);
-        rows.add(new SettingRow(cat, row, keywords, null, card.box()));
+        rows.add(new SettingsSearch.Row(cat, row, keywords, null, card.box()));
     }
 
     /**
@@ -8112,72 +8148,6 @@ public class SettingsWindow {
         return r;
     }
 
-    // --- search ----------------------------------------------------------------------------------
-
-    /**
-     * Whether {@code text} matches the search {@code query}: every whitespace-separated word of the query
-     * must occur in it, in any order, case-insensitively ("size font" finds "Font size"). Pure.
-     */
-    static boolean matches(String query, String text) {
-        if (query == null || query.isBlank()) {
-            return true;
-        }
-        if (text == null) {
-            return false;
-        }
-        String haystack = text.toLowerCase(Locale.ROOT);
-        for (String word : query.strip().toLowerCase(Locale.ROOT).split("\\s+")) {
-            if (!haystack.contains(word)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Everything a row can be found by: its (English) keywords plus the text it actually shows — title,
-     * description, checkbox and button captions, field prompts — so a search in the UI language works.
-     */
-    static String searchText(String keywords, Node... shown) {
-        StringBuilder out = new StringBuilder(keywords == null ? "" : keywords);
-        for (Node node : shown) {
-            collectText(node, out);
-        }
-        return out.toString();
-    }
-
-    private static void collectText(Node node, StringBuilder out) {
-        if (node == null) {
-            return;
-        }
-        if (node instanceof javafx.scene.control.Labeled labeled && labeled.getText() != null) {
-            out.append(' ').append(labeled.getText());
-        }
-        if (node instanceof javafx.scene.control.TextInputControl input && input.getPromptText() != null) {
-            out.append(' ').append(input.getPromptText());
-        }
-        if (node instanceof javafx.scene.Parent parent) {
-            for (Node child : parent.getChildrenUnmodifiable()) {
-                collectText(child, out);
-            }
-        }
-    }
-
-    /** A row's search text, built on first use (pages are built once; titles never change afterwards). */
-    private String searchTextOf(SettingRow r) {
-        return searchIndex.computeIfAbsent(r, row -> {
-            // A row is also found by the heading it sits under: its card's title or its section label.
-            Node cardTitle = row.card() != null
-                            && !row.card().getChildren().isEmpty()
-                            && row.card().getChildren().get(0) instanceof Label title
-                    ? title
-                    : null;
-            // ... and by the name of its page: typing "Keymaps" or "Build Tools" used to say that no
-            // setting matches, because no row on those pages happens to repeat the sidebar's name.
-            return searchText(row.keywords(), row.node(), cardTitle, row.section()) + ' ' + row.category().display;
-        });
-    }
-
     /** Shows the selected category's page, or the "no settings match" note while a search has no hits. */
     private void showContent() {
         Node content = searchEmpty != null && searchEmpty.isVisible()
@@ -8205,89 +8175,55 @@ public class SettingsWindow {
     private void filter(String query) {
         searchHiddenCats.clear();
         searchHiddenGroups.clear();
-        boolean searching = query != null && !query.isBlank();
-        if (!searching) {
-            rows.forEach(r -> setShown(r.node(), true));
-            sectionLabels.forEach(s -> setShown(s, true));
-            cards.forEach(c -> setShown(c, true));
-            searchEmpty.setVisible(false);
-            showContent();
-            sidebar.refresh();
-            return;
-        }
-        Set<Category> matched = EnumSet.noneOf(Category.class);
-        Set<Label> visibleSections = new HashSet<>();
-        Set<VBox> visibleCards = new HashSet<>();
-        for (SettingRow r : rows) {
-            boolean m = matches(query, searchTextOf(r));
-            setShown(r.node(), m);
-            if (m) {
-                matched.add(r.category());
-                if (r.section() != null) {
-                    visibleSections.add(r.section());
-                }
-                if (r.card() != null) {
-                    visibleCards.add(r.card());
+        SettingsSearch.Result found = search.filter(query);
+        pushShortcutQuery(query);
+        if (found != null) {
+            for (Category c : Category.values()) {
+                if (!found.pages().contains(c)) {
+                    searchHiddenCats.add(c);
                 }
             }
-        }
-        sectionLabels.forEach(s -> setShown(s, visibleSections.contains(s)));
-        cards.forEach(c -> setShown(c, visibleCards.contains(c)));
-        for (Category c : Category.values()) {
-            if (!matched.contains(c)) {
-                searchHiddenCats.add(c);
-            }
-        }
-        for (Group g : Group.values()) {
-            boolean any = matched.stream().anyMatch(c -> c.group == g);
-            if (!any) {
-                searchHiddenGroups.add(g);
+            for (Group g : Group.values()) {
+                if (found.pages().stream().noneMatch(c -> ((Category) c).group == g)) {
+                    searchHiddenGroups.add(g);
+                }
             }
         }
         sidebar.refresh();
         // No hit anywhere: say so, instead of a blank page beside a fully greyed-out sidebar.
-        searchEmpty.setText(tr("settings.search.empty", query.strip()));
-        searchEmpty.setVisible(matched.isEmpty());
+        searchEmpty.setText(found == null ? "" : tr("settings.search.empty", query.strip()));
+        searchEmpty.setVisible(found != null && found.pages().isEmpty());
         showContent();
-        Object selObj = sidebar.getSelectionModel().getSelectedItem();
-        Category sel = (selObj instanceof Category c) ? c : null;
-        Category best = bestMatch(query, matched);
-        // A page named by the query wins even over a matching current page: "tool windows" typed on the
-        // Interface page (which mentions them) means the Tool Windows page.
-        boolean named = best != null && namesPage(query, best.display);
-        if (best != null && (sel == null || !matched.contains(sel) || (named && !namesPage(query, sel.display)))) {
-            sidebar.getSelectionModel().select(best);
+        Object sel = sidebar.getSelectionModel().getSelectedItem();
+        if (found != null && found.best() != null && !found.ties(sel)) {
+            sidebar.getSelectionModel().select(found.best());
         }
     }
 
     /**
-     * Whether {@code query} is (the start of) a page's sidebar name. Three characters at least: a page is
-     * not "named" by the first letter of a word that merely happens to begin like it. Pure.
+     * The Keymaps shortcut list is searched as a list of its own (its hundreds of command names are not the
+     * page's text): a search it matches carries over into its filter, and clearing the search clears it again.
      */
-    static boolean namesPage(String query, String pageName) {
-        String q = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-        return q.length() >= 3
-                && pageName != null
-                && pageName.toLowerCase(Locale.ROOT).startsWith(q);
-    }
-
-    /** The page a search opens: the first matching one named by the query, else the first with a hit. */
-    private static Category bestMatch(String query, Set<Category> matched) {
-        Category first = null;
-        for (Category c : Category.values()) {
-            if (matched.contains(c)) {
-                if (namesPage(query, c.display)) {
-                    return c;
-                }
-                first = first == null ? c : first;
-            }
+    private void pushShortcutQuery(String query) {
+        if (shortcutFilter == null) {
+            return;
         }
-        return first;
+        String q = query == null ? "" : query.strip();
+        String shown = shortcutFilter.getText();
+        boolean ours = shown.isEmpty() || shown.equals(pushedShortcutQuery);
+        pushedShortcutQuery = q.isEmpty() || !shortcutMatches(q) ? "" : q;
+        if (ours) {
+            shortcutFilter.setText(pushedShortcutQuery);
+        }
     }
 
-    private static void setShown(Node node, boolean shown) {
-        node.setVisible(shown);
-        node.setManaged(shown);
+    /** Whether a command in the shortcut list matches {@code query} as its own filter would. */
+    private boolean shortcutMatches(String query) {
+        String q = query.toLowerCase(Locale.ROOT);
+        return shortcutActions != null
+                && shortcutActions.rows().stream()
+                        .anyMatch(s -> s.title().toLowerCase(Locale.ROOT).contains(q)
+                                || s.id().toLowerCase(Locale.ROOT).contains(q));
     }
 
     /** Renders a sidebar row: a {@link Group} as a non-selectable header, a {@link Category} as an item. */
@@ -8964,7 +8900,7 @@ public class SettingsWindow {
     private Label chordChip(String commandId) {
         Label chip = new Label();
         chip.getStyleClass().add("chord-chip");
-        setShown(chip, false);
+        SettingsSearch.setShown(chip, false);
         chordChips.put(commandId, chip);
         return chip;
     }
@@ -8983,7 +8919,7 @@ public class SettingsWindow {
         chordChips.forEach((id, chip) -> {
             String chord = byId.get(id);
             chip.setText(chord == null ? "" : chord);
-            setShown(chip, chord != null);
+            SettingsSearch.setShown(chip, chord != null);
         });
     }
 
