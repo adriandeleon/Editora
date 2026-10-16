@@ -238,11 +238,12 @@ folder (`-D`) and every folder above it must not be group- or world-writable, so
 was also checked with BusyBox's `sh` and `setsid`.
 
 The `Remote probe` workflow (`.github/workflows/remote-probe.yml`; run it from the Actions tab, or push a
-`probe/**` branch) runs the probe on a `macos-15` runner against the runner's own `/usr/sbin/sshd`, started
-unprivileged on a high port. It installs the host's tools from the sources Editora's installer uses (the
-pinned jdtls milestone, java-debug from Open VSX, js-debug from GitHub, debugpy with pip, pyright with npm),
-and gives the account a login profile like a Mac user's: Homebrew's and npm's `bin` on `PATH`, a
-`JAVA_HOME`. It is not part of CI.
+`probe/**` branch) runs the probe on two runners, each against a server of its own started unprivileged on a
+high port: a `macos-15` runner's own `/usr/sbin/sshd`, and dropbear from the distribution on `ubuntu-latest`
+(its `authorized_keys` folder in the runner's home, as dropbear insists). It installs the host's tools from
+the sources Editora's installer uses (the pinned jdtls milestone, java-debug from Open VSX, js-debug from
+GitHub, debugpy with pip, pyright with npm), and gives the account a login profile like a real user's: the
+tools' `bin` folders on `PATH`, a `JAVA_HOME`. It is not part of CI.
 
 **ed25519** keys and host keys work through Bouncy Castle (`bcprov-jdk18on`, see
 [dependencies](../dependencies.md)): MINA SSHD has no EdDSA of its own and turns `ssh-ed25519` on only when a
