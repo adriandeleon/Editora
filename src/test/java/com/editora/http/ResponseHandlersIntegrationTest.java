@@ -266,7 +266,8 @@ class ResponseHandlersIntegrationTest {
                 "TMP",
                 "PATHEXT",
                 "ComSpec",
-                "COMSPEC");
+                "COMSPEC",
+                "__CF_USER_TEXT_ENCODING"); // macOS puts its text-encoding setting into every child's environment
         String keys = log.get(0).substring("env ".length());
         for (String k : keys.split(",")) {
             assertTrue(k.isEmpty() || allowed.contains(k), "Node saw " + k + " (" + keys + ")");
