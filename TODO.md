@@ -1536,6 +1536,13 @@ A backlog of planned features and improvements. Unordered within each section.
       (`textDocument/formatting`, when it advertises formatting), undoable; palette + editor right-click.
       (GFM table reflow also exists.)
 - [x] Column select support — column/block selection (overlay + column-aware edits)
+- [x] Rulers and indent guides — `Settings.rulers` + `languageRulers` (schema 123; `editor/RulerColumns`
+      resolves language list → global, `.editorconfig max_line_length` replaces the first / `off` hides);
+      `ColumnRuler` is now one line per column from a single column-0 measure. `editor/IndentGuideOverlay`
+      (Canvas, lazy, on by default; hidden in Zen/Simple/large files): column 0 from one char-bounds query, a
+      paragraph-bounds query per visible indented line, blank lines from `editops/IndentLevels`, and a
+      frame key that skips repaints when nothing it draws changed (~13% of keystrokes repaint while typing).
+      *Deferred: highlighting the caret's own block guide; a structured per-language rulers editor*
 - [x] Multiple cursors support — VS Code–style multi-caret (add at next occurrence / above / below) +
       Alt-drag column selection (personal RichTextFX fork); see "Recently shipped"
 - [x] Multi-caret extras — `edit.splitSelectionIntoLines` (Sublime: each line's selected part),
