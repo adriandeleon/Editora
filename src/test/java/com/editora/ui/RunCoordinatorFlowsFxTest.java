@@ -320,7 +320,6 @@ class RunCoordinatorFlowsFxTest {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
             EditorBuffer made = new EditorBuffer();
             made.setOnRunnableChanged(scanned::countDown);
-            made.setShellRunEnabled(true); // as the window does when shell scripts may be run
             made.setPath(file);
             made.setContent(source);
             made.markClean();

@@ -6233,11 +6233,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void refreshRunButton() {
-            updateRunButton();
-        }
-
-        @Override
         public com.editora.config.ConfigManager config() {
             return config;
         }
@@ -7637,7 +7632,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         // A remote (SFTP) file runs on its host; whether that host may run commands is asked at launch, and a
         // refusal is reported then.
         buffer.setRunEnabled(local || com.editora.vfs.Vfs.isRemote(buffer.getPath()));
-        buffer.setShellRunEnabled(lspEnabled() && local && config.getSettings().isBashLspEnabled());
         buffer.setAdminEditAvailable(
                 fileWorkflows.elevationAvailable() && local); // "Edit as Administrator" on a locked file
         // .http: the request ▶, the editor menu's Run All Requests (active buffer), the running request's ■
