@@ -77,4 +77,18 @@ class TextInputKeymapTest {
         // Elsewhere Ctrl+Alt is AltGr — a character typed with Control down can be real text.
         assertFalse(TextInputKeymap.swallowTyped(false, false, false, true));
     }
+
+    @Test
+    void theReadOnlySetMovesAndCopiesButNeverEdits() {
+        // X3: the HTTP response view's headers are read-only; the API edits a non-editable control all the same.
+        var all = TextInputKeymap.readOnly(java.util.Map.of(
+                "nav.lineEnd", c -> {},
+                "edit.copy", c -> {},
+                "edit.selectAll", c -> {},
+                "edit.killLine", c -> {},
+                "edit.paste", c -> {},
+                "edit.cut", c -> {}));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of("nav.lineEnd", "edit.copy", "edit.selectAll"), all.keySet());
+    }
 }

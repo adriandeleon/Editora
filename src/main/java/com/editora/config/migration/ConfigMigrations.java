@@ -412,6 +412,14 @@ public final class ConfigMigrations {
      *
      * @return the copy's path, or {@code null} when no copy could be made
      */
+    /**
+     * Keeps a copy of {@code file} as {@code <name>.corrupt.bak} (see {@link #keepCorrupt}) for a store that reads
+     * its own entries one by one and is about to drop the ones it could not read. Returns the copy, or null.
+     */
+    public static Path keepCopyOfDamaged(Path file) {
+        return keepCorrupt(file);
+    }
+
     private static Path keepCorrupt(Path file) {
         try {
             Path existing = identicalBackup(file, ".corrupt.bak");

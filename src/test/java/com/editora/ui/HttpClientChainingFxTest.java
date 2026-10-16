@@ -91,6 +91,7 @@ class HttpClientChainingFxTest {
             coordinator.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         return b;
     }
@@ -132,7 +133,7 @@ class HttpClientChainingFxTest {
     void anUnresolvedReferenceIsWarnedAndAnEnvironmentChangeForgetsResponses(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("http-client.env.json"), "{\"dev\":{},\"prod\":{}}");
         EditorBuffer b = httpBuffer(dir.resolve("env.http"), file());
-        ComboBox<String> env = coordinator.panelForTest(b).environmentPickerForTest();
+        ComboBox<String> env = coordinator.panelForTest(b).controlsForTest().environmentPicker();
         FxTestSupport.runOnFx(() -> env.setValue("dev"));
         runLine(b, 2);
         FxTestSupport.runOnFx(() -> env.setValue("prod"));

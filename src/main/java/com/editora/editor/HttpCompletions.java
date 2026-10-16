@@ -38,6 +38,9 @@ final class HttpCompletions {
         if (open < 0 || before.indexOf("}}", open) >= 0) {
             return null;
         }
+        if (open > 0 && before.charAt(open - 1) == '\\') {
+            return null; // "\{{" is the escape for a literal {{: no variable is being typed
+        }
         int start = open + 2;
         while (start < before.length() && before.charAt(start) == ' ') {
             start++;
@@ -75,8 +78,10 @@ final class HttpCompletions {
             return items.isEmpty() ? null : new MarkdownCompletions.Offer(start, partial, items);
         }
         Set<String> seen = new LinkedHashSet<>();
-        for (String name : HttpVariableIndex.variablesAt(document, line, c)) {
-            if (seen.add(name)) {
+        List<String> variables = HttpVariableIndex.variablesAt(document, line, c);
+        Set<String> all = new java.util.HashSet<>(variables);
+        for (String name : variables) {
+            if (nextLevel(name, partial, all) && seen.add(name)) {
                 add(items, partial, name, closed, tr("http.complete.variable"), CompletionIconKind.VARIABLE);
             }
         }
@@ -90,6 +95,27 @@ final class HttpCompletions {
             add(items, partial, "$dotenv " + key, closed, tr("http.complete.dotenv"), CompletionIconKind.CONSTANT);
         }
         return items.isEmpty() ? null : new MarkdownCompletions.Offer(start, partial, items);
+    }
+
+    /**
+     * Whether {@code name} is offered for {@code partial}: a nested env member ({@code users[0].address.city}, whose
+     * parent {@code users[0].address} is itself a variable) only once its parent and a separator are typed, so one
+     * array in an environment cannot fill the popup with hundreds of rows and push out the responses and built-ins.
+     */
+    static boolean nextLevel(String name, String partial, Set<String> names) {
+        String parent = null;
+        for (int i = name.length() - 1; i > 0; i--) {
+            char ch = name.charAt(i);
+            if ((ch == '.' || ch == '[') && names.contains(name.substring(0, i))) {
+                parent = name.substring(0, i);
+                break;
+            }
+        }
+        if (parent == null) {
+            return true;
+        }
+        String typed = partial.toLowerCase(Locale.ROOT);
+        return typed.length() > parent.length() && typed.startsWith(parent.toLowerCase(Locale.ROOT));
     }
 
     /** Adds {@code name} when it starts with what was typed; a {@code noClose} row (a path to go on, or a {@code }}} already after the caret) gets no {@code }}}. */

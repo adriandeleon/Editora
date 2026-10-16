@@ -154,6 +154,8 @@ public class SharedConfig {
     private byte[] appliedSettingsBytes;
     /** The export in progress, if any (see {@link #exportConfigAsync}). */
     private java.util.concurrent.CompletableFuture<Path> runningExport;
+    /** Where an export lands; {@code null} means the user's home directory (see {@link #exportDirectory}). */
+    private volatile Path exportDirectory;
 
     private Consumer<ConfigManager> onSettingsChanged = origin -> {};
     private volatile Runnable onStoreChanged = () -> {};
@@ -578,7 +580,10 @@ public class SharedConfig {
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
-        // First: the history worker finishes the records still in flight (the save made from the quit prompt)
+        // The HTTP Client's saves wait on its own thread before they reach the writer: let them through first, or
+        // a response that landed just before quitting (a Clear, an environment change) is never saved.
+        awaitHttpHistoryWork();
+        // Then: the history worker finishes the records still in flight (the save made from the quit prompt)
         // and hands them over, which queues the index — so the writer has to be running still.
         historyService.shutdown();
         boolean storesSaved = retryUnsavedStores(); // the last chance for a store whose write failed earlier
@@ -597,11 +602,26 @@ public class SharedConfig {
     }
 
     /**
-     * Zips the active config directory into a timestamped {@code .zip} in the user's home directory
-     * and returns the created file. Backs up whichever config dir is in use.
+     * Zips the active config directory into a timestamped {@code .zip} in {@link #exportDirectory()} (the
+     * user's home directory) and returns the created file. Backs up whichever config dir is in use.
      */
     public Path exportConfig() throws IOException {
-        return exportConfig(Path.of(System.getProperty("user.home")));
+        return exportConfig(exportDirectory());
+    }
+
+    /** The folder an export is written to: the user's home directory unless {@link #setExportDirectory} moved it. */
+    public Path exportDirectory() {
+        Path dir = exportDirectory;
+        return dir != null ? dir : Path.of(System.getProperty("user.home"));
+    }
+
+    /**
+     * Sends later exports to {@code dir} (which must exist) instead of the home directory; {@code null} restores
+     * the default. A test window points this at its own temporary folder, so a test that runs the Export
+     * Configuration command never drops a zip into the real home directory.
+     */
+    public void setExportDirectory(Path dir) {
+        exportDirectory = dir;
     }
 
     Path exportConfig(Path destinationDir) throws IOException {
@@ -609,6 +629,9 @@ public class SharedConfig {
     }
 
     Path exportConfig(Path destinationDir, boolean includeHttpHistory) throws IOException {
+        if (includeHttpHistory) {
+            awaitHttpHistoryWork(); // the response that just landed belongs in the export too
+        }
         if (!writer.flush()) {
             throw new IOException("Timed out waiting for pending configuration writes");
         }
@@ -619,6 +642,14 @@ public class SharedConfig {
                 System.getProperty("user.name"),
                 java.time.LocalDateTime.now(),
                 includeHttpHistory);
+    }
+
+    /** Waits for the HTTP Client's history saves still queued in the windows (see {@link HttpResponseHistory}). */
+    private void awaitHttpHistoryWork() {
+        HttpResponseHistory history = httpHistory;
+        if (history != null) {
+            history.awaitPendingWork();
+        }
     }
 
     /** Whether the HTTP Client has saved responses, which an export leaves out unless the user asks. */
@@ -644,7 +675,7 @@ public class SharedConfig {
 
     /** As {@link #exportConfigAsync()}, with the HTTP response history when {@code includeHttpHistory}. */
     public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(boolean includeHttpHistory) {
-        return exportConfigAsync(Path.of(System.getProperty("user.home")), includeHttpHistory);
+        return exportConfigAsync(exportDirectory(), includeHttpHistory);
     }
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {

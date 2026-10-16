@@ -137,27 +137,30 @@ final class RequestBodies {
         Charset charset = HttpResult.charsetOf(contentType);
         // external body: < ./file (raw) or <@ ./file (substituted), optional encoding.
         if (request.bodyRef() != null && baseDir != null) {
+            String path = request.bodyRef().path();
             try {
                 HttpFile.BodyRef ref = request.bodyRef();
                 Charset cs = ref.encoding() == null ? StandardCharsets.UTF_8 : Charset.forName(ref.encoding());
-                Path bodyFile = HttpPaths.contained(baseDir, ref.path());
+                // The path may use {{variables}} ("< ./fixtures/{{env}}.json"), as a multipart part's and a >> path
+                // may; the containment check applies to the path they resolve to.
+                path = sub.apply(ref.path());
+                Path bodyFile = HttpPaths.contained(baseDir, path);
                 if (bodyFile == null) {
-                    return Content.unreadable(tr("http.body.outside", ref.path()));
+                    return Content.unreadable(tr("http.body.outside", path));
                 }
                 if (!ref.substitute()) {
                     // "< file": the file's bytes are the body, untouched and streamed — a decode/re-encode round
                     // trip through String corrupts anything that is not valid UTF-8 (an image, a protobuf), and a
                     // multi-gigabyte upload must not be read into memory first.
                     long size = Files.size(bodyFile);
-                    String shown = shownFileBody(bodyFile, size, ref.path(), cs);
+                    String shown = shownFileBody(bodyFile, size, path, cs);
                     FileBodyPublisher upload = new FileBodyPublisher(bodyFile);
                     return new Content(upload, shown, null, md -> feedFile(bodyFile, md), bodyFile, List.of(), upload);
                 }
                 String content = sub.apply(new String(Files.readAllBytes(bodyFile), cs));
                 return Content.of(encode(content, charset, warnings), content);
             } catch (Exception e) {
-                return Content.unreadable(
-                        tr("http.body.notFound", request.bodyRef().path()));
+                return Content.unreadable(tr("http.body.notFound", path));
             }
         }
         if (request.bodyRef() != null) {
@@ -236,7 +239,7 @@ final class RequestBodies {
                     p.file() != null
                             ? new HttpExchange.FormPart(
                                     name, null, p.file().toAbsolutePath().toString(), filename, type)
-                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, null, type));
+                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, filename, type));
         }
         return out;
     }

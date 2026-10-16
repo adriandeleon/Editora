@@ -20,7 +20,6 @@ import com.editora.config.HttpResponseHistory;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.sun.net.httpserver.HttpServer;
-import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -120,6 +119,7 @@ class HttpHistoryRound2FxTest {
         coordinators.forEach(HttpClientCoordinator::shutdown);
         server.stop(0);
         FxTestSupport.runOnFx(() -> buffers.forEach(EditorBuffer::dispose));
+        HttpHistorySync.awaitIdleForTest(); // a save still queued would write into the temp folder being deleted
     }
 
     private String url(String path) {
@@ -146,6 +146,7 @@ class HttpHistoryRound2FxTest {
             c.ensureHttpPreview(created);
             return created;
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         buffers.add(b);
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
@@ -207,7 +208,7 @@ class HttpHistoryRound2FxTest {
         for (int i = 0; i < 3; i++) {
             int index = i;
             FxTestSupport.runOnFx(() -> {
-                p.historyPickerForTest().setValue(p.history().get(index));
+                p.controlsForTest().historyPicker().setValue(p.history().get(index));
                 c.copyActiveAsCurl();
             });
             assertEquals(tr("status.http.curlCopied"), second.last);
@@ -359,10 +360,10 @@ class HttpHistoryRound2FxTest {
         HttpClientCoordinator c = coordinator(host);
         EditorBuffer b = open(host, c, file, "GET " + url("/big") + "\n");
         HttpClientPanel p = c.panelForTest(b);
-        CodeArea body = p.bodyAreaForTest();
-        await(() -> body.getText().contains("saved history kept only"));
-        String shown = FxTestSupport.callOnFx(body::getText);
-        assertFalse(shown.contains("has the full body"), shown.substring(shown.length() - 300));
+        // The notes sit above the body since round 3 (X11).
+        await(() -> p.bodyNoteForTest() != null && p.bodyNoteForTest().contains("saved history kept only"));
+        String shown = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertFalse(shown.contains("has the full body"), shown);
         assertFalse(shown.contains("were downloaded"), "the whole response was downloaded");
     }
 
@@ -382,6 +383,7 @@ class HttpHistoryRound2FxTest {
             b.setPath(renamed);
             c.ensureHttpPreview(b);
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
         HttpHistorySync.awaitIdleForTest();
@@ -395,6 +397,7 @@ class HttpHistoryRound2FxTest {
             b.setPath(copy);
             c.ensureHttpPreview(b);
         });
+        HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         HttpHistorySync.awaitIdleForTest();
         FxTestSupport.drainFx();
         HttpHistorySync.awaitIdleForTest();
@@ -422,9 +425,11 @@ class HttpHistoryRound2FxTest {
         HttpClientCoordinator c = coordinator(host);
         EditorBuffer b = open(host, c, file, "GET " + url("/a") + "\n");
         await(() -> c.panelForTest(b).history().size() == 2);
+        Path kept = Path.of(store.fileFor(file) + ".corrupt.bak");
         assertTrue(
-                host.errors.contains(tr("status.http.historyPartlyUnreadable", 1, "damaged.http")),
+                host.errors.contains(tr("status.http.historyPartlyUnreadableKept", 1, "damaged.http", kept.toString())),
                 host.errors.toString());
+        assertTrue(Files.readString(kept).contains("two hundred"), "the damaged entry is kept in a copy");
     }
 
     @Test

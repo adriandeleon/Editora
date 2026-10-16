@@ -141,7 +141,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder next to the project (typed as the host names it, `~` its home), and Git: Init creates a repository
   there. Fetch automatically fetches a remote repository on its host too, by the host's git, under the same
   rules as a local one (a trusted folder, or one you have fetched in yourself), leaving an ssh command the
-  host's login profile exports alone.
+  host's login profile exports alone. In a remote project that holds another repository (nested, a submodule,
+  a worktree), the Project tree's Git actions on its files act on that repository, as they do locally. Blame
+  of a remote file uses the repository's `.git-blame-ignore-revs`, and a `blame.ignoreRevsFile` in the host's
+  global config that the repository lacks no longer stops blame there.
 - **Remote folders are projects with their own window.** Connecting to a remote (SFTP) folder now opens it as
   a project in its own window, listed with your other projects, with its own tabs and trust. Reopening it later
   opens the window and asks to connect; while it is not connected the Project panel says so and offers
@@ -269,37 +272,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GraphQL, WebSocket and gRPC requests are reported as not supported instead of being sent as broken GETs.
 - **HTTP Client: the response view shows what happened.** The top line reads `404 Not Found · 12 ms · 4 B`,
   coloured by outcome, with the protocol version above the headers and a "Request" section showing the request as
-  sent, variables filled in. A running request shows its elapsed time, Run All shows "2 of 5: GET …" and finishes
+  sent, variables filled in. A running request shows its elapsed time, Run All shows "2 of 5: GET …" and lands
   on the first failure with a "3 of 13 failed" summary, and one Run / Cancel button re-sends the request the
-  selected response came from (found by its name, or its method and URL, even after the file was edited).
-  Warnings have their own block with a count beside the status line. Cancelling a Run All keeps the responses
-  that had already arrived. The toolbar wraps instead of shrinking to "…". Long lines can be wrapped, one-line
-  XML is indented, and images are shown as pictures.
+  selected response came from, even after the file was edited: a named response runs only the request of that
+  name, an unnamed one the request with the same text or URL; when it is gone, the request at the caret runs and
+  the panel says so. Warnings have their own block with a count beside the status line, and the warnings and
+  headers get the room their text needs. A request that was never sent reads "Not sent", and Copy as cURL is off
+  for it. Cancelling a Run All keeps the responses that had already arrived and says how many ran; History lists
+  a Run All's responses newest first. The toolbar wraps instead of shrinking to "…". Long lines can be wrapped,
+  one-line XML is indented, and images are shown as pictures.
 - **HTTP Client: history and environments are remembered per file.** The last 10 responses of each `.http` file,
   and its environment, are kept in Editora's config folder and come back when the file is reopened. Bodies are
-  capped at 1 MB, credential headers (Authorization, cookies, API keys and tokens) are masked, and requests
+  capped at 1 MB; credential headers (Authorization, cookies, API keys, tokens, passwords) and every value a
+  request read from an environment variable or `.env` are masked, in the saved file and in History; requests
   marked `# @no-log` are never saved. A restored response still knows how its request was sent, so Copy as cURL
   after a restart reproduces the upload, form or Digest login. Two windows on one file keep each other's
-  responses, the history follows a renamed or moved file and is removed with a deleted one, and Export
+  responses, the history follows a file renamed or moved (also from the Project tree) and is removed with a
+  deleted one, a Run pressed right after opening a file no longer wipes the saved responses, and Export
   Configuration includes it only when you tick "Include HTTP response history". Environment files are found in
   the file's folder or the nearest folder above it, up to the open project's root, else the file's repository
   root; outside a repository only the file's own folder counts. Environments defined only in
-  `http-client.private.env.json` are listed. A
+  `http-client.private.env.json` are listed. Env files may hold comments, trailing commas or a byte-order mark;
+  one that cannot be read is named in the run's warnings and in the underline's tooltip, numbers are sent as
+  written, and an env file edited in another program is picked up when the window regains focus. A
   chained request (`{{login.response.body.$.token}}`) works when requests are run one at a time; the session is
   cleared when the environment changes.
 - **HTTP Client: keyboard and editor.** Run Request at Caret is bound to `C-c C-c` (Emacs) and `Ctrl+Alt+R`
   (VS Code, CUA, Sublime, IntelliJ), Run All Requests to `C-c C-r` (Emacs) and `Ctrl+Alt+Shift+Enter`
   (`Option+Cmd+Shift+Enter` on macOS; GNOME keeps `Ctrl+Alt+Shift+R` for screen recording), and Cancel to
   `C-c C-k` (Emacs) and `Ctrl+Alt+K` (`Option+Cmd+K` on macOS; the IntelliJ keymap on macOS keeps Control+Option);
-  the ▶ tooltip names both run chords. While a request runs its ▶ turns into a ■ that cancels it,
-  and the "Running …" line shows the request with its variables filled in. Escape in the response view returns
-  to the editor. Run File and the editor's context menu run the file's requests. `.http` files get request
+  the ▶ tooltip names both run chords. While a request runs its ▶ turns into a ■ that cancels it (a folded
+  request keeps its ▶ or ■ on its `###` line), and the "Running …" line shows the request with its variables
+  filled in. Escape in the response view returns to the editor, and the response view takes the keymap's motion
+  and copy keys (Emacs `M-w`, `C-n`, `M->`). Run File and the editor's context menu run the file's requests. `.http` files get request
   folding, one Structure entry per request, completion for methods and headers, a starter request in New File,
   and richer highlighting (variables, directives, JSON and XML bodies, file references, scripts).
 - **HTTP Client: unresolved variables are underlined as you type.** A `{{variable}}` that cannot resolve with the
   selected environment, the `@var` lines above it and the built-ins gets a warning underline; hover for the
-  reason. Typing `{{` offers the variables available there, the dynamic built-ins, `.env` keys and
-  `name.response.` for each request in the file.
+  reason; with no environment selected, it names the environments that define the variable. Typing `{{` offers
+  the variables available there (a nested environment member one level at a time), the dynamic built-ins, `.env`
+  keys and `name.response.` for each request in the file. `\{{` stands for a literal `{{`.
+- **HTTP Client: requests from remote files don't run yet.** On a file opened from a remote folder, Run, Run All
+  and Cancel say so instead of sending the request from this machine, and the response view's Run is disabled
+  with a tooltip saying why.
 - **HTTP Client: an untitled `.http` file can send requests.** It uses the project's environment files, and its
   responses are kept when you save it. A request that needs the file's folder (a body file, a `>>` target,
   `$dotenv`) is not sent and says to save the file first.
@@ -346,14 +361,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   takes: `{{$env NAME}}` or `{{$env.NAME}}`, through an `@var` line or an environment value, in a header, a `<@`
   body file or a multipart `<@` part. The check follows what the request actually resolves, so no spelling slips
   past it. The prompt names the variables as written, never their values, and the hosts the request goes to (a
-  redirect may lead elsewhere); declining sends nothing, and a refused secret is never shown or saved. It uses
+  redirect may lead elsewhere); declining sends none of the requests that read a secret (in a Run All the others
+  still go), and a refused secret is never shown or saved. A request that is never sent (GraphQL, a missing body
+  file) asks nothing and shows or saves no secret; a host chosen by an earlier response is named as such; Enter
+  in the prompt cancels it. `.env` is read only when it is a regular file inside the folder, up to 1 MB. It uses
   the same trust as build scripts, so a trusted project is asked once, and the check runs off the UI thread, so a
   malformed `{{` cannot freeze the window. Before, a request in a cloned repository could send, say,
   `AWS_SECRET_ACCESS_KEY` to any host on one click.
 - **HTTP Client: Copy as cURL is safe to paste into bash or zsh.** The URL and header names were put in the shell command
   unquoted, so a crafted URL ran commands when the copied cURL was pasted into a terminal, and a body starting
   with `@` made curl upload a local file. Every word is quoted now, and the command reproduces what was sent:
-  `--data-binary @file` for file bodies, `-F` for forms, `--digest`, `-L` and the HTTP version.
+  `--data-binary @file` for file bodies, `-F` for forms (with their parts' types and file names), `--digest`,
+  `-L` and the HTTP version (`--http1.0` and `--http2-prior-knowledge` too). A redirected POST turns into a GET
+  as it did in the run, and no `Content-Type` is added that was not sent. Import cURL writes an imported `{{` as
+  `\{{`, so text from a copied command never turns into a variable, and says when it did.
 
 ### Fixed
 
@@ -408,16 +429,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   methods (`PROPFIND`, `QUERY`), a URL without `http://`, indented headers, and the caret on a request's `###`,
   `# @name` or directive line. Digest answers SHA-256 and other RFC 7616 challenges, and Basic/Digest shorthand
   passwords may contain spaces. `@timeout` also stops a body that stalls. Import cURL handles browser and Windows
-  copies, `-F`, `--json`, `-d @file`, `-G`, `-I` and options with arguments, and works outside a `.http` file.
+  copies (Chrome's cmd copies with multi-line bodies included), `curl.exe`, `$ curl` and `/usr/bin/curl`, `-F`
+  with typed parts, `--json`, `-d @file`, `-G`, `-I`, `--url-query`, `-H 'Name:'`, `--http2-prior-knowledge` and
+  options with arguments, works outside a `.http` file, and warns when body lines would be read as comments or
+  scripts.
 - **HTTP Client: smaller fixes.** `$datetime` writes full month and weekday names (`MMMM`, `dddd`), Day.js
-  formats such as `Do`, `Q`, `d` and `[W]ww` come out right, and a huge date offset gives a warning instead of an
-  error. Indented (YAML) bodies keep their first line's indentation. A nested environment object merges across
+  formats such as `Do`, `Q`, `d`, `[W]ww` and `GGGG` come out right, a letter Day.js does not format (outside
+  `[brackets]`) is reported instead of being sent as text, and a huge date offset gives a warning instead of an
+  error. `< ./body-{{v}}.json` paths take variables, and an infinite `$random.float` range is reported. Indented (YAML) bodies keep their first line's indentation. A nested environment object merges across
   both env files, and `.env` accepts `export<TAB>` and multi-line quoted values. Copy as cURL of a multipart
   upload imports back, and curl import keeps `--http1.1` / `--http2` and turns `-T file` into a PUT. More
   credential headers are masked in the saved history (`X-Auth-Key`, `…-Key`, session and signature headers).
   Cancelling an upload releases the file at once, and a cancelled re-run of a login no longer empties the token
   later requests use. Messages about headers, body files, `>>` saves and stalled responses are translated, the
-  elapsed time uses your language's decimal separator, and Escape in Preview goes back to the editor.
+  elapsed time uses your language's decimal separator, and Escape in Preview goes back to the editor. `@var`
+  lines fold with their request, browser multipart boundaries are coloured, and a Save As from `.http` to `.md`
+  swaps the variable underlines for Markdown lint.
+- **HTTP Client: saved responses are not lost, and Run on one sends the right request.** A Clear keeps a
+  response that arrives after it, quitting waits for the last save, and a damaged entry is kept in a
+  `.corrupt.bak` copy that the message names. Run on a History entry no longer freezes on a long URL, and a
+  single cancelled request whose answer had already arrived says so.
+- **HTTP Client: no file work on the UI thread.** Environment files are read in the background (and by the run
+  itself as it starts, so it sends what they hold then), and Save response writes in the background, so a slow
+  disk or a 50 MB response no longer holds up the window.
 - **HTTP Client: clearer messages.** "Connection refused — is a server listening on …?", "Host not found",
   untrusted certificates and timeouts read as sentences instead of `ConnectException`; failures no longer read
   "exit 404" or "exit 5". A redirect to another host names the custom headers that went along, and a redirect

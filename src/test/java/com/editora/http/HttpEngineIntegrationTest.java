@@ -226,7 +226,7 @@ class HttpEngineIntegrationTest {
         HttpFile.Parsed p = HttpFile.parseRequest(HttpFile.parse(fileText).get(0));
         AtomicReference<HttpExchange> got = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
-        service.run(p, vars, dir, null, HttpClientService.SecretGate.UNCHECKED, ex -> {
+        service.run(p, vars, dir, null, SecretGate.UNCHECKED, ex -> {
             got.set(ex);
             done.countDown();
         });
@@ -246,7 +246,7 @@ class HttpEngineIntegrationTest {
                 Map.of(),
                 dir,
                 null,
-                HttpClientService.SecretGate.UNCHECKED,
+                SecretGate.UNCHECKED,
                 null,
                 all -> {
                     got.set(all);
@@ -388,10 +388,9 @@ class HttpEngineIntegrationTest {
 
     @Test
     void timeoutAlsoLimitsTheSilenceBetweenBodyReads() throws Exception {
-        long t0 = System.nanoTime();
+        // Stopped by the 1 s silence limit, not the 20 s stall: the body is cut ("first" only, marked partial) and
+        // the warning names @timeout — a stall that ran to its end would give the whole body and no warning.
         HttpExchange ex = run("# @timeout 1\nGET " + url("/stall") + "\n", null);
-        long ms = (System.nanoTime() - t0) / 1_000_000;
-        assertTrue(ms < 8_000, "stopped by the 1 s silence limit, not the 20 s stall: " + ms + " ms");
         assertFalse(ex.result().failed());
         assertEquals("first", ex.result().body(), "what arrived is kept");
         assertTrue(ex.result().truncated(), "an incomplete body is marked partial");

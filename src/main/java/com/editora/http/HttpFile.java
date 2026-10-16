@@ -126,6 +126,31 @@ public final class HttpFile {
             variables = variables == null ? List.of() : List.copyOf(variables);
             warnings = warnings == null ? List.of() : List.copyOf(warnings);
         }
+
+        /**
+         * This request with {@code first} put before its own warnings — an env file that could not be read is named
+         * above the "was sent as empty text" lines it causes. Itself when {@code first} is empty.
+         */
+        public Parsed withWarningsFirst(List<String> first) {
+            if (first == null || first.isEmpty()) {
+                return this;
+            }
+            List<String> all = new ArrayList<>(first);
+            all.addAll(warnings);
+            return new Parsed(
+                    method,
+                    url,
+                    headers,
+                    body,
+                    name,
+                    bodyRef,
+                    redirects,
+                    directives,
+                    httpVersion,
+                    variables,
+                    all,
+                    error);
+        }
     }
 
     /** What one pass over a file finds: its requests and every declaration outside a body, in order. */

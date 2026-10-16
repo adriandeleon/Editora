@@ -146,7 +146,6 @@ public final class CurlImport {
             "--trace-config",
             "--unix-socket",
             "--upload-file",
-            "--url-query",
             "--variable",
             "--write-out");
 
@@ -167,17 +166,28 @@ public final class CurlImport {
         boolean get;
         String version; // --http1.1 / --http2 → the request line's version
         String uploadFile; // -T / --upload-file
+        final List<String> query = new ArrayList<>(); // --url-query pieces
+        final java.util.Set<String> removed = new java.util.HashSet<>(); // "-H 'Name:'": headers not to send
     }
 
-    /** Builds a {@code METHOD url} + headers + body request block from a {@code curl} command. */
+    /**
+     * Builds a {@code METHOD url} + headers + body request block from a {@code curl} command, or returns {@code null}
+     * when {@code curl} is not one: no {@code curl}/{@code curl.exe} word, or no URL. Anything before the
+     * {@code curl} word — a shell prompt ({@code $ curl …}), {@code sudo} — is skipped, and so is a path to it
+     * ({@code /usr/bin/curl}); PowerShell's backtick line continuations are ignored.
+     */
     public static String toHttpRequest(String curl) {
         List<String> tokens = tokenize(curl);
+        int start = curlWord(tokens);
+        if (start < 0) {
+            return null;
+        }
         Command c = new Command();
         boolean optionsDone = false;
-        for (int i = 0; i < tokens.size(); i++) {
+        for (int i = start + 1; i < tokens.size(); i++) {
             String t = tokens.get(i);
-            if (i == 0 && t.equals("curl")) {
-                continue;
+            if (t.equals("`")) {
+                continue; // a PowerShell line continuation
             }
             if (optionsDone || !t.startsWith("-") || t.equals("-")) {
                 if (c.url == null) {
@@ -214,7 +224,55 @@ public final class CurlImport {
                 flag(c, opt);
             }
         }
-        return render(c);
+        if (c.url == null || c.url.isBlank()) {
+            return null;
+        }
+        // Pasted text never reads a variable: every {{ of the command is written as the \{{ escape, sent as {{.
+        return HttpVars.escape(render(c));
+    }
+
+    /**
+     * How many lines of the body in {@code request} (as {@link #toHttpRequest} wrote it) the {@code .http} format does
+     * not send as written: a {@code #} or {@code //} line is a comment, a {@code ###} line starts another request, and
+     * from a {@code >}, {@code >>} or {@code <>} line on everything is a handler, a redirect or a reference. The
+     * import cannot keep such a body as it was (the format has no escape for them), so it says so instead.
+     */
+    public static int alteredBodyLines(String request) {
+        if (request == null) {
+            return 0;
+        }
+        String[] lines = request.split("\n", -1);
+        int i = 1;
+        while (i < lines.length && !lines[i].isBlank()) {
+            i++; // the headers
+        }
+        int altered = 0;
+        boolean ended = false;
+        for (i++; i < lines.length; i++) {
+            String t = lines[i].strip();
+            if (ended || t.startsWith(">") || t.startsWith("<>") || HttpFile.isSeparator(t)) {
+                ended = ended || !t.isEmpty(); // the rest is a handler, a reference, or another request
+                altered += t.isEmpty() ? 0 : 1;
+            } else if (HttpFile.isComment(t)) {
+                altered++;
+            }
+        }
+        return altered;
+    }
+
+    /** The index of the {@code curl} (or {@code curl.exe}, or a path to either) word in {@code tokens}, else -1. */
+    static int curlWord(List<String> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            String t = tokens.get(i);
+            String name = t.substring(Math.max(t.lastIndexOf('/'), t.lastIndexOf('\\')) + 1);
+            if (name.equalsIgnoreCase("curl") || name.equalsIgnoreCase("curl.exe")) {
+                return i;
+            }
+            if (t.startsWith("-")) {
+                return -1; // options before any curl word: not a curl command
+            }
+        }
+        return -1;
     }
 
     private static boolean takesValue(String longOpt) {
@@ -233,7 +291,8 @@ public final class CurlImport {
                     "--user-agent",
                     "--cookie",
                     "--referer",
-                    "--url" -> true;
+                    "--url",
+                    "--url-query" -> true;
             default -> LONG_WITH_ARG.contains(longOpt);
         };
     }
@@ -247,7 +306,8 @@ public final class CurlImport {
             case "--basic" -> c.digest = false;
             case "--http1.0", "-0" -> c.version = "HTTP/1.0";
             case "--http1.1" -> c.version = "HTTP/1.1";
-            case "--http2", "--http2-prior-knowledge" -> c.version = "HTTP/2";
+            case "--http2" -> c.version = "HTTP/2";
+            case "--http2-prior-knowledge" -> c.version = "HTTP/2 (Prior Knowledge)";
             default -> {} // -L, -k, -s, --compressed, … : nothing to carry over
         }
     }
@@ -257,7 +317,21 @@ public final class CurlImport {
         switch (opt) {
             case "-X", "--request" -> c.method = v;
             case "-H", "--header" -> {
-                if (!v.startsWith("@")) {
+                if (v.startsWith("@")) {
+                    break; // a file of headers
+                }
+                String trimmed = v.strip();
+                if (trimmed.endsWith(":") && trimmed.indexOf(':') == trimmed.length() - 1) {
+                    // "Name:" removes a header curl would add (Copy as cURL writes "Content-Type:" for a body sent
+                    // without one), so the import sends none either.
+                    String name = trimmed.substring(0, trimmed.length() - 1).strip();
+                    c.removed.add(name.toLowerCase(Locale.ROOT));
+                    c.headers.removeIf(h -> h[0].equalsIgnoreCase(name));
+                } else if (trimmed.endsWith(";") && trimmed.indexOf(':') < 0) {
+                    c.headers.add(new String[] {
+                        trimmed.substring(0, trimmed.length() - 1).strip(), ""
+                    }); // "X;": empty
+                } else {
                     c.headers.add(splitHeader(v));
                 }
             }
@@ -287,6 +361,8 @@ public final class CurlImport {
             }
             case "-e", "--referer" -> c.headers.add(new String[] {"Referer", v});
             case "--url" -> c.url = v;
+            // curl adds it to the URL's query, URL-encoding the content unless it starts with "+"
+            case "--url-query" -> c.query.add(v.startsWith("+") ? v.substring(1) : urlencodeData(v));
             case "-T", "--upload-file" -> {
                 if (!v.equals("-") && !v.equals(".")) {
                     c.uploadFile = v; // curl PUTs the file (stdin is not something a .http file can say)
@@ -306,6 +382,9 @@ public final class CurlImport {
         boolean hasData = !c.data.isEmpty() || c.bodyFile != null || !c.json.isEmpty();
         boolean hasForm = !c.form.isEmpty();
         String url = c.url == null ? "" : c.url;
+        if (!c.query.isEmpty()) {
+            url = url + (url.contains("?") ? "&" : "?") + String.join("&", c.query);
+        }
         String data = String.join("&", c.data);
         if (c.get && !c.data.isEmpty()) {
             url = url + (url.contains("?") ? "&" : "?") + data; // -G: the data is the query string
@@ -329,7 +408,13 @@ public final class CurlImport {
         } else if (hasData && c.bodyFile != null && c.bodyFile.equals(c.uploadFile)) {
             // -T sends the file as it is: curl adds no Content-Type, and neither does the import
         } else if (hasData && !(c.get && c.bodyFile == null)) {
-            addIfAbsent(headers, "Content-Type", "application/x-www-form-urlencoded");
+            if (!c.removed.contains("content-type")) {
+                addIfAbsent(headers, "Content-Type", "application/x-www-form-urlencoded");
+            }
+        }
+        if (!hasForm) {
+            // "-H 'Content-Type:'" said curl must not add one: neither does the import (a multipart body needs its own)
+            headers.removeIf(h -> c.removed.contains(h[0].toLowerCase(Locale.ROOT)));
         }
         StringBuilder sb = new StringBuilder();
         sb.append(method).append(' ').append(url);
@@ -370,6 +455,7 @@ public final class CurlImport {
             String filename = null;
             String file = null;
             boolean fileAsText = false;
+            String attributes = "";
             if (!literal && (value.startsWith("@") || value.startsWith("<"))) {
                 fileAsText = value.startsWith("<"); // name=<file: the file's content as a plain field
                 // The file may be double-quoted (curl's -F syntax, and Editora's own Copy as cURL): then it may
@@ -378,30 +464,42 @@ public final class CurlImport {
                 if (rest.startsWith("\"")) {
                     int close = closingQuote(rest);
                     file = curlUnescape(rest.substring(1, close < 0 ? rest.length() : close));
-                    rest = close < 0 ? "" : rest.substring(close + 1);
+                    attributes = close < 0 ? "" : rest.substring(close + 1);
                 } else {
                     int semi = rest.indexOf(';');
                     file = semi < 0 ? rest : rest.substring(0, semi);
-                    rest = semi < 0 ? "" : rest.substring(semi);
+                    attributes = semi < 0 ? "" : rest.substring(semi);
                 }
-                String[] attrs = (";" + rest).split(";");
-                for (int k = 1; k < attrs.length; k++) {
-                    String a = attrs[k].strip();
-                    if (a.startsWith("type=")) {
-                        type = a.substring(5);
-                    } else if (a.startsWith("filename=")) {
-                        filename = unquote(a.substring(9));
-                    }
+            } else if (!literal && value.startsWith("\"")) {
+                // name="text";type=…: a quoted value may hold ';' itself, and its attributes follow the quote
+                int close = closingQuote(value);
+                attributes = close < 0 ? "" : value.substring(close + 1);
+                value = curlUnescape(value.substring(1, close < 0 ? value.length() : close));
+            } else if (!literal) {
+                // name=text;type=application/json: curl reads ";type=" / ";filename=" / ";headers=" off a value
+                int cut = firstAttribute(value);
+                if (cut >= 0) {
+                    attributes = value.substring(cut);
+                    value = value.substring(0, cut);
                 }
-                if (!fileAsText && filename == null) {
-                    int slash = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
-                    filename = file.substring(slash + 1);
+            }
+            for (String a : attributes(attributes)) {
+                if (a.startsWith("type=")) {
+                    type = a.substring(5);
+                } else if (a.startsWith("filename=")) {
+                    filename = unquote(a.substring(9));
                 }
+            }
+            if (file != null && !fileAsText && filename == null) {
+                int slash = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
+                filename = file.substring(slash + 1);
             }
             sb.append("--").append(b).append('\n');
             sb.append("Content-Disposition: form-data; name=\"").append(name).append('"');
             if (filename != null) {
-                sb.append("; filename=\"").append(filename).append('"');
+                sb.append("; filename=\"")
+                        .append(filename.replace("\\", "\\\\").replace("\"", "\\\""))
+                        .append('"');
             }
             sb.append('\n');
             if (type != null) {
@@ -412,6 +510,45 @@ public final class CurlImport {
         }
         sb.append("--").append(b).append("--");
         return sb.toString();
+    }
+
+    /** Where the first {@code ;type=}, {@code ;filename=} or {@code ;headers=} attribute starts in an unquoted value. */
+    private static int firstAttribute(String value) {
+        int best = -1;
+        for (String a : new String[] {";type=", ";filename=", ";headers="}) {
+            int at = value.indexOf(a);
+            if (at >= 0 && (best < 0 || at < best)) {
+                best = at;
+            }
+        }
+        return best;
+    }
+
+    /** The {@code ;}-separated attributes of an {@code -F} part, a {@code "quoted"} value keeping its {@code ;}. */
+    static List<String> attributes(String s) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (quoted && ch == '\\' && i + 1 < s.length()) {
+                cur.append(ch).append(s.charAt(++i));
+            } else if (ch == '"') {
+                quoted = !quoted;
+                cur.append(ch);
+            } else if (ch == ';' && !quoted) {
+                if (!cur.toString().isBlank()) {
+                    out.add(cur.toString().strip());
+                }
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        if (!cur.toString().isBlank()) {
+            out.add(cur.toString().strip());
+        }
+        return out;
     }
 
     /** {@code --data-urlencode} forms: {@code content}, {@code =content}, {@code name=content}. */
@@ -621,9 +758,14 @@ public final class CurlImport {
         return s.contains("^\"") || s.matches("(?s).*\\^\\r?\\n.*");
     }
 
-    /** Removes {@code cmd}'s carets: {@code ^} + newline continues the line, {@code ^x} is a literal {@code x}. */
+    /**
+     * Removes {@code cmd}'s carets: {@code ^} + newline continues the line, {@code ^x} is a literal {@code x}. Inside a
+     * {@code ^"…^"} string, {@code ^} + newline escapes that newline and the literal newline Chrome writes after it is
+     * the one kept, so it adds nothing; between arguments it is a space.
+     */
     private static String fromCmd(String s) {
         StringBuilder sb = new StringBuilder(s.length());
+        boolean quoted = false;
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (c == '^' && i + 1 < s.length()) {
@@ -633,8 +775,13 @@ public final class CurlImport {
                     if (next == '\r' && i + 1 < s.length() && s.charAt(i + 1) == '\n') {
                         i++;
                     }
-                    sb.append(' ');
+                    if (!quoted) {
+                        sb.append(' ');
+                    }
                     continue;
+                }
+                if (next == '"' && trailingBackslashes(sb) % 2 == 0) {
+                    quoted = !quoted; // ^" opens or closes a string; \^" (an odd run of \) is a quote inside one
                 }
                 sb.append(next);
                 i++;
@@ -643,5 +790,13 @@ public final class CurlImport {
             sb.append(c);
         }
         return sb.toString();
+    }
+
+    private static int trailingBackslashes(CharSequence sb) {
+        int n = 0;
+        for (int i = sb.length() - 1; i >= 0 && sb.charAt(i) == '\\'; i--) {
+            n++;
+        }
+        return n;
     }
 }

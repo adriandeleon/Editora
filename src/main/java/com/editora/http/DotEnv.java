@@ -19,7 +19,8 @@ public final class DotEnv {
         if (content == null || content.isBlank()) {
             return out;
         }
-        String[] lines = content.split("\n", -1);
+        // A byte-order mark (Windows editors) would otherwise become part of the first key.
+        String[] lines = HttpEnv.withoutBom(content).split("\n", -1);
         for (int k = 0; k < lines.length; k++) {
             String line = lines[k].strip();
             if (line.isEmpty() || line.startsWith("#")) {
@@ -34,15 +35,20 @@ public final class DotEnv {
             }
             String value = line.substring(eq + 1).strip();
             // A double-quoted value may span lines (KEY="line 1⏎line 2"); an unclosed quote stays one line.
-            if (value.startsWith("\"") && closingQuote(value) < 0) {
+            if (value.startsWith("\"") && closingQuote(value, 1) < 0) {
+                // Each added line is scanned once, from where the last scan stopped (a stray quote with thousands of
+                // lines below it used to rescan the whole tail for every line: seconds, on every completion).
                 StringBuilder joined = new StringBuilder(value);
+                int from = scanResume(value);
                 for (int m = k + 1; m < lines.length; m++) {
                     joined.append('\n').append(stripCr(lines[m]));
-                    if (closingQuote(joined.toString()) > 0) {
+                    int close = closingQuote(joined, from);
+                    if (close > 0) {
                         value = joined.toString();
                         k = m;
                         break;
                     }
+                    from = scanResume(joined);
                 }
             }
             out.put(line.substring(0, eq).strip(), unquote(value));
@@ -79,7 +85,12 @@ public final class DotEnv {
 
     /** The index of the double quote that closes {@code v} (which starts with one), skipping escaped quotes. */
     private static int closingQuote(String v) {
-        for (int i = 1; i < v.length(); i++) {
+        return closingQuote(v, 1);
+    }
+
+    /** As {@link #closingQuote(String)}, scanning from {@code from} (never inside an escape pair). */
+    private static int closingQuote(CharSequence v, int from) {
+        for (int i = Math.max(1, from); i < v.length(); i++) {
             char c = v.charAt(i);
             if (c == '\\') {
                 i++;
@@ -88,6 +99,18 @@ public final class DotEnv {
             }
         }
         return -1;
+    }
+
+    /**
+     * Where a later scan of {@code v} (a quoted value with no closing quote yet) may resume: its end, or one back when
+     * it ends in an unpaired backslash, whose escape pairs with the next character.
+     */
+    private static int scanResume(CharSequence v) {
+        int backslashes = 0;
+        for (int i = v.length() - 1; i >= 1 && v.charAt(i) == '\\'; i--) {
+            backslashes++;
+        }
+        return backslashes % 2 == 1 ? v.length() - 1 : v.length();
     }
 
     private static String unescape(String s) {

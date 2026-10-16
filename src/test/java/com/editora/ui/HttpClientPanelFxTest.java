@@ -17,6 +17,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,7 +64,9 @@ class HttpClientPanelFxTest {
 
         assertTrue(shown.startsWith("line of response text\n"));
         assertTrue(shown.length() < body.length(), "the view is limited");
-        String marker = shown.substring(HttpClientPanel.MAX_BODY_CHARS);
+        // The note sits above the body (X11), where it is seen, not after 400 000 characters.
+        String marker = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertNotNull(marker, "the cut is announced above the body");
         assertTrue(marker.contains("400,000"), "the cut is announced, with the shown length: " + marker);
         assertTrue(marker.contains("660,000"), "…and the full length: " + marker);
 
@@ -119,20 +122,23 @@ class HttpClientPanelFxTest {
                 true);
         String shown = show(p, exchange("img", r));
         assertTrue(shown.contains("binary"), shown);
-        assertTrue(shown.contains("truncated"), "a size-capped response says so in the body pane: " + shown);
+        String note = FxTestSupport.callOnFx(p::bodyNoteForTest);
+        assertTrue(
+                note != null && note.contains("truncated"), "a size-capped response says so above the body: " + note);
         String notes = FxTestSupport.callOnFx(p::notesForTest); // warnings sit apart from the headers (U4)
         assertTrue(notes.startsWith("⚠  response truncated at 50 MB"), notes);
         assertEquals(tr("httppanel.warnings", 1), FxTestSupport.callOnFx(p::warnBadgeForTest));
         assertTrue(
-                FxTestSupport.callOnFx(() -> p.bodyAreaForTest().isWrapText()),
+                FxTestSupport.callOnFx(() -> p.controlsForTest().bodyArea().isWrapText()),
                 "a note in place of the body wraps (U7)");
-        assertTrue(FxTestSupport.callOnFx(() -> p.openTabButtonForTest().isDisabled()));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> p.controlsForTest().openTabButton().isDisabled()));
     }
 
     @Test
     void theRunButtonTurnsIntoCancelOnlyWhileARequestRuns() throws Exception {
         HttpClientPanel p = panel();
-        Button run = p.runButtonForTest();
+        Button run = p.controlsForTest().runButton();
         int[] cancels = {0};
         int[] runs = {0};
         FxTestSupport.runOnFx(() -> {
@@ -164,9 +170,10 @@ class HttpClientPanelFxTest {
                 404, List.<String[]>of(new String[] {"content-type", "text/plain"}), "gone", "text/plain", 12, 4, null);
         show(p, exchange("missing", r));
         assertEquals("404 Not Found  ·  12 ms  ·  4 B", FxTestSupport.callOnFx(p::statusForTest));
-        Label status = p.statusLabelForTest();
+        Label status = p.controlsForTest().statusLabel();
         assertTrue(FxTestSupport.callOnFx(() -> status.getStyleClass().contains(HttpStatusText.CLIENT_ERROR)));
-        String head = FxTestSupport.callOnFx(() -> p.headersAreaForTest().getText());
+        String head =
+                FxTestSupport.callOnFx(() -> p.controlsForTest().headersArea().getText());
         assertEquals("HTTP 404 Not Found\ncontent-type: text/plain\n", head, "no summary line under the headers");
     }
 
@@ -182,10 +189,13 @@ class HttpClientPanelFxTest {
         assertTrue(FxTestSupport.callOnFx(p::statusForTest)
                 .contains(tr("httppanel.runningOf", 2, 5, "GET http://x.test/b")));
         FxTestSupport.runOnFx(p::cancelled);
+        // X10: nothing is shown under "Cancelled" (the old response read as this one's); it is still in History.
+        assertEquals(null, FxTestSupport.callOnFx(p::getSelectedExchange));
+        assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
         assertEquals(
-                "old body",
-                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()),
-                "cancelling shows the last response again");
+                1,
+                FxTestSupport.callOnFx(
+                        () -> p.controlsForTest().historyPicker().getItems().size()));
     }
 
     @Test
@@ -213,7 +223,7 @@ class HttpClientPanelFxTest {
         assertEquals("bad", FxTestSupport.callOnFx(() -> p.getSelectedExchange().label()));
         assertEquals(tr("httppanel.requestFailed"), FxTestSupport.callOnFx(p::statusForTest));
         assertTrue(
-                FxTestSupport.callOnFx(() -> p.saveButtonForTest().isDisabled()),
+                FxTestSupport.callOnFx(() -> p.controlsForTest().saveButton().isDisabled()),
                 "a request that failed has nothing to save");
     }
 
@@ -257,15 +267,17 @@ class HttpClientPanelFxTest {
                 com.editora.i18n.Messages.tr("httppanel.bodyDropped", "4.9 KB"),
                 FxTestSupport.callOnFx(p::shownBodyForTest));
         assertTrue(FxTestSupport.callOnFx(p::statusForTest).startsWith("200 OK"));
-        assertTrue(FxTestSupport.callOnFx(() -> p.saveButtonForTest().isDisabled()), "a dropped body cannot be saved");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> p.controlsForTest().saveButton().isDisabled()),
+                "a dropped body cannot be saved");
     }
 
     @Test
     void escapeGoesBackToTheEditorAndTabLeavesTheResponseBody() throws Exception {
         HttpClientPanel p = panel();
         int[] escapes = {0};
-        javafx.scene.Node body = p.bodyAreaForTest();
-        Button run = p.runButtonForTest();
+        javafx.scene.Node body = p.controlsForTest().bodyArea();
+        Button run = p.controlsForTest().runButton();
         javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
             p.setOnEscape(() -> escapes[0]++);
             javafx.stage.Stage st = new javafx.stage.Stage();

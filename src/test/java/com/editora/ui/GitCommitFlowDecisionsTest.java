@@ -228,6 +228,26 @@ class GitCommitFlowDecisionsTest {
         assertEquals(nested, GitPathScope.nearestRepository(nested.resolve("deep/er/a.txt")));
     }
 
+    /**
+     * What a remote project's host is asked to find its repositories, run here on a real tree: a repository,
+     * one nested in it, a submodule's {@code .git} file, and one under {@code node_modules}, which is skipped.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // find(1)
+    void theHostScanFindsEveryRepositoryButNotInsideSkippedFolders(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve(".git"));
+        Files.createDirectories(dir.resolve("libs/inner/.git/objects"));
+        Files.createDirectories(dir.resolve("modules/sub"));
+        Files.writeString(dir.resolve("modules/sub/.git"), "gitdir: ../../.git/modules/sub\n");
+        Files.createDirectories(dir.resolve("node_modules/pkg/.git"));
+
+        com.editora.process.ProcessRunner.Result r =
+                com.editora.process.ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), GitPathScope.scanArgv());
+
+        assertEquals(0, r.exit(), r.err());
+        assertEquals(java.util.Set.of("", "libs/inner", "modules/sub"), GitPathScope.parseScan(r.out()));
+    }
+
     @Test
     void aPathInNoRepositoryIsNone(@TempDir Path dir) {
         Path plain = dir.resolve("notes.txt");

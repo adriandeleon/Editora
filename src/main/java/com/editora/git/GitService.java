@@ -1211,7 +1211,7 @@ public final class GitService {
         BlameOptions options = blameOptions;
         BlameIgnoreRevs.Plan plan = ignoreRevsPlanFor(root);
         String source = revision + ":" + path;
-        BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(plan));
+        BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(root, plan));
         List<BlameParser.BlameLine> cached = cachedBlame(key.source(), key);
         if (cached != null) {
             return cached;
@@ -1294,17 +1294,12 @@ public final class GitService {
     /** Repository root → its configured ignore-revs files. Blame is re-requested after every status refresh. */
     private final Map<Path, CachedIgnoreRevs> ignoreRevsConfig = new ConcurrentHashMap<>();
 
-    /** The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are now. */
     /**
-     * {@link #ignoreRevsPlan} for a local repository. A remote one leaves {@code blame.ignoreRevsFile} to the
-     * host's git: checking the files and rewriting the global configuration would mean temporary files on
-     * the host for every blame.
+     * The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are
+     * now. For a repository on a remote host the configuration is the host's (its {@code ~}, its global
+     * config), and the files are looked at over SFTP, on the blame's own thread.
      */
     private BlameIgnoreRevs.Plan ignoreRevsPlanFor(Path root) {
-        return isLocal(root) ? ignoreRevsPlan(root) : BlameIgnoreRevs.Plan.NONE;
-    }
-
-    private BlameIgnoreRevs.Plan ignoreRevsPlan(Path root) {
         long now = System.nanoTime();
         CachedIgnoreRevs cached = ignoreRevsConfig.get(root);
         if (cached == null || now - cached.readNanos() > IGNORE_REVS_CONFIG_TTL.toNanos()) {
@@ -1318,12 +1313,13 @@ public final class GitService {
     }
 
     /** The part of a blame cache key that changes when an ignore-revs file in play is edited. */
-    private static String ignoreRevsSignature(BlameIgnoreRevs.Plan plan) {
+    private static String ignoreRevsSignature(Path root, BlameIgnoreRevs.Plan plan) {
         StringBuilder sb = new StringBuilder(plan.withoutGlobalConfig() ? "g" : "");
         for (String file : plan.files()) {
             try {
-                java.nio.file.attribute.BasicFileAttributes attrs =
-                        Files.readAttributes(Path.of(file), java.nio.file.attribute.BasicFileAttributes.class);
+                // On the repository's own file system: a host path, for a repository on a remote host.
+                java.nio.file.attribute.BasicFileAttributes attrs = Files.readAttributes(
+                        root.getFileSystem().getPath(file), java.nio.file.attribute.BasicFileAttributes.class);
                 sb.append('|').append(file).append(':').append(attrs.size()).append(':');
                 sb.append(attrs.lastModifiedTime().toMillis());
             } catch (IOException | RuntimeException gone) {
@@ -1342,18 +1338,52 @@ public final class GitService {
     private Map<String, String> envWithoutGlobalIgnoreRevs(Path root) {
         try {
             ProcessRunner.Result global = git(root, QUICK, "config", "--global", "--includes", "-z", "--list");
-            Path config = Files.createTempFile("editora-git-global", ".config");
-            config.toFile().deleteOnExit();
-            Files.writeString(
-                    config,
-                    BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
-                            global.ok() ? global.out() : "", root.toString().replace('\\', '/')));
+            String text = BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
+                    global.ok() ? global.out() : "", gitPath(root).replace('\\', '/'));
+            String path;
+            if (isLocal(root)) {
+                Path config = Files.createTempFile("editora-git-global", ".config");
+                config.toFile().deleteOnExit();
+                Files.writeString(config, text);
+                path = config.toString();
+            } else {
+                path = hostGlobalConfigCopy(root, text);
+            }
             Map<String, String> env = new LinkedHashMap<>(READ_ENV);
-            env.put("GIT_CONFIG_GLOBAL", config.toString());
+            env.put("GIT_CONFIG_GLOBAL", path);
             return env;
         } catch (IOException | RuntimeException e) {
             return READ_ENV; // blame then fails the way it does in a terminal
         }
+    }
+
+    /**
+     * Where {@code text}, the host's global config without {@code blame.ignoreRevsFile}, is on the host: in
+     * Editora's cache folder there, named by its contents, so it is written once and not again for every
+     * blame. Named as the host names it, for {@code GIT_CONFIG_GLOBAL}.
+     */
+    private static String hostGlobalConfigCopy(Path root, String text) throws IOException {
+        ExecTarget target = ExecTargets.forPath(root);
+        Path dir = target.cacheDir();
+        if (dir == null) {
+            throw new IOException("no cache folder on " + target.id());
+        }
+        String name;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            name = "git-global-" + java.util.HexFormat.of().formatHex(digest, 0, 8) + ".config";
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException(e);
+        }
+        Path config = dir.resolve(name);
+        if (!Files.isRegularFile(config)) {
+            Files.createDirectories(dir);
+            Path partial = dir.resolve(name + ".part");
+            Files.writeString(partial, text);
+            Files.move(partial, config, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        return target.toTargetPath(config);
     }
 
     private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
@@ -1370,7 +1400,7 @@ public final class GitService {
                     attrs.lastModifiedTime().toMillis(),
                     attrs.size(),
                     options,
-                    ignoreRevsSignature(plan));
+                    ignoreRevsSignature(root, plan));
         } catch (IOException | RuntimeException e) {
             return null;
         }

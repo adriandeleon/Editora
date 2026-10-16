@@ -693,6 +693,8 @@ public class EditorBuffer implements TabContent {
             markdownLintValidator;
 
     private boolean markdownLintEnabled;
+    /** What the controller last asked for Markdown lint (the setting), re-applied when the language changes. */
+    private boolean markdownLintWanted;
     /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
     private final ImageDrop imageDrop =
             new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
@@ -1010,7 +1012,9 @@ public class EditorBuffer implements TabContent {
                 this::onRunGlyph,
                 line -> testLines.containsKey(line)
                         ? "test-run-marker"
-                        : line == httpRunningLine() ? FoldManager.HTTP_RUNNING_CLASS : null,
+                        : line == httpGutter.runningGlyphLine(this::isFoldedLine)
+                                ? FoldManager.HTTP_RUNNING_CLASS
+                                : null,
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -3280,6 +3284,7 @@ public class EditorBuffer implements TabContent {
 
     /** Turns Markdown linting on/off for this buffer (controller gates on the setting; Markdown buffers only). */
     public void setMarkdownLintEnabled(boolean on) {
+        this.markdownLintWanted = on;
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
         if (this.markdownLintEnabled || mdLintOverlay != null) {
             // The overlay is shared with a .http buffer's {{variable}} marks: keep it on while they are.
@@ -3538,8 +3543,9 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpHooks(HttpHooks hooks) {
         httpGutter.setHooks(hooks);
-        httpVariableMarks.setValidator(httpGutter.hooks().variableLint());
-        completionActions.setHttpVariables(httpGutter.hooks().variableContext());
+        HttpHooks set = httpGutter.hooks();
+        httpVariableMarks.setValidator(set.checksVariables() ? set.variableLint() : null);
+        completionActions.setHttpVariables(set.variableContext());
     }
 
     /** The hooks injected by {@link #setHttpHooks} ({@link HttpHooks#NONE} until then). */
@@ -3565,6 +3571,10 @@ public class EditorBuffer implements TabContent {
         for (int line : httpGutter.setRunning(index, this::paragraphTextOrNull)) {
             if (line >= 0) {
                 refreshGutterLine(line);
+                int shown = HttpGutter.glyphLine(line, this::isFoldedLine); // a folded request's ■ is on its ### line
+                if (shown != line) {
+                    refreshGutterLine(shown);
+                }
             }
         }
     }
@@ -3575,6 +3585,11 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpRunning(int index, String requestLine) {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
+    }
+
+    /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
+    private boolean isFoldedLine(int line) {
+        return line >= 0 && line < area.getParagraphs().size() && area.isFolded(line);
     }
 
     private String paragraphTextOrNull(int line) {
@@ -3706,7 +3721,7 @@ public class EditorBuffer implements TabContent {
             return true;
         }
         if (httpFeatureEnabled && isHttpFile()) {
-            return httpGutter.isRequestLine(line);
+            return httpGutter.isGlyphLine(line, this::isFoldedLine); // a folded request's ▶ shows on its ### line
         }
         if (isMakefile()) {
             return makeTargets.containsKey(line);
@@ -3714,8 +3729,6 @@ public class EditorBuffer implements TabContent {
         return line == runLine;
     }
 
-    /** Dispatches a Run-glyph click: a {@code .http} request runner (with the clicked line), a Makefile
-     *  target runner (with the clicked target's name), else the script run handler. */
     /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
     private String runGlyphTooltip(int line) {
         com.editora.run.MainMethodScanner.MainMethod m = mainLines.get(line);
@@ -3725,7 +3738,7 @@ public class EditorBuffer implements TabContent {
         com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
         if (t == null) {
             if (httpFeatureEnabled && isHttpFile()) {
-                return httpGutter.tooltip(line); // the ■ cancels, a ▶ runs its request (and names the chord)
+                return httpGutter.tooltip(line, this::isFoldedLine); // ■ cancels, ▶ runs its request (names the chord)
             }
             return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
@@ -3734,6 +3747,8 @@ public class EditorBuffer implements TabContent {
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
+    /** Dispatches a Run-glyph click: a JUnit or main ▶, a {@code .http} request (the clicked line), a Makefile
+     *  target (the clicked target's name), else the script run handler. */
     private void onRunGlyph(int line) {
         com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
         com.editora.run.MainMethodScanner.MainMethod mainTarget = mainLines.get(line);
@@ -3742,7 +3757,7 @@ public class EditorBuffer implements TabContent {
         } else if (mainTarget != null) {
             mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
         } else if (httpFeatureEnabled && isHttpFile()) {
-            httpGutter.click(line); // the ■ of the request in flight cancels it; a ▶ runs its request
+            httpGutter.click(line, this::isFoldedLine); // the ■ in flight cancels it; a ▶ runs its request
         } else if (isMakefile()) {
             String target = makeTargets.get(line);
             if (target != null) {
@@ -7618,6 +7633,10 @@ public class EditorBuffer implements TabContent {
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
         // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
         spell.languageChanged();
+        // A Save As (or a language override) can turn a .http buffer into Markdown and back: the overlay they
+        // share follows the new language — the {{variable}} marks stop, Markdown lint starts, or the reverse.
+        setMarkdownLintEnabled(markdownLintWanted);
+        httpVariableMarks.update();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
