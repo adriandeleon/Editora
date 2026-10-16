@@ -504,6 +504,12 @@
                         <editora.updateCheck>off</editora.updateCheck>
                         <!-- As App.main sets it: a .http request may send its own Host header. -->
                         <jdk.httpclient.allowRestrictedHeaders>host</jdk.httpclient.allowRestrictedHeaders>
+                        <!-- Each fork extracts JavaFX's native libraries into its own cache, not the shared
+                             ~/.openjfx/cache. NativeLibLoader hashes and deletes a cached library outside its
+                             .lock, so on a cold cache one JVM can delete a library another is still writing:
+                             two macOS CI forks booting together lost libjavafx_font that way (see
+                             docs/gotchas.md). A property, not an argLine -D: argLine is split on spaces. -->
+                        <javafx.cachedir>${project.build.directory}/openjfx-cache-${surefire.forkNumber}</javafx.cachedir>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
