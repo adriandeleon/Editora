@@ -15,6 +15,8 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import com.editora.plugin.PluginInstaller;
+
 /**
  * Exports a config directory to a timestamped {@code .zip}. Used by the Settings → Advanced
  * "Export configuration" button to back up the active config dir ({@code ~/.editora},
@@ -77,8 +79,11 @@ public final class ConfigExporter {
      * in an export. Left out, because none of it is configuration and all of it is recreated on demand:
      *
      * <ul>
-     *   <li>{@code plugins/lsp/} and {@code plugins/dap/} — downloaded language servers and debug adapters,
-     *       hundreds of megabytes of binaries (a plugin the user installed, {@code plugins/<id>/}, is kept);
+     *   <li>the in-app installer's folders under {@code plugins/} — {@code lsp/}, {@code dap/}, {@code typst/}
+     *       and {@code tools/} (ShellCheck, shfmt): downloaded language servers, debug adapters and tools,
+     *       hundreds of megabytes of binaries built for this machine's OS, which another one could not run.
+     *       They are the folders {@link PluginInstaller#isReservedId} keeps plugins out of; a plugin the user
+     *       installed, {@code plugins/<id>/}, is kept;
      *   <li>{@code jdtls-workspaces/} — the Java language server's index cache;
      *   <li>{@code history/} — Local History: the index and a copy of every recorded revision of the user's
      *       <em>files</em>, from every project. That is their work, not their configuration, it can be many
@@ -111,8 +116,7 @@ public final class ConfigExporter {
     }
 
     private static boolean includedConfig(String relative) {
-        if (relative.startsWith("plugins/lsp/")
-                || relative.startsWith("plugins/dap/")
+        if (inBuiltInToolFolder(relative)
                 || relative.startsWith("jdtls-workspaces/")
                 || relative.startsWith("history/")
                 || relative.startsWith("sync/")
@@ -124,6 +128,16 @@ public final class ConfigExporter {
             return false;
         }
         return relative.contains("/") || !RUNTIME_FILES.contains(relative);
+    }
+
+    /** Whether {@code relative} lies in one of the installer's {@code plugins/<reserved id>/} folders. */
+    private static boolean inBuiltInToolFolder(String relative) {
+        String prefix = ConfigManager.PLUGINS_DIR_NAME + "/";
+        if (!relative.startsWith(prefix)) {
+            return false;
+        }
+        int slash = relative.indexOf('/', prefix.length());
+        return slash > prefix.length() && PluginInstaller.isReservedId(relative.substring(prefix.length(), slash));
     }
 
     /**

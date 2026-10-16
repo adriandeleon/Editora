@@ -134,6 +134,7 @@ class ConfigExporterTest {
         for (String skipped : List.of(
                 "plugins/lsp/java/jdtls/plugins/big.jar",
                 "plugins/dap/java/java-debug.jar",
+                "plugins/typst/typst",
                 "jdtls-workspaces/abc/.metadata/index",
                 // A15: Local History is the user's files, not their configuration.
                 "history/index.json",
@@ -161,6 +162,27 @@ class ConfigExporterTest {
                         "settings.json.v104.bak",
                         "snippets/java.json"),
                 entries.stream().sorted().toList());
+    }
+
+    /** The one-click ShellCheck / shfmt install: binaries for this machine's OS, not configuration. */
+    @Test
+    void installedToolBinariesAreNotExported(@TempDir Path cfg, @TempDir Path home) throws Exception {
+        for (String file : List.of(
+                "settings.json",
+                "plugins/tools/shellcheck/shellcheck",
+                "plugins/tools/shfmt/shfmt.exe",
+                "plugins/toolsmith/plugin.json")) {
+            Files.createDirectories(cfg.resolve(file).getParent());
+            Files.writeString(cfg.resolve(file), "x");
+        }
+
+        List<String> entries = entryNames(ConfigExporter.export(cfg, home, "1.0.0", "tester", WHEN));
+
+        assertEquals(
+                List.of("plugins/toolsmith/plugin.json", "settings.json"),
+                entries.stream().sorted().toList());
+        assertFalse(ConfigExporter.included("plugins/tools/shellcheck/shellcheck"));
+        assertTrue(ConfigExporter.included("plugins/tools.json"), "a file named like the folder is not in it");
     }
 
     @Test

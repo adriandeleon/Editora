@@ -22,9 +22,10 @@ your config directory containing a `plugin.json` manifest plus, optionally, a Ja
 `EDITORA_CONFIG_DIR` points at). The enabled set is stored in `<configDir>/plugins.json`.
 
 A plugin id is letters, digits, `-`, `_` and `.` (not starting with a dot, no `..`), and should equal its
-folder name. `lsp`, `dap` and `typst` are reserved: Editora keeps downloaded language servers, debug adapters
-and the Typst CLI in `plugins/lsp`, `plugins/dap` and `plugins/typst`, so those folders are never treated as
-plugins. A folder whose `plugin.json` declares an invalid or reserved id is listed under its folder name with
+folder name. `lsp`, `dap`, `typst` and `tools` are reserved: Editora keeps downloaded language servers, debug
+adapters, the Typst CLI and single-binary tools (ShellCheck, shfmt) in `plugins/lsp`, `plugins/dap`,
+`plugins/typst` and `plugins/tools`, so those folders are never treated as plugins (and Export Configuration
+leaves them out). A folder whose `plugin.json` declares an invalid or reserved id is listed under its folder name with
 a load error and nothing from it is loaded. *Remove* deletes the plugin's own folder — always a direct child
 of `plugins/` — never a path built from the manifest id.
 

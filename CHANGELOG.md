@@ -512,6 +512,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Export Configuration leaves out the installed ShellCheck and shfmt** (`plugins/tools/`) and the Typst CLI
+  (`plugins/typst/`), as it already did language servers and debug adapters. The zip no longer carries about
+  20 MB of executables built for this machine's OS. A plugin can no longer take the id `tools`, so installing or
+  removing one cannot overwrite or delete those tools.
 - **Startup files have no Run ▶:** `.bashrc`, `.profile`, `.zshrc`, `.xinitrc`, `.bash_logout`, `.envrc` and
   the other rc, profile, login and session files. One stray click no longer runs them.
 - **Debug on a shell script says it cannot be debugged** and points to Run with Trace, instead of sending you to
