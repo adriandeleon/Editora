@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -430,9 +431,15 @@ class RunCoordinatorFlowsFxTest {
 
     @Test
     void aShShebangRunsShAndAZshFileRunsZsh() throws Exception {
-        Path sh = Path.of("/bin/sh").toRealPath();
-        org.junit.jupiter.api.Assumptions.assumeFalse(
-                sh.getFileName().toString().contains("bash"), "/bin/sh is bash here: nothing to tell apart");
+        // Ask /bin/sh itself: on macOS it is its own binary but runs bash 3.2 in sh mode, so BASH_VERSION is set
+        // and there is nothing to tell apart; the file name alone does not show that.
+        Process probe = new ProcessBuilder("/bin/sh", "-c", "echo \"${BASH_VERSION:-not bash}\"")
+                .redirectErrorStream(true)
+                .start();
+        String shSays = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        probe.waitFor();
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                "not bash\n".equals(shSays), "/bin/sh is bash here: nothing to tell apart");
         open("posix.sh", "#!/bin/sh\necho \"${BASH_VERSION:-not bash}\"\n", true);
         FxTestSupport.runOnFx(run::runActiveFile);
         awaitStatus(tr("status.run.ok"));
