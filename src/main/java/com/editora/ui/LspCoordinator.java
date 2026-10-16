@@ -379,6 +379,11 @@ final class LspCoordinator {
             }
 
             @Override
+            public void openUrl(String url) {
+                host.openExternalUrl(url); // through the window's link choke point
+            }
+
+            @Override
             public void setProjectWide(boolean projectWide) {
                 setProjectWideProblems(projectWide); // #743
             }

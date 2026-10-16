@@ -235,13 +235,13 @@ class DiagnosticPanelsKeysFxTest {
             assertTrue(file.getStyleClass().contains("search-file-row"));
 
             TreeCell<Object> error = cell(tree, 2);
-            assertEquals("✖  1:  broken here", error.getText());
+            assertEquals("✖  1:  broken here  [E]", error.getText(), "the rule's code ends the row");
             assertTrue(error.getStyleClass().contains("problem-error"));
             TreeCell<Object> warning = cell(tree, 3);
-            assertEquals("⚠  2:  " + "w".repeat(200) + "…", warning.getText(), "a long message is cut");
+            assertEquals("⚠  2:  " + "w".repeat(200) + "…  [E]", warning.getText(), "a long message is cut");
             assertTrue(warning.getStyleClass().contains("problem-warning"));
             TreeCell<Object> hint = cell(tree, 4);
-            assertEquals("ℹ  3:  hint", hint.getText());
+            assertEquals("ℹ  3:  hint  [E]", hint.getText());
             assertTrue(hint.getStyleClass().contains("problem-info"));
 
             hint.updateIndex(2); // a reused cell takes the new row's severity only

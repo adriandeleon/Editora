@@ -40,7 +40,8 @@ final class OverlayPalette {
             Color searchMatch,
             Color searchActive,
             Color searchActiveBorder,
-            Color indentGuide) {}
+            Color indentGuide,
+            Color ground) {}
 
     private static Color cachedFor;
     private static Colors cached;
@@ -63,7 +64,8 @@ final class OverlayPalette {
                 Color.web("#ffd54f", dark ? 0.30 : 0.40),
                 Color.web("#ff9800", dark ? 0.45 : 0.55),
                 reach(Color.web(dark ? "#ff9800" : "#c2410c"), ground, INDICATOR),
-                reach(ground.interpolate(ink(ground), 0.08), ground, GUIDE));
+                reach(ground.interpolate(ink(ground), 0.08), ground, GUIDE),
+                ground);
     }
 
     /** Whether light ink reads better than dark ink on {@code ground}. Pure. */
