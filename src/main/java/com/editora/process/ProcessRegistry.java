@@ -70,6 +70,25 @@ public final class ProcessRegistry {
     /** Metadata for the on-disk ledger, keyed by pid (so a crash-leaked server can be reaped next run). */
     private static final ConcurrentHashMap<Long, LedgerEntry> LEDGER = new ConcurrentHashMap<>();
 
+    /**
+     * Ledger rows for programs a launcher started elsewhere (a container, a WSL distribution), keyed by their
+     * process: ending the launcher here does not end them there, so after a crash the next Editora stops them
+     * through a {@linkplain #registerOrphanReaper reaper}.
+     */
+    private static final ConcurrentHashMap<Process, LedgerEntry> REMOTE_LEDGER = new ConcurrentHashMap<>();
+
+    /** Stops a program a crashed Editora left on a target, from its ledger row's record (kind removed). */
+    @FunctionalInterface
+    public interface OrphanReaper {
+        /** True when it was found and stopped; false when it was not there any more (or not that program). */
+        boolean reap(List<String> fields) throws IOException;
+    }
+
+    private static final ConcurrentHashMap<String, OrphanReaper> REAPERS = new ConcurrentHashMap<>();
+
+    /** How long the shutdown hook waits for the targets to be asked to force-stop their programs. */
+    static final long REMOTE_KILL_WAIT_MS = 2000;
+
     private static final Object LEDGER_FILE_LOCK = new Object();
     /** The shared ledger older versions wrote ({@code spawned-servers.txt}): read and cleared, never written. */
     private static volatile Path ledgerFile;
@@ -123,9 +142,12 @@ public final class ProcessRegistry {
             return;
         }
         LIVE.add(p);
-        if (p instanceof RemoteProcess) {
-            // No ledger row: the pid belongs to another machine, where the connection's own end reaps it.
+        if (p instanceof RemoteProcess remote) {
+            // Its pid belongs to another machine: never a row a local reap could read. A target that ends
+            // Editora's programs by itself when Editora goes (an SSH session) records nothing; one that does
+            // not (a container) says how to find the program again, which asks the target, so off this thread.
             p.onExit().thenRun(() -> untrack(p));
+            Thread.ofVirtual().name("orphan-record").start(() -> recordRemote(remote));
             return;
         }
         LedgerEntry entry = LedgerEntry.of(p);
@@ -136,13 +158,37 @@ public final class ProcessRegistry {
         p.onExit().thenRun(() -> untrack(p));
     }
 
+    private static void recordRemote(RemoteProcess p) {
+        List<String> record = p.orphanRecord();
+        if (record == null || record.isEmpty() || !LIVE.contains(p)) {
+            return;
+        }
+        REMOTE_LEDGER.put(p, LedgerEntry.remote(record, SELF));
+        if (!LIVE.contains(p)) {
+            REMOTE_LEDGER.remove(p); // it ended while being recorded: untrack has run, or is about to
+        }
+        writeLedger();
+    }
+
+    /**
+     * Registers how rows of {@code kind} ({@link RemoteProcess#orphanRecord}'s first field) are reaped. Call
+     * before {@link #reapOrphans}; a row of a kind nobody registered is left alone.
+     */
+    public static void registerOrphanReaper(String kind, OrphanReaper reaper) {
+        REAPERS.put(kind, reaper);
+    }
+
     /** Stops tracking a process (called after it's been killed, or when it exits). */
     public static void untrack(Process p) {
         if (p == null) {
             return;
         }
         LIVE.remove(p);
-        if (!(p instanceof RemoteProcess) && LEDGER.remove(p.pid()) != null) {
+        if (p instanceof RemoteProcess) {
+            if (REMOTE_LEDGER.remove(p) != null) {
+                writeLedger();
+            }
+        } else if (LEDGER.remove(p.pid()) != null) {
             writeLedger();
         }
     }
@@ -374,20 +420,54 @@ public final class ProcessRegistry {
                 destroyTree(p, true); // and anything forked during the grace period
             }
         }
+        List<RemoteProcess> stubborn = new ArrayList<>();
         for (RemoteProcess r : remote) {
             try {
                 r.waitFor(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS); // the same grace
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            signalRemote(r, true);
+            if (r.isAlive()) {
+                stubborn.add(r);
+            }
         }
+        forceRemoteNow(stubborn);
         PENDING_REAPS.clear();
         LIVE.clear();
+        REMOTE_LEDGER.clear();
         // The killed PIDs are now dead, so the next launch's reapOrphans would no-op on them anyway; still,
         // clear the ledger we can account for (a hard crash that skips this hook is what reaping handles).
         LEDGER.clear();
         writeLedger();
+    }
+
+    /**
+     * Force-stops {@code remote} and waits, at most {@link #REMOTE_KILL_WAIT_MS} in all, until each target has
+     * been asked: the JVM is exiting, and a request still on its way when it does is never sent.
+     */
+    private static void forceRemoteNow(List<RemoteProcess> remote) {
+        if (remote.isEmpty()) {
+            return;
+        }
+        List<Thread> asking = new ArrayList<>();
+        for (RemoteProcess r : remote) {
+            asking.add(Thread.ofVirtual().name("editora-shutdown-remote").start(() -> {
+                try {
+                    r.signalTreeNow(true, REMOTE_KILL_WAIT_MS);
+                } catch (RuntimeException ignored) {
+                    // best effort: the target may be gone, and the program with it
+                }
+            }));
+        }
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(REMOTE_KILL_WAIT_MS);
+        for (Thread t : asking) {
+            try {
+                t.join(java.time.Duration.ofNanos(Math.max(1, deadline - System.nanoTime())));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     /** Blocks until none of {@code handles} is alive, or {@code millis} have passed. */
@@ -434,6 +514,7 @@ public final class ProcessRegistry {
             return;
         }
         int reaped = 0;
+        List<LedgerEntry> remoteOrphans = new ArrayList<>();
         for (Path file : ledgerFiles(legacy)) {
             List<LedgerEntry> entries;
             synchronized (LEDGER_FILE_LOCK) {
@@ -449,6 +530,10 @@ public final class ProcessRegistry {
                 Optional<Live> ownerNow = liveState(e.owner().pid());
                 if (!ownerGone(e.owner(), SELF, ownerNow)) {
                     liveOwner = true; // another running Editora's row (or our own): leave it, and its file
+                    continue;
+                }
+                if (e.remote() != null) {
+                    remoteOrphans.add(e); // its pid is the target's: only its reaper may act on it
                     continue;
                 }
                 Optional<ProcessHandle> handle = ProcessHandle.of(e.pid());
@@ -480,6 +565,33 @@ public final class ProcessRegistry {
         if (reaped > 0) {
             LOG.info("Reaped " + reaped + " orphaned language/debug server process(es) from a previous run");
         }
+        if (!remoteOrphans.isEmpty()) {
+            // A target may be slow to answer (a WSL distribution boots first): not on the startup path.
+            Thread.ofVirtual().name("orphan-reaper-remote").start(() -> reapRemote(remoteOrphans));
+        }
+    }
+
+    /** Hands each row to the reaper of its kind; the target checks the program is still the one recorded. */
+    static int reapRemote(List<LedgerEntry> rows) {
+        int reaped = 0;
+        for (LedgerEntry row : rows) {
+            List<String> record = row.remote();
+            OrphanReaper reaper = record == null || record.isEmpty() ? null : REAPERS.get(record.get(0));
+            if (reaper == null) {
+                continue;
+            }
+            try {
+                if (reaper.reap(record.subList(1, record.size()))) {
+                    reaped++;
+                }
+            } catch (IOException | RuntimeException e) {
+                LOG.log(Level.FINE, "Could not reap a program a previous run left on " + record.get(0), e);
+            }
+        }
+        if (reaped > 0) {
+            LOG.info("Stopped " + reaped + " program(s) a previous run left in containers or WSL");
+        }
+        return reaped;
     }
 
     /** The legacy ledger (when present) plus every per-process ledger beside it. */
@@ -551,15 +663,28 @@ public final class ProcessRegistry {
 
     /** A ledger row: the spawned root pid plus enough identity to avoid killing a reused PID next run, and the
      *  Editora process that spawned it. */
-    record LedgerEntry(long pid, long startEpochMillis, String command, Owner owner) {
+    record LedgerEntry(long pid, long startEpochMillis, String command, Owner owner, List<String> remote) {
 
         LedgerEntry {
             owner = owner == null ? Owner.NONE : owner;
+            remote = remote == null ? null : List.copyOf(remote);
+        }
+
+        LedgerEntry(long pid, long startEpochMillis, String command, Owner owner) {
+            this(pid, startEpochMillis, command, owner, null);
         }
 
         /** A row with no recorded owner (the legacy format). */
         LedgerEntry(long pid, long startEpochMillis, String command) {
             this(pid, startEpochMillis, command, Owner.NONE);
+        }
+
+        /**
+         * A row for a program on a target ({@link RemoteProcess#orphanRecord}): no local pid (0, which no reap
+         * of this machine acts on), the record as a seventh field, which earlier versions do not read.
+         */
+        static LedgerEntry remote(List<String> record, Owner owner) {
+            return new LedgerEntry(0L, 0L, "", owner, record);
         }
 
         static LedgerEntry of(Process p) {
@@ -582,9 +707,44 @@ public final class ProcessRegistry {
          */
         String format() {
             String row = pid + "\t" + startEpochMillis + "\t" + field(command);
-            return owner.known()
-                    ? row + "\t" + owner.pid() + "\t" + owner.startEpochMillis() + "\t" + field(owner.command())
-                    : row;
+            if (!owner.known()) {
+                return row;
+            }
+            row += "\t" + owner.pid() + "\t" + owner.startEpochMillis() + "\t" + field(owner.command());
+            return remote == null ? row : row + "\t" + encodeRecord(remote);
+        }
+
+        /** The record's fields joined by U+001F, each with {@code %}, tab, CR, LF and U+001F escaped. */
+        static String encodeRecord(List<String> record) {
+            StringBuilder out = new StringBuilder();
+            for (String field : record) {
+                if (!out.isEmpty()) {
+                    out.append('\u001f');
+                }
+                for (char c : field.toCharArray()) {
+                    switch (c) {
+                        case '%' -> out.append("%25");
+                        case '\t' -> out.append("%09");
+                        case '\n' -> out.append("%0A");
+                        case '\r' -> out.append("%0D");
+                        case '\u001f' -> out.append("%1F");
+                        default -> out.append(c);
+                    }
+                }
+            }
+            return out.toString();
+        }
+
+        static List<String> decodeRecord(String text) {
+            List<String> out = new ArrayList<>();
+            for (String field : text.split("\u001f", -1)) {
+                out.add(field.replace("%1F", "\u001f")
+                        .replace("%0D", "\r")
+                        .replace("%0A", "\n")
+                        .replace("%09", "\t")
+                        .replace("%25", "%"));
+            }
+            return List.copyOf(out);
         }
 
         private static String field(String text) {
@@ -596,18 +756,25 @@ public final class ProcessRegistry {
                 return Optional.empty();
             }
             String[] parts = line.split("\t", -1);
-            // 2-3 fields: a legacy row. 6: an owned row. Anything else is a torn or foreign line — skipped,
-            // because half an owner must never be read as "no owner" (that would make the row reapable).
-            if (parts.length != 2 && parts.length != 3 && parts.length != 6) {
+            // 2-3 fields: a legacy row. 6: an owned row. 7: an owned row for a program on a target. Anything
+            // else is a torn or foreign line — skipped, because half an owner must never be read as "no owner"
+            // (that would make the row reapable).
+            if (parts.length != 2 && parts.length != 3 && parts.length != 6 && parts.length != 7) {
                 return Optional.empty();
             }
             try {
                 long pid = Long.parseLong(parts[0].trim());
                 long start = Long.parseLong(parts[1].trim());
                 String cmd = parts.length >= 3 ? parts[2] : "";
-                Owner owner = parts.length == 6
+                Owner owner = parts.length >= 6
                         ? new Owner(Long.parseLong(parts[3].trim()), Long.parseLong(parts[4].trim()), parts[5])
                         : Owner.NONE;
+                if (parts.length == 7) {
+                    if (pid != 0 || !owner.known() || parts[6].isEmpty()) {
+                        return Optional.empty(); // a target's row always has an owner and never a local pid
+                    }
+                    return Optional.of(LedgerEntry.remote(decodeRecord(parts[6]), owner));
+                }
                 return Optional.of(new LedgerEntry(pid, start, cmd, owner));
             } catch (NumberFormatException e) {
                 return Optional.empty();
@@ -742,6 +909,9 @@ public final class ProcessRegistry {
             // and leave the older rows on disk.
             List<String> lines = new ArrayList<>();
             for (LedgerEntry e : LEDGER.values()) {
+                lines.add(e.format());
+            }
+            for (LedgerEntry e : REMOTE_LEDGER.values()) {
                 lines.add(e.format());
             }
             try {

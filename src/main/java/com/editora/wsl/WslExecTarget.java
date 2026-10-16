@@ -125,7 +125,51 @@ public final class WslExecTarget implements ExecTarget {
         RemoteEnv known = env();
         Process client = client(argv(PosixShell.argv(spec, cwd, known.path(), known.locale(), known.profile())))
                 .start();
-        return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal);
+        return LauncherProcess.start(id(), client, START_TIMEOUT, this::signal, this::orphanRecord);
+    }
+
+    /** {@link #orphanRecord}'s kind, and the reaper {@code App} registers for it. */
+    public static final String ORPHAN_KIND = "wsl";
+
+    /**
+     * How the next Editora finds the program with {@code pid} again: the distribution, the pid and its start
+     * time there ({@link PosixShell#startTimeArgv}), then the launcher's command.
+     */
+    private List<String> orphanRecord(long pid) throws IOException {
+        String start = capture(PosixShell.startTimeArgv(pid)).strip();
+        if (!start.matches("\\d+")) {
+            throw new IOException("no start time for " + pid + " in " + distro);
+        }
+        List<String> record = new ArrayList<>(List.of(ORPHAN_KIND, distro, Long.toString(pid), start));
+        record.addAll(launcher);
+        return record;
+    }
+
+    /**
+     * Stops a program a crashed Editora left in a distribution, from its {@link #orphanRecord} (kind removed),
+     * only while the pid is still the process that started then. False when it was not there any more.
+     */
+    public static boolean reapOrphan(List<String> fields) throws IOException {
+        if (fields.size() < 4) {
+            return false;
+        }
+        WslExecTarget target = new WslExecTarget(fields.subList(3, fields.size()), fields.get(0), "");
+        Process p = client(target.argv(PosixShell.reapArgv(Long.parseLong(fields.get(1)), fields.get(2))))
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        p.getOutputStream().close();
+        try {
+            if (!p.waitFor(START_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            p.destroyForcibly();
+            return false;
+        }
     }
 
     /** The distribution's login environment, asked once. */

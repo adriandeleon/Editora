@@ -25,6 +25,24 @@ public abstract class RemoteProcess extends Process {
     /** True once the process ended because its connection did, so its exit code means nothing. */
     public abstract boolean connectionLost();
 
+    /**
+     * How the next Editora finds this program again and stops it, should this one die without doing so: the
+     * {@linkplain ProcessRegistry#registerOrphanReaper reaper}'s kind, then what that reaper needs. {@code null}
+     * when the target ends Editora's programs by itself when Editora goes (an SSH session's watchdog). May ask
+     * the target: never call it on the FX thread.
+     */
+    public java.util.List<String> orphanRecord() {
+        return null;
+    }
+
+    /**
+     * {@link #signalTree}, returning only once the target has been asked, or after {@code millis}: for the
+     * shutdown hook, whose last word must not be lost to a JVM that is already exiting.
+     */
+    public void signalTreeNow(boolean force, long millis) {
+        signalTree(force);
+    }
+
     @Override
     public final void destroy() {
         signalTree(false);

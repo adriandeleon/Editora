@@ -109,7 +109,10 @@ this machine cannot see: its files are written by commands in the container (`pr
 `mkdir -p`, a file streamed through `cat` into a `.part` and moved in, `rm -rf`, the folder and name always
 passed as arguments), so a container's jdtls index, the java-debug jars, a loose file's debug classes and blame's
 stand-in git config live there as on an SSH host. They last as long as the container; the consent question
-names the folder. Not yet: stopping a container's programs after Editora itself crashed. The `Remote probe` workflow's
+names the folder. A program Editora tracks in a container outlives a crashed Editora (killing the client here
+does not end it there): its ledger row says how to reach it, and the next launch stops it in the container,
+only while its pid still has the recorded start time (`ContainerExecTarget.reapOrphan`; see
+[LSP and DAP](lsp-and-dap.md), process lifecycle). The `Remote probe` workflow's
 container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
 

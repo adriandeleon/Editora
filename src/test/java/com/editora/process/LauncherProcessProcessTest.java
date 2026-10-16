@@ -134,6 +134,28 @@ class LauncherProcessProcessTest {
 
     @Test
     @DisabledOnOs(OS.WINDOWS)
+    void atShutdownTheLastSignalIsSentBeforeReturning() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean asked = new java.util.concurrent.atomic.AtomicBoolean();
+        LauncherProcess p = LauncherProcess.start(
+                "test:here", launch(List.of("sleep", "300"), null), Duration.ofSeconds(10), (pid, force) -> {
+                    try {
+                        Thread.sleep(300); // a docker exec takes a moment
+                    } catch (InterruptedException e) {
+                        return false;
+                    }
+                    asked.set(true);
+                    return kill(pid, force);
+                });
+
+        p.signalTreeNow(true, 5000);
+
+        assertTrue(asked.get(), "returned only once the target had been asked");
+        assertTrue(p.waitFor(10, TimeUnit.SECONDS));
+        p.signalTreeNow(true, 5000); // over: nothing to ask
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
     void aLauncherThatNeverStartsTheCommandIsGivenUpOn() throws Exception {
         Process silent = new ProcessBuilder("sleep", "300").start();
 

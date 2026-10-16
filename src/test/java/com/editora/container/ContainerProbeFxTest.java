@@ -159,6 +159,45 @@ class ContainerProbeFxTest {
     }
 
     @Test
+    void aProgramACrashedEditoraLeftInTheContainerIsStoppedByTheNextOne() throws Exception {
+        RemoteProcess p = (RemoteProcess) target.start(ExecSpec.of(
+                        List.of("sh", "-c", "sleep 300 & sleep 301; wait"),
+                        folder,
+                        Map.of(),
+                        ExecSpec.Locale.PARSE_STABLE)
+                .withLongLived(true));
+        List<String> record = p.orphanRecord();
+        assertEquals(ContainerExecTarget.ORPHAN_KIND, record.get(0), String.valueOf(record));
+        List<String> fields = record.subList(1, record.size());
+
+        // The crash: the engine's client here dies with Editora; the program in the container does not.
+        List<ProcessHandle> clients = ProcessHandle.current()
+                .children()
+                .filter(h ->
+                        h.info().commandLine().orElse("").contains(target.info().id()))
+                .toList();
+        assertFalse(clients.isEmpty(), "the exec client is a child of this process");
+        clients.forEach(ProcessHandle::destroyForcibly);
+        assertTrue(p.waitFor(20, TimeUnit.SECONDS), "the client ended");
+        Thread.sleep(500);
+        assertTrue(processes().stream().anyMatch(a -> a.startsWith("sleep 30")), "left running: " + processes());
+
+        List<String> other = new java.util.ArrayList<>(fields);
+        other.set(3, fields.get(3) + "1");
+        assertFalse(ContainerExecTarget.reapOrphan(other), "another start time: not that program");
+        assertTrue(processes().stream().anyMatch(a -> a.startsWith("sleep 30")));
+
+        assertTrue(ContainerExecTarget.reapOrphan(fields));
+        List<String> left = processes();
+        for (int i = 0; i < 50 && left.stream().anyMatch(a -> a.startsWith("sleep 30")); i++) {
+            Thread.sleep(200);
+            left = processes();
+        }
+        assertFalse(left.stream().anyMatch(a -> a.startsWith("sleep 30")), "stopped with its group: " + left);
+        assertFalse(ContainerExecTarget.reapOrphan(fields), "gone: nothing left to stop");
+    }
+
+    @Test
     void theContainersOwnPathAndLocaleAreUsed() throws Exception {
         ProcessRunner.Result r =
                 ProcessRunner.run(folder, Duration.ofSeconds(60), List.of("sh", "-c", "echo \"$PATH\""));

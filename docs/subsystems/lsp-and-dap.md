@@ -458,6 +458,21 @@ all call `ProcessRegistry.track(process)`. Three mechanisms:
    pre-owner shared file `spawned-servers.txt` is still read at startup (its rows have no owner and are
    reaped as before) but never written. The `LedgerEntry` parse/format and both decisions are pure and
    unit-tested; `ProcessRegistryLedgerProcessTest` runs them against real processes.
+4. **Programs in a container or a WSL distribution.** Ending the `docker exec` / `wsl.exe` client here does
+   not end the program there, so a crashed Editora would leave it running. A tracked `RemoteProcess` whose
+   target does not end Editora's programs by itself (an SSH session's watchdog does) answers
+   `orphanRecord()`: a reaper kind (`container`, `wsl`) and what that reaper needs — for a container its id,
+   the user, the pid there and the pid's start time (`/proc/<pid>/stat` field 22, `PosixShell.startTimeArgv`,
+   one extra command, asked off the FX thread), then the engine's command. It is written as a seventh field
+   with local pid 0 (`LedgerEntry.remote`); earlier versions read only 2, 3 or 6 fields, so they skip it, and
+   nothing of this machine's process table ever acts on it. `reapOrphans` hands a dead owner's such rows to
+   the reaper `App` registers for the kind (`registerOrphanReaper`: `ContainerExecTarget.reapOrphan`,
+   `WslExecTarget.reapOrphan`) on a virtual thread, off the startup path. The reaper runs
+   `PosixShell.reapArgv` on the target, which kills the group only while the pid still has the recorded
+   start time. On a normal quit the hook's last force-kill of such programs waits until each target has
+   been asked (`signalTreeNow`, at most `REMOTE_KILL_WAIT_MS` in all): a request still on its way when the
+   JVM exits would never be sent. `ProcessRegistryOrphansTest`, `PosixShellReapProcessTest` and the
+   container and WSL probes cover it (the probes kill the client the way a crash does).
 
 `ownerGone` is deliberately conservative: a live process at the owner's pid whose start instant looks
 different but whose executable matches is treated as **alive**. Two JVMs can disagree about one
