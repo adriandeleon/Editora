@@ -1464,7 +1464,6 @@ public class SettingsWindow {
             config.getSettings().setGitSupport(now);
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
-            blameCheck.setDisable(!now); // inline blame only matters when Git is on
             refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
         });
 
@@ -4385,7 +4384,10 @@ public class SettingsWindow {
                 settingRow(tr("settings.git.detected"), null, gitStatusLabel),
                 "git command found version installed not found");
 
+        // Blame, pull and fetch only matter while Git is on; the command path stays editable to fix detection.
+        p.getChildren().add(SettingsDependents.note(gitCheck.selectedProperty(), tr("settings.enableGit")));
         Card c2 = card(p, null);
+        SettingsDependents.bind(gitCheck.selectedProperty(), c2.body());
         cardRow(
                 c2,
                 Category.GIT,
@@ -7057,16 +7059,22 @@ public class SettingsWindow {
     }
 
     private void showGithubStatus(com.editora.github.GitHubService.Availability a) {
-        String[] verdict = githubStatus(a);
+        String[] verdict = githubStatus(a, config.getSettings().getGhPath());
         githubStatusLabel.getStyleClass().setAll("settings-git-status", verdict[0]);
         githubStatusLabel.setText(verdict[1]);
     }
 
     /** The GitHub page's status row for a probe result: {@code [style class, text]}. Pure — unit-tested. */
-    static String[] githubStatus(com.editora.github.GitHubService.Availability a) {
+    static String[] githubStatus(com.editora.github.GitHubService.Availability a, String ghPath) {
         String missing = "settings-git-missing";
         if (!a.found()) {
-            return new String[] {missing, tr("settings.github.notFound")};
+            // A typo in the path is not a missing install: name the path rather than say "install gh".
+            return new String[] {
+                missing,
+                ghPath == null || ghPath.isBlank()
+                        ? tr("settings.github.notFound")
+                        : tr("settings.github.notFoundAt", ghPath.strip())
+            };
         }
         return switch (a.auth()) {
             case SIGNED_OUT -> new String[] {missing, tr("settings.github.foundNoAuth")};
@@ -7233,8 +7241,13 @@ public class SettingsWindow {
             gitStatusLabel
                     .getStyleClass()
                     .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
-            gitStatusLabel.setText(found ? tr("settings.git.found", version) : tr("settings.git.notFound"));
-            gitCheck.setDisable(!found);
+            String path = config.getSettings().getGitPath();
+            gitStatusLabel.setText(
+                    found
+                            ? tr("settings.git.found", version)
+                            : path == null || path.isBlank()
+                                    ? tr("settings.git.notFound")
+                                    : tr("settings.git.notFoundAt", path));
         });
     }
 
@@ -8394,7 +8407,6 @@ public class SettingsWindow {
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
-            blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
             gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
             gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
@@ -8775,7 +8787,6 @@ public class SettingsWindow {
         loading = true;
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
-            blameCheck.setDisable(!config.getSettings().isGitSupport());
             gitPullModeCombo.setValue(
                     com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
             gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
