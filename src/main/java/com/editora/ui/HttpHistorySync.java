@@ -107,6 +107,7 @@ final class HttpHistorySync {
         }
         Path file = t.file;
         history.acquire(file);
+        history.setPendingWork(HttpHistorySync::awaitIdleQuietly); // quitting waits for what is queued here
         if (PRUNED.compareAndSet(false, true)) {
             WORKER.execute(() -> history.pruneOrphans(System.currentTimeMillis()));
         }
@@ -124,17 +125,12 @@ final class HttpHistorySync {
                     return; // closed, or the feature was switched off, while reading
                 }
                 report(file, stored);
-                stored.responses.forEach(r -> t.seen.add(HttpResponseHistory.entryKey(r)));
                 t.clearedAt = Math.max(t.clearedAt, stored.clearedAt);
                 if (!stored.file.isEmpty()) {
                     environments.putIfAbsent(buffer, stored.environment); // a file never saved keeps the old choice
                 }
                 refreshEnvironments.accept(buffer);
-                if (panel.history().isEmpty()) {
-                    panel.restore(entries);
-                } else {
-                    panel.addOlder(entries); // a run finished before the read: the saved ones go after it
-                }
+                take(panel, t, entries);
             });
         });
     }
@@ -205,12 +201,11 @@ final class HttpHistorySync {
                     return; // closed, switched off, or saved elsewhere again meanwhile
                 }
                 report(now, found);
-                found.responses.forEach(r -> t.seen.add(HttpResponseHistory.entryKey(r)));
                 t.clearedAt = Math.max(t.clearedAt, found.clearedAt);
                 if (!found.file.isEmpty()) {
                     environments.putIfAbsent(buffer, found.environment);
                 }
-                panel.addOlder(older);
+                take(panel, t, older);
                 refreshEnvironments.accept(buffer);
                 persist(buffer);
                 if (old != null) {
@@ -223,6 +218,53 @@ final class HttpHistorySync {
             });
         });
         return true;
+    }
+
+    /**
+     * Puts saved {@code entries} into {@code panel} — behind what it shows, leaving out the ones it already holds (a
+     * history that followed its file holds this panel's own entries) — and only then counts them as held. An entry
+     * counted as held but never put in the panel would be "removed here" at the next save: a run pressed before
+     * the read landed, which made the panel refuse the restore, deleted the file's whole saved history.
+     */
+    private static void take(HttpClientPanel panel, Tracked t, List<HttpHistoryEntry> entries) {
+        Set<String> held = new HashSet<>();
+        for (HttpHistoryEntry e : panel.history()) {
+            held.add(e.storedKey());
+        }
+        List<HttpHistoryEntry> fresh = new ArrayList<>();
+        for (HttpHistoryEntry e : entries) {
+            String key = e.storedKey();
+            if (held.add(key)) {
+                fresh.add(e);
+            }
+        }
+        if (panel.history().isEmpty() && !panel.isRunning()) {
+            panel.restore(fresh);
+        } else {
+            panel.addOlder(fresh); // a run is in flight or finished before the read: the saved ones go after it
+        }
+        for (HttpHistoryEntry e : panel.history()) {
+            t.seen.add(e.storedKey());
+        }
+    }
+
+    /**
+     * A file or folder was renamed or moved from {@code from} to {@code to} (the Project tree, another window): the
+     * saved histories of the {@code .http} files it held move with them, also those no panel shows (a tab not built
+     * yet, a file that is not open), which would otherwise be pruned as orphans.
+     */
+    void moved(Path from, Path to) {
+        HttpResponseHistory history = store.get();
+        if (history == null || from == null || to == null) {
+            return;
+        }
+        WORKER.execute(() -> {
+            try {
+                history.move(from, to);
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Could not move the HTTP history of " + from, e);
+            }
+        });
     }
 
     /** The user cleared {@code buffer}'s history: no window brings back an entry from before now. */
@@ -269,6 +311,47 @@ final class HttpHistorySync {
         WORKER.submit(() -> {}).get(30, TimeUnit.SECONDS);
     }
 
+    /**
+     * Holds the history thread until the returned latch is counted down, as a long read of another file's history
+     * would (tests). Returns once the thread is held.
+     */
+    static java.util.concurrent.CountDownLatch holdForTest() throws InterruptedException {
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+        WORKER.execute(() -> {
+            held.countDown();
+            try {
+                release.await(60, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        held.await(30, TimeUnit.SECONDS);
+        return release;
+    }
+
+    /** How long quitting waits for the history work still queued. */
+    private static final long DRAIN_SECONDS = 10;
+
+    /**
+     * Waits, at most {@link #DRAIN_SECONDS}, for the reads, saves and deletes queued so far: the config writer stops
+     * when the app quits, and a save still waiting here then never reached the disk. Any thread but the worker.
+     */
+    static void awaitIdleQuietly() {
+        if (Thread.currentThread().getName().equals("http-history")) {
+            return; // the worker itself: waiting on its own queue would never end
+        }
+        try {
+            WORKER.submit(() -> {}).get(DRAIN_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            LOG.log(Level.WARNING, "The HTTP history was still being saved when Editora closed", e);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // shut down already: nothing queued
+        }
+    }
+
     /** The panel entries of a saved history, newest first; a damaged entry is left out. Any thread. */
     private static List<HttpHistoryEntry> entries(HttpResponseHistory.Stored stored) {
         List<HttpHistoryEntry> out = new ArrayList<>();
@@ -288,10 +371,17 @@ final class HttpHistorySync {
             host.setError(ConfigLoadMessages.describe(problem, problem.mustNotOverwrite()));
         }
         if (stored.skipped > 0) {
-            host.setError(tr(
-                    "status.http.historyPartlyUnreadable",
-                    stored.skipped,
-                    file.getFileName().toString()));
+            host.setError(
+                    stored.damagedCopy == null
+                            ? tr(
+                                    "status.http.historyPartlyUnreadable",
+                                    stored.skipped,
+                                    file.getFileName().toString())
+                            : tr(
+                                    "status.http.historyPartlyUnreadableKept",
+                                    stored.skipped,
+                                    file.getFileName().toString(),
+                                    stored.damagedCopy.toString()));
         }
     }
 }

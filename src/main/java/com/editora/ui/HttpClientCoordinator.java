@@ -255,6 +255,24 @@ final class HttpClientCoordinator {
         }
     }
 
+    /**
+     * {@code from} (a file or a folder) was renamed or moved to {@code to} — the Project tree, another window, a
+     * refactoring: the saved histories under it move along, and each open buffer now under {@code to} re-points its
+     * panel's history (call after the buffers' paths changed).
+     */
+    void onFileMoved(Path from, Path to) {
+        history.moved(from, to);
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null
+                    && b.getPath()
+                            .toAbsolutePath()
+                            .normalize()
+                            .startsWith(to.toAbsolutePath().normalize())) {
+                ensureHttpPreview(b);
+            }
+        });
+    }
+
     /** Drops the closed buffer's panel (the map is strongly keyed, so this hook is required). */
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null) {
@@ -461,8 +479,7 @@ final class HttpClientCoordinator {
             return;
         }
         HttpExchange ex = entry.exchange();
-        int index = HttpRerunTarget.find(
-                HttpFile.parse(buffer.getContent()), entry.name(), ex.method(), ex.url(), entry.requestIndex());
+        int index = HttpRerunTarget.find(HttpFile.parse(buffer.getContent()), entry);
         if (index >= 0) {
             runIndex(buffer, index);
             return;
@@ -787,13 +804,11 @@ final class HttpClientCoordinator {
         for (int i = 0; i < exchanges.size(); i++) {
             HttpFile.Parsed req = i < requests.size() ? requests.get(i) : null;
             HttpExchange ex = exchanges.get(i);
-            entries.add(new HttpHistoryEntry(
+            entries.add(HttpHistoryEntry.ran(
                     ex,
-                    req == null ? null : req.name(),
+                    req,
                     i < indexes.size() ? indexes.get(i) : -1,
                     startedAt != null && i < startedAt.length ? startedAt[i] : now,
-                    false,
-                    false,
                     // # @no-log, and an untitled buffer's "not sent — save first": shown now, never written to disk
                     (req != null && req.directives().noLog()) || unsent.contains(ex)));
         }
@@ -841,7 +856,9 @@ final class HttpClientCoordinator {
         }
         long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
         finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1);
-        host.setStatus(tr("status.http.cancelledAfter", kept.size(), total));
+        // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read oddly.
+        host.setStatus(
+                total > 1 ? tr("status.http.cancelledAfter", kept.size(), total) : tr("status.http.cancelledTooLate"));
     }
 
     private void copyAsCurl(HttpExchange ex) {

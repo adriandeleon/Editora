@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -44,13 +43,12 @@ final class HttpHistoryRetention {
         return out;
     }
 
-    /** What makes two entries "the same request": its name, else its method and the URL it sent. */
+    /**
+     * What makes two entries "the same request": its name, else its position and method (an unnamed request whose
+     * URL varies is still one request), else its method and the URL it sent — as the saved history decides it.
+     */
     static String key(HttpHistoryEntry e) {
-        if (e.name() != null) {
-            return "name:" + e.name();
-        }
         var ex = e.exchange();
-        String method = ex.method() == null ? "" : ex.method().toUpperCase(Locale.ROOT);
-        return "url:" + method + " " + ex.url();
+        return com.editora.config.HttpResponseHistory.requestKey(e.name(), e.requestIndex(), ex.method(), ex.url());
     }
 }

@@ -422,9 +422,11 @@ class HttpHistoryRound2FxTest {
         HttpClientCoordinator c = coordinator(host);
         EditorBuffer b = open(host, c, file, "GET " + url("/a") + "\n");
         await(() -> c.panelForTest(b).history().size() == 2);
+        Path kept = Path.of(store.fileFor(file) + ".corrupt.bak");
         assertTrue(
-                host.errors.contains(tr("status.http.historyPartlyUnreadable", 1, "damaged.http")),
+                host.errors.contains(tr("status.http.historyPartlyUnreadableKept", 1, "damaged.http", kept.toString())),
                 host.errors.toString());
+        assertTrue(Files.readString(kept).contains("two hundred"), "the damaged entry is kept in a copy");
     }
 
     @Test

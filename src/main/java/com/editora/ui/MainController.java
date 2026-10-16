@@ -1913,6 +1913,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
         migrateFileState(old, target);
+        // The saved HTTP responses follow the file (or every .http file under a moved folder), shown or not: the
+        // tree's rename never reached the history, so closing the tab or quitting lost it.
+        httpClient.onFileMoved(old, target);
         requestSave();
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
