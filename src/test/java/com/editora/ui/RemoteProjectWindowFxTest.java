@@ -164,6 +164,13 @@ class RemoteProjectWindowFxTest {
     }
 
     @Test
+    void theFailureDialogIsSizedToItsTextAsItWraps() {
+        assertEquals(1, RemoteCoordinator.wrappedLines("short", 64));
+        assertEquals(3, RemoteCoordinator.wrappedLines("x".repeat(130), 64), "one long line wraps to three");
+        assertEquals(4, RemoteCoordinator.wrappedLines("x".repeat(70) + "\n\n" + "y", 64), "blank lines count");
+    }
+
+    @Test
     void aChangedHostKeySaysHowToForgetTheOldOneAndARefusedLoginWhatToCheck() throws Exception {
         java.util.Map<String, String> shown = new java.util.LinkedHashMap<>();
         remote.connectFailureShown = shown::put;

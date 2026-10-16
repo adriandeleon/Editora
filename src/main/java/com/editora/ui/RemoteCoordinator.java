@@ -420,11 +420,22 @@ final class RemoteCoordinator {
         TextArea area = new TextArea(body);
         area.setEditable(false);
         area.setWrapText(true);
-        area.setPrefColumnCount(52);
-        area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
+        area.setPrefColumnCount(60);
+        area.setPrefRowCount(Math.min(16, wrappedLines(body, 64) + 1)); // the advice wraps: count what it wraps to
         area.getStyleClass().add("git-error-text"); // the error-detail style the Git dialog uses
         alert.getDialogPane().setContent(area);
+        alert.getDialogPane().setMinWidth(600);
+        alert.setResizable(true);
         alert.showAndWait();
+    }
+
+    /** Lines {@code text} takes when wrapped at about {@code width} characters. Pure. */
+    static int wrappedLines(String text, int width) {
+        int lines = 0;
+        for (String line : text.split("\n", -1)) {
+            lines += Math.max(1, (line.length() + width - 1) / width);
+        }
+        return lines;
     }
 
     /** Takes the connect-failure dialog's header and body instead of showing it (tests). */
