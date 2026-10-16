@@ -51,6 +51,16 @@ public record ContainerEngine(List<String> command) {
         return r.ok() ? ContainerInfo.parse(r.out()) : null;
     }
 
+    /** The names of the running containers, for the user to pick one; empty when the engine does not answer. */
+    public List<String> runningContainers() {
+        List<String> argv = new ArrayList<>(command);
+        argv.addAll(List.of("ps", "--format", "{{.Names}}"));
+        ProcessRunner.Result r = ProcessRunner.run(null, QUICK, argv);
+        return r.ok()
+                ? r.out().lines().map(String::strip).filter(l -> !l.isEmpty()).toList()
+                : List.of();
+    }
+
     /**
      * The running container the Dev Containers CLI or VS Code started for {@code folder} (its
      * {@value ContainerInfo#LOCAL_FOLDER_LABEL} label), or null.

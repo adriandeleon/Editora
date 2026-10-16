@@ -331,6 +331,7 @@ final class LanguageServerSession implements LanguageClient {
     boolean start() {
         try {
             com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+            targetId = target.id();
             if (!target.isLocal()) {
                 // Where the folder's tools run (a remote host, a container, WSL): its own server, its own PATH
                 // and locale. It is told about documents by its own paths for them.
@@ -836,6 +837,13 @@ final class LanguageServerSession implements LanguageClient {
 
     ServerCapabilities capabilities() {
         return capabilities;
+    }
+
+    /** The id of the target the server was started on ({@code local}, a host, a container), or null before. */
+    private volatile String targetId;
+
+    String targetId() {
+        return targetId;
     }
 
     Path root() {

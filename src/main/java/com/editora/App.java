@@ -97,6 +97,8 @@ public class App extends Application {
                 () -> shared.getSettings().isRemoteExecution());
         com.editora.process.ExecTargets.setRemoteHostAllowed(shared::remoteExecAllowed); // once per host
         com.editora.process.ExecTargets.setRemoteTools(shared::remoteTool);
+        // Folders bind-mounted into a container the user works in: their tools run there once allowed.
+        com.editora.process.ExecTargets.registerMapped(com.editora.container.ContainerBindings.shared());
         // Delete a mcp-endpoint.json left by a crashed run — it advertises a dead port with a live-looking
         // token. Reaped by the stamped pid + start instant, before any MCP server starts this session (#464).
         com.editora.mcp.McpServer.reapStaleEndpoint(shared.getConfigDir());

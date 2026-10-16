@@ -162,6 +162,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public ContainerCoordinator containerCoordinator() {
+        return mc.containerCoordinator;
+    }
+
+    @Override
     public ToolWindow problemsToolWindow() {
         return mc.problemsToolWindow;
     }

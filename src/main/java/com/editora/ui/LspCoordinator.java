@@ -671,7 +671,16 @@ final class LspCoordinator {
      * are offered to their servers, or closed on them, accordingly.
      */
     void remoteExecChanged() {
-        resyncRemoteBuffers(null);
+        // A folder's tools may now run elsewhere (a host allowed or withdrawn, a folder bound to a container or
+        // released): a server started on the old side is stopped, and every tab re-decides — not only remote
+        // ones, since a bound container serves local files.
+        lspManager.shutdownSessionsOnAnotherTarget();
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null) {
+                syncBufferWhenShown(b);
+            }
+        });
+        updateStatusBar();
     }
 
     /** Re-decides every remote tab on {@code authority} (any host when null): the active one now, others on show. */
