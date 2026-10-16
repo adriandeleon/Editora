@@ -888,6 +888,9 @@ public class SettingsWindow {
     }
 
     public void show(Window owner) {
+        if (!stage.isShowing()) {
+            gitProbedFor = null; // git may have been installed or removed while the window was closed
+        }
         if (!built) {
             build(owner);
             built = true;
@@ -7242,6 +7245,20 @@ public class SettingsWindow {
             }
         });
         field.getProperties().put(COMMIT_KEY, run);
+        field.getProperties().put(PENDING_KEY, (java.util.function.BooleanSupplier) () ->
+                !java.util.Objects.toString(field.getText(), "").equals(java.util.Objects.toString(stored.get(), "")));
+    }
+
+    private static final Object PENDING_KEY = new Object();
+
+    /** The commit-on-blur field the user is typing in, holding text not committed yet; null when none. */
+    private TextField typingField() {
+        return stage.getScene() != null
+                        && stage.getScene().getFocusOwner() instanceof TextField f
+                        && f.getProperties().get(PENDING_KEY) instanceof java.util.function.BooleanSupplier pending
+                        && pending.getAsBoolean()
+                ? f
+                : null;
     }
 
     /** Every {@link #commitOnEnterOrBlur} field, so closing the window can commit the one being typed in. */
@@ -8481,6 +8498,10 @@ public class SettingsWindow {
     }
 
     private void load() {
+        // Another window's change re-reads every control: the field being typed in keeps what was typed.
+        TextField typing = typingField();
+        String typed = typing == null ? null : typing.getText();
+        int caret = typing == null ? 0 : typing.getCaretPosition();
         loading = true;
         try {
             reloadStoreBackedEditors(); // a command or another window may have changed a store since the build
@@ -8719,14 +8740,25 @@ public class SettingsWindow {
             autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)
                     Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
             autoSaveDelaySpinner.setDisable(!FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(mode));
+            if (typing != null) {
+                typing.setText(typed);
+                typing.positionCaret(caret);
+            }
         } finally {
             loading = false;
         }
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
         updatePreviewFont();
         fileNotes.show(config.shared().settingsFileIssues());
-        probeGit(); // re-check git availability each time Settings opens
+        // Once per open and per command: a sync from another window used to spawn `git --version` each time.
+        String gitCommand = config.getSettings().getGitPath();
+        if (!java.util.Objects.equals(gitCommand, gitProbedFor)) {
+            gitProbedFor = gitCommand;
+            probeGit();
+        }
     }
+
+    private String gitProbedFor; // the git command last probed while this window is open; null = probe again
 
     private void updateProjectRowEnabled() {
         if (projectShowCheck == null) {

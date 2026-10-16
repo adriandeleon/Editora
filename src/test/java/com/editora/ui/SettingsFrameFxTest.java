@@ -342,4 +342,42 @@ class SettingsFrameFxTest {
             });
         }
     }
+
+    @Test
+    void aChangeFromAnotherWindowKeepsWhatIsBeingTypedAndDoesNotReprobeGit() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            WindowManager wm = FxTestSupport.field(fx, "windowManager");
+            MainController other = FxTestSupport.callOnFx(wm::buildWindowForTest);
+            SettingsWindow a = fx.controller.settingsWindow;
+            SettingsWindow b = other.settingsWindow;
+            FxTestSupport.runOnFx(() -> {
+                a.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
+                b.show(FxTestSupport.<Stage>field(other, "stage"));
+            });
+            javafx.scene.control.Label gitStatus = FxTestSupport.field(b, "gitStatusLabel");
+            String checking = com.editora.i18n.Messages.tr("settings.git.checking");
+            await(() -> !gitStatus.getText().equals(checking), "the first git probe");
+            TextField gitPath = FxTestSupport.field(b, "gitPathField");
+            Spinner<Integer> tabA = FxTestSupport.field(a, "tabSizeSpinner");
+            Spinner<Integer> tabB = FxTestSupport.field(b, "tabSizeSpinner");
+            FxTestSupport.runOnFx(() -> {
+                ListView<Object> sidebar = FxTestSupport.field(b, "sidebar");
+                sidebar.getSelectionModel().select(category(sidebar, "GIT"));
+                gitPath.requestFocus();
+                assertSame(gitPath, gitPath.getScene().getFocusOwner());
+                gitPath.setText("/opt/git/bin/git"); // typed, not committed yet
+                tabA.getValueFactory().setValue(6); // meanwhile, in the other window
+            });
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(6, tabB.getValue(), "the other window follows the change");
+                assertEquals("/opt/git/bin/git", gitPath.getText(), "and keeps what was being typed");
+                assertTrue(!gitStatus.getText().equals(checking), "no new git probe for the same command");
+                FxTestSupport.<Stage>field(b, "stage").close(); // closing commits it
+            });
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(
+                    () -> assertEquals("/opt/git/bin/git", config.getSettings().getGitPath()));
+            FxTestSupport.runOnFx(() -> FxTestSupport.<Stage>field(a, "stage").hide());
+        }
+    }
 }
