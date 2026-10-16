@@ -2080,6 +2080,11 @@ final class LspCoordinator {
             }
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
         }
+        // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
+        // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
+        if ("bash".equals(base) && com.editora.editor.ShellFiles.isZshStartupFile(fileName)) {
+            return null;
+        }
         return base;
     }
 
