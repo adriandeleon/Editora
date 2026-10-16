@@ -6632,6 +6632,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
                 }
+
+                @Override
+                public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                        pythonInterpreter() {
+                    return lspCoordinator.pythonInterpreterForDoctor();
+                }
             });
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------

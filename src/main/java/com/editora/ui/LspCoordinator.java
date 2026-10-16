@@ -409,6 +409,37 @@ final class LspCoordinator {
                 host.setStatus(message);
             }
         });
+        this.pythonFormat = new PythonFormatCoordinator(new PythonFormatCoordinator.Host() {
+            @Override
+            public EditorBuffer activeBuffer() {
+                return host.activeBuffer();
+            }
+
+            @Override
+            public boolean activeEditable() {
+                return ops.activeEditable();
+            }
+
+            @Override
+            public boolean serverFormats(Path file) {
+                return ops.lspFeatureEnabled() && lspManager.isManaged(file) && lspManager.supportsFormatting(file);
+            }
+
+            @Override
+            public Path venvOf(Path file) {
+                return pythonInterpreters.resolve(file).venv();
+            }
+
+            @Override
+            public void setStatus(String message) {
+                host.setStatus(message);
+            }
+
+            @Override
+            public void setError(String message) {
+                host.setError(message);
+            }
+        });
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
         this.problemsActions = new ProblemsPanel.Actions() {
@@ -608,7 +639,7 @@ final class LspCoordinator {
     private void refreshCapabilityGates(EditorBuffer b, boolean active) {
         Path path = b.getPath();
         b.setLspTriggerChars(lspManager.triggerCharacters(path));
-        b.setLspFormatAvailable(lspManager.supportsFormatting(path));
+        b.setLspFormatAvailable(lspManager.supportsFormatting(path) || b.isPython()); // Python: Ruff/Black
         b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
         b.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(path));
         b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
@@ -2095,7 +2126,7 @@ final class LspCoordinator {
             // no-ops until the server's initialize completes (then onServerStatus "ready" refreshes them),
             // and effective immediately when the server for this root is already running (a 2nd file).
             buffer.setLspTriggerChars(lspManager.triggerCharacters(path));
-            buffer.setLspFormatAvailable(lspManager.supportsFormatting(path));
+            buffer.setLspFormatAvailable(lspManager.supportsFormatting(path) || buffer.isPython()); // Ruff/Black
             buffer.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
             buffer.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(path)); // #740
             buffer.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
@@ -2318,6 +2349,26 @@ final class LspCoordinator {
     private EditorBuffer pythonStatusBuffer;
 
     private String pythonStatusLanguage;
+
+    /** Ruff/Black Format Document for Python files no language server formats (adl's decision 4). */
+    final PythonFormatCoordinator pythonFormat;
+
+    /**
+     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it. True when
+     * this took the command — then it works with the language server off too.
+     */
+    boolean formatPythonExternally() {
+        pythonInterpreters.captureSnapshot();
+        return pythonFormat.formatActive();
+    }
+
+    /** For Doctor (FX thread): resolves, off the FX thread, the interpreter of the active Python file or project. */
+    java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreterForDoctor() {
+        pythonInterpreters.captureSnapshot();
+        EditorBuffer b = host.activeBuffer();
+        Path file = b != null && b.isPython() && !com.editora.vfs.Vfs.isRemote(b.getPath()) ? b.getPath() : null;
+        return () -> pythonInterpreters.resolve(file);
+    }
 
     /** {@code python.selectInterpreter}: the interpreter picker for the active file's project. */
     void selectPythonInterpreter() {
@@ -2564,7 +2615,11 @@ final class LspCoordinator {
                 this::gotoDefinition,
                 this::findReferences,
                 this::showHover,
-                this::formatDocument,
+                () -> {
+                    if (!formatPythonExternally()) {
+                        formatDocument();
+                    }
+                },
                 this::codeActions,
                 this::rename,
                 this::gotoImplementation,

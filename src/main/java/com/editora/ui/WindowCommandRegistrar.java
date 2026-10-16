@@ -2169,8 +2169,12 @@ final class WindowCommandRegistrar {
                         "lsp.toggleProjectProblems",
                         () -> host.ifLsp(() -> host.lspCoordinator()
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
-        host.registry()
-                .register(Command.of("lsp.formatDocument", () -> host.ifLsp(host.lspCoordinator()::formatDocument)));
+        host.registry().register(Command.of("lsp.formatDocument", () -> {
+            // Python: Ruff/Black unless a language server formats it — with the language server off too.
+            if (!host.lspCoordinator().formatPythonExternally()) {
+                host.ifLsp(host.lspCoordinator()::formatDocument);
+            }
+        }));
         host.registry().register(Command.of("lsp.codeActions", () -> host.ifLsp(host.lspCoordinator()::codeActions)));
         host.registry()
                 .register(Command.of(
