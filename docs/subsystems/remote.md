@@ -103,9 +103,13 @@ Remote; blank is `docker`). A port only the container has — a debugger's — i
 here (`ContainerExecTarget.forwardLocal`, `process/RelayPortForward`): each connection starts one `exec` running a
 relay the container has, found once (`process/PortRelays`: `nc`, else `bash`'s `/dev/tcp`, else `python3`), joined to the port
 inside. It works for every engine and network, including rootless Podman and Docker Desktop, whose containers
-this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. Not
-yet: a cache folder in the container (jdtls keeps its own default; the java-debug plugin is the container's own
-`dap.java`), and stopping a container's programs after Editora itself crashed. The `Remote probe` workflow's
+this machine cannot reach by address; the pumps flush every read, since a process's stdin is buffered. Editora's
+working folder in a container is `~/.cache/editora` in the container's home (`ContainerExecTarget.cache`), which
+this machine cannot see: its files are written by commands in the container (`process/ShellTargetCache`:
+`mkdir -p`, a file streamed through `cat` into a `.part` and moved in, `rm -rf`, the folder and name always
+passed as arguments), so a container's jdtls index, the java-debug jars, a loose file's debug classes and blame's
+stand-in git config live there as on an SSH host. They last as long as the container; the consent question
+names the folder. Not yet: stopping a container's programs after Editora itself crashed. The `Remote probe` workflow's
 container job runs `ContainerProbeFxTest` against Docker on `ubuntu-latest`. `ContainerProbeFxTest` is the opt-in check against a real engine
 (`-Dcontainer.probe=podman -Dcontainer.probe.image=<an image already present>`).
 
@@ -278,12 +282,16 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   folder. No marker probing over the network. Project `.editora/settings.json` overrides are not read for a
   remote project. **astro is not offered remotely yet.**
 - **jdtls on the host:** `-data` is `<cache>/jdtls-workspaces/<root hash>`, where the cache is
-  `ExecTarget.cacheDir()` (`~/.cache/editora` from the login shell's `HOME`; the consent question names it).
+  `ExecTarget.cache()` (`~/.cache/editora` from the login shell's `HOME`; the consent question names it). Every
+  file Editora puts there goes through `process/TargetCache`: an SSH host's and a WSL distribution's through
+  their file systems (`PathTargetCache`, the folder `ExecTarget.cacheDir()`), a container's by commands
+  (`ShellTargetCache`).
   It is not claimed across windows as local workspaces are (a remote project has one window), and a failed
   handshake does not delete it. `java.configuration.runtimes` lists the host's JDKs, found by one `sh` command
   (`RemoteJavaRuntimes`: the host's `jdk.home` tool, `JAVA_HOME`, the `javac` on `PATH`, and the folders
-  `JavaRuntimes` looks in). The java-debug bundles are not sent (they are paths on this machine; debugging on a
-  host is not done yet). `-Djava.lsp.joinOnCompletion=true` goes on the command line when the host says the executable is
+  `JavaRuntimes` looks in). The java-debug bundles are the host's `dap.java` tool, else this machine's jars copied
+  into `<cache>/java-debug/` (`LspManager.remoteDebugBundles`; sent again only when the size differs, the name
+  carrying the version). `-Djava.lsp.joinOnCompletion=true` goes on the command line when the host says the executable is
   jdtls's launcher (`jdtls.py` beside it, `JavaServerEnvironment.isRemoteJdtlsLauncher`), else in the
   server's environment.
 - **Language servers and the connection:** a remote server that ends is given a second
