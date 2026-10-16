@@ -296,9 +296,7 @@ class HttpClientServiceFlowsIntegrationTest {
                         + "--x\nContent-Disposition: form-data; name=\"f\"; filename=\"p\"\n\n< ../../etc/passwd\n--x--\n",
                 dir);
         assertTrue(ex.result().failed());
-        assertTrue(
-                ex.result().error().startsWith("request not sent: "),
-                ex.result().error());
+        assertTrue(ex.result().error().startsWith("Not sent: "), ex.result().error());
         assertTrue(
                 ex.result().error().contains("outside the request folder"),
                 ex.result().error());
@@ -328,7 +326,7 @@ class HttpClientServiceFlowsIntegrationTest {
     void aBodyFileCannotBeResolvedWithoutASavedRequestFile() throws Exception {
         com.editora.http.HttpExchange ex = run("POST " + url("/echo") + "\n\n< ./body.json\n", null);
         assertEquals(
-                "request not sent: body file needs a saved request file to resolve against: ./body.json",
+                "Not sent: body file needs a saved request file to resolve against: ./body.json",
                 ex.result().error());
         assertEquals(List.of(), seen);
     }
@@ -336,19 +334,19 @@ class HttpClientServiceFlowsIntegrationTest {
     @Test
     void aBodyFileOutsideTheFolderOrMissingStopsTheRequest(@TempDir Path dir) throws Exception {
         assertEquals(
-                "request not sent: body file outside the request folder: ../secret.txt",
+                "Not sent: body file outside the request folder: ../secret.txt",
                 run("POST " + url("/echo") + "\n\n< ../secret.txt\n", dir)
                         .result()
                         .error());
         assertEquals(
-                "request not sent: body file not found: ./nope.json",
+                "Not sent: body file not found: ./nope.json",
                 run("POST " + url("/echo") + "\n\n< ./nope.json\n", dir)
                         .result()
                         .error());
         // An encoding the JVM does not know is also "cannot read this body".
         Files.writeString(dir.resolve("b.txt"), "x");
         assertEquals(
-                "request not sent: body file not found: ./b.txt",
+                "Not sent: body file not found: ./b.txt",
                 run("POST " + url("/echo") + "\n\n<@klingon ./b.txt\n", dir)
                         .result()
                         .error());
