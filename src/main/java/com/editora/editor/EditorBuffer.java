@@ -8452,7 +8452,8 @@ public class EditorBuffer implements TabContent {
                 e.consume();
                 return;
             }
-            int del = Indenter.smartBackspaceCount(line.substring(0, col), line.substring(col), par > 0);
+            int del = Indenter.smartBackspaceCount(
+                    line.substring(0, col), line.substring(col), par > 0, language, indentUnit(), tabSize);
             if (del > 1) {
                 a.deleteText(caret - del, caret);
                 e.consume();
@@ -8707,7 +8708,7 @@ public class EditorBuffer implements TabContent {
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
         String beforeCaret = a.getText(lineStart, caret);
         boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
+        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c, language);
         if (!bracket && !keyword) {
             return;
         }
