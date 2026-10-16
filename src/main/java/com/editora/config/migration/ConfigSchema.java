@@ -322,7 +322,10 @@ public enum ConfigSchema {
     /** One file per {@code .http} file: its chosen environment and last responses (HTTP Client). */
     // v1 → v2: each response gained protocol, charset and `sent` (how the request went out, for Copy as cURL),
     // and the file gained clearedAt — all additive (absent ⇒ unknown / never cleared).
-    HTTP_HISTORY(HttpResponseHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity));
+    HTTP_HISTORY(
+            HttpResponseHistory.SCHEMA_VERSION,
+            1,
+            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity));
 
     private final int currentVersion;
     private final int assumedLegacyVersion;
