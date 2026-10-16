@@ -966,7 +966,8 @@ final class FileWorkflowCoordinator {
         com.editora.editorconfig.EditorConfigCharset.Decoded decoded = useChosen
                 ? new com.editora.editorconfig.EditorConfigCharset.Decoded(
                         forced.text(), forced.charset(), forced.charset(), false)
-                : com.editora.editorconfig.EditorConfigCharset.decodeLossless(bytes, editorConfig.charset());
+                : com.editora.editorconfig.EditorConfigCharset.decodeLossless(
+                        bytes, declaredCharset(file, bytes, editorConfig));
         String charset = decoded.charset();
         String content = decoded.text();
         boolean large = size >= EditorBuffer.LARGE_FILE_BYTES;
@@ -1047,6 +1048,21 @@ final class FileWorkflowCoordinator {
         return LoadHeapGuard.cap(wanted, heap[0], heap[1]);
     }
 
+    /**
+     * The charset {@code .editorconfig} declares for {@code file}, except that a shell script is never read as
+     * {@code utf-8-bom}: a save would write the mark that hides its {@code #!} line. A real BOM is still
+     * detected (and the open notice offers to remove it).
+     */
+    private static String declaredCharset(
+            Path file, byte[] bytes, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        String declared = editorConfig.charset();
+        if (!com.editora.editorconfig.EditorConfigCharset.UTF_8_BOM.equals(declared) || file.getFileName() == null) {
+            return declared;
+        }
+        String head = new String(bytes, 0, Math.min(bytes.length, 256), java.nio.charset.StandardCharsets.ISO_8859_1);
+        return com.editora.editor.ShellScripts.isShellScript(file.getFileName().toString(), head) ? null : declared;
+    }
+
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
         return applyPreparedLoad(buffer, load, false);
@@ -1107,6 +1123,16 @@ final class FileWorkflowCoordinator {
             host.logViewer().sniffLoaded(buffer, load.content()); // a log its name does not announce
         }
         String forgotten = applyChosenEncoding(buffer, load);
+        if (!load.truncated() && load.file() != null && load.file().getFileName() != null) {
+            ShellFileNotice.offer(
+                    buffer,
+                    load.file().getFileName().toString(),
+                    load.document() != null
+                            ? load.document().lineEnding()
+                            : com.editora.editor.LineEndings.dominant(load.content()),
+                    buffer.getEffectiveCharset(),
+                    host::setStatus);
+        }
         if (load.truncated()) {
             return tr(
                     load.tail() ? "status.load.hugeLog" : "status.load.hugeFile",
