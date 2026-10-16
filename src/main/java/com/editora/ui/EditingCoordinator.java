@@ -1927,69 +1927,28 @@ final class EditingCoordinator {
         }
         CodeArea area = buffer.getFocusedArea();
         host.setStatus(tr("status.zapToChar"));
-        new ZapSession(buffer, area).arm();
+        ReadCharSession.read(area, () -> host.setStatus(""), c -> zapTo(buffer, area, c));
     }
 
-    /**
-     * The node a modal key session (query-replace, zap-to-char) listens on: the area's parent. JavaFX runs
-     * <em>every</em> filter registered on one node, in registration order and whether or not an earlier one
-     * consumed the event, so a session filter added to the area itself ran after the buffer's own typing
-     * assists — auto-indent, smart Backspace/Tab and auto-close had already edited the document with the
-     * key the session meant to own. A filter on an ancestor runs first, and consuming there ends dispatch.
-     */
+    /** The node a modal key session (query-replace, zap-to-char) listens on; see {@link ReadCharSession}. */
     private static javafx.scene.Node keyHost(CodeArea area) {
-        return area.getParent() != null ? area.getParent() : area;
+        return ReadCharSession.keyHost(area);
     }
 
-    /** The armed half of {@code zap-to-char}: takes the next typed character, or stands down. */
-    private final class ZapSession implements javafx.event.EventHandler<javafx.scene.input.KeyEvent> {
-        private final EditorBuffer buffer;
-        private final CodeArea area;
-        private final javafx.scene.Node keyHost;
-        // Moving the caret or leaving the editor cancels, as any non-character key does in Emacs: an armed
-        // zap that survived navigation deleted text at the next ordinary keystroke, much later.
-        private final javafx.beans.InvalidationListener cancel = obs -> disarm();
-
-        ZapSession(EditorBuffer buffer, CodeArea area) {
-            this.buffer = buffer;
-            this.area = area;
-            this.keyHost = keyHost(area);
+    /** The second half of {@code zap-to-char}: kill up to and including the next {@code ch}. */
+    private void zapTo(EditorBuffer buffer, CodeArea area, char ch) {
+        com.editora.editops.EmacsEdits.Edit edit =
+                com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch);
+        if (edit == null) {
+            host.setStatus(tr("status.zapNotFound", String.valueOf(ch)));
+            return;
         }
-
-        void arm() {
-            keyHost.addEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-            area.caretPositionProperty().addListener(cancel);
-            area.focusedProperty().addListener(cancel);
-        }
-
-        private void disarm() {
-            keyHost.removeEventFilter(javafx.scene.input.KeyEvent.KEY_TYPED, this);
-            area.caretPositionProperty().removeListener(cancel);
-            area.focusedProperty().removeListener(cancel);
-            host.setStatus("");
-        }
-
-        @Override
-        public void handle(javafx.scene.input.KeyEvent e) {
-            disarm();
-            e.consume();
-            String ch = e.getCharacter();
-            if (ch == null || ch.isEmpty() || ch.charAt(0) < ' ') {
-                return; // Escape / no printable character: cancel
-            }
-            com.editora.editops.EmacsEdits.Edit edit =
-                    com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch.charAt(0));
-            if (edit == null) {
-                host.setStatus(tr("status.zapNotFound", ch));
-                return;
-            }
-            boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
-            String killed = area.getText(edit.from(), edit.to());
-            area.replaceText(edit.from(), edit.to(), edit.replacement());
-            area.moveTo(edit.caret());
-            pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
-            deactivateMark();
-        }
+        boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
+        String killed = area.getText(edit.from(), edit.to());
+        area.replaceText(edit.from(), edit.to(), edit.replacement());
+        area.moveTo(edit.caret());
+        pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
+        deactivateMark();
     }
 
     /**

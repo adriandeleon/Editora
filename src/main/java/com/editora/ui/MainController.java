@@ -1580,6 +1580,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         dispatcher.setPrefixArgumentSupport(
                 id -> "edit.setMark".equals(id)
+                        || "edit.copyToRegister".equals(id) // C-u cuts the region instead of repeating
                         || toolWindows.isKeyboardCountAware(id)
                         || (macroCoordinator != null && macroCoordinator.isCountAware(id)),
                 arg -> toolWindows.setKeyboardPrefixArgument(editing.currentPrefixArg = arg),
@@ -8134,6 +8135,44 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Files whose tabs the user closed in this window, for Buffer: Reopen Closed Tab. */
     final ClosedTabs closedTabs = new ClosedTabs();
+
+    /** Emacs registers ({@code C-x r s / i / SPC / j}) for this window. */
+    final RegisterCommands registers = new RegisterCommands(new RegisterCommands.Host() {
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
+
+        @Override
+        public boolean activeEditable() {
+            return editing.activeEditable();
+        }
+
+        @Override
+        public Integer prefixArgument() {
+            return editing.currentPrefixArg;
+        }
+
+        @Override
+        public void openThen(Path file, Runnable then) {
+            fileWorkflows.openThen(file, then);
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlayHost;
+        }
+
+        @Override
+        public Stage stage() {
+            return stage;
+        }
+    });
 
     /**
      * Remembers a file tab the user is closing. Called from the close command, the batch closes and the tab's

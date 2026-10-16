@@ -22,19 +22,24 @@ class CompletionPopupFxTest {
         FxToolkit.registerPrimaryStage();
     }
 
+    /**
+     * A row wider than the former 760px cap gets its own width. The row is grown one parameter at a time rather
+     * than fixed, because what a given signature measures depends on the platform's UI font: the jdtls
+     * {@code Files.find} row is 833px on Linux and under 760px on macOS. One parameter adds far less than the
+     * 340px between the two caps, so the first row past 760px is always short of 1100.
+     */
     @Test
-    void javaMethodSignaturesCanGrowBeyondTheFormerWidthLimit() throws Exception {
-        // What CompletionMapper makes of jdtls's Files.find proposal: the signature in the label, the
-        // return type as the detail.
-        Completion item = Completion.lsp(
-                "find(Path start, int maxDepth, BiPredicate<Path,BasicFileAttributes> matcher, FileVisitOption... options)",
-                "find",
-                "Stream<Path>");
+    void aRowWiderThanTheFormerCapGetsItsOwnWidth() throws Exception {
+        StringBuilder params = new StringBuilder("find(Path start");
+        double width = 0;
+        for (int i = 0; i < 200 && width <= 760; i++) {
+            params.append(", Path p").append(i);
+            Completion item = Completion.lsp(params + ")", "find", "Stream<Path>");
+            width = onFx(() -> CompletionPopup.contentWidth(List.of(item)));
+        }
 
-        double width = onFx(() -> CompletionPopup.contentWidth(List.of(item)));
-
-        assertTrue(width > 760, "a typical JDT LS method row must not be capped at the former width");
-        assertTrue(width <= 1100, "the popup remains bounded");
+        assertTrue(width > 760, "a long Java signature is no longer clamped to the former 760px cap");
+        assertTrue(width < 1100, "it gets its own width, not the new cap: " + width);
     }
 
     @Test
