@@ -61,12 +61,6 @@ public final class HttpEnv {
 
     private HttpEnv() {}
 
-    /** The variables of one environment ({@code name → value}) from one file's {@code json}, with its
-     *  {@code $shared} environment merged in underneath (a specific environment's value wins), or empty. */
-    public static Map<String, String> variables(String json, String environment) {
-        return merged(json, null, environment);
-    }
-
     /**
      * The variables of {@code environment} from both files, merged lowest-first as public {@code $shared},
      * private {@code $shared}, public environment, private environment. A blank/invalid file contributes
@@ -182,12 +176,6 @@ public final class HttpEnv {
         } catch (JsonProcessingException e) {
             return v.toString();
         }
-    }
-
-    /** The ordered top-level environment names in {@code json} (excluding the reserved {@code $shared}), or
-     *  an empty list if it is blank/invalid. */
-    public static List<String> environmentNames(String json) {
-        return environmentNames(json, null);
     }
 
     /** The environment names of both files: the public file's in order, then any only the private file has. */

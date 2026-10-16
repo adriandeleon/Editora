@@ -18,14 +18,14 @@ class HttpEnvTest {
                   "prod": { "host": "https://api.example.com" }
                 }
                 """;
-        assertEquals(List.of("dev", "prod"), HttpEnv.environmentNames(json));
+        assertEquals(List.of("dev", "prod"), HttpEnv.environmentNames(json, null));
     }
 
     @Test
     void blankOrMalformedYieldsEmpty() {
-        assertTrue(HttpEnv.environmentNames("").isEmpty());
-        assertTrue(HttpEnv.environmentNames(null).isEmpty());
-        assertTrue(HttpEnv.environmentNames("{ not json").isEmpty());
-        assertTrue(HttpEnv.environmentNames("[1,2,3]").isEmpty()); // not an object
+        assertTrue(HttpEnv.environmentNames("", null).isEmpty());
+        assertTrue(HttpEnv.environmentNames(null, null).isEmpty());
+        assertTrue(HttpEnv.environmentNames("{ not json", null).isEmpty());
+        assertTrue(HttpEnv.environmentNames("[1,2,3]", null).isEmpty()); // not an object
     }
 }

@@ -60,11 +60,6 @@ public final class FileBodyPublisher implements HttpRequest.BodyPublisher, Close
         subscriber.onSubscribe(upload);
     }
 
-    /** Whether a file is open for an upload in progress (tests). */
-    boolean hasOpenFiles() {
-        return !open.isEmpty();
-    }
-
     /** Closes the files of every upload still running; later uploads fail. Idempotent. */
     @Override
     public void close() {

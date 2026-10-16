@@ -87,7 +87,6 @@ class HttpEnvironmentsTest {
         HttpEnvironments.EnvFiles env = HttpEnvironments.read(dir);
         assertEquals(List.of("dev", "prod", "local"), env.names());
         assertEquals(Map.of("h", "pub", "a", "1", "t", "secret"), env.variables("dev"));
-        assertEquals("1\n2", env.everyValue().get("a"), "every environment's value, for the gate");
         assertEquals(List.of(), HttpEnvironments.read(null).names());
         assertEquals(Map.of(), HttpEnvironments.read(dir.resolve("none")).variables("dev"));
     }

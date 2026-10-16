@@ -1131,11 +1131,6 @@ public final class HttpClientPanel extends VBox {
         onEnvironmentChanged = null;
     }
 
-    /** Whether the elapsed-time animation is running. Test accessor. */
-    boolean isTimerRunningForTest() {
-        return elapsed.getStatus() == javafx.animation.Animation.Status.RUNNING;
-    }
-
     /** The warning badge's text, or null when hidden. Test accessor. */
     String warnBadgeForTest() {
         return warnBadge.isVisible() ? warnBadge.getText() : null;

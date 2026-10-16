@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -64,20 +63,6 @@ final class HttpEnvironments {
             String priv = HttpEnv.problem(privateJson);
             if (priv != null) {
                 out.add(tr("http.env.unreadable", HttpEnv.PRIVATE_FILE, priv));
-            }
-            return out;
-        }
-
-        /**
-         * Every value of every environment of both files, per variable name (values of several environments joined
-         * by a newline) — any of them could be the one picked next, which is what the secrets gate looks through.
-         */
-        Map<String, String> everyValue() {
-            Map<String, String> out = new LinkedHashMap<>();
-            for (String json : new String[] {publicJson, privateJson}) {
-                for (String env : HttpEnv.environmentNames(json)) {
-                    HttpEnv.variables(json, env).forEach((k, v) -> out.merge(k, v, (a, b) -> a + "\n" + b));
-                }
             }
             return out;
         }

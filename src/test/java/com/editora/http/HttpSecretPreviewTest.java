@@ -123,7 +123,7 @@ class HttpSecretPreviewTest {
         assertEquals(List.of("$env PATH"), inHost.reads());
         assertFalse(inHost.hosts().get(0).contains(SECRET), inHost.hosts().toString());
         assertEquals("{{$env PATH}}.evil.test", inHost.hosts().get(0));
-        assertEquals("h.test", HttpClientService.hostOf("https://user:pw@h.test/p?q#f"));
+        assertEquals("h.test", HttpHosts.authority("https://user:pw@h.test/p?q#f"));
     }
 
     @Test

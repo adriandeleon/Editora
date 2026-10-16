@@ -261,7 +261,8 @@ public final class HttpClientService {
                 || !hostSink.secretReads().isEmpty()
                 || !hostSink.dynamicReads().isEmpty();
         boolean sendable = request.error() == null && p.body().problem() == null;
-        return new Preview(sink.secretReads(), List.of(hostOf(p.targetUrl())), fromResponse, unfixed, sendable);
+        return new Preview(
+                sink.secretReads(), List.of(HttpHosts.authority(p.targetUrl())), fromResponse, unfixed, sendable);
     }
 
     /**
@@ -318,23 +319,6 @@ public final class HttpClientService {
             i++;
         }
         return u.substring(0, i);
-    }
-
-    /** {@code host[:port]} of {@code url}, read leniently (a {@code {{reference}}} kept in a dry host stays as is). */
-    static String hostOf(String url) {
-        String u = url == null ? "" : url.strip();
-        int scheme = u.indexOf("://");
-        if (scheme < 0) {
-            return u;
-        }
-        int start = scheme + 3;
-        int end = start;
-        while (end < u.length() && "/?#".indexOf(u.charAt(end)) < 0) {
-            end++;
-        }
-        String authority = u.substring(start, end);
-        int at = authority.lastIndexOf('@');
-        return at < 0 ? authority : authority.substring(at + 1);
     }
 
     /**
@@ -417,7 +401,7 @@ public final class HttpClientService {
             unapproved.removeAll(approval.reads());
             return tr("status.http.secretsUnapproved", String.join(", ", unapproved));
         }
-        String host = hostOf(targetUrl);
+        String host = HttpHosts.authority(targetUrl);
         if (!approval.anyHost() && !approval.hosts().contains(host)) {
             return tr("status.http.secretsHostUnapproved", String.join(", ", unresolved.secretReads()), host);
         }
@@ -1072,10 +1056,10 @@ public final class HttpClientService {
                 }
                 out.add(
                         carried.isEmpty()
-                                ? tr("status.http.warn.redirectedHost", authority(finalUri))
+                                ? tr("status.http.warn.redirectedHost", HttpHosts.authority(finalUri))
                                 : tr(
                                         "status.http.warn.redirectedHostHeaders",
-                                        authority(finalUri),
+                                        HttpHosts.authority(finalUri),
                                         String.join(", ", carried)));
             }
             String location = responseHeaders.firstValue("Location").orElse(null);
@@ -1097,15 +1081,7 @@ public final class HttpClientService {
                     && a.getScheme().equalsIgnoreCase(b.getScheme())
                     && a.getHost() != null
                     && a.getHost().equalsIgnoreCase(b.getHost())
-                    && port(a) == port(b);
-        }
-
-        private static int port(URI u) {
-            return u.getPort() >= 0 ? u.getPort() : "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
-        }
-
-        private static String authority(URI u) {
-            return u.getHost() + (u.getPort() >= 0 ? ":" + u.getPort() : "");
+                    && HttpHosts.port(a) == HttpHosts.port(b);
         }
     }
 

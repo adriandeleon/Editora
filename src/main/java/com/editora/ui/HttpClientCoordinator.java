@@ -434,7 +434,7 @@ final class HttpClientCoordinator {
         if (baseDir == null) {
             List<String> needs = HttpScratch.needsFolder(parsed, vars);
             if (!needs.isEmpty()) {
-                HttpExchange unsent = notSent(parsed, needs);
+                HttpExchange unsent = saveFirstResult(parsed, needs);
                 revealResult(buffer); // in Editor mode the "save first" result was never seen
                 finishRun(
                         buffer,
@@ -479,7 +479,7 @@ final class HttpClientCoordinator {
     }
 
     /** What a request an untitled buffer cannot send reports instead: not sent, save the file first. */
-    private static HttpExchange notSent(HttpFile.Parsed parsed, List<String> needs) {
+    private static HttpExchange saveFirstResult(HttpFile.Parsed parsed, List<String> needs) {
         String line = parsed.method() + " " + parsed.url();
         return new HttpExchange(
                 line,
@@ -622,7 +622,7 @@ final class HttpClientCoordinator {
                 if (needs.isEmpty()) {
                     sent.add(i);
                 } else {
-                    skipped.put(i, notSent(reqs.get(i), needs));
+                    skipped.put(i, saveFirstResult(reqs.get(i), needs));
                 }
             }
             List<Integer> indexes = new ArrayList<>();
