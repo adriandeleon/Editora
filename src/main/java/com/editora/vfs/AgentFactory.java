@@ -36,8 +36,7 @@ final class AgentFactory implements SshAgentFactory {
     @Override
     public SshAgent createClient(Session session, FactoryManager manager) throws IOException {
         RemoteFileSystems engine = SshClients.engineOf(session);
-        if (engine == null
-                || session.getAttribute(RemoteFileSystems.AUTH) != RemoteConnection.AuthMethod.DEFAULT_KEYS) {
+        if (engine == null || RemoteFileSystems.authOf(session) != RemoteConnection.AuthMethod.DEFAULT_KEYS) {
             return null; // MINA then offers no agent keys
         }
         SshEnvironment ssh = engine.sshEnvironment();

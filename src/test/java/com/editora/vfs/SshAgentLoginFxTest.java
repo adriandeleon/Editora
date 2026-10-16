@@ -230,6 +230,42 @@ class SshAgentLoginFxTest {
         assertTrue(offered.contains(KeyUtils.getFingerPrint(fileKey.getPublic())));
     }
 
+    @Test
+    void aProxyJumpHopLogsInWithTheAgentToo() throws Exception {
+        KeyPair key = newKey();
+        Path sock = socket();
+        agent = TestAgent.start(sock, key);
+        startServer(key, new CopyOnWriteArrayList<>()); // the target
+        SshServer target = server;
+        startServer(key, new CopyOnWriteArrayList<>()); // the jump host, which forwards
+        SshServer jump = server;
+        jump.setForwardingFilter(org.apache.sshd.server.forward.AcceptAllForwardingFilter.INSTANCE);
+        server = target;
+        Files.writeString(
+                ssh().resolve("config"),
+                "Host target\n  HostName 127.0.0.1\n  Port " + target.getPort() + "\n  ProxyJump me@127.0.0.1:"
+                        + jump.getPort() + "\n");
+        engine(Map.of("SSH_AUTH_SOCK", sock.toString()));
+        try {
+            RemoteConnection conn = new RemoteConnection(
+                    "target", target.getPort(), "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "t", "/");
+            AtomicReference<RemoteFileSystems.Result> result = new AtomicReference<>();
+            CountDownLatch done = new CountDownLatch(1);
+            engine.connect(conn, null, r -> {
+                result.set(r);
+                done.countDown();
+            });
+            assertTrue(done.await(60, TimeUnit.SECONDS));
+
+            assertTrue(
+                    result.get().ok(),
+                    "the hop has no key but the agent's: " + result.get().error());
+            assertEquals(2, agent.signatures.get(), "one signature for the hop, one for the target");
+        } finally {
+            jump.stop(true);
+        }
+    }
+
     /** An SSH agent on a Unix-domain socket, holding {@code keys}: MINA's protocol handler over AgentImpl. */
     static final class TestAgent implements AutoCloseable {
         final AtomicInteger requests = new AtomicInteger();

@@ -264,9 +264,22 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         return promptClock;
     }
 
-    /** How a session logs in: only an Automatic login ({@code DEFAULT_KEYS}) asks the SSH agent. */
+    /**
+     * How a session logs in: only an Automatic login ({@code DEFAULT_KEYS}) asks the SSH agent. On the session,
+     * and on the connect's context, which a ProxyJump hop shares: the hop of an Automatic login uses the agent too.
+     */
     static final AttributeRepository.AttributeKey<RemoteConnection.AuthMethod> AUTH =
             new AttributeRepository.AttributeKey<>();
+
+    /** {@link #AUTH} for {@code session}: its own, else its connect's (a jump hop has only that). */
+    static RemoteConnection.AuthMethod authOf(Session session) {
+        RemoteConnection.AuthMethod own = session.getAttribute(AUTH);
+        if (own != null) {
+            return own;
+        }
+        AttributeRepository context = session instanceof ClientSession cs ? cs.getConnectionContext() : null;
+        return context == null ? null : context.getAttribute(AUTH);
+    }
 
     /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
     boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
@@ -476,7 +489,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                         conn.user(),
                         conn.host(),
                         conn.port(),
-                        AttributeRepository.ofKeyValuePair(SshClients.ENGINE, this),
+                        // Also on the context, so a ProxyJump hop (its own session, the same context) knows them too.
+                        AttributeRepository.ofAttributesMap(Map.of(SshClients.ENGINE, this, AUTH, conn.auth())),
                         null)
                 .verify(connectTimeout)
                 .getSession();
