@@ -41,6 +41,17 @@ final class RemoteSitesPane {
 
     private final ConfigManager config;
     private final Runnable apply;
+    /** "Run commands on the remote host": the host section below a site only matters while it is on. */
+    private final javafx.beans.value.ObservableBooleanValue remoteExecution;
+    /** Opens the Connect form pre-filled with a site (null: no button). */
+    private final java.util.function.Consumer<RemoteConnection> connect;
+
+    /**
+     * Asks before a site is deleted: empty to keep it, else whether to also forget that commands may run on its
+     * host ({@code askAboutHost}: that was agreed, and no other saved site uses the host). Replaceable by tests.
+     */
+    java.util.function.BiFunction<RemoteConnection, Boolean, java.util.Optional<Boolean>> confirmDelete =
+            this::deleteDialog;
 
     /** Working copy of the saved SFTP connections, edited live. */
     private final ObservableList<RemoteConnection> items = FXCollections.observableArrayList();
@@ -62,9 +73,15 @@ final class RemoteSitesPane {
             new ComboBox<>(FXCollections.observableArrayList(RemoteConnection.AuthMethod.values()));
     private final TextField keyPath = new TextField();
 
-    RemoteSitesPane(ConfigManager config, Runnable apply) {
+    RemoteSitesPane(
+            ConfigManager config,
+            Runnable apply,
+            javafx.beans.value.ObservableBooleanValue remoteExecution,
+            java.util.function.Consumer<RemoteConnection> connect) {
         this.config = config;
         this.apply = apply;
+        this.remoteExecution = remoteExecution;
+        this.connect = connect;
         this.node = build();
     }
 
@@ -76,12 +93,17 @@ final class RemoteSitesPane {
     private Node build() {
         items.setAll(config.getConnections());
 
-        list.setPrefSize(210, 380);
+        list.setPrefSize(240, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(RemoteConnection c, boolean empty) {
                 super.updateItem(c, empty);
                 setText(empty || c == null ? null : c.displayLabel());
+                // A long label ends in "…" at the list's width (a cell sized to its text made the list scroll
+                // sideways), and the whole of it, with the address, is in the tooltip.
+                setPrefWidth(0);
+                setTooltip(
+                        empty || c == null ? null : new javafx.scene.control.Tooltip(c.displayLabel() + "\n" + c.id()));
             }
         });
 
@@ -166,7 +188,14 @@ final class RemoteSitesPane {
         Label hostTitle = new Label(tr("settings.remote.host.title"));
         hostTitle.getStyleClass().add("settings-card-title");
         Label hostNote = hint(tr("settings.remote.host.note"));
-        VBox hostBox = new VBox(6, new Separator(), hostTitle, hostAllowed, toolsGrid, hostNote);
+        VBox hostRows = new VBox(6, hostAllowed, toolsGrid, hostNote);
+        SettingsDependents.bind(remoteExecution, hostRows);
+        VBox hostBox = new VBox(
+                6,
+                new Separator(),
+                hostTitle,
+                SettingsDependents.note(remoteExecution, tr("settings.remote.execution")),
+                hostRows);
         hostBox.disableProperty().bind(form.disabledProperty());
         hostAllowed.setOnAction(e -> {
             RemoteConnection cur = list.getSelectionModel().getSelectedItem();
@@ -267,25 +296,27 @@ final class RemoteSitesPane {
         Button remove = new Button(tr("settings.remote.remove"));
         remove.disableProperty()
                 .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                items.remove(i);
-                persist();
-            }
-        });
+        remove.setOnAction(e -> delete());
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
         keepWidth(add, remove, left, keyBrowse);
 
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow, hostBox);
+        // No Save button: every field saves when it is left or Enter is pressed, like the rest of Settings.
+        Button connectButton = new Button(tr("settings.remote.connect"));
+        connectButton
+                .disableProperty()
+                .bind(form.disabledProperty().or(host.textProperty().isEmpty()));
+        connectButton.setOnAction(e -> {
+            commit(); // what is typed is what is connected to
+            RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            if (cur != null && connect != null) {
+                connect.accept(cur);
+            }
+        });
+        connectButton.setVisible(connect != null);
+        HBox connectRow = new HBox(connectButton);
+        connectRow.setAlignment(Pos.CENTER_RIGHT);
+        VBox right = new VBox(8, form, connectRow, hostBox);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
@@ -372,6 +403,51 @@ final class RemoteSitesPane {
                                         : tr("settings.remote.check.keyMissing", path)));
                     }
                 }));
+    }
+
+    /** Remove: asks "Delete “x”?" first, and whether to also forget the host's agreement to run commands. */
+    private void delete() {
+        int i = list.getSelectionModel().getSelectedIndex();
+        if (i < 0) {
+            return;
+        }
+        RemoteConnection site = items.get(i);
+        boolean sharedHost =
+                items.stream().filter(c -> c.id().equals(site.id())).count() > 1;
+        boolean askAboutHost = !sharedHost && config.remoteExecAllowed(site.id());
+        java.util.Optional<Boolean> answer = confirmDelete.apply(site, askAboutHost);
+        if (answer.isEmpty()) {
+            return;
+        }
+        items.remove(i);
+        persist();
+        if (askAboutHost && answer.get()) {
+            config.setRemoteExecAllowed(site.id(), false);
+        }
+    }
+
+    private java.util.Optional<Boolean> deleteDialog(RemoteConnection site, boolean askAboutHost) {
+        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
+                tr("settings.remote.delete"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr("settings.remote.deleteConfirm", site.displayLabel()),
+                delete,
+                javafx.scene.control.ButtonType.CANCEL));
+        alert.initOwner(list.getScene() == null ? null : list.getScene().getWindow());
+        alert.setTitle(tr("settings.remote.remove"));
+        alert.setHeaderText(null);
+        CheckBox forget = new CheckBox(tr("settings.remote.deleteForgetHost", site.host()));
+        forget.setSelected(true); // removing a site is how people expect to withdraw its trust
+        forget.setWrapText(true);
+        if (askAboutHost) {
+            Label text = new Label(tr("settings.remote.deleteConfirm", site.displayLabel()));
+            alert.getDialogPane().setContent(new VBox(10, text, forget));
+        }
+        // Cancel is the default: Enter does not delete.
+        ((Button) alert.getDialogPane().lookupButton(delete)).setDefaultButton(false);
+        ((Button) alert.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL)).setDefaultButton(true);
+        return alert.showAndWait().filter(b -> b == delete).map(b -> forget.isSelected());
     }
 
     private void persist() {

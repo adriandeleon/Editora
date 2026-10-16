@@ -333,6 +333,12 @@ public class SettingsWindow {
 
     /** The Remote page's site editor; null until that page is built. */
     private RemoteSitesPane remoteSites;
+    /** Opens the Connect form pre-filled with a saved site (the Remote page's Connect… button). */
+    private Consumer<com.editora.vfs.RemoteConnection> onConnectRemote;
+
+    void setRemoteConnect(Consumer<com.editora.vfs.RemoteConnection> connect) {
+        this.onConnectRemote = connect;
+    }
 
     /** The uncommitted text in the Abbreviations form, asked for before the list is re-read. */
     private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
@@ -4417,7 +4423,7 @@ public class SettingsWindow {
     }
 
     private VBox githubPage() {
-        VBox p = page(tr("settings.cat.github"));
+        VBox p = page(tr("settings.cat.github"), tr("settings.github.subtitle"));
         Card c = card(p, null);
         githubStatusLabel = new Label(tr("settings.github.checking"));
         githubStatusLabel.getStyleClass().add("settings-git-status");
@@ -5098,28 +5104,33 @@ public class SettingsWindow {
     }
 
     private VBox remotePage() {
-        VBox p = page(tr("settings.cat.remote"));
+        VBox p = page(tr("settings.cat.remote"), tr("settings.remote.subtitle"));
         Card mainCard = card(p, null);
+        // Built first: the host section under each site follows it.
+        remoteExecutionCheck = viewCheck(tr("settings.remote.execution"), Settings::setRemoteExecution);
+        remoteSites = new RemoteSitesPane(config, this::apply, remoteExecutionCheck.selectedProperty(), site -> {
+            if (onConnectRemote != null) {
+                onConnectRemote.accept(site);
+            }
+        });
         cardRow(
                 mainCard,
                 Category.REMOTE,
-                (remoteSites = new RemoteSitesPane(config, this::apply)).node(),
+                remoteSites.node(),
                 "remote sftp ssh connection host user key password saved site server");
         Label note = note(tr("settings.remote.note"));
         note.setWrapText(true);
         note.setMaxWidth(460);
         cardRow(mainCard, Category.REMOTE, note, "remote secret password passphrase not stored security");
-        Card execCard = card(p, tr("settings.remote.execution.title"));
-        remoteExecutionCheck = viewCheck(tr("settings.remote.execution"), Settings::setRemoteExecution);
+        Card execCard = card(p, null);
         cardRow(
                 execCard,
                 Category.REMOTE,
-                remoteExecutionCheck,
+                settingRow(
+                        tr("settings.remote.execution"),
+                        tr("settings.remote.execution.desc"),
+                        switchFor(remoteExecutionCheck)),
                 "remote run command execute ssh host server build git");
-        Label execNote = note(tr("settings.remote.execution.desc"));
-        execNote.setWrapText(true);
-        execNote.setMaxWidth(460);
-        cardRow(execCard, Category.REMOTE, execNote, "remote run command execute ssh host server");
         containerEngineField = new TextField();
         containerEngineField.setPromptText("docker");
         containerEngineField.setPrefWidth(PATH_FIELD_WIDTH);
@@ -5716,7 +5727,7 @@ public class SettingsWindow {
     }
 
     private VBox mcpPage() {
-        VBox p = page(tr("settings.cat.mcp"));
+        VBox p = page(tr("settings.cat.mcp"), tr("settings.mcp.subtitle"));
         Card c = card(p, null);
         checkRow(
                 c,
@@ -6064,7 +6075,7 @@ public class SettingsWindow {
     }
 
     private VBox pluginsPage() {
-        VBox p = page(tr("settings.cat.plugins"));
+        VBox p = page(tr("settings.cat.plugins"), tr("settings.plugins.subtitle"));
         Card mainCard = card(p, null);
         Label warn = note(tr("settings.plugins.note"));
         warn.getStyleClass().add("settings-experimental");
@@ -7432,7 +7443,7 @@ public class SettingsWindow {
     }
 
     private VBox advancedPage() {
-        VBox p = page(tr("settings.cat.advanced"));
+        VBox p = page(tr("settings.cat.advanced"), tr("settings.advanced.subtitle"));
         Card fileSection = card(p, tr("settings.section.file"));
         Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
         link.setTooltip(new Tooltip(tr("settings.openFileTip")));

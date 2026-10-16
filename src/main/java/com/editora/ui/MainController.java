@@ -799,6 +799,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setTemplateRegistry(
                 templateActions.templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
+        this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
             @Override
             public List<String> trustedRoots() {
