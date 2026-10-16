@@ -4260,7 +4260,9 @@ public class EditorBuffer implements TabContent {
     public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
         java.util.Map<String, String> shown = hugeFile ? null : values;
         if ((shown != null && !shown.isEmpty()) || inlineValues != null) {
-            inlineValues().setValues(shown, frameLine);
+            // In a .http file only its script lines are the script's; a request body's "user" is not that variable.
+            java.util.BitSet script = isHttpFile() ? com.editora.http.HttpScriptLines.of(getContent()) : null;
+            inlineValues().setValues(shown, frameLine, script == null ? null : script::get);
         }
     }
 

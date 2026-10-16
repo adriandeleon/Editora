@@ -51,9 +51,19 @@ class HttpScriptLinesTest {
     @Test
     void aDebuggedScriptWaitsOnALoopbackInspector() {
         assertEquals(
+                List.of("--allow-inspector", "--disable-warning=SecurityWarning", "--inspect-brk=127.0.0.1:0"),
+                HttpScripts.debugFlags(HttpScripts.Guard.PERMISSION, new int[] {24, 18, 1}));
+        assertEquals(
                 List.of("--allow-inspector", "--inspect-brk=127.0.0.1:0"),
-                HttpScripts.debugFlags(HttpScripts.Guard.PERMISSION));
-        assertEquals(List.of("--inspect-brk=127.0.0.1:0"), HttpScripts.debugFlags(HttpScripts.Guard.NONE));
+                HttpScripts.debugFlags(HttpScripts.Guard.EXPERIMENTAL_PERMISSION, new int[] {20, 10, 0}),
+                "Node 20.10 has no --disable-warning: it would refuse to start");
+        assertEquals(
+                3,
+                HttpScripts.debugFlags(HttpScripts.Guard.EXPERIMENTAL_PERMISSION, new int[] {21, 3, 0})
+                        .size());
+        assertEquals(
+                List.of("--inspect-brk=127.0.0.1:0"),
+                HttpScripts.debugFlags(HttpScripts.Guard.NONE, new int[] {18, 0, 0}));
         Map<String, Object> attach =
                 LaunchConfig.nodeAttach("pwa-node", "Response handler of login", 9229, List.of("/c/s.js"));
         assertEquals("attach", attach.get("request"));

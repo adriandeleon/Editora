@@ -416,7 +416,8 @@ public final class NodeResponseScripts implements ResponseScripts {
         argv.add(ready.node().executable());
         argv.addAll(HttpScripts.flags(ready.node().guard(), ready.shim()));
         if (debug) {
-            argv.addAll(HttpScripts.debugFlags(ready.node().guard()));
+            argv.addAll(HttpScripts.debugFlags(
+                    ready.node().guard(), HttpScripts.parseVersion(ready.node().version())));
         }
         argv.add(ready.shim().toString());
         return argv;

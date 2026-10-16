@@ -102,9 +102,20 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     }
 
     /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
+    /**
+     * The lines that may carry a value at all (a {@code .http} file: its script lines — the identifiers of a request
+     * body are not the script's); null for every line.
+     */
+    private java.util.function.IntPredicate lineFilter;
+
+    void setValues(Map<String, String> v, int frameLine, java.util.function.IntPredicate lines) {
+        this.lineFilter = lines;
+        setValues(v, frameLine);
+    }
+
     void setValues(Map<String, String> v, int frameLine) {
         if (follower != null) {
-            follower.setValues(v, frameLine);
+            follower.setValues(v, frameLine, lineFilter);
         }
         this.values = (v == null || v.isEmpty()) ? null : Map.copyOf(v);
         this.frameLine = frameLine;
@@ -179,7 +190,9 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
                 int par = p;
                 List<String> names = DebugIdentifiers.matchesIn(
                         line, vals.keySet(), col -> !isCode(area.getStyleAtPosition(par, col + 1)));
-                if (names.isEmpty() || !InlineValueScope.sameScope(this::codeLine, frameLine, p)) {
+                if (names.isEmpty()
+                        || (lineFilter != null && !lineFilter.test(p))
+                        || !InlineValueScope.sameScope(this::codeLine, frameLine, p)) {
                     continue;
                 }
                 int lastChar = line.length() - 1;

@@ -100,12 +100,30 @@ public final class HttpScripts {
 
     /**
      * The flags that make Node wait for a debugger on a free 127.0.0.1 port: {@code --inspect-brk}, and under the
-     * permission model {@code --allow-inspector}, without which Node ignores it (adl, 2026-10-16: Debug Request only).
+     * permission model {@code --allow-inspector}, without which Node ignores it (adl, 2026-10-16: Debug Request only) —
+     * with the security warning that flag prints silenced where Node can ({@code --disable-warning}: 20.11+, 21.3+), so
+     * the Debug console does not open on it.
      */
-    public static List<String> debugFlags(Guard guard) {
-        return guard == Guard.NONE
-                ? List.of("--inspect-brk=127.0.0.1:0")
-                : List.of("--allow-inspector", "--inspect-brk=127.0.0.1:0");
+    public static List<String> debugFlags(Guard guard, int[] version) {
+        if (guard == Guard.NONE) {
+            return List.of("--inspect-brk=127.0.0.1:0");
+        }
+        List<String> flags = new ArrayList<>(List.of("--allow-inspector"));
+        if (disablesWarnings(version)) {
+            flags.add("--disable-warning=SecurityWarning");
+        }
+        flags.add("--inspect-brk=127.0.0.1:0");
+        return flags;
+    }
+
+    /** Whether Node {@code version} takes {@code --disable-warning} (20.11+, 21.3+, 22+). */
+    static boolean disablesWarnings(int[] version) {
+        if (version == null || version.length < 2) {
+            return false;
+        }
+        int major = version[0];
+        int minor = version[1];
+        return major >= 22 || (major == 21 && minor >= 3) || (major == 20 && minor >= 11);
     }
 
     /** The environment Node is started with: {@code inherited} reduced to {@link #KEPT}, with {@code path} as PATH. */
