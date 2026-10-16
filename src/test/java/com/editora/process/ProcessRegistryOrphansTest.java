@@ -4,8 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,8 +48,13 @@ class ProcessRegistryOrphansTest {
         return ProcessRegistry.ownLedgerFor(legacy, ProcessRegistry.Owner.of(ProcessHandle.current()));
     }
 
+    /** The rows for programs on a target in {@code file}: other tests in this JVM may have local rows there. */
     private List<ProcessRegistry.LedgerEntry> rows(Path file) throws Exception {
-        return Files.exists(file) ? ProcessRegistry.parseLedger(Files.readAllLines(file)) : List.of();
+        return Files.exists(file)
+                ? ProcessRegistry.parseLedger(Files.readAllLines(file)).stream()
+                        .filter(row -> row.remote() != null)
+                        .toList()
+                : List.of();
     }
 
     @Test
@@ -110,27 +113,36 @@ class ProcessRegistryOrphansTest {
 
     @Test
     void aDeadEditorsProgramsAreHandedToTheirReaperAndALiveOnesAreNot() throws Exception {
-        CompletableFuture<List<String>> reaped = new CompletableFuture<>();
-        ProcessRegistry.registerOrphanReaper("test-kind", fields -> reaped.complete(fields));
+        List<List<String>> reaped = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ProcessRegistry.registerOrphanReaper("test-kind", fields -> reaped.add(fields));
         Path deadLedger = ProcessRegistry.ownLedgerFor(legacy, DEAD);
         Files.write(
                 deadLedger,
                 List.of(ProcessRegistry.LedgerEntry.remote(RECORD, DEAD).format()));
-        ProcessRegistry.Owner self = ProcessRegistry.Owner.of(ProcessHandle.current());
+        // A running Editora: the process that started this test's JVM, whose ledger nothing else writes.
+        ProcessRegistry.Owner running =
+                ProcessRegistry.Owner.of(ProcessHandle.current().parent().orElseThrow());
+        Path runningLedger = ProcessRegistry.ownLedgerFor(legacy, running);
         List<String> liveRecord = List.of("test-kind", "still-in-use");
         Files.write(
-                mine(),
-                List.of(ProcessRegistry.LedgerEntry.remote(liveRecord, self).format()));
+                runningLedger,
+                List.of(ProcessRegistry.LedgerEntry.remote(liveRecord, running).format()));
 
         ProcessRegistry.reapOrphans();
 
-        assertEquals(RECORD.subList(1, RECORD.size()), reaped.get(10, TimeUnit.SECONDS), "the reaper gets the fields");
+        for (int i = 0; i < 100 && reaped.isEmpty(); i++) {
+            Thread.sleep(50);
+        }
+        Thread.sleep(300); // time for a wrong second call to show
+        assertEquals(
+                List.of(RECORD.subList(1, RECORD.size())), reaped, "only the dead editor's program, with its fields");
         assertFalse(Files.exists(deadLedger), "the dead editor's ledger is gone");
         assertEquals(
                 List.of(liveRecord),
-                rows(mine()).stream().map(ProcessRegistry.LedgerEntry::remote).toList(),
+                rows(runningLedger).stream()
+                        .map(ProcessRegistry.LedgerEntry::remote)
+                        .toList(),
                 "a running editor's row stays");
-        Files.deleteIfExists(mine());
     }
 
     @Test

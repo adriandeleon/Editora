@@ -472,7 +472,9 @@ all call `ProcessRegistry.track(process)`. Three mechanisms:
    start time. On a normal quit the hook's last force-kill of such programs waits until each target has
    been asked (`signalTreeNow`, at most `REMOTE_KILL_WAIT_MS` in all): a request still on its way when the
    JVM exits would never be sent. `ProcessRegistryOrphansTest`, `PosixShellReapProcessTest` and the
-   container and WSL probes cover it (the probes kill the client the way a crash does).
+   container and WSL probes cover it (the probes kill the client the way a crash does). Docker and Podman
+   leave the program running; WSL 1 ends it with `wsl.exe` (the probe prints which), so there the record is
+   a safety net, for WSL 2, which the hosted runners cannot run.
 
 `ownerGone` is deliberately conservative: a live process at the owner's pid whose start instant looks
 different but whose executable matches is treated as **alive**. Two JVMs can disagree about one
