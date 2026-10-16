@@ -345,6 +345,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Personal Notes colours match Bookmarks.** Project headers in the Personal Notes tree are accent-coloured
+  again and file headers are muted, as in Bookmarks. The two panels now share one set of style rules.
 - **Java completions show the whole signature.** The completion list now grows to 1100 px instead of 760 px, so
   long method signatures such as `Files.find(…)` or `Map.merge(…)` are no longer cut off. It still sizes itself to
   the widest row, so short lists stay narrow.
