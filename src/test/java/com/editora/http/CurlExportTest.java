@@ -71,7 +71,7 @@ class CurlExportTest {
                 List.<String[]>of(new String[] {"Content-Type", "application/json"}),
                 "{\"k\":\"v\"}",
                 null);
-        assertTrue(curl.contains("-X POST"), curl);
+        assertFalse(curl.contains("-X"), curl); // curl infers POST from the body, and follows a 302 as the run did
         assertTrue(curl.contains("-H 'Content-Type: application/json'"), curl);
         assertTrue(curl.contains("--data-raw '{\"k\":\"v\"}'"), curl);
     }
@@ -196,5 +196,14 @@ class CurlExportTest {
         assertTrue(HttpExchange.isBodyPlaceholder("(binary body from ./a.bin, 5 bytes)"));
         assertFalse(HttpExchange.isBodyPlaceholder("(a body in parentheses)"));
         assertFalse(HttpExchange.isBodyPlaceholder("{\"k\":1}"));
+    }
+
+    @Test
+    void theVersionTheRequestLineAskedForIsKept() {
+        assertEquals("--http1.0", CurlExport.versionFlag("HTTP/1.0"));
+        assertEquals("--http1.1", CurlExport.versionFlag("http/1.1"));
+        assertEquals("--http2", CurlExport.versionFlag("HTTP/2"));
+        assertEquals("--http2-prior-knowledge", CurlExport.versionFlag("HTTP/2 (Prior Knowledge)"));
+        assertEquals(null, CurlExport.versionFlag(null));
     }
 }

@@ -167,6 +167,7 @@ public final class CurlImport {
         boolean get;
         String version; // --http1.1 / --http2 → the request line's version
         String uploadFile; // -T / --upload-file
+        final java.util.Set<String> removed = new java.util.HashSet<>(); // -H 'Name:': headers curl must not add
     }
 
     /** Builds a {@code METHOD url} + headers + body request block from a {@code curl} command. */
@@ -257,7 +258,11 @@ public final class CurlImport {
         switch (opt) {
             case "-X", "--request" -> c.method = v;
             case "-H", "--header" -> {
-                if (!v.startsWith("@")) {
+                // "Name:" with nothing after it removes a header curl would add (Copy as cURL writes
+                // -H 'Content-Type:' for a body sent without one): nothing to send.
+                if (v.matches("[^:;@]+:\\s*")) {
+                    c.removed.add(v.substring(0, v.indexOf(':')).strip().toLowerCase(java.util.Locale.ROOT));
+                } else if (!v.startsWith("@")) {
                     c.headers.add(splitHeader(v));
                 }
             }
@@ -329,7 +334,9 @@ public final class CurlImport {
         } else if (hasData && c.bodyFile != null && c.bodyFile.equals(c.uploadFile)) {
             // -T sends the file as it is: curl adds no Content-Type, and neither does the import
         } else if (hasData && !(c.get && c.bodyFile == null)) {
-            addIfAbsent(headers, "Content-Type", "application/x-www-form-urlencoded");
+            if (!c.removed.contains("content-type")) {
+                addIfAbsent(headers, "Content-Type", "application/x-www-form-urlencoded");
+            }
         }
         StringBuilder sb = new StringBuilder();
         sb.append(method).append(' ').append(url);
@@ -396,6 +403,29 @@ public final class CurlImport {
                 if (!fileAsText && filename == null) {
                     int slash = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
                     filename = file.substring(slash + 1);
+                }
+            } else if (!literal) {
+                // A text value with attributes: -F 'name="value";type=…;filename="…"' (curl's syntax, and Editora's
+                // own Copy as cURL for a typed or named inline part), or unquoted -F 'name=value;type=…'.
+                String rest;
+                if (value.startsWith("\"")) {
+                    int close = closingQuote(value);
+                    rest = close < 0 ? "" : value.substring(close + 1);
+                    value = curlUnescape(value.substring(1, close < 0 ? value.length() : close));
+                } else {
+                    int semi = value.indexOf(';');
+                    String after = semi < 0 ? "" : value.substring(semi + 1).strip();
+                    boolean attrs = after.startsWith("type=") || after.startsWith("filename=");
+                    rest = attrs ? value.substring(semi) : "";
+                    value = attrs ? value.substring(0, semi) : value;
+                }
+                for (String a : rest.split(";")) {
+                    String attr = a.strip();
+                    if (attr.startsWith("type=")) {
+                        type = attr.substring(5);
+                    } else if (attr.startsWith("filename=")) {
+                        filename = unquote(attr.substring(9));
+                    }
                 }
             }
             sb.append("--").append(b).append('\n');

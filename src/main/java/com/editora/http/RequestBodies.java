@@ -236,7 +236,7 @@ final class RequestBodies {
                     p.file() != null
                             ? new HttpExchange.FormPart(
                                     name, null, p.file().toAbsolutePath().toString(), filename, type)
-                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, null, type));
+                            : new HttpExchange.FormPart(name, p.text() == null ? "" : p.text(), null, filename, type));
         }
         return out;
     }
