@@ -143,9 +143,74 @@ public final class ContainerExecTarget implements ExecTarget {
         }
     }
 
+    /** The relay the container has, asked once: {@code nc}, {@code bash} or {@code python3}; "" for none. */
+    private volatile String relayTool;
+
+    /**
+     * A loopback port here joined to {@code host:port} as the container sees it, through a relay run with
+     * {@code exec} for each connection ({@link ContainerPortForward}).
+     */
     @Override
     public PortForward forwardLocal(String host, int port) throws IOException {
-        throw new IOException("ports in containers are not reached yet");
+        if (!running) {
+            throw new IOException("the container " + info.name() + " is not running");
+        }
+        List<String> relay = relayArgv(relayTool(), host, port);
+        if (relay == null) {
+            throw new IOException(
+                    "the container " + info.name() + " has no nc, bash or python3 to reach its port " + port);
+        }
+        return ContainerPortForward.open(this, relay);
+    }
+
+    private String relayTool() throws IOException {
+        String known = relayTool;
+        if (known == null) {
+            known = capture(List.of(
+                            "/bin/sh",
+                            "-c",
+                            "for t in nc bash python3; do command -v $t >/dev/null 2>&1 && { echo $t; exit; }; done"))
+                    .strip();
+            relayTool = known;
+        }
+        return known;
+    }
+
+    /** The inner command that joins its stdin and stdout to {@code host:port} with {@code tool}; null for none. Pure. */
+    static List<String> relayArgv(String tool, String host, int port) {
+        String p = String.valueOf(port);
+        return switch (tool == null ? "" : tool) {
+            case "nc" -> List.of("nc", host, p);
+            // The writer becomes the shell; the reader keeps stdout, so the port closing ends this side too.
+            case "bash" ->
+                List.of("bash", "-c", "exec 3<>\"/dev/tcp/$0/$1\" || exit 1; cat <&3 & exec cat >&3", host, p);
+            case "python3" ->
+                List.of(
+                        "python3",
+                        "-c",
+                        "import socket,sys,threading\n"
+                                + "s=socket.create_connection((sys.argv[1],int(sys.argv[2])))\n"
+                                + "def up():\n"
+                                + "  while True:\n"
+                                + "    b=sys.stdin.buffer.read1(65536)\n"
+                                + "    if not b: s.shutdown(socket.SHUT_WR); return\n"
+                                + "    s.sendall(b)\n"
+                                + "threading.Thread(target=up,daemon=True).start()\n"
+                                + "while True:\n"
+                                + "  b=s.recv(65536)\n"
+                                + "  if not b: break\n"
+                                + "  sys.stdout.buffer.write(b); sys.stdout.buffer.flush()\n",
+                        host,
+                        p);
+            default -> null;
+        };
+    }
+
+    /** Starts one relay connection: {@code exec} of {@code relay} in the container. */
+    Process relayProcess(List<String> relay) throws IOException {
+        return client(engine.execArgv(info.id(), info.user(), relay))
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
     }
 
     /** The container's name for {@code path}: through its mounts, else the path as it is (not in the container). */

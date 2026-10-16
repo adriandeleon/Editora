@@ -167,7 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Project's Tools in a Container… — can have its git, builds, tests, language servers and debuggers run
   inside the container, with the container's own PATH, environment and user, while you edit the files here.
   Editora asks once per container; Containers: Run This Project's Tools Here goes back. Works with Docker and
-  Podman (Settings → Remote → Container engine).
+  Podman (Settings → Remote → Container engine). A debugger listening on a port inside the container is
+  reached from here, whatever the container's network.
 - **Debugging in remote folders.** On a host you have allowed to run commands, Debug on a
   remote `.py` or `.js` file runs debugpy or vscode-js-debug on the file's host, with breakpoints, stepping and
   the call stack as for a local file. The host needs its own debugpy (`pip install debugpy`) or vscode-js-debug
