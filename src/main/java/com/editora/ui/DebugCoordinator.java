@@ -1348,6 +1348,17 @@ final class DebugCoordinator {
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
     private void launchBuffer(EditorBuffer b) {
+        // A file no adapter can debug is told so first: an untitled one used to get a Save As dialog, and then
+        // a shell script "Debugging is unavailable for this file (check Settings → Debugging)", which no
+        // setting can change.
+        if (b != null && b.isShell()) {
+            host.setStatus(tr("status.debug.shellNotDebuggable"));
+            return;
+        }
+        if (b != null && b.getPath() == null && !DapServerRegistry.isDebuggable(b.getLanguage())) {
+            host.setStatus(tr("status.debug.languageNotDebuggable"));
+            return;
+        }
         if (b == null || b.getPath() == null && !ops.saveBuffer(b)) {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
@@ -1433,7 +1444,10 @@ final class DebugCoordinator {
         if (!cfg.isJava()) {
             // Script types run but do not debug yet. Say so plainly: falling through would resolve a Java
             // main class that a Python configuration does not have and report a confusing Java error.
-            host.setStatus(tr("status.debug.configTypeUnsupported", cfg.type()));
+            host.setStatus(
+                    com.editora.run.ScriptRunCommand.SHELL.equals(cfg.type())
+                            ? tr("status.debug.shellNotDebuggable")
+                            : tr("status.debug.configTypeUnsupported", tr("settings.runConfig.type." + cfg.type())));
             return;
         }
         // Same guard as the Run path: a blank main class is an internal NPE from jdtls, not an error.
