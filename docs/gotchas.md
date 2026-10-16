@@ -334,3 +334,17 @@ bare command to its absolute path against it (Java's `ProcessBuilder` resolves t
 the JVM's own PATH, not the child env). Always spawn subprocesses through `ProcessRunner`
 ([`ProcessRunner.java`](../src/main/java/com/editora/process/ProcessRunner.java)); don't call
 `ProcessBuilder` directly.
+
+## A file written a moment ago can fail to exec with "Text file busy" (Linux)
+
+**Symptom:** starting a script or binary that was just written fails, now and then and only under load,
+with `Exec failed, error: 26 (Text file busy)`. Callers that treat a failed start as "not installed" (the
+Doctor, a tool's detect) say so. In the test suite this showed as a flaky `DoctorProbesTest`.
+
+**Why/fix:** Linux refuses to exec a file that any process has open for writing. The writer here has
+already closed it, but if *another* thread started a process while the file was still open, that child
+inherited the write descriptor and holds it until it closes its descriptors and execs. Closing the file
+before running it does not help. Start freshly written programs through
+`BusyExecutable.start(pb)` ([`BusyExecutable.java`](../src/main/java/com/editora/process/BusyExecutable.java)),
+which retries for about 0.6 s while the exec fails with `ETXTBSY`. `LocalExecTarget` (so every
+`ProcessRunner` call) and the Run tool window already do.
