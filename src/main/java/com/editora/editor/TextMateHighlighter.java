@@ -640,6 +640,14 @@ public final class TextMateHighlighter {
         if (scope.startsWith("string.regexp")) {
             return "regexp";
         }
+        // A shell command's bare words and options are its arguments, not string literals (the grammar scopes
+        // `pipefail`, `-y` and `libssl-dev` as strings): plain text, which also keeps spell check off them.
+        // Quoted strings, here-doc and here-string bodies stay strings.
+        if (scope.startsWith("string.unquoted.argument.shell")
+                || scope.equals("string.unquoted.shell")
+                || scope.startsWith("constant.other.option")) {
+            return PLAIN;
+        }
         if (scope.startsWith("string")) {
             return "string";
         }

@@ -99,4 +99,22 @@ class ShellGrammarTest {
         assertEquals(List.of("literal text|string"), body);
         assertTrue(after.contains("if|keyword") && after.contains("then|keyword"), after.toString());
     }
+    /**
+     * A command's bare words and options are arguments, not string literals: plain text (which also keeps spell
+     * check off `pipefail` and package names). Quoted strings and here-doc bodies are still strings.
+     */
+    @Test
+    void bareArgumentsAndOptionsArePlainButQuotedStringsAreStrings() {
+        List<String> set = lastLine("set -euo pipefail").styles();
+        List<String> apt = lastLine("apt-get install -y libssl-dev \"quoted text\" 'single'")
+                .styles();
+        List<String> forList = lastLine("for f in alpha beta; do :; done").styles();
+        List<String> heredoc = lastLine("cat <<EOF\nbody words").styles();
+
+        assertEquals(List.of("set|function", "-|null", "euo|null", "pipefail|null"), set);
+        assertTrue(apt.containsAll(List.of("install|null", "y|null", "libssl-dev|null")), apt.toString());
+        assertTrue(apt.contains("quoted text|string") && apt.contains("single|string"), apt.toString());
+        assertTrue(forList.stream().noneMatch(t -> t.endsWith("|string")), forList.toString());
+        assertEquals(List.of("body words|string"), heredoc);
+    }
 }
