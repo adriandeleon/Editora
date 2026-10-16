@@ -779,6 +779,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
         // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
         this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
+        this.settingsWindow.setRunConfigScriptSuggestion(this::suggestedScriptConfiguration, this::windowProjectRoot);
         this.settingsWindow.setTemplateRegistry(
                 templateActions.templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
@@ -3523,6 +3524,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public String suggestedMainClass() {
                     return MainController.this.suggestedMainClass();
+                }
+
+                @Override
+                public com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+                    return MainController.this.suggestedScriptConfiguration();
                 }
 
                 @Override
@@ -8877,6 +8883,16 @@ public class MainController implements com.editora.mcp.McpBridge {
      * <p>Shared by {@code run.saveConfig} and Run Configurations → Add, so the two cannot disagree
      * about what "the obvious main class here" is.
      */
+    /** A configuration for the active Python or shell script (Add / Save as Run Configuration), or null. */
+    com.editora.config.RunConfiguration suggestedScriptConfiguration() {
+        EditorBuffer b = activeBuffer();
+        if (b == null || b.getPath() == null) {
+            return null;
+        }
+        String type = b.isShell() ? "shell" : b.isPython() ? "python" : null;
+        return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
+    }
+
     String suggestedMainClass() {
         EditorBuffer b = activeBuffer();
         if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {

@@ -44,6 +44,11 @@ public final class RunConfigurationsWindow {
     private final ObservableList<RunConfiguration> items = FXCollections.observableArrayList();
     private final ListView<RunConfiguration> list = new ListView<>(items);
     private final Supplier<String> suggestion;
+    /** A Python or shell configuration for the active script, or null — what Add proposes first. */
+    private final Supplier<RunConfiguration> scriptSuggestion;
+    /** The window's project root (or null): where Browse starts, and what a chosen script is relative to. */
+    private final Supplier<java.nio.file.Path> projectRoot;
+
     private final Runnable onChanged;
     private boolean built;
     private boolean loading;
@@ -55,8 +60,24 @@ public final class RunConfigurationsWindow {
     private boolean reloading;
 
     public RunConfigurationsWindow(ConfigManager config, Supplier<String> suggestion, Runnable onChanged) {
+        this(config, suggestion, null, null, onChanged);
+    }
+
+    /**
+     * @param suggestion the active Java main class, or null
+     * @param scriptSuggestion a configuration for the active Python or shell script, or null
+     * @param projectRoot the window's project root, or null
+     */
+    public RunConfigurationsWindow(
+            ConfigManager config,
+            Supplier<String> suggestion,
+            Supplier<RunConfiguration> scriptSuggestion,
+            Supplier<java.nio.file.Path> projectRoot,
+            Runnable onChanged) {
         this.config = config;
         this.suggestion = suggestion;
+        this.scriptSuggestion = scriptSuggestion;
+        this.projectRoot = projectRoot;
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
 
@@ -126,7 +147,15 @@ public final class RunConfigurationsWindow {
         form.setVgap(8);
         formRow(form, 0, "settings.runConfig.name", name);
         formRow(form, 1, "settings.runConfig.type", type);
-        formRow(form, 2, "settings.runConfig.target", target);
+        // A script's path can be picked rather than typed (Python and shell only: make and npm name targets).
+        Button browse = new Button(tr("settings.runConfig.browse"));
+        browse.setId("run-config-browse");
+        browse.setMinWidth(Region.USE_PREF_SIZE);
+        HBox targetRow = new HBox(6, target, browse);
+        targetRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(target, Priority.ALWAYS);
+        target.setMaxWidth(Double.MAX_VALUE);
+        formRow(form, 2, "settings.runConfig.target", targetRow);
         formRow(form, 3, "settings.runConfig.interpreter", interpreter);
         formRow(form, 4, "settings.runConfig.interpreterOptions", interpreterOptions);
         formRow(form, 5, "settings.runConfig.mainClass", mainClass);
@@ -150,9 +179,14 @@ public final class RunConfigurationsWindow {
         // Only the fields the selected type launches with are editable: a script has no main class, module,
         // VM arguments or JDK, and a Java main class has no script/target. A disabled field keeps its text, so
         // switching the type back and forth loses nothing.
+        // The rows a type does not use are hidden as well, so a shell configuration is not a form of greyed-out
+        // Java fields.
         Runnable applyType = () -> {
             String value = type.getValue();
-            setRowDisabled(form, !RunConfigFields.usesTarget(value), target);
+            setRowDisabled(form, !RunConfigFields.usesTarget(value), targetRow);
+            boolean scriptFile = com.editora.run.RunConfigFields.usesScriptFile(value);
+            browse.setVisible(scriptFile);
+            browse.setManaged(scriptFile);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
             setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClass, projectName, vmArgs, jdk);
         };
@@ -242,16 +276,34 @@ public final class RunConfigurationsWindow {
             }
         });
 
+        browse.setOnAction(e -> {
+            javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+            chooser.setTitle(tr("settings.runConfig.browseTitle"));
+            java.nio.file.Path root = projectRoot == null ? null : projectRoot.get();
+            if (root != null && root.getFileSystem() == java.nio.file.FileSystems.getDefault()) {
+                chooser.setInitialDirectory(root.toFile());
+            }
+            java.io.File chosen = chooser.showOpenDialog(stage);
+            if (chosen != null) {
+                target.setText(chosenTarget(type.getValue(), chosen.toPath(), root));
+                commit.run();
+            }
+        });
+
         Button add = new Button(tr("settings.runConfig.add"));
         add.setOnAction(e -> {
-            String suggested = suggestion == null ? null : suggestion.get();
             List<String> taken = items.stream().map(RunConfiguration::name).toList();
-            RunConfiguration value =
-                    RunConfigDefaults.newConfiguration(suggested, taken, tr("settings.runConfig.newName"));
+            // The active Python or shell script first: Add used to make an empty Java configuration whatever
+            // was open, and focus Main class for a .sh.
+            RunConfiguration script = scriptSuggestion == null ? null : scriptSuggestion.get();
+            String suggested = script != null || suggestion == null ? null : suggestion.get();
+            RunConfiguration value = script != null
+                    ? RunConfigDefaults.uniquelyNamed(script, taken)
+                    : RunConfigDefaults.newConfiguration(suggested, taken, tr("settings.runConfig.newName"));
             items.add(value);
             persist();
             list.getSelectionModel().select(value);
-            Platform.runLater(() -> (suggested == null ? mainClass : name).requestFocus());
+            Platform.runLater(() -> (script != null ? args : suggested == null ? mainClass : name).requestFocus());
         });
         Button remove = new Button(tr("settings.runConfig.remove"));
         remove.disableProperty()
@@ -299,8 +351,15 @@ public final class RunConfigurationsWindow {
         return field;
     }
 
+    /** The Script / target text for a file picked with Browse: relative to the project when inside it. */
+    static String chosenTarget(String type, java.nio.file.Path chosen, java.nio.file.Path root) {
+        RunConfiguration c = RunConfigDefaults.forScript(type, chosen, root);
+        return c == null ? chosen.toString() : c.target();
+    }
+
     private static void formRow(GridPane form, int row, String labelKey, javafx.scene.Node control) {
         Label label = new Label(tr(labelKey));
+        label.setMinWidth(Region.USE_PREF_SIZE); // "Program arguments", not "Program arg…"
         form.add(label, 0, row);
         form.add(control, 1, row);
         GridPane.setHgrow(control, Priority.ALWAYS);
@@ -309,17 +368,23 @@ public final class RunConfigurationsWindow {
         }
     }
 
-    /** Disables (or re-enables) each control together with the label on its row. */
+    /** Disables and hides (or re-enables and shows) each control together with the label on its row. */
     private static void setRowDisabled(GridPane form, boolean disabled, javafx.scene.Node... controls) {
         for (javafx.scene.Node control : controls) {
-            control.setDisable(disabled);
+            show(control, !disabled);
             Integer row = GridPane.getRowIndex(control);
             for (javafx.scene.Node node : form.getChildren()) {
                 if (node instanceof Label && java.util.Objects.equals(GridPane.getRowIndex(node), row)) {
-                    node.setDisable(disabled);
+                    show(node, !disabled);
                 }
             }
         }
+    }
+
+    private static void show(javafx.scene.Node node, boolean used) {
+        node.setDisable(!used);
+        node.setVisible(used);
+        node.setManaged(used);
     }
 
     private static Region spacer() {

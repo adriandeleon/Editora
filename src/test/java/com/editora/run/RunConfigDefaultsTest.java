@@ -92,4 +92,23 @@ class RunConfigDefaultsTest {
     void toleratesNullsInTheExistingNames() {
         assertEquals("App", RunConfigDefaults.uniqueName("App", java.util.Arrays.asList("Server", null)));
     }
+
+    @Test
+    void aScriptProposesAScriptConfigurationRelativeToTheProject() {
+        java.nio.file.Path root = java.nio.file.Path.of("/work/site").toAbsolutePath();
+        com.editora.config.RunConfiguration c =
+                RunConfigDefaults.forScript("shell", root.resolve("scripts/deploy.sh"), root);
+        assertEquals("deploy.sh", c.name());
+        assertEquals("shell", c.type());
+        assertEquals(java.nio.file.Path.of("scripts", "deploy.sh").toString(), c.target());
+        java.nio.file.Path outside = java.nio.file.Path.of("/elsewhere/tool.py").toAbsolutePath();
+        assertEquals(
+                outside.toString(),
+                RunConfigDefaults.forScript("python", outside, root).target());
+        org.junit.jupiter.api.Assertions.assertNull(RunConfigDefaults.forScript("java", outside, root));
+        assertEquals(
+                "deploy.sh (2)",
+                RunConfigDefaults.uniquelyNamed(c, java.util.List.of("deploy.sh"))
+                        .name());
+    }
 }
