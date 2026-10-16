@@ -83,6 +83,12 @@ class SettingsListEditorsFxTest {
         throw new IllegalStateException(text);
     }
 
+    /** The Abbreviations form: the key field and the (multi-line) expansion. */
+    private static List<javafx.scene.control.TextInputControl> abbrevFields(SettingsWindow w) {
+        AbbreviationsEditor editor = FxTestSupport.field(w, "abbreviationsEditor");
+        return List.of(editor.abbrev, editor.expansion);
+    }
+
     private static List<TextField> fields(Region page) {
         return all(page, TextField.class, new ArrayList<>());
     }
@@ -138,7 +144,8 @@ class SettingsListEditorsFxTest {
                         "example.org", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Example", "/srv"));
 
                 shown(fx);
-                ObservableList<Abbreviation> abbrevs = FxTestSupport.field(w, "abbrevItems");
+                ObservableList<Abbreviation> abbrevs =
+                        FxTestSupport.<AbbreviationsEditor>field(w, "abbreviationsEditor").items;
                 ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
                 assertEquals(1, abbrevs.size(), "the page shows the abbreviation defined from the editor");
                 assertEquals(1, sites.size(), "the page shows the site Connect remembered");
@@ -182,7 +189,7 @@ class SettingsListEditorsFxTest {
                 SettingsWindow w = shown(fx);
                 Region pg = page(w, "ABBREVIATIONS");
                 button(pg, tr("settings.abbrev.add")).fire();
-                List<TextField> tfs = fields(pg);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
                 tfs.get(0).setText("omw");
                 tfs.get(1).setText("on my way");
                 button(pg, tr("settings.save")).fire();
@@ -207,13 +214,50 @@ class SettingsListEditorsFxTest {
                 w.showAbbreviations(FxTestSupport.<Stage>field(w, "stage").getOwner()); // the page is on screen
                 Region pg = page(w, "ABBREVIATIONS");
                 button(pg, tr("settings.abbrev.add")).fire();
-                List<TextField> tfs = fields(pg);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
                 tfs.get(0).setText("omw");
                 tfs.get(1).requestFocus();
                 assertTrue(tfs.get(1).isFocused());
                 tfs.get(1).setText("on my way"); // no Enter, no Save, no click elsewhere
                 FxTestSupport.<Stage>field(w, "stage").close();
                 assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
+            });
+        }
+    }
+
+    @Test
+    void aMultiLineExpansionKeepsItsLineBreaksThroughAFocusPassAndAnEdit() throws Exception {
+        Path dir = Files.createTempDirectory("abbrev-multiline");
+        try (var fx = FxWindowFixture.create(dir, shared -> {
+            shared.setAbbreviations(new ArrayList<>(List.of(new Abbreviation("sig", "Best regards,\nAdrian"))));
+            shared.saveAbbreviations();
+        })) {
+            Path file = fx.configDir.resolve("abbreviations.json");
+            String before = Files.readString(file);
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx);
+                w.showAbbreviations(FxTestSupport.<Stage>field(w, "stage").getOwner());
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
+                assertEquals(
+                        "Best regards,\nAdrian", tfs.get(1).getText(), "the expansion is shown with its line break");
+                tfs.get(1).requestFocus();
+                tfs.get(0).requestFocus(); // a focus pass: nothing typed
+                FxTestSupport.<Stage>field(w, "stage").close(); // closing commits the focused field too
+                assertEquals(
+                        "Best regards,\nAdrian",
+                        fx.shared.getAbbreviations().get(0).getExpansion());
+            });
+            assertEquals(before, Files.readString(file), "a focus pass does not rewrite the store");
+
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
+                tfs.get(1).setText("Best regards,\nAdrian\nEditora");
+                button(page(w, "ABBREVIATIONS"), tr("settings.save")).fire();
+                assertEquals(
+                        "Best regards,\nAdrian\nEditora",
+                        fx.shared.getAbbreviations().get(0).getExpansion());
+                FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }
     }

@@ -325,10 +325,7 @@ public class SettingsWindow {
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
     private boolean loadingExternalTool = false;
-    private ListView<com.editora.config.Abbreviation> abbrevList;
-    private final javafx.collections.ObservableList<com.editora.config.Abbreviation> abbrevItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private boolean loadingAbbrev = false;
+    private AbbreviationsEditor abbreviationsEditor;
     private CheckBox abbrevModeCheck;
 
     /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
@@ -336,10 +333,8 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
-    /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
+    /** The uncommitted text in the Remote form, asked for before the list is re-read. */
     private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
-
-    private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
     /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
     private ListView<com.editora.vfs.RemoteConnection> remoteList;
 
@@ -5630,150 +5625,9 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.ABBREVIATIONS,
-                abbreviationsEditor(),
+                (abbreviationsEditor = new AbbreviationsEditor(config, this::apply)).node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;
-    }
-
-    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion). */
-    private javafx.scene.Node abbreviationsEditor() {
-        reloadAbbrevs();
-
-        ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
-        abbrevList = list;
-        list.setPrefSize(200, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.config.Abbreviation a, boolean empty) {
-                super.updateItem(a, empty);
-                setText(
-                        empty || a == null || a.getAbbreviation().isBlank()
-                                ? (empty || a == null ? null : tr("settings.abbrev.unnamed"))
-                                : a.getAbbreviation());
-            }
-        });
-
-        TextField abbrev = new TextField();
-        TextField expansion = new TextField();
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.abbrev.abbreviation"), abbrev);
-        formRow(form, 1, tr("settings.abbrev.expansion"), expansion);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        Runnable commit = () -> {
-            com.editora.config.Abbreviation a = list.getSelectionModel().getSelectedItem();
-            if (a == null || loadingAbbrev) {
-                return;
-            }
-            a.setAbbreviation(abbrev.getText());
-            a.setExpansion(expansion.getText());
-            list.refresh();
-            persistAbbrevs();
-        };
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(abbrev);
-        wire.accept(expansion);
-        abbrevFormEdit = () -> {
-            com.editora.config.Abbreviation cur = list.getSelectionModel().getSelectedItem();
-            return cur == null
-                    ? PendingFormEdit.none()
-                    : PendingFormEdit.capture(
-                            List.of(abbrev, expansion), List.of(cur.getAbbreviation(), cur.getExpansion()));
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingAbbrev = true;
-            try {
-                form.setDisable(now == null);
-                abbrev.setText(now == null ? "" : now.getAbbreviation());
-                expansion.setText(now == null ? "" : now.getExpansion());
-            } finally {
-                loadingAbbrev = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.abbrev.add"));
-        add.setOnAction(e -> {
-            com.editora.config.Abbreviation a = new com.editora.config.Abbreviation("", "");
-            abbrevItems.add(a);
-            persistAbbrevs();
-            list.getSelectionModel().select(a);
-            abbrev.requestFocus();
-        });
-        Button remove = new Button(tr("settings.abbrev.remove"));
-        remove.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                abbrevItems.remove(i);
-                persistAbbrevs();
-            }
-        });
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-
-        VBox left = new VBox(6, list);
-        VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-        if (!abbrevItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox top = new HBox(12, left, right);
-        top.setAlignment(Pos.TOP_LEFT);
-        VBox.setVgrow(top, Priority.ALWAYS);
-        HBox buttons = new HBox(6, add, remove, spacer(), save);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, top, buttons);
-    }
-
-    private void persistAbbrevs() {
-        config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
-        config.saveAbbreviations();
-        apply(); // buffers hold a copy of the table: push the new one to every window's open buffers
-    }
-
-    private void reloadAbbrevs() {
-        if (sameAbbrevs(abbrevItems, config.getAbbreviations())) {
-            return;
-        }
-        var selected =
-                abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
-        String selectedKey = selected == null ? null : selected.getAbbreviation();
-        PendingFormEdit typing = abbrevFormEdit.get(); // before the items change: that reloads the form
-        abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
-        if (abbrevList != null && selectedKey != null) {
-            for (var a : abbrevItems) {
-                if (selectedKey.equals(a.getAbbreviation())) {
-                    abbrevList.getSelectionModel().select(a);
-                    typing.restore(); // the entry being edited is still there: what was typed stays typed
-                    break;
-                }
-            }
-        }
-    }
-
-    private static java.util.List<com.editora.config.Abbreviation> copyAbbrevs(
-            java.util.List<com.editora.config.Abbreviation> src) {
-        java.util.List<com.editora.config.Abbreviation> out = new java.util.ArrayList<>();
-        for (com.editora.config.Abbreviation a : src) {
-            out.add(new com.editora.config.Abbreviation(a.getAbbreviation(), a.getExpansion()));
-        }
-        return out;
     }
 
     private static java.util.List<com.editora.externaltool.ExternalTool> copyTools(
@@ -8467,7 +8321,9 @@ public class SettingsWindow {
      */
     private void reloadStoreBackedEditors() {
         reloadExternalTools();
-        reloadAbbrevs();
+        if (abbreviationsEditor != null) {
+            abbreviationsEditor.reload();
+        }
         reloadRemote();
     }
 
@@ -8505,23 +8361,6 @@ public class SettingsWindow {
                             && x.getStdin() == y.getStdin()
                             && x.getOutput() == y.getOutput()
                             && x.isEnabled() == y.isEnabled())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean sameAbbrevs(
-            java.util.List<com.editora.config.Abbreviation> a, java.util.List<com.editora.config.Abbreviation> b) {
-        if (a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            com.editora.config.Abbreviation x = a.get(i);
-            com.editora.config.Abbreviation y = b.get(i);
-            if (x != y
-                    && !(java.util.Objects.equals(x.getAbbreviation(), y.getAbbreviation())
-                            && java.util.Objects.equals(x.getExpansion(), y.getExpansion()))) {
                 return false;
             }
         }
