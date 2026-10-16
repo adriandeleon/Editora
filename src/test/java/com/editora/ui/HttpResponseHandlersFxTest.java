@@ -330,6 +330,36 @@ class HttpResponseHandlersFxTest {
     }
 
     @Test
+    void aScriptErrorIsNamedForTheScriptThatStopped(@TempDir Path dir) throws Exception {
+        // A failing pre-request script's Tests block read "Response handler error".
+        assumeTrue(nodeAvailable(), "node is not installed");
+        ops.trust = true;
+        EditorBuffer b = httpBuffer(
+                dir.resolve("api.http"),
+                "### pre\n< {% throw new Error('no key') %}\nGET " + url("/me") + "\n\n" + "### handler\nGET "
+                        + url("/hit") + "\n\n> {% throw new Error('bad body') %}\n");
+        runAllAndWait(b);
+        assertEquals(List.of("hit"), hits, "the request whose pre-request script stopped was not sent");
+        HttpClientPanel p = panel(b);
+        for (HttpHistoryEntry e : FxTestSupport.callOnFx(
+                () -> List.copyOf(p.controlsForTest().historyPicker().getItems()))) {
+            FxTestSupport.runOnFx(() -> p.controlsForTest().historyPicker().setValue(e));
+            FxTestSupport.drainFx();
+            String block = FxTestSupport.callOnFx(p::testsForTest);
+            String badge = FxTestSupport.callOnFx(p::testsBadgeForTest);
+            if ("pre".equals(e.name())) {
+                assertTrue(block.startsWith("Pre-request script error"), block);
+                assertTrue(block.contains("no key"), block);
+                assertEquals("✗ pre-request error", badge);
+            } else {
+                assertTrue(block.startsWith("Response handler error"), block);
+                assertTrue(block.contains("bad body"), block);
+                assertEquals("✗ handler error", badge);
+            }
+        }
+    }
+
+    @Test
     void aPreRequestScriptThatCannotRunLeavesItsRequestUnsent(@TempDir Path dir) throws Exception {
         assumeTrue(nodeAvailable(), "node is not installed");
         ops.trust = false;

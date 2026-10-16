@@ -1,5 +1,9 @@
 package com.editora.http;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -24,10 +28,12 @@ import static com.editora.i18n.Messages.tr;
  * above the reference, the dynamic built-ins (an environment variable must be set in this process, a
  * {@code $dotenv} key must be in the {@code .env} beside the file), and {@code {{name.response…}}} when the
  * file has a request called {@code name} — whether it has run yet is not known here, so it is not marked. Nor is
- * a name the file sets as a session variable ({@link #sessionNames}: a {@code # @capture} line, or an inline
- * handler's {@code client.global.set("name", …)}), which resolves once that request has run.
+ * a name the file sets as a session variable ({@link #sessionNames}: a {@code # @capture} line, or a script's
+ * {@code client.global.set("name", …)} or {@code request.variables.set("name", …)}, inline or in a script file the
+ * file names, {@link Context#scriptNames()}), which resolves once that request has run.
  * Comment lines and JavaScript handler/pre-request scripts are not looked at, as the run does not send them.
- * Pure apart from reading the {@code .env} file for {@code $dotenv}.
+ * Pure apart from reading the {@code .env} file for {@code $dotenv} and the script files for their names, both when
+ * a {@link Context} is built.
  */
 public final class HttpVariableIndex {
 
@@ -35,14 +41,16 @@ public final class HttpVariableIndex {
      * The environment the document is analysed against: the selected environment's variables, the folder of the
      * {@code .env} file and its keys (read once, when the context is built off the FX thread, so the completion
      * popup never reads a file), and — for better reasons — which environments define each name when none is
-     * selected ({@code definedIn}), and why an env file could not be read ({@code envProblems}).
+     * selected ({@code definedIn}), why an env file could not be read ({@code envProblems}), and the names the
+     * document's script files set ({@code scriptNames}, {@link #scriptFileNames}, read with the rest).
      */
     public record Context(
             Map<String, String> environment,
             Path dotenvDir,
             Set<String> dotenvKeys,
             Map<String, List<String>> definedIn,
-            List<String> envProblems) {
+            List<String> envProblems,
+            Set<String> scriptNames) {
         public static final Context EMPTY = new Context(Map.of(), null, Set.of(), Map.of(), List.of());
 
         public Context {
@@ -50,6 +58,17 @@ public final class HttpVariableIndex {
             dotenvKeys = dotenvKeys == null ? Set.of() : Collections.unmodifiableSet(new TreeSet<>(dotenvKeys));
             definedIn = definedIn == null ? Map.of() : Map.copyOf(definedIn);
             envProblems = envProblems == null ? List.of() : List.copyOf(envProblems);
+            scriptNames = scriptNames == null ? Set.of() : Collections.unmodifiableSet(new TreeSet<>(scriptNames));
+        }
+
+        /** A context whose document names no script file. */
+        public Context(
+                Map<String, String> environment,
+                Path dotenvDir,
+                Set<String> dotenvKeys,
+                Map<String, List<String>> definedIn,
+                List<String> envProblems) {
+            this(environment, dotenvDir, dotenvKeys, definedIn, envProblems, Set.of());
         }
 
         /** The selected environment and the {@code .env} beside the file in {@code dotenvDir} (read now). */
@@ -125,7 +144,7 @@ public final class HttpVariableIndex {
     /**
      * The variables the document's scripts set when its requests run: the names of its {@code # @capture} lines and
      * the literal names its inline scripts pass to {@code client.global.set} or {@code request.variables.set}. A script
-     * file is not read.
+     * file is not read here: its names come from {@link #scriptFileNames}, through {@link Context#scriptNames()}.
      */
     public static Set<String> sessionNames(String text) {
         Set<String> names = new TreeSet<>();
@@ -139,8 +158,54 @@ public final class HttpVariableIndex {
                 }
             }
         }
-        if (text.contains("client.global.set") || text.contains("request.variables.set")) {
-            Matcher m = GLOBAL_SET.matcher(text);
+        names.addAll(setNames(text));
+        return names;
+    }
+
+    /**
+     * The literal names the script files {@code text} runs ({@code < ./pre.js} above a request line, {@code > ./check.js}
+     * after it) pass to {@code client.global.set} or {@code request.variables.set}, each file resolved against
+     * {@code dir} as a run resolves it. A file that is missing, not a regular file or larger than a run reads
+     * ({@link NodeResponseScripts#MAX_SCRIPT_BYTES}) adds nothing. Reading a file only to find these names runs
+     * nothing, so it does not ask for the folder's trust. Reads files: call it off the FX thread.
+     */
+    public static Set<String> scriptFileNames(String text, Path dir) {
+        Set<String> names = new TreeSet<>();
+        if (dir == null || text == null || text.isEmpty()) {
+            return names;
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (HttpFile.Request r : HttpFile.parse(text)) {
+            List<HttpFile.Handler> scripts = new ArrayList<>(r.preScripts());
+            scripts.addAll(HttpFile.parseRequest(r).handlers());
+            for (HttpFile.Handler h : scripts) {
+                if (h.isFile() && !h.path().isEmpty() && seen.add(h.path())) {
+                    names.addAll(setNames(readScript(dir, h.path())));
+                }
+            }
+        }
+        return names;
+    }
+
+    /** The script file {@code written} in {@code dir}, as a run would read it, or "" when a run would not. */
+    private static String readScript(Path dir, String written) {
+        try {
+            Path real = dir.resolve(written).normalize().toRealPath();
+            if (!Files.isRegularFile(real, LinkOption.NOFOLLOW_LINKS)
+                    || Files.size(real) > NodeResponseScripts.MAX_SCRIPT_BYTES) {
+                return "";
+            }
+            return Files.readString(real, StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) { // missing, unreadable, not UTF-8, a bad path
+            return "";
+        }
+    }
+
+    /** The literal names {@code script} passes to {@code client.global.set} or {@code request.variables.set}. */
+    private static Set<String> setNames(String script) {
+        Set<String> names = new TreeSet<>();
+        if (script.contains("client.global.set") || script.contains("request.variables.set")) {
+            Matcher m = GLOBAL_SET.matcher(script);
             while (m.find()) {
                 names.add(m.group(2));
             }
@@ -157,6 +222,9 @@ public final class HttpVariableIndex {
         Set<String> names =
                 new TreeSet<>(ctx == null ? Set.of() : ctx.environment().keySet());
         names.addAll(sessionNames(text));
+        if (ctx != null) {
+            names.addAll(ctx.scriptNames());
+        }
         Walk walk = new Walk(text);
         for (int k = 0; k < walk.lines.length && k < line; k++) {
             String t = walk.lines[k].strip();
@@ -178,6 +246,7 @@ public final class HttpVariableIndex {
         Walk walk = new Walk(text);
         Set<String> requests = new LinkedHashSet<>(requestNames(text));
         Set<String> session = sessionNames(text);
+        session.addAll(c.scriptNames());
         List<String[]> declared = new ArrayList<>();
         HttpVars.Scope scope = null;
         int scopeSize = -1;

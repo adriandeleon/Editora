@@ -102,7 +102,7 @@ final class HttpVariableHints {
             HttpVariableIndex.Context ctx = HttpVariableIndex.Context.EMPTY;
             List<MarkdownLint.Diagnostic> marks;
             try {
-                ctx = context(env, envDir, dir);
+                ctx = context(env, envDir, dir, text);
                 marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
             } catch (Throwable unexpected) { // also an Error (a StackOverflowError on a pathological file)
                 // Never leave the previous marks standing as if they were current: clear them instead (the
@@ -121,8 +121,11 @@ final class HttpVariableHints {
         });
     }
 
-    /** The context for environment {@code env} of the env files in {@code envDir}, with {@code $dotenv} in {@code dir}. */
-    static HttpVariableIndex.Context context(String env, Path envDir, Path dir) {
+    /**
+     * The context for environment {@code env} of the env files in {@code envDir}, with {@code $dotenv} in {@code dir}
+     * and the names the script files {@code text} runs set (resolved in {@code dir}). Reads files: the worker's.
+     */
+    static HttpVariableIndex.Context context(String env, Path envDir, Path dir, String text) {
         HttpEnvironments.EnvFiles files = HttpEnvironments.read(envDir);
         boolean selected = env != null && !env.isEmpty();
         return new HttpVariableIndex.Context(
@@ -130,7 +133,8 @@ final class HttpVariableHints {
                 dir,
                 HttpVariableIndex.Context.readDotenvKeys(dir),
                 selected ? Map.of() : definedIn(files),
-                files.problems());
+                files.problems(),
+                HttpVariableIndex.scriptFileNames(text, dir));
     }
 
     /** Which environments of {@code files} define each variable name (for "no environment selected" marks). */

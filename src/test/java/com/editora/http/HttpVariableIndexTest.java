@@ -7,6 +7,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.BeforeAll;
@@ -41,6 +42,27 @@ class HttpVariableIndexTest {
                         + "\n> {% client.global.set(\"tok\", response.body.t) %}\n\n### next\nGET http://h/{{other}}\n";
         assertEquals(List.of("{{other}}"), refs(problems(text, Map.of(), null)));
         assertTrue(HttpVariableIndex.variablesAt(text, 2, null).containsAll(List.of("id", "sig", "tok")));
+    }
+
+    @Test
+    void namesAScriptFileSetsAreNotMarked(@TempDir Path dir) throws IOException {
+        // A name set in "< ./scripts/id.js" used to stay underlined: only inline scripts were read.
+        Files.createDirectories(dir.resolve("scripts"));
+        Files.writeString(dir.resolve("scripts/id.js"), "request.variables.set(\"requestId\", \"1\");\n");
+        Files.writeString(dir.resolve("check.js"), "client.global.set('token', response.body.t);\n");
+        Files.writeString(
+                dir.resolve("big.js"),
+                "client.global.set('huge', 1);\n" + " ".repeat((int) NodeResponseScripts.MAX_SCRIPT_BYTES));
+        String text = "< ./scripts/id.js\nGET http://h/{{requestId}}\n\n> check.js\n\n"
+                + "### next\n< ./big.js\n< ./missing.js\nGET http://h/{{token}}/{{huge}}\n";
+        assertEquals(Set.of("requestId", "token"), HttpVariableIndex.scriptFileNames(text, dir));
+        HttpVariableIndex.Context ctx = new HttpVariableIndex.Context(
+                Map.of(), dir, Set.of(), Map.of(), List.of(), HttpVariableIndex.scriptFileNames(text, dir));
+        assertEquals(
+                List.of("{{huge}}"), refs(HttpVariableIndex.unresolved(text, ctx, NOW)), "a file a run would not read");
+        assertTrue(HttpVariableIndex.variablesAt(text, 1, ctx).containsAll(List.of("requestId", "token")));
+        // Without a folder (an untitled buffer) there is nothing to read.
+        assertEquals(Set.of(), HttpVariableIndex.scriptFileNames(text, null));
     }
 
     @Test
