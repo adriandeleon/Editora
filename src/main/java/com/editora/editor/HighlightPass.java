@@ -158,6 +158,13 @@ final class HighlightPass {
                     }
 
                     @Override
+                    public void runNotBrackets(String style, int length) {
+                        if (scanner != null) {
+                            scanner.skip(length);
+                        }
+                    }
+
+                    @Override
                     public boolean lineDone(int line, int lineStart, int lineEnd, IStateStack endState) {
                         int depth = scanner == null ? 0 : scanner.depth();
                         depths.add(depth);
