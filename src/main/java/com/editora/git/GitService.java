@@ -1364,8 +1364,8 @@ public final class GitService {
      */
     private static String hostGlobalConfigCopy(Path root, String text) throws IOException {
         ExecTarget target = ExecTargets.forPath(root);
-        Path dir = target.cacheDir();
-        if (dir == null) {
+        com.editora.process.TargetCache cache = target.cache();
+        if (cache == null) {
             throw new IOException("no cache folder on " + target.id());
         }
         String name;
@@ -1376,14 +1376,7 @@ public final class GitService {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IOException(e);
         }
-        Path config = dir.resolve(name);
-        if (!Files.isRegularFile(config)) {
-            Files.createDirectories(dir);
-            Path partial = dir.resolve(name + ".part");
-            Files.writeString(partial, text);
-            Files.move(partial, config, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-        return target.toTargetPath(config);
+        return cache.putText(name, text);
     }
 
     private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {

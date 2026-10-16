@@ -168,7 +168,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside the container, with the container's own PATH, environment and user, while you edit the files here.
   Editora asks once per container; Containers: Run This Project's Tools Here goes back. Works with Docker and
   Podman (Settings → Remote → Container engine). A debugger listening on a port inside the container is
-  reached from here, whatever the container's network.
+  reached from here, whatever the container's network. Editora keeps its working files in `~/.cache/editora`
+  inside the container, so the Java language server's index survives a restart, Debug works on a loose Java
+  file and with the java-debug plugin Editora ships, and blame's ignore-revs settings work as on an SSH host.
 - **Tools in WSL (Windows).** A project inside a WSL distribution, opened as `\\wsl.localhost\Ubuntu\…`, can
   have its git, builds, tests, language servers and debuggers run inside that distribution with its own Linux
   tools, instead of Windows ones reading the files across the share. Editora asks once per distribution;

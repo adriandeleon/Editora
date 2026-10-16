@@ -51,6 +51,15 @@ public interface ExecTarget {
     }
 
     /**
+     * Editora's working folder on this target ({@link #cacheDir} through its file system, by default), or
+     * {@code null} when there is none. May ask the target: call it off the FX thread.
+     */
+    default TargetCache cache() throws IOException {
+        Path dir = cacheDir();
+        return dir == null ? null : new PathTargetCache(this, dir);
+    }
+
+    /**
      * The account's home folder on this target, as Editora reaches it, for a typed {@code ~}; {@code null}
      * when the target does not say (the local target: use {@code user.home}). May ask the target: call it off
      * the FX thread.
