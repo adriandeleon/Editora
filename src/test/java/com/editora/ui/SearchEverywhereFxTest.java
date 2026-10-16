@@ -138,11 +138,15 @@ class SearchEverywhereFxTest {
         }
         ConfigManager config = FxTestSupport.field(fx.controller, "config");
         String original = config.getSettings().getKeymap();
+        javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
+        // What reaches the window, in order: the test waits on it, and a failure prints it.
+        List<javafx.scene.input.KeyEvent> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        javafx.event.EventHandler<javafx.scene.input.KeyEvent> recorder = seen::add;
         try {
             FxTestSupport.runOnFxUnchecked(() -> {
+                stage.getScene().addEventFilter(javafx.scene.input.KeyEvent.ANY, recorder);
                 config.getSettings().setKeymap("emacs");
                 fx.windowManager.reloadSharedKeymap();
-                javafx.stage.Stage stage = FxTestSupport.field(fx.controller, "stage");
                 stage.requestFocus();
                 Robot robot = new Robot();
                 robot.keyPress(KeyCode.COMMAND);
@@ -160,25 +164,98 @@ class SearchEverywhereFxTest {
                     () -> popup().isShown(),
                     this::focusOwner);
             awaitFx("the query field to have the focus", () -> queryField().isFocused(), this::focusOwner);
-            FxTestSupport.runOnFxUnchecked(() -> {
-                Robot robot = new Robot();
-                robot.keyPress(KeyCode.U);
-                robot.keyRelease(KeyCode.U);
-            });
-            // A swallowed character never arrives, so this still fails then; it only stops racing the delivery.
+            // The chord is over only when its Command release has reached the window: a U the system still sees
+            // with Command down is Cmd-U, which types nothing — the runner's timing, not a swallowed character.
             awaitFx(
-                    "the first query character to arrive",
-                    () -> !queryField().getText().isEmpty(),
-                    () -> focusOwner() + ", query: '" + queryField().getText() + "'");
+                    "the Command release of the chord to reach the window",
+                    () -> released(seen, KeyCode.COMMAND),
+                    () -> focusOwner() + ", events: " + describe(seen));
+            // Up to three U presses, each retried only when the window never saw it, or saw it with Command still
+            // down. A clean U press that leaves the field empty is the bug this test guards against, and fails.
+            for (int attempt = 1; ; attempt++) {
+                int from = seen.size();
+                FxTestSupport.runOnFxUnchecked(() -> {
+                    Robot robot = new Robot();
+                    robot.keyRelease(KeyCode.COMMAND); // a no-op unless the system still holds it
+                    robot.keyPress(KeyCode.U);
+                    robot.keyRelease(KeyCode.U);
+                });
+                javafx.scene.input.KeyEvent press = awaitPress(seen, from, KeyCode.U, 3);
+                boolean delivered = press != null && !press.isMetaDown() && !press.isShortcutDown();
+                if (delivered || attempt == 3) {
+                    awaitFx(
+                            "the first query character to arrive",
+                            () -> !queryField().getText().isEmpty(),
+                            () -> focusOwner() + ", query: '" + queryField().getText() + "', events: "
+                                    + describe(seen));
+                    break;
+                }
+            }
             String query = FxTestSupport.callOnFx(() -> queryField().getText());
-            assertEquals("u", query, "the opening Command chord must not swallow the first query character");
+            // One "u" per clean U press the window saw (a retried press may arrive late, after its retry).
+            long clean = seen.stream()
+                    .filter(e -> e.getEventType() == javafx.scene.input.KeyEvent.KEY_PRESSED
+                            && e.getCode() == KeyCode.U
+                            && !e.isMetaDown())
+                    .count();
+            assertEquals(
+                    "u".repeat((int) Math.max(1, clean)),
+                    query,
+                    "the opening Command chord must not swallow the first query character; events: " + describe(seen));
             hide();
         } finally {
             FxTestSupport.runOnFxUnchecked(() -> {
+                stage.getScene().removeEventFilter(javafx.scene.input.KeyEvent.ANY, recorder);
                 config.getSettings().setKeymap(original);
                 fx.windowManager.reloadSharedKeymap();
             });
         }
+    }
+
+    /** Whether a KEY_RELEASED of {@code code} reached the window. */
+    private static boolean released(List<javafx.scene.input.KeyEvent> seen, KeyCode code) {
+        return seen.stream()
+                .anyMatch(e -> e.getEventType() == javafx.scene.input.KeyEvent.KEY_RELEASED && e.getCode() == code);
+    }
+
+    /** The first KEY_PRESSED of {@code code} at or after {@code from}, waited for up to {@code seconds}; or null. */
+    private static javafx.scene.input.KeyEvent awaitPress(
+            List<javafx.scene.input.KeyEvent> seen, int from, KeyCode code, int seconds) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(seconds);
+        while (System.nanoTime() < deadline) {
+            FxTestSupport.drainFx();
+            for (int i = from; i < seen.size(); i++) {
+                javafx.scene.input.KeyEvent e = seen.get(i);
+                if (e.getEventType() == javafx.scene.input.KeyEvent.KEY_PRESSED && e.getCode() == code) {
+                    return e;
+                }
+            }
+            Thread.sleep(20);
+        }
+        return null;
+    }
+
+    /** The recorded key events, short: {@code PRESSED U [meta]}, {@code TYPED 'u'}, for a failure message. */
+    private static String describe(List<javafx.scene.input.KeyEvent> seen) {
+        StringBuilder sb = new StringBuilder("[");
+        for (javafx.scene.input.KeyEvent e : seen) {
+            if (sb.length() > 1) {
+                sb.append(", ");
+            }
+            String type = e.getEventType().getName().replace("KEY_", "");
+            sb.append(type).append(' ');
+            sb.append(
+                    e.getEventType() == javafx.scene.input.KeyEvent.KEY_TYPED
+                            ? "'" + e.getCharacter() + "'"
+                            : e.getCode().getName());
+            if (e.isMetaDown()) {
+                sb.append(" [meta]");
+            }
+            if (e.isShiftDown()) {
+                sb.append(" [shift]");
+            }
+        }
+        return sb.append(']').toString();
     }
 
     @Test
