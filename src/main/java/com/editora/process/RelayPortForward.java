@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,9 +24,13 @@ public final class RelayPortForward implements PortForward {
         Process start() throws IOException;
     }
 
+    /** How long {@link #close} waits for the port to close. */
+    private static final Duration CLOSE_WAIT = Duration.ofSeconds(5);
+
     private final ServerSocket server;
     private final Set<AutoCloseable> open = ConcurrentHashMap.newKeySet();
     private volatile boolean closed;
+    private volatile Thread acceptor;
 
     private RelayPortForward(ServerSocket server) {
         this.server = server;
@@ -35,7 +40,7 @@ public final class RelayPortForward implements PortForward {
     public static RelayPortForward open(Relay relay) throws IOException {
         ServerSocket server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         RelayPortForward forward = new RelayPortForward(server);
-        Thread.ofVirtual().name("relay-forward-accept").start(() -> {
+        forward.acceptor = Thread.ofVirtual().name("relay-forward-accept").start(() -> {
             while (!forward.closed) {
                 try {
                     Socket socket = server.accept();
@@ -139,6 +144,7 @@ public final class RelayPortForward implements PortForward {
         } catch (IOException ignored) {
             // already closed
         }
+        awaitPortClosed();
         for (AutoCloseable c : open) {
             try {
                 c.close();
@@ -147,5 +153,22 @@ public final class RelayPortForward implements PortForward {
             }
         }
         open.clear();
+    }
+
+    /**
+     * Waits for the accept thread to leave {@code accept()}. Closing a server socket that a virtual thread is
+     * blocked on only stops the poll: the thread closes the port when it next runs, and until then the port
+     * still takes connections (Windows CI hit this).
+     */
+    private void awaitPortClosed() {
+        Thread thread = acceptor;
+        if (thread == null || thread == Thread.currentThread()) {
+            return;
+        }
+        try {
+            thread.join(CLOSE_WAIT);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
