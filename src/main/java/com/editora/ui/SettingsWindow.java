@@ -1726,7 +1726,8 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setMcpSupport(now);
-            apply();
+            apply(); // starts or stops the server
+            refreshMcpStatus();
         });
 
         aiMasterCheck = new CheckBox(tr("settings.ai.masterEnable"));
@@ -5735,7 +5736,53 @@ public class SettingsWindow {
                 mcpCheck,
                 tr("settings.mcp.hint"),
                 "mcp model context protocol agent server enable ai claude llm loopback token endpoint");
+        mcpStatusLabel = new Label();
+        mcpStatusLabel.setWrapText(true);
+        mcpCopyButton = new Button(tr("settings.mcp.copy"));
+        mcpCopyButton.setOnAction(e -> mcpActions.copyCommand().run());
+        mcpNewTokenButton = new Button(tr("settings.mcp.newToken"));
+        mcpNewTokenButton.setOnAction(e -> {
+            mcpActions.newToken().run();
+            refreshMcpStatus();
+        });
+        cardRow(
+                c,
+                Category.MCP,
+                settingRow(
+                        tr("settings.mcp.status"),
+                        tr("settings.mcp.status.desc"),
+                        new VBox(6, mcpStatusLabel, new HBox(8, mcpCopyButton, mcpNewTokenButton))),
+                "mcp status running port endpoint url copy command token new rotate claude mcp add");
+        refreshMcpStatus();
         return p;
+    }
+
+    /** The MCP page's link to the app-wide server: its endpoint ({@code ""} when not running), and two actions. */
+    record McpActions(java.util.function.Supplier<String> endpoint, Runnable copyCommand, Runnable newToken) {}
+
+    private McpActions mcpActions;
+    private Label mcpStatusLabel;
+    private Button mcpCopyButton;
+    private Button mcpNewTokenButton;
+
+    void setMcpActions(McpActions actions) {
+        this.mcpActions = actions;
+        refreshMcpStatus();
+    }
+
+    /** Running at which endpoint, or off; the buttons only while it runs. */
+    private void refreshMcpStatus() {
+        if (mcpStatusLabel == null) {
+            return;
+        }
+        String endpoint = mcpActions == null ? "" : mcpActions.endpoint().get();
+        boolean running = !endpoint.isEmpty();
+        mcpStatusLabel.setText(
+                running
+                        ? tr("settings.mcp.running", endpoint)
+                        : tr(config.getSettings().isMcpSupport() ? "status.mcp.notRunning" : "settings.mcp.off"));
+        mcpCopyButton.setDisable(!running);
+        mcpNewTokenButton.setDisable(!running);
     }
 
     /**
@@ -8476,6 +8523,7 @@ public class SettingsWindow {
             httpScriptTimeoutSpinner.getValueFactory().setValue(settings.getHttpScriptTimeoutSeconds());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
+            refreshMcpStatus();
             aiMasterCheck.setSelected(settings.isAiEnabled());
             updateAiSubEnablement(settings.isAiEnabled());
             agentCheck.setSelected(settings.isAgentSupport());
@@ -8943,6 +8991,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        refreshMcpStatus();
     }
 
     public void syncAgentCheck() {
