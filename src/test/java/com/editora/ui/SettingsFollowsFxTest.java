@@ -294,6 +294,7 @@ class SettingsFollowsFxTest {
         List<BiConsumer<Boolean, String>> probes = new ArrayList<>();
         List<Boolean> fresh = new ArrayList<>();
         FxTestSupport.runOnFx(() -> {
+            settings.setAiEnabled(true);
             rig.window.setAiConnectionProbe((isFresh, onResult) -> {
                 fresh.add(isFresh);
                 probes.add(onResult);
@@ -440,12 +441,13 @@ class SettingsFollowsFxTest {
             // The master switch gates the two features under it.
             CheckBox master = rig.control("aiMasterCheck");
             CheckBox actions = rig.control("aiCheck");
-            CheckBox agent = rig.control("agentCheck");
+            TextField agentCommand = rig.<java.util.Map<String, TextField>>control("agentCommandFields")
+                    .get("claude");
             master.setSelected(false);
             assertFalse(settings.isAiEnabled());
-            assertTrue(actions.isDisable() && agent.isDisable());
+            assertTrue(endpoint.isDisabled() && agentCommand.isDisabled());
             master.setSelected(true);
-            assertFalse(actions.isDisable() || agent.isDisable());
+            assertFalse(endpoint.isDisabled() || agentCommand.isDisabled());
             actions.setSelected(!actions.isSelected());
             assertEquals(actions.isSelected(), settings.isAiSupport());
         });

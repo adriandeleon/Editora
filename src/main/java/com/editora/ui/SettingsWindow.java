@@ -1730,7 +1730,6 @@ public class SettingsWindow {
         aiMasterCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAiEnabled(now);
             apply();
-            updateAiSubEnablement(now); // the AI Agent / AI Actions checkboxes are only meaningful while on
             scheduleAiStatus(); // the AI Actions status said "Connected" after AI was turned off
         });
 
@@ -1872,7 +1871,6 @@ public class SettingsWindow {
         debugCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSupport(now);
             apply();
-            updateDebugRowsEnabled();
             updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
         });
@@ -1905,7 +1903,6 @@ public class SettingsWindow {
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLspSupport(now);
             apply();
-            updateLspRowsEnabled();
             updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems row
             refreshLspStatus();
         });
@@ -3965,15 +3962,16 @@ public class SettingsWindow {
                 Category.WEB,
                 tr("settings.httpClient.nodePath"),
                 tr("settings.httpClient.nodePathHint"),
-                new HBox(6, httpNodeField, nodeBrowse),
+                dependent(httpScriptsCheck, new HBox(6, httpNodeField, nodeBrowse)),
                 "http client response handler node nodejs path executable javascript");
         controlRow(
                 http,
                 Category.WEB,
                 tr("settings.httpClient.scriptTimeout"),
                 tr("settings.httpClient.scriptTimeoutHint"),
-                httpScriptTimeoutSpinner,
+                dependent(httpScriptsCheck, new HBox(httpScriptTimeoutSpinner)),
                 "http client response handler script timeout seconds node javascript");
+        SettingsDependents.bind(httpCheck.selectedProperty(), httpScriptsCheck);
         return p;
     }
 
@@ -4467,6 +4465,7 @@ public class SettingsWindow {
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"));
+        dependsOn(p, mermaidCheck);
         Card c = card(p, null);
         mermaidStatusLabel = new Label(tr("settings.mermaid.checking"));
         mermaidStatusLabel.getStyleClass().add("settings-git-status");
@@ -4484,7 +4483,9 @@ public class SettingsWindow {
                 Category.MERMAID,
                 tr("settings.mermaid.mmdcPath"),
                 null,
-                new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField)),
+                dependent(
+                        mermaidCheck,
+                        new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField))),
                 "mermaid mmdc path executable render");
         maidPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
@@ -4492,7 +4493,9 @@ public class SettingsWindow {
                 Category.MERMAID,
                 tr("settings.mermaid.maidPath"),
                 null,
-                new HBox(6, maidPathField, browseButton(tr("settings.mermaid.maidPath"), maidPathField)),
+                dependent(
+                        mermaidCheck,
+                        new HBox(6, maidPathField, browseButton(tr("settings.mermaid.maidPath"), maidPathField))),
                 "mermaid maid path executable lint validate");
         controlRow(
                 c,
@@ -4507,6 +4510,7 @@ public class SettingsWindow {
     /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
     private VBox diagramsPage() {
         VBox p = page(tr("settings.cat.diagrams"));
+        dependsOn(p, diagramCheck);
         Card c = card(p, null);
         diagramStatusLabel = new Label(tr("settings.diagram.checking"));
         diagramStatusLabel.getStyleClass().add("settings-git-status");
@@ -4524,7 +4528,9 @@ public class SettingsWindow {
                 Category.DIAGRAMS,
                 tr("settings.diagram.dotPath"),
                 null,
-                new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField)),
+                dependent(
+                        diagramCheck,
+                        new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField))),
                 "diagram dot graphviz path executable render");
         plantumlPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
@@ -4532,7 +4538,12 @@ public class SettingsWindow {
                 Category.DIAGRAMS,
                 tr("settings.diagram.plantumlPath"),
                 null,
-                new HBox(6, plantumlPathField, browseButton(tr("settings.diagram.plantumlPath"), plantumlPathField)),
+                dependent(
+                        diagramCheck,
+                        new HBox(
+                                6,
+                                plantumlPathField,
+                                browseButton(tr("settings.diagram.plantumlPath"), plantumlPathField))),
                 "diagram plantuml puml path executable render");
         controlRow(
                 c,
@@ -4566,6 +4577,7 @@ public class SettingsWindow {
     /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
     private VBox typstPage() {
         VBox p = page(tr("settings.cat.typst"));
+        dependsOn(p, typstCheck);
         Card c = card(p, null);
         typstStatusLabel = new Label(tr("settings.typst.checking"));
         typstStatusLabel.getStyleClass().add("settings-git-status");
@@ -4583,7 +4595,9 @@ public class SettingsWindow {
                 Category.TYPST,
                 tr("settings.typst.path"),
                 null,
-                new HBox(6, typstPathField, browseButton(tr("settings.typst.path"), typstPathField)),
+                dependent(
+                        typstCheck,
+                        new HBox(6, typstPathField, browseButton(tr("settings.typst.path"), typstPathField))),
                 "typst path executable render document");
         controlRow(
                 c,
@@ -4636,7 +4650,9 @@ public class SettingsWindow {
                     Category.BUILD_TOOLS,
                     tr("settings.buildTools.commandOverride"),
                     null,
-                    new HBox(6, field, browseButton(tr("settings.buildTools.commandOverride"), field)),
+                    dependent(
+                            buildToolChecks.get(bt),
+                            new HBox(6, field, browseButton(tr("settings.buildTools.commandOverride"), field))),
                     kw + " path executable wrapper");
             controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
             if (bt == BuildTool.MAVEN) {
@@ -5843,16 +5859,11 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Disables the AI Agent / AI Actions enable checkboxes while the master AI switch is off — they're
-     *  only meaningful when it's on (mirrors {@code autocompleteCheck}'s sub-toggle disabling). */
-    private void updateAiSubEnablement(boolean masterOn) {
-        agentCheck.setDisable(!masterOn);
-        aiCheck.setDisable(!masterOn);
-    }
-
     private VBox agentPage() {
         VBox p = page(tr("settings.cat.agent"));
+        dependsOn(p, aiMasterCheck);
         Card mainCard = card(p, null);
+        SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
         checkRow(mainCard, Category.AGENT, agentCheck, null, "ai agent acp claude code chat enable assistant");
         cardRow(
                 mainCard,
@@ -5863,6 +5874,7 @@ public class SettingsWindow {
         // names the client, so a title would just repeat it in every locale.
         for (AgentClientUi a : agentClientUis()) {
             Card c = card(p, null);
+            SettingsDependents.bind(aiMasterCheck.selectedProperty(), c.box());
             Label status = new Label(tr("settings.agent.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
@@ -6092,7 +6104,9 @@ public class SettingsWindow {
 
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
+        dependsOn(p, aiMasterCheck);
         Card mainCard = card(p, null);
+        SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
         // A switch row like every other page's enable toggle; what it turns on stays in the (i) tooltip.
         HBox aiEnable = new HBox(8, infoIcon(tr("settings.ai.actionsTooltip")), switchFor(aiCheck));
         aiEnable.setAlignment(Pos.CENTER_RIGHT);
@@ -6363,6 +6377,17 @@ public class SettingsWindow {
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
+    /** The page's "Turn on “X” to change these settings." note, shown while {@code master} is off. */
+    private void dependsOn(VBox page, CheckBox master) {
+        page.getChildren().add(SettingsDependents.note(master.selectedProperty(), master.getText()));
+    }
+
+    /** {@code row} greyed while {@code master} is off (the {@link SettingsDependents} rule). */
+    private static <T extends Node> T dependent(CheckBox master, T row) {
+        SettingsDependents.bind(master.selectedProperty(), row);
+        return row;
+    }
+
     private VBox debugPage() {
         VBox p = page(tr("settings.cat.debug"));
         Label experimental = note(tr("settings.debug.experimental"));
@@ -6379,8 +6404,10 @@ public class SettingsWindow {
                 "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
         // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
         // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
+        dependsOn(p, debugCheck);
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             Card c = card(p, tr(dbg.sectionKey()));
+            SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
             CheckBox enable = debugEnableChecks.get(dbg.id());
             if (enable != null) {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
@@ -6505,8 +6532,10 @@ public class SettingsWindow {
         // which it took real effort to see which status line belonged to which enable box. The card is
         // deliberately untitled: the server's own enable checkbox already names it in every locale, and a
         // derived title ("Enable Java (jdtls)" minus "Enable ") would not survive translation.
+        dependsOn(p, lspCheck);
         for (LspServerUi srv : lspServerUis()) {
             Card c = card(p, null);
+            SettingsDependents.bind(lspCheck.selectedProperty(), c.box());
             cardRow(
                     c,
                     Category.LSP,
@@ -7265,28 +7294,6 @@ public class SettingsWindow {
                 status.setText(
                         tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
             });
-        }
-    }
-
-    /** The per-language debug enable checkboxes are only meaningful while the master debug toggle is on. */
-    private void updateDebugRowsEnabled() {
-        boolean on = debugCheck != null && debugCheck.isSelected();
-        for (CheckBox c : debugEnableChecks.values()) {
-            c.setDisable(!on);
-        }
-        for (TextField f : debugCommandFields.values()) {
-            f.setDisable(!on);
-        }
-        if (debugProgramConsoleCheck != null) {
-            debugProgramConsoleCheck.setDisable(!on);
-        }
-    }
-
-    /** The per-server enable checkboxes are only meaningful while the global LSP toggle is on. */
-    private void updateLspRowsEnabled() {
-        boolean on = lspCheck != null && lspCheck.isSelected();
-        for (CheckBox c : lspEnableChecks.values()) {
-            c.setDisable(!on);
         }
     }
 
@@ -8499,7 +8506,6 @@ public class SettingsWindow {
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
             aiMasterCheck.setSelected(settings.isAiEnabled());
-            updateAiSubEnablement(settings.isAiEnabled());
             agentCheck.setSelected(settings.isAgentSupport());
             agentClientCombo.setValue(com.editora.agent.AcpAgentRegistry.from(settings.getAgentClient())
                     .id());
@@ -8538,7 +8544,6 @@ public class SettingsWindow {
                     field.setText(dbg.getCommand().get());
                 }
             }
-            updateDebugRowsEnabled();
             refreshDebugStatus();
             lspCheck.setSelected(settings.isLspSupport());
             for (LspServerUi srv : lspServerUis()) {
@@ -8551,7 +8556,6 @@ public class SettingsWindow {
                     field.setText(srv.getCommand().get());
                 }
             }
-            updateLspRowsEnabled();
             refreshLspStatus();
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             expertCheck.setSelected(config.getWorkspaceState().isExpertMode());

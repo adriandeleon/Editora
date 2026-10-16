@@ -242,6 +242,7 @@ class SettingsPagesFxTest {
     @Test
     void anInstallButtonAsksForItsOwnToolAndDoesNothingUntilAnInstallerIsWired() throws Exception {
         FxTestSupport.runOnFx(() -> {
+            rig.settings.setLspSupport(true); // the language-server cards follow the LSP switch
             rig.show();
             Map<String, Button> buttons = rig.control("installButtons");
             List<String> languages = new ArrayList<>();
