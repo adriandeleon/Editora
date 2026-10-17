@@ -111,7 +111,12 @@ final class SnippetsEditor {
 
     /** The first trigger of {@code entry} with whitespace in it — one Tab can never expand — or null. Pure. */
     static String spacedTrigger(Entry entry) {
-        for (String t : entry.prefixes()) {
+        return spacedTrigger(entry.prefixes());
+    }
+
+    /** The first of {@code triggers} with whitespace in it, or null. Pure. */
+    static String spacedTrigger(List<String> triggers) {
+        for (String t : triggers) {
             if (t.chars().anyMatch(Character::isWhitespace)) {
                 return t;
             }
@@ -276,6 +281,16 @@ final class SnippetsEditor {
                     }
                 }
             }
+            String spaced = spacedTrigger(parseTriggers(prefix.getText()));
+            flag(prefix, spaced == null ? null : tr("settings.snippet.triggerSpace", spaced));
+            if (spaced != null) {
+                // Refused, not saved: Tab could never expand it. The typed text stays for the user to fix, and
+                // the form stays "edited", so the next commit tries again.
+                clash.setText(tr("settings.snippet.triggerSpace", spaced));
+                clash.setVisible(true);
+                clash.setManaged(true);
+                return;
+            }
             boolean descriptionEdited =
                     !description.getText().equals(loaded.get(0).get(2));
             Entry updated = cur.withFields(
@@ -331,6 +346,7 @@ final class SnippetsEditor {
             }
             loading = true;
             try {
+                flag(prefix, null); // a refused trigger belongs to the row being left
                 form.setDisable(s == null || fileProblem != null);
                 name.setText(s == null ? "" : s.name());
                 prefix.setText(s == null ? "" : s.prefixText());
@@ -480,6 +496,13 @@ final class SnippetsEditor {
             hooks.warn().accept(tr("settings.snippet.saveFailed", e.getMessage()));
             return false;
         }
+    }
+
+    /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */
+    private static void flag(TextField field, String why) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
+        field.setTooltip(why == null ? null : new javafx.scene.control.Tooltip(why));
+        field.setAccessibleHelp(why);
     }
 
     private static Label wrapped(String styleClass) {
