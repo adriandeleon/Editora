@@ -140,11 +140,23 @@ class JavaCodeChangesProbeFxTest {
         w.fx().dispose();
     }
 
+    /**
+     * The stopped thread's top frame. Right after a step or Restart Frame the session can still read SUSPENDED
+     * while the thread is already moving, and the adapter then answers with no frames: ask again until the
+     * thread has stopped once more.
+     */
     private static DapModels.StackFrameInfo topFrame(Window w) throws Exception {
-        await(w, "a stop", 300, () -> FxTestSupport.callOnFx(w.dap()::state) == DapManager.State.SUSPENDED);
-        CompletableFuture<List<DapModels.StackFrameInfo>> frames = new CompletableFuture<>();
-        FxTestSupport.runOnFx(() -> w.dap().stackTrace(w.dap().currentThreadId(), frames::complete));
-        return frames.get(20, TimeUnit.SECONDS).get(0);
+        for (int attempt = 0; attempt < 300; attempt++) {
+            await(w, "a stop", 300, () -> FxTestSupport.callOnFx(w.dap()::state) == DapManager.State.SUSPENDED);
+            CompletableFuture<List<DapModels.StackFrameInfo>> frames = new CompletableFuture<>();
+            FxTestSupport.runOnFx(() -> w.dap().stackTrace(w.dap().currentThreadId(), frames::complete));
+            List<DapModels.StackFrameInfo> list = frames.get(20, TimeUnit.SECONDS);
+            if (list != null && !list.isEmpty()) {
+                return list.get(0);
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("the stopped thread never had a frame; console:\n" + console(w));
     }
 
     @Test
