@@ -1426,6 +1426,12 @@ final class LspCoordinator {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
     }
 
+    /** Whether the user (or a trusted project) set this server's command, rather than leaving the default (Doctor). */
+    boolean serverCommandSet(String serverId) {
+        String raw = serverCommand(serverId);
+        return raw != null && !raw.isBlank();
+    }
+
     /**
      * Whether this window's project folder is trusted, which is what lets its committed
      * {@code .editora/settings.json} choose a program to run. Only consulted when the file overrides

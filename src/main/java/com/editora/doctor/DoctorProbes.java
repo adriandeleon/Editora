@@ -35,11 +35,19 @@ public final class DoctorProbes {
      * {@code Mermaid.detect}. The version line is captured only when the run actually succeeded.
      */
     public static Presence version(List<String> command) {
+        return version(command, "--version");
+    }
+
+    /**
+     * As {@link #version(List)}, asking with {@code versionArg} — for the tools that reject {@code --version} and
+     * print their version only for their own flag ({@code dot -V}, {@code plantuml -version}).
+     */
+    public static Presence version(List<String> command, String versionArg) {
         if (command == null || command.isEmpty()) {
             return Presence.ABSENT;
         }
         boolean wrapper = command.size() > 1;
-        ProcessRunner.Result r = runSafe(withArg(command, "--version"));
+        ProcessRunner.Result r = runSafe(withArg(command, versionArg));
         if (r != null && DoctorRules.presentFrom(r.exit(), wrapper)) {
             return new Presence(true, r.ok() ? DoctorRules.firstLine(r.out(), r.err()) : "");
         }

@@ -51,6 +51,34 @@ public final class DoctorText {
         return fileName(c).equals(fileName(detail.trim()));
     }
 
+    /**
+     * {@code text} with every path under {@code home} written {@code ~/…}, wherever it starts: a detail is often
+     * "version — path" ({@code pyright 1.1.411 — /home/me/.nvm/…}), which a prefix-only collapse leaves long. A
+     * home path counts only at the start or after a space or an opening bracket, and only when a separator
+     * follows it, so {@code /home/me2} is left alone.
+     */
+    public static String collapseHomeEverywhere(String text, String home) {
+        if (text == null || text.isEmpty() || home == null || home.length() < 2) {
+            return text == null ? "" : text;
+        }
+        String h = home.endsWith("/") || home.endsWith("\\") ? home.substring(0, home.length() - 1) : home;
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        while (i < text.length()) {
+            boolean boundary = i == 0 || " ([".indexOf(text.charAt(i - 1)) >= 0;
+            int end = i + h.length();
+            if (boundary
+                    && text.startsWith(h, i)
+                    && (end == text.length() || text.charAt(end) == '/' || text.charAt(end) == '\\')) {
+                out.append('~');
+                i = end;
+            } else {
+                out.append(text.charAt(i++));
+            }
+        }
+        return out.toString();
+    }
+
     private static String fileName(String path) {
         int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         return cut < 0 ? path : path.substring(cut + 1);

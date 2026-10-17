@@ -492,6 +492,11 @@ public final class StatusBar extends HBox {
         return truncated ? line + " …" : line;
     }
 
+    /** Gives the message-log popup an "Open Doctor" button running {@code action}. */
+    public void setOnOpenDoctor(Runnable action) {
+        messageLogPopup.setOnOpenDoctor(action);
+    }
+
     /** Injects the shared in-scene overlay host into the message-log popup. */
     public void setOverlayHost(OverlayHost overlayHost) {
         messageLogPopup.setOverlayHost(overlayHost);
