@@ -146,9 +146,10 @@ class ChildLocalePolicyTest {
     @Test
     void theOneParseStableChildOfTheDebuggerIsItsProbe() throws IOException {
         // DapManager starts both kinds. Its adapters and the javac of the user's file are counted above; what
-        // may still use the C locale is the local availability probe and, for a remote file, the host's two
-        // (whether debugpy imports there: an exit code; where its vscode-js-debug is: a path).
-        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 3);
+        // may still use the C locale is the local availability probe and, for a remote file, the host's three
+        // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
+        // path).
+        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 4);
         // The language server session has none at all.
         assertEquals(0, count(PARSE_STABLE).getOrDefault("lsp/LanguageServerSession.java", 0));
     }

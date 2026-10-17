@@ -1027,7 +1027,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         StyleSpans<Collection<String>> spans = null;
         if (("stderr".equals(category) || DapManager.COMMAND_CATEGORY.equals(category)) && !text.isEmpty()) {
             // The program's stderr in red; the command line Editora ran, muted (as a Run trace line).
-            String style = "stderr".equals(category) ? "run-stderr" : "run-trace";
+            String style = "stderr".equals(category) ? "run-stderr" : "run-command"; // as RunPanel.showCommandLine
             spans = new StyleSpansBuilder<Collection<String>>()
                     .add(List.of(style), text.length())
                     .create();

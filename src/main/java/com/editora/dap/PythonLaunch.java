@@ -137,13 +137,12 @@ public final class PythonLaunch {
     }
 
     /**
-     * The command line the program runs as, for the console's first line: what a terminal would run (the
-     * interpreter, its own arguments, the script or {@code -m module}, the program's arguments), each word
-     * quoted when it needs it. debugpy's own launcher, which sits in between, is left out.
+     * The command line the program runs as, for the console's first line — written as Run writes its own
+     * ({@link com.editora.run.RunService#commandLine}): the interpreter and its arguments, the script or {@code -m
+     * module}, the program's arguments. debugpy's own launcher, which sits in between, is left out.
      */
     public static String commandLine(DapManager.HostPython interpreter, Target target) {
         List<String> words = new ArrayList<>();
-        interpreter.env().forEach((k, v) -> words.add(k + "=" + v));
         words.add(interpreter.executable());
         words.addAll(interpreter.args());
         if (target.module() != null && !target.module().isBlank()) {
@@ -153,21 +152,6 @@ public final class PythonLaunch {
             words.add(target.program() == null ? "" : target.program());
         }
         words.addAll(target.args());
-        StringBuilder sb = new StringBuilder();
-        for (String w : words) {
-            if (!sb.isEmpty()) {
-                sb.append(' ');
-            }
-            sb.append(quote(w));
-        }
-        return sb.toString();
-    }
-
-    private static String quote(String word) {
-        if (!word.isEmpty()
-                && word.chars().noneMatch(c -> Character.isWhitespace(c) || "'\"\\$`;&|<>()*?!#".indexOf(c) >= 0)) {
-            return word;
-        }
-        return "'" + word.replace("'", "'\\''") + "'";
+        return com.editora.run.RunService.commandLine(words);
     }
 }

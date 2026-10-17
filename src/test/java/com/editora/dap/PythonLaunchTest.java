@@ -109,7 +109,7 @@ class PythonLaunchTest {
     @Test
     void theCommandLineIsWhatATerminalWouldRun() {
         assertEquals(
-                "K=v /venv/bin/python -X dev '/my app/run.py' a 'two words'",
+                "/venv/bin/python -X dev \"/my app/run.py\" a \"two words\"",
                 PythonLaunch.commandLine(
                         python("env", "K=v", "/venv/bin/python", "-X", "dev"),
                         PythonLaunch.Target.script("/my app/run.py", List.of("a", "two words"), "/my app")));
