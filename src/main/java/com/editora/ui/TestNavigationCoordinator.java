@@ -112,6 +112,12 @@ final class TestNavigationCoordinator {
             }
 
             @Override
+            public boolean canDebug(Path where) {
+                return host.debugCoordinator() != null
+                        && host.debugCoordinator().debugEffectiveFor("python", where);
+            }
+
+            @Override
             public void debugTests(
                     Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {
                 if (host.debugCoordinator() != null) {
