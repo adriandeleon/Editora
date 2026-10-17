@@ -363,6 +363,40 @@ Bouncy Castle Crypto APIs — org.bouncycastle:bcprov-jdk18on
     (https://www.bouncycastle.org). Licensed under the MIT License.
     https://www.bouncycastle.org/licence.html
 
+JediTerm core — org.jetbrains.jediterm:jediterm-core
+    The VT100/xterm terminal emulator behind the integrated terminal
+    (com.editora.terminal). Copyright JetBrains s.r.o. Dual-licensed under the
+    GNU Lesser General Public License v3 and the Apache License, Version 2.0;
+    Editora uses it under the Apache License, Version 2.0. Parts derive from
+    jVT220 by J.W. Janssen (Apache License, Version 2.0).
+    https://github.com/JetBrains/jediterm
+    https://www.apache.org/licenses/LICENSE-2.0
+
+pty4j — org.jetbrains.pty4j:pty4j
+    Starts the integrated terminal's shell on a pseudo-terminal (forkpty on
+    macOS and Linux, ConPTY or winpty on Windows). Copyright JetBrains s.r.o.
+    Licensed under the Eclipse Public License, version 1.0. Its jar carries
+    native helpers: winpty (Copyright Ryan Prichard, MIT License) and Windows
+    Terminal's conpty.dll and OpenConsole.exe (Copyright Microsoft
+    Corporation, MIT License).
+    https://github.com/JetBrains/pty4j
+    https://www.eclipse.org/legal/epl-v10.html
+
+Java Native Access (JNA) — net.java.dev.jna:jna, net.java.dev.jna:jna-platform
+    How pty4j reaches the operating system's terminal APIs. Copyright Timothy
+    Wall and the JNA contributors. Dual-licensed under the Apache License,
+    Version 2.0 and the GNU Lesser General Public License v2.1; Editora uses
+    it under the Apache License, Version 2.0.
+    https://github.com/java-native-access/jna
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Kotlin Standard Library — org.jetbrains.kotlin:kotlin-stdlib
+    Runtime library of JediTerm and pty4j, which are written in Kotlin.
+    Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+    Licensed under the Apache License, Version 2.0.
+    https://kotlinlang.org
+    https://www.apache.org/licenses/LICENSE-2.0
+
 Simple Icons (browser + file-type glyphs)
     The Chrome, Firefox, and Microsoft Edge glyphs in the HTML Live Preview
     browser picker (com.editora.ui.Icons), the Apache Maven feather glyph in the

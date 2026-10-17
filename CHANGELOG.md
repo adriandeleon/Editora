@@ -159,6 +159,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Groundwork for an integrated terminal** ([ADR 0014](docs/decisions/0014-integrated-terminal.md)): the
+  app now carries JediTerm core (the terminal emulator), pty4j (pseudo-terminals on macOS, Linux and Windows),
+  JNA and the Kotlin standard library, about 7.5 MB more in the installed app. Nothing uses them yet apart from
+  `editora --check-terminal`, which starts a shell on a pseudo-terminal and says whether it answered.
 - **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
   words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
   glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,

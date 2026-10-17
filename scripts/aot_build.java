@@ -314,7 +314,7 @@ public class aot_build {
                     // builder, 256 MB on a small one), so the trainer's heap layout would depend on which
                     // machine built the release. AotTrainerOptionsTest fails the build if this drifts.
                     "-Xmx2g", "-Xms64m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=30000",
-                    "--enable-native-access=javafx.graphics",
+                    "--enable-native-access=javafx.graphics,com.sun.jna",
                     // Mirror the packaged launcher's javaOptions (see pom.xml dist profile): lets the macOS
                     // "Open With" handler reach the internal com.sun.glass.ui API. Harmless on other OSes.
                     // (com.editora.MacOpenFiles degrades gracefully without it, but include it so the cache
