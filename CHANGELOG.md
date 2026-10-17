@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A failed connect says why: the host could not be reached, did not answer, its host key has changed (with
     the `ssh-keygen -R` line to remove the old entry), or the login was refused. Cancelling only says so in the
     status bar.
+- **Remote: `~/.ssh/config`.** The connect form offers the hosts your SSH config names, and for the host you
+  type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
+  in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
+  jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
+  ones. `Include` lines are followed. `ProxyCommand` is not supported.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store
@@ -243,6 +248,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Markdown page** split the pasted-image rows, had a scroller inside the page, and a blank gap.
 - **A broken plugin.json showed the parser's internals**; Browse plugins… hid Settings before the picker opened.
 - **Java debug-adapter detection ran on the UI thread.**
+
+- **Remote: an SSH config with a `Match` section no longer stops every connect.** Editora skips `Match`
+  sections (it cannot evaluate them) and reads the rest of the file; before, any `Match` made every connect
+  fail with "Currently not able to process Match sections".
 
 ### Changed
 
