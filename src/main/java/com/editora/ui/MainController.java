@@ -733,6 +733,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
+        statusBar.setOnOpenDoctor(this::showDoctor); // the message log's "Open Doctor" (review C4)
         statusBar.setOnHttpEnvironmentClicked(() -> httpClient.showEnvironmentMenu(
                 activeBuffer(), statusBar.httpEnvSegmentNode(), javafx.geometry.Side.TOP));
         this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath, this::windowProjectRoot);
@@ -6801,6 +6802,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public boolean pythonInterpreterElsewhere() {
                     return lspCoordinator.pythonInterpreterElsewhereForDoctor();
+                }
+
+                @Override
+                public boolean lspServerCommandSet(String serverId) {
+                    return lspCoordinator.serverCommandSet(serverId);
+                }
+
+                @Override
+                public void runCommand(String commandId) {
+                    registry.run(commandId);
+                }
+
+                @Override
+                public void reveal(java.nio.file.Path path) {
+                    revealInFileManager(path, java.nio.file.Files.isDirectory(path), true);
                 }
             });
 

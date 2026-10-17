@@ -16,6 +16,7 @@ class DoctorSummaryTest {
             case OK -> base.ok("");
             case WARN -> base.warn("", "tip");
             case MISSING -> base.missing("tip");
+            case OPTIONAL -> base.optional("tip");
             case DISABLED -> base.disabled();
             case CHECKING -> base;
         };
@@ -28,14 +29,17 @@ class DoctorSummaryTest {
                 with(DoctorStatus.OK),
                 with(DoctorStatus.WARN),
                 with(DoctorStatus.MISSING),
+                with(DoctorStatus.OPTIONAL),
+                with(DoctorStatus.OPTIONAL),
                 with(DoctorStatus.DISABLED),
                 with(DoctorStatus.CHECKING)));
         assertEquals(2, s.ok());
         assertEquals(1, s.warn());
         assertEquals(1, s.missing());
+        assertEquals(2, s.optional());
         assertEquals(1, s.disabled());
         assertEquals(1, s.checking());
-        assertEquals(2, s.issues());
+        assertEquals(2, s.issues(), "not-installed tools are not issues");
         assertTrue(s.pending());
     }
 

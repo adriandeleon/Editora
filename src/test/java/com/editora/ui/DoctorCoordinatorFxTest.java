@@ -131,14 +131,17 @@ class DoctorCoordinatorFxTest {
         DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
 
         List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
-        for (String disabledId : List.of("mmdc", "dot", "typst")) {
+        // A feature that is off is one row named for the feature, with a Turn on action (review A6/C5).
+        for (String disabledId : List.of("mermaid", "diagrams", "typst")) {
             DoctorService.CheckSpec spec = specs.stream()
                     .filter(s -> s.placeholder().id().equals(disabledId))
                     .findFirst()
                     .orElseThrow();
             assertEquals(DoctorStatus.DISABLED, spec.placeholder().status());
             assertNull(spec.probe(), disabledId + " must not spawn a probe while its feature is off");
+            assertFalse(spec.placeholder().enableKey().isEmpty(), disabledId + " offers Turn on");
         }
+        assertTrue(specs.stream().noneMatch(s -> s.placeholder().id().equals("mmdc")), "no tool rows while off");
         // Every DISABLED placeholder is terminal — no probe anywhere.
         assertTrue(specs.stream()
                 .filter(s -> s.placeholder().status() == DoctorStatus.DISABLED)
@@ -177,7 +180,7 @@ class DoctorCoordinatorFxTest {
     }
 
     @Test
-    void absentMermaidLinterIsOnlyAWarning() throws Exception {
+    void absentMermaidLinterIsOnlyNotInstalled() throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setMermaidSupport(true);
         FakeOps ops = new FakeOps();
@@ -186,7 +189,8 @@ class DoctorCoordinatorFxTest {
 
         List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
         DoctorCheck maid = spec(specs, "maid").probe().get(); // launches nothing: the path doesn't exist
-        assertEquals(DoctorStatus.WARN, maid.status());
+        // Diagrams render without it: a neutral fact, not a warning (review A2).
+        assertEquals(DoctorStatus.OPTIONAL, maid.status());
         assertEquals("doctor.tip.maidOptional", maid.tipKey());
     }
 

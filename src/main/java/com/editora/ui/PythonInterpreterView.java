@@ -157,13 +157,17 @@ final class PythonInterpreterView {
      * every distinct Python on PATH, and Browse…. Rows with the same executable are shown once.
      *
      * @param current what resolves now (shown first after Detect automatically)
-     * @param venvs environment folders found for the project
+     * @param venvs environment folders found for the project, in Editora's view of the files
+     * @param windows whether the machine the interpreter runs on is Windows ({@code Scripts\python.exe})
+     * @param toTarget a path in Editora's view → as that machine names it ({@link Path#toString} here; a remote
+     *     host or WSL is POSIX, also when Editora runs on Windows)
      * @param onPath name → absolute path of that name on PATH (empty when absent)
      */
     static List<Choice> choices(
             PythonInterpreter current,
             List<Path> venvs,
             boolean windows,
+            Function<Path, String> toTarget,
             Function<String, Optional<String>> onPath,
             Function<String, String> versionOf) {
         Map<String, Choice> rows = new LinkedHashMap<>();
@@ -181,8 +185,8 @@ final class PythonInterpreterView {
                             tr("python.interpreter.pick.current", reason(current))));
         }
         for (Path venv : venvs) {
-            String exe = PythonInterpreters.venvPython(venv, windows).toString();
-            rows.putIfAbsent(exe, new Choice(Kind.VENV, exe, labelFor(exe, versionOf), venv.toString()));
+            String exe = toTarget.apply(PythonInterpreters.venvPython(venv, windows));
+            rows.putIfAbsent(exe, new Choice(Kind.VENV, exe, labelFor(exe, versionOf), toTarget.apply(venv)));
         }
         for (String name : pathNames(windows)) {
             Optional<String> found = onPath.apply(name);
