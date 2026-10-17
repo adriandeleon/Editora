@@ -1892,11 +1892,7 @@ public class EditorBuffer implements TabContent {
                     debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
                     items.add(debugRequest);
                 }
-                for (CodeAction fix : httpVariableFixesAt(a, at.offset())) { // "Use environment dev" on a mark
-                    MenuItem item = new MenuItem(fix.title(), MenuIcons.codeAction());
-                    item.setOnAction(ev -> ((Runnable) fix.token()).run());
-                    items.add(item);
-                }
+                items.addAll(HttpVariableFixes.menuItems(httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
                 items.add(new SeparatorMenuItem());
             } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -3635,57 +3631,19 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
-    /**
-     * The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"),
-     * each action's token a {@link Runnable}; empty when there are none.
-     */
+    /** The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"). */
     public java.util.List<CodeAction> httpVariableFixesAt(CodeArea view, int offset) {
-        if (!httpVariableMarks.enabled()) {
-            return java.util.List.of();
-        }
-        var pos = view.offsetToPosition(
-                Math.max(0, Math.min(offset, view.getLength())), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-        java.util.List<MarkdownLint.Diagnostic> marks = httpVariableMarks.at(pos.getMajor(), pos.getMinor());
-        return marks.isEmpty()
-                ? java.util.List.of()
-                : httpGutter.hooks().variableFixes().apply(marks);
+        return HttpVariableFixes.at(httpVariableMarks, httpGutter.hooks(), view, offset);
     }
 
-    /**
-     * The line the squiggle tooltip adds under unresolved-variable marks that have a quick fix — "Right-click: Use
-     * environment dev" — so the fix is found from the mark itself; null for other marks.
-     */
-    private String httpVariableFixHint(java.util.List<MarkdownLint.Diagnostic> hits) {
-        if (!httpVariableMarks.enabled()) {
-            return null;
-        }
-        java.util.List<CodeAction> fixes = httpGutter.hooks().variableFixes().apply(hits);
-        if (fixes.isEmpty()) {
-            return null;
-        }
-        java.util.List<String> titles = new java.util.ArrayList<>(fixes.size());
-        for (CodeAction fix : fixes) {
-            titles.add(fix.title());
-        }
-        return tr("http.fix.hint", String.join(" · ", titles));
-    }
-
-    /**
-     * Offers the quick fixes for the unresolved-variable mark at the caret in the code-action popup (the editor's
-     * Code Actions chord); false when there is none to offer.
-     */
+    /** Offers the variable fixes at the caret in the code-action popup (Code Actions); false when there are none. */
     public boolean showHttpVariableFixes() {
         CodeArea view = getFocusedArea();
         java.util.List<CodeAction> fixes = httpVariableFixesAt(view, view.getCaretPosition());
-        if (fixes.isEmpty()) {
-            return false;
+        if (!fixes.isEmpty()) {
+            showCodeActions(fixes, HttpVariableFixes::apply);
         }
-        showCodeActions(fixes, chosen -> {
-            if (chosen != null && chosen.token() instanceof Runnable apply) {
-                apply.run();
-            }
-        });
-        return true;
+        return !fixes.isEmpty();
     }
 
     /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
@@ -3717,12 +3675,7 @@ public class EditorBuffer implements TabContent {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
     }
 
-    /**
-     * Shows each request's last result after its method/URL line, muted with the status coloured, and colours its ▶
-     * by the outcome (U11). Inlays, never text: not in the document, undo, a copy, a search or a save. A result whose
-     * line no longer reads {@link HttpLineResult#anchor()} is left out; one whose line is edited later goes at the next
-     * Run scan. Empty removes them all.
-     */
+    /** Each request's last result after its line, and its ▶ coloured by it ({@link HttpResultMarks}); empty: none. */
     public void setHttpResults(java.util.List<HttpLineResult> results) {
         if (!httpResults.isEmpty() || (results != null && !results.isEmpty())) {
             repaintHttpResults(httpResults.set(results, this::paragraphTextOrNull));
@@ -7205,7 +7158,7 @@ public class EditorBuffer implements TabContent {
         MarkdownLintHover.install(
                 a,
                 () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
-                this::httpVariableFixHint);
+                hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);
