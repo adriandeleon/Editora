@@ -66,6 +66,7 @@ class DoctorPaneLayoutFxTest {
         return FxTestSupport.callOnFx(() -> {
             DoctorPane pane = new DoctorPane(NO_ACTIONS);
             pane.setChecks(rows);
+            pane.toggleExpandedForTest("lsp"); // an all-OK section is folded to one line
             Stage stage = new Stage();
             stage.setScene(new Scene(pane, sceneWidth, 900));
             stage.show();
@@ -112,6 +113,7 @@ class DoctorPaneLayoutFxTest {
         Object[] found = FxTestSupport.callOnFx(() -> {
             DoctorPane pane = new DoctorPane(NO_ACTIONS);
             pane.setChecks(rows);
+            pane.toggleExpandedForTest("lsp");
             Stage stage = new Stage();
             stage.setScene(new Scene(pane, 1600, 900));
             stage.show();

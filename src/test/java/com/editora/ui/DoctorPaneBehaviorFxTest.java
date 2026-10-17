@@ -1,0 +1,260 @@
+package com.editora.ui;
+
+import java.util.List;
+
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
+
+import com.editora.doctor.DoctorCheck;
+import com.editora.doctor.DoctorStatus;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+
+import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * How the Doctor page behaves as results arrive (the Doctor review's C1, C3, A4, A5, C2): the keyboard focus
+ * stays on the control it was on, a new run keeps the last results, problems come first, sections that are all
+ * OK fold, the summary counts in words, and the copied report names every row.
+ */
+@Tag("fx")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class DoctorPaneBehaviorFxTest {
+
+    @BeforeAll
+    void setUp() throws Exception {
+        FxTestSupport.bootToolkit();
+    }
+
+    private static final DoctorPane.Actions NO_ACTIONS = new DoctorPane.Actions() {
+        @Override
+        public void refresh() {}
+
+        @Override
+        public void install(DoctorCheck check) {}
+
+        @Override
+        public void openSettings(String settingsKey) {}
+    };
+
+    private static DoctorCheck gitOk() {
+        return DoctorCheck.checking("git", "vcs", "Git", "git")
+                .withSettings("git")
+                .ok("git version 2.47.3");
+    }
+
+    private static DoctorCheck xmlMissing() {
+        return DoctorCheck.checking("lsp.xml", "lsp", "XML", "lemminx")
+                .withSettings("lsp")
+                .withInstall(DoctorCheck.Install.SERVER, "xml")
+                .missing("doctor.tip.missingInstallable", "lemminx");
+    }
+
+    private static DoctorCheck optional(String id, String label) {
+        return DoctorCheck.checking("lsp." + id, "lsp", label, id)
+                .withInstall(DoctorCheck.Install.SERVER, id)
+                .optional("doctor.tip.serverOptional");
+    }
+
+    private record Shown(DoctorPane pane, Stage stage) {}
+
+    private static Shown show(List<DoctorCheck> rows) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            DoctorPane pane = new DoctorPane(NO_ACTIONS);
+            pane.setChecks(rows);
+            Stage stage = new Stage();
+            stage.setScene(new Scene(pane, 1200, 900));
+            stage.show();
+            pane.applyCss();
+            pane.layout();
+            return new Shown(pane, stage);
+        });
+    }
+
+    private static VBox body(DoctorPane pane) {
+        return FxTestSupport.field(pane, "body");
+    }
+
+    private static Node row(DoctorPane pane, String id) {
+        for (Node n : body(pane).getChildren()) {
+            if (id.equals(n.getProperties().get("doctor.id"))) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    private static Button button(Node row, String role) {
+        return (Button) row.lookupAll(".doctor-action").stream()
+                .filter(n -> role.equals(n.getProperties().get("doctor.role")))
+                .findFirst()
+                .orElse(null);
+    }
+
+    @Test
+    void focusStaysOnTheSameControlWhenItsRowUpdatesOrMovesGroup() throws Exception {
+        Shown s = show(List.of(gitOk(), xmlMissing(), optional("lua", "Lua")));
+        try {
+            Node xml = FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.xml"));
+            assertNotNull(xml, "a problem is shown even though its section has OK rows folded");
+            FxTestSupport.runOnFx(() -> button(xml, "install").requestFocus());
+
+            // A result for another row, then for this one (in place), then this row leaving "Needs attention".
+            FxTestSupport.runOnFx(() -> s.pane().updateCheck(gitOk()));
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> s.pane().updateCheck(xmlMissing()));
+            FxTestSupport.drainFx();
+            Node focused = FxTestSupport.callOnFx(() -> s.stage().getScene().getFocusOwner());
+            assertEquals("install", focused.getProperties().get("doctor.role"));
+            assertSame(xml, FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.xml")), "the row node is reused");
+
+            // XML becomes the section's second not-installed tool, so its row folds away: the fold's Show link
+            // takes the focus rather than a button that is no longer on the page.
+            FxTestSupport.runOnFx(() -> s.pane().updateCheck(optional("xml", "XML")));
+            FxTestSupport.drainFx();
+            Node after = FxTestSupport.callOnFx(() -> s.stage().getScene().getFocusOwner());
+            assertTrue(isInside(after, s.pane()), "focus left the Doctor page: " + after);
+            assertEquals("fold:opt:lsp", after.getProperties().get("doctor.role"));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    @Test
+    void aNewRunKeepsTheLastResultsUntilTheirProbesReturn() throws Exception {
+        Shown s = show(List.of(gitOk(), xmlMissing()));
+        try {
+            FxTestSupport.runOnFx(() -> s.pane()
+                    .beginRun(List.of(
+                            DoctorCheck.checking("git", "vcs", "Git", "git"),
+                            DoctorCheck.checking("lsp.xml", "lsp", "XML", "lemminx"),
+                            DoctorCheck.checking("typst", "preview", "Typst CLI", "typst"))));
+            List<DoctorCheck> during = FxTestSupport.callOnFx(s.pane()::currentChecks);
+            assertEquals(DoctorStatus.OK, during.get(0).status(), "Git keeps its result while re-checked");
+            assertEquals("git version 2.47.3", during.get(0).detail());
+            assertEquals(DoctorStatus.CHECKING, during.get(2).status(), "a new row starts as Checking");
+            assertTrue(FxTestSupport.callOnFx(s.pane()::isRunning));
+            Node git = FxTestSupport.callOnFx(() -> {
+                s.pane().toggleExpandedForTest("vcs");
+                return row(s.pane(), "git");
+            });
+            assertTrue(git.getStyleClass().contains("doctor-stale"), "an old result is dimmed");
+            String summary = FxTestSupport.callOnFx(() -> summaryText(s.pane()));
+            assertTrue(summary.contains(tr("doctor.summary.checking", 0, 3)), summary);
+
+            FxTestSupport.runOnFx(() -> {
+                s.pane().updateCheck(gitOk());
+                s.pane().endRun();
+            });
+            FxTestSupport.drainFx();
+            assertFalse(FxTestSupport.callOnFx(s.pane()::isRunning));
+            assertFalse(FxTestSupport.callOnFx(
+                    () -> row(s.pane(), "git").getStyleClass().contains("doctor-stale")));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    @Test
+    void problemsComeFirstAllOkSectionsFoldAndNotInstalledToolsFoldTogether() throws Exception {
+        Shown s = show(List.of(gitOk(), xmlMissing(), optional("lua", "Lua"), optional("sql", "SQL")));
+        try {
+            List<String> texts = FxTestSupport.callOnFx(() -> body(s.pane()).getChildren().stream()
+                    .map(DoctorPaneBehaviorFxTest::firstText)
+                    .toList());
+            assertEquals(tr("doctor.section.attention"), texts.get(0), texts.toString());
+            assertNotNull(FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.xml")));
+            assertEquals(null, FxTestSupport.callOnFx(() -> row(s.pane(), "git")), "an all-OK section is folded");
+            assertEquals(null, FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.lua")), "two not-installed rows fold");
+            assertTrue(texts.stream().anyMatch(t -> t.equals(tr("doctor.status.optional"))), texts.toString());
+
+            FxTestSupport.runOnFx(() -> {
+                s.pane().toggleExpandedForTest("vcs");
+                s.pane().toggleExpandedForTest("opt:lsp");
+            });
+            assertNotNull(FxTestSupport.callOnFx(() -> row(s.pane(), "git")));
+            assertNotNull(FxTestSupport.callOnFx(() -> row(s.pane(), "lsp.lua")));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    @Test
+    void theSummaryCountsInWordsAndTheReportNamesEveryRow() throws Exception {
+        Shown s = show(List.of(gitOk(), xmlMissing(), optional("lua", "Lua")));
+        try {
+            String summary = FxTestSupport.callOnFx(() -> summaryText(s.pane()));
+            assertTrue(summary.contains(tr("doctor.summary.problems", 1)), summary);
+            assertFalse(summary.contains("problems"), "one problem, not \"1 problems\": " + summary);
+            assertTrue(summary.contains(tr("doctor.summary.optional", 1)), summary);
+
+            String report = FxTestSupport.callOnFx(s.pane()::reportText);
+            assertTrue(report.startsWith("# " + tr("doctor.title")), report);
+            assertTrue(report.contains("[" + tr("doctor.status.ok") + "] Git (git): git version 2.47.3"), report);
+            assertTrue(report.contains("[" + tr("doctor.status.missing") + "] XML (lemminx)"), report);
+            assertTrue(report.contains(tr("doctor.tip.missingInstallable", "lemminx")), report);
+            assertTrue(report.contains("[" + tr("doctor.status.optional") + "] Lua"), report);
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    @Test
+    void aRemoteProjectIsNamedInTheHeader() throws Exception {
+        Shown s = show(List.of(gitOk()));
+        try {
+            FxTestSupport.runOnFx(() -> s.pane().setMachine("ssh://build-box"));
+            Label note = FxTestSupport.callOnFx(() -> (Label) s.pane().lookup(".doctor-remote-note"));
+            assertTrue(FxTestSupport.callOnFx(note::isVisible));
+            assertEquals(tr("doctor.remoteNote", "ssh://build-box"), FxTestSupport.callOnFx(note::getText));
+            FxTestSupport.runOnFx(() -> s.pane().setMachine(null));
+            assertFalse(FxTestSupport.callOnFx(note::isVisible));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    private static String summaryText(DoctorPane pane) {
+        javafx.scene.layout.HBox summary = FxTestSupport.field(pane, "summary");
+        StringBuilder sb = new StringBuilder();
+        for (Node n : summary.getChildren()) {
+            sb.append(((javafx.scene.control.Labeled) n).getText()).append(" | ");
+        }
+        return sb.toString();
+    }
+
+    private static String firstText(Node n) {
+        if (n instanceof javafx.scene.control.Labeled l) {
+            return l.getText();
+        }
+        if (n instanceof javafx.scene.Parent p) {
+            for (Node ch : p.getChildrenUnmodifiable()) {
+                String t = firstText(ch);
+                if (t != null) {
+                    return t;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isInside(Node n, Node root) {
+        for (Node p = n; p != null; p = p.getParent()) {
+            if (p == root) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
