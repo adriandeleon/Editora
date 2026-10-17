@@ -430,6 +430,9 @@ public class SettingsWindow {
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     private CheckBox debugProgramConsoleCheck;
+    private CheckBox debugStepFiltersCheck;
+    private CheckBox debugShowStaticsCheck;
+    private TextField debugExceptionTypesField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1882,6 +1885,22 @@ public class SettingsWindow {
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
         debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugProgramConsole(now);
+            apply();
+        });
+        debugStepFiltersCheck = new CheckBox(tr("settings.debug.stepFilters"));
+        debugStepFiltersCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugStepFilters(now);
+            apply();
+        });
+        debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
+        debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugShowStatics(now);
+            apply();
+        });
+        debugExceptionTypesField = new TextField();
+        debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
+        commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
+            config.getSettings().setDebugExceptionTypes(now);
             apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
@@ -6554,6 +6573,21 @@ public class SettingsWindow {
                         debugProgramConsoleCheck,
                         tr("settings.debug.programConsole.hint"),
                         "debug java console input stdin standard input program terminal type");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugStepFiltersCheck,
+                        tr("settings.debug.stepFilters.hint"),
+                        "debug java step into filter skip jdk library synthetic");
+                checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
+                debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.exceptionTypes"),
+                        tr("settings.debug.exceptionTypes.hint"),
+                        debugExceptionTypesField,
+                        "debug java exception breakpoint class type filter caught uncaught");
             }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
@@ -7441,6 +7475,9 @@ public class SettingsWindow {
         }
         if (debugProgramConsoleCheck != null) {
             debugProgramConsoleCheck.setDisable(!on);
+            debugStepFiltersCheck.setDisable(!on);
+            debugShowStaticsCheck.setDisable(!on);
+            debugExceptionTypesField.setDisable(!on);
         }
     }
 
@@ -8735,6 +8772,9 @@ public class SettingsWindow {
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
+            debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
+            debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
+            debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

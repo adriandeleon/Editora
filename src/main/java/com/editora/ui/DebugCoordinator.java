@@ -473,6 +473,10 @@ final class DebugCoordinator {
                 s.isJsDebugEnabled(),
                 s.getJsDebugPath());
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
+                s.isDebugStepFilters(),
+                s.isDebugShowStatics(),
+                com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes())));
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle

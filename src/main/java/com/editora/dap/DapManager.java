@@ -1312,8 +1312,30 @@ public final class DapManager implements DapClient.Host {
         return pkg.isEmpty() ? cls : pkg + "." + cls;
     }
 
+    /** What java-debug is told before each Java session (step filters, statics, exception types). */
+    private JavaDebugSettings javaDebugSettings = JavaDebugSettings.defaults();
+
+    /** Sets the java-debug settings the next Java session starts with (FX thread). */
+    public void setJavaDebugSettings(JavaDebugSettings settings) {
+        this.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
+    }
+
     private void startDebugSessionAndConnect(
             Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
+        // failure (an older java-debug) is no reason not to debug, on its defaults as before.
+        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaDebugSettings.toJson()), (r, e) -> {
+            if (e != null) {
+                LOG.log(Level.FINE, "java-debug settings were not applied", e);
+            }
+            startDebugSession(file, args, attach, epoch);
+        });
+    }
+
+    private void startDebugSession(Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -2277,25 +2299,23 @@ public final class DapManager implements DapClient.Host {
                 }));
     }
 
-    /** The file's existing breakpoints plus a temporary plain one at {@code line} (no duplicate when a
-     *  breakpoint already sits there). Pure — tested. */
+    /**
+     * The file's existing breakpoints plus a temporary plain one at {@code line}. A breakpoint already on that
+     * line is made plain for the trip: left as it was, a condition that was false or a logpoint (which never
+     * suspends) let the program run past the cursor. {@link #clearTempBreakpoint} restores it. Pure — tested.
+     */
     static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
             if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                lines.addAll(fb.breakpoints());
+                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
+                    if (lb.line() != line) {
+                        lines.add(lb);
+                    }
+                }
             }
         }
-        boolean present = false;
-        for (DapModels.LineBreakpoint lb : lines) {
-            if (lb.line() == line) {
-                present = true;
-                break;
-            }
-        }
-        if (!present) {
-            lines.add(new DapModels.LineBreakpoint(line, null, null));
-        }
+        lines.add(new DapModels.LineBreakpoint(line, null, null));
         return new DapModels.FileBreakpoints(file, lines);
     }
 

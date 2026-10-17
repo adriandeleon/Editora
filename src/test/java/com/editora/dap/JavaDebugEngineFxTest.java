@@ -231,6 +231,42 @@ class JavaDebugEngineFxTest {
         awaitEvent("RUNNING");
     }
 
+    // --- B4 / B9: java-debug is told the step filters and statics before each session ---------------------
+
+    @Test
+    void javaDebugGetsItsSettingsBeforeTheSessionStarts() throws Exception {
+        launch();
+        List<String> names =
+                commands.stream().map(ExecuteCommandParams::getCommand).toList();
+        int settings = names.indexOf(JavaDebugSettings.COMMAND);
+        assertTrue(settings >= 0, "the settings were sent: " + names);
+        assertTrue(settings < names.indexOf("vscode.java.startDebugSession"), names.toString());
+        String json = String.valueOf(commands.get(settings).getArguments().get(0));
+        assertTrue(json.contains("\"showStaticVariables\":true"), json);
+        assertTrue(json.contains("\"java.*\""), json);
+    }
+
+    @Test
+    void stepFiltersAndStaticsFollowTheSettings() throws Exception {
+        onFx(() -> dap.setJavaDebugSettings(new JavaDebugSettings(false, false, List.of())));
+        launch();
+        String json = commands.stream()
+                .filter(c -> c.getCommand().equals(JavaDebugSettings.COMMAND))
+                .map(c -> String.valueOf(c.getArguments().get(0)))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(json.contains("\"showStaticVariables\":false"), json);
+        assertFalse(json.contains("java.*"), json);
+    }
+
+    @Test
+    void aJdtlsThatRefusesTheSettingsStillDebugs() throws Exception {
+        replies.put(JavaDebugSettings.COMMAND, p -> {
+            throw new IllegalStateException("unknown command");
+        });
+        launch(); // reaches Running all the same
+    }
+
     // --- B2: the program java-debug launched ends with a lost adapter ---------------------------------
 
     @Test
