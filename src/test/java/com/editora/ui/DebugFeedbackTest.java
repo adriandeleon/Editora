@@ -101,4 +101,14 @@ class DebugFeedbackTest {
         assertEquals(DebugFeedback.MAX_EXCEPTION_TEXT, capped.length());
         assertTrue(capped.endsWith("…"));
     }
+
+    @Test
+    void aBreakpointStillWaitingOnceItsClassLoadedIsSaidToHaveNoCodeToStopOn() {
+        // B17: java-debug left a field initializer's breakpoint pending for good, and the hover blamed loading
+        var verified = new com.editora.dap.DapModels.BreakpointStatus(4, true, false, "", 4);
+        var waiting = new com.editora.dap.DapModels.BreakpointStatus(9, false, false, "", -1);
+        assertEquals("debug.breakpoint.pending", DebugFeedback.pendingKey(java.util.List.of(waiting)));
+        assertEquals("debug.breakpoint.pending", DebugFeedback.pendingKey(java.util.List.of()));
+        assertEquals("debug.breakpoint.unplaceable", DebugFeedback.pendingKey(java.util.List.of(verified, waiting)));
+    }
 }

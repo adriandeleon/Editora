@@ -46,6 +46,19 @@ final class DebugFeedback {
     }
 
     /**
+     * The hover-text key of a breakpoint the adapter has not bound, given what it said about the file's others.
+     * java-debug binds the breakpoints of a class when it loads; once one in the file is bound, the class has
+     * loaded, and one still waiting is most likely on a line it cannot stop on — a field initializer, a class
+     * declared on one line — rather than waiting for its class (B17). It could still be in a nested class that
+     * has not run, which the text says too.
+     */
+    static String pendingKey(java.util.Collection<DapModels.BreakpointStatus> fileStatuses) {
+        boolean classLoaded =
+                fileStatuses != null && fileStatuses.stream().anyMatch(DapModels.BreakpointStatus::verified);
+        return classLoaded ? "debug.breakpoint.unplaceable" : "debug.breakpoint.pending";
+    }
+
+    /**
      * Whether an adapter notice is about {@code expression} (a breakpoint's condition or log message).
      * java-debug reports a failed evaluation as {@code Breakpoint condition '<expr>' error: …} /
      * {@code [Logpoint] Log message '<expr>' error: …} with no breakpoint id, so the quoted expression is the

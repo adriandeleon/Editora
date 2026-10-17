@@ -597,6 +597,7 @@ final class DebugCoordinator {
         Map<Integer, DapModels.BreakpointStatus> known = breakpointStatus.getOrDefault(file, Map.of());
         Map<Integer, EvaluationFailure> failures = evaluationFailures.get(file);
         Map<Integer, BreakpointManager.Live> live = new java.util.HashMap<>();
+        String pending = tr(DebugFeedback.pendingKey(known.values()));
         for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
             EvaluationFailure failure = failures == null ? null : failures.get(bp.line());
             if (failure != null
@@ -610,7 +611,7 @@ final class DebugCoordinator {
                     DebugFeedback.live(
                             known.get(bp.line()),
                             failure == null ? null : failure.message(),
-                            tr("debug.breakpoint.pending"),
+                            pending,
                             tr("debug.breakpoint.rejected")));
         }
         buffer.getBreakpointManager().setLive(live);
@@ -2103,14 +2104,23 @@ final class DebugCoordinator {
      * file is only a script line (adl, 2026-10-16) — else says so. Removing one is always allowed.
      */
     private boolean breakpointAllowed(EditorBuffer b, int line) {
-        if (!b.isHttpFile() || b.getBreakpointManager().isBreakpoint(line)) {
+        if (b.getBreakpointManager().isBreakpoint(line)) {
             return true;
         }
-        if (com.editora.http.HttpScriptLines.isScriptLine(b.getContent(), line)) {
-            return true;
+        if (b.isHttpFile()) {
+            if (com.editora.http.HttpScriptLines.isScriptLine(b.getContent(), line)) {
+                return true;
+            }
+            host.setStatus(tr("status.debug.httpScriptLinesOnly"));
+            return false;
         }
-        host.setStatus(tr("status.debug.httpScriptLinesOnly"));
-        return false;
+        // B8: a blank or comment-only line has no code to stop on. java-debug even called such a breakpoint
+        // verified, and it never stopped.
+        if (com.editora.editor.CodeLessLines.isCodeLess(b.getContent(), line, b.getLanguage())) {
+            host.setStatus(tr("status.debug.noCodeOnLine"));
+            return false;
+        }
+        return true;
     }
 
     /**
