@@ -9,8 +9,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
-import javafx.scene.control.ComboBox;
-
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.i18n.Messages;
@@ -119,8 +117,7 @@ class HttpVariableHintsFxTest {
         await(() -> !b.httpVariableDiagnostics().isEmpty());
         assertEquals(List.of("{{host}}", "{{token}}"), marked(b), "no environment chosen yet");
 
-        ComboBox<String> env = coordinator.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "dev"));
         await(() -> b.httpVariableDiagnostics().size() == 1);
         assertEquals(List.of("{{token}}"), marked(b), "the env file of the parent folder applies");
 
@@ -128,7 +125,7 @@ class HttpVariableHintsFxTest {
         FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b)); // the window's focus pass does this
         await(() -> b.httpVariableDiagnostics().isEmpty());
 
-        FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "prod"));
         await(() -> b.httpVariableDiagnostics().size() == 2);
     }
 

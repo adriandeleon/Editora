@@ -23,8 +23,7 @@ final class HttpPanelLayout {
 
     /**
      * How the header row is laid out: the status's width, whether the timing and size beside it show, the History
-     * picker's width, and on how many rows (1; 2 with History and Environment under the status; 3 with Environment
-     * on a row of its own).
+     * picker's width, and on how many rows (1, or 2 with History under the status).
      */
     record HeaderFit(double status, boolean meta, double history, int rows) {}
 
@@ -35,31 +34,27 @@ final class HttpPanelLayout {
 
     /**
      * Fits the header row — Run ({@code run} wide), the status ({@code status}; it may be cut to {@code statusMin}
-     * while a request runs), the timing and size ({@code meta}, 0 when none), the History picker and the Environment
-     * picker ({@code env}, 0 when absent) — into {@code room}. What gives way, in order: History narrows to its least,
-     * the timing and size hide (the status's tooltip has them), a running status is cut, and then History and
-     * Environment move to a row of their own. The status of a response is never cut.
+     * while a request runs), the timing and size ({@code meta}, 0 when none) and the History picker — into {@code
+     * room}. What gives way, in order: History narrows to its least, the timing and size hide (the status's tooltip
+     * has them), a running status is cut, and then History moves to a row of its own. The status of a response is
+     * never cut.
      */
-    static HeaderFit header(double room, double run, double status, double statusMin, double meta, double env) {
+    static HeaderFit header(double room, double run, double status, double statusMin, double meta) {
         double want = preferredHistory(room);
-        double envPart = env > 0 ? GAP + env : 0;
-        double side = GAP + HISTORY_MIN_WIDTH + envPart; // History at its least, then Environment
+        double side = GAP + HISTORY_MIN_WIDTH; // History at its least
         double left = run + GAP + status;
         if (meta > 0 && left + GAP + meta + side <= room) {
-            return new HeaderFit(status, true, Math.min(want, room - left - GAP - meta - GAP - envPart), 1);
+            return new HeaderFit(status, true, Math.min(want, room - left - GAP - meta - GAP), 1);
         }
         if (left + side <= room) {
-            return new HeaderFit(status, false, Math.min(want, room - left - GAP - envPart), 1);
+            return new HeaderFit(status, false, Math.min(want, room - left - GAP), 1);
         }
         if (run + GAP + statusMin + side <= room) {
             return new HeaderFit(room - run - GAP - side, false, HISTORY_MIN_WIDTH, 1);
         }
         double s = Math.max(0, Math.min(status, room - run - GAP));
         boolean m = meta > 0 && s >= status && run + GAP + s + GAP + meta <= room;
-        if (HISTORY_MIN_WIDTH + envPart <= room) {
-            return new HeaderFit(s, m, Math.max(HISTORY_MIN_WIDTH, Math.min(want, room - envPart)), 2);
-        }
-        return new HeaderFit(s, m, Math.max(0, Math.min(want, room)), 3);
+        return new HeaderFit(s, m, Math.max(Math.min(HISTORY_MIN_WIDTH, room), Math.min(want, room)), 2);
     }
 
     /** How much of the tab strip shows: everything, the actions folded into the "⋯" menu, or tabs as counts too. */

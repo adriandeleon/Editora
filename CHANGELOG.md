@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Export Configuration never includes a password or token stored in the Settings Sync repository URL**, and
+  the Sync page offers to remove one stored there before the URL check existed.
 - **Switching the AI provider no longer sends one provider's API key to another provider's server.** Anthropic
   and the OpenAI-compatible provider shared one endpoint and model, so after a switch to Anthropic the Anthropic
   key went to the OpenAI-compatible server set up before (and the other way round), within seconds and again on
@@ -22,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
+  state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it
+  for the runtime's own version banner and, for Java, the JDK's folder.
+  - It asks the very executable the run starts, in the run's folder and environment — so a run configuration's
+    JDK, a virtualenv's `python`, a pyenv `.python-version` and a remote host's own runtime are what it reports.
+  - The program doesn't wait for the answer: the chip fills in a moment after the launch. It stays after the
+    program exits and is replaced by the next run. A runtime it can't ask (a plain `sh`, a compiled binary) and
+    an attached debug session show no chip.
 - **Settings search ranks its results.** A hit in a setting's title beats one in its description, a whole word
   beats part of a word, and the page with the best row opens; matching rows are tinted. Synonyms find settings
   known by another name (zoom, line endings, encoding, hotkey, colour scheme, soft wrap, gutter), and the search
@@ -69,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A failed connect says why: the host could not be reached, did not answer, its host key has changed (with
     the `ssh-keygen -R` line to remove the old entry), or the login was refused. Cancelling only says so in the
     status bar.
+- **Remote: `~/.ssh/config`.** The connect form offers the hosts your SSH config names, and for the host you
+  type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
+  in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
+  jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
+  ones. `Include` lines are followed, globs too (`Include conf.d/*`, on Windows as well). `ProxyCommand` is not
+  supported.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store
@@ -94,9 +110,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requirements files.
 - **"Turn on Python code intelligence?"** — a one-time offer when the first Python file opens while language
   servers are off.
+- **Java debugging: hot code replace.** Saving a `.java` file during a Java debug session rebuilds it with the
+  Java language server and loads the new code into the running program. The Debug console says which classes
+  changed, or why they could not be (adding a method or field still needs a restart). Settings → Debugging →
+  "Apply code changes to a running Java program": automatically (default), on command only, or off; and
+  **Debug: Apply Code Changes**.
+- **Java debugging: Restart Frame** (call-stack right-click menu and a command) and **Smart Step Into…** (pick
+  which call on the line to step into).
+- **Debug: Breakpoints…** lists every breakpoint: Enter jumps to it, Alt+E enables or disables it, Alt+D removes it,
+  Alt+M mutes them all. Also **Mute Breakpoints**, **Enable/Disable Breakpoint** at the caret, and a right-click
+  menu on a breakpoint glyph (Edit…, Enable/Disable, Remove, Breakpoints…).
+- **Exception breakpoints: Caught and Uncaught** are two toggles, checked in the Run menu and shown in the Debug
+  window, kept per project. Settings → Debugging can limit them to some exception classes.
+- **Java step filters and static fields.** Step Into skips JDK classes and synthetic methods, and a class's static
+  fields show among the variables; both are on by default and can be turned off in Settings → Debugging.
+- **Show Value at Caret** (keyboard), **Copy Value**, **Copy Name** and **Add to Watches** (filled in from the
+  selected variable) in the Variables tree; Up/Down history in the evaluate field.
+- **Debugger keys in every keymap.** CUA and Sublime get VS Code's F-keys (F5, Shift+F5, Ctrl+Shift+F5, F6, F9,
+  F10, F11 = Step Into while paused and Full Screen otherwise, Shift+F11); IntelliJ, VS Code and Emacs gain the
+  missing ones. The Run menu lists every debugger action, and the editor's right-click menu has Toggle/Edit
+  Breakpoint, and while paused Run to Cursor, Show Value and Add to Watches.
+- **JDK and library frames show their source** (read-only) when you step into them or click them.
+
+- **HTTP Client: Run All lists every request.** After Run All the response view used to show one response and a
+  line like "Run All: 3 of 10 failed". Now a results list sits above the tabs: a title ("Run All · 3 of 10 failed ·
+  4.1 s"), then one row per request in run order with its status, name, method and path, time, and tests (`✗ 2/3`
+  in red when one failed). The first failure is selected and shown; selecting another row shows that response in
+  the tabs. **Only failures** hides the rest, the chevron collapses the list, and the list scrolls on its own so
+  the tabs keep their room. Enter or a double-click goes to the request in the editor; right-click a row to run it
+  again or copy it as cURL. A cancelled Run All lists the requests that finished. The list stays until the next run
+  or Clear.
+
+- **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
+  how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
+  status is in the outcome's colour, failed tests are red, and the request's ▶ takes the colour too (amber for a
+  4xx, red for a 5xx, a failure or failed tests).
+  - Click the result to show that response in the response view; hover it to see when it ran.
+  - The results come from the response history, so they are back when the file is reopened, and Clear removes them.
+    A request whose line you edit loses its result.
+  - The text is not part of the file: it is never copied, searched, saved or undone.
+  - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
+    Request Lines`.
 
 ### Changed
 
+- **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
+  words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
+  glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,
+  colormap, grayscale), the Java toolchain (jlink, jpackage, Temurin), language servers, web, devops and AI names,
+  -ed and -ing forms of the words it already had (deserialized, symlinking, canonicalized), and British spellings
+  (tokenised, rasterising). It no longer lists "nat", "elt", "os", "io" or "gan", which hid typos of "not",
+  "let", "so", "to" and "can". The file is sorted by section and explains what not to add; plurals it listed
+  twice are gone, since spell check accepts the plural of any listed word.
+- **Debug variables use the editor's syntax colours.** Names, values and types in the Debug tool window's
+  variables and watches are coloured like code in the current editor theme — strings, numbers, `true`/`null`/`None`
+  and type names — including each element of a list or dict value, instead of the app's status colours.
+- **Settings: every external tool row looks and reads the same** — language servers, debug adapters, Mermaid,
+  Diagrams, Typst, build tools, Node.js and AI agents show "tool: found (path)" or "tool: not found", then
+  Install… or a link. Diagrams links to its install help, and Build Tools says whether the command it would run
+  exists.
+- **The theme pickers group themes under Light and Dark headings**, with your own themes in a group of their own.
+- **Keyboard chips read on every app theme**, whatever the editor theme: the shortcut colour follows the app theme
+  everywhere (palette, Welcome, menus, Keymaps), with at least 4.5:1 contrast on all bundled themes.
+- **Macros:** the step reorder buttons are labelled Move Up / Move Down and grey out at either end.
 - **Python Run:**
   - The script runs in its own folder with the project root and `src/` on `PYTHONPATH`, so package imports work.
   - A saved run configuration writes that folder into Working directory.
@@ -132,9 +208,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Pipfile`, `poetry.lock`, `uv.lock` and `pdm.lock` open as TOML; `Pipfile.lock` and `.ipynb` as JSON.
   - `uv run`, `pipx run`, `pypy` and free-threaded `python3.14t` shebangs are Python.
   - Toggle Comment in an INI file uses the comment character the file already uses.
+- **Java Debug builds the project first.** A Maven or Gradle debug launch asks the Java language server to build
+  the project; compile errors stop the launch and are listed in the Debug console as links. Before, Debug ran
+  whatever was in `target/classes` (ClassNotFoundException on a new project, old code after an edit).
+- **Debug ▶ and Debug on a file use the class's run configuration** (arguments, VM options, environment, working
+  directory, JDK), as Run ▶ does, and every unsaved Java file of the project is saved before a Java debug launch.
+- **The Debug window never takes the keyboard.** Starting a session or stopping at a breakpoint leaves focus in the
+  editor; a stop reopens a closed Debug window. In the Debug window, Stop and Restart need Shift (Shift+K, Shift+R).
+- **The stopped line is easy to see:** amber with a gutter arrow, never hidden under the sticky header; the line an
+  exception was thrown from is red, and the exception is the top row of Variables.
+- **Inline values** stop at the stopped line, and a lambda parameter no longer shows an outer variable's value.
+  Hover waits for the mouse to rest and skips comments and strings.
+- **Breakpoint kinds differ by shape** (a diamond for a logpoint, "=" marks for a condition), and their hover says
+  the condition, log message and hit count. A breakpoint on a blank or comment-only line is refused.
+- **Debug window:** opens taller, Variables is the widest column, JVM housekeeping threads are hidden and the
+  stopped thread is marked, lambda frames read `<lambda>`, frames without source are muted, stack-trace links
+  open on one click, "Exited with code N" stays after the program ends, and setup messages say which piece is
+  missing (LSP off, Java server off, jdtls or java-debug missing), with an Install button on the Java card.
+- **Debug Test and Debug via Build** use a free JDWP port for Maven test JVMs and Spring Boot, attach every forked
+  JVM in turn, and Stop ends the test or build run too.
+- **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
+- **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
+  workspace schema 19 keeps the exception toggles per project.
 
 ### Fixed
 
+- **Spell check accepts the possessive of any dictionary word**, such as "someone else's" and "another's". Only
+  words the dictionary lists with a possessive were accepted.
+- **Settings scrolled sideways at its 900 px minimum width** in German, French, Spanish and Portuguese (Snippets,
+  Templates, Remote), and controls sat a scrollbar's width apart on short and long pages.
+- **A snippet trigger with a space in it was saved and never expanded.** It is now refused with the reason shown.
 - **Python:**
   - Run used `python3` from PATH whatever the project or the Debug setting said.
   - Output arrived only when the program ended, with stderr ahead of stdout.
@@ -166,6 +269,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spell check:** it now checks the first word of an f-string. Common Python terms (kwargs, asyncio, noqa) are no
   longer flagged.
 - **Go to Symbol without a language server:** Python methods show their class.
+- **Java Debug:**
+  - A class with a `package` line in a folder with no `pom.xml` or Gradle build could not be debugged
+    ("Could not find or load main class Main"). Editora now corrects the Java server's source folder.
+  - Debug on a file could run a different program: another `main` of the project, or a class never compiled.
+  - Editing a file during a session moved its breakpoints and the stopped line off the code the program runs;
+    lines are now matched to the launched code, and a stop in an edited file says the program runs the old code.
+  - Breakpoints in other unsaved files were silently not hit.
+  - Starting a session moved focus into the Debug window, where typing `r` or `k` restarted or killed the program.
+  - With "Run the debugged program in the Debug console" off, a crashed Java language server left the program
+    running; a lost connection to the debugger now ends the program at once and says so.
+  - A breakpoint set while the session was starting flashed "Empty debug session." as invalid.
+  - Run to Cursor ran past a line that had a false conditional breakpoint or a logpoint.
+  - Every stop fetched the whole call stack (thousands of frames in deep recursion); it is now paged.
+  - Stop and Restart froze the window for up to a quarter of a second, and logged a "Socket closed" stack trace.
+  - Hover and inline values showed the wrong variable for `obj.field`.
+  - A compile error of a loose file showed only in the status bar; it is now in the Debug console with links.
+  - A slow evaluation timed out with a raw Java exception name, and a Step pressed meanwhile fired seconds later.
+  - Install Java Support downloaded java-debug again while debugging was off; with `--config-dir` the installed
+    plugin was not found.
+  - Restart of a run configuration used its old arguments; F5 in another tab stopped a running session without
+    asking; Attach, configurations and Debug via Build of a remote file checked this machine's tools instead of
+    the host's; remote launch arguments were quoted for this machine's OS.
+  - java-debug's "different versions of JVMs" warning no longer clutters the console, and a program java-debug
+    started now ends with "The program ended." instead of a made-up exit code 0.
+  - Debugger launch, connect and adapter errors were English in every language and could start with Java class
+    names (`org.eclipse.debug.core.DebugException: …`); they are now translated and plain, and a report of
+    several lines goes to the Debug console with its first line in the status bar.
 
 ### Changed
 
@@ -244,13 +374,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A broken plugin.json showed the parser's internals**; Browse plugins… hid Settings before the picker opened.
 - **Java debug-adapter detection ran on the UI thread.**
 
+- **Remote: an SSH config with a `Match` section no longer stops every connect.** Editora skips `Match`
+  sections (it cannot evaluate them) and reads the rest of the file; before, any `Match` made every connect
+  fail with "Currently not able to process Match sections".
+
 ### Changed
 
 - **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
   stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
   - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
-    3xx, amber 4xx, red 5xx and failures), the time and size, then History and the environment. Its tooltip has
-    the full status line and when the request was sent.
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
+    status line and when the request was sent.
   - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
     (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
     default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
@@ -260,8 +394,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the request as sent, highlighted like a `.http` file and filling the tab.
   - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
     their shortcuts in the tooltips; Clear is in the **⋯** menu.
+  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
+    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
+- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
+  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
+  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
+  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
+  file no longer goes out without an environment because the response view was not open yet. The Environment
+  picker in the response view is gone; each file keeps the environment it had.
+  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
+    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
+    names the fix, and with another environment selected it says which ones define the variable.
+  - A variable sent empty is reported with the environments that define it. Each response in History records
+    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
+  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
+
   - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
     to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+- **HTTP Client: the response view says what is going on between responses.**
+  - **Before the first run** (and after Clear) it shows which request Run will send — the one at the caret, by its
+    `###` title — your Run shortcut, that the gutter's ▶ runs a request, and the file's requests: click one (or
+    press Enter on it) to run it.
+  - **While a request is sent**, the status says "Sending Get one user… 1.2 s" ("Sending 3 of 10: …" in a Run
+    All) over a thin progress line, and the response shown before is one "Previous: 200 OK · 16:42:31 · getUser"
+    row, which you can click to see it. Its body no longer disappears without a trace, nor shows under the new
+    run.
+  - **While a trust prompt is open** it says "Waiting for your answer…" without a clock; the time counts from
+    when the request is sent.
+  - **After Cancel** it says how long the request ran, and the previous response's row comes back, selected in
+    History.
+  - **A request that got no response** shows a card in the Body tab naming what went wrong (Connection refused,
+    Host not found, Timed out, Certificate problem, Not sent…) with the explanation and Run again and Copy as
+    cURL buttons; a pre-request script that did not run also offers its output. The view opens on that card.
+
+- **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
+  per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's
+  `"id" : 42` with `[ {` on one line). HTML responses, such as a one-line 404 page, are indented one element per
+  line, with text and inline tags kept together and the contents of `<pre>`, `<script>`, `<style>`,
+  `<textarea>` and comments left as they are; a page the server already indented, or one too irregular to
+  format safely, is shown as received. Only the view changes: Save response and Open in tab still write the
+  body exactly as it arrived.
+
+- **HTTP Client: image responses say what they are.** A caption line gives the format, the size in pixels and
+  the size in bytes ("PNG · 160 × 160 · 858 B"), the picture sits on a checkerboard so transparent parts show,
+  and **Fit** (the default, which scales a large picture down to the panel's width but never enlarges a small
+  one) and **100%** switch between fitting and the actual size.
 
 ## [0.22.0] - 2026-10-16
 

@@ -59,6 +59,11 @@ final class DoctorCoordinator {
         /** The effective Debug feature state ({@code debugSupportEnabled()}). */
         boolean debugFeatureEnabled();
 
+        /** Whether the running jdtls provides java-debug itself (a distribution that ships it: no jar to find). */
+        default boolean javaDebugFromServer() {
+            return false;
+        }
+
         /** Known LSP server ids, in Settings-page order. */
         List<String> lspServerIds();
 
@@ -339,11 +344,19 @@ final class DoctorCoordinator {
             DoctorCheck javaDebug = DoctorCheck.checking("debug.java", "debug", tr("doctor.label.javaDebug"), "")
                     .withSettings("debug")
                     .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVA.name());
+            // Java debugging runs through the Java language server: with LSP off nothing else here matters, and a
+            // jdtls that ships java-debug has no jar to find (review A7).
+            boolean lspOn = ops.lspFeatureEnabled();
+            boolean fromServer = ops.javaDebugFromServer();
             specs.add(probe(
                     javaDebug,
-                    base -> DebugAdapterLocator.locate(javaPluginPath, home)
-                            .map(p -> base.ok(p.toString()))
-                            .orElseGet(() -> base.missing("doctor.tip.missing", "java-debug"))));
+                    base -> !lspOn
+                            ? base.missing("status.debug.javaNeedsLsp")
+                            : DebugAdapterLocator.locate(javaPluginPath, home)
+                                    .map(p -> base.ok(p.toString()))
+                                    .orElseGet(() -> fromServer
+                                            ? base.ok("jdtls")
+                                            : base.missing("doctor.tip.missing", "java-debug"))));
             if (s.isPythonDebugEnabled()) {
                 List<String> py = DapServerRegistry.interpreterArgv("python", s.getPythonDebugCommand());
                 DoctorCheck debugpy = DoctorCheck.checking(

@@ -247,7 +247,7 @@ final class AbbreviationsEditor {
         l.setLabelFor(field);
         form.add(l, 0, row);
         form.add(field, 1, row);
-        field.setMinWidth(180);
+        field.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         field.setMaxWidth(Double.MAX_VALUE); // the fields take the card's width, not a fixed 190 px
         GridPane.setHgrow(field, Priority.ALWAYS);
         if (field instanceof TextArea) {

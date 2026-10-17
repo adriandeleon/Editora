@@ -464,7 +464,10 @@ final class Chrome {
             "debug.jumpToLine",
             "debug.evaluate",
             "debug.addWatch",
-            "debug.setValue");
+            "debug.setValue",
+            "debug.showValue",
+            "debug.smartStepInto",
+            "debug.restartFrame");
 
     /**
      * Why {@code id} has nothing to act on, or null when it does. See {@link PaletteContext} for why this

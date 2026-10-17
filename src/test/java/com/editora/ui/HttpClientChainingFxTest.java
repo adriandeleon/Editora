@@ -10,8 +10,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import javafx.scene.control.ComboBox;
-
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpExchange;
@@ -133,10 +131,9 @@ class HttpClientChainingFxTest {
     void anUnresolvedReferenceIsWarnedAndAnEnvironmentChangeForgetsResponses(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("http-client.env.json"), "{\"dev\":{},\"prod\":{}}");
         EditorBuffer b = httpBuffer(dir.resolve("env.http"), file());
-        ComboBox<String> env = coordinator.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "dev"));
         runLine(b, 2);
-        FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "prod"));
         HttpExchange me = runLine(b, 5);
         assertEquals(List.of("/login", "/me Bearer"), hits, "a dev token is not sent to prod");
         assertTrue(

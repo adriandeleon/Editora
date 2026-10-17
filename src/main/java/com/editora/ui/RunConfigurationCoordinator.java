@@ -647,11 +647,11 @@ final class RunConfigurationCoordinator {
             host.setStatus(tr("status.debug.needJavaFile"));
             return;
         }
-        if (!host.debugCoordinator().debugEffectiveFor("java")) {
-            host.setStatus(tr("status.debug.unavailable"));
+        java.nio.file.Path routing = b.getPath();
+        if (!host.debugCoordinator().debugEffectiveFor("java", routing)) { // remote: the host's (review A9)
+            host.setStatus(host.debugCoordinator().unavailableMessage("java", routing));
             return;
         }
-        java.nio.file.Path routing = b.getPath();
         java.nio.file.Path root = JavaProjectRoot.find(routing);
         if (root == null) {
             host.setStatus(tr("status.debug.noProject"));
@@ -689,13 +689,14 @@ final class RunConfigurationCoordinator {
         return null;
     }
 
-    /** Watches {@code c}'s next-run output for the JDWP banner, then attaches the debugger (one-shot). */
+    /** Watches {@code c}'s next run's output for JDWP banners and attaches the debugger to each. */
     void armDebugAttach(BuildCoordinator c, java.nio.file.Path routing) {
+        // Every banner of the run is attached (one at a time — see DebugCoordinator.attachToPort), and Stop on
+        // the session ends the run (review A4, D11); the coordinator drops the watcher when the run is over.
         c.setOutputWatcher((line, stderr) -> {
             int port = com.editora.test.TestDebug.jdwpPort(line);
             if (port > 0) {
-                c.setOutputWatcher(null);
-                host.debugCoordinator().attachToPort(routing, "localhost", port);
+                host.debugCoordinator().attachToPort(routing, "localhost", port, c::stop);
             }
         });
     }

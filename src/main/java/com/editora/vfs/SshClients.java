@@ -3,6 +3,7 @@ package com.editora.vfs;
 import java.time.Duration;
 
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.config.hosts.HostConfigEntryResolver;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.AttributeRepository;
 import org.apache.sshd.common.session.Session;
@@ -48,6 +49,23 @@ final class SshClients {
                 RemoteFileSystems engine = engineOf(session);
                 return engine != null && engine.verifyServerKey(session, address, key);
             });
+            // ~/.ssh/config as the connecting window's engine reads it (its own ~/.ssh in a test).
+            c.setHostConfigEntryResolver((host, port, local, user, proxyJump, context) -> {
+                RemoteFileSystems engine = context == null ? null : context.getAttribute(ENGINE);
+                return engine == null
+                        ? HostConfigEntryResolver.EMPTY.resolveEffectiveHost(
+                                host, port, local, user, proxyJump, context)
+                        : engine.resolveHost(host, port, local, user, proxyJump, context);
+            });
+            // The keys ssh tries when nothing names one, from the owning engine's ~/.ssh; a passphrase any key
+            // needs (an IdentityFile's included) is asked for by the window whose login it is.
+            c.setKeyIdentityProvider(session -> {
+                RemoteFileSystems engine = session instanceof Session s ? engineOf(s) : null;
+                return engine == null
+                        ? java.util.List.of()
+                        : engine.defaultKeys().loadKeys(session);
+            });
+            c.setFilePasswordProvider(Passphrases.INSTANCE);
             // The login's questions (passwords, 2FA codes), put by the window that owns the session.
             c.setUserInteraction(LoginInteraction.INSTANCE);
             // RemoteFileSystems times a login out itself, leaving out the time a person spends answering; MINA's

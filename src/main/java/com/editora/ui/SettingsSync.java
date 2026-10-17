@@ -105,6 +105,8 @@ final class SettingsSync {
     private boolean remoteFailed;
 
     private boolean startupDone;
+    /** The Sync page's warning about a password or token in the stored URL was answered "Keep" (once a run). */
+    boolean storedCredentialsKept;
     /** This computer's name for commit messages; looked up off the FX thread (it can be a DNS query). */
     private volatile String machine = "";
 

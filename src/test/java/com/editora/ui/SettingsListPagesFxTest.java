@@ -37,6 +37,7 @@ import static com.editora.ui.SettingsShortcutsFxTest.stage;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Snippets, Templates, Abbreviations and Macros in a real Settings window: what the user edits is what is kept. */
@@ -236,7 +237,7 @@ class SettingsListPagesFxTest {
     // --- C14: every language, and triggers Tab cannot expand ----------------------------------------------
 
     @Test
-    void aSnippetCanBeAddedForALanguageWithNoneYetAndASpacedTriggerIsPointedOut() throws Exception {
+    void aSnippetCanBeAddedForALanguageWithNoneYetAndASpacedTriggerIsRefused() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = FxTestSupport.callOnFx(() -> shown(fx, "SNIPPETS"));
             SnippetManager manager = FxTestSupport.field(w, "snippetManager");
@@ -255,13 +256,33 @@ class SettingsListPagesFxTest {
                 assertEquals(1, manager.userSnippets(none).size());
 
                 List<TextField> tfs = all(pg, TextField.class, new ArrayList<>());
-                tfs.get(2).setText("my trig");
-                tfs.get(2).fireEvent(new ActionEvent());
+                TextField prefix = tfs.get(2);
+                CodeArea body = all(pg, CodeArea.class, new ArrayList<>()).get(0);
+                body.replaceText("BODY");
+                prefix.setText("ok, my trig");
+                prefix.fireEvent(new ActionEvent());
+                String reason = tr("settings.snippet.triggerSpace", "my trig");
+                assertTrue(
+                        prefix.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER),
+                        "the field is red");
+                assertEquals(reason, prefix.getTooltip().getText());
                 assertTrue(
                         all(pg, Label.class, new ArrayList<>()).stream()
-                                .anyMatch(l -> l.isVisible()
-                                        && l.getText().contains(tr("settings.snippet.triggerSpace", "my trig"))),
-                        "Tab cannot expand a trigger with a space: said");
+                                .anyMatch(l -> l.isVisible() && l.getText().equals(reason)),
+                        "and the reason is shown");
+                assertEquals("ok, my trig", prefix.getText(), "what was typed stays");
+                assertTrue(
+                        manager.userSnippets(none).stream()
+                                .noneMatch(sn -> "BODY".equals(sn.body()) || "ok".equals(sn.prefix())),
+                        "nothing saved: " + manager.userSnippets(none));
+
+                prefix.setText("ok, mytrig");
+                prefix.fireEvent(new ActionEvent());
+                assertFalse(prefix.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+                assertNull(prefix.getTooltip());
+                assertTrue(
+                        manager.userSnippets(none).stream().anyMatch(sn -> "BODY".equals(sn.body())),
+                        "saved once fixed: " + manager.userSnippets(none));
                 stage(w).hide();
             });
         }

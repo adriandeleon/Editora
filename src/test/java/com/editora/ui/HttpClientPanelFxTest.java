@@ -17,6 +17,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -79,8 +80,8 @@ class HttpClientPanelFxTest {
         HttpClientPanel p = panel();
         String raw = "{\"price\":10.50,\"n\":1e2,\"a\":1,\"a\":2}";
         String shown = show(p, exchange("json", ok(raw, "application/json", List.of())));
-        assertTrue(shown.contains("\"price\" : 10.50"), shown);
-        assertTrue(shown.contains("\"n\" : 1e2"), shown);
+        assertTrue(shown.contains("\"price\": 10.50"), shown);
+        assertTrue(shown.contains("\"n\": 1e2"), shown);
         assertEquals(raw, shown.replaceAll("\\s+", ""), "whitespace is the only change");
         String saved = FxTestSupport.callOnFx(() -> responseText(p));
         assertTrue(saved.contains("\n" + raw + "\n"), "the report holds the raw body: " + saved);
@@ -199,17 +200,37 @@ class HttpClientPanelFxTest {
     void whileARequestRunsTheOldResponseIsClearedAndTheElapsedTimeShown() throws Exception {
         HttpClientPanel p = panel();
         show(p, exchange("old", ok("old body", "text/plain", List.of())));
+        HttpHistoryEntry old =
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getValue());
         FxTestSupport.runOnFx(() -> p.started("GET http://x.test/slow"));
         assertEquals("", FxTestSupport.callOnFx(p::shownBodyForTest), "the previous body is not left under Running");
         String text = FxTestSupport.callOnFx(p::statusForTest);
         assertTrue(text.contains("GET http://x.test/slow") && text.contains(" s"), text);
+        assertTrue(text.startsWith(HttpPanelStatesFxTest.runningPrefix("GET http://x.test/slow")), text);
+        // U7: the previous response is one labelled row, and the progress line runs.
+        String row = FxTestSupport.callOnFx(p::previousRowForTest);
+        assertNotNull(row, "the previous response's row shows");
+        assertTrue(row.contains("200 OK") && row.contains("old"), row);
+        assertTrue(FxTestSupport.callOnFx(() -> p.controlsForTest().progress().isVisible()));
         FxTestSupport.runOnFx(() -> p.progress(1, 5, "GET http://x.test/b"));
         assertTrue(FxTestSupport.callOnFx(p::statusForTest)
                 .contains(tr("httppanel.runningOf", 2, 5, "GET http://x.test/b")));
         FxTestSupport.runOnFx(p::cancelled);
-        // X10: nothing is shown under "Cancelled" (the old response read as this one's); it is still in History.
+        // X10 / U7: the old body is not shown under "Cancelled after" (it read as this one's): its row comes back, and
+        // History shows it selected rather than blank. Nothing is "selected" for the actions until it is shown.
         assertEquals(null, FxTestSupport.callOnFx(p::getSelectedExchange));
-        assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
+        String cancelled = FxTestSupport.callOnFx(p::statusForTest);
+        assertTrue(
+                cancelled.startsWith(
+                        tr("httppanel.cancelledAfter", "").replace(" s", "").strip()),
+                cancelled);
+        assertTrue(cancelled.endsWith(" s"), cancelled);
+        assertEquals("", FxTestSupport.callOnFx(p::shownBodyForTest));
+        assertNotNull(FxTestSupport.callOnFx(p::previousRowForTest));
+        assertSame(
+                old,
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getValue()));
+        assertFalse(FxTestSupport.callOnFx(() -> p.controlsForTest().progress().isVisible()));
         assertEquals(
                 1,
                 FxTestSupport.callOnFx(
@@ -258,6 +279,10 @@ class HttpClientPanelFxTest {
                         "img",
                         HttpFixtures.bytes(200, List.of(), png.toByteArray(), "image/png", 2, List.of(), false)));
         assertTrue(FxTestSupport.callOnFx(p::showsImageForTest));
+        assertEquals(
+                "PNG · 4 × 3 · " + png.size() + " B",
+                FxTestSupport.callOnFx(() -> p.imageViewForTest().captionForTest()),
+                "the picture says what it is");
     }
 
     @Test
@@ -266,6 +291,22 @@ class HttpClientPanelFxTest {
         String raw = "<a><b id=\"1\">x</b><c/></a>";
         String shown = show(p, exchange("xml", ok(raw, "application/xml", List.of())));
         assertEquals("<a>\n  <b id=\"1\">x</b>\n  <c/>\n</a>", shown);
+        assertEquals(
+                raw,
+                FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()));
+    }
+
+    @Test
+    void htmlIsIndentedInTheViewOnly() throws Exception {
+        HttpClientPanel p = panel();
+        String raw = "<html><head><title>404</title></head><body><h1>Not <b>Found</b></h1></body></html>";
+        String shown = show(p, exchange("html", ok(raw, "text/html; charset=utf-8", List.of())));
+        assertEquals(
+                "<html>\n  <head>\n    <title>404</title>\n  </head>\n  <body>\n    <h1>Not <b>Found</b></h1>\n"
+                        + "  </body>\n</html>",
+                shown);
+        String saved = FxTestSupport.callOnFx(() -> responseText(p));
+        assertTrue(saved.contains("\n" + raw + "\n"), "the report holds the raw body: " + saved);
         assertEquals(
                 raw,
                 FxTestSupport.callOnFx(() -> p.getSelectedExchange().result().body()));

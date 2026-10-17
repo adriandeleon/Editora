@@ -39,12 +39,12 @@ class HttpResponseFormatTest {
         String body = "{\"price\":10.50,\"exp\":1e2,\"big\":1234567890.12345678901234567890,"
                 + "\"id\":9007199254740993,\"neg\":-0.0,\"zero\":0.10}";
         String pretty = HttpResponseFormat.prettyBody(body, "application/json");
-        assertTrue(pretty.contains("\"price\" : 10.50"), pretty);
-        assertTrue(pretty.contains("\"exp\" : 1e2"), pretty);
-        assertTrue(pretty.contains("\"big\" : 1234567890.12345678901234567890"), pretty);
-        assertTrue(pretty.contains("\"id\" : 9007199254740993"), pretty);
-        assertTrue(pretty.contains("\"neg\" : -0.0"), pretty);
-        assertTrue(pretty.contains("\"zero\" : 0.10"), pretty);
+        assertTrue(pretty.contains("\"price\": 10.50"), pretty);
+        assertTrue(pretty.contains("\"exp\": 1e2"), pretty);
+        assertTrue(pretty.contains("\"big\": 1234567890.12345678901234567890"), pretty);
+        assertTrue(pretty.contains("\"id\": 9007199254740993"), pretty);
+        assertTrue(pretty.contains("\"neg\": -0.0"), pretty);
+        assertTrue(pretty.contains("\"zero\": 0.10"), pretty);
         // Whitespace is the only difference from what the server sent.
         assertEquals(body, pretty.replaceAll("\\s+", ""));
     }
@@ -56,6 +56,55 @@ class HttpResponseFormatTest {
         assertEquals("{\"a\":1,\"a\":2,\"l\":[true,null,\"xy\"]}", pretty.replaceAll("\\s+", ""));
         assertTrue(pretty.contains("\"x y\""), "spaces inside strings are untouched");
         assertTrue(pretty.lines().count() > 3, "it is actually re-indented: " + pretty);
+    }
+
+    @Test
+    void theViewUsesTheCommonLayout() {
+        String body = "{\"id\":42,\"name\":\"Ada\",\"roles\":[\"admin\",\"editor\"],\"tags\":[],\"meta\":{},"
+                + "\"items\":[{\"a\":1},{\"b\":[1,2]}],\"addr\":{\"city\":\"London\"}}";
+        String expected = """
+                {
+                  "id": 42,
+                  "name": "Ada",
+                  "roles": [
+                    "admin",
+                    "editor"
+                  ],
+                  "tags": [],
+                  "meta": {},
+                  "items": [
+                    {
+                      "a": 1
+                    },
+                    {
+                      "b": [
+                        1,
+                        2
+                      ]
+                    }
+                  ],
+                  "addr": {
+                    "city": "London"
+                  }
+                }""";
+        assertEquals(expected, HttpResponseFormat.prettyBody(body, "application/json"));
+    }
+
+    @Test
+    void topLevelArraysScalarsAndSeveralValuesUseTheSameLayout() {
+        assertEquals(
+                "[\n  {\n    \"id\": 1\n  },\n  {}\n]",
+                HttpResponseFormat.prettyBody("[{\"id\":1},{}]", "application/json"));
+        assertEquals("[]", HttpResponseFormat.prettyBody(" [ ] ", "application/json"));
+        assertEquals("{}", HttpResponseFormat.prettyBody("{}", "application/json"));
+        assertEquals("\"text\"", HttpResponseFormat.prettyBody("\"text\"", "application/json"));
+        // NDJSON-style streams: one value per line, each laid out on its own.
+        assertEquals(
+                "{\n  \"a\": 1\n}\n[\n  2\n]", HttpResponseFormat.prettyBody("{\"a\":1}\n[2]", "application/x-ndjson"));
+        // A string holding JSON-looking text is a value: nothing inside it moves.
+        assertEquals(
+                "{\n  \"s\": \"[1, {\\\"k\\\" : 2}]\"\n}",
+                HttpResponseFormat.prettyBody("{\"s\":\"[1, {\\\"k\\\" : 2}]\"}", "application/json"));
     }
 
     @Test

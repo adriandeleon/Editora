@@ -7,7 +7,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
+import com.fasterxml.jackson.core.PrettyPrinter;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -18,7 +18,9 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Pretty-printing is for the viewer only ({@link #view}) and works on the token stream, so it changes
  * whitespace and nothing else: a number keeps its exact text ({@code 10.50}, {@code 1e2}, a 30-digit decimal)
- * and duplicate keys survive. Anything saved or opened in a tab uses the unmodified body.
+ * and duplicate keys survive. Anything saved or opened in a tab uses the unmodified body. The layout is the
+ * common one ({@code JSON.stringify(v, null, 2)}, editors' "Format JSON"): two-space indent, {@code "key": value},
+ * every object field and array element on its own line, {@code {}} and {@code []} for empty containers.
  */
 public final class HttpResponseFormat {
 
@@ -132,7 +134,7 @@ public final class HttpResponseFormat {
         StringWriter out = new StringWriter(body.length() + body.length() / 4);
         try (JsonParser parser = JSON.createParser(body);
                 JsonGenerator gen = JSON.createGenerator(out)) {
-            gen.setPrettyPrinter(new DefaultPrettyPrinter().withRootSeparator("\n"));
+            gen.setPrettyPrinter(new ViewPrinter());
             for (JsonToken t = parser.nextToken(); t != null; t = parser.nextToken()) {
                 if (t == JsonToken.VALUE_NUMBER_INT || t == JsonToken.VALUE_NUMBER_FLOAT) {
                     gen.writeNumber(parser.getText()); // the number's own text, verbatim
@@ -142,6 +144,83 @@ public final class HttpResponseFormat {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * The view's layout. Jackson's {@code DefaultPrettyPrinter} writes {@code "id" : 42} and keeps <code>[ {</code> on one
+     * line, which no other tool does. One instance per generator (it counts the nesting itself).
+     */
+    private static final class ViewPrinter implements PrettyPrinter {
+        private int depth;
+
+        private void newline(JsonGenerator g) throws IOException {
+            g.writeRaw('\n');
+            for (int i = 0; i < depth; i++) {
+                g.writeRaw("  ");
+            }
+        }
+
+        @Override
+        public void writeRootValueSeparator(JsonGenerator g) throws IOException {
+            g.writeRaw('\n'); // several top-level values (NDJSON): one per line
+        }
+
+        @Override
+        public void writeStartObject(JsonGenerator g) throws IOException {
+            g.writeRaw('{');
+            depth++;
+        }
+
+        @Override
+        public void beforeObjectEntries(JsonGenerator g) throws IOException {
+            newline(g); // only called once an object has a field, so an empty one stays "{}"
+        }
+
+        @Override
+        public void writeObjectFieldValueSeparator(JsonGenerator g) throws IOException {
+            g.writeRaw(": ");
+        }
+
+        @Override
+        public void writeObjectEntrySeparator(JsonGenerator g) throws IOException {
+            g.writeRaw(',');
+            newline(g);
+        }
+
+        @Override
+        public void writeEndObject(JsonGenerator g, int entries) throws IOException {
+            depth--;
+            if (entries > 0) {
+                newline(g);
+            }
+            g.writeRaw('}');
+        }
+
+        @Override
+        public void writeStartArray(JsonGenerator g) throws IOException {
+            g.writeRaw('[');
+            depth++;
+        }
+
+        @Override
+        public void beforeArrayValues(JsonGenerator g) throws IOException {
+            newline(g);
+        }
+
+        @Override
+        public void writeArrayValueSeparator(JsonGenerator g) throws IOException {
+            g.writeRaw(',');
+            newline(g);
+        }
+
+        @Override
+        public void writeEndArray(JsonGenerator g, int values) throws IOException {
+            depth--;
+            if (values > 0) {
+                newline(g);
+            }
+            g.writeRaw(']');
+        }
     }
 
     public static String humanSize(long bytes) {

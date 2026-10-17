@@ -792,10 +792,11 @@ class RealSshdProbeFxTest {
             Path ssh = Files.createDirectories(home.resolve(".ssh"));
             Files.copy(Path.of(ed25519Default), ssh.resolve("id_ed25519"));
             Files.copy(Path.of(System.getProperty("remote.probe.key")), ssh.resolve("id_ecdsa"));
-            String realHome = System.getProperty("user.home");
-            System.setProperty("user.home", home.toString());
+            // An engine whose ~/.ssh is that folder (the default keys are read from its SshEnvironment).
+            RemoteFileSystems main = engine;
+            main.disconnect(conn.id());
+            engine = new RemoteFileSystems((h, p, type, fp) -> true, null, com.editora.vfs.SshEnvironment.at(ssh));
             try {
-                engine.disconnect(conn.id());
                 connect(new RemoteConnection(
                         conn.host(),
                         conn.port(),
@@ -806,7 +807,9 @@ class RealSshdProbeFxTest {
                         "/"));
                 return null;
             } finally {
-                System.setProperty("user.home", realHome);
+                engine.shutdown();
+                engine = main;
+                connect(conn);
             }
         });
 

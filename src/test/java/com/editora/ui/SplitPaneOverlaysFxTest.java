@@ -345,10 +345,13 @@ class SplitPaneOverlaysFxTest {
                 sink.accept("42");
             });
             b.setDebugHoverActive(true);
+            com.editora.editor.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
         });
         moveOver(second, 4, 9);
+        com.editora.editor.DebugHover.setDebounceForTest(null);
         assertEquals("total", asked[0]);
-        javafx.scene.control.Tooltip value = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "debugTooltip"));
+        javafx.scene.control.Tooltip value =
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "tooltip"));
         assertNotNull(value);
         assertEquals("total = 42", FxTestSupport.callOnFx(value::getText));
         assertEquals(second, FxTestSupport.callOnFx(value::getOwnerNode));

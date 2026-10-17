@@ -60,7 +60,7 @@ class RemoteJavaDebugFxTest {
     void setUp() throws Exception {
         ExecTargets.setRemoteEnabled(() -> true);
         sftp = EmbeddedSftpFixture.startWithShell(base); // forwards ports, as an OpenSSH server does
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lsp);
         lsp.configure(true, Map.of("java", "jdtls"));
@@ -199,5 +199,35 @@ class RemoteJavaDebugFxTest {
         assertTrue(
                 sftp.commands().stream().anyMatch(c -> c.contains("/bin/javac'") && c.contains("'-g'")),
                 "javac ran on the host: " + sftp.commands());
+    }
+
+    /**
+     * A saved configuration on a remote host runs on the host's configured JDK, as Run runs it — Debug used
+     * whatever jdtls resolved there (review D9).
+     */
+    @Test
+    void aConfigurationOnAHostRunsOnTheHostsConfiguredJdk() throws Exception {
+        String hostFile = sftp.serverPath("app/src/main/java/demo/Main.java").toString();
+        Path file = open(
+                "app/src/main/java/demo/Main.java",
+                "package demo;\npublic class Main {\n    public static void main(String[] a) {\n    }\n}\n");
+        replies.put(
+                "vscode.java.resolveClasspath",
+                p -> List.of(
+                        List.of(), List.of(sftp.serverPath("app/target/classes").toString())));
+        replies.put("vscode.java.resolveJavaExecutable", p -> "/host/jdk-21/bin/java");
+
+        onFx(() -> {
+            dap.setHostJavaExec("/opt/jdk-25/bin/java");
+            dap.startLaunchMainClass(
+                    file,
+                    new DapManager.MainClassOption("demo.Main", "app", hostFile),
+                    sftp.remotePath("app"),
+                    "/opt/local-only/bin/java");
+        });
+
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        assertEquals("/opt/jdk-25/bin/java", session.launchArgs.get("javaExec"), "the host's configured JDK");
     }
 }

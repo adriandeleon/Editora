@@ -49,8 +49,11 @@ public class WorkspaceState {
      *
      * <p>v17 → v18 added {@code pythonInterpreter} (the Python picked for this project in the status bar).
      * Additive; blank means detected (activated environment, project venv, setting, PATH), as before.
+     *
+     * <p>v18 → v19 added {@code debugExceptionFilters} (the exception breakpoints chosen per debug adapter
+     * language). Additive; absent means the adapter's defaults, as before.
      */
-    public static final int SCHEMA_VERSION = 18;
+    public static final int SCHEMA_VERSION = 19;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -161,6 +164,11 @@ public class WorkspaceState {
      * optionally with arguments), or "" to detect it — see {@code run.PythonInterpreters}. Additive in v18.
      */
     private String pythonInterpreter = "";
+    /**
+     * The exception breakpoints chosen per debug-adapter language ({@code java} → {@code [caught, uncaught]}); a
+     * language not listed uses its adapter's defaults. Additive in v19.
+     */
+    private Map<String, List<String>> debugExceptionFilters = new LinkedHashMap<>();
 
     // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
     //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
@@ -511,6 +519,15 @@ public class WorkspaceState {
 
     public void setDebugWatches(List<String> debugWatches) {
         this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
+    }
+
+    public Map<String, List<String>> getDebugExceptionFilters() {
+        return debugExceptionFilters == null ? new LinkedHashMap<>() : debugExceptionFilters;
+    }
+
+    public void setDebugExceptionFilters(Map<String, List<String>> debugExceptionFilters) {
+        this.debugExceptionFilters =
+                debugExceptionFilters == null ? new LinkedHashMap<>() : new LinkedHashMap<>(debugExceptionFilters);
     }
 
     public String getPythonInterpreter() {
