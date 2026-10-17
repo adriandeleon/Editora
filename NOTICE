@@ -30,6 +30,9 @@ Most grammars were obtained from the shiki "tm-grammars" collection:
     https://github.com/shikijs/textmate-grammars-themes
     (packages/tm-grammars/grammars)
 
+The C#, CSS, dotenv, PowerShell, and SQL grammars are from tm-grammars 1.32.22;
+the other grammars from this source are from earlier releases.
+
 These are aggregated by shiki from their respective upstream projects, each
 under its original license (predominantly MIT, with some under other permissive
 licenses such as Apache-2.0 or BSD); see the upstream repository above for the
@@ -105,20 +108,36 @@ hosts.tmLanguage.json, deb822.tmLanguage.json, apt-sources.tmLanguage.json,
 interfaces.tmLanguage.json, debian-changelog.tmLanguage.json) — like the HTTP
 grammar (http.tmLanguage.json), the Java properties grammar
 (properties.tmLanguage.json), and the Git attributes grammar
-(gitattributes.tmLanguage.json), and the pip requirements grammar
-(pip-requirements.tmLanguage.json) — were written for Editora and are covered by
-Editora's own MIT License (above).
+(gitattributes.tmLanguage.json), the pip requirements grammar
+(pip-requirements.tmLanguage.json), the CSV, Mermaid, Typst, and log-file
+grammars (csv/mermaid/typst/log .tmLanguage.json), and the HTML derivative that
+the Markdown grammar embeds for raw HTML (html-derivative.tmLanguage.json,
+modelled on VS Code's) — were written for Editora and are covered by Editora's
+own MIT License (above).
 
-These remain under their original upstream licenses (predominantly MIT). All
-grammars are redistributed unmodified except markdown.tmLanguage.json (three
-regular expressions minimally adjusted for the Joni regex backend — the {,3}
-quantifier rewritten as {0,3}, and a variable-length look-behind removed from
-the strikethrough rule), python.tmLanguage.json (extended for newer Python:
-PEP 695 type parameters on def/class and the `type` alias statement, PEP 750
-t-string prefixes, an strftime-style f-string format spec, match/case as
-keywords only on a statement ending in a colon, and def/class/decorator names
-that shadow a builtin or are dunders scoped as declarations), and the two
-plist-to-JSON conversions noted above.
+These remain under their original upstream licenses (predominantly MIT). Apart
+from the two plist-to-JSON conversions noted above, the vendored grammars are
+redistributed unmodified except for these local changes (each file's
+information_for_contributors header or Git history has the detail):
+
+    applyEndPatternLast "1" written as true, the only form tm4e reads as true:
+        cpp, graphql, groovy, markdown, shell, sql
+    look-behinds the Joni regex backend rejects (variable length) rewritten as
+    fixed-length alternatives or line-anchored begin/end rules:
+        css (three selector look-behinds), desktop (Categories/Exec/Version
+        values and the key before "="), markdown (strikethrough), ruby,
+        typescript, typescriptreact
+    markdown: the {,3} quantifier written {0,3}; front matter as one begin/end
+        rule with a begin/while body; fences for Kotlin, TOML, Mermaid and
+        console/shell-session, and VS Code's `shellscript` fence id
+    python: extended for newer Python (PEP 695 type parameters on def/class
+        and the `type` alias statement, PEP 750 t-string prefixes, an
+        strftime-style f-string format spec, match/case as keywords only on a
+        statement ending in a colon, and def/class/decorator names that shadow
+        a builtin or are dunders scoped as declarations)
+    shell: rules upstream includes but never defines; <<\EOF delimiters; more
+        ${...} expansion operators; =~ right sides as regexes; &> and &>> as
+        redirections; brace expansion; select/coproc keywords; zsh { cmd }
 
 Languages bundled: Java, XML, shell, PowerShell, DOS batch, Python, Groovy,
 Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
