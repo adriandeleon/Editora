@@ -236,4 +236,72 @@ class StyleContrastTest {
             }
         }
     }
+
+    /** The {@code .root} palette of an AtlantaFX built-in theme, read from the library. */
+    private static Map<String, String> builtInPalette(String base) throws Exception {
+        try (var in = StyleContrastTest.class.getResourceAsStream("/atlantafx/base/theme/" + base + ".css")) {
+            String css = new String(in.readAllBytes(), StandardCharsets.UTF_8).replaceAll("(?s)/\\*.*?\\*/", "");
+            int start = css.indexOf(".root {");
+            String block = css.substring(start, css.indexOf("\n}", start));
+            Map<String, String> tokens = new HashMap<>();
+            Matcher m = Pattern.compile("(-color-[a-z0-9-]+)\\s*:\\s*([^;]+);").matcher(block);
+            while (m.find()) {
+                tokens.put(m.group(1), m.group(2).trim());
+            }
+            return tokens;
+        }
+    }
+
+    /** JavaFX's ladder(): the stop colours, interpolated at the reference colour's brightness (.3r+.59g+.11b). */
+    private static Color ladder(Color ref, List<double[]> offsets, List<Color> colors) {
+        double b = 0.3 * ref.getRed() + 0.59 * ref.getGreen() + 0.11 * ref.getBlue();
+        if (b <= offsets.get(0)[0]) {
+            return colors.get(0);
+        }
+        for (int i = 1; i < offsets.size(); i++) {
+            double o1 = offsets.get(i - 1)[0];
+            double o2 = offsets.get(i)[0];
+            if (b <= o2) {
+                return colors.get(i - 1).interpolate(colors.get(i), (b - o1) / (o2 - o1));
+            }
+        }
+        return colors.get(colors.size() - 1);
+    }
+
+    @Test
+    void theKeyboardPeriwinkleReadsOnEveryBundledAppTheme() throws Exception {
+        String app = read("app.css");
+        Matcher decl = Pattern.compile("-state-key:\\s*ladder\\(-color-bg-default,([^;]+)\\);")
+                .matcher(app);
+        assertTrue(decl.find(), "-state-key is a ladder of the app theme's ground");
+        List<double[]> offsets = new ArrayList<>();
+        List<Color> colors = new ArrayList<>();
+        Matcher stop = Pattern.compile("(#[0-9a-fA-F]{6})\\s+([0-9.]+)%").matcher(decl.group(1));
+        while (stop.find()) {
+            colors.add(Color.web(stop.group(1)));
+            offsets.add(new double[] {Double.parseDouble(stop.group(2)) / 100});
+        }
+        assertTrue(colors.size() >= 2);
+        for (String editorTheme : List.of("editora-light", "editora-dark")) {
+            assertFalse(
+                    read("editor-themes/" + editorTheme + ".css").contains("-state-key"), "set by the app theme only");
+        }
+        List<String> problems = new ArrayList<>();
+        for (String name : Themes.NAMES) {
+            String[] bundled = Themes.BUNDLED.get(name);
+            Map<String, String> p = bundled != null
+                    ? palette(bundled[0])
+                    : builtInPalette(name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
+            for (String surface : List.of("-color-bg-default", "-color-bg-subtle")) {
+                Color ground = color(p, surface);
+                Color ink = ladder(color(p, "-color-bg-default"), offsets, colors);
+                Color chip = ground.interpolate(ink, 0.15); // the chip's tint over that surface
+                double worst = Math.min(contrast(ink, ground), contrast(ink, chip));
+                if (worst < 4.5) {
+                    problems.add(name + " " + surface + ": " + String.format("%.2f", worst));
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "chord chips under 4.5:1:\n" + String.join("\n", problems));
+    }
 }

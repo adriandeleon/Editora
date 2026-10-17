@@ -61,9 +61,9 @@
 .text.sem-deprecated { -fx-fill: #8b91a3; -fx-strikethrough: true; }
 
 /* Theme-owned looked-up colours: this theme's exact editor background (the active tab is filled
-   with it, so the tab and the editor read as one surface), and the kit's exact light periwinkle,
-   replacing app.css's both-grounds compromise. */
-.root { -editor-surface: #ffffff; -state-sel: rgba(14, 133, 119, 0.12); -state-key: #5c66ae; -state-key-bg: rgba(92, 102, 174, 0.14); }
+   with it, so the tab and the editor read as one surface), and its selection wash. The keyboard's
+   periwinkle (-state-key) is the app theme's, not the editor theme's: see app.css. */
+.root { -editor-surface: #ffffff; -state-sel: rgba(14, 133, 119, 0.12); }
 
 /* Brace match — periwinkle, the kit's one reserved keyboard hue. */
 .text.brace-match { -rtfx-background-color: #5c66ae38; }

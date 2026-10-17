@@ -433,7 +433,9 @@ final class SnippetsEditor {
                                         .isNull()));
             }
         }
-        HBox buttons = new HBox(6, add, remove, toggle);
+        // The buttons wrap onto a second line rather than hold the list column wider than a narrow window
+        // allows (German at the 900 px minimum scrolled the whole page sideways).
+        WrapRow buttons = new WrapRow(6, 6, add, remove, toggle);
         // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
         Label languageLabel = new Label(tr("settings.snippet.language"));
         languageLabel.setLabelFor(languageBox);
@@ -442,7 +444,7 @@ final class SnippetsEditor {
         HBox languageRow = new HBox(10, languageLabel, languageBox);
         languageRow.setAlignment(Pos.CENTER_LEFT);
         VBox left = new VBox(6, languageRow, filter, list, buttons);
-        for (Region r : List.of(languageLabel, add, remove, toggle, left)) {
+        for (Region r : List.of(languageLabel, add, remove, toggle)) {
             r.setMinWidth(Region.USE_PREF_SIZE);
         }
         VBox.setVgrow(left, Priority.ALWAYS);
@@ -522,7 +524,7 @@ final class SnippetsEditor {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         }
         if (field instanceof CodeArea) { // a tall body would otherwise centre its label
             GridPane.setValignment(l, javafx.geometry.VPos.TOP);
