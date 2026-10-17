@@ -44,6 +44,19 @@ public final class AppInfo {
 
     private AppInfo() {}
 
+    /** This build's release notes: its own release page, or the latest release for a development build
+     *  (or an unfiltered {@code 0.0.0}) that has no tag of its own. */
+    public static String releaseNotesUrl() {
+        return releaseNotesUrl(VERSION);
+    }
+
+    static String releaseNotesUrl(String version) {
+        if (version == null || version.isBlank() || isSnapshot(version) || "0.0.0".equals(version)) {
+            return RELEASES_PAGE;
+        }
+        return "https://github.com/" + GITHUB_REPO + "/releases/tag/v" + version;
+    }
+
     /** The Maven-filtered project version (single source: {@code pom.xml}'s {@code <version>}); falls back
      *  to {@code "0.0.0"} for an unfiltered run that bypassed Maven resource filtering (e.g. straight from
      *  an IDE) — every real build (incl. {@code mvn javafx:run} and the dist image) filters it. */

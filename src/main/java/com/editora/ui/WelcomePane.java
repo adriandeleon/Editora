@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
@@ -12,16 +13,25 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import com.editora.AppInfo;
+import com.editora.command.ChordFormat;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
@@ -33,22 +43,38 @@ import com.editora.vfs.Vfs;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The VSCode-style empty state shown in the editor area when no file tabs are open (startup with no
- * session to restore, or after the last tab is closed) — replacing the old empty "Untitled" buffer.
+ * The VSCode-style start page shown in the editor area at startup when there is no session to restore.
  *
- * <p>A real {@link TabContent}: the controller shows it in a dedicated, closeable "Welcome" tab (at
- * startup with no session, via {@code view.welcome}, or by reopening), so the tab strip handles
- * activation/switching/closing for free. Offers Start actions (reused commands) and a Recent-files
- * list. Built fresh on each {@link #refresh()} so Open-Folder / Clone honor the current Projects/Git
- * toggles.
+ * <p>A real {@link TabContent}: the controller shows it in a dedicated, closeable "Welcome" tab (at startup
+ * with no session, or via {@code view.welcome}), so the tab strip handles activation/switching/closing for
+ * free. Closing the last tab does not bring it back; the editor area shows its own hint instead
+ * ({@link EditorEmptyState}). Offers Start actions (reused commands), Recent Projects, Recent Files, saved
+ * Remote Sites, a Customize block (keymap and theme) and Help links. Built fresh on each {@link #refresh()}
+ * so Open-Folder / Clone honor the current Projects/Git toggles.
+ *
+ * <p>The page is one centered column capped at {@link #COLUMN_WIDTH}: a long path never widens it, it elides
+ * from its start instead, so the file name (the part people scan for) always shows. Every px size is
+ * multiplied by the text zoom, so zooming scales the layout and not only the words.
  */
 public final class WelcomePane extends Region implements TabContent {
 
     /** Keep the Welcome page compact while leaving the full recent history one disclosure away. */
     static final int COLLAPSED_RECENT_LIMIT = 5;
 
-    /** Width of the Start-actions column, so keybinding labels right-align in a tidy column. */
-    private static final double ACTIONS_WIDTH = 380;
+    /** Widest the content column grows (at 100 % zoom); longer rows elide their folder text. */
+    static final double COLUMN_WIDTH = 640;
+
+    /** Narrowest the column gets before the page scrolls sideways (at 100 % zoom). */
+    private static final double MIN_COLUMN_WIDTH = 340;
+
+    /** Least space between a Start action's label and its key chord (at 100 % zoom). */
+    private static final double KEY_GAP = 32;
+
+    /** Outer margin around the centered content (also the scroll threshold for the horizontal bar). */
+    private static final double MARGIN = 48;
+
+    /** Digits 1–9 open the first nine entries of the recent lists. */
+    static final int NUMBERED_ENTRIES = 9;
 
     private final CommandRegistry registry;
     private final KeymapManager keymap;
@@ -66,8 +92,22 @@ public final class WelcomePane extends Region implements TabContent {
      *  lookup that has not finished). One node, re-homed into each rebuilt footer. */
     private final Label commitLabel = new Label();
 
-    /** Outer margin around the centered content (also the scroll threshold for the horizontal bar). */
-    private static final double MARGIN = 48;
+    /** Opens a project's window; null hides the Recent Projects section. */
+    private Consumer<Project> onOpenProject;
+    /** Asks before removing a file from the recent list; null hides the menu item. */
+    private Consumer<Path> onRemoveRecent;
+    /** The active keymap's and app theme's names for the Customize block; null hides it. */
+    private Supplier<String> keymapName;
+
+    private Supplier<String> themeName;
+    /** The home directory, written as {@code ~} in folder text. */
+    private Path home = homeDirectory();
+
+    /** Text zoom (1.0 = 100 %); every px size on the page is multiplied by it. */
+    private double zoom = 1.0;
+
+    /** The entries digits 1–9 open, in page order (rebuilt by {@link #refresh()}). */
+    private final List<Hyperlink> numbered = new ArrayList<>();
 
     private final VBox content = new VBox();
     /** Centers {@code content} and provides the padding; this is what the ScrollPane scrolls. */
@@ -138,20 +178,40 @@ public final class WelcomePane extends Region implements TabContent {
         getStyleClass().add("welcome-pane");
         content.getStyleClass().add("welcome-content");
         content.setAlignment(Pos.TOP_LEFT);
-        content.setFillWidth(false);
-        content.setMaxWidth(Region.USE_PREF_SIZE); // keep its natural width so it can be centered, not stretched
+        content.setFillWidth(true); // sections span the column, so a recent row can elide inside it
 
         centerHost.getStyleClass().add("welcome-scroll-content");
         centerHost.setAlignment(Pos.TOP_CENTER);
         centerHost.setPadding(new Insets(MARGIN));
-        // Below this width the content can't fit, so fit-to-width stops shrinking and a horizontal bar shows.
-        centerHost.setMinWidth(ACTIONS_WIDTH + 2 * MARGIN);
 
         scroll.getStyleClass().add("welcome-scroll");
         scroll.setFitToWidth(true); // fill the viewport so the content stays centered; clamps to minWidth
         scroll.setFitToHeight(false); // let it grow taller than the viewport → vertical scrollbar
         getChildren().add(scroll);
+        // 1–9 open the numbered recent entries; typed characters only, so chords and Enter are untouched.
+        addEventHandler(KeyEvent.KEY_TYPED, this::onKeyTyped);
         refresh();
+    }
+
+    /** Wires the Recent Projects section: picking one opens (or focuses) that project's window. */
+    public void setProjectOpener(Consumer<Project> onOpenProject) {
+        this.onOpenProject = onOpenProject;
+    }
+
+    /** Wires "Remove from recent files" on a recent file's context menu (the caller confirms, then refreshes). */
+    public void setRecentRemover(Consumer<Path> onRemoveRecent) {
+        this.onRemoveRecent = onRemoveRecent;
+    }
+
+    /** Wires the Customize block: the active keymap's and app theme's names. */
+    public void setCustomizeSource(Supplier<String> keymapName, Supplier<String> themeName) {
+        this.keymapName = keymapName;
+        this.themeName = themeName;
+    }
+
+    /** For tests: the directory written as {@code ~}. */
+    void setHomeDirectory(Path home) {
+        this.home = home;
     }
 
     // --- TabContent ---
@@ -162,12 +222,17 @@ public final class WelcomePane extends Region implements TabContent {
     }
 
     /**
-     * Scales the Welcome page's text to the editor text-zoom factor ({@code Settings.fontZoom}, 1.0 = 100%).
-     * The {@code .welcome-*} font sizes are all {@code em}-relative, so setting the root's font size scales the
-     * whole tree proportionally (#540). Survives {@link #refresh()} (which rebuilds only the inner content).
+     * Scales the Welcome page to the editor text-zoom factor ({@code Settings.fontZoom}, 1.0 = 100%). The
+     * {@code .welcome-*} font sizes are all {@code em}-relative, so setting the root's font size scales the text
+     * (#540); the column, icons, logo and gaps are px, so the page is rebuilt with them multiplied by the zoom.
      */
     public void setFontScale(double zoom) {
-        setStyle("-fx-font-size: " + Math.max(0.5, zoom) + "em;");
+        double z = Math.max(0.5, zoom);
+        setStyle("-fx-font-size: " + z + "em;");
+        if (z != this.zoom) {
+            this.zoom = z;
+            refresh();
+        }
     }
 
     @Override
@@ -190,40 +255,367 @@ public final class WelcomePane extends Region implements TabContent {
         return view;
     }
 
-    /** Rebuilds the Start actions + Recent list (call before showing, so toggles/recents are current). */
-    public void refresh() {
-        content.getChildren()
-                .setAll(
-                        header(),
-                        section(tr("welcome.start")),
-                        startActions(),
-                        section(tr("welcome.recent")),
-                        recentList());
-        // Only show the Remote Sites section when there's at least one saved connection.
-        List<RemoteConnection> sites = remoteSites == null ? List.of() : remoteSites.get();
-        if (!sites.isEmpty()) {
-            content.getChildren().add(section(tr("welcome.remote")));
-            content.getChildren().add(remoteList(sites));
+    /**
+     * Focus goes to the first recent entry (Enter opens it), or to New File when there is none, so the page
+     * is usable from the keyboard without first tabbing into it. A programmatic focus draws no focus ring.
+     */
+    @Override
+    public void requestFocus() {
+        // The pane takes focus now; the entry can take it only once the scroll pane has laid it out (a tab
+        // that was just added has not been), so hand it over after this pulse unless focus has moved on.
+        super.requestFocus();
+        if (focusFirstEntry()) {
+            return;
         }
-        content.getChildren().add(footer());
+        Platform.runLater(() -> {
+            if (getScene() != null && getScene().getFocusOwner() == this) {
+                focusFirstEntry();
+            }
+        });
     }
+
+    /** Whether this window's focus owner is this pane or inside it (true even while the window is inactive). */
+    boolean ownsFocus() {
+        Node owner = getScene() == null ? null : getScene().getFocusOwner();
+        for (Node n = owner; n != null; n = n.getParent()) {
+            if (n == this) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean focusFirstEntry() {
+        Node target = numbered.isEmpty() ? content.lookup(".welcome-action") : numbered.getFirst();
+        if (target == null || target.getScene() == null) {
+            return false;
+        }
+        target.requestFocus();
+        return target.getScene().getFocusOwner() == target; // isFocused() is false in an inactive window
+    }
+
+    /** Rebuilds every section (call before showing, so toggles/recents/projects are current). */
+    public void refresh() {
+        // Rebuilding removes the focused link from the scene, and focus would fall to the toolbar. Asks the
+        // scene, not isFocusWithin(): a refresh driven from the Settings window runs while this window is not
+        // focused, when no node in it reports focus.
+        boolean hadFocus = ownsFocus();
+        rebuild();
+        if (hadFocus) {
+            requestFocus();
+        }
+    }
+
+    private void rebuild() {
+        numbered.clear();
+        content.setMaxWidth(COLUMN_WIDTH * zoom);
+        content.setMinWidth(MIN_COLUMN_WIDTH * zoom);
+        // Below this width the content can't fit, so fit-to-width stops shrinking and a horizontal bar shows.
+        centerHost.setMinWidth(MIN_COLUMN_WIDTH * zoom + 2 * MARGIN);
+
+        List<Path> files = shownRecentFiles();
+        List<Project> recentProjects = shownProjects(files);
+        List<RemoteConnection> sites = remoteSites == null ? List.of() : remoteSites.get();
+        boolean firstRun = files.isEmpty() && recentProjects.isEmpty();
+
+        List<Node> nodes = new ArrayList<>();
+        nodes.add(header());
+        nodes.add(section(tr("welcome.start")));
+        nodes.add(startActions());
+        if (firstRun) {
+            addCustomize(nodes); // nothing to come back to yet: setting up is the next thing to do
+        }
+        if (!recentProjects.isEmpty()) {
+            nodes.add(section(tr("welcome.recentProjects")));
+            nodes.add(projectList(recentProjects));
+        }
+        nodes.add(section(tr("welcome.recentFiles")));
+        nodes.add(recentList(files));
+        if (!sites.isEmpty()) {
+            nodes.add(section(tr("welcome.remote")));
+            nodes.add(remoteList(sites));
+        }
+        if (!firstRun) {
+            addCustomize(nodes);
+        }
+        nodes.add(section(tr("welcome.help")));
+        nodes.add(helpLinks());
+        nodes.add(footer());
+        content.getChildren().setAll(nodes);
+    }
+
+    // --- Recent projects ---
+
+    private List<Project> shownProjects(List<Path> recent) {
+        if (onOpenProject == null || projects == null || !projectsEnabled.getAsBoolean()) {
+            return List.of();
+        }
+        List<Project> all = projects.get().stream()
+                .filter(p -> !p.root().isBlank() && !p.id().isEmpty())
+                .filter(WelcomePane::rootExists)
+                .toList();
+        return WelcomeText.recentProjects(
+                all, recent, file -> RecentProject.containing(file, all).orElse(null));
+    }
+
+    private static boolean rootExists(Project p) {
+        try {
+            Path root = p.rootPath();
+            return !Vfs.isLocal(root) || java.nio.file.Files.isDirectory(root);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    private VBox projectList(List<Project> shown) {
+        VBox box = new VBox();
+        box.getStyleClass().add("welcome-recent");
+        addCollapsed(box, shown.stream().map(this::projectRow).toList());
+        return box;
+    }
+
+    private Node projectRow(Project project) {
+        Hyperlink link = new Hyperlink(project.name());
+        link.getStyleClass().add("welcome-link");
+        link.setOnAction(e -> onOpenProject.accept(project));
+        Path root = project.rootPath();
+        String rootText = Vfs.displayLabel(root);
+        HBox row = recentRowBox(link, folderLabel(Vfs.isLocal(root) ? WelcomeText.dirText(root, home) : rootText));
+        Tooltip.install(row, new Tooltip(rootText));
+        row.setOnContextMenuRequested(e -> {
+            menuFor(null, rootText).show(row, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
+        return row;
+    }
+
+    // --- Recent files ---
+
+    private List<Path> shownRecentFiles() {
+        // Same filter as the toolbar dropdown: a file that has since been deleted must not be offered here
+        // either. Remote entries are kept unchecked — see RecentFiles.showable.
+        return recentFiles == null
+                ? List.of()
+                : RecentFiles.showable(recentFiles.getList(), Vfs::isLocal, java.nio.file.Files::exists);
+    }
+
+    private VBox recentList(List<Path> shown) {
+        VBox box = new VBox();
+        box.getStyleClass().add("welcome-recent");
+        if (shown.isEmpty()) {
+            Label empty = caption(tr("welcome.noRecent"));
+            empty.setWrapText(true);
+            box.getChildren().add(empty);
+            return box;
+        }
+        List<Project> availableProjects = projects == null ? List.of() : projects.get();
+        addCollapsed(
+                box,
+                shown.stream().map(path -> recentRow(path, availableProjects)).toList());
+        return box;
+    }
+
+    private Node recentRow(Path path, List<Project> availableProjects) {
+        Hyperlink link = new Hyperlink(path.getFileName().toString());
+        link.getStyleClass().add("welcome-link");
+        link.setOnAction(e -> onOpenRecent.accept(path));
+        boolean local = Vfs.isLocal(path);
+        Project project =
+                local ? RecentProject.containing(path, availableProjects).orElse(null) : null;
+        Label chip = null;
+        if (project != null) {
+            chip = chip(project.name());
+        } else if (!local && Vfs.authorityOf(path) != null) {
+            chip = chip(WelcomeText.withoutDefaultPort(Vfs.authorityOf(path))); // a remote file names its host
+            chip.setGraphic(scaled(Icons.remote()));
+        }
+        Path projectRoot =
+                project == null ? null : project.rootPath().toAbsolutePath().normalize();
+        Label where = folderLabel(WelcomeText.folderText(path, projectRoot, local ? home : null));
+        HBox row = chip == null ? recentRowBox(link, where) : recentRowBox(link, chip, where);
+        String pathText = Vfs.displayLabel(path);
+        Tooltip.install(row, new Tooltip(pathText));
+        row.setOnContextMenuRequested(e -> {
+            menuFor(path, pathText).show(row, e.getScreenX(), e.getScreenY());
+            e.consume();
+        });
+        return row;
+    }
+
+    /** Copy Path, plus Remove from recent files for a recent file. */
+    private ContextMenu menuFor(Path removable, String pathText) {
+        ContextMenu menu = new ContextMenu();
+        MenuItem copy = new MenuItem(tr("menu.copyPath"));
+        copy.setGraphic(Icons.copy());
+        copy.setOnAction(e -> {
+            ClipboardContent cc = new ClipboardContent();
+            cc.putString(pathText);
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        });
+        menu.getItems().add(copy);
+        if (removable != null && onRemoveRecent != null) {
+            MenuItem remove = new MenuItem(tr("tooltip.removeRecent"));
+            remove.setGraphic(Icons.trash());
+            remove.setOnAction(e -> onRemoveRecent.accept(removable));
+            menu.getItems().add(remove);
+        }
+        return menu;
+    }
+
+    /**
+     * One recent row: an entry number (for the first nine), the name, an optional chip, and the folder. The
+     * name and chip keep their full width; only the folder shrinks, eliding from its start.
+     */
+    private HBox recentRowBox(Hyperlink link, Node... rest) {
+        link.setMinWidth(Region.USE_PREF_SIZE);
+        HBox row = new HBox(8 * zoom);
+        row.getStyleClass().add("welcome-recent-row");
+        row.setAlignment(Pos.BASELINE_LEFT);
+        if (numbered.size() < NUMBERED_ENTRIES) {
+            numbered.add(link);
+            Label number = new Label(String.valueOf(numbered.size()));
+            number.getStyleClass().add("welcome-entry-number");
+            number.setMinWidth(Region.USE_PREF_SIZE);
+            link.setAccessibleHelp(tr("welcome.entryNumber", numbered.size()));
+            row.getChildren().add(number);
+        }
+        row.getChildren().add(link);
+        for (Node n : rest) {
+            if (n.getStyleClass().contains("welcome-recent-dir")) {
+                HBox.setHgrow(n, Priority.ALWAYS);
+            } else if (n instanceof Region r) {
+                r.setMinWidth(Region.USE_PREF_SIZE);
+            }
+            row.getChildren().add(n);
+        }
+        return row;
+    }
+
+    private static Label folderLabel(String text) {
+        Label dir = new Label(text);
+        dir.getStyleClass().add("welcome-recent-dir");
+        dir.setMinWidth(0);
+        dir.setMaxWidth(Double.MAX_VALUE);
+        dir.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS); // keep the folder's end, the part that differs
+        return dir;
+    }
+
+    private static Label chip(String text) {
+        Label chip = new Label(text);
+        chip.getStyleClass().add("recent-project-name");
+        return chip;
+    }
+
+    /** Shows the first {@link #COLLAPSED_RECENT_LIMIT} rows, and the rest behind a "Show N more" toggle. */
+    private void addCollapsed(VBox box, List<Node> rows) {
+        rows.stream().limit(COLLAPSED_RECENT_LIMIT).forEach(box.getChildren()::add);
+        if (rows.size() <= COLLAPSED_RECENT_LIMIT) {
+            return;
+        }
+        List<Node> overflow = rows.subList(COLLAPSED_RECENT_LIMIT, rows.size());
+        Button disclosure = new Button();
+        disclosure.getStyleClass().addAll("flat", "welcome-recent-disclosure");
+        disclosure.setContentDisplay(ContentDisplay.RIGHT);
+        setRecentDisclosureState(disclosure, overflow.size(), false);
+        disclosure.setOnAction(event -> {
+            boolean expanding = !box.getChildren().contains(overflow.getFirst());
+            if (expanding) {
+                box.getChildren().addAll(box.getChildren().indexOf(disclosure), overflow);
+            } else {
+                box.getChildren().removeAll(overflow);
+            }
+            setRecentDisclosureState(disclosure, overflow.size(), expanding);
+        });
+        box.getChildren().add(disclosure);
+    }
+
+    private void setRecentDisclosureState(Button disclosure, int hiddenCount, boolean expanded) {
+        String text = expanded ? tr("welcome.recent.showFewer") : tr("welcome.recent.showMore", hiddenCount);
+        disclosure.setText(text);
+        disclosure.setGraphic(scaled(expanded ? Icons.findPrevious() : Icons.findNext()));
+        disclosure.setAccessibleText(text);
+    }
+
+    // --- Remote sites ---
 
     /** A quick-connect list of saved SFTP sites; clicking one opens the prefilled connection form. */
     private VBox remoteList(List<RemoteConnection> sites) {
         VBox box = new VBox();
         box.getStyleClass().add("welcome-recent");
+        List<Node> rows = new ArrayList<>();
         for (RemoteConnection c : sites) {
             Hyperlink link = new Hyperlink(c.displayLabel());
             link.getStyleClass().add("welcome-link");
-            Label id = new Label(c.id());
-            id.getStyleClass().add("welcome-recent-dir");
-            HBox row = new HBox(8, link, id);
+            link.setMinWidth(Region.USE_PREF_SIZE);
+            link.setOnAction(e -> onConnectRemote.accept(c));
+            HBox row = new HBox(8 * zoom, link);
+            row.getStyleClass().add("welcome-recent-row");
+            String detail = WelcomeText.siteDetail(c);
+            if (!detail.isEmpty()) {
+                Label where = folderLabel(detail);
+                HBox.setHgrow(where, Priority.ALWAYS);
+                row.getChildren().add(where);
+            }
             row.setAlignment(Pos.BASELINE_LEFT);
             Tooltip.install(row, new Tooltip("sftp://" + c.id()));
-            link.setOnAction(e -> onConnectRemote.accept(c));
-            box.getChildren().add(row);
+            rows.add(row);
         }
+        addCollapsed(box, rows);
         return box;
+    }
+
+    // --- Customize ---
+
+    private void addCustomize(List<Node> nodes) {
+        if (keymapName == null || themeName == null) {
+            return;
+        }
+        nodes.add(section(tr("welcome.customize")));
+        VBox box = new VBox(
+                customizeRow(tr("welcome.keymap"), keymapName.get(), "keymap.select"),
+                customizeRow(tr("welcome.theme"), themeName.get(), "theme.setAppTheme"));
+        box.getStyleClass().add("welcome-recent");
+        if (keymap != null
+                && ChordFormat.styleFor(keymap.activeName(), KeymapManager.isMac()) == ChordFormat.Style.EMACS) {
+            // Emacs notation is unfamiliar to most newcomers; say what the chords on this page mean.
+            Label hint = caption(tr(KeymapManager.isMac() ? "welcome.notation.emacs.mac" : "welcome.notation.emacs"));
+            hint.setWrapText(true);
+            box.getChildren().add(hint);
+        }
+        nodes.add(box);
+    }
+
+    private Node customizeRow(String label, String value, String commandId) {
+        Label name = new Label(label);
+        name.getStyleClass().add("welcome-customize-label");
+        name.setMinWidth(96 * zoom);
+        Hyperlink link = new Hyperlink(value);
+        link.getStyleClass().add("welcome-link");
+        link.setAccessibleText(label + ": " + value);
+        link.setOnAction(e -> registry.run(commandId));
+        HBox row = new HBox(8 * zoom, name, link);
+        row.setAlignment(Pos.BASELINE_LEFT);
+        return row;
+    }
+
+    // --- Help + footer ---
+
+    private Node helpLinks() {
+        FlowPane row = new FlowPane(20 * zoom, 4);
+        row.getStyleClass().add("welcome-help");
+        row.getChildren()
+                .addAll(
+                        helpLink(tr("welcome.documentation"), () -> registry.run("help.documentation")),
+                        helpLink(tr("welcome.whatsNew"), () -> openUrl.accept(AppInfo.releaseNotesUrl())),
+                        helpLink(tr("welcome.doctor"), () -> registry.run("view.doctor")));
+        return row;
+    }
+
+    private static Hyperlink helpLink(String text, Runnable action) {
+        Hyperlink link = new Hyperlink(text);
+        link.getStyleClass().add("welcome-link");
+        link.setOnAction(e -> action.run());
+        return link;
     }
 
     /** App version + home-page link, with the copyright + license beneath. */
@@ -231,10 +623,10 @@ public final class WelcomePane extends Region implements TabContent {
         Label version = new Label(tr("welcome.version", AppInfo.VERSION));
         version.getStyleClass().add("welcome-footer");
         Hyperlink home = new Hyperlink(AppInfo.HOMEPAGE.replaceFirst("^https?://", ""));
-        home.getStyleClass().add("welcome-link");
+        home.getStyleClass().addAll("welcome-link", "welcome-footer-link");
         home.setOnAction(e -> openUrl.accept(AppInfo.HOMEPAGE));
         HBox line1 = new HBox(8, version, dotLabel(), home);
-        line1.setAlignment(Pos.CENTER_LEFT);
+        line1.setAlignment(Pos.BASELINE_LEFT);
 
         Label legal = new Label(AppInfo.LICENSE); // license only here; the author/copyright lives in About
         legal.getStyleClass().add("welcome-footer");
@@ -269,7 +661,7 @@ public final class WelcomePane extends Region implements TabContent {
         if (logo == null) {
             return titles;
         }
-        HBox box = new HBox(16, logo, titles);
+        HBox box = new HBox(16 * zoom, logo, titles);
         box.getStyleClass().add("welcome-header");
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
@@ -281,130 +673,66 @@ public final class WelcomePane extends Region implements TabContent {
             return null;
         }
         javafx.scene.image.ImageView view = new javafx.scene.image.ImageView(new javafx.scene.image.Image(in));
-        view.setFitWidth(64);
-        view.setFitHeight(64);
+        view.setFitWidth(64 * zoom);
+        view.setFitHeight(64 * zoom);
         view.setPreserveRatio(true);
         view.setSmooth(true);
         return view;
     }
 
+    // --- Start actions ---
+
     private VBox startActions() {
         VBox box = new VBox();
         box.getStyleClass().add("welcome-actions");
         box.setFillWidth(true);
-        box.setMinWidth(ACTIONS_WIDTH);
-        box.setPrefWidth(ACTIONS_WIDTH);
-        box.setMaxWidth(ACTIONS_WIDTH);
-        box.getChildren().add(action(Icons.newFile(), tr("welcome.newFile"), "file.new"));
-        // Opens a file dialog (file.open), but show the familiar "find file" keybinding (C-x C-f).
+        // As wide as the widest row (label + gap + chord), not the column, so chords sit near their labels.
+        box.setMaxWidth(Region.USE_PREF_SIZE);
+        box.getChildren().add(action(Icons.newFile(), tr("welcome.newFile"), "file.new", null));
+        // Runs the Open dialog. Its own chord when bound; the Emacs keymap binds only find-file (C-x C-f),
+        // which opens a file too, so that is the chord to learn there.
         box.getChildren().add(action(Icons.open(), tr("welcome.openFile"), "file.open", "file.find"));
         if (projectsEnabled.getAsBoolean()) {
-            box.getChildren().add(action(Icons.openFolder(), tr("welcome.openFolder"), "project.open"));
+            box.getChildren().add(action(Icons.openFolder(), tr("welcome.openFolder"), "project.open", null));
         }
         if (gitEnabled.getAsBoolean()) {
-            box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone"));
+            box.getChildren().add(action(Icons.git(), tr("welcome.clone"), "git.clone", null));
         }
-        box.getChildren().add(action(Icons.doctor(), tr("welcome.doctor"), "view.doctor"));
         // The Command Palette is always last (it's the gateway to everything else).
-        box.getChildren().add(action(Icons.palette(), tr("command.palette.show"), "palette.show"));
+        box.getChildren().add(action(Icons.palette(), tr("command.palette.show"), "palette.show", null));
         return box;
     }
 
-    private VBox recentList() {
-        VBox box = new VBox();
-        box.getStyleClass().add("welcome-recent");
-        // Same filter as the toolbar dropdown: a file that has since been deleted must not be offered here
-        // either. Remote entries are kept unchecked — see RecentFiles.showable.
-        List<Path> shown = recentFiles == null
-                ? List.of()
-                : RecentFiles.showable(recentFiles.getList(), Vfs::isLocal, java.nio.file.Files::exists);
-        if (shown.isEmpty()) {
-            box.getChildren().add(caption(tr("welcome.noRecent")));
-            return box;
-        }
-        List<Project> availableProjects = projects == null ? List.of() : projects.get();
-        shown.stream()
-                .limit(COLLAPSED_RECENT_LIMIT)
-                .map(path -> recentRow(path, availableProjects))
-                .forEach(box.getChildren()::add);
-        if (shown.size() > COLLAPSED_RECENT_LIMIT) {
-            addRecentDisclosure(box, shown, availableProjects);
-        }
-        return box;
-    }
-
-    private HBox recentRow(Path path, List<Project> availableProjects) {
-        Hyperlink link = new Hyperlink(path.getFileName().toString());
-        link.getStyleClass().add("welcome-link");
-        Label dir = new Label(parentText(path));
-        dir.getStyleClass().add("welcome-recent-dir");
-        HBox row = new HBox(8, link);
-        row.getStyleClass().add("welcome-recent-row");
-        RecentProject.containing(path, availableProjects).ifPresent(project -> {
-            Label projectName = new Label(project.name());
-            projectName.getStyleClass().add("recent-project-name");
-            row.getChildren().add(projectName);
-        });
-        row.getChildren().add(dir);
-        row.setAlignment(Pos.BASELINE_LEFT);
-        Tooltip.install(row, new Tooltip(path.toString()));
-        link.setOnAction(e -> onOpenRecent.accept(path));
-        return row;
-    }
-
-    private void addRecentDisclosure(VBox box, List<Path> shown, List<Project> availableProjects) {
-        List<Node> overflow = shown.subList(COLLAPSED_RECENT_LIMIT, shown.size()).stream()
-                .map(path -> (Node) recentRow(path, availableProjects))
-                .toList();
-        Button disclosure = new Button();
-        disclosure.getStyleClass().addAll("button-icon", "flat", "welcome-recent-disclosure");
-        setRecentDisclosureState(disclosure, overflow.size(), false);
-        disclosure.setOnAction(event -> {
-            boolean expanding = !box.getChildren().contains(overflow.getFirst());
-            if (expanding) {
-                box.getChildren().addAll(box.getChildren().indexOf(disclosure), overflow);
-            } else {
-                box.getChildren().removeAll(overflow);
-            }
-            setRecentDisclosureState(disclosure, overflow.size(), expanding);
-        });
-        box.getChildren().add(disclosure);
-    }
-
-    private static void setRecentDisclosureState(Button disclosure, int hiddenCount, boolean expanded) {
-        String description = tr(expanded ? "welcome.recent.showFewer" : "welcome.recent.showMore", hiddenCount);
-        disclosure.setGraphic(expanded ? Icons.findPrevious() : Icons.findNext());
-        disclosure.setAccessibleText(description);
-        disclosure.setTooltip(new Tooltip(description));
-    }
-
-    private Node action(Node icon, String text, String commandId) {
-        return action(icon, text, commandId, commandId);
-    }
-
-    /** {@code commandId} runs on click; the keybinding shown is {@code shortcutCommandId}'s (often the same). */
-    private Node action(Node icon, String text, String commandId, String shortcutCommandId) {
+    /** {@code commandId} runs on click; its chord is shown, or {@code fallbackChordId}'s when it has none. */
+    private Node action(Node icon, String text, String commandId, String fallbackChordId) {
         // Put the icon in a fixed-width column so every label starts at the same x, regardless of icon width.
-        javafx.scene.layout.StackPane holder = new javafx.scene.layout.StackPane(icon);
-        holder.setMinWidth(26);
-        holder.setPrefWidth(26);
-        holder.setMaxWidth(26);
+        StackPane holder = new StackPane(scaled(icon));
+        holder.setMinWidth(26 * zoom);
+        holder.setPrefWidth(26 * zoom);
+        holder.setMaxWidth(26 * zoom);
         holder.setAlignment(Pos.CENTER_LEFT);
         Hyperlink link = new Hyperlink(text);
         link.setGraphic(holder);
         link.getStyleClass().add("welcome-action");
+        link.setMinWidth(Region.USE_PREF_SIZE);
         link.setOnAction(e -> registry.run(commandId));
 
         Region spacer = new Region();
-        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+        spacer.setMinWidth(KEY_GAP * zoom);
+        HBox.setHgrow(spacer, Priority.ALWAYS);
         HBox row = new HBox(link, spacer);
         row.setAlignment(Pos.CENTER_LEFT);
         row.getStyleClass().add("welcome-action-row");
-        String shortcut = shortcutFor(shortcutCommandId); // the configured keybinding, if any
+        String shortcut = shortcutFor(commandId);
+        if (shortcut == null && fallbackChordId != null) {
+            shortcut = shortcutFor(fallbackChordId);
+        }
         if (shortcut != null) {
             Label key = new Label(shortcut);
             key.getStyleClass().add("welcome-key");
+            key.setMinWidth(Region.USE_PREF_SIZE);
             row.getChildren().add(key);
+            link.setAccessibleHelp(shortcut);
         }
         // Clicking anywhere on the row triggers the action, not just the link text.
         row.setOnMouseClicked(e -> link.fire());
@@ -414,6 +742,34 @@ public final class WelcomePane extends Region implements TabContent {
     /** The configured keybinding for {@code commandId} in the active keymap's notation, or null if unbound. */
     private String shortcutFor(String commandId) {
         return keymap == null ? null : keymap.displayChord(commandId);
+    }
+
+    // --- Keys ---
+
+    private void onKeyTyped(KeyEvent e) {
+        String ch = e.getCharacter();
+        if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || ch == null || ch.length() != 1) {
+            return;
+        }
+        int n = ch.charAt(0) - '0';
+        if (n >= 1 && n <= numbered.size()) {
+            numbered.get(n - 1).fire();
+            e.consume();
+        }
+    }
+
+    /** The entries digits 1–9 open, in order (for tests). */
+    List<Hyperlink> numberedEntries() {
+        return List.copyOf(numbered);
+    }
+
+    // --- Helpers ---
+
+    /** An icon at the page's zoom. Scale does not change layout bounds, so callers size its cell themselves. */
+    private Node scaled(Node icon) {
+        icon.setScaleX(zoom);
+        icon.setScaleY(zoom);
+        return icon;
     }
 
     private static Label title(String text) {
@@ -434,9 +790,13 @@ public final class WelcomePane extends Region implements TabContent {
         return l;
     }
 
-    private static String parentText(Path p) {
-        Path parent = p.getParent();
-        return parent == null ? "" : parent.toString();
+    private static Path homeDirectory() {
+        try {
+            String h = System.getProperty("user.home");
+            return h == null || h.isBlank() ? null : Path.of(h).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @Override

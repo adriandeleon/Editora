@@ -736,6 +736,7 @@ public class SettingsWindow {
                     case "ai" -> Category.AI_GENERAL;
                     case "buildTools" -> Category.BUILD_TOOLS;
                     case "editor" -> Category.EDITOR;
+                    case "remote" -> Category.REMOTE;
                     default -> null;
                 };
         showAt(target, owner);

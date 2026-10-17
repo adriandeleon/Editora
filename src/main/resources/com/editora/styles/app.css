@@ -3650,21 +3650,51 @@
     -fx-spacing: 8;
 }
 /* Start actions + recent files are Hyperlinks in the accent color. No box at rest; keyboard focus
-   draws the shared ring (see "Keyboard focus" at the end of this file). */
+   draws the shared ring (see "Keyboard focus" at the end of this file). Underlined only on hover or
+   keyboard focus (the page focuses its first entry on open, which should not look hovered): a page of always-underlined links reads like a web form and the lines fight the icons. */
 .welcome-action, .welcome-link {
     -fx-text-fill: -color-accent-fg;
     -fx-border-color: transparent;
     -fx-padding: 4 0 4 0;
+    -fx-underline: false;
+}
+.welcome-action:hover, .welcome-link:hover,
+.welcome-action:focus-visible, .welcome-link:focus-visible {
+    -fx-underline: true;
+}
+/* Visited stays the accent: the page is rebuilt on every show, and "visited" means nothing here. */
+.welcome-action:visited, .welcome-link:visited {
+    -fx-text-fill: -color-accent-fg;
 }
 .welcome-action {
     -fx-graphic-text-gap: 12;
+}
+/* The whole action row is clickable, so the whole row answers the pointer. The insets reach past the
+   row so the label text does not touch the fill. */
+.welcome-action-row:hover {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-insets: 0 -8 0 -8;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
 }
 .welcome-recent-dir {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
+/* The digit that opens a recent entry (1–9), in the chord colour so it reads as a key. */
+.welcome-entry-number {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 0.8em;
+    -fx-min-width: 1.2em;
+}
 .welcome-recent-disclosure {
-    -fx-padding: 3 6 3 6;
+    -fx-padding: 3 0 3 0;
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+    -fx-graphic-text-gap: 6;
+}
+.welcome-recent-disclosure:hover {
+    -fx-text-fill: -color-fg-default;
 }
 .recent-project-name {
     -fx-text-fill: -color-fg-muted;
@@ -3672,6 +3702,10 @@
     -fx-background-color: -color-bg-subtle;
     -fx-background-radius: 3;
     -fx-padding: 1 5 1 5;
+    -fx-graphic-text-gap: 4;
+}
+.welcome-customize-label {
+    -fx-text-fill: -color-fg-muted;
 }
 /* Keybinding chord shown right-aligned next to a Start action (periwinkle, as everywhere). */
 .welcome-key {
@@ -3692,9 +3726,45 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
+/* The home-page link sits in the footer line, so it takes the footer's size and no extra padding. */
+.welcome-footer-link {
+    -fx-font-size: 0.9em;
+    -fx-padding: 0;
+}
 
-/* Doctor screen (external-tool health, a Welcome-style tab): sectioned rows of status glyph + tool +
-   command + version/tip, all in semantic colors so every theme reads correctly. */
+/* The Welcome and Doctor pages paint the UI surface (-color-bg-default), not the editor surface, so their
+   selected tab takes the same fill; with a dark UI and a light editor theme it was a white block. */
+.tab-pane > .tab-header-area > .headers-region > .tab.ui-surface-tab:top:selected,
+.tab-pane > .tab-header-area > .headers-region > .tab.ui-surface-tab:bottom:selected {
+    -fx-background-color: -color-border-default, -color-bg-default;
+}
+
+/* The editor area once its last tab is closed: a quiet list of the ways back in, each with its chord. */
+.editor-empty-rows {
+    -fx-hgap: 28;
+    -fx-vgap: 6;
+}
+.editor-empty-action {
+    -fx-text-fill: -color-fg-muted;
+    -fx-border-color: transparent;
+    -fx-underline: false;
+    -fx-padding: 2 0 2 0;
+}
+.editor-empty-action:hover, .editor-empty-action:focus-visible {
+    -fx-text-fill: -color-fg-default;
+    -fx-underline: true;
+}
+.editor-empty-action:visited {
+    -fx-text-fill: -color-fg-muted;
+}
+.editor-empty-key {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 0.9em;
+}
+
+/* Doctor screen (external-tool health, a Welcome-style tab). What needs attention sits on top; each row is a
+   status pill (the Settings pages' .settings-git-status family, plus amber), the tool with its command under
+   it, the version or path, and the actions — all in semantic colours so every theme reads correctly. */
 .doctor-pane {
     -fx-background-color: -color-bg-default;
 }
@@ -3710,17 +3780,41 @@
 .doctor-content {
     -fx-spacing: 4;
 }
+.doctor-body {
+    -fx-spacing: 2;
+}
 .doctor-title {
     -fx-font-size: 2.4em;
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-default;
 }
-.doctor-caption {
+.doctor-caption,
+.doctor-machine {
     -fx-text-fill: -color-fg-muted;
 }
-.doctor-summary {
+.doctor-remote-note {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-padding: 6 10 6 10;
+}
+.doctor-summary-part {
     -fx-text-fill: -color-fg-default;
 }
+.doctor-summary-checking {
+    -fx-text-fill: -color-fg-muted;
+}
+.doctor-summary-clear {
+    -fx-text-fill: -state-green;
+    -fx-font-weight: bold;
+}
+.doctor-summary-link {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+    -fx-font-weight: bold;
+}
+.doctor-summary-problems { -fx-text-fill: -state-red; }
+.doctor-summary-warnings { -fx-text-fill: -state-amber; }
 .doctor-status-line {
     -fx-padding: 10 0 0 0;
 }
@@ -3730,8 +3824,39 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 22 0 6 0;
 }
+.doctor-section.doctor-attention {
+    -fx-text-fill: -state-red;
+}
+.doctor-section-line .doctor-section {
+    -fx-padding: 0;
+}
+.doctor-section-line {
+    -fx-padding: 12 0 2 0;
+}
+.doctor-fold-count {
+    -fx-text-fill: -color-fg-muted;
+}
+.doctor-fold-link {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+.doctor-optional-fold {
+    -fx-padding: 4 0 4 0;
+}
 .doctor-row {
-    -fx-padding: 3 0 3 0;
+    -fx-padding: 4 0 4 0;
+}
+.doctor-stale {
+    -fx-opacity: 0.55;
+}
+/* One width for every pill, so the names line up down the page. */
+.doctor-pill {
+    -fx-min-width: 8.5em;
+    -fx-alignment: center;
+}
+.doctor-pill-warn {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
 }
 .doctor-name {
     -fx-font-weight: bold;
@@ -3745,19 +3870,10 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.92em;
 }
-.doctor-settings-link {
-    -fx-text-fill: -color-accent-fg;
-    -fx-border-color: transparent;
-    -fx-padding: 0 0 0 4;
+.doctor-row-missing .doctor-tip { -fx-text-fill: -color-fg-default; }
+.doctor-installing {
+    -fx-opacity: 0.7;
 }
-.doctor-status {
-    -fx-font-weight: bold;
-}
-.doctor-status-ok { -fx-text-fill: -color-success-fg; }
-.doctor-status-warn { -fx-text-fill: -color-warning-fg; }
-.doctor-status-missing { -fx-text-fill: -color-danger-fg; }
-.doctor-status-disabled { -fx-text-fill: -color-fg-muted; }
-.doctor-status-checking { -fx-text-fill: -color-fg-muted; }
 
 /* TODO tool window: file-group rows + the per-pattern color tag. (The in-editor highlight is a Canvas
    overlay colored inline per pattern, so it needs no CSS.) */

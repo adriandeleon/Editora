@@ -2,6 +2,7 @@ package com.editora.doctor;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,5 +48,23 @@ class DoctorTextTest {
         assertFalse(DoctorText.commandRepeatsDetail("gopls", "~/go/bin/gopls-old"));
         assertFalse(DoctorText.commandRepeatsDetail("", "~/go/bin/gopls"));
         assertFalse(DoctorText.commandRepeatsDetail("gopls", ""));
+    }
+
+    @Test
+    void collapsesTheHomeFolderWhereverAPathStarts() {
+        assertEquals(
+                "pyright 1.1.411 — ~/.nvm/bin/pyright-langserver",
+                DoctorText.collapseHomeEverywhere(
+                        "pyright 1.1.411 — /home/me/.nvm/bin/pyright-langserver", "/home/me"));
+        assertEquals("~/bin/x", DoctorText.collapseHomeEverywhere("/home/me/bin/x", "/home/me/"));
+        assertEquals(
+                "Python 3.13 — ~/p/.venv/bin/python (~/p/.venv)",
+                DoctorText.collapseHomeEverywhere(
+                        "Python 3.13 — /home/me/p/.venv/bin/python (/home/me/p/.venv)", "/home/me"));
+        // Another user's folder that merely starts with the same letters, and a path not at a word start.
+        assertEquals("/home/me2/bin/x", DoctorText.collapseHomeEverywhere("/home/me2/bin/x", "/home/me"));
+        assertEquals("x/home/me/bin", DoctorText.collapseHomeEverywhere("x/home/me/bin", "/home/me"));
+        assertEquals("", DoctorText.collapseHomeEverywhere(null, "/home/me"));
+        assertEquals("git version 2", DoctorText.collapseHomeEverywhere("git version 2", ""));
     }
 }

@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -71,6 +70,24 @@ class DoctorCatalogFxTest {
         final Map<String, List<String>> argv = new HashMap<>();
         boolean installedTypstCli;
         String openedSettings;
+        Path root;
+        Set<String> configured = Set.of();
+        final List<String> commandsRun = new java.util.ArrayList<>();
+
+        @Override
+        public Path projectRoot() {
+            return root;
+        }
+
+        @Override
+        public boolean lspServerCommandSet(String serverId) {
+            return configured.contains(serverId);
+        }
+
+        @Override
+        public void runCommand(String commandId) {
+            commandsRun.add(commandId);
+        }
 
         @Override
         public com.editora.mermaid.MermaidService mermaidService() {
@@ -166,8 +183,11 @@ class DoctorCatalogFxTest {
         assertEquals(
                 DoctorStatus.OK,
                 spec(specs, "lsp.bash.shellcheck").probe().get().status());
+        // No shell script is open, so the missing formatter is not a problem yet; Install… stays offered.
         DoctorCheck shfmt = spec(specs, "lsp.bash.shfmt").probe().get();
-        assertEquals(DoctorStatus.MISSING, shfmt.status());
+        assertEquals(DoctorStatus.OPTIONAL, shfmt.status());
+        assertEquals("format", shfmt.sectionKey());
+        assertEquals(DoctorCheck.Install.TOOL, shfmt.install());
         assertEquals("doctor.tip.bashTool", shfmt.tipKey());
         assertEquals(List.of(noShfmt), shfmt.tipArgs());
 
@@ -297,9 +317,9 @@ class DoctorCatalogFxTest {
         DoctorCheck git = spec(specs, "git").probe().get();
         assertEquals(DoctorStatus.MISSING, git.status());
         assertEquals(List.of(noGit), git.tipArgs());
-        // Without ripgrep the search still works, more slowly: a warning, not an error.
+        // Without ripgrep the search still works, more slowly: not installed, not a warning.
         DoctorCheck rg = spec(specs, "ripgrep").probe().get();
-        assertEquals(DoctorStatus.WARN, rg.status());
+        assertEquals(DoctorStatus.OPTIONAL, rg.status());
         assertEquals("doctor.tip.ripgrepOptional", rg.tipKey());
     }
 
@@ -326,20 +346,37 @@ class DoctorCatalogFxTest {
         assertEquals(DoctorStatus.OK, jsonResult.status());
         assertEquals(jsonServer.toString(), jsonResult.detail());
 
-        // No command configured at all: says so, and names the server in the tip.
+        // No command configured at all: says so (not "not found on PATH"), and nothing here needs it.
         DoctorCheck java = spec(specs, "lsp.java").placeholder();
-        assertEquals(tr("doctor.notConfigured"), java.command());
+        assertEquals("", java.command());
         assertEquals(DoctorCheck.Install.LANG, java.install());
         assertEquals(InstallCatalog.Lang.JAVA.name(), java.installArg());
         DoctorCheck javaResult = spec(specs, "lsp.java").probe().get();
-        assertEquals(DoctorStatus.MISSING, javaResult.status());
-        assertEquals(List.of(java.label()), javaResult.tipArgs());
+        assertEquals(DoctorStatus.OPTIONAL, javaResult.status());
+        assertEquals("doctor.tip.notConfigured", javaResult.tipKey());
 
+        // Missing, but no TypeScript file is open and the project has no package.json: not a problem (review A1).
         DoctorCheck ts = spec(specs, "lsp.typescript").placeholder();
         assertEquals(InstallCatalog.Lang.JAVASCRIPT.name(), ts.installArg());
         DoctorCheck tsResult = spec(specs, "lsp.typescript").probe().get();
-        assertEquals(DoctorStatus.MISSING, tsResult.status());
-        assertEquals(List.of(dir.resolve("no-such-ts-server").toString()), tsResult.tipArgs());
+        assertEquals(DoctorStatus.OPTIONAL, tsResult.status());
+        assertEquals("doctor.tip.serverOptional", tsResult.tipKey());
+
+        // A project that calls for it makes the same absence a problem, named by its command.
+        Files.writeString(Files.createDirectories(dir.resolve("proj")).resolve("package.json"), "{}");
+        ops.root = dir.resolve("proj");
+        DoctorCheck needed = spec(specs(host, ops), "lsp.typescript").probe().get();
+        assertEquals(DoctorStatus.MISSING, needed.status());
+        assertEquals("doctor.tip.missingInstallable", needed.tipKey());
+        assertEquals(List.of(dir.resolve("no-such-ts-server").toString()), needed.tipArgs());
+        ops.root = null;
+
+        // So does a command the user set themselves.
+        ops.configured = Set.of("markdown");
+        DoctorCheck md = spec(specs(host, ops), "lsp.markdown").probe().get();
+        assertEquals(DoctorStatus.MISSING, md.status());
+        assertEquals("doctor.tip.missing", md.tipKey(), "no installer, so no \"Click Install…\"");
+        ops.configured = Set.of();
 
         // A server the editor cannot install itself offers no Install button.
         assertFalse(InstallCatalog.installableServerIds().contains("markdown"));
@@ -376,6 +413,7 @@ class DoctorCatalogFxTest {
         host.settings.setJavaDebugPluginPath(dir.resolve("gone.jar").toString());
         DoctorCheck missing = spec(specs(host, ops), "debug.java").probe().get();
         assertEquals(DoctorStatus.MISSING, missing.status());
+        assertEquals("doctor.tip.missingInstallable", missing.tipKey());
         assertEquals(List.of("java-debug"), missing.tipArgs());
 
         // A jdtls that ships java-debug has no jar to find; with LSP off nothing else matters (review A7).
@@ -384,9 +422,14 @@ class DoctorCatalogFxTest {
                 DoctorStatus.OK,
                 spec(specs(host, ops), "debug.java").probe().get().status());
         ops.lsp = false;
-        DoctorCheck needsLsp = spec(specs(host, ops), "debug.java").probe().get();
+        // The fix is turning LSP on, not an install (review A3): no probe, no Install…, a Turn on.
+        DoctorService.CheckSpec needsLspSpec = spec(specs(host, ops), "debug.java");
+        assertNull(needsLspSpec.probe());
+        DoctorCheck needsLsp = needsLspSpec.placeholder();
         assertEquals(DoctorStatus.MISSING, needsLsp.status());
-        assertEquals("status.debug.javaNeedsLsp", needsLsp.tipKey());
+        assertEquals("doctor.tip.needsLsp", needsLsp.tipKey());
+        assertEquals(DoctorCheck.Install.NONE, needsLsp.install());
+        assertEquals("lsp", needsLsp.enableKey());
         ops.lsp = true;
         ops.javaDebugFromServer = false;
 
@@ -576,5 +619,23 @@ class DoctorCatalogFxTest {
 
         host.settings.setHttpClientSupport(false);
         assertFalse(has(specs(host, new Ops()), "http.scripts"), "no HTTP Client, no row");
+    }
+
+    /** A feature-off row's Turn on runs that feature's own toggle, and only while the feature is off (review C5). */
+    @Test
+    void turnOnRunsTheFeaturesToggleOnlyWhileItIsOff() throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+        doctor.probeOverrideForTest = spec -> spec.placeholder().ok("");
+        host.settings.setDebugSupport(false);
+        host.settings.setLspSupport(true);
+        FxTestSupport.runOnFx(() -> doctor.enableFeature("debug"));
+        FxTestSupport.runOnFx(() -> doctor.enableFeature("lsp"));
+        assertEquals(List.of("view.toggleDebug"), ops.commandsRun, "LSP is already on: never toggled off");
+
+        host.settings.setHttpScriptsEnabled(false);
+        FxTestSupport.runOnFx(() -> doctor.enableFeature("httpScripts"));
+        assertTrue(host.settings.isHttpScriptsEnabled());
     }
 }
