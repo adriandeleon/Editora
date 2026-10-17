@@ -84,6 +84,11 @@ class JavaLooseLaunchFxTest {
                 public void onError(String message) {
                     errors.add(message);
                 }
+
+                @Override
+                public void onProgramExit(int code) {
+                    console.add("exit:" + code);
+                }
             });
         });
         replies.put("vscode.java.startDebugSession", p -> adapter.port());
@@ -131,8 +136,11 @@ class JavaLooseLaunchFxTest {
         }
         session.awaitRequest("launch");
         assertEquals(List.of(), errors);
+        lastSession = session;
         return session.launchArgs;
     }
+
+    private FakeDebugAdapter.Session lastSession;
 
     private List<String> names() {
         return commands.stream().map(ExecuteCommandParams::getCommand).toList();
@@ -366,4 +374,24 @@ class JavaLooseLaunchFxTest {
     }
 
     private final Path[] firstDir = new Path[1];
+
+    /**
+     * With the program console off java-debug starts the program, and its {@code exited} event says 0 whatever
+     * the program exited with: the console says the program ended, not a code that is not the program's (A10).
+     */
+    @Test
+    void javaDebugsExitCodeIsNotPassedOffAsTheProgramsOwn() throws Exception {
+        Path folder = Files.createDirectories(dir.resolve("exit"));
+        Path file = folder.resolve("Quit.java");
+        open(file, folder, "public class Quit {\n    public static void main(String[] a) { System.exit(3); }\n}\n");
+
+        onFx(() -> dap.startLaunch(file, "java", noPicker, javaExec(), null));
+        launch();
+        FakeDebugAdapter.Session session = lastSession;
+        session.exited(0);
+        session.terminate();
+
+        awaitTrue(() -> console.contains("console:The program ended.\n"), "the end is said: " + console);
+        assertFalse(console.stream().anyMatch(l -> l.startsWith("exit:")), console.toString());
+    }
 }

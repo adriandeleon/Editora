@@ -1597,6 +1597,7 @@ public final class DapManager implements DapClient.Host {
         if (!isCurrent(epoch)) {
             return;
         }
+        javaAdapterEpoch = epoch;
         lsp.executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -3057,6 +3058,9 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
+    /** The session served by java-debug (whose {@code exited} event carries no real exit code). */
+    private long javaAdapterEpoch = -1;
+
     /** The session whose program Editora started itself (its exit is reported by its own process). */
     private long programStartedEpoch = -1;
 
@@ -3071,6 +3075,12 @@ public final class DapManager implements DapClient.Host {
             }
             exitReportedEpoch = epoch;
             outputPump.flush();
+            if (javaAdapterEpoch == epoch) {
+                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live):
+                // the console says the program ended, not a code that is not its own (review A10).
+                listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                return;
+            }
             listener.onProgramExit(exitCode);
         });
     }
