@@ -376,8 +376,7 @@ class SettingsContentPagesFxTest {
             assertEquals("", editorTheme.getItems().getFirst(), "Automatic is the first choice");
             assertEquals("", editorTheme.getValue());
             assertEquals(
-                    tr("settings.editorTheme.auto", EditorThemes.defaultFor(settings.getTheme())),
-                    editorTheme.getButtonCell().getText());
+                    tr("settings.editorTheme.auto"), editorTheme.getButtonCell().getText());
 
             editorTheme.setValue("Dracula");
             theme.setValue("Nord Light");
@@ -388,9 +387,7 @@ class SettingsContentPagesFxTest {
             assertEquals(EditorThemes.defaultFor("Nord Light"), settings.getEditorTheme());
             theme.setValue("Editora Dark");
             assertEquals(EditorThemes.defaultFor("Editora Dark"), settings.getEditorTheme(), "and follows again");
-            assertEquals(
-                    tr("settings.editorTheme.auto", EditorThemes.defaultFor("Editora Dark")),
-                    editorTheme.getButtonCell().getText());
+            assertEquals("", editorTheme.getValue(), "still showing Automatic");
         });
     }
 

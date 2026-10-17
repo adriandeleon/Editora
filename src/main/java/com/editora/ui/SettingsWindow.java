@@ -1152,7 +1152,6 @@ public class SettingsWindow {
             if (!config.getSettings().isEditorThemeUserSet()) {
                 config.getSettings().setEditorTheme(EditorThemes.defaultFor(now));
                 applyPreviewTheme(config.getSettings().getEditorTheme());
-                editorThemeCombo.setButtonCell(editorThemeCell()); // "Automatic" names the theme it follows
             }
             apply();
         });
@@ -8186,7 +8185,6 @@ public class SettingsWindow {
                 settings.setEditorTheme(editorTheme);
             }
             editorThemeCombo.setValue(settings.isEditorThemeUserSet() ? editorTheme : "");
-            editorThemeCombo.setButtonCell(editorThemeCell()); // the app theme "Automatic" names may have changed
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
             indentStyleCombo.setValue(settings.getIndentStyle());
             fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
@@ -8781,7 +8779,7 @@ public class SettingsWindow {
         return choices;
     }
 
-    /** An editor-theme cell: "Automatic (Nord Dark)" for "", else the theme's name. */
+    /** An editor-theme cell: "Automatic" for "", else the theme's name. */
     private ListCell<String> editorThemeCell() {
         return new ListCell<>() {
             @Override
@@ -8791,10 +8789,7 @@ public class SettingsWindow {
                         empty || name == null
                                 ? null
                                 : name.isEmpty()
-                                        ? tr(
-                                                "settings.editorTheme.auto",
-                                                EditorThemes.defaultFor(
-                                                        config.getSettings().getTheme()))
+                                        ? tr("settings.editorTheme.auto")
                                         : withShade(
                                                 name,
                                                 EditorThemes.editorBackgroundFor(name)
