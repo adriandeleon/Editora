@@ -29,7 +29,8 @@ sends.
   `http/HttpScripts` (stdin JSON, result line, flags, environment). The shim is the resource
   `com/editora/http/http-handler-shim.js`, copied to `<config>/cache/http-scripts/http-handler-shim-<hash>.js`
   (excluded from config export).
-- **UI** — `ui/HttpClientPanel` Tests block and badge, `HttpStatusText.testsBadge` / `testsFailedSuffix`,
+- **UI** — `ui/HttpClientPanel` Tests tab and its count (`HttpStatusText.testsCount`; the tab's tooltip is
+  `HttpStatusText.testsBadge`), `HttpResponseTab.choose` (a failed test or script switches to Tests), `testsFailedSuffix`,
   `HttpHistoryCell` mark, `HttpHistoryEntry.storedTests` / `restoredTests` (history schema 4).
 
 - **Hosts the prompt can't know** — `HttpVars.Unresolved.sessionReads()` follows session variables and script

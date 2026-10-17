@@ -325,6 +325,18 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         setRunning(true);
     }
 
+    /**
+     * Writes the command line that was started as the console's first, muted line — which interpreter ran,
+     * with which flags, on which file — the way IDEs open a run's console.
+     */
+    public void showCommandLine(String commandLine) {
+        if (commandLine == null || commandLine.isBlank()) {
+            return;
+        }
+        String line = commandLine.strip() + "\n";
+        appender.append(line, spans(line, List.of(), "run-command"));
+    }
+
     /** Appends one line of program output, applying stderr/log-level colors and clickable URL styling. */
     public void appendOutput(String line, boolean stderr) {
         appendOutput(line, stderr, true);

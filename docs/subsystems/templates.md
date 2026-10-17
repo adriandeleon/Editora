@@ -66,6 +66,14 @@ package comes from its folder), and `projectName` when there is no project.
 every window has its own registry over the same folder, so a cache made a change in one window invisible
 in the others.
 
+The bundled set is `src/main/resources/com/editora/templates/`, listed (and ordered in the picker) by its
+`index.json`. Adding one means a JSON file, an `index.json` entry and a regenerated `bundled-golden.txt`
+(`TemplateEngineTest` renders every bundled template against it). `BundledTemplatesTest` holds the rules every
+bundled template keeps: each variable the wizard asks for has a default, so Create with no edits gives a usable
+file; nothing renders as an unresolved `${…}`; and the formats Editora parses itself (`.http` and its environment
+files, Markwhen, `.editorconfig`, JSON) parse cleanly. Bundled templates set no `labels`, which would be the same
+text in every language; a new variable gets a `template.var.<name>` label in the six catalogs instead.
+
 ## Applying
 
 `TemplateOutput.plan` works out every target first and writes nothing. A path that is not a relative,

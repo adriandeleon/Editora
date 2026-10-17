@@ -1,0 +1,27 @@
+{
+  "name": "Dockerfile (Java)",
+  "description": "A multi-stage Dockerfile: build a Maven project, run its jar on a JRE as a non-root user",
+  "language": "dockerfile",
+  "fileName": "Dockerfile",
+  "body": [
+    "# syntax=docker/dockerfile:1",
+    "",
+    "# Build stage: resolve dependencies first (cached while pom.xml is unchanged), then package.",
+    "FROM maven:3-eclipse-temurin-25 AS build",
+    "WORKDIR /src",
+    "COPY pom.xml .",
+    "RUN mvn -B -q dependency:go-offline",
+    "COPY src ./src",
+    "RUN mvn -B -q package -DskipTests",
+    "",
+    "# Runtime stage: only the JRE and the application jar, run as an unprivileged user.",
+    "FROM eclipse-temurin:25-jre",
+    "WORKDIR /app",
+    "RUN useradd --system --uid 10001 app",
+    "# The jar Maven builds: set <finalName>${jarName:app}</finalName> in pom.xml, or change the name here.",
+    "COPY --from=build /src/target/${jarName:app}.jar app.jar",
+    "USER app",
+    "EXPOSE ${port:8080}",
+    "ENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]"
+  ]
+}

@@ -58,4 +58,20 @@ class BreakpointTest {
         assertEquals(Breakpoint.plain(2, "t"), Breakpoint.plain(2, "t"));
         assertEquals(List.of(Breakpoint.plain(2, "t")), List.of(Breakpoint.plain(2, "t")));
     }
+
+    @Test
+    void aHitConditionMakesItConditionalAndSurvivesTheWithersAndJson() throws Exception {
+        Breakpoint b = Breakpoint.plain(4, "total += i").withHitCondition(">= 3");
+        assertTrue(b.isConditional(), "drawn as conditional: it does not stop on every hit");
+        assertEquals(
+                ">= 3", b.withLine(9).withCondition("i > 0").withEnabled(false).hitCondition());
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(b, json.readValue(json.writeValueAsString(b), Breakpoint.class));
+        // breakpoints.json written before hit counts existed
+        Breakpoint old = json.readValue(
+                "{\"line\":2,\"condition\":\"\",\"logMessage\":\"\",\"enabled\":true,\"lineText\":\"x\"}",
+                Breakpoint.class);
+        assertEquals("", old.hitCondition());
+    }
 }

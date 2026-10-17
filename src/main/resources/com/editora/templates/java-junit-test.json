@@ -1,0 +1,19 @@
+{
+  "name": "JUnit 5 Test",
+  "description": "A JUnit Jupiter test class in the folder's package",
+  "language": "java",
+  "fileName": "${className:MainTest}.java",
+  "body": [
+    "${packageDeclaration}import org.junit.jupiter.api.Test;",
+    "",
+    "import static org.junit.jupiter.api.Assertions.assertEquals;",
+    "",
+    "class ${className:MainTest} {",
+    "",
+    "    @Test",
+    "    void works() {",
+    "        ${cursor}assertEquals(2, 1 + 1);",
+    "    }",
+    "}"
+  ]
+}

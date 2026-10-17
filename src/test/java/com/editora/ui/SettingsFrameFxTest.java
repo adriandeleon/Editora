@@ -1,0 +1,647 @@
+package com.editora.ui;
+
+import java.util.List;
+import java.util.Set;
+
+import javafx.scene.Node;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.stage.Stage;
+
+import com.editora.editor.EditorBuffer;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** The Settings window's frame: how it opens, what a command opening it on a page shows, the sidebar. */
+@Tag("fx")
+class SettingsFrameFxTest {
+
+    @BeforeAll
+    static void boot() throws Exception {
+        FxTestSupport.bootToolkit();
+    }
+
+    static Object category(ListView<Object> sidebar, String name) {
+        return sidebar.getItems().stream()
+                .filter(i -> i instanceof Enum<?> e
+                        && e.name().equals(name)
+                        && !e.getDeclaringClass().getSimpleName().equals("Group"))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    /** The rows of the page on show that the search filter leaves visible. */
+    static int visibleRowsOnPage(SettingsWindow window) {
+        ScrollPane scroll = FxTestSupport.field(window, "contentScroll");
+        Node page = scroll.getContent();
+        List<Object> rows = FxTestSupport.field(window, "rows");
+        int n = 0;
+        for (Object row : rows) {
+            Node node = (Node) FxTestSupport.call(row, "node", new Class<?>[0]);
+            boolean under = false;
+            for (Node p = node; p != null; p = p.getParent()) {
+                under |= p == page;
+            }
+            if (under && node.isVisible()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    @Test
+    void aCommandOpeningAPageClearsASearchLeftInTheBox() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            Stage owner = FxTestSupport.field(fx.controller, "stage");
+            FxTestSupport.runOnFx(() -> window.show(owner));
+            Stage stage = FxTestSupport.field(window, "stage");
+            TextField search = FxTestSupport.field(window, "searchField");
+            ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+            FxTestSupport.runOnFx(() -> {
+                search.setText("font");
+                stage.close(); // the title bar / Close button: the search stays in the box
+            });
+            for (String[] c : List.of(
+                    new String[] {"snippets.manage", "SNIPPETS"},
+                    new String[] {"sync.setup", "SYNC"},
+                    new String[] {"abbrev.manage", "ABBREVIATIONS"})) {
+                FxTestSupport.runOnFx(() -> {
+                    search.setText("font");
+                    stage.close();
+                    fx.controller.registry.run(c[0]);
+                });
+                FxTestSupport.runOnFx(() -> {
+                    assertTrue(stage.isShowing(), c[0]);
+                    assertEquals("", search.getText(), c[0] + " clears the search");
+                    assertSame(
+                            category(sidebar, c[1]), sidebar.getSelectionModel().getSelectedItem(), c[0]);
+                    Set<Object> hidden = FxTestSupport.field(window, "searchHiddenCats");
+                    assertTrue(hidden.isEmpty(), c[0] + ": no page greyed out");
+                    assertTrue(visibleRowsOnPage(window) > 0, c[0] + " shows the page's settings");
+                });
+            }
+            FxTestSupport.runOnFx(stage::hide);
+        }
+    }
+
+    @Test
+    void aPlainReopenKeepsTheSearchSelectedSoTypingReplacesIt() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            Stage owner = FxTestSupport.field(fx.controller, "stage");
+            FxTestSupport.runOnFx(() -> window.show(owner));
+            Stage stage = FxTestSupport.field(window, "stage");
+            TextField search = FxTestSupport.field(window, "searchField");
+            FxTestSupport.runOnFx(() -> {
+                search.setText("font");
+                stage.close();
+                window.show(owner);
+            });
+            FxTestSupport.runOnFx(() -> {
+                assertEquals("font", search.getText());
+                assertEquals("font", search.getSelectedText(), "the kept search is selected");
+                assertSame(search, stage.getScene().getFocusOwner(), "a reopen focuses the search, not nothing");
+                stage.hide();
+            });
+        }
+    }
+
+    /** Whether the sidebar's selected row is inside its viewport, once the deferred scroll has run. */
+    static boolean selectedRowInView(ListView<Object> sidebar) {
+        int i = sidebar.getSelectionModel().getSelectedIndex();
+        sidebar.applyCss();
+        sidebar.layout(); // what the next pulse would draw
+        var flow = (javafx.scene.control.skin.VirtualFlow<?>) sidebar.lookup(".virtual-flow");
+        return flow.getFirstVisibleCell().getIndex() <= i
+                && i <= flow.getLastVisibleCell().getIndex();
+    }
+
+    static void search(TextField field, String q) throws Exception {
+        FxTestSupport.runOnFx(() -> field.setText(q));
+        FxTestSupport.drainFx(); // the sidebar reveal is deferred a pulse
+        FxTestSupport.drainFx();
+    }
+
+    @Test
+    void searchOpensThePageWithTheBestHitAndShowsItsSidebarRow() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            Stage stage = FxTestSupport.field(window, "stage");
+            TextField search = FxTestSupport.field(window, "searchField");
+            ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+            FxTestSupport.runOnFx(() -> sidebar.getSelectionModel().select(category(sidebar, "ADVANCED")));
+            // "wrap" used to open Workspace (its Trusted Folders keyword "wrapper"); "line numbers" and
+            // "minimap" opened Interface (a Simple-mode description) — both only because they come first.
+            for (String[] c : List.of(
+                    new String[] {"wrap", "EDITOR"},
+                    new String[] {"line numbers", "EDITOR"},
+                    new String[] {"minimap", "EDITOR"},
+                    new String[] {"zoom", "APPEARANCE"},
+                    new String[] {"blame", "GIT"},
+                    new String[] {"mcp", "MCP"})) {
+                search(search, "");
+                FxTestSupport.runOnFx(() -> sidebar.getSelectionModel().select(category(sidebar, "ADVANCED")));
+                search(search, c[0]);
+                FxTestSupport.runOnFx(() -> {
+                    assertSame(
+                            category(sidebar, c[1]), sidebar.getSelectionModel().getSelectedItem(), c[0]);
+                    assertTrue(selectedRowInView(sidebar), c[0] + ": the selected page's row is in view");
+                });
+            }
+            FxTestSupport.runOnFx(() -> sidebar.getSelectionModel().select(category(sidebar, "APPEARANCE")));
+            search(search, "");
+            FxTestSupport.runOnFx(() -> window.showSync(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.drainFx();
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> assertTrue(selectedRowInView(sidebar), "Sync: Set Up shows the Sync row"));
+            search(search, "vim");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.Label empty = FxTestSupport.field(window, "searchEmpty");
+                assertTrue(empty.isVisible(), "no Vim keymap exists, so nothing claims to match it");
+                stage.hide();
+            });
+        }
+    }
+
+    /** The pages a search for {@code q} lights up in the sidebar. */
+    static Set<Object> hits(SettingsWindow window, TextField search, String q) throws Exception {
+        search(search, q);
+        return FxTestSupport.callOnFx(() -> {
+            ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+            Set<Object> hidden = FxTestSupport.field(window, "searchHiddenCats");
+            Set<Object> out = new java.util.LinkedHashSet<>();
+            for (Object item : sidebar.getItems()) {
+                if (item.getClass().getSimpleName().equals("Category") && !hidden.contains(item)) {
+                    out.add(((Enum<?>) item).name());
+                }
+            }
+            return out;
+        });
+    }
+
+    @Test
+    void whatASearchFindsDoesNotDependOnThePagesOpenedBeforeIt() throws Exception {
+        List<String> queries = List.of("Duplicate Line", "Java Class", "Edit: Cut", "Time", "Emacs");
+        List<Set<Object>> fresh = new java.util.ArrayList<>();
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            TextField search = FxTestSupport.field(window, "searchField");
+            for (String q : queries) {
+                fresh.add(hits(window, search, q));
+            }
+            // A command name is found through the Keymaps list, and carried into its filter.
+            search(search, "Duplicate Line");
+            TextField shortcutFilter = FxTestSupport.field(window, "shortcutFilter");
+            FxTestSupport.runOnFx(() -> assertEquals("Duplicate Line", shortcutFilter.getText()));
+            search(search, "");
+            FxTestSupport.runOnFx(() -> assertEquals("", shortcutFilter.getText(), "clearing the search clears it"));
+            assertTrue(fresh.get(0).contains("KEYMAPS"), "a command name finds the Keymaps page");
+            assertTrue(fresh.get(4).contains("KEYMAPS"), "a keymap's name finds the Keymap row");
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.<Stage>field(window, "stage").hide());
+        }
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+            for (String page : List.of("KEYMAPS", "TEMPLATES", "TOOLBAR", "SNIPPETS")) {
+                FxTestSupport.runOnFx(() -> sidebar.getSelectionModel().select(category(sidebar, page)));
+                FxTestSupport.drainFx();
+            }
+            TextField search = FxTestSupport.field(window, "searchField");
+            for (int i = 0; i < queries.size(); i++) {
+                assertEquals(
+                        fresh.get(i), hits(window, search, queries.get(i)), queries.get(i) + " after visiting pages");
+            }
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.<Stage>field(window, "stage").hide());
+        }
+    }
+
+    @Test
+    void theKeyboardReachesTheSearchFromAnywhere() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            Stage stage = FxTestSupport.field(window, "stage");
+            TextField search = FxTestSupport.field(window, "searchField");
+            ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+            FxTestSupport.runOnFx(() -> {
+                sidebar.requestFocus();
+                javafx.event.Event.fireEvent(
+                        sidebar,
+                        new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.F, false, !isMac(), false, isMac()));
+                assertSame(search, stage.getScene().getFocusOwner(), "Ctrl/Cmd+F focuses the search");
+                javafx.event.Event.fireEvent(
+                        search, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+                assertSame(sidebar, stage.getScene().getFocusOwner(), "Down goes on to the pages");
+                javafx.event.Event.fireEvent(
+                        sidebar,
+                        new KeyEvent(KeyEvent.KEY_TYPED, "g", "", KeyCode.UNDEFINED, false, false, false, false));
+                assertSame(search, stage.getScene().getFocusOwner(), "a letter typed on the sidebar searches");
+                assertEquals("g", search.getText());
+                stage.hide();
+            });
+        }
+    }
+
+    private static boolean isMac() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("mac");
+    }
+
+    /** Polls {@code condition} on the FX thread until it holds (10 s at most). */
+    static void await(java.util.concurrent.Callable<Boolean> condition, String what) throws Exception {
+        long end = System.nanoTime() + 10_000_000_000L;
+        while (!FxTestSupport.callOnFx(condition)) {
+            if (System.nanoTime() > end) {
+                throw new AssertionError("timed out waiting for " + what);
+            }
+            Thread.sleep(20);
+        }
+    }
+
+    @Test
+    void savingSettingsJsonInAnEditorTabAppliesItAndSaysWhatWasNotUsed() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(() -> config.shared().saveSettings());
+            java.nio.file.Path file = config.getSettingsFile();
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(file);
+                workflows.loadInto(b, file);
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, b, true);
+                return b;
+            });
+            await(() -> buffer.getContent().contains("tabSize"), "the file to load");
+            FxTestSupport.runOnFx(() -> {
+                String text = buffer.getContent()
+                        .replaceFirst("\"tabSize\"\\s*:\\s*\\d+", "\"tabSize\" : 7")
+                        .replaceFirst("\\{", "{ \"tabsize\" : 2,");
+                buffer.getArea().replaceText(text);
+                fx.controller.registry.run("file.save");
+            });
+            await(() -> config.getSettings().getTabSize() == 7, "the saved file to be applied");
+            Spinner<Integer> tabSize = FxTestSupport.field(window, "tabSizeSpinner");
+            await(() -> tabSize.getValue() == 7, "the open Settings window to show it");
+            SettingsFileNotes notes = FxTestSupport.field(window, "fileNotes");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.Label issues = FxTestSupport.field(notes, "issues");
+                assertTrue(issues.isVisible() && issues.getText().contains("tabsize"), issues.getText());
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
+    }
+
+    @Test
+    void choosingALanguageSaysRestartOnTheRowInsteadOfADialogPerStep() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            javafx.scene.control.ComboBox<String> language = FxTestSupport.field(window, "languageCombo");
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            String start = config.getSettings().getUiLanguage();
+            FxTestSupport.runOnFx(() -> {
+                language.requestFocus();
+                // Down on a closed combo commits the next language at once: it used to open a modal per step.
+                for (int i = 0; i < 2; i++) { // Automatic → English → the next language
+                    javafx.event.Event.fireEvent(
+                            language,
+                            new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+                }
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(
+                        javafx.stage.Window.getWindows().stream()
+                                .noneMatch(w -> w.isShowing()
+                                        && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane),
+                        "no dialog");
+                assertTrue(!start.equals(config.getSettings().getUiLanguage()), "the choice is saved");
+                javafx.scene.Node note =
+                        language.getParent().getChildrenUnmodifiable().get(1);
+                assertTrue(note.isVisible(), "the row says a restart applies it");
+                language.setValue(com.editora.i18n.Messages.current());
+                assertTrue(!note.isVisible(), "the running language: nothing to restart for");
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
+    }
+
+    @Test
+    void aChangeFromAnotherWindowKeepsWhatIsBeingTypedAndDoesNotReprobeGit() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            WindowManager wm = FxTestSupport.field(fx, "windowManager");
+            MainController other = FxTestSupport.callOnFx(wm::buildWindowForTest);
+            SettingsWindow a = fx.controller.settingsWindow;
+            SettingsWindow b = other.settingsWindow;
+            FxTestSupport.runOnFx(() -> {
+                a.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
+                b.show(FxTestSupport.<Stage>field(other, "stage"));
+            });
+            javafx.scene.control.Label gitStatus = FxTestSupport.field(b, "gitStatusLabel");
+            String checking = com.editora.i18n.Messages.tr("settings.git.checking");
+            await(() -> !gitStatus.getText().equals(checking), "the first git probe");
+            TextField gitPath = FxTestSupport.field(b, "gitPathField");
+            Spinner<Integer> tabA = FxTestSupport.field(a, "tabSizeSpinner");
+            Spinner<Integer> tabB = FxTestSupport.field(b, "tabSizeSpinner");
+            FxTestSupport.runOnFx(() -> {
+                ListView<Object> sidebar = FxTestSupport.field(b, "sidebar");
+                sidebar.getSelectionModel().select(category(sidebar, "GIT"));
+                gitPath.requestFocus();
+                assertSame(gitPath, gitPath.getScene().getFocusOwner());
+                gitPath.setText("/opt/git/bin/git"); // typed, not committed yet
+                tabA.getValueFactory().setValue(6); // meanwhile, in the other window
+            });
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(6, tabB.getValue(), "the other window follows the change");
+                assertEquals("/opt/git/bin/git", gitPath.getText(), "and keeps what was being typed");
+                assertTrue(!gitStatus.getText().equals(checking), "no new git probe for the same command");
+                FxTestSupport.<Stage>field(b, "stage").close(); // closing commits it
+            });
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(
+                    () -> assertEquals("/opt/git/bin/git", config.getSettings().getGitPath()));
+            FxTestSupport.runOnFx(() -> FxTestSupport.<Stage>field(a, "stage").hide());
+        }
+    }
+
+    /** Every visible label under {@code root} with exactly {@code text}. */
+    static List<javafx.scene.control.Label> labels(Node root, String text, List<javafx.scene.control.Label> out) {
+        if (root instanceof javafx.scene.control.Label l && text.equals(l.getText())) {
+            out.add(l);
+        }
+        if (root instanceof javafx.scene.Parent p) {
+            p.getChildrenUnmodifiable().forEach(c -> labels(c, text, out));
+        }
+        return out;
+    }
+
+    @Test
+    void theWindowSaysOnceThatChangesApplyAsTheyAreMade() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                Stage stage = FxTestSupport.field(window, "stage");
+                String live = com.editora.i18n.Messages.tr("settings.liveNote");
+                Node footer = stage.getScene().getRoot().lookup(".settings-footer");
+                assertEquals(
+                        1, labels(footer, live, new java.util.ArrayList<>()).size(), "in the footer, on every page");
+                java.util.Map<Object, javafx.scene.layout.Region> pages = FxTestSupport.field(window, "pages");
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                assertTrue(
+                        labels(pages.get(category(sidebar, "GIT")), live, new java.util.ArrayList<>())
+                                .isEmpty(),
+                        "not again on the Git page");
+                stage.hide();
+            });
+        }
+    }
+
+    /**
+     * Answers the next dialog that opens: {@code inspect} sees its pane first, then {@code button} is fired.
+     * Runs off the FX thread, because the dialog's showAndWait holds the FX call that opened it.
+     */
+    static Thread answerDialog(
+            java.util.function.Consumer<javafx.scene.control.DialogPane> inspect,
+            javafx.scene.control.ButtonType button) {
+        Thread t = new Thread(() -> {
+            for (int i = 0; i < 500; i++) {
+                boolean[] done = {false};
+                try {
+                    FxTestSupport.runOnFx(() -> {
+                        for (javafx.stage.Window w :
+                                javafx.stage.Window.getWindows().stream().toList()) {
+                            if (w.isShowing()
+                                    && w.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                                inspect.accept(pane);
+                                javafx.scene.control.ButtonType match = pane.getButtonTypes().stream()
+                                        .filter(bt -> bt.getText().equals(button.getText()))
+                                        .findFirst()
+                                        .orElseThrow();
+                                javafx.application.Platform.runLater(
+                                        () -> ((javafx.scene.control.Button) pane.lookupButton(match)).fire());
+                                done[0] = true;
+                                return;
+                            }
+                        }
+                    });
+                    if (done[0]) {
+                        return;
+                    }
+                    Thread.sleep(20);
+                } catch (Exception e) {
+                    return;
+                }
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    @Test
+    void resetSaysWhatItClearsKeepsCredentialsDefaultsToCancelAndCanBeUndone() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            com.editora.config.ConfigManager config = FxTestSupport.field(fx.controller, "config");
+            FxTestSupport.runOnFx(() -> {
+                config.getSettings().setFontSize(21);
+                config.getSettings().setAiApiKey("sk-test-not-real");
+                config.getSettings().setSyncRepoUrl("git@example.invalid:me/sync.git");
+                config.save();
+                window.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
+            });
+            String[] seen = new String[2];
+            Thread answer = answerDialog(
+                    pane -> {
+                        seen[0] = pane.getContentText();
+                        javafx.scene.control.Button cancel =
+                                (javafx.scene.control.Button) pane.lookupButton(javafx.scene.control.ButtonType.CANCEL);
+                        seen[1] = String.valueOf(cancel.isDefaultButton());
+                    },
+                    findButton("settings.reset.button"));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(window, "resetAll", new Class<?>[0]));
+            answer.join();
+            assertTrue(seen[0].contains("settings.json.before-reset-"), "the dialog names the backup: " + seen[0]);
+            assertTrue(seen[0].contains(com.editora.i18n.Messages.tr("settings.restore.button")), "and how to undo it");
+            assertEquals("true", seen[1], "Enter cancels");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(
+                        new com.editora.config.Settings().getFontSize(),
+                        config.getSettings().getFontSize());
+                assertEquals("sk-test-not-real", config.getSettings().getAiApiKey(), "credentials are kept");
+                assertEquals(
+                        "git@example.invalid:me/sync.git", config.getSettings().getSyncRepoUrl());
+            });
+            assertEquals(1, SettingsResetFlow.backups(config.getSettingsFile()).size());
+
+            // Restore from Backup… puts the reset settings back (and backs up the defaults first).
+            Thread pick = answerDialog(pane -> {}, javafx.scene.control.ButtonType.OK);
+            FxTestSupport.runOnFx(() -> ((SettingsResetFlow) FxTestSupport.call(window, "resetFlow", new Class<?>[0]))
+                    .restore(FxTestSupport.<Stage>field(window, "stage")));
+            pick.join();
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(21, config.getSettings().getFontSize(), "the backup is in force again");
+                Spinner<Integer> fontSize = FxTestSupport.field(window, "fontSize");
+                assertEquals(21, fontSize.getValue(), "and shown");
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+            assertEquals(2, SettingsResetFlow.backups(config.getSettingsFile()).size());
+        }
+    }
+
+    /** A dialog button whose label is the catalog text of {@code key} (matched by text, see answerDialog). */
+    static javafx.scene.control.ButtonType findButton(String key) {
+        return new javafx.scene.control.ButtonType(
+                com.editora.i18n.Messages.tr(key), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+    }
+
+    @Test
+    void aReopenComesBackWhereTheUserLeftTheWindow() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            Stage owner = FxTestSupport.field(fx.controller, "stage");
+            FxTestSupport.runOnFx(() -> window.show(owner));
+            Stage stage = FxTestSupport.field(window, "stage");
+            FxTestSupport.runOnFx(() -> {
+                stage.setX(12);
+                stage.setY(34);
+                stage.setWidth(910);
+                stage.setHeight(500);
+                stage.close();
+                window.show(owner);
+            });
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(12, stage.getX(), 0.5, "not re-centred with the preferred size");
+                assertEquals(34, stage.getY(), 0.5);
+                assertEquals(910, stage.getWidth(), 0.5);
+                stage.hide();
+            });
+        }
+    }
+
+    @Test
+    void chordChipsFollowTheAppThemeNotTheEditorTheme() throws Exception {
+        try (var fx = FxWindowFixture.create(java.nio.file.Files.createTempDirectory("editora-fx-test"), shared -> {
+            shared.getSettings().setTheme("Editora Dark"); // the editor theme stays Editora Light
+        })) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                // The app theme in force, as the app sets it at startup (the fixture leaves the default).
+                javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor("Editora Dark"));
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                sidebar.getSelectionModel().select(category(sidebar, "KEYMAPS"));
+                Stage stage = FxTestSupport.field(window, "stage");
+                stage.getScene().getRoot().applyCss();
+                Node chip = stage.getScene().getRoot().lookup(".shortcut-chord");
+                assertTrue(chip != null, "a bound command shows its chord");
+                javafx.scene.paint.Color ink =
+                        (javafx.scene.paint.Color) ((javafx.scene.control.Labeled) chip).getTextFill();
+                assertTrue(
+                        StyleContrastTest.contrast(ink, Themes.backgroundFor("Editora Dark")) >= 4.5,
+                        "a periwinkle that reads on the dark window: " + ink);
+                stage.hide();
+                javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(Themes.DEFAULT));
+            });
+        }
+    }
+
+    @Test
+    void betaPagesSayItOnceBesideTheirTitleAndTextGrowsWithTheRootFont() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                java.util.Map<Object, javafx.scene.layout.Region> pages = FxTestSupport.field(window, "pages");
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                String beta = com.editora.i18n.Messages.tr("settings.beta");
+                for (String name : List.of("LSP", "SYNC", "MCP", "AI_GENERAL")) {
+                    javafx.scene.layout.VBox page = (javafx.scene.layout.VBox) pages.get(category(sidebar, name));
+                    assertEquals(
+                            1,
+                            labels(page.getChildren().get(0), beta, new java.util.ArrayList<>())
+                                    .size(),
+                            name);
+                }
+                javafx.scene.layout.VBox appearance =
+                        (javafx.scene.layout.VBox) pages.get(category(sidebar, "APPEARANCE"));
+                assertTrue(labels(appearance.getChildren().get(0), beta, new java.util.ArrayList<>())
+                        .isEmpty());
+
+                // Sizes are relative: a larger root font (a user stylesheet, a zoom) reaches the rows' text too.
+                Stage stage = FxTestSupport.field(window, "stage");
+                javafx.scene.Parent root = stage.getScene().getRoot();
+                root.applyCss();
+                double before = ((javafx.scene.control.Labeled) root.lookup(".settings-row-title"))
+                        .getFont()
+                        .getSize();
+                root.setStyle("-fx-font-size: 18px;");
+                root.applyCss();
+                double after = ((javafx.scene.control.Labeled) root.lookup(".settings-row-title"))
+                        .getFont()
+                        .getSize();
+                assertTrue(after > before + 3, before + " -> " + after);
+                stage.hide();
+            });
+            // No chord baked into a description: they depend on the keymap.
+            for (String key : List.of("settings.toolWindows.stripeNote", "settings.abbrev.note")) {
+                String text = com.editora.i18n.Messages.tr(key);
+                assertTrue(!text.contains("M-1") && !text.contains("C-x"), key + ": " + text);
+            }
+        }
+    }
+
+    @Test
+    void aViewSwitchReachesTheBuffersWithoutRebuildingTheRestOfTheWindow() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+            javafx.scene.control.CheckBox minimap = FxTestSupport.field(window, "minimapCheck");
+            javafx.scene.control.CheckBox git = FxTestSupport.field(window, "gitCheck");
+            java.nio.file.Path file = java.nio.file.Files.writeString(
+                    java.nio.file.Files.createTempFile("editora-reapply", ".txt"), "text\n");
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(file);
+                workflows.loadInto(b, file);
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, b, true);
+                return b;
+            });
+            FxTestSupport.runOnFx(() -> {
+                minimap.setSelected(!minimap.isSelected()); // the first re-apply is a full one (nothing known yet)
+                List<Node> items = List.copyOf(bar.getItems());
+                minimap.setSelected(!minimap.isSelected());
+                assertEquals(minimap.isSelected(), (boolean) FxTestSupport.<Boolean>field(buffer, "minimapVisible"));
+                assertEquals(items, bar.getItems(), "a view switch does not rebuild the toolbar");
+                git.setSelected(!git.isSelected());
+                assertTrue(!items.equals(bar.getItems()), "a feature switch still re-applies everything");
+                git.setSelected(!git.isSelected());
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
+    }
+}

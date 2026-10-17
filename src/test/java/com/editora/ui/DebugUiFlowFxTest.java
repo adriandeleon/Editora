@@ -1142,6 +1142,45 @@ class DebugUiFlowFxTest {
         }
     }
 
+    /**
+     * debugpy binds a breakpoint on a blank line to a line that has a (conditional) breakpoint already: the two
+     * are one breakpoint, the one there with its condition. The moved one used to stay drawn on the blank
+     * line while the adapter held an unconditional copy on the conditional one's line — which then stopped on
+     * every pass.
+     */
+    @Test
+    void aBreakpointBoundOntoAnotherMergesIntoIt() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            session.breakpointAnswer = args -> answer(
+                    args, line1 -> FakeDebugAdapter.Session.breakpoint(line1, true, line1 == 5 ? 7 : line1, null));
+            FxTestSupport.runOnFx(() -> {
+                b.toggleBreakpoint(6); // "def go():" on line 7
+                b.getBreakpointManager().setCondition(6, "n == 3");
+            });
+            awaitLive(b, 6, LiveState.VERIFIED);
+
+            FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4)); // the blank line 5 → line 7, which has one
+
+            await(
+                    "the breakpoint was not merged",
+                    () -> !b.getBreakpointManager().isBreakpoint(4));
+            assertEquals(
+                    "n == 3",
+                    FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(6).condition()));
+            assertEquals(List.of(6), storedLines(util));
+            assertEquals(tr("status.debug.breakpointMerged", 5, 7), status());
+            await("the adapter still holds two breakpoints", () -> {
+                var last = session.breakpoints.get(session.breakpoints.size() - 1);
+                return last.getBreakpoints().length == 1
+                        && last.getBreakpoints()[0].getLine() == 7
+                        && "n == 3".equals(last.getBreakpoints()[0].getCondition());
+            });
+        }
+    }
+
     // --- D3-11: which exception --------------------------------------------------------------------------------
 
     /** An exception stop said "Suspended on an exception" and nothing about which. */

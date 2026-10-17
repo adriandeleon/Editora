@@ -1,0 +1,111 @@
+{
+  "name": "Node.js TypeScript Project",
+  "description": "A Node.js package in TypeScript with a module, a node:test test, tsconfig and README (multi-file)",
+  "language": "typescript",
+  "files": [
+    {
+      "path": "package.json",
+      "body": [
+        "{",
+        "  \"name\": \"${packageName:app}\",",
+        "  \"version\": \"0.1.0\",",
+        "  \"description\": \"${description:A TypeScript project}\",",
+        "  \"type\": \"module\",",
+        "  \"main\": \"dist/index.js\",",
+        "  \"scripts\": {",
+        "    \"build\": \"tsc\",",
+        "    \"start\": \"tsc && node dist/index.js\",",
+        "    \"test\": \"tsc && node --test \\\"dist/**/*.test.js\\\"\"",
+        "  },",
+        "  \"devDependencies\": {",
+        "    \"@types/node\": \"^24.0.0\",",
+        "    \"typescript\": \"^7.0.0\"",
+        "  }",
+        "}"
+      ]
+    },
+    {
+      "path": "tsconfig.json",
+      "body": [
+        "{",
+        "  \"compilerOptions\": {",
+        "    \"target\": \"ES2023\",",
+        "    \"module\": \"NodeNext\",",
+        "    \"moduleResolution\": \"NodeNext\",",
+        "    \"rootDir\": \"src\",",
+        "    \"outDir\": \"dist\",",
+        "    \"strict\": true,",
+        "    \"skipLibCheck\": true,",
+        "    \"sourceMap\": true,",
+        "    \"types\": [\"node\"]",
+        "  },",
+        "  \"include\": [\"src\"]",
+        "}"
+      ]
+    },
+    {
+      "path": "src/greet.ts",
+      "body": [
+        "export function greet(name: string): string {",
+        "  return `Hello, $${name}!`;",
+        "}"
+      ]
+    },
+    {
+      "path": "src/index.ts",
+      "body": [
+        "import { greet } from \"./greet.js\";",
+        "",
+        "${cursor}console.log(greet(\"${packageName:app}\"));"
+      ]
+    },
+    {
+      "path": "src/greet.test.ts",
+      "body": [
+        "import assert from \"node:assert/strict\";",
+        "import { test } from \"node:test\";",
+        "",
+        "import { greet } from \"./greet.js\";",
+        "",
+        "test(\"greet says hello\", () => {",
+        "  assert.equal(greet(\"Ada\"), \"Hello, Ada!\");",
+        "});"
+      ]
+    },
+    {
+      "path": "README.md",
+      "body": [
+        "# ${packageName:app}",
+        "",
+        "${description:A TypeScript project}",
+        "",
+        "## Run",
+        "",
+        "```bash",
+        "npm install",
+        "npm start",
+        "```",
+        "",
+        "## Test",
+        "",
+        "```bash",
+        "npm test",
+        "```",
+        "",
+        "---",
+        "",
+        "Created by ${author} on ${date}."
+      ]
+    },
+    {
+      "path": ".gitignore",
+      "body": [
+        "node_modules/",
+        "dist/",
+        "*.tsbuildinfo",
+        "npm-debug.log*",
+        ".env"
+      ]
+    }
+  ]
+}

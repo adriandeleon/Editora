@@ -188,7 +188,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Keyboard macros (record/replay/save/run); see {@link MacroCoordinator}. Created in {@link #init}. */
     MacroCoordinator macroCoordinator;
 
-    private CommandPalette palette;
+    CommandPalette palette;
     private FindReplaceBar findBar;
     StatusBar statusBar;
     private FileBreadcrumb breadcrumb;
@@ -374,7 +374,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private final RecentFilesCheck recentCheck = new RecentFilesCheck();
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
-    private WelcomePane welcomePane;
+    WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
     private Tab welcomeTab;
     /** The single open Doctor tab (external-tool health screen), or null — the {@code welcomeTab} pattern. */
@@ -790,6 +790,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
+        this.settingsWindow.setOpenUrl(this::openExternalUrl); // Diagrams' "How to install" docs link
         this.settingsWindow.setInstallToolActions(
                 id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
@@ -799,6 +800,12 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.settingsWindow.setTemplateRegistry(
                 templateActions.templates); // backs the Settings → Templates management page
         this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
+        this.settingsWindow.setMcpActions(new SettingsWindow.McpActions( // the MCP page's status and buttons
+                () -> mcpServer == null || !mcpServer.isRunning() ? "" : mcpServer.url(), this::copyMcpEndpoint, () -> {
+                    mcpServer.newToken(); // the buttons only show while it runs
+                    setStatus(tr("status.mcp.newToken"));
+                }));
+        this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
             @Override
             public List<String> trustedRoots() {
@@ -821,6 +828,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setAiConnectionProbe(
                 aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
+        this.settingsWindow.setLspProjectNotes(id -> lspCoordinator.projectOverrideNote(id)); // project overrides
         this.settingsWindow.setOnKeymapChanged(editorSettings::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override
@@ -847,6 +855,26 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void resetAll() {
                 editorSettings.resetAllShortcuts();
+            }
+
+            @Override
+            public String display(String chordSeq) {
+                return keymap.display(chordSeq);
+            }
+
+            @Override
+            public void clear(String commandId) {
+                editorSettings.clearShortcut(commandId);
+            }
+
+            @Override
+            public java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
+                return editorSettings.takenDefaults(commandId);
+            }
+
+            @Override
+            public void forget(String commandId) {
+                editorSettings.forgetShortcut(commandId);
             }
         });
         this.settingsWindow.setRunConfigsChangedHandler(
@@ -1407,6 +1435,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFileActions(new ProjectTreeFileActions(
                 git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
         if (projectGitStatus != null) {
@@ -1448,36 +1477,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
     public void reapplyAfterSharedSettingsChange(Settings settings) {
-        editorSettings.applyViewSettingsToAllBuffers(settings);
-        updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
-        // A build tool may have just been switched back on in Settings. Its cached detection was cleared the
-        // last time refresh() ran while it was off, and every other apply path only re-derives the stripe from
-        // that cache — so without a real re-detect the tool stays "not detected" (no stripe, no tasks tree)
-        // until an unrelated tab switch or focus-regain happens to run one. The palette toggle command always
-        // did this; the Settings checkbox did not.
-        refreshBuildTools();
-        // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
-        // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
-        refreshToolbarTooltips();
-        if (toolbarCoordinator != null) {
-            toolbarCoordinator.rebuild(); // the toolbar layout is a shared setting — rebuild from it
-        }
-        if (palette != null) {
-            palette.refreshBindings();
-        }
-        if (toolWindows != null) {
-            toolWindows.refreshTooltips();
-        }
-        if (welcomePane != null) {
-            welcomePane.refresh();
-        }
-        installPrompts.maybeOfferInstall(
-                activeBuffer()); // the install-prompts toggle / a feature gate may have changed
-        fileWorkflows.applyAdminSaveSupport(); // the admin-save toggle may have flipped
-        runConfigurations.refreshRunConfigs(); // the Settings page edits the same list this selector shows
-        lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.json
-        remoteExecSettingsMayHaveChanged();
+        settingsReapply.run(settings); // only what the changed settings reach (SettingsReapply)
     }
+
+    private final SettingsReapply settingsReapply = new SettingsReapply(this);
 
     /** The remote-execution setting, or this window's host's agreement or tools, may have been edited. */
     public void remoteExecSettingsMayHaveChanged() {
@@ -2513,6 +2516,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public Path projectRoot() {
+                        return windowProjectRoot();
+                    }
+
+                    @Override
+                    public String pythonInterpreterChoice() {
+                        return config.getWorkspaceState().getPythonInterpreter();
+                    }
+
+                    @Override
                     public void openLink(com.editora.run.StackTraceLinks.Link link) {
                         testNavigation.openRunLink(link);
                     }
@@ -2815,8 +2828,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
-                windowManager.openRemoteProject(project, conn, secret);
+            public void openRemoteProject(
+                    Project project,
+                    com.editora.vfs.RemoteConnection conn,
+                    com.editora.vfs.RemoteFileSystems.LiveConnection live,
+                    char[] secret) {
+                windowManager.openRemoteProject(project, conn, live, secret);
                 refreshProjectPanelList();
             }
 
@@ -4508,6 +4525,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void fileSaved(Path file) {
             snippetCoordinator.fileSaved(file);
+            if (windowManager != null && windowManager.isSettingsFile(file)) {
+                MainController.this.setStatus(windowManager.settingsFileSaved()); // a hand edit applies on save
+            }
         }
 
         @Override
@@ -4833,6 +4853,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
+                }
+
+                @Override
                 public TestRunCoordinator testRunCoordinator() {
                     return testRunCoordinator;
                 }
@@ -4927,6 +4952,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean lspEnabled() {
             return MainController.this.lspEnabled();
+        }
+
+        @Override
+        public void turnOnLsp() {
+            if (!config.getSettings().isLspSupport()) {
+                toggleLsp();
+            }
+        }
+
+        @Override
+        public void openLspSettings() {
+            settingsWindow.showDoctorTarget("lsp", stage);
         }
     });
 
@@ -5982,6 +6019,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String pythonInterpreterChoice() {
+            return config.getWorkspaceState().getPythonInterpreter();
+        }
+
+        @Override
+        public boolean runPythonTestFile(java.nio.file.Path file, String text) {
+            return testNavigation.runPythonTestFile(file, text);
+        }
+
+        @Override
         public java.nio.file.Path projectRoot() {
             return windowProjectRoot();
         }
@@ -6245,6 +6292,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void setStatusBarLsp(String label) {
             statusBar.setLsp(label);
+        }
+
+        @Override
+        public void setStatusBarPython(String text, String tooltip) {
+            statusBar.setPythonInterpreter(text, tooltip);
         }
 
         @Override
@@ -6624,8 +6676,29 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public java.nio.file.Path projectRoot() {
+                    return windowProjectRoot();
+                }
+
+                @Override
+                public String pythonInterpreterChoice() {
+                    return config.getWorkspaceState().getPythonInterpreter();
+                }
+
+                @Override
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+
+                @Override
+                public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                        pythonInterpreter() {
+                    return lspCoordinator.pythonInterpreterForDoctor();
+                }
+
+                @Override
+                public boolean pythonInterpreterElsewhere() {
+                    return lspCoordinator.pythonInterpreterElsewhereForDoctor();
                 }
             });
 
@@ -7464,7 +7537,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Re-applies every toolbar tooltip's chord from the current keymap (after a live keymap switch). */
-    private void refreshToolbarTooltips() {
+    void refreshToolbarTooltips() {
         for (ToolbarTip t : toolbarTips) {
             applyToolbarTip(t.button(), t.base(), t.commandId());
         }
@@ -7773,7 +7846,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
-        buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        buffer.setTestRunHandler(t -> testNavigation.runSingleTest(buffer, t)); // JUnit → build tool; Python → pytest
         buffer.setTestDebugHandler(testNavigation::debugSingleTest); // editor menu → suspended test + debugger attach
         testNavigation.applyTestGutter(
                 buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
@@ -9436,22 +9509,26 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void exportConfig() {
-        boolean includeHttpHistory = false;
-        if (config.shared().hasHttpHistory()) { // saved responses hold bodies and URLs: asked, off by default
-            java.util.Optional<Boolean> choice = ExportConfigDialog.ask(stage);
-            if (choice.isEmpty()) {
-                return;
-            }
-            includeHttpHistory = choice.get();
+        // Saved HTTP responses (bodies, URLs) and AI API keys are asked about, off by default.
+        boolean askHttp = config.shared().hasHttpHistory(),
+                askKeys = config.shared().hasApiKeys();
+        var choice = askHttp || askKeys
+                ? ExportConfigDialog.ask(stage, askHttp, askKeys)
+                : java.util.Optional.of(new ExportConfigDialog.Choice(false, false));
+        if (choice.isEmpty()) {
+            return;
         }
+        boolean keysLeftOut = askKeys && !choice.get().includeApiKeys();
         BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
         // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
         config.shared()
-                .exportConfigAsync(includeHttpHistory)
+                .exportConfigAsync(
+                        choice.get().includeHttpHistory(), choice.get().includeApiKeys())
                 .whenComplete((zip, failure) -> Platform.runLater(() -> {
                     task.done();
                     String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
-                    setStatus(tr(failure == null ? "status.config.exported" : "status.config.exportFailed", detail));
+                    String done = keysLeftOut ? "status.config.exportedNoKeys" : "status.config.exported";
+                    setStatus(tr(failure == null ? done : "status.config.exportFailed", detail));
                     Alert alert = new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
                     alert.initOwner(stage);
                     alert.setTitle(tr("dialog.exportConfig.title"));

@@ -619,6 +619,54 @@ class PreviewRenderFxTest {
         buffer.setPreviewExportJsonHandler(() -> sink.accept("json"));
     }
 
+    /**
+     * Simple UI mode keeps the preview menu's copy actions, Export to PDF and Print — as the Simple File menu
+     * keeps Print and Export to PDF — and hides Copy HTML and the Word / OpenDocument exports; the same, built
+     * once menu shows them again when the mode is turned off.
+     */
+    @Test
+    void simpleModeTrimsTheMarkdownPreviewMenu() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = buffer("markdown", "# Title\n\nSome **bold** text.\n");
+            wireExports(buffer, kind -> {});
+            buffer.setSimpleMenu(true);
+            stage[0] = EditorFx.show(buffer, 640, 320);
+            ref[0] = buffer;
+        });
+        EditorBuffer buffer = ref[0];
+        awaitPane(buffer, () -> buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
+        EditorFx.onFx(() -> {
+            ContextMenu menu = previewMenu(buffer);
+            List<String> simple = visibleTitles(menu.getItems());
+            assertTrue(simple.contains(tr("previewmenu.copyAll")), simple.toString());
+            assertTrue(simple.contains(tr("previewmenu.exportPdf")), simple.toString());
+            assertTrue(simple.contains(tr("previewmenu.print")), simple.toString());
+            for (String key : List.of("previewmenu.copyHtml", "previewmenu.exportDocx", "previewmenu.exportOdt")) {
+                assertFalse(simple.contains(tr(key)), key + " in " + simple);
+            }
+            menu.hide();
+
+            buffer.setSimpleMenu(false);
+            List<String> full = visibleTitles(previewMenu(buffer).getItems());
+            for (String key : List.of("previewmenu.copyHtml", "previewmenu.exportDocx", "previewmenu.exportOdt")) {
+                assertTrue(full.contains(tr(key)), key + " in " + full);
+            }
+            menu.hide();
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
+    private static List<String> visibleTitles(List<MenuItem> items) {
+        return items.stream()
+                .filter(MenuItem::isVisible)
+                .map(MenuItem::getText)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
     @Test
     void theMarkdownPreviewMenuCopiesAndExports() throws Exception {
         EditorBuffer[] ref = new EditorBuffer[1];

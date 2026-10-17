@@ -155,7 +155,7 @@ class SettingsSyncPageFxTest {
         assertEquals(tr("status.sync.invalidRepository"), status());
 
         connect(remote.toString(), "not..a/branch");
-        assertEquals(tr("status.sync.invalidRepository"), status());
+        assertEquals(tr("settings.sync.branch.invalid"), status(), "the field says it too, and keeps main");
 
         connect("--upload-pack=evil", "main"); // an option is not a repository
         assertEquals(tr("status.sync.invalidRepository"), status());
@@ -331,7 +331,8 @@ class SettingsSyncPageFxTest {
             assertEquals(7, (int) FxTestSupport.<Integer>field(sync, "timerMinutes"), "the timer runs at it");
             minutes.getEditor().setText("0");
             minutes.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(1, settings.getSyncIntervalMinutes(), "never below a minute");
+            assertEquals(7, settings.getSyncIntervalMinutes(), "never below a minute: 0 is refused, not saved");
+            assertTrue(minutes.getEditor().getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
 
             // With automatic sync on, a local change schedules a run instead of waiting for the interval.
             Animation dirty = FxTestSupport.field(sync, "dirty");
@@ -462,5 +463,122 @@ class SettingsSyncPageFxTest {
                     "an editor nobody is looking at does not talk to the network");
         });
         awaitIdle();
+    }
+
+    /**
+     * A password or token pasted into the repository URL used to be saved as typed — in plain text in
+     * settings.json, its exports and the clone's .git/config. The field now refuses it and says why.
+     */
+    @Test
+    void aRepositoryUrlWithATokenIsRefusedWithTheReason() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            TextField url = FxTestSupport.field(window, "syncUrlField");
+            Label state = FxTestSupport.field(window, "syncStateLabel");
+            url.setText("https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git");
+            url.fireEvent(new javafx.event.ActionEvent());
+            assertEquals("", settings.getSyncRepoUrl(), "nothing is saved");
+            assertTrue(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(tr("settings.sync.repo.credentials"), url.getTooltip().getText());
+            assertEquals(tr("settings.sync.repo.credentials"), state.getText());
+            FxTestSupport.<Button>field(window, "syncConnectButton").fire();
+            assertFalse(settings.isSyncEnabled(), "Connect does not reach for the stored URL instead");
+
+            url.setText("git@github.com:me/editora-sync.git");
+            assertFalse(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            url.fireEvent(new javafx.event.ActionEvent());
+            assertEquals("git@github.com:me/editora-sync.git", settings.getSyncRepoUrl());
+        });
+    }
+
+    /** A branch git would refuse used to be saved without a word, failing only at Connect. */
+    @Test
+    void aBranchNameGitWouldRefuseIsNotSaved() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            TextField branch = control("syncBranchField");
+            SettingsRig.typeAndEnter(branch, "a..b");
+            assertEquals("main", settings.getSyncBranch());
+            assertTrue(branch.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(tr("settings.sync.branch.invalid"), branch.getTooltip().getText());
+            SettingsRig.typeAndEnter(branch, "editora/sync");
+            assertEquals("editora/sync", settings.getSyncBranch());
+            assertTrue(SettingsRig.texts(FxTestSupport.<Stage>field(window, "stage")
+                            .getScene()
+                            .getRoot())
+                    .contains(tr("settings.sync.notSynced")));
+        });
+    }
+
+    /** Connect's look at the repository could take minutes with no way out; Cancel stops waiting. */
+    @Test
+    void connectCanBeCancelledWhileItLooksAtTheRepository() throws Exception {
+        open(null);
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(sync, "worker");
+        worker.execute(
+                () -> { // stands for a slow network: the look waits behind this
+                    try {
+                        hold.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        connect(remote.toUri().toString(), "main");
+        FxTestSupport.runOnFx(() -> {
+            Button cancel = control("syncCancelButton");
+            assertTrue(cancel.isVisible(), "offered while it looks");
+            cancel.fire();
+            assertFalse(cancel.isVisible());
+            assertEquals(
+                    tr("settings.sync.cancelled"),
+                    this.<Label>control("syncStateLabel").getText());
+            assertFalse(this.<Button>control("syncConnectButton").isDisabled(), "Connect can be pressed again");
+        });
+        hold.countDown();
+        awaitIdle();
+        assertFalse(settings.isSyncEnabled(), "the look that finished after Cancel connects nothing");
+    }
+
+    /**
+     * A URL stored with a token before the field refused them stayed as it was, with nothing on the page but a
+     * red field. The page now offers, once, to take the secret out of the stored URL.
+     */
+    @Test
+    void aTokenAlreadyInTheStoredUrlIsOfferedForRemoval() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            settings.setSyncRepoUrl("https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git");
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            javafx.scene.layout.VBox warning = control("syncCredentialsWarning");
+            assertTrue(warning.isVisible());
+            assertTrue(SettingsRig.texts(warning).contains(tr("settings.sync.credentials.stored")));
+            ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.remove"))).fire();
+            assertEquals("https://me@github.com/me/editora-sync.git", settings.getSyncRepoUrl());
+            assertEquals(
+                    "https://me@github.com/me/editora-sync.git",
+                    this.<TextField>control("syncUrlField").getText());
+            assertFalse(warning.isVisible());
+            assertEquals(
+                    tr("settings.sync.credentials.removed"),
+                    this.<Label>control("syncStateLabel").getText());
+        });
+        fx.shared.flushWrites();
+        assertFalse(Files.readString(fx.configDir.resolve("settings.json")).contains("ghp_FAKE"), "saved");
+    }
+
+    @Test
+    void keepingTheStoredTokenIsAskedOnlyOnce() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            settings.setSyncRepoUrl("https://ghp_FAKEFAKEFAKE0000@github.com/me/editora-sync.git");
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            javafx.scene.layout.VBox warning = control("syncCredentialsWarning");
+            ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.keep"))).fire();
+            assertFalse(warning.isVisible());
+            assertEquals("https://ghp_FAKEFAKEFAKE0000@github.com/me/editora-sync.git", settings.getSyncRepoUrl());
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            assertFalse(warning.isVisible(), "not again this run");
+        });
     }
 }

@@ -9,10 +9,62 @@ described in the `vfs/` entry of the [architecture catalog](../reference/archite
 A remote file is an ordinary `java.nio.file.Path` on a non-default filesystem (Apache MINA SSHD's
 `SftpFileSystem`), owned by the window's `vfs/RemoteFileSystems`. `Vfs.isLocal(path)` is the predicate every
 local-only feature gates on; `Vfs.toStorableString` / `parseStorable` round-trip a remote path as an
-`sftp://user@host:port/path` URI. Each window has its own engine and its own SSH client.
+`sftp://user@host:port/path` URI. Each window has its own engine; all of them connect through one SSH client
+(`vfs/SshClients`), started with the first engine and stopped with the last. The client's host-key check asks
+the engine that owns the session (the `SshClients.ENGINE` attribute: the connect's context, or the session's
+own once another engine adopts it), so each window keeps its own `known_hosts` and its own prompt.
 
 `Remote: Disconnect` closes the SSH session, not only the SFTP channel: the session also carries commands and
 forwarded ports.
+
+## Logging in
+
+The connect form takes no password: what a login needs is asked for while it runs, as `ssh` asks at the
+terminal. `vfs/LoginPrompt` is the window's question (in the app, `RemoteCoordinator.answerLogin`, a blocking
+FX dialog on the pattern of the host-key question, 120 s to answer); `vfs/LoginQuestions` puts it for the
+engine that owns the session (`SshClients.engineOf`), so a window's login asks in that window.
+
+- **Keyboard-interactive** (a server's own questions — where 2FA codes come from): the shared client's
+  `UserInteraction` is `vfs/LoginInteraction`. The server's name, instruction and prompts are shown as sent,
+  each answer hidden unless the server allows echo.
+- **Password**: a given password (`connect`'s `secret`, used by tests) is the first try; then
+  `resolveAuthPasswordAttempt` asks, up to three in all.
+- **Key passphrase**: asked only when a key turns out to be encrypted (`RemoteFileSystems.Passphrases`, the
+  key provider's `FilePasswordProvider`), three tries; cancelling skips that key and the login goes on.
+- What each method may use: `PASSWORD` no keys (MINA's default keys were tried first before); `KEY` that file;
+  `DEFAULT_KEYS` (shown as "Automatic") what MINA puts together for the session — `~/.ssh/config`'s
+  `IdentityFile` keys, then the default keys, unless `IdentitiesOnly yes`. Each may still answer the server's
+  questions, so a key + 2FA server works. After the login the session's key provider is emptied, so no
+  passphrase outlives it.
+
+**`~/.ssh/config`.** `vfs/SshEnvironment` is where the engine's SSH setup lives (`~/.ssh`'s `config`,
+`known_hosts` and default keys, and the environment); the app's is `SshEnvironment.standard()`, a test's a
+folder of its own (the package-private test constructors use the folder of their `known_hosts`, so no test reads
+the config or keys of whoever runs it). The shared client's host-config resolver, default-key provider and
+`FilePasswordProvider` (`vfs/Passphrases`) all delegate to the owning engine, the resolver through the connect's
+context. The resolver is `vfs/SshConfigFile`: MINA's own entry parser and matching (HostName, Port, User,
+IdentityFile, CertificateFile, IdentitiesOnly, ProxyJump) over the config with `Include`s read in place
+(relative to `~/.ssh`, `~`, globs sorted, 16 deep) and `Match` sections left out — MINA's resolver refuses the
+whole file over a `Match` ("Currently not able to process Match sections"), for every host, so such a config
+had stopped every connect. It re-reads when the config or an included file changes; the jump session carries the same context, so its host-key question and login
+are the same window's. The connection id stays what the form says (`user@alias:port`), so saved sites, exec
+consent and `sftp://` URIs don't depend on the config. The connect form offers the config's single-name `Host`
+entries (`RemoteFileSystems.configuredHosts`, the editor's `sshconfig.SshConfig` parser), and for the host
+typed shows HostName, ProxyJump and IdentityFile and fills User and Port from `RemoteFileSystems.configured` —
+MINA's resolver, the connect's own reading; User from the editor parser of the same text, since MINA fills in
+this machine's user when the config has none — until you type in those fields. Not supported: `ProxyCommand`,
+and what a `Match` section says.
+- Time spent answering is left out of the login deadline (`PromptClock`, the #486 rule for host-key prompts,
+  now for every question); MINA's own `AUTH_TIMEOUT` is raised to 15 minutes so it never ends a login first.
+- Cancelling a password or server question sets `LoginQuestions.CANCELLED` (and the engine's per-connect flag,
+  since a closed session's attributes are cleared): nothing more is asked and the connect fails as
+  `CANCELLED`, which the status bar reports without a dialog.
+
+**Why a connect failed** is `vfs/ConnectFailure`: unreachable, timed out, host key declined, host key changed
+(`KnownHostsServerKeyVerifier`'s modified-key acceptor records it), login refused, cancelled, other.
+`RemoteCoordinator.reportConnectFailure` shows a "Remote" dialog with advice for the kind (for a changed key,
+the `ssh-keygen -R` line naming the entry) and the underlying message; a cancel or a declined key only sets
+the status.
 
 ## Projects
 
@@ -25,13 +77,16 @@ A remote folder is a `config/Project` whose `root` is its `sftp://` URI.
 - `TrustStore` keys a remote folder by its URI and only matches folders on the same filesystem, so a remote
   `/srv/app` and the local `/srv/app` are trusted separately.
 
-**One window per project, and that window holds the connection.** An SSH session belongs to the SSH client
-of the window that opened it and cannot be handed to another window. So when the connect form succeeds in
-window A for a folder that is not A's project, `RemoteCoordinator.connected` creates the project, closes A's
-connection (unless A's tabs still use that host) and calls `WindowManager.openRemoteProject`, which opens the
-project's window and has it log in again with the same credentials (`connectForWindowProject`). The secret
-is copied for that second login and wiped after it. With projects turned off, the folder is mounted in the
-current window as before.
+**One window per project, and that window holds the connection.** When the connect form succeeds in window
+A for a folder that is not A's project, `RemoteCoordinator.connected` creates the project and hands A's
+logged-in session over: `RemoteFileSystems.handOff` gives it up without closing it, and
+`WindowManager.openRemoteProject` opens the project's window, whose engine `adopt`s it
+(`adoptForWindowProject`). One login serves both windows, which matters when it took a one-time 2FA code.
+The session's close listener asks `SshClients.engineOf` which engine to tell, so a drop after the handover
+reaches the project's window, and closing A leaves the project's window connected. When A's tabs still use
+that host (or A shows it), the session stays in A and the project's window logs in for itself
+(`connectForWindowProject`) with a copy of the secret, wiped after it. With projects turned off, the folder is
+mounted in the current window as before.
 
 **Not connected.** A remote project's window whose host is not connected shows "Not connected to …" with a
 Reconnect button in place of the Project tree (`ProjectPanel.showDisconnected`, state held by
@@ -192,7 +247,7 @@ Three things have to hold before anything runs on a host, all checked by `ExecTa
 
 `ConnectionStore.exec[…].tools` holds a command per tool id for a host whose `PATH` does not have the right
 one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they are paths
-on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `dap.python`, `dap.js`, `dap.java`, and
+on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `python`, `dap.python`, `dap.js`, `dap.java`, and
 `lsp.<server id>`.
 
 Settings → Remote edits both per saved site, below the connection form: "Allow running commands on this host"
@@ -264,7 +319,9 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   Maven / Gradle / npm / Cargo / Go builds and tests run on the host (`RunService.startRemote`: user locale,
   long-lived, so Stop and a lost connection end the tree). Typed input goes as UTF-8 lines ending in `\n`.
   This machine's JDK setting and PATH are never sent; a host's JDK is its own `java`, or `jdk.home` from its
-  tools (sent as `JAVA_HOME`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
+  tools (sent as `JAVA_HOME`). A Python file or configuration runs under the project's venv on the host
+  (`.venv`/`venv`/… with `pyvenv.cfg`, found over SFTP off the FX thread), else the host's `python` tool, else
+  `python3` there (`PythonRunPlan` with `Host.elsewhere`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
   the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
   file whatever the host allows; a refusal is reported when it is launched.
 - **Java projects:** the main class (gutter ▶, Run Main Class, a saved configuration) runs on the host with

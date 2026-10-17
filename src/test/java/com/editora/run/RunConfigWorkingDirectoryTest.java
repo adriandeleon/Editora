@@ -73,4 +73,31 @@ class RunConfigWorkingDirectoryTest {
         assertEquals(dir.resolve("run.sh"), RunConfigWorkingDirectory.script(config("shell", "run.sh", ""), dir));
         assertNull(RunConfigWorkingDirectory.script(config("make", "all", ""), dir));
     }
+
+    @Test
+    void aPythonScriptRunsInItsOwnFolderLikeRunFile(@org.junit.jupiter.api.io.TempDir Path root) {
+        // C8 / decision 2: a configuration ran at the project root while ▶ ran in the script's folder.
+        assertEquals(
+                root.resolve("scripts"),
+                RunConfigWorkingDirectory.resolve(config("python", "scripts/report.py", ""), root));
+        assertEquals(root, RunConfigWorkingDirectory.resolve(config("python-module", "app.main", ""), root));
+        assertEquals(
+                root, RunConfigWorkingDirectory.resolve(config("shell", "scripts/x.sh", ""), root), "shell unchanged");
+    }
+
+    @Test
+    void aTargetStaysRelativeToTheProjectWhenTheWorkingDirectoryChanges(@org.junit.jupiter.api.io.TempDir Path root)
+            throws Exception {
+        // C9: target src/app/main.py with working dir src became src/src/app/main.py — "script missing".
+        Path main = root.resolve("src/app/main.py");
+        java.nio.file.Files.createDirectories(main.getParent());
+        java.nio.file.Files.writeString(main, "print(1)\n");
+        RunConfiguration cfg = config("python", "src/app/main.py", "src");
+        Path cwd = RunConfigWorkingDirectory.resolve(cfg, root);
+        assertEquals(root.resolve("src"), cwd);
+        assertEquals(main, RunConfigWorkingDirectory.script(cfg, root, cwd));
+        // An older configuration whose target was written relative to its working directory still resolves.
+        RunConfiguration old = config("python", "app/main.py", "src");
+        assertEquals(main, RunConfigWorkingDirectory.script(old, root, RunConfigWorkingDirectory.resolve(old, root)));
+    }
 }

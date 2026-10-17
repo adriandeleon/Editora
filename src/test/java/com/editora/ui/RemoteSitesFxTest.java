@@ -60,6 +60,9 @@ class RemoteSitesFxTest {
     private static final RemoteConnection DOCS = new RemoteConnection(
             "docs.example.test", 22, "ada", RemoteConnection.AuthMethod.PASSWORD, null, null, null);
 
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path sshDir;
+
     private Host host;
     private Ops ops;
     private RemoteCoordinator coordinator;
@@ -78,7 +81,11 @@ class RemoteSitesFxTest {
         ops = new Ops();
         ops.saved.addAll(List.of(BUILD, DOCS));
         FxTestSupport.runOnFx(() -> {
-            coordinator = new RemoteCoordinator(host, ops);
+            // Its own ~/.ssh: the form reads ssh's config, and must not read the one of whoever runs the tests.
+            coordinator = new RemoteCoordinator(
+                    host,
+                    ops,
+                    new com.editora.vfs.RemoteFileSystems(null, null, com.editora.vfs.SshEnvironment.at(sshDir)));
             panel = coordinator.panel();
             overlayRoot = new StackPane(panel);
             host.overlay.install(overlayRoot);
@@ -185,23 +192,21 @@ class RemoteSitesFxTest {
     }
 
     @Test
-    void connectingASavedSitePreFillsTheFormButNeverTheSecret() throws Exception {
+    void connectingASavedSitePreFillsTheFormAndAsksForNoSecret() throws Exception {
         FxTestSupport.runOnFx(() -> {
             list().getSelectionModel().select(BUILD);
             button(panel, tr("remotePanel.connect")).fire();
         });
         Parent form = form();
         assertNotNull(form, "the connection form");
-        assertEquals(List.of("build.example.test", "2222", "ci", "/keys/ci_ed25519", "", "/srv/app"), values(form));
+        assertEquals(List.of("build.example.test", "2222", "ci", "/keys/ci_ed25519", "/srv/app"), values(form));
         Button connect = FxTestSupport.callOnFx(() -> button(form, tr("remote.connect.button")));
         assertFalse(FxTestSupport.callOnFx(connect::isDisabled));
 
-        // A key file is named, so the key field and its passphrase are in play.
+        // A key file is named, so the key field is in play; its passphrase, if any, is asked for while logging in.
         List<TextField> fields = fields(form);
         assertFalse(FxTestSupport.callOnFx(() -> fields.get(3).isDisabled()));
-        PasswordField secret = (PasswordField) fields.get(4);
-        assertFalse(FxTestSupport.callOnFx(secret::isDisabled));
-        assertEquals(tr("remote.passphrasePrompt"), FxTestSupport.callOnFx(secret::getPromptText));
+        assertTrue(fields.stream().noneMatch(PasswordField.class::isInstance), "no secret is typed into the form");
 
         // Double-click and Enter on a row do the same as the button.
         FxTestSupport.runOnFx(() -> {
@@ -252,12 +257,45 @@ class RemoteSitesFxTest {
     }
 
     @Test
+    void theSshConfigsHostsCanBePickedAndFillTheUserAndPortUntilYouTypeThem() throws Exception {
+        java.nio.file.Files.writeString(
+                sshDir.resolve("config"),
+                "Host box\n  HostName 10.1.2.3\n  Port 2222\n  User ana\n  ProxyJump bastion\nHost *.corp\n  User x\n");
+        FxTestSupport.runOnFx(() -> button(panel, tr("remotePanel.new")).fire());
+        Parent form = form();
+        javafx.scene.control.MenuButton fromConfig = FxTestSupport.callOnFx(() -> (javafx.scene.control.MenuButton)
+                form.lookupAll(".menu-button").stream().findFirst().orElse(null));
+        assertNotNull(fromConfig, "the config's hosts are offered");
+        assertEquals(
+                List.of("box"),
+                FxTestSupport.callOnFx(() ->
+                        fromConfig.getItems().stream().map(i -> i.getText()).toList()));
+
+        FxTestSupport.runOnFx(() -> fromConfig.getItems().getFirst().fire());
+
+        assertEquals(List.of("box", "2222", "ana", "", ""), values(form));
+        String shown = FxTestSupport.callOnFx(() -> {
+            StringBuilder text = new StringBuilder();
+            collect(form, text);
+            return text.toString();
+        });
+        assertTrue(shown.contains("HostName 10.1.2.3") && shown.contains("ProxyJump bastion"), shown);
+
+        // A user typed in is yours: another host does not replace it, and a host the config does not know
+        // puts back only what the config had filled in.
+        List<TextField> fields = fields(form);
+        FxTestSupport.runOnFx(() -> fields.get(2).setText("me"));
+        FxTestSupport.runOnFx(() -> fields.get(0).setText("plain.example.test"));
+        assertEquals(List.of("plain.example.test", "22", "me", "", ""), values(form));
+    }
+
+    @Test
     void aNewConnectionStartsFromDefaultsAndNeedsAHostAndAUser() throws Exception {
         FxTestSupport.runOnFx(() -> button(panel, tr("remotePanel.new")).fire());
         Parent form = form();
         assertNotNull(form);
         List<TextField> fields = fields(form);
-        assertEquals(List.of("", "22", System.getProperty("user.name", ""), "", "", ""), values(form));
+        assertEquals(List.of("", "22", System.getProperty("user.name", ""), "", ""), values(form));
         Button connect = FxTestSupport.callOnFx(() -> button(form, tr("remote.connect.button")));
         assertTrue(FxTestSupport.callOnFx(connect::isDisabled), "no host yet");
 
@@ -271,19 +309,14 @@ class RemoteSitesFxTest {
         ComboBox<RemoteConnection.AuthMethod> auth =
                 (ComboBox<RemoteConnection.AuthMethod>) FxTestSupport.callOnFx(() -> form.lookup(".combo-box"));
         TextField key = fields.get(3);
-        PasswordField secret = (PasswordField) fields.get(4);
         assertEquals(RemoteConnection.AuthMethod.DEFAULT_KEYS, FxTestSupport.callOnFx(auth::getValue));
         assertTrue(FxTestSupport.callOnFx(key::isDisabled));
-        assertTrue(FxTestSupport.callOnFx(secret::isDisabled), "the default keys need nothing typed");
 
         FxTestSupport.runOnFx(() -> auth.setValue(RemoteConnection.AuthMethod.PASSWORD));
-        assertTrue(FxTestSupport.callOnFx(key::isDisabled));
-        assertFalse(FxTestSupport.callOnFx(secret::isDisabled));
-        assertEquals(tr("remote.secretPrompt"), FxTestSupport.callOnFx(secret::getPromptText));
+        assertTrue(FxTestSupport.callOnFx(key::isDisabled), "the password is asked for while logging in");
 
         FxTestSupport.runOnFx(() -> auth.setValue(RemoteConnection.AuthMethod.KEY));
         assertFalse(FxTestSupport.callOnFx(key::isDisabled));
-        assertEquals(tr("remote.passphrasePrompt"), FxTestSupport.callOnFx(secret::getPromptText));
 
         // The picker names each method.
         assertEquals(

@@ -1,0 +1,24 @@
+{
+  "name": "Meeting Notes",
+  "description": "Dated meeting notes: attendees, agenda, notes, decisions and action items",
+  "language": "markdown",
+  "fileName": "${date}-${slug:meeting}.md",
+  "body": [
+    "# ${title:Meeting} — ${date}",
+    "",
+    "- **Time:** ${time}",
+    "- **Attendees:** ${author}",
+    "",
+    "## Agenda",
+    "",
+    "1. ${cursor}",
+    "",
+    "## Notes",
+    "",
+    "## Decisions",
+    "",
+    "## Action items",
+    "",
+    "- [ ] Who — what — by when"
+  ]
+}

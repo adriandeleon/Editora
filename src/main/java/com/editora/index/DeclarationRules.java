@@ -160,6 +160,9 @@ final class DeclarationRules {
 
     private static final List<Rule> PYTHON = List.of(
             rule("^\\s*class\\s+(?<n>\\w+)", SymbolKind.TYPE),
+            // Type aliases: the 3.12 `type X = …` / `type X[T] = …` statement, and `X: TypeAlias = …`.
+            rule("^\\s*type\\s+(?<n>\\w+)\\s*(?:\\[[^\\]]*\\])?\\s*=", SymbolKind.TYPE),
+            rule("^(?<n>\\w+)\\s*:\\s*(?:typing\\.)?TypeAlias\\s*=", SymbolKind.TYPE),
             rule("^\\s*(?:async\\s+)?def\\s+(?<n>\\w+)", SymbolKind.METHOD),
             rule("^(?<n>[A-Z][A-Z0-9_]*)\\s*(?::[^=]+)?=", SymbolKind.VARIABLE));
 

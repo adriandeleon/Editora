@@ -303,9 +303,14 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.drainFx();
     }
 
+    /** The program's output: the console without the muted command line a script run starts it with. */
     private String console() throws Exception {
         CodeArea output = FxTestSupport.field(run.panel(), "output");
-        return FxTestSupport.callOnFx(output::getText);
+        return FxTestSupport.callOnFx(() -> {
+            String text = output.getText();
+            boolean header = !text.isEmpty() && output.getStyleOfChar(0).contains("run-command");
+            return header ? text.substring(text.indexOf('\n') + 1) : text;
+        });
     }
 
     private String panelStatus() throws Exception {

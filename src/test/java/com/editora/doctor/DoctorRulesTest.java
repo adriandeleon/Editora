@@ -61,4 +61,27 @@ class DoctorRulesTest {
         assertEquals("", DoctorRules.firstLine("", ""));
         assertEquals("", DoctorRules.firstLine(null, null));
     }
+
+    /**
+     * pyright-langserver answers --version with an error, so Doctor showed only a path (Python review B16):
+     * the version comes from the npm package the launcher is linked into.
+     */
+    @org.junit.jupiter.api.Test
+    void anNpmLaunchersVersionComesFromItsPackage(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path pkg = java.nio.file.Files.createDirectories(dir.resolve("lib/node_modules/pyright"));
+        java.nio.file.Files.writeString(
+                pkg.resolve("package.json"), "{\n  \"name\": \"pyright\",\n  \"version\": \"1.1.411\"\n}\n");
+        java.nio.file.Path js = java.nio.file.Files.writeString(pkg.resolve("langserver.index.js"), "");
+        java.nio.file.Path bin = java.nio.file.Files.createDirectories(dir.resolve("bin"));
+        java.nio.file.Path launcher = bin.resolve("pyright-langserver");
+        try {
+            java.nio.file.Files.createSymbolicLink(launcher, js);
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            launcher = js; // no symlinks here: the package file itself
+        }
+        org.junit.jupiter.api.Assertions.assertEquals("pyright 1.1.411", DoctorRules.npmPackageVersion(launcher));
+        org.junit.jupiter.api.Assertions.assertEquals("", DoctorRules.npmPackageVersion(dir.resolve("missing")));
+        org.junit.jupiter.api.Assertions.assertEquals("2.0", DoctorRules.packageJsonVersion("{\"version\": \"2.0\"}"));
+    }
 }

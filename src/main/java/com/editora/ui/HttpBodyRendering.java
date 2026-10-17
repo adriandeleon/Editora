@@ -68,6 +68,19 @@ final class HttpBodyRendering {
         return new Rendered(view, text, spans, null);
     }
 
+    /** {@code text}'s highlight spans in the grammar for files ending in {@code .ext}, or null. Worker thread. */
+    static StyleSpans<Collection<String>> highlight(String text, String ext) {
+        IGrammar grammar = text == null || text.isEmpty() ? null : grammarFor(ext);
+        if (grammar == null) {
+            return null;
+        }
+        try {
+            return TextMateHighlighter.compute(text, grammar);
+        } catch (RuntimeException e) {
+            return null; // unknown/oversized — leave it unstyled
+        }
+    }
+
     /** The decoded picture of an {@code image/*} response (not SVG, which is text), or null. */
     private static Image imageOf(HttpResult r) {
         String ct = r.contentType() == null ? "" : r.contentType().toLowerCase(Locale.ROOT);

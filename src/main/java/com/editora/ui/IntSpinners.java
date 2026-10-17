@@ -2,16 +2,23 @@ package com.editora.ui;
 
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.Tooltip;
 import javafx.util.StringConverter;
 
+import atlantafx.base.theme.Styles;
+
+import static com.editora.i18n.Messages.tr;
+
 /**
- * Editable whole-number spinners that cannot be typed into a broken state.
+ * Editable whole-number spinners that cannot be typed into a broken state, and say so when typed text is not a
+ * value they take.
  *
  * <p>A stock editable {@code Spinner<Integer>} converts its text with {@code IntegerStringConverter}: letters
  * (or a number too large for an {@code int}) throw out of the commit, and an empty field commits {@code null}
- * — after which the arrow buttons throw until the value is set again. Here text that is not a number keeps the
- * current value, a number outside the range is pulled to the nearest bound, and the field is rewritten to show
- * the value that is actually in force.
+ * — after which the arrow buttons throw until the value is set again. Here text that is not a whole number in
+ * range is not committed: the value in force stays, the typed text stays for the user to fix, and the field is
+ * marked with the Settings rule for invalid input (the danger state and a tooltip giving the range). Typing
+ * "-5" for a font size used to apply 6 to every editor without a word.
  */
 final class IntSpinners {
 
@@ -30,24 +37,46 @@ final class IntSpinners {
             @Override
             public Integer fromString(String text) {
                 Integer current = factory.getValue();
-                return parse(text, current == null ? initial : current, min, max);
+                return accepts(text, min, max) ? parse(text, current == null ? initial : current, min, max) : current;
             }
         });
         spinner.setEditable(true);
-        // A commit that leaves the value unchanged ("abc", or 99 where 16 is already the maximum) fires no
-        // value change, so the field would keep showing the rejected text. Rewrite it after each commit.
-        Runnable showValue =
-                () -> spinner.getEditor().setText(factory.getConverter().toString(factory.getValue()));
+        Tooltip reason = new Tooltip(tr("settings.number.range", min, max));
+        // After each commit: text that is a value is shown as the value in force (" 8 " → "8"); any other text
+        // stays, marked, until it is fixed or an arrow sets a value.
+        Runnable settle = () -> {
+            boolean ok = accepts(spinner.getEditor().getText(), min, max);
+            spinner.getEditor().pseudoClassStateChanged(Styles.STATE_DANGER, !ok);
+            spinner.setTooltip(ok ? null : reason);
+            if (ok) {
+                spinner.getEditor().setText(factory.getConverter().toString(factory.getValue()));
+            }
+        };
         spinner.getEditor().setOnAction(e -> {
             spinner.commitValue();
-            showValue.run();
+            settle.run();
         });
         spinner.focusedProperty().addListener((obs, was, focused) -> {
             if (!focused) {
-                showValue.run(); // after the spinner's own focus-loss commit, which was registered first
+                settle.run(); // after the spinner's own focus-loss commit, which was registered first
             }
         });
+        // An arrow or a programmatic value is a value in force: the mark goes with the text it replaces.
+        factory.valueProperty().addListener((obs, was, now) -> {
+            spinner.getEditor().pseudoClassStateChanged(Styles.STATE_DANGER, false);
+            spinner.setTooltip(null);
+        });
         return spinner;
+    }
+
+    /** Whether {@code text} is a whole number from {@code min} to {@code max} (surrounding blanks allowed). Pure. */
+    static boolean accepts(String text, int min, int max) {
+        String t = text == null ? "" : text.strip();
+        if (!t.matches("[+-]?\\d{1,10}")) {
+            return false;
+        }
+        long v = Long.parseLong(t);
+        return v >= min && v <= max;
     }
 
     /**

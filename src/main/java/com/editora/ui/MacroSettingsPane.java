@@ -84,6 +84,8 @@ final class MacroSettingsPane extends HBox {
     private final ListView<Macro> list = new ListView<>(macros);
     private final ListView<MacroStep> stepList = new ListView<>(steps);
     private final TextField name = new TextField();
+    /** Says that another macro already has the typed name (shown only then). */
+    private final Label nameClash = new Label();
     /** The key-binding row: a chord label and its buttons, or a capture field while recording a chord. */
     private final WrapRow keybinding = new WrapRow(8, 6);
 
@@ -135,17 +137,26 @@ final class MacroSettingsPane extends HBox {
         });
         stepList.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> showStepDetail());
 
-        Button up = new Button("▲");
-        Button down = new Button("▼");
-        up.setAccessibleText(tr("bookmarks.moveUp"));
-        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
-        down.setAccessibleText(tr("bookmarks.moveDown"));
-        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
-        up.getStyleClass().addAll("flat", "reorder-button");
-        down.getStyleClass().addAll("flat", "reorder-button");
+        // Ordinary labelled buttons, like the others in this row: the flat ▲/▼ glyphs were 10 px targets that
+        // a screen reader announced as the glyphs. Each is greyed where it cannot act.
+        Button up = new Button(tr("settings.macro.moveUp"));
+        Button down = new Button(tr("settings.macro.moveDown"));
+        up.setTooltip(new Tooltip(tr("settings.macro.moveUp.help")));
+        up.setAccessibleHelp(tr("settings.macro.moveUp.help"));
+        down.setTooltip(new Tooltip(tr("settings.macro.moveDown.help")));
+        down.setAccessibleHelp(tr("settings.macro.moveDown.help"));
         up.setOnAction(e -> moveStep(-1));
         down.setOnAction(e -> moveStep(1));
         Button remove = new Button(tr("settings.macro.removeStep"));
+        Runnable stepButtonsState = () -> {
+            int i = stepList.getSelectionModel().getSelectedIndex();
+            up.setDisable(i <= 0);
+            down.setDisable(i < 0 || i >= steps.size() - 1);
+            remove.setDisable(i < 0);
+        };
+        stepList.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> stepButtonsState.run());
+        steps.addListener((javafx.collections.ListChangeListener<MacroStep>) c -> stepButtonsState.run());
+        stepButtonsState.run();
         remove.setOnAction(e -> {
             int i = stepList.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -172,10 +183,21 @@ final class MacroSettingsPane extends HBox {
         form.setHgap(8);
         form.setVgap(6);
         formRow(form, 0, tr("settings.macro.name"), name);
-        formRow(form, 1, tr("settings.macro.keybinding"), keybinding);
+        nameClash.getStyleClass().add("settings-hint");
+        nameClash.setWrapText(true);
+        nameClash.setVisible(false);
+        nameClash.setManaged(false);
+        form.add(nameClash, 1, 1);
+        formRow(form, 2, tr("settings.macro.keybinding"), keybinding);
         javafx.scene.layout.GridPane.setHgrow(name, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setHgrow(keybinding, Priority.ALWAYS);
-        name.textProperty().addListener((o, was, now) -> touched());
+        name.textProperty().addListener((o, was, now) -> {
+            touched();
+            Macro twin = namedLike(now, editingId, host.config().getMacroStore().macros);
+            nameClash.setText(twin == null ? "" : tr("settings.macro.nameExists", twin.name()));
+            nameClash.setVisible(twin != null);
+            nameClash.setManaged(twin != null);
+        });
 
         Label stepsLabel = new Label(tr("settings.macro.steps"));
         stepsLabel.getStyleClass().add("settings-section");
@@ -301,6 +323,23 @@ final class MacroSettingsPane extends HBox {
         }
     }
 
+    /**
+     * The other macro already named {@code name} (ignoring case and surrounding space), or null. Two macros of
+     * one name were two identical "Macro: …" rows in the palette and the key list. Pure.
+     */
+    static Macro namedLike(String name, String selfId, List<Macro> all) {
+        String n = name == null ? "" : name.strip();
+        if (n.isEmpty()) {
+            return null;
+        }
+        for (Macro m : all) {
+            if (!m.id().equals(selfId) && m.name().strip().equalsIgnoreCase(n)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
     private Macro find(String id) {
         for (Macro m : macros) {
             if (m.id().equals(id)) {
@@ -356,8 +395,9 @@ final class MacroSettingsPane extends HBox {
         }
         MacroStore store = host.config().getMacroStore();
         String newName = name.getText() == null ? "" : name.getText().strip();
-        if (newName.isEmpty() && !store.isPlaceholder(stored)) {
-            newName = stored.name(); // a macro keeps its name rather than lose it to an emptied field
+        if ((newName.isEmpty() && !store.isPlaceholder(stored))
+                || namedLike(newName, stored.id(), store.macros) != null) {
+            newName = stored.name(); // keeps its name rather than lose it to an emptied or a taken one
         }
         store.put(new Macro(stored.id(), newName, new ArrayList<>(steps)));
         host.config().saveMacros();
@@ -379,11 +419,13 @@ final class MacroSettingsPane extends HBox {
         confirm.initOwner(getScene() == null ? null : getScene().getWindow());
         confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
         confirm.setHeaderText(null);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
         if (host.shortcuts() != null) {
-            host.shortcuts().reset(MacroService.commandIdFor(sel)); // drop its keybinding
+            host.shortcuts().forget(MacroService.commandIdFor(sel)); // drop its keybinding, in every keymap
         }
         dirty.set(false);
         editingId = null;
@@ -417,11 +459,13 @@ final class MacroSettingsPane extends HBox {
         chordLabel.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
         chordLabel.setMinWidth(Region.USE_PREF_SIZE);
         Button record = new Button(tr("settings.shortcuts.record"));
-        Button clear = new Button(tr("settings.shortcuts.reset"));
+        // A macro has no default chord, so this removes the binding — and says so.
+        Button clear = new Button(tr("settings.shortcuts.remove"));
+        clear.setDisable(!bound);
         fitToLabel(record, clear);
         clear.setOnAction(e -> {
             if (host.shortcuts() != null) {
-                host.shortcuts().reset(commandId);
+                host.shortcuts().clear(commandId);
             }
             rebuildKeybinding();
             host.shortcutsChanged();
@@ -441,10 +485,11 @@ final class MacroSettingsPane extends HBox {
             host.rebind(commandId, seq);
             done.run();
         };
-        TextField capture = ShortcutCapture.field(commit, done);
+        SettingsWindow.ShortcutActions actions = host.shortcuts();
+        TextField capture = ShortcutCapture.field(seq -> actions == null ? seq : actions.display(seq), commit, done);
         Button save = new Button(tr("settings.shortcuts.save"));
         save.getStyleClass().add("success");
-        save.setOnAction(e -> commit.accept(capture.getText()));
+        save.setOnAction(e -> commit.accept(ShortcutCapture.recorded(capture)));
         Button cancel = new Button(tr("settings.shortcuts.cancel"));
         cancel.setOnAction(e -> done.run());
         fitToLabel(save, cancel);
@@ -543,7 +588,9 @@ final class MacroSettingsPane extends HBox {
         prompt.setWrapText(true);
         if (step.isKey()) {
             TextField capture = new TextField(keyLabel(step.value()));
-            capture.getStyleClass().add("macro-step-input");
+            // "shortcut-capture" tells the Settings window that Escape here is the field's own key, not a
+            // request to close the window (its scene filter sees the key before this field does).
+            capture.getStyleClass().addAll("macro-step-input", "shortcut-capture");
             capture.setEditable(false);
             capture.setPromptText(tr("settings.macro.pressKey"));
             HBox.setHgrow(capture, Priority.ALWAYS);
@@ -566,11 +613,10 @@ final class MacroSettingsPane extends HBox {
             capture.addEventFilter(KeyEvent.KEY_TYPED, KeyEvent::consume);
             prompt.setOnAction(
                     e -> replaceStep(index, MacroStep.key(steps.get(index).value(), prompt.isSelected())));
-            Label hint = new Label(tr("settings.macro.pressKey"));
-            hint.getStyleClass().add("settings-hint");
+            // The prompt text says how ("Click the field and press the key."); a hint under it said it again.
             HBox row = new HBox(8, kind, capture);
             row.setAlignment(Pos.CENTER_LEFT);
-            stepDetail.getChildren().addAll(row, hint, prompt);
+            stepDetail.getChildren().addAll(row, prompt);
             return;
         }
         // Multi-line: an Enter typed here is an Enter in the macro. (The single-line field this replaces

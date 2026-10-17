@@ -124,6 +124,18 @@ class MacroSettingsPaneActionsFxTest {
 
                     @Override
                     public void resetAll() {}
+
+                    @Override
+                    public void clear(String commandId) {
+                        log.add("clear " + commandId);
+                        chords.remove(commandId);
+                    }
+
+                    @Override
+                    public void forget(String commandId) {
+                        log.add("forget " + commandId);
+                        chords.remove(commandId);
+                    }
                 };
             }
 
@@ -309,10 +321,20 @@ class MacroSettingsPaneActionsFxTest {
             MacroStep copy = pane.steps().get(0);
             MacroStep text = pane.steps().get(1);
             MacroStep gone = pane.steps().get(2);
-            Button up = button("▲");
-            Button down = button("▼");
+            Button up = button(tr("settings.macro.moveUp"));
+            Button down = button(tr("settings.macro.moveDown"));
+            Button addCommand = button(tr("settings.macro.addCommand"));
+            for (Button b : List.of(up, down)) { // ordinary buttons like the rest of the row, not 10 px glyphs
+                assertFalse(b.getStyleClass().contains("reorder-button"));
+                assertFalse(b.getStyleClass().contains("flat"));
+                assertTrue(
+                        b.getAccessibleHelp() != null && !b.getAccessibleHelp().isBlank());
+                assertEquals(addCommand.getHeight(), b.getHeight(), 0.5, "as tall as Add Command");
+            }
 
             pane.stepList().getSelectionModel().select(0);
+            assertTrue(up.isDisable(), "greyed on the first step");
+            assertFalse(down.isDisable());
             up.fire(); // already first
             assertEquals(List.of(copy, text, gone), List.copyOf(pane.steps()));
             assertFalse(pane.isDirty());
@@ -322,6 +344,7 @@ class MacroSettingsPaneActionsFxTest {
             assertEquals(1, pane.stepList().getSelectionModel().getSelectedIndex(), "the moved step stays selected");
             assertTrue(pane.isDirty());
             down.fire();
+            assertTrue(down.isDisable(), "greyed on the last step");
             down.fire(); // already last
             assertEquals(List.of(text, gone, copy), List.copyOf(pane.steps()));
             up.fire();
@@ -381,8 +404,8 @@ class MacroSettingsPaneActionsFxTest {
             assertTrue(SettingsRig.texts(keybindingRow()).contains(typed), "the row shows the chord now bound");
 
             log.clear();
-            SettingsRig.button(keybindingRow(), tr("settings.shortcuts.reset")).fire();
-            assertEquals(List.of("reset " + command, "shortcutsChanged"), log);
+            SettingsRig.button(keybindingRow(), tr("settings.shortcuts.remove")).fire();
+            assertEquals(List.of("clear " + command, "shortcutsChanged"), log);
             assertTrue(SettingsRig.texts(keybindingRow()).contains(tr("settings.shortcuts.unbound")));
         });
     }
@@ -406,7 +429,7 @@ class MacroSettingsPaneActionsFxTest {
 
             SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, delete::fire);
             assertNull(config.getMacroStore().findById("sample"));
-            assertEquals(List.of("reset " + command, "macrosChanged"), log);
+            assertEquals(List.of("forget " + command, "macrosChanged"), log);
             assertFalse(chords.containsKey(command));
             assertEquals(1, pane.macroList().getItems().size());
             assertEquals(

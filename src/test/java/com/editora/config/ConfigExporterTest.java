@@ -107,6 +107,67 @@ class ConfigExporterTest {
         assertEquals("rw-------", PosixFilePermissions.toString(perms));
     }
 
+    @Test
+    void theAiApiKeysAreBlankedInTheSettingsFileAndItsCopiesUnlessIncluded(@TempDir Path cfg, @TempDir Path home)
+            throws Exception {
+        String json =
+                "{\n  \"aiApiKey\" : \"sk-ant-FAKE\\\"x\",\n  \"aiApiKeyOpenai\" : \"sk-FAKE\",\n  \"fontSize\" : 14\n}\n";
+        Files.writeString(cfg.resolve("settings.json"), json);
+        Files.writeString(cfg.resolve("settings.json.corrupt.bak"), "{ \"aiApiKeyLmstudio\":\"lm-FAKE\", broken");
+        Files.writeString(cfg.resolve("settings.toml.migrated"), "aiApiKey = \"sk-ant-OLD\"\nfontSize = 14\n");
+        Files.writeString(cfg.resolve("notes.json"), "{\"aiApiKey\":\"a note is not settings\"}");
+
+        Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, false);
+        try (ZipFile zf = new ZipFile(zip.toFile())) {
+            String settings =
+                    new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+            assertEquals("{\n  \"aiApiKey\" : \"\",\n  \"aiApiKeyOpenai\" : \"\",\n  \"fontSize\" : 14\n}\n", settings);
+            String bak = new String(
+                    zf.getInputStream(zf.getEntry("settings.json.corrupt.bak")).readAllBytes());
+            assertFalse(bak.contains("lm-FAKE"), bak);
+            String toml = new String(
+                    zf.getInputStream(zf.getEntry("settings.toml.migrated")).readAllBytes());
+            assertEquals("aiApiKey = \"\"\nfontSize = 14\n", toml);
+            String notes =
+                    new String(zf.getInputStream(zf.getEntry("notes.json")).readAllBytes());
+            assertTrue(notes.contains("a note is not settings"), "only the settings files are touched");
+        }
+        Files.delete(zip);
+        Path withKeys = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, true);
+        try (ZipFile zf = new ZipFile(withKeys.toFile())) {
+            assertEquals(
+                    json,
+                    new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes()));
+        }
+    }
+
+    /** A sync URL stored with a token before the Sync page refused them is exported without it, keys or not. */
+    @Test
+    void aTokenInTheStoredSyncUrlNeverReachesTheZip(@TempDir Path cfg, @TempDir Path home) throws Exception {
+        Files.writeString(
+                cfg.resolve("settings.json"),
+                "{\n  \"syncRepoUrl\" : \"https://me:ghp_FAKEFAKE@github.com/me/sync.git\",\n  \"fontSize\" : 14\n}\n");
+        Files.writeString(
+                cfg.resolve("settings.toml.migrated"),
+                "syncRepoUrl = \"https://ghp_FAKEOLD000@github.com/me/s.git\"\n");
+        for (boolean keys : new boolean[] {false, true}) {
+            Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, keys);
+            try (ZipFile zf = new ZipFile(zip.toFile())) {
+                String json = new String(
+                        zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+                assertTrue(json.contains("\"syncRepoUrl\" : \"https://me@github.com/me/sync.git\""), json);
+                assertTrue(json.contains("\"fontSize\" : 14"), json);
+                String toml = new String(
+                        zf.getInputStream(zf.getEntry("settings.toml.migrated")).readAllBytes());
+                assertEquals("syncRepoUrl = \"https://github.com/me/s.git\"\n", toml);
+            }
+            Files.delete(zip);
+        }
+        assertTrue(
+                Files.readString(cfg.resolve("settings.json")).contains("ghp_FAKEFAKE"),
+                "the file itself is untouched");
+    }
+
     private static List<String> entryNames(Path zip) throws Exception {
         List<String> names = new ArrayList<>();
         try (ZipFile zf = new ZipFile(zip.toFile())) {

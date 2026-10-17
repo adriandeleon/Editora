@@ -233,7 +233,7 @@ public class EditorBuffer implements TabContent {
             this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
 
     private final CodeArea area = tagRename.newArea(null);
-    private final IndentKeys indentKeys = new IndentKeys(area);
+    private final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
@@ -779,6 +779,10 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** "Run File" context-menu handler (compact source files); null hides the item. */
     private Runnable runHandler;
+    /** "Debug File" beside "Run File" (null: none); shown while {@link #debugFileShown} says it can debug. */
+    private Runnable debugFileHandler;
+
+    private java.util.function.BooleanSupplier debugFileShown = () -> false;
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
     private Runnable lspGotoDefinitionAction = () -> {};
 
@@ -1828,6 +1832,8 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
+    /** Simple UI mode: the right-click menu keeps the editing actions only — see {@link #setSimpleMenu}. */
+    private boolean simpleMenu;
 
     private ContextMenu contextMenu() {
         if (contextMenu == null) {
@@ -1848,7 +1854,9 @@ public class EditorBuffer implements TabContent {
             ContextMenuTarget at = ContextMenuTarget.resolve(a, e, this::collapseCarets);
             // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAt(at.line(), false);
+            // Simple UI mode keeps the editing actions only: no Run/Debug, language-server, build, AI, markup,
+            // bookmark or note items, as the Simple menu bar keeps none of them.
+            com.editora.test.JavaTestScanner.TestTarget testTarget = simpleMenu ? null : testTargetAt(at.line(), false);
             if (testTarget != null) {
                 boolean method = testTarget.methodName() != null;
                 MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
@@ -1860,7 +1868,7 @@ public class EditorBuffer implements TabContent {
                 debugTest.setOnAction(ev -> testDebugHandler.accept(testTarget));
                 items.addAll(java.util.List.of(runTests, debugTest));
                 items.add(new SeparatorMenuItem());
-            } else if (httpFeatureEnabled && isHttpFile() && runnable) {
+            } else if (!simpleMenu && httpFeatureEnabled && isHttpFile() && runnable) {
                 // A .http file runs requests, never "Run File" (which launched `java requests.http`).
                 MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
                 runRequest.setGraphic(FoldManager.runGlyph());
@@ -1876,13 +1884,19 @@ public class EditorBuffer implements TabContent {
                     items.add(debugRequest);
                 }
                 items.add(new SeparatorMenuItem());
-            } else if (runnable && runHandler != null && !isHttpFile()) {
+            } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
                 run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
                 run.setOnAction(ev -> runHandler.run());
                 items.add(run);
+                if (debugFileHandler != null && debugFileShown.getAsBoolean()) {
+                    MenuItem debugFile = new MenuItem(tr("editmenu.debugFile"));
+                    debugFile.setGraphic(MenuIcons.debug());
+                    debugFile.setOnAction(ev -> debugFileHandler.run());
+                    items.add(debugFile);
+                }
                 items.add(new SeparatorMenuItem());
-            } else {
+            } else if (!simpleMenu) {
                 // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
                 com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
                 if (mainTarget != null) {
@@ -1899,13 +1913,13 @@ public class EditorBuffer implements TabContent {
                 }
             }
             // LSP navigation (only when this buffer is served by a language server), for the symbol there.
-            if (lspActive) {
+            if (lspActive && !simpleMenu) {
                 items.add(lspMenu(at.offset()));
                 items.add(new SeparatorMenuItem());
             }
             // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
             // are "what this file's toolchain can do", and reading them together is the point.
-            if (buildMenuContributor != null) {
+            if (buildMenuContributor != null && !simpleMenu) {
                 List<MenuItem> build = buildMenuContributor.get();
                 if (build != null && !build.isEmpty()) {
                     items.addAll(build);
@@ -1916,7 +1930,7 @@ public class EditorBuffer implements TabContent {
             // are on and the provider's latest connectivity check succeeded. Keep the submenu available
             // even without a selection so the menu remains a stable map of enabled features; its
             // selection-scoped actions are disabled until there is text to act on.
-            if (aiActionsEnabled) {
+            if (aiActionsEnabled && !simpleMenu) {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
@@ -1925,10 +1939,10 @@ public class EditorBuffer implements TabContent {
             // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
             // top level above — they are the actions you reach for without reading the menu.
-            if (canFormatMarkdown()) {
+            if (!simpleMenu && canFormatMarkdown()) {
                 items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this, typstImagePasteHandler)));
                 items.add(new SeparatorMenuItem());
-            } else if (isTypst() && isEditable()) {
+            } else if (!simpleMenu && isTypst() && isEditable()) {
                 items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
                 items.add(new SeparatorMenuItem());
             }
@@ -1940,6 +1954,8 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
             }
             items.addAll(standardMenuItems());
+            // Print / Export to PDF stay in Simple mode, as on its File menu; the controller already leaves out the
+            // External Tools and plugin items there.
             if (menuContributor != null) { // plugin-contributed items
                 List<MenuItem> extra = menuContributor.get();
                 if (extra != null && !extra.isEmpty()) {
@@ -1948,7 +1964,7 @@ public class EditorBuffer implements TabContent {
                 }
             }
             // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            if (path != null) {
+            if (path != null && !simpleMenu) {
                 items.add(new SeparatorMenuItem());
                 int clickedLine = at.line();
                 boolean marked = bookmarks.isBookmarked(clickedLine);
@@ -1957,7 +1973,7 @@ public class EditorBuffer implements TabContent {
                 bookmark.setOnAction(ev -> bookmarkToggleRequest.accept(this, clickedLine));
                 items.add(bookmark);
             }
-            if (path != null && notesEnabled) {
+            if (path != null && notesEnabled && !simpleMenu) {
                 items.add(new SeparatorMenuItem());
                 boolean hasSelection = a.getSelection().getLength() > 0;
                 MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
@@ -1974,6 +1990,21 @@ public class EditorBuffer implements TabContent {
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.menuContributor = contributor;
+    }
+
+    /**
+     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
+     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
+     * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
+     * so a toggle applies to the next one.
+     */
+    public void setSimpleMenu(boolean simple) {
+        this.simpleMenu = simple;
+    }
+
+    /** Whether the right-click menus are trimmed for Simple UI mode (the preview menus read it too). */
+    boolean isSimpleMenu() {
+        return simpleMenu;
     }
 
     /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
@@ -3766,7 +3797,11 @@ public class EditorBuffer implements TabContent {
             return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
         return t.methodName() == null
-                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))
+                ? t.className().isEmpty() // a Python test file's whole-file ▶
+                        ? tr("testrunner.gutter.runFile")
+                        : tr(
+                                "testrunner.gutter.runClass",
+                                com.editora.test.TestSourceLocator.displayName(t.className()))
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
@@ -3886,12 +3921,19 @@ public class EditorBuffer implements TabContent {
 
     /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
      *  document open/close + requests; this only gates the editor surface. */
+    /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
+    private boolean heavyFileLspAllowed;
+
+    public void setHeavyFileLspAllowed(boolean allowed) {
+        heavyFileLspAllowed = allowed;
+    }
+
     public void setLspActive(boolean on) {
         // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
         // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
-        this.lspActive = on && isLspLanguage() && !largeFile && !heavyFile;
+        this.lspActive = on && isLspLanguage() && !largeFile && (!heavyFile || heavyFileLspAllowed);
         lastLspSentVersion = -1; // an (de)activation re-syncs via didOpen; force the next change-send to fire
         if (this.lspActive || lspOverlay != null) {
             lspOverlay().setActive(this.lspActive);
@@ -4370,7 +4412,7 @@ public class EditorBuffer implements TabContent {
                 var pos = a.offsetToPosition(
                         hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 String line = a.getParagraph(pos.getMajor()).getText();
-                String word = DebugIdentifiers.wordAt(line, pos.getMinor());
+                String word = DebugIdentifiers.expressionAt(line, pos.getMinor()); // self.x, not x
                 if (word == null) {
                     hideDebugTooltip();
                     return;
@@ -6913,6 +6955,12 @@ public class EditorBuffer implements TabContent {
         this.runHandler = handler;
     }
 
+    /** Sets the "Debug File" context-menu entry: shown beside "Run File" while {@code shown} holds. */
+    public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
+        this.debugFileHandler = handler;
+        this.debugFileShown = shown == null ? () -> false : shown;
+    }
+
     /** Callback fired after any note change (for persistence + the Notes panel). */
     public void setOnNotesChanged(Runnable callback) {
         notes.setOnChanged(callback);
@@ -8452,7 +8500,8 @@ public class EditorBuffer implements TabContent {
                 e.consume();
                 return;
             }
-            int del = Indenter.smartBackspaceCount(line.substring(0, col), line.substring(col), par > 0);
+            int del = Indenter.smartBackspaceCount(
+                    line.substring(0, col), line.substring(col), par > 0, language, indentUnit(), tabSize);
             if (del > 1) {
                 a.deleteText(caret - del, caret);
                 e.consume();
@@ -8668,13 +8717,18 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();
-        char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
         char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
         boolean hasSel = a.getSelection().getLength() > 0;
-        AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
+        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+        AutoClose.Decision d = AutoClose.decide(c, a.getText(lineStart, caret), next, hasSel, language);
         switch (d.action()) {
             case INSERT_PAIR -> {
                 a.replaceText(caret, caret, "" + c + d.closer());
+                a.moveTo(caret + 1);
+                return true;
+            }
+            case INSERT_TRIPLE -> { // the third quote of a Python triple quote: close it too
+                a.replaceText(caret, caret, String.valueOf(c).repeat(4));
                 a.moveTo(caret + 1);
                 return true;
             }
@@ -8707,7 +8761,7 @@ public class EditorBuffer implements TabContent {
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
         String beforeCaret = a.getText(lineStart, caret);
         boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
+        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c, language);
         if (!bracket && !keyword) {
             return;
         }

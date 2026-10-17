@@ -1,0 +1,25 @@
+{
+  "name": "Markwhen Timeline",
+  "description": "A Markwhen timeline for the year with groups, ranges and coloured tags",
+  "language": "markwhen",
+  "fileName": "${baseName:timeline}.mw",
+  "body": [
+    "---",
+    "title: ${title:Timeline}",
+    "#Milestone: #F44336",
+    "#Work: #2196F3",
+    "---",
+    "",
+    "// One event per line: a date or a range (start / end), a colon, then the text. #Tags colour events.",
+    "",
+    "# First half",
+    "${year}-01-15: Kick-off #Milestone",
+    "${year}-02 / ${year}-04: Design and prototype #Work",
+    "${year}-05 / ${year}-06: Build the first version #Work",
+    "",
+    "# Second half",
+    "${year}-07-01: First release #Milestone",
+    "${year}-08 / ${year}-11: ${cursor}Next phase #Work",
+    "${year}-12-15: Year-end review #Milestone"
+  ]
+}

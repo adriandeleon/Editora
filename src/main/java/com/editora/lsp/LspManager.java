@@ -204,6 +204,111 @@ public final class LspManager {
         });
     }
 
+    /** The Python server's id, whose sessions are told which interpreter to analyse with. */
+    static final String PYTHON_SERVER_ID = "python";
+
+    /**
+     * Root → the Python interpreter a Pyright session there should analyse with (an absolute executable, or
+     * null to leave it to the server). Called off the FX thread (it looks at the file system and PATH).
+     */
+    private volatile java.util.function.Function<Path, String> pythonInterpreterResolver = root -> null;
+
+    /** Installs how a Python session's interpreter is found (review B1); {@code null} = the server's own. */
+    public void setPythonInterpreterResolver(java.util.function.Function<Path, String> resolver) {
+        pythonInterpreterResolver = resolver == null ? root -> null : resolver;
+    }
+
+    private String resolvePythonPath(Path root) {
+        try {
+            return pythonInterpreterResolver.apply(root);
+        } catch (RuntimeException e) {
+            LOG.log(java.util.logging.Level.FINE, "Python interpreter resolution failed for " + root, e);
+            return null;
+        }
+    }
+
+    /**
+     * Re-resolves every running Python session's interpreter (the project's pick changed, a venv was
+     * created) off the FX thread; a session whose answer changed is pushed the new {@code python.pythonPath}.
+     */
+    public void refreshPythonInterpreters() {
+        List<LanguageServerSession> python = new ArrayList<>();
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            if (PYTHON_SERVER_ID.equals(s.serverId())) {
+                python.add(s);
+            }
+        }
+        if (python.isEmpty()) {
+            return;
+        }
+        Thread.ofVirtual().name("lsp-python-interpreter").start(() -> {
+            for (LanguageServerSession s : python) {
+                if (!s.isDisposed()) {
+                    s.setPythonPath(resolvePythonPath(s.root()));
+                }
+            }
+        });
+    }
+
+    /**
+     * Which local server roots get a {@link RootWatcher} of their own: those nothing else reports file changes
+     * for (no project, or a root outside it). Read off the FX thread when a session starts.
+     */
+    private volatile java.util.function.Predicate<Path> watchRoot = root -> false;
+
+    /** Root → its watcher; at most {@link #MAX_ROOT_WATCHERS}, closed with the manager. */
+    private final Map<Path, RootWatcher> rootWatchers = new ConcurrentHashMap<>();
+
+    static final int MAX_ROOT_WATCHERS = 8;
+
+    /** Installs which server roots this manager watches itself (review B7). */
+    public void setWatchSessionRoots(java.util.function.Predicate<Path> watch) {
+        watchRoot = watch == null ? root -> false : watch;
+    }
+
+    /** Starts watching {@code root} when it should be and is not yet (any thread). */
+    private void ensureRootWatcher(Path root) {
+        if (closed
+                || root == null
+                || !com.editora.process.ExecTargets.runsHere(root)
+                || RootResolver.isBroadRoot(root)) {
+            return;
+        }
+        Path key = root.toAbsolutePath().normalize();
+        if (rootWatchers.containsKey(key) || rootWatchers.size() >= MAX_ROOT_WATCHERS || !watchRoot.test(key)) {
+            return;
+        }
+        RootWatcher w = RootWatcher.start(key, batch -> Platform.runLater(() -> notifyWatchedFiles(batch)));
+        if (w != null && rootWatchers.putIfAbsent(key, w) != null) {
+            w.close(); // another start won
+        }
+        if (closed) {
+            closeRootWatchers();
+        }
+    }
+
+    private void closeRootWatchers() {
+        rootWatchers.values().forEach(RootWatcher::close);
+        rootWatchers.clear();
+    }
+
+    /** The roots watched by this manager itself (tests). */
+    java.util.Set<Path> watchedRoots() {
+        return java.util.Set.copyOf(rootWatchers.keySet());
+    }
+
+    /** The workspace root of the session serving {@code file}, or null when none does. */
+    public Path sessionRoot(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? null : s.root();
+    }
+
+    /** The interpreter a local Python session was given ({@code null} = none, or no such session). */
+    public String pythonPathFor(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? null : s.pythonPath();
+    }
+
     /** The {@code bashIde} configuration last set (null = never). */
     public BashIdeConfig bashIde() {
         return bashIde;
@@ -1006,6 +1111,10 @@ public final class LspManager {
                     throw new IllegalStateException("Could not create test jdtls workspace", e);
                 }
             }
+            if (PYTHON_SERVER_ID.equals(serverId)) {
+                session.setPythonPath(resolvePythonPath(root)); // as the production start does, before initialize
+            }
+            ensureRootWatcher(root);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -1086,6 +1195,13 @@ public final class LspManager {
             List<String> startBundles = remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
                     ? remoteDebugBundles(root, bundles)
                     : remote ? List.of() : bundles;
+            if (PYTHON_SERVER_ID.equals(serverId)) {
+                // Before initialize: the first answer counts. A remote server is told the path as its host names it.
+                session.setPythonPath(resolvePythonPath(root));
+            }
+            if (!remote) {
+                ensureRootWatcher(root); // file changes nobody else reports reach this server (B7)
+            }
             session.configureStart(
                     startCommand,
                     remoteEnvironment,
@@ -1787,6 +1903,22 @@ public final class LspManager {
 
     /** One changed file + what happened to it. */
     public record WatchedFile(Path file, WatchedKind kind) {}
+
+    /**
+     * Folds two events for one path inside a coalescing window into what the server should hear, or null for
+     * nothing at all. Pure. A file written fresh is created then modified: still {@code CREATED}. Created then
+     * deleted never existed for the server. Deleted then created (an atomic save) is a change.
+     */
+    public static WatchedKind mergeWatched(WatchedKind earlier, WatchedKind later) {
+        if (earlier == null || later == null) {
+            return later == null ? earlier : later;
+        }
+        return switch (earlier) {
+            case CREATED -> later == WatchedKind.DELETED ? null : WatchedKind.CREATED;
+            case DELETED -> later == WatchedKind.DELETED ? WatchedKind.DELETED : WatchedKind.CHANGED;
+            case CHANGED -> later == WatchedKind.DELETED ? WatchedKind.DELETED : WatchedKind.CHANGED;
+        };
+    }
 
     /**
      * Forwards external file changes to every live session whose root contains them
@@ -3868,6 +4000,7 @@ public final class LspManager {
     public void close() {
         closed = true;
         enabled = false;
+        closeRootWatchers();
         shutdownAll();
         pendingEvictions.values().forEach(timer -> timer.cancel(false));
         pendingEvictions.clear();
@@ -4393,6 +4526,85 @@ public final class LspManager {
      * <p>Signature read off the jdtls jar: it takes {@code CodeActionParams} — the whole file's range, not a
      * position — and answers a {@code WorkspaceEdit}.
      */
+    /** What an Organize Imports did. */
+    public enum OrganizeOutcome {
+        ORGANIZED,
+        UNCHANGED,
+        /** The file's server has no way to organize imports. */
+        UNSUPPORTED
+    }
+
+    /**
+     * Organizes {@code file}'s imports the way its server does it: jdtls's {@code java/organizeImports},
+     * Pyright's {@code pyright.organizeimports} command (basedpyright's own name for it), else a
+     * {@code source.organizeImports} code action. Before this every server was sent the jdtls request, so on a
+     * Python file it failed and the status bar said "Imports already organized" (review B5).
+     */
+    public void organizeImportsAny(Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || file == null) {
+            Platform.runLater(() -> cb.accept(OrganizeOutcome.UNSUPPORTED));
+            return;
+        }
+        String serverId = s.serverId();
+        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+            organizeImports(
+                    file,
+                    lastLine,
+                    lastChar,
+                    ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
+            return;
+        }
+        if (PYTHON_SERVER_ID.equals(serverId)) {
+            EditBasis expected = editBasis(s);
+            String command = pyrightOrganizeCommand(s.command());
+            s.executeCommand(command, List.of(serverUri(file)))
+                    .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .whenComplete((r, e) -> {
+                        org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+                        Platform.runLater(() -> {
+                            if (e != null) {
+                                cb.accept(OrganizeOutcome.UNSUPPORTED); // pylsp, ruff, jedi: no such command
+                            } else if (edit == null || !changesText(edit)) {
+                                cb.accept(OrganizeOutcome.UNCHANGED);
+                            } else {
+                                applyWorkspaceEdit(
+                                        edit,
+                                        expected,
+                                        ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
+                            }
+                        });
+                    });
+            return;
+        }
+        codeActions(file, 0, 0, lastLine, lastChar, items -> {
+            CodeActionItem organize = items.stream()
+                    .filter(i -> i.kind().startsWith("source.organizeImports"))
+                    .findFirst()
+                    .orElse(null);
+            if (organize == null) {
+                cb.accept(OrganizeOutcome.UNSUPPORTED);
+            } else {
+                applyCodeAction(
+                        file, organize, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
+            }
+        });
+    }
+
+    /** Pyright's organize-imports command, under basedpyright's name when that is the server. Pure. */
+    static String pyrightOrganizeCommand(List<String> serverCommand) {
+        String exe = serverCommand == null || serverCommand.isEmpty() ? "" : serverCommand.get(0);
+        return exe.contains("basedpyright") ? "basedpyright.organizeimports" : "pyright.organizeimports";
+    }
+
+    /** Whether {@code edit} carries any text change (Pyright answers an already-sorted file with none). */
+    private static boolean changesText(org.eclipse.lsp4j.WorkspaceEdit edit) {
+        if (edit.getChanges() != null && edit.getChanges().values().stream().anyMatch(l -> l != null && !l.isEmpty())) {
+            return true;
+        }
+        return edit.getDocumentChanges() != null && !edit.getDocumentChanges().isEmpty();
+    }
+
     public void organizeImports(Path file, int lastLine, int lastChar, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || file == null) {

@@ -204,6 +204,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private FileActions fileActions;
     /** Injected by MainController: file-level entry points into the line-anchored bookmark/note stores. */
     private MarkerActions markerActions;
+    /** Injected by MainController: whether Simple UI mode is on, which trims the cell menu. */
+    private java.util.function.BooleanSupplier simpleMode = () -> false;
 
     /**
      * File-scoped actions the Project tree's cell menu offers — Local History and Git. Injected by
@@ -1828,6 +1830,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.fileActions = fileActions;
     }
 
+    /**
+     * Injects the Simple UI mode check. While it answers true the cell menu keeps file management only — New
+     * File / New Folder, Rename, Undo Move, Delete, Reveal in File Manager — as the Simple menu bar does.
+     */
+    public void setSimpleMode(java.util.function.BooleanSupplier simpleMode) {
+        this.simpleMode = simpleMode;
+    }
+
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;
@@ -1879,7 +1889,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * picker and in the tests from one table row. Each entry carries the same {@link FileIcons} glyph the
      * file will show in the tree once it exists, which is what makes a long list scannable.
      */
-    private Menu newMenu(TreeItem<Path> dirItem) {
+    private Menu newMenu(TreeItem<Path> dirItem, boolean simple) {
         Menu newMenu = new Menu(tr("newfile.menu.new"));
         newMenu.setGraphic(Icons.newFile());
         Path dir = dirItem.getValue();
@@ -1892,6 +1902,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         folder.setOnAction(e -> newFolder(dirItem));
         newMenu.getItems().add(folder);
 
+        if (simple) {
+            return newMenu; // a text file or a folder: no file-type catalog, templates or Maven project
+        }
         if (onNewFile != null) {
             newMenu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             for (com.editora.template.NewFileType type : com.editora.template.NewFileCatalog.topLevel()) {
@@ -2811,14 +2824,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** One lazily built file-management menu shared by Tree rows and Canvas map nodes. */
     private ContextMenu contextMenuFor(TreeItem<Path> treeItem, boolean isDir, boolean isRoot) {
         ContextMenu menu = new ContextMenu();
+        // Read per right-click (the menu is built for each one), so a Simple-mode toggle applies to the next.
+        boolean simple = simpleMode.getAsBoolean();
         if (isDir) {
-            menu.getItems().add(newMenu(treeItem));
+            menu.getItems().add(newMenu(treeItem, simple));
         }
         // Offered on a folder holding a pom and on a pom.xml row itself — the same submenu the editor's
         // right-click on that file shows. Built per right-click rather than once: a folder gains or loses
         // its pom.xml while the tree is open, and mavenMenuFor owns the whole "is there anything here?"
         // rule (it answers null for a folder with no pom, and for any file that is not a pom.xml).
-        javafx.scene.control.Menu maven = mavenMenuFor(treeItem.getValue());
+        javafx.scene.control.Menu maven = simple ? null : mavenMenuFor(treeItem.getValue());
         if (maven != null) {
             menu.getItems().add(maven);
         }
@@ -2844,7 +2859,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             delete.setOnAction(e -> deleteSelected(treeItem));
             menu.getItems().add(delete);
         }
-        if (markerActions != null) {
+        if (markerActions != null && !simple) {
             Path target = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
@@ -2860,7 +2875,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             note.setOnAction(e -> markerActions.addPersonalNote(target));
             menu.getItems().add(note);
         }
-        if (onReveal != null || onOpenTerminal != null) {
+        boolean terminalShown = onOpenTerminal != null && !simple;
+        if (onReveal != null || terminalShown) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
         if (onReveal != null) {
@@ -2869,14 +2885,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             reveal.setOnAction(e -> onReveal.accept(treeItem.getValue(), isDir));
             menu.getItems().add(reveal);
         }
-        if (onOpenTerminal != null) {
+        if (terminalShown) {
             MenuItem terminal = new MenuItem(tr("project.menu.openTerminal"));
             terminal.setGraphic(Icons.terminal());
             terminal.setOnAction(e -> onOpenTerminal.accept(treeItem.getValue(), isDir));
             menu.getItems().add(terminal);
         }
         // Local History + Git act on a concrete file (not a folder).
-        if (fileActions != null && !isDir) {
+        if (fileActions != null && !isDir && !simple) {
             Path file = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
 
@@ -2947,7 +2963,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
-        if (fileActions != null && isDir) {
+        if (fileActions != null && isDir && !simple) {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
             MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));

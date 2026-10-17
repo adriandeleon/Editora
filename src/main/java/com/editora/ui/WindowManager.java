@@ -25,6 +25,7 @@ import com.editora.config.ProjectManager;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.config.WorkspaceState;
+import com.editora.i18n.Messages;
 
 /**
  * Owns the set of top-level editor windows and the shared config behind them. In single-window terms
@@ -943,13 +944,24 @@ public class WindowManager {
      * {@code secret}, which is wiped either way. The window that shows a remote folder must hold the
      * connection itself.
      */
-    void openRemoteProject(Project project, com.editora.vfs.RemoteConnection conn, char[] secret) {
+    void openRemoteProject(
+            Project project,
+            com.editora.vfs.RemoteConnection conn,
+            com.editora.vfs.RemoteFileSystems.LiveConnection live,
+            char[] secret) {
         openOrFocus(project);
         MainController window = controllerOf(project);
-        if (window != null) {
+        if (window != null && live != null) {
+            window.remoteCoordinator().adoptForWindowProject(conn, live);
+        } else if (window != null) {
             window.remoteCoordinator().connectForWindowProject(conn, secret);
-        } else if (secret != null) {
-            java.util.Arrays.fill(secret, '\0');
+        } else {
+            if (live != null) {
+                live.close(); // no window to take it: don't leave a logged-in session behind
+            }
+            if (secret != null) {
+                java.util.Arrays.fill(secret, '\0');
+            }
         }
     }
 
@@ -1230,6 +1242,39 @@ public class WindowManager {
         shared.markSettingsApplied();
     }
 
+    /** Whether {@code file} is the shared {@code settings.json}. */
+    public boolean isSettingsFile(Path file) {
+        Path settings = shared.getSettingsFile();
+        // A remote (SFTP) path is never the local settings file, and its equals() throws ProviderMismatchException
+        // when handed a path of another provider, so compare only paths of the same file system.
+        if (file.getFileSystem() != settings.getFileSystem()) {
+            return false;
+        }
+        return file.toAbsolutePath()
+                .normalize()
+                .equals(settings.toAbsolutePath().normalize());
+    }
+
+    /**
+     * {@code settings.json} was saved in an editor tab: re-reads it into the shared settings and applies it in
+     * every window (theme, keymap, view settings, open Settings windows). Returns the status line saying so.
+     */
+    public String settingsFileSaved() {
+        List<com.editora.config.SettingsFileCheck.Issue> issues = shared.reloadSettings();
+        if (issues == null) {
+            return Messages.tr("status.settings.reloadFailed");
+        }
+        javafx.application.Application.setUserAgentStylesheet(
+                Themes.stylesheetFor(shared.getSettings().getTheme()));
+        reloadSharedKeymap(); // rebuilds the keymap the file may name, and re-applies everything everywhere
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncAll();
+        }
+        return issues.isEmpty()
+                ? Messages.tr("status.settings.reloaded")
+                : Messages.tr("status.settings.reloadedIssues", issues.size());
+    }
+
     /**
      * A window saved preferences that the other windows have not applied — the change came from a palette
      * command or key binding, which applies it only in its own window. Schedules the others to catch up.
@@ -1414,14 +1459,7 @@ public class WindowManager {
      */
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
-        List<java.util.Map<String, String>> pluginKeymaps = new ArrayList<>();
-        if (settings.isPluginSupport()) {
-            for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
-                if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
-                    pluginKeymaps.add(d.manifest().keymap);
-                }
-            }
-        }
+        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(settings, pluginManager);
         KeymapLayers.rebuild(
                 keymap,
                 settings.getKeymap(),
