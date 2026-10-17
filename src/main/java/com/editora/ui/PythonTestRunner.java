@@ -53,6 +53,13 @@ final class PythonTestRunner {
 
         /** Opens a failure's stack frame, running {@code fallback} when it does not resolve. */
         void openFrame(TestNode node, Runnable fallback);
+
+        /**
+         * Debugs tests by id in {@code cwd} under {@code anchor}'s interpreter (see {@code
+         * DebugCoordinator.debugPythonTests}); a no-op where there is no debugger.
+         */
+        default void debugTests(
+                Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {}
     }
 
     private final Host host;
@@ -312,6 +319,16 @@ final class PythonTestRunner {
             }
 
             @Override
+            public boolean debug(TestNode node) {
+                DebugTarget t = debugTarget(scope, node, pytest);
+                if (t == null) {
+                    return false;
+                }
+                host.debugTests(t.anchor(), t.cwd(), t.pytestIds(), t.unittestIds(), node.displayName());
+                return true;
+            }
+
+            @Override
             public void jump(TestNode node) {
                 Runnable byName = () -> jumpByName(scope, node, pytest);
                 if (node.stackTrace() != null) {
@@ -321,6 +338,39 @@ final class PythonTestRunner {
                 }
             }
         };
+    }
+
+    /** What a Test Results row's Debug runs: the ids, the folder, and the file whose interpreter is used. */
+    record DebugTarget(Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds) {}
+
+    /**
+     * The debug run of one Test Results row of a {@code scope} run (pure apart from path arithmetic; tested): a
+     * pytest run debugs the row's node id from the same folder; a unittest run (no pytest) its dotted id. The
+     * anchor is the row's file (from its report location or module), else the run's file, else its folder.
+     * Null when the row names nothing to run.
+     */
+    static DebugTarget debugTarget(Scope scope, TestNode node, boolean pytest) {
+        if (pytest) {
+            String id = pytestId(node);
+            if (id == null) {
+                return null;
+            }
+            String file = id.contains("::") ? id.substring(0, id.indexOf("::")) : id;
+            Path anchor = scope.rootDir().resolve(file);
+            return new DebugTarget(anchor, scope.rootDir(), List.of(id), List.of());
+        }
+        String id = unittestId(node);
+        if (id == null) {
+            return null;
+        }
+        String cls = node.className();
+        String module = cls.contains(".") ? cls.substring(0, cls.lastIndexOf('.')) : cls;
+        Path anchor = scope.unittestDir().resolve(module.replace('.', '/') + ".py");
+        if (scope.script() != null
+                && !anchor.normalize().startsWith(scope.unittestDir().normalize())) {
+            anchor = scope.script();
+        }
+        return new DebugTarget(anchor, scope.unittestDir(), List.of(), List.of(id));
     }
 
     /** {@code scope} limited to {@code nodes} (tests, or suite rows standing for their tests). */

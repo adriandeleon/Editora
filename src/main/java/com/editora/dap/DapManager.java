@@ -593,6 +593,26 @@ public final class DapManager implements DapClient.Host {
     public void setPythonProject(Path projectRoot, String projectChoice) {
         this.pythonProjectRoot = projectRoot;
         this.pythonProjectChoice = projectChoice == null ? "" : projectChoice;
+        this.pythonRequest = null;
+        this.pythonHost = null;
+    }
+
+    /** Run's plan request for the next Python launch (its root, choice, setting, shebang), or null. */
+    private volatile com.editora.run.PythonRunPlan.Request pythonRequest;
+
+    /** The machine the next Python program runs on, as Run plans it, or null (decided from the file). */
+    private volatile com.editora.run.PythonRunPlan.Host pythonHost;
+
+    /**
+     * Plans the next Python launch the way Run plans one: {@code request}'s project root, picked interpreter,
+     * interpreter setting (a host's {@code python} tool elsewhere) and first line, on {@code host}. Only the
+     * interpreter and the environment are taken from the plan; the target and its arguments are the session's.
+     */
+    public void setPythonPlan(com.editora.run.PythonRunPlan.Request request, com.editora.run.PythonRunPlan.Host host) {
+        this.pythonProjectRoot = request == null ? null : request.projectRoot();
+        this.pythonProjectChoice = request == null ? "" : request.projectChoice();
+        this.pythonRequest = request;
+        this.pythonHost = host;
     }
 
     /** Environment variables for the next launch (from a saved run configuration; empty otherwise). */
@@ -1495,13 +1515,7 @@ public final class DapManager implements DapClient.Host {
             long epoch,
             PythonLaunch.Target module)
             throws Exception {
-        Path root = pythonRootFor(file);
-        com.editora.run.PythonInterpreters.PythonInterpreter resolved =
-                com.editora.run.PythonInterpreters.resolveLocal(file, root, "", pythonProjectChoice, pythonCommand);
-        HostPython parsed = HostPython.parse(resolved.command());
-        // debugpy is handed the program's interpreter by path: the adapter's PATH is not the one it was found on.
-        HostPython program = new HostPython(
-                ProcessRunner.resolveExecutable(List.of(parsed.executable())).getFirst(), parsed.args(), parsed.env());
+        HostPython program = planProgram(file, com.editora.process.ExecTargets.forPath(file), true);
         HostPython adapter = probe(program.argv(List.of("-c", "import debugpy")), debugpyDir, program.env())
                 ? program
                 : HostPython.parse(DapServerRegistry.interpreterArgv("python", pythonCommand));
@@ -1513,7 +1527,7 @@ public final class DapManager implements DapClient.Host {
             prependPythonPath(pb, debugpyDir);
         }
         if (module != null && "pytest".equals(module.module())) {
-            module = pytestOrFallback(module, program, epoch);
+            module = pytestOrFallback(module, program, epoch, argv -> probe(argv, null, program.env()));
             if (module == null) {
                 return; // reported
             }
@@ -1525,14 +1539,11 @@ public final class DapManager implements DapClient.Host {
                 module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
         // What runs, first in the console (muted): which Python, in which venv, with which arguments.
         onOutput(epoch, PythonLaunch.commandLine(program, target) + "\n", COMMAND_CATEGORY);
+        // The plan's PYTHONPATH (project root, src/, the user's) when it set one; else the user's own, or "" —
+        // never the adapter's, which carries Editora's debugpy folder.
         String inherited = System.getenv("PYTHONPATH");
         Map<String, Object> launch = PythonLaunch.request(
-                target,
-                program,
-                com.editora.run.PythonInterpreters.pythonPathEntries(root, Files::isDirectory),
-                inherited == null ? "" : inherited,
-                File.pathSeparator,
-                console);
+                target, program, List.of(), inherited == null ? "" : inherited, File.pathSeparator, console);
         attachStdio(proc, spec, bps, filters, epoch, DapPaths.LOCAL, launch, console, stderr);
     }
 
@@ -1540,9 +1551,12 @@ public final class DapManager implements DapClient.Host {
      * A pytest run when {@code program} can import pytest; else its unittest fallback; else null, with the
      * session ended saying which interpreter lacks pytest.
      */
-    private PythonLaunch.Target pytestOrFallback(PythonLaunch.Target pytest, HostPython program, long epoch) {
-        if (!"pytest".equals(pytest.module())
-                || probe(program.argv(List.of("-c", "import pytest")), null, program.env())) {
+    private PythonLaunch.Target pytestOrFallback(
+            PythonLaunch.Target pytest,
+            HostPython program,
+            long epoch,
+            java.util.function.Predicate<List<String>> runs) {
+        if (!"pytest".equals(pytest.module()) || runs.test(program.argv(List.of("-c", "import pytest")))) {
             return pytest;
         }
         if (pytest.fallback() != null) {
@@ -1553,6 +1567,50 @@ public final class DapManager implements DapClient.Host {
                 "pytest is not installed for " + program.executable()
                         + " — install it in that environment (python -m pip install pytest).");
         return null;
+    }
+
+    /**
+     * The program's interpreter and environment for a Python session on {@code file}, planned by Run's planner
+     * ({@link com.editora.run.PythonRunPlan}) so Run and Debug start the same Python the same way: the
+     * resolved interpreter (a project venv found on the target, named as the target names it; a picked one; a
+     * host's {@code python} tool), the file's shebang, and the project root with {@code src/} on {@code
+     * PYTHONPATH}. Taken apart as debugpy takes it ({@code python}, {@code pythonArgs}, {@code env}). Off the FX
+     * thread: elsewhere the lookups are network round trips.
+     */
+    private HostPython planProgram(Path file, com.editora.process.ExecTarget target, boolean local) {
+        com.editora.run.PythonRunPlan.Request asked = pythonRequest;
+        com.editora.run.PythonRunPlan.Request request = com.editora.run.PythonRunPlan.Request.file(
+                file,
+                asked != null ? asked.projectRoot() : pythonRootFor(file),
+                target.toTargetPath(file),
+                List.of(),
+                asked != null ? asked.firstLine() : null,
+                asked != null ? asked.projectChoice() : pythonProjectChoice,
+                asked != null ? asked.setting() : local ? pythonCommand : "");
+        com.editora.run.PythonRunPlan.Host host = pythonHost != null
+                ? pythonHost
+                : local
+                        ? com.editora.run.PythonRunPlan.Host.here()
+                        : com.editora.run.PythonRunPlan.Host.elsewhere(target::toTargetPath);
+        com.editora.run.PythonRunPlan plan;
+        try {
+            plan = com.editora.run.PythonRunPlan.plan(request, host);
+        } catch (RuntimeException e) {
+            if (host.local()) {
+                throw e;
+            }
+            // A lookup over a dropped connection: the host's own python3, as Run does.
+            plan = com.editora.run.PythonRunPlan.plan(
+                    request,
+                    com.editora.run.PythonRunPlan.Host.elsewhere(host.toTarget())
+                            .withoutLookups());
+        }
+        List<String> command = plan.argv().subList(0, plan.argv().size() - 1); // the plan's argv ends in the script
+        // debugpy is handed a local interpreter by path: the adapter's PATH is not the one it was found on.
+        String exe = host.local()
+                ? ProcessRunner.resolveExecutable(List.of(command.get(0))).getFirst()
+                : command.get(0);
+        return new HostPython(exe, List.copyOf(command.subList(1, command.size())), plan.env());
     }
 
     /** The project root {@code file} belongs to (the window's project, when the file is inside it), else null. */
@@ -1900,6 +1958,23 @@ public final class DapManager implements DapClient.Host {
         if (!isCurrent(epoch)) {
             return;
         }
+        // The program runs as Run runs it there (the project's venv on the host, its python tool, PYTHONPATH);
+        // the adapter stays on the host's debugpy-capable Python.
+        HostPython program = planProgram(file, target, false);
+        if (module != null && "pytest".equals(module.module())) {
+            module = pytestOrFallback(
+                    module,
+                    program,
+                    epoch,
+                    run -> ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), run, program.env())
+                            .ok());
+            if (module == null) {
+                return; // reported
+            }
+        }
+        if (!isCurrent(epoch)) {
+            return;
+        }
         List<String> argv = python.argv(spec.adapterArgs()); // -m debugpy.adapter
         Process proc = target.start(
                 com.editora.process.ExecSpec.of(argv, dir, python.env(), com.editora.process.ExecSpec.Locale.USER)
@@ -1908,8 +1983,9 @@ public final class DapManager implements DapClient.Host {
         PythonLaunch.Target what = module != null
                 ? module
                 : PythonLaunch.Target.script(target.toTargetPath(file), programArgs, target.toTargetPath(dir));
-        // The host's own PYTHONPATH is not known here (null): it is left as the host has it.
-        Map<String, Object> launch = PythonLaunch.request(what, python, List.of(), null, ":", false);
+        onOutput(epoch, PythonLaunch.commandLine(program, what) + "\n", COMMAND_CATEGORY);
+        // The host's own PYTHONPATH is not known here (null): the plan's is used, else it is left as the host has it.
+        Map<String, Object> launch = PythonLaunch.request(what, program, List.of(), null, ":", false);
         attachStdio(proc, spec, bps, filters, epoch, DapPaths.on(target, file.getFileSystem()), launch, false, null);
     }
 

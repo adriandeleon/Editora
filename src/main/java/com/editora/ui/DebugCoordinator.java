@@ -1455,7 +1455,9 @@ final class DebugCoordinator {
         nameSession(b.getPath().getFileName().toString());
         dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
-        dapManager.setPythonProject(ops.projectRoot(), ops.pythonInterpreterChoice());
+        if (b.isPython()) {
+            planPython(b.getPath(), firstLine(b.getContent()));
+        }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
         boolean compactSource = "java".equals(language) && b.isCompactSource();
@@ -1540,24 +1542,89 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        if (!debugEffectiveFor("python", file)) {
-            host.setStatus(unavailableMessage("python", file));
-            return;
-        }
-        if (b.isDirty() && !ops.saveBuffer(b)) {
-            return;
-        }
         Path root = pythonRootOf(file);
         Path cwd = root != null ? root : file.getParent();
         String relative = cwd.relativize(file).toString().replace('\\', '/');
-        String nodeId = com.editora.test.PytestScanner.nodeId(relative, target);
-        List<String> unittest = unittestFallback(b.getContent(), relative, target);
+        debugPythonTests(
+                file,
+                cwd,
+                List.of(com.editora.test.PytestScanner.nodeId(relative, target)),
+                unittestFallback(b.getContent(), relative, target),
+                file.getFileName() + (target == null ? "" : " :: " + target.displayName()));
+    }
+
+    /**
+     * Pure: the pytest test a Python test glyph stands for. The glyphs carry {@link
+     * com.editora.test.JavaTestScanner.TestTarget}s ({@code RunScan.pythonTestLines}): a class (method null), a
+     * module-level function (class {@code ""}), or — class {@code ""} and no method — the whole file (null here).
+     */
+    static com.editora.test.PytestScanner.TestTarget pytestTarget(
+            String source, com.editora.test.JavaTestScanner.TestTarget glyph) {
+        if (glyph == null || (glyph.className().isEmpty() && glyph.methodName() == null)) {
+            return null;
+        }
+        com.editora.test.PytestScanner.TestTarget found = com.editora.test.PytestScanner.atLine(source, glyph.line());
+        int end = found == null ? glyph.line() : found.endLine();
+        return new com.editora.test.PytestScanner.TestTarget(
+                glyph.line(), end, glyph.className().isEmpty() ? null : glyph.className(), glyph.methodName());
+    }
+
+    /**
+     * Debugs Python tests by id in {@code cwd}, under {@code anchor}'s interpreter (the test file, or the folder
+     * a run was in): pytest node ids — with {@code unittestIds} to fall back on when the interpreter has no
+     * pytest — or, with no pytest ids, {@code python -m unittest} on {@code unittestIds} (a run that was
+     * unittest's). What a Test Results row's Debug and a test ▶'s Debug Test come to.
+     */
+    void debugPythonTests(Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {
+        if (!debugEffectiveFor("python", anchor)) {
+            host.setStatus(unavailableMessage("python", anchor));
+            return;
+        }
+        EditorBuffer open = ops.bufferForPath(anchor);
+        if (open != null && open.isDirty() && !ops.saveBuffer(open)) {
+            return;
+        }
+        List<String> fallback = unittestIds == null ? List.of() : unittestIds;
         ops.openToolWindow();
-        nameSession(file.getFileName() + (target == null ? "" : " :: " + target.displayName()));
+        nameSession(label);
         dapManager.setProgramArgs(List.of());
-        dapManager.setPythonProject(root, ops.pythonInterpreterChoice());
-        relaunch = () -> debugPythonTest(b, target);
-        withClosedBreakpoints(() -> dapManager.startPythonTest(file, List.of(nodeId), unittest, cwd));
+        planPython(anchor, open == null ? null : firstLine(open.getContent()));
+        relaunch = () -> debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+        withClosedBreakpoints(() -> {
+            if (pytestIds == null || pytestIds.isEmpty()) {
+                dapManager.startPythonModule(anchor, "unittest", fallback, cwd);
+            } else {
+                dapManager.startPythonTest(anchor, pytestIds, fallback, cwd);
+            }
+        });
+    }
+
+    /**
+     * Hands the next Python launch Run's plan inputs ({@link com.editora.run.PythonRunPlan}) for {@code file}:
+     * its project root, the interpreter picked for the project, the interpreter setting where it runs (a remote
+     * host's {@code python} tool), its first line (a shebang) — and that machine. Debug and Run then start the
+     * same Python with the same {@code PYTHONPATH}, here, on a host, in WSL or in a container.
+     */
+    private void planPython(Path file, String firstLine) {
+        Path dir = file.getParent() == null ? file : file.getParent();
+        dapManager.setPythonPlan(
+                com.editora.run.PythonRunPlan.Request.file(
+                        file,
+                        pythonRootOf(file),
+                        com.editora.process.ExecTargets.forPath(file).toTargetPath(file),
+                        List.of(),
+                        firstLine,
+                        ops.pythonInterpreterChoice(),
+                        PythonRunLauncher.setting(dir, host.settings())),
+                PythonRunLauncher.hostFor(dir));
+    }
+
+    private static String firstLine(String text) {
+        if (text == null) {
+            return null;
+        }
+        int nl = text.indexOf('\n');
+        return nl < 0 ? text : text.substring(0, nl);
     }
 
     /** This window's project root when {@code file} is inside it, else null. */

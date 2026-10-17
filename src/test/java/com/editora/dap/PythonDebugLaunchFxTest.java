@@ -195,6 +195,10 @@ class PythonDebugLaunchFxTest {
         assertFalse(
                 pythonPath.contains(site.toString()), "Editora's debugpy folder stays the adapter's: " + pythonPath);
         assertEquals(venvPython, logged("__adapter__").get("exe").getAsString(), "venv imports debugpy: adapter too");
+        assertEquals(
+                List.of("\"" + venvPython + "\" \"" + file + "\" one \"two words\"\n"), // "my project"
+                commandLines,
+                "the console's first line says what runs");
         JsonObject breakpoint =
                 logged("setBreakpoints").getAsJsonArray("breakpoints").get(0).getAsJsonObject();
         assertEquals("% 2", breakpoint.get("hitCondition").getAsString(), "a hit count reaches debugpy");

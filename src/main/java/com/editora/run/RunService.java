@@ -339,7 +339,7 @@ public final class RunService {
      * {@code argv} as one line a user can read and paste back into a shell: a word with spaces or quotes in it
      * is quoted.
      */
-    static String commandLine(List<String> argv) {
+    public static String commandLine(List<String> argv) {
         StringBuilder sb = new StringBuilder();
         for (String a : argv) {
             if (!sb.isEmpty()) {

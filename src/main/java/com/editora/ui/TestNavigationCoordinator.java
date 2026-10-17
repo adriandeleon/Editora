@@ -112,6 +112,14 @@ final class TestNavigationCoordinator {
             }
 
             @Override
+            public void debugTests(
+                    Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {
+                if (host.debugCoordinator() != null) {
+                    host.debugCoordinator().debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+                }
+            }
+
+            @Override
             public void openFrame(com.editora.test.TestNode node, Runnable fallback) {
                 com.editora.run.StackTraceLinks.Link frame =
                         TestRunCoordinator.firstFrame(node.stackTrace(), node.sourceFileHint());
@@ -487,6 +495,12 @@ final class TestNavigationCoordinator {
 
     /** Editor context-menu path for a scanned JUnit class/method. */
     void debugSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isPython() && host.debugCoordinator() != null) {
+            host.debugCoordinator().debugPythonTest(b, DebugCoordinator.pytestTarget(b.getContent(), target));
+            return;
+        }
         for (BuildCoordinator c : host.buildCoordinators()) {
             if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
                 host.testRunCoordinator().debugSingleTest(c.tool(), target, args -> c.runTask(args, List.of()));
