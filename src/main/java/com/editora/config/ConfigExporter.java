@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -171,6 +172,23 @@ public final class ConfigExporter {
             LocalDateTime now,
             boolean includeHttpHistory)
             throws IOException {
+        return export(configDir, destinationDir, version, userName, now, includeHttpHistory, false);
+    }
+
+    /**
+     * As {@link #export(Path, Path, String, String, LocalDateTime, boolean)}; the AI provider API keys in the
+     * settings file (and its backups) are written blank unless {@code includeApiKeys}. An export is the thing
+     * people hand to someone else, and a key is a billable credential.
+     */
+    public static Path export(
+            Path configDir,
+            Path destinationDir,
+            String version,
+            String userName,
+            LocalDateTime now,
+            boolean includeHttpHistory,
+            boolean includeApiKeys)
+            throws IOException {
         Path zip = destinationDir.resolve(zipName(configDir, version, userName, now));
         ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         boolean complete = false;
@@ -188,7 +206,12 @@ public final class ConfigExporter {
                     }
                     try (InputStream in = Files.newInputStream(file)) {
                         zos.putNextEntry(new ZipEntry(entry));
-                        in.transferTo(zos);
+                        if (!includeApiKeys && holdsApiKeys(entry)) {
+                            zos.write(withoutApiKeys(new String(in.readAllBytes(), StandardCharsets.UTF_8))
+                                    .getBytes(StandardCharsets.UTF_8));
+                        } else {
+                            in.transferTo(zos);
+                        }
                         zos.closeEntry();
                     } catch (NoSuchFileException vanished) {
                         // deleted since the walk listed it — nothing to back up
@@ -209,5 +232,24 @@ public final class ConfigExporter {
             }
         }
         return zip;
+    }
+
+    /** The settings file and its copies ({@code settings.json.v104.bak}, the legacy {@code settings.toml}…). Pure. */
+    static boolean holdsApiKeys(String relative) {
+        return !relative.contains("/") && relative.startsWith("settings.");
+    }
+
+    private static final java.util.regex.Pattern JSON_KEY =
+            java.util.regex.Pattern.compile("(\"aiApiKey\\w*\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*\"");
+    private static final java.util.regex.Pattern TOML_KEY =
+            java.util.regex.Pattern.compile("(?m)^(\\s*aiApiKey\\w*\\s*=\\s*)(?:\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')");
+
+    /**
+     * {@code text} with the value of every {@code aiApiKey…} entry blanked, in JSON or TOML form. Textual on
+     * purpose: a backup that no longer parses (a {@code .corrupt.bak}) holds the key just the same. Pure.
+     */
+    static String withoutApiKeys(String text) {
+        String json = JSON_KEY.matcher(text).replaceAll("$1\"\"");
+        return TOML_KEY.matcher(json).replaceAll("$1\"\"");
     }
 }

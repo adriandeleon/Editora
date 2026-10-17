@@ -328,15 +328,14 @@ public class SettingsWindow {
     private AbbreviationsEditor abbreviationsEditor;
     private CheckBox abbrevModeCheck;
 
-    /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
-    private final javafx.collections.ObservableList<com.editora.vfs.RemoteConnection> remoteItems =
-            javafx.collections.FXCollections.observableArrayList();
+    /** The Remote page's site editor; null until that page is built. */
+    private RemoteSitesPane remoteSites;
+    /** Opens the Connect form pre-filled with a saved site (the Remote page's Connect… button). */
+    private Consumer<com.editora.vfs.RemoteConnection> onConnectRemote;
 
-    private boolean loadingRemote = false;
-    /** The uncommitted text in the Remote form, asked for before the list is re-read. */
-    private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
-    /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
-    private ListView<com.editora.vfs.RemoteConnection> remoteList;
+    void setRemoteConnect(Consumer<com.editora.vfs.RemoteConnection> connect) {
+        this.onConnectRemote = connect;
+    }
 
     /** Re-read the Snippets / Templates lists from disk, keeping the selected row (set when the page is built). */
     private Runnable reloadSnippets;
@@ -1465,7 +1464,6 @@ public class SettingsWindow {
             config.getSettings().setGitSupport(now);
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
-            blameCheck.setDisable(!now); // inline blame only matters when Git is on
             refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
         });
 
@@ -1722,7 +1720,8 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setMcpSupport(now);
-            apply();
+            apply(); // starts or stops the server
+            refreshMcpStatus();
         });
 
         aiMasterCheck = new CheckBox(tr("settings.ai.masterEnable"));
@@ -4072,6 +4071,11 @@ public class SettingsWindow {
     private Spinner<Integer> syncIntervalSpinner;
     /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
     private String syncConnectMessage;
+    /** Connect's look at the repository is under way; {@link #syncConnectRun} tells a cancelled one apart. */
+    private boolean syncChecking;
+
+    private int syncConnectRun;
+    private Button syncCancelButton;
     /**
      * Why the last Connect or Create did not go through (an unusable URL, an unreachable repository, a gh
      * error). Kept, rather than written to the label once, so that a refresh arriving afterwards — the
@@ -4113,7 +4117,17 @@ public class SettingsWindow {
         syncUrlField = new TextField();
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
         syncUrlField.setPrefWidth(REPO_URL_FIELD_WIDTH);
+        // A password or token in the URL would be stored in plain text: refused, with the reason, until removed.
+        syncUrlField.textProperty().addListener((o, was, now) -> {
+            boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
+            syncUrlField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, secret);
+            syncUrlField.setTooltip(secret ? new Tooltip(tr("settings.sync.repo.credentials")) : null);
+        });
         commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
+            if (com.editora.sync.SyncEngine.hasCredentials(text)) {
+                showSyncNotice(tr("settings.sync.repo.credentials"));
+                return;
+            }
             config.getSettings().setSyncRepoUrl(text);
             config.save();
             syncNotice = null;
@@ -4126,7 +4140,15 @@ public class SettingsWindow {
                 "sync repository url git remote github gitlab clone ssh https");
         syncBranchField = new TextField();
         syncBranchField.setPrefWidth(140);
+        syncBranchField.textProperty().addListener((o, was, now) -> {
+            boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
+            syncBranchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
+            syncBranchField.setTooltip(bad ? new Tooltip(tr("settings.sync.branch.invalid")) : null);
+        });
         commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
+            if (!text.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(text.strip())) {
+                return; // red, with the reason; the branch in use stays
+            }
             config.getSettings().setSyncBranch(text);
             config.save();
             syncNotice = null;
@@ -4173,6 +4195,14 @@ public class SettingsWindow {
                 settingsSync.syncAllowingLargeRemoval();
             }
         });
+        syncCancelButton = new Button(tr("settings.sync.cancel"));
+        syncCancelButton.setOnAction(
+                e -> { // stops waiting; git finishes (or times out) on its own, unused
+                    syncConnectRun++;
+                    syncChecking = false;
+                    syncConnectMessage = null;
+                    showSyncNotice(tr("settings.sync.cancelled"));
+                });
         Button openFolder = new Button(tr("settings.sync.openFolder"));
         openFolder.setOnAction(e -> openSyncFolder());
         cardRow(
@@ -4185,7 +4215,7 @@ public class SettingsWindow {
                                 6,
                                 syncStateLabel,
                                 syncAccountLabel,
-                                new HBox(8, syncNowButton, syncAnywayButton, openFolder))),
+                                new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
                 "sync now status last synced received sent conflict backups folder github account signed in");
 
         Card what = card(p, tr("settings.sync.what"));
@@ -4197,6 +4227,7 @@ public class SettingsWindow {
         checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
         checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
         checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
+        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences keymap macros");
 
         Card when = card(p, null);
         syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
@@ -4299,6 +4330,8 @@ public class SettingsWindow {
                 && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
         syncAnywayButton.setVisible(needsConfirmation);
         syncAnywayButton.setManaged(needsConfirmation);
+        syncCancelButton.setVisible(syncChecking);
+        syncCancelButton.setManaged(syncChecking);
         String account = connected && settingsSync != null ? settingsSync.account() : "";
         syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
         syncAccountLabel.setVisible(!account.isEmpty());
@@ -4329,14 +4362,29 @@ public class SettingsWindow {
         syncNotice = null;
         Settings settings = config.getSettings();
         String url = settings.getSyncRepoUrl();
+        if (com.editora.sync.SyncEngine.hasCredentials(syncUrlField.getText())) {
+            showSyncNotice(tr("settings.sync.repo.credentials")); // the stored URL is not the one shown
+            return;
+        }
+        String typedBranch = syncBranchField.getText().strip();
+        if (!typedBranch.isEmpty() && !com.editora.sync.SyncEngine.isUsableBranch(typedBranch)) {
+            showSyncNotice(tr("settings.sync.branch.invalid")); // nor is the stored branch
+            return;
+        }
         String branch = settings.getSyncBranch();
         if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
             showSyncNotice(tr("status.sync.invalidRepository"));
             return;
         }
         syncConnectMessage = tr("sync.state.checking");
+        int run = ++syncConnectRun;
+        syncChecking = true;
         refreshSyncControls();
         settingsSync.preview(url, branch, report -> {
+            if (run != syncConnectRun) {
+                return; // cancelled: the user stopped waiting for this look
+            }
+            syncChecking = false;
             syncConnectMessage = null;
             if (!report.ok()) {
                 showSyncNotice(SettingsSync.problemText(report));
@@ -4448,7 +4496,10 @@ public class SettingsWindow {
                 settingRow(tr("settings.git.detected"), null, gitStatusLabel),
                 "git command found version installed not found");
 
+        // Blame, pull and fetch only matter while Git is on; the command path stays editable to fix detection.
+        p.getChildren().add(SettingsDependents.note(gitCheck.selectedProperty(), tr("settings.enableGit")));
         Card c2 = card(p, null);
+        SettingsDependents.bind(gitCheck.selectedProperty(), c2.body());
         cardRow(
                 c2,
                 Category.GIT,
@@ -4478,7 +4529,7 @@ public class SettingsWindow {
     }
 
     private VBox githubPage() {
-        VBox p = page(tr("settings.cat.github"));
+        VBox p = page(tr("settings.cat.github"), tr("settings.github.subtitle"));
         Card c = card(p, null);
         githubStatusLabel = new Label(tr("settings.github.checking"));
         githubStatusLabel.getStyleClass().add("settings-git-status");
@@ -5167,28 +5218,33 @@ public class SettingsWindow {
     }
 
     private VBox remotePage() {
-        VBox p = page(tr("settings.cat.remote"));
+        VBox p = page(tr("settings.cat.remote"), tr("settings.remote.subtitle"));
         Card mainCard = card(p, null);
+        // Built first: the host section under each site follows it.
+        remoteExecutionCheck = viewCheck(tr("settings.remote.execution"), Settings::setRemoteExecution);
+        remoteSites = new RemoteSitesPane(config, this::apply, remoteExecutionCheck.selectedProperty(), site -> {
+            if (onConnectRemote != null) {
+                onConnectRemote.accept(site);
+            }
+        });
         cardRow(
                 mainCard,
                 Category.REMOTE,
-                remoteConnectionsEditor(),
+                remoteSites.node(),
                 "remote sftp ssh connection host user key password saved site server");
         Label note = note(tr("settings.remote.note"));
         note.setWrapText(true);
         note.setMaxWidth(460);
         cardRow(mainCard, Category.REMOTE, note, "remote secret password passphrase not stored security");
-        Card execCard = card(p, tr("settings.remote.execution.title"));
-        remoteExecutionCheck = viewCheck(tr("settings.remote.execution"), Settings::setRemoteExecution);
+        Card execCard = card(p, null);
         cardRow(
                 execCard,
                 Category.REMOTE,
-                remoteExecutionCheck,
+                settingRow(
+                        tr("settings.remote.execution"),
+                        tr("settings.remote.execution.desc"),
+                        switchFor(remoteExecutionCheck)),
                 "remote run command execute ssh host server build git");
-        Label execNote = note(tr("settings.remote.execution.desc"));
-        execNote.setWrapText(true);
-        execNote.setMaxWidth(460);
-        cardRow(execCard, Category.REMOTE, execNote, "remote run command execute ssh host server");
         containerEngineField = new TextField();
         containerEngineField.setPromptText("docker");
         containerEngineField.setPrefWidth(PATH_FIELD_WIDTH);
@@ -5204,282 +5260,6 @@ public class SettingsWindow {
                 containerEngineField,
                 "container docker podman engine dev container devcontainer run tools");
         return p;
-    }
-
-    /** Master-detail editor for saved SFTP sites: a list on the left, a form for the selected site on the right. */
-    private javafx.scene.Node remoteConnectionsEditor() {
-        remoteItems.setAll(config.getConnections());
-
-        ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
-        remoteList = list;
-        list.setPrefSize(210, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.vfs.RemoteConnection c, boolean empty) {
-                super.updateItem(c, empty);
-                setText(empty || c == null ? null : c.displayLabel());
-            }
-        });
-
-        TextField label = new TextField();
-        TextField host = new TextField();
-        host.setPromptText(tr("remote.hostPrompt"));
-        TextField port = new TextField();
-        TextField user = new TextField();
-        ComboBox<com.editora.vfs.RemoteConnection.AuthMethod> auth =
-                new ComboBox<>(javafx.collections.FXCollections.observableArrayList(
-                        com.editora.vfs.RemoteConnection.AuthMethod.values()));
-        auth.setConverter(enumConverter(m -> switch (m) {
-            case DEFAULT_KEYS -> tr("remote.auth.defaultKeys");
-            case KEY -> tr("remote.auth.key");
-            case PASSWORD -> tr("remote.auth.password");
-        }));
-        TextField keyPath = new TextField();
-        keyPath.setPromptText(tr("remote.keyPrompt"));
-        keyPath.setMinWidth(160);
-        Button keyBrowse = new Button(tr("dialog.clone.browse"));
-        keyBrowse.setOnAction(e -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle(tr("remote.keyPrompt"));
-            java.io.File f = fc.showOpenDialog(keyBrowse.getScene().getWindow());
-            if (f != null) {
-                keyPath.setText(f.getAbsolutePath());
-            }
-        });
-        // Wraps: beside a wide (German) Browse button the field was left about 60px in a narrow window. The
-        // button now moves below the field instead, which then has the row to itself.
-        WrapRow keyRow = new WrapRow(6, 6, WrapRow.setGrow(keyPath), keyBrowse);
-        // The key-file row only applies to "Private key file" auth.
-        auth.valueProperty()
-                .addListener((o, a, b) -> keyRow.setDisable(b != com.editora.vfs.RemoteConnection.AuthMethod.KEY));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.remote.label"), label);
-        formRow(form, 1, tr("remote.host"), host);
-        formRow(form, 2, tr("remote.port"), port);
-        formRow(form, 3, tr("remote.user"), user);
-        formRow(form, 4, tr("remote.auth"), auth);
-        formRow(form, 5, tr("remote.key"), keyRow);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        // --- the selected site's host: may Editora run commands there, and with which tools ---
-        CheckBox hostAllowed = new CheckBox(tr("settings.remote.host.allowed"));
-        hostAllowed.setWrapText(true);
-        java.util.Map<String, TextField> toolFields = new java.util.LinkedHashMap<>();
-        // Each label above its field: beside them, the longer tool names widened the page past the smallest
-        // Settings window, which then scrolled sideways.
-        VBox toolsGrid = new VBox(2);
-        for (HostTools.Tool tool : HostTools.NAMED) {
-            TextField field = new TextField();
-            field.setPromptText(tr("settings.remote.tool.prompt"));
-            toolFields.put(tool.id(), field);
-            Label name = new Label(tr(tool.labelKey()));
-            VBox.setMargin(name, new javafx.geometry.Insets(4, 0, 0, 0));
-            toolsGrid.getChildren().addAll(name, field);
-        }
-        javafx.scene.control.TextArea servers = new javafx.scene.control.TextArea();
-        servers.setPromptText(tr("settings.remote.tool.servers.prompt"));
-        servers.setPrefRowCount(3);
-        servers.setPrefColumnCount(20);
-        servers.setWrapText(false);
-        Label serversName = new Label(tr("settings.remote.tool.servers"));
-        VBox.setMargin(serversName, new javafx.geometry.Insets(4, 0, 0, 0));
-        toolsGrid.getChildren().addAll(serversName, servers);
-        Label hostTitle = new Label(tr("settings.remote.host.title"));
-        hostTitle.getStyleClass().add("settings-card-title");
-        Label hostNote = note(tr("settings.remote.host.note"));
-        hostNote.setWrapText(true);
-        hostNote.setMaxWidth(460);
-        VBox hostBox = new VBox(6, new javafx.scene.control.Separator(), hostTitle, hostAllowed, toolsGrid, hostNote);
-        hostBox.disableProperty().bind(form.disabledProperty());
-        hostAllowed.setOnAction(e -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur != null && !loadingRemote) {
-                config.setRemoteExecAllowed(cur.id(), hostAllowed.isSelected());
-            }
-        });
-        Runnable commitTools = () -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur == null || loadingRemote) {
-                return;
-            }
-            java.util.Map<String, String> named = new java.util.LinkedHashMap<>();
-            toolFields.forEach((id, field) -> named.put(id, field.getText()));
-            java.util.Map<String, String> previous = config.remoteTools(cur.id());
-            java.util.Map<String, String> merged = HostTools.merge(previous, named, servers.getText());
-            if (!merged.equals(previous)) {
-                config.setRemoteTools(cur.id(), merged);
-            }
-        };
-        toolFields.values().forEach(field -> {
-            field.setOnAction(e -> commitTools.run());
-            field.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commitTools.run();
-                }
-            });
-        });
-        servers.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commitTools.run();
-            }
-        });
-
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            if (cur == null || i < 0 || loadingRemote) {
-                return;
-            }
-            int portNum;
-            try {
-                portNum = Integer.parseInt(port.getText().strip());
-            } catch (NumberFormatException ex) {
-                portNum = 0; // the record coerces <= 0 to the default SFTP port
-            }
-            com.editora.vfs.RemoteConnection updated = new com.editora.vfs.RemoteConnection(
-                    host.getText().strip(),
-                    portNum,
-                    user.getText().strip(),
-                    auth.getValue() == null
-                            ? com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS
-                            : auth.getValue(),
-                    keyPath.getText().strip(),
-                    label.getText().strip(),
-                    cur.lastPath()); // preserve the remembered path; not edited here
-            // What was decided for the host (may run commands, its tools) follows the connection when its host,
-            // user or port is edited: it is kept by id, and the new id would otherwise start with none.
-            config.renameRemoteHost(cur.id(), updated.id());
-            remoteItems.set(i, updated);
-            list.refresh();
-            persistRemote();
-        };
-        auth.valueProperty().addListener((o, a, b) -> commit.run());
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(label);
-        wire.accept(host);
-        wire.accept(port);
-        wire.accept(user);
-        wire.accept(keyPath);
-        remoteFormEdit = () -> {
-            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
-            return cur == null
-                    ? PendingFormEdit.none()
-                    : PendingFormEdit.capture(
-                            List.of(label, host, port, user, keyPath),
-                            List.of(
-                                    nullToEmpty(cur.label()),
-                                    nullToEmpty(cur.host()),
-                                    String.valueOf(cur.port()),
-                                    nullToEmpty(cur.user()),
-                                    nullToEmpty(cur.keyPath())));
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingRemote = true;
-            try {
-                form.setDisable(now == null);
-                label.setText(now == null ? "" : nullToEmpty(now.label()));
-                host.setText(now == null ? "" : nullToEmpty(now.host()));
-                port.setText(now == null ? "" : String.valueOf(now.port()));
-                user.setText(now == null ? "" : nullToEmpty(now.user()));
-                auth.setValue(now == null ? null : now.auth());
-                keyPath.setText(now == null ? "" : nullToEmpty(now.keyPath()));
-                keyRow.setDisable(now == null || now.auth() != com.editora.vfs.RemoteConnection.AuthMethod.KEY);
-                java.util.Map<String, String> tools = now == null ? java.util.Map.of() : config.remoteTools(now.id());
-                hostAllowed.setSelected(now != null && config.remoteExecAllowed(now.id()));
-                toolFields.forEach((id, field) -> field.setText(tools.getOrDefault(id, "")));
-                servers.setText(HostTools.serversText(tools));
-            } finally {
-                loadingRemote = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.remote.add"));
-        add.setOnAction(e -> {
-            com.editora.vfs.RemoteConnection c = new com.editora.vfs.RemoteConnection(
-                    "",
-                    com.editora.vfs.SftpUri.DEFAULT_PORT,
-                    System.getProperty("user.name", ""),
-                    com.editora.vfs.RemoteConnection.AuthMethod.DEFAULT_KEYS,
-                    "",
-                    tr("settings.remote.newName"),
-                    "");
-            remoteItems.add(c);
-            persistRemote();
-            list.getSelectionModel().select(c);
-        });
-        Button remove = new Button(tr("settings.remote.remove"));
-        remove.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                remoteItems.remove(i);
-                persistRemote();
-            }
-        });
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
-        keepWidth(add, remove, left, keyBrowse);
-
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow, hostBox);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        if (!remoteItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
-    }
-
-    private void persistRemote() {
-        config.setConnections(new java.util.ArrayList<>(remoteItems));
-        apply();
-    }
-
-    /** Re-reads the saved sites (Connect remembers one; the Remote Sites panel removes one), keeping the selection. */
-    private void reloadRemote() {
-        if (remoteItems.equals(config.getConnections())) {
-            return;
-        }
-        var selected =
-                remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
-        String selectedId = selected == null ? null : selected.id();
-        PendingFormEdit typing = remoteFormEdit.get(); // before the items change: that reloads the form
-        remoteItems.setAll(config.getConnections());
-        if (remoteList != null && selectedId != null) {
-            for (var c : remoteItems) {
-                if (selectedId.equals(c.id())) {
-                    remoteList.getSelectionModel().select(c);
-                    typing.restore(); // the site being edited is still there: what was typed stays typed
-                    break;
-                }
-            }
-        }
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
     }
 
     /** Opens Settings focused on the Remote page (the {@code remote.settings} command). */
@@ -5930,7 +5710,7 @@ public class SettingsWindow {
     }
 
     private VBox mcpPage() {
-        VBox p = page(tr("settings.cat.mcp"));
+        VBox p = page(tr("settings.cat.mcp"), tr("settings.mcp.subtitle"));
         Card c = card(p, null);
         checkRow(
                 c,
@@ -5938,7 +5718,53 @@ public class SettingsWindow {
                 mcpCheck,
                 tr("settings.mcp.hint"),
                 "mcp model context protocol agent server enable ai claude llm loopback token endpoint");
+        mcpStatusLabel = new Label();
+        mcpStatusLabel.setWrapText(true);
+        mcpCopyButton = new Button(tr("settings.mcp.copy"));
+        mcpCopyButton.setOnAction(e -> mcpActions.copyCommand().run());
+        mcpNewTokenButton = new Button(tr("settings.mcp.newToken"));
+        mcpNewTokenButton.setOnAction(e -> {
+            mcpActions.newToken().run();
+            refreshMcpStatus();
+        });
+        cardRow(
+                c,
+                Category.MCP,
+                settingRow(
+                        tr("settings.mcp.status"),
+                        tr("settings.mcp.status.desc"),
+                        new VBox(6, mcpStatusLabel, new HBox(8, mcpCopyButton, mcpNewTokenButton))),
+                "mcp status running port endpoint url copy command token new rotate claude mcp add");
+        refreshMcpStatus();
         return p;
+    }
+
+    /** The MCP page's link to the app-wide server: its endpoint ({@code ""} when not running), and two actions. */
+    record McpActions(java.util.function.Supplier<String> endpoint, Runnable copyCommand, Runnable newToken) {}
+
+    private McpActions mcpActions;
+    private Label mcpStatusLabel;
+    private Button mcpCopyButton;
+    private Button mcpNewTokenButton;
+
+    void setMcpActions(McpActions actions) {
+        this.mcpActions = actions;
+        refreshMcpStatus();
+    }
+
+    /** Running at which endpoint, or off; the buttons only while it runs. */
+    private void refreshMcpStatus() {
+        if (mcpStatusLabel == null) {
+            return;
+        }
+        String endpoint = mcpActions == null ? "" : mcpActions.endpoint().get();
+        boolean running = !endpoint.isEmpty();
+        mcpStatusLabel.setText(
+                running
+                        ? tr("settings.mcp.running", endpoint)
+                        : tr(config.getSettings().isMcpSupport() ? "status.mcp.notRunning" : "settings.mcp.off"));
+        mcpCopyButton.setDisable(!running);
+        mcpNewTokenButton.setDisable(!running);
     }
 
     /**
@@ -6278,7 +6104,7 @@ public class SettingsWindow {
     }
 
     private VBox pluginsPage() {
-        VBox p = page(tr("settings.cat.plugins"));
+        VBox p = page(tr("settings.cat.plugins"), tr("settings.plugins.subtitle"));
         Card mainCard = card(p, null);
         Label warn = note(tr("settings.plugins.note"));
         warn.getStyleClass().add("settings-experimental");
@@ -6330,10 +6156,18 @@ public class SettingsWindow {
                         config.getSettings().getPluginRegistryUrl(),
                         config.getSettings().getPluginRegistryUrlRaw()),
                 now -> {
+                    if (!now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now)) {
+                        return; // the field is red and says why; the registry in use stays
+                    }
                     config.getSettings().setPluginRegistryUrl(now);
                     apply();
                     updateRegistryWarn();
                 });
+        pluginRegistryField.textProperty().addListener((o, was, now) -> {
+            boolean bad = !now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now);
+            pluginRegistryField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
+            pluginRegistryField.setTooltip(bad ? new Tooltip(tr("settings.plugins.registryNotHttps")) : null);
+        });
         Label regNote = note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
@@ -6354,10 +6188,7 @@ public class SettingsWindow {
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
-                // The browse picker is an in-scene overlay in the MAIN window; hide Settings first so it
-                // isn't rendered behind this window (otherwise the click appears to do nothing).
-                stage.hide();
-                onBrowsePlugins.run();
+                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
             }
         });
         Button installFile = new Button(tr("settings.plugins.installFromFile"));
@@ -6372,12 +6203,32 @@ public class SettingsWindow {
 
         Card installed = card(p, tr("settings.plugins.installed"));
         pluginListBox = new VBox(8);
-        cardRow(installed, Category.PLUGINS, pluginListBox, "plugins installed list enable disable");
+        cardRow(
+                installed,
+                Category.PLUGINS,
+                new VBox(
+                        6,
+                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
+                        pluginListBox),
+                "plugins installed list enable disable");
         refreshPluginList();
         return p;
     }
 
+    /**
+     * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
+     * actually opens, so a registry that fails to load leaves Settings where it was, with the reason.
+     */
+    void hideForMainWindowPicker() {
+        if (built && stage.isShowing()) {
+            stage.hide();
+        }
+    }
+
     /** Rebuilds the per-plugin enable list from the shared {@link com.editora.plugin.PluginManager}. */
+    /** Each listed plugin's enabled state when this window first showed it: what the running code reflects. */
+    private final Map<String, Boolean> pluginStateAtStart = new HashMap<>();
+
     private void refreshPluginList() {
         if (pluginListBox == null) {
             return;
@@ -6391,14 +6242,19 @@ public class SettingsWindow {
             pluginListBox.getChildren().add(empty);
             return;
         }
-        boolean master = config.getSettings().isPluginSupport();
         for (com.editora.plugin.PluginDescriptor d : ds) {
             String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
             String ver = d.manifest().version == null ? "" : d.manifest().version;
             String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
             CheckBox cb = new CheckBox(label);
             cb.setSelected(config.getPluginStore().isEnabled(d.id()));
-            cb.setDisable(!master);
+            // Code is loaded at start: a row switched since then says it needs a restart.
+            boolean atStart = pluginStateAtStart.computeIfAbsent(d.id(), id -> cb.isSelected());
+            Label restartPill = new Label(tr("settings.plugins.restartPill"));
+            restartPill.getStyleClass().add("settings-git-status");
+            restartPill.visibleProperty().bind(atStart ? cb.selectedProperty().not() : cb.selectedProperty());
+            restartPill.managedProperty().bind(restartPill.visibleProperty());
+            SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
             cb.selectedProperty().addListener((obs, was, now) -> {
                 if (loading) {
                     return;
@@ -6420,7 +6276,7 @@ public class SettingsWindow {
                     onUninstallPlugin.accept(d.id());
                 }
             });
-            HBox header = new HBox(8, cb, spacer, remove);
+            HBox header = new HBox(8, cb, restartPill, spacer, remove);
             header.setAlignment(Pos.CENTER_LEFT);
             VBox entry = new VBox(2, header);
             if (d.loadError() != null) {
@@ -7267,16 +7123,22 @@ public class SettingsWindow {
     }
 
     private void showGithubStatus(com.editora.github.GitHubService.Availability a) {
-        String[] verdict = githubStatus(a);
+        String[] verdict = githubStatus(a, config.getSettings().getGhPath());
         githubStatusLabel.getStyleClass().setAll("settings-git-status", verdict[0]);
         githubStatusLabel.setText(verdict[1]);
     }
 
     /** The GitHub page's status row for a probe result: {@code [style class, text]}. Pure — unit-tested. */
-    static String[] githubStatus(com.editora.github.GitHubService.Availability a) {
+    static String[] githubStatus(com.editora.github.GitHubService.Availability a, String ghPath) {
         String missing = "settings-git-missing";
         if (!a.found()) {
-            return new String[] {missing, tr("settings.github.notFound")};
+            // A typo in the path is not a missing install: name the path rather than say "install gh".
+            return new String[] {
+                missing,
+                ghPath == null || ghPath.isBlank()
+                        ? tr("settings.github.notFound")
+                        : tr("settings.github.notFoundAt", ghPath.strip())
+            };
         }
         return switch (a.auth()) {
             case SIGNED_OUT -> new String[] {missing, tr("settings.github.foundNoAuth")};
@@ -7443,8 +7305,13 @@ public class SettingsWindow {
             gitStatusLabel
                     .getStyleClass()
                     .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
-            gitStatusLabel.setText(found ? tr("settings.git.found", version) : tr("settings.git.notFound"));
-            gitCheck.setDisable(!found);
+            String path = config.getSettings().getGitPath();
+            gitStatusLabel.setText(
+                    found
+                            ? tr("settings.git.found", version)
+                            : path == null || path.isBlank()
+                                    ? tr("settings.git.notFound")
+                                    : tr("settings.git.notFoundAt", path));
         });
     }
 
@@ -7629,7 +7496,7 @@ public class SettingsWindow {
     }
 
     private VBox advancedPage() {
-        VBox p = page(tr("settings.cat.advanced"));
+        VBox p = page(tr("settings.cat.advanced"), tr("settings.advanced.subtitle"));
         Card fileSection = card(p, tr("settings.section.file"));
         Hyperlink link = new Hyperlink(displaySettingsPath(config.getSettingsFile()));
         link.setTooltip(new Tooltip(tr("settings.openFileTip")));
@@ -8418,7 +8285,9 @@ public class SettingsWindow {
         if (abbreviationsEditor != null) {
             abbreviationsEditor.reload();
         }
-        reloadRemote();
+        if (remoteSites != null) {
+            remoteSites.reload();
+        }
     }
 
     /** Re-reads the Snippets and Templates pages after a settings sync wrote those files. */
@@ -8587,7 +8456,6 @@ public class SettingsWindow {
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
-            blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
             gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
             gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
@@ -8638,6 +8506,7 @@ public class SettingsWindow {
             httpScriptTimeoutSpinner.getValueFactory().setValue(settings.getHttpScriptTimeoutSeconds());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
+            refreshMcpStatus();
             aiMasterCheck.setSelected(settings.isAiEnabled());
             updateAiSubEnablement(settings.isAiEnabled());
             agentCheck.setSelected(settings.isAgentSupport());
@@ -8986,7 +8855,6 @@ public class SettingsWindow {
         loading = true;
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
-            blameCheck.setDisable(!config.getSettings().isGitSupport());
             gitPullModeCombo.setValue(
                     com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
             gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
@@ -9124,6 +8992,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        refreshMcpStatus();
     }
 
     public void syncAgentCheck() {

@@ -636,6 +636,34 @@ class SettingsControlsFxTest {
         });
     }
 
+    /** The MCP page used to be one switch: no way to see whether it runs, where, or to get the command. */
+    @Test
+    void theMcpPageShowsWhereTheServerRunsAndOffersItsActions() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setMcpSupport(false);
+            String[] endpoint = {""};
+            int[] copied = {0};
+            int[] rotated = {0};
+            rig.window.setMcpConfirm(() -> true);
+            rig.window.setMcpActions(
+                    new SettingsWindow.McpActions(() -> endpoint[0], () -> copied[0]++, () -> rotated[0]++));
+            rig.show();
+            javafx.scene.layout.Region page = rig.page("MCP");
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.off")));
+            assertTrue(SettingsRig.button(page, tr("settings.mcp.copy")).isDisabled(), "nothing to copy while off");
+
+            endpoint[0] = "http://127.0.0.1:4242/mcp"; // what the server reports once the switch starts it
+            CheckBox mcp = rig.control("mcpCheck");
+            mcp.setSelected(true);
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.running", "http://127.0.0.1:4242/mcp")));
+            SettingsRig.button(page, tr("settings.mcp.copy")).fire();
+            SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+            assertEquals(1, copied[0]);
+            assertEquals(1, rotated[0]);
+            assertFalse(SettingsRig.texts(page).stream().anyMatch(t -> t.contains("Off by default")));
+        });
+    }
+
     @Test
     void theZenAndExpertSwitchesGoToTheWindowAndNotToTheSettingsFile() throws Exception {
         FxTestSupport.runOnFx(() -> {

@@ -78,5 +78,7 @@ class RegistryIndexTest {
         assertFalse(PluginRegistry.isHttps("ftp://example.com"));
         assertFalse(PluginRegistry.isHttps(""));
         assertFalse(PluginRegistry.isHttps(null));
+        assertFalse(PluginRegistry.isHttps("https://not a url at all"), "an address, not just the scheme");
+        assertFalse(PluginRegistry.isHttps("https:///index.json"));
     }
 }
