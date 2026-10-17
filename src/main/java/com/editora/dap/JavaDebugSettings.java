@@ -65,6 +65,9 @@ public record JavaDebugSettings(boolean stepFilters, boolean showStatics, List<S
         Map<String, Object> exceptions = new LinkedHashMap<>();
         exceptions.put("exceptionTypes", exceptionTypes);
         Map<String, Object> settings = new LinkedHashMap<>();
+        // java-debug sets its log level from every update and fails the command (after applying the rest) when the
+        // level is missing: Level.parse(null).
+        settings.put("logLevel", "WARNING");
         settings.put("showStaticVariables", showStatics);
         settings.put("stepFilters", filters);
         settings.put("exceptionFilters", exceptions);

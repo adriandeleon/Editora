@@ -18,6 +18,10 @@ class JavaDebugSettingsTest {
         JsonObject json =
                 JsonParser.parseString(JavaDebugSettings.defaults().toJson()).getAsJsonObject();
         assertTrue(json.get("showStaticVariables").getAsBoolean());
+        // java-debug's handler parses the log level of every update; without one the command fails (real jdtls)
+        assertEquals(
+                java.util.logging.Level.WARNING,
+                java.util.logging.Level.parse(json.get("logLevel").getAsString()));
         JsonObject filters = json.getAsJsonObject("stepFilters");
         assertTrue(filters.get("skipSynthetics").getAsBoolean());
         assertFalse(filters.get("skipConstructors").getAsBoolean(), "constructors are the user's code");
