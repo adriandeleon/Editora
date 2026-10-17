@@ -1118,12 +1118,11 @@ public class SettingsWindow {
         });
 
         themeCombo = new ComboBox<>();
-        themeCombo.getItems().setAll(Themes.names());
+        themeCombo.getItems().setAll(appThemeChoices());
         themeCombo.setPrefWidth(220);
-        themeCombo.setCellFactory(
-                v -> labelledCell(name -> withShade(name, Themes.themeFor(name).isDarkMode())));
+        ThemeGroups.install(themeCombo, name -> name);
         themeCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
+            if (loading || now == null || ThemeGroups.isHeading(now)) {
                 return;
             }
             config.getSettings().setTheme(now);
@@ -1140,9 +1139,12 @@ public class SettingsWindow {
         editorThemeCombo = new ComboBox<>();
         editorThemeCombo.getItems().setAll(editorThemeChoices());
         editorThemeCombo.setPrefWidth(220);
-        editorThemeCombo.setCellFactory(v -> editorThemeCell());
+        ThemeGroups.install(editorThemeCombo, SettingsWindow::editorThemeLabel);
         editorThemeCombo.setButtonCell(editorThemeCell());
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (ThemeGroups.isHeading(now)) {
+                return; // passing over a group title on the way to the theme below it
+            }
             if (now != null) {
                 applyPreviewTheme(
                         now.isEmpty()
@@ -8484,40 +8486,35 @@ public class SettingsWindow {
         };
     }
 
-    /** A theme's name, marked dark or light when the name itself does not say which (Dracula, Yacht…). */
-    private static String withShade(String name, boolean dark) {
-        if (name.contains("Light") || name.contains("Dark")) {
-            return name;
-        }
-        return tr(dark ? "settings.theme.dark" : "settings.theme.light", name);
+    /** The app themes under their Light / Dark / Your themes headings. */
+    private static List<String> appThemeChoices() {
+        return ThemeGroups.grouped(
+                Themes.names(),
+                name -> Themes.themeFor(name).isDarkMode(),
+                UserThemes.controlThemes().keySet());
     }
 
-    /** "" (Automatic) followed by every editor theme. */
+    /** "" (Automatic), then the editor themes under their Light / Dark / Your themes headings. */
     private static List<String> editorThemeChoices() {
+        Set<String> user = new java.util.HashSet<>(UserThemes.controlThemes().keySet());
+        user.addAll(UserThemes.editorThemes().keySet());
         List<String> choices = new ArrayList<>();
         choices.add("");
-        choices.addAll(EditorThemes.names());
+        choices.addAll(ThemeGroups.grouped(
+                EditorThemes.names(),
+                name -> EditorThemes.editorBackgroundFor(name).getBrightness() < 0.5,
+                user));
         return choices;
     }
 
-    /** An editor-theme cell: "Automatic" for "", else the theme's name. */
+    /** "Automatic" for "", else the theme's name. */
+    private static String editorThemeLabel(String name) {
+        return name.isEmpty() ? tr("settings.editorTheme.auto") : name;
+    }
+
+    /** The editor-theme combo's button: "Automatic" for "", else the theme's name. */
     private ListCell<String> editorThemeCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(String name, boolean empty) {
-                super.updateItem(name, empty);
-                setText(
-                        empty || name == null
-                                ? null
-                                : name.isEmpty()
-                                        ? tr("settings.editorTheme.auto")
-                                        : withShade(
-                                                name,
-                                                EditorThemes.editorBackgroundFor(name)
-                                                                .getBrightness()
-                                                        < 0.5));
-            }
-        };
+        return labelledCell(SettingsWindow::editorThemeLabel);
     }
 
     public void syncThemes() {
@@ -8527,7 +8524,7 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
-            themeCombo.getItems().setAll(Themes.names()); // pick up user themes reloaded from the config folder
+            themeCombo.getItems().setAll(appThemeChoices()); // pick up user themes reloaded from the config folder
             editorThemeCombo.getItems().setAll(editorThemeChoices());
             themeCombo.setValue(config.getSettings().getTheme());
             editorThemeCombo.setValue(
