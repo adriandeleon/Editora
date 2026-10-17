@@ -1,0 +1,15 @@
+{
+  "name": "Java Shebang Script",
+  "description": "An executable single-file Java program the java launcher runs directly (no .java extension)",
+  "language": "java",
+  "fileName": "${baseName:script}",
+  "body": [
+    "#!/usr/bin/env -S java --source 25",
+    "// ${summary:Script summary}",
+    "// Run it as ./${baseName:script} [arguments] — no compile step, no build file.",
+    "",
+    "void main(String[] args) {",
+    "    ${cursor}IO.println(\"Hello from ${baseName:script}\");",
+    "}"
+  ]
+}

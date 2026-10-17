@@ -1,0 +1,29 @@
+{
+  "name": ".editorconfig",
+  "description": "An .editorconfig with UTF-8, LF, final newlines and per-type indentation",
+  "fileName": ".editorconfig",
+  "body": [
+    "# EditorConfig — https://editorconfig.org",
+    "root = true",
+    "",
+    "[*]",
+    "charset = utf-8",
+    "end_of_line = lf",
+    "insert_final_newline = true",
+    "trim_trailing_whitespace = true",
+    "indent_style = space",
+    "indent_size = 4",
+    "",
+    "[*.{json,yml,yaml,toml,html,css,scss,js,jsx,ts,tsx,vue}]",
+    "indent_size = 2",
+    "",
+    "[*.md]",
+    "trim_trailing_whitespace = false",
+    "",
+    "[{Makefile,*.mk,go.mod,*.go}]",
+    "indent_style = tab",
+    "",
+    "[*.{bat,cmd}]",
+    "end_of_line = crlf"
+  ]
+}

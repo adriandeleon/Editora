@@ -1,0 +1,60 @@
+{
+  "name": "HTTP Requests + Environments",
+  "description": "A .http file with checks and a captured value, plus dev/prod environment files (multi-file)",
+  "files": [
+    {
+      "path": "${baseName:requests}.http",
+      "body": [
+        "# Pick dev or prod in the HTTP Client's Environment box before running a request.",
+        "# {{host}} comes from http-client.env.json and {{token}} from http-client.private.env.json,",
+        "# which holds secrets and must stay out of Git.",
+        "",
+        "### List items",
+        "# @assert status == 200",
+        "GET {{host}}/items",
+        "Accept: application/json",
+        "",
+        "### Create an item and keep its id",
+        "# @assert status == 201",
+        "# @capture itemId = $.id",
+        "POST {{host}}/items",
+        "Content-Type: application/json",
+        "Authorization: Bearer {{token}}",
+        "",
+        "{",
+        "  \"name\": \"${cursor}example\"",
+        "}",
+        "",
+        "### Read the item created above",
+        "GET {{host}}/items/{{itemId}}",
+        "Accept: application/json"
+      ]
+    },
+    {
+      "path": "http-client.env.json",
+      "body": [
+        "{",
+        "  \"dev\": {",
+        "    \"host\": \"http://localhost:${port:8080}\"",
+        "  },",
+        "  \"prod\": {",
+        "    \"host\": \"https://api.example.com\"",
+        "  }",
+        "}"
+      ]
+    },
+    {
+      "path": "http-client.private.env.json",
+      "body": [
+        "{",
+        "  \"dev\": {",
+        "    \"token\": \"dev-token-change-me\"",
+        "  },",
+        "  \"prod\": {",
+        "    \"token\": \"\"",
+        "  }",
+        "}"
+      ]
+    }
+  ]
+}
