@@ -159,33 +159,28 @@ class PythonDebugLaunchFxTest {
         return out;
     }
 
+    /** The site-packages folder of the last {@link #projectWithVenv()} (for a stand-in pytest). */
+    private Path venvSite;
+
     /**
-     * A project with a real {@code .venv}, made by {@code venv} without pip (fast, offline). Not a hand-made link to
-     * {@code /usr/bin/python3}: on macOS that is an xcrun shim, not the interpreter, and a link to it ran no Python
-     * in the venv — it imported neither debugpy nor the venv's pytest, so the adapter fell back to PATH's Python.
+     * A project with a real {@code .venv} made by {@code python3 -m venv --without-pip} (fast, offline). A
+     * hand-made symlink to {@code /usr/bin/python3} is not a venv on macOS, where that path is a shim that
+     * starts another binary, so the venv's own site-packages were never on the path there.
      */
     private Path projectWithVenv() throws Exception {
         Path project = Files.createDirectories(base.resolve("my project"));
         Files.writeString(project.resolve("pyproject.toml"), "[project]\nname = \"x\"\n");
         Files.createDirectories(project.resolve("src"));
-        Process p = new ProcessBuilder(
-                        "python3",
-                        "-m",
-                        "venv",
-                        "--without-pip",
-                        project.resolve(".venv").toString())
+        Path venv = project.resolve(".venv");
+        Process p = new ProcessBuilder("python3", "-m", "venv", "--without-pip", venv.toString())
                 .redirectErrorStream(true)
                 .start();
         p.getInputStream().readAllBytes();
         assumeTrue(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0, "python3 with venv is installed");
-        return project;
-    }
-
-    /** The venv's {@code site-packages} folder ({@code lib/python3.X/site-packages}). */
-    private static Path sitePackages(Path project) throws Exception {
-        try (var lib = Files.list(project.resolve(".venv/lib"))) {
-            return lib.findFirst().orElseThrow().resolve("site-packages");
+        try (var lib = Files.list(venv.resolve("lib"))) {
+            venvSite = lib.findFirst().orElseThrow().resolve("site-packages");
         }
+        return project;
     }
 
     @Test
@@ -275,7 +270,7 @@ class PythonDebugLaunchFxTest {
     @Test
     void aTestIsDebuggedUnderPytestInTheProjectFolder() throws Exception {
         Path project = projectWithVenv();
-        Path stand = Files.createDirectories(sitePackages(project).resolve("pytest"));
+        Path stand = Files.createDirectories(venvSite.resolve("pytest"));
         Files.writeString(stand.resolve("__init__.py"), "");
         Path test = testFile(project);
         configure("", false);
