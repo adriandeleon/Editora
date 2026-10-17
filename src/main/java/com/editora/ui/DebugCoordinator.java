@@ -261,6 +261,7 @@ final class DebugCoordinator {
         if (debugPanel == null) {
             DebugPanel built = new DebugPanel(debugActions());
             built.setPrompt(host::promptText);
+            built.setExpressionPrompt(this::expressionPrompt); // Add / Edit Watch: the field completes (follow-up 5)
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
             built.setChordLookup(ops::chordFor);
@@ -1379,6 +1380,11 @@ final class DebugCoordinator {
             @Override
             public void evaluateWatch(String expr, int frameId, Consumer<DapModels.EvalResult> cb) {
                 dapManager.evaluateFull(expr, frameId, "watch", cb);
+            }
+
+            @Override
+            public void complete(String text, int caret, int frameId, Consumer<List<DapModels.CompletionTarget>> cb) {
+                dapManager.completions(frameId, text, caret, cb);
             }
 
             @Override
@@ -2608,6 +2614,9 @@ final class DebugCoordinator {
         condition.setPrefColumnCount(32);
         TextField logMessage = new TextField(bp.logMessage());
         logMessage.setPrefColumnCount(32);
+        // Completion in the stopped frame (follow-up 5): the whole condition, and the {expression} of a log message.
+        DebugCompletion.attach(condition, completionSource(false));
+        DebugCompletion.attach(logMessage, completionSource(true));
         TextField hitCondition = new TextField(bp.hitCondition());
         hitCondition.setPrefColumnCount(32);
         hitCondition.setPromptText(tr("dialog.debug.hitConditionPrompt"));
@@ -2828,6 +2837,7 @@ final class DebugCoordinator {
         buffer.setOnBreakpointsChanged(() -> onBreakpointsChanged(buffer));
         // Hover value tooltip while suspended: evaluate the hovered identifier in the selected frame.
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
+        buffer.setDebugValuePresenter(valuePopup()); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         buffer.setDebugFileHandler(
                 () -> launchBuffer(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
@@ -3254,5 +3264,76 @@ final class DebugCoordinator {
                 new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
         item.setOnAction(e -> action.run());
         return item;
+    }
+
+    // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ----------------
+
+    /**
+     * What a debugger expression field completes against: the selected frame of a stopped session (DAP
+     * {@code completions}). {@code braces}: a log message, where only the {@code {expression}} at the caret is code.
+     */
+    DebugCompletion.Source completionSource(boolean braces) {
+        return new DebugCompletion.Source() {
+            @Override
+            public boolean paused() {
+                return dapManager.state() == DapManager.State.SUSPENDED && debugFrameId >= 0;
+            }
+
+            @Override
+            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
+                int from = braces ? DebugCompletionText.braceStart(text, caret) : 0;
+                if (from < 0) {
+                    cb.accept(List.of()); // outside {…}: plain log text
+                    return;
+                }
+                dapManager.completions(debugFrameId, text.substring(from, caret), caret - from, cb);
+            }
+        };
+    }
+
+    /** Add / Edit Watch: the window's one-field prompt, its field completing expressions in the stopped frame. */
+    private void expressionPrompt(String title, String label, String initial, Consumer<String> onAccept) {
+        Label promptLabel = new Label(label);
+        TextField field = new TextField(initial == null ? "" : initial);
+        field.setPrefColumnCount(32);
+        DebugCompletion.attach(field, completionSource(false));
+        com.editora.command.TextInputKeymap.installShared(field);
+        OverlayInput.show(
+                host.overlayHost(),
+                title,
+                new javafx.scene.layout.VBox(6, promptLabel, field),
+                field,
+                tr("dialog.ok"),
+                null,
+                () -> onAccept.accept(field.getText()),
+                null,
+                false);
+    }
+
+    private DebugValuePopup valuePopup;
+
+    /** The hover / Show Value at Caret popup, shared by this window's editors. */
+    DebugValuePopup valuePopup() {
+        if (valuePopup == null) {
+            valuePopup = new DebugValuePopup(new DebugValuePopup.Source() {
+                @Override
+                public void evaluate(String expression, Consumer<DapModels.EvalResult> cb) {
+                    dapManager.evaluateFull(expression, debugFrameId, "hover", cb);
+                }
+
+                @Override
+                public void children(
+                        int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
+                    dapManager.variables(ref, filter, start, count, cb);
+                }
+
+                @Override
+                public void addWatch(String expression) {
+                    ops.openToolWindow();
+                    panel().addWatchPrompt(expression);
+                }
+            });
+        }
+        return valuePopup;
     }
 }

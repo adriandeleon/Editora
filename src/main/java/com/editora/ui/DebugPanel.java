@@ -146,6 +146,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** End the running program's standard input (end of file). */
         default void endInput() {}
 
+        /**
+         * The adapter's completions of {@code text} at 0-based {@code caret} in frame {@code frameId} (DAP
+         * {@code completions}); none by default.
+         */
+        default void complete(String text, int caret, int frameId, Consumer<List<DapModels.CompletionTarget>> cb) {
+            cb.accept(List.of());
+        }
+
         /** Turn exception breakpoints on caught ({@code caught}) or uncaught exceptions on or off. */
         default void toggleExceptions(boolean caught) {}
     }
@@ -194,6 +202,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private Runnable onWatchesChanged = () -> {};
     private OverlayInput.Prompt prompt;
+
+    /** The prompt of Add / Edit Watch: as {@link #prompt}, with completion in its field (null: {@link #prompt}). */
+    private OverlayInput.Prompt expressionPrompt;
+
+    /** Completion in the evaluate field (follow-up 5). */
+    private DebugCompletion evalCompletion;
     /** Receives a double-clicked stack-trace location from the console (controller resolves + jumps). */
     private java.util.function.Consumer<com.editora.run.StackTraceLinks.Link> onLink;
 
@@ -494,6 +508,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
+        evalCompletion = DebugCompletion.attach(evalInput, new DebugCompletion.Source() {
+            @Override
+            public boolean paused() {
+                return lastState == DapManager.State.SUSPENDED && !inputMode();
+            }
+
+            @Override
+            public void complete(String text, int caret, Consumer<List<DapModels.CompletionTarget>> cb) {
+                actions.complete(text, caret, selectedFrameId, cb);
+            }
+        });
         evalInput.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             boolean up = e.getCode() == javafx.scene.input.KeyCode.UP;
             if ((up || e.getCode() == javafx.scene.input.KeyCode.DOWN) && !e.isControlDown() && !e.isAltDown()) {
@@ -584,7 +609,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     /** Builds the styled TextFlow for one variables-tree row. */
-    private TextFlow renderRow(VarRow row) {
+    static TextFlow renderRow(VarRow row) {
         TextFlow flow = new TextFlow();
         switch (row.kind()) {
             case SCOPE -> {
@@ -1108,6 +1133,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         this.prompt = prompt;
     }
 
+    /** Injects the Add / Edit Watch prompt whose field completes expressions; null falls back to the plain one. */
+    public void setExpressionPrompt(OverlayInput.Prompt prompt) {
+        this.expressionPrompt = prompt;
+    }
+
+    private OverlayInput.Prompt watchPrompt() {
+        return expressionPrompt != null ? expressionPrompt : prompt;
+    }
+
     /** The current watch expressions, in display order (persisted by the controller). */
     public List<String> getWatches() {
         return List.copyOf(watches);
@@ -1236,10 +1270,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Add Watch, its prompt pre-filled with {@code initial} (a variable's expression). */
     void addWatchPrompt(String initial) {
-        if (prompt == null) {
+        if (watchPrompt() == null) {
             return;
         }
-        prompt.show(tr("debugpanel.addWatchTitle"), tr("debugpanel.watchExpr"), initial, expr -> {
+        watchPrompt().show(tr("debugpanel.addWatchTitle"), tr("debugpanel.watchExpr"), initial, expr -> {
             if (expr != null && !expr.isBlank()) {
                 watches.add(expr.strip());
                 onWatchesChanged.run();
@@ -1249,10 +1283,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     private void editWatchPrompt(String old) {
-        if (prompt == null) {
+        if (watchPrompt() == null) {
             return;
         }
-        prompt.show(tr("debugpanel.editWatchTitle"), tr("debugpanel.watchExpr"), old, expr -> {
+        watchPrompt().show(tr("debugpanel.editWatchTitle"), tr("debugpanel.watchExpr"), old, expr -> {
             int idx = watches.indexOf(old);
             if (idx >= 0 && expr != null && !expr.isBlank()) {
                 watches.set(idx, expr.strip());

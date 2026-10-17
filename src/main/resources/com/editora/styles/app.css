@@ -4120,6 +4120,23 @@
     -fx-background-color: -color-bg-overlay;
     -fx-text-fill: -color-fg-default;
 }
+/* The hover / Show Value at Caret popup (follow-up 6): one line for a plain value, a bounded tree of an object's
+   fields (the Variables tree's rows, .debug-vars) otherwise. */
+.debug-value-popup {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1;
+    -fx-background-radius: 4;
+    -fx-border-radius: 4;
+    -fx-padding: 4;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.25), 8, 0, 0, 2);
+}
+.debug-value-popup .debug-value-line {
+    -fx-font-size: 12px;
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-text-fill: -color-fg-default;
+}
+.debug-value-popup .debug-vars { -fx-background-color: transparent; }
 /* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
 /* A beta page says so with the one pill beside its title (and in the sidebar); its own "experimental"
    line is plain page text, not a second, louder badge. */
