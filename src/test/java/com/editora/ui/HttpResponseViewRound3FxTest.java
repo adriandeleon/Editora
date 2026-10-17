@@ -389,6 +389,11 @@ class HttpResponseViewRound3FxTest {
         String w = "{{token}} was sent as empty text: not defined in the file or the selected environment.";
         show(p, 450, 820);
         showIn(p, exchange("h", ok("{}", headers, List.of(w, w.replace("token", "user")))));
+        FxTestSupport.runOnFx(
+                () -> { // the body view, hidden before this response, is laid out on the next pass
+                    p.applyCss();
+                    p.layout();
+                });
         double body =
                 FxTestSupport.callOnFx(() -> p.controlsForTest().bodyArea().getHeight());
         // Six headers and two warnings used to leave the body a few lines: now only the header row and the tabs
