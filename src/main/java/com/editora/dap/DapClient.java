@@ -79,6 +79,11 @@ public final class DapClient implements IDebugProtocolClient {
     private static final Logger LOG = Logger.getLogger(DapClient.class.getName());
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
+    /** How long a request waits for the adapter's answer, in seconds (for messages that name it). */
+    static long requestTimeoutSeconds() {
+        return REQUEST_TIMEOUT.toSeconds();
+    }
+
     /** Event sink (implemented by {@link DapManager}); calls arrive on the launcher's reader thread. */
     public interface Host {
         void onStopped(int threadId, String reason);
@@ -119,6 +124,9 @@ public final class DapClient implements IDebugProtocolClient {
          *  {@code usernotification}: a breakpoint condition or log message it could not evaluate). */
         default void onNotice(String message, boolean error) {}
 
+        /** The debuggee exited with {@code exitCode} (the adapter's {@code exited} event). */
+        default void onExited(int exitCode) {}
+
         /**
          * The adapter asks the client to start the debuggee itself ({@code runInTerminal}): {@code argv} in
          * {@code cwd} with {@code env} on top of the client's environment (a null value unsets a variable).
@@ -156,7 +164,8 @@ public final class DapClient implements IDebugProtocolClient {
      *  thread at session start, so this never reads UI state off-thread). */
     private volatile List<DapModels.FileBreakpoints> initialBreakpoints = List.of();
     /** Exception-breakpoint filter ids (e.g. {@code uncaught}/{@code caught}). */
-    private volatile List<String> exceptionFilters = List.of();
+    /** The chosen exception filters; null for the adapter's own defaults ({@link #defaultExceptionFilters}). */
+    private volatile List<String> exceptionFilters;
     /** True once the adapter's {@code initialized} event installed the configuration (breakpoints +
      *  exception filters). Before that, a filter change only updates the field — {@link #initialized}
      *  will read it. After it, a change must be sent on the wire itself. */
@@ -228,14 +237,14 @@ public final class DapClient implements IDebugProtocolClient {
      * Fire-and-forget, mirroring {@link #sendSetBreakpoints}.
      */
     public void setExceptionFilters(List<String> filters) {
-        this.exceptionFilters = filters == null ? List.of() : List.copyOf(filters);
+        this.exceptionFilters = filters == null ? null : List.copyOf(filters);
         for (DapClient child : children) {
             child.setExceptionFilters(filters); // each session holds its own exception configuration
         }
         if (server != null && configured) {
             try {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(this.exceptionFilters.toArray(new String[0]));
+                ex.setFilters(effectiveExceptionFilters().toArray(new String[0]));
                 ignore(timed(server.setExceptionBreakpoints(ex)));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "live setExceptionBreakpoints failed", e);
@@ -245,6 +254,44 @@ public final class DapClient implements IDebugProtocolClient {
 
     /** The adapter's {@code initialize} capabilities (kept for feature gating, e.g. Jump to Line). */
     private volatile Capabilities capabilities;
+
+    /**
+     * The exception filters in force: the chosen ones, or — none chosen — those the adapter marks
+     * {@code default: true} (debugpy: uncaught exceptions; java-debug and js-debug: none).
+     */
+    public List<String> effectiveExceptionFilters() {
+        List<String> chosen = exceptionFilters;
+        return chosen != null ? chosen : defaultExceptionFilters(exceptionFilterOptions());
+    }
+
+    /** The exception filters the adapter offers ({@code exceptionBreakpointFilters}); empty before it answered. */
+    public List<DapModels.ExceptionFilterOption> exceptionFilterOptions() {
+        return exceptionFilterOptions(capabilities);
+    }
+
+    static List<DapModels.ExceptionFilterOption> exceptionFilterOptions(Capabilities caps) {
+        if (caps == null || caps.getExceptionBreakpointFilters() == null) {
+            return List.of();
+        }
+        List<DapModels.ExceptionFilterOption> out = new ArrayList<>();
+        for (org.eclipse.lsp4j.debug.ExceptionBreakpointsFilter f : caps.getExceptionBreakpointFilters()) {
+            if (f != null && f.getFilter() != null) {
+                out.add(new DapModels.ExceptionFilterOption(
+                        f.getFilter(),
+                        f.getLabel() == null || f.getLabel().isBlank() ? f.getFilter() : f.getLabel(),
+                        Boolean.TRUE.equals(f.getDefault_())));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** The filters of {@code options} that are on by default. */
+    static List<String> defaultExceptionFilters(List<DapModels.ExceptionFilterOption> options) {
+        return options.stream()
+                .filter(DapModels.ExceptionFilterOption::byDefault)
+                .map(DapModels.ExceptionFilterOption::filter)
+                .toList();
+    }
 
     /** Whether the adapter supports {@code gotoTargets}/{@code goto} (debugpy does; java-debug and
      *  vscode-js-debug currently do not). */
@@ -321,10 +368,11 @@ public final class DapClient implements IDebugProtocolClient {
                     this, process.getInputStream(), orderedWriter(process.getOutputStream()), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
-            return timed(server.initialize(initArgs(adapterId, false, false))).thenApply(c -> {
-                this.capabilities = c;
-                return c;
-            });
+            return timed(server.initialize(initArgs(adapterId, false, runsDebuggee)))
+                    .thenApply(c -> {
+                        this.capabilities = c;
+                        return c;
+                    });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to wire stdio debug adapter", e);
             return CompletableFuture.failedFuture(e);
@@ -486,9 +534,10 @@ public final class DapClient implements IDebugProtocolClient {
             for (DapModels.FileBreakpoints fb : initialBreakpoints) {
                 sendSetBreakpoints(fb);
             }
-            if (!exceptionFilters.isEmpty()) {
+            List<String> filters = effectiveExceptionFilters();
+            if (!filters.isEmpty()) {
                 SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(exceptionFilters.toArray(new String[0]));
+                ex.setFilters(filters.toArray(new String[0]));
                 ignore(timed(server.setExceptionBreakpoints(ex)));
             }
             ignore(timed(server.configurationDone(new ConfigurationDoneArguments())));
@@ -584,7 +633,11 @@ public final class DapClient implements IDebugProtocolClient {
 
     @Override
     public void exited(org.eclipse.lsp4j.debug.ExitedEventArguments args) {
-        // The debuggee process exited; the session ends on the following `terminated` event.
+        // The debuggee process exited; the session ends on the following `terminated` event. The code is what
+        // the console reports — a Python program's sys.exit(3) used to end without a word.
+        if (args != null && !disposed) {
+            host.onExited(args.getExitCode());
+        }
     }
 
     /**
@@ -807,6 +860,9 @@ public final class DapClient implements IDebugProtocolClient {
             }
             if (lb.logMessage() != null && !lb.logMessage().isBlank()) {
                 sb.setLogMessage(lb.logMessage());
+            }
+            if (lb.hitCondition() != null && !lb.hitCondition().isBlank()) {
+                sb.setHitCondition(lb.hitCondition());
             }
             sbs.add(sb);
         }

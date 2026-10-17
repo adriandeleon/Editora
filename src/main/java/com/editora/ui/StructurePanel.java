@@ -879,14 +879,20 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             while (at < sourceLine.length() && Character.isWhitespace(sourceLine.charAt(at))) {
                 at++;
             }
-            int markerLength = sourceLine.startsWith("->", at) ? 2 : sourceLine.startsWith(":", at) ? 1 : 0;
+            // A Python `def` has only `->`: its `:` opens the body (`def f(x): return x` has no return type).
+            boolean pythonDef =
+                    PYTHON_DEF.matcher(sourceLine.substring(0, nameColumn)).matches();
+            int markerLength =
+                    sourceLine.startsWith("->", at) ? 2 : !pythonDef && sourceLine.startsWith(":", at) ? 1 : 0;
             if (markerLength > 0) {
                 at += markerLength;
                 while (at < sourceLine.length() && Character.isWhitespace(sourceLine.charAt(at))) {
                     at++;
                 }
-                int suffixEnd = at;
-                while (suffixEnd < sourceLine.length() && "{=;".indexOf(sourceLine.charAt(suffixEnd)) < 0) {
+                int suffixEnd = pythonDef ? pythonAnnotationEnd(sourceLine, at) : at;
+                while (!pythonDef
+                        && suffixEnd < sourceLine.length()
+                        && "{=;".indexOf(sourceLine.charAt(suffixEnd)) < 0) {
                     suffixEnd++;
                 }
                 String candidate = sourceLine.substring(at, suffixEnd).strip();
@@ -896,6 +902,35 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         return null;
+    }
+
+    private static final java.util.regex.Pattern PYTHON_DEF =
+            java.util.regex.Pattern.compile("\\s*(?:async\\s+)?def\\s+");
+
+    /**
+     * Where a Python return annotation that starts at {@code from} ends: at the {@code :} that opens the body,
+     * outside brackets and quotes ({@code -> dict[str, int]:}, {@code -> "Greeter":}), else at the line end.
+     */
+    static int pythonAnnotationEnd(String line, int from) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = from; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (quote != 0) {
+                if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '[' || c == '(') {
+                depth++;
+            } else if ((c == ']' || c == ')') && depth > 0) {
+                depth--;
+            } else if ((c == ':' || c == '#') && depth == 0) {
+                return i;
+            }
+        }
+        return line.length();
     }
 
     private static int previousTopLevelTokenStart(String text, int end) {
@@ -940,7 +975,12 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     "public",
                     "static",
                     "synchronized" -> false;
-            default -> Character.isJavaIdentifierStart(value.charAt(0));
+            default ->
+                Character.isJavaIdentifierStart(value.charAt(0))
+                        // A quoted (forward-reference) Python annotation: `-> "Greeter"`.
+                        || (value.length() > 2
+                                && (value.charAt(0) == '"' || value.charAt(0) == '\'')
+                                && Character.isJavaIdentifierStart(value.charAt(1)));
         };
     }
 
@@ -1112,10 +1152,19 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         boolean haveSymbols = !symbolByLine.isEmpty();
         boolean brace = isBraceLanguage(buffer.getLanguage());
+        if (haveSymbols && "python".equals(buffer.getLanguage())) {
+            // Python nests by indentation, as Python does: a one-line `def f(): ...` folds nothing but is still
+            // structure. Each node takes the block its header opens (sorted outermost-first per start line).
+            Map<Integer, Region> blockByLine = new HashMap<>();
+            for (Region r : regions) {
+                blockByLine.putIfAbsent(r.startLine(), r);
+            }
+            return symbolNodes(area, symbolByLine, paras, blockByLine);
+        }
         if (regions.isEmpty() && haveSymbols) {
             // No delimiter folding for this language (python, ruby, shell, lua, yaml, ini …): there are no
             // regions to hang the symbols on, and the outline used to come out empty. Nest by indentation.
-            return symbolNodes(area, symbolByLine, paras);
+            return symbolNodes(area, symbolByLine, paras, Map.of());
         }
 
         List<StructureNode> rootNodes = new ArrayList<>();
@@ -1141,7 +1190,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (rootNodes.isEmpty() && haveSymbols) {
             // Regions, but none headed by a symbol — say only `# region` markers in a language whose blocks
             // do not fold: the symbols are still the structure (one marker used to empty the outline).
-            return symbolNodes(area, symbolByLine, paras);
+            return symbolNodes(area, symbolByLine, paras, Map.of());
         }
         return rootNodes;
     }
@@ -1237,7 +1286,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     /** An outline built from the symbols alone, nested by each symbol line's indentation. */
-    private static List<StructureNode> symbolNodes(CodeArea area, Map<Integer, Symbol> symbolByLine, int paras) {
+    private static List<StructureNode> symbolNodes(
+            CodeArea area, Map<Integer, Symbol> symbolByLine, int paras, Map<Integer, Region> blockByLine) {
         List<StructureNode> rootNodes = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> indents = new ArrayDeque<>();
@@ -1252,7 +1302,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 indents.pop();
                 stack.pop();
             }
-            StructureNode node = new StructureNode(null, symbol.name(), symbol.kind(), line);
+            StructureNode node = new StructureNode(blockByLine.get(line), symbol.name(), symbol.kind(), line);
             if (stack.isEmpty()) {
                 rootNodes.add(node);
             } else {

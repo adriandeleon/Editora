@@ -50,7 +50,8 @@ public final class DiagnosticMapper {
                     code(d),
                     d.getSource(),
                     href(d),
-                    d.getTags() != null && d.getTags().contains(org.eclipse.lsp4j.DiagnosticTag.Unnecessary)));
+                    d.getTags() != null && d.getTags().contains(org.eclipse.lsp4j.DiagnosticTag.Unnecessary),
+                    d.getTags() != null && d.getTags().contains(org.eclipse.lsp4j.DiagnosticTag.Deprecated)));
         }
         return out;
     }

@@ -8,6 +8,7 @@ import com.editora.config.Settings;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -58,5 +59,32 @@ class KeymapSwitchOverridesTest {
         assertTrue(settings.getKeymapKeybindings().containsKey(KeymapManager.DEFAULT));
         KeymapLayers.switchKeymap(settings, KeymapManager.DEFAULT);
         assertEquals("find.show", settings.keybindingsFor(false).get("<f7>"));
+    }
+
+    /**
+     * A macro's shortcut has nothing to do with a keymap, yet a switch parked it with the keymap it was made in:
+     * the macro showed "Unbound" until the user switched back. It follows now, unless the new keymap's own
+     * chords make it dead — then it stays with the old keymap and comes back with it.
+     */
+    @Test
+    void aShortcutOfACommandNoKeymapBindsFollowsTheSwitch() {
+        Settings settings = new Settings();
+        settings.setKeymap("emacs");
+        settings.keybindingsFor(false).put("C-M-S-f12", "macro.run.m1");
+        settings.keybindingsFor(false).put("C-c m", "macro.run.m2"); // under CUA, C-c is Copy: unreachable
+        settings.keybindingsFor(false).put("C-x C-s", ""); // an Emacs-only suppressor stays with Emacs
+
+        KeymapLayers.switchKeymap(settings, "cua");
+        assertEquals("macro.run.m1", settings.keybindingsFor(false).get("C-M-S-f12"), "it follows");
+        assertNull(settings.keybindingsFor(false).get("C-c m"), "a chord CUA makes dead stays behind");
+        assertNull(settings.keybindingsFor(false).get("C-x C-s"));
+
+        settings.keybindingsFor(false).remove("C-M-S-f12"); // rebound while in CUA
+        settings.keybindingsFor(false).put("C-M-S-f11", "macro.run.m1");
+        KeymapLayers.switchKeymap(settings, "emacs");
+        assertEquals("macro.run.m1", settings.keybindingsFor(false).get("C-M-S-f11"));
+        assertNull(settings.keybindingsFor(false).get("C-M-S-f12"), "the old chord does not come back");
+        assertEquals("macro.run.m2", settings.keybindingsFor(false).get("C-c m"));
+        assertEquals("", settings.keybindingsFor(false).get("C-x C-s"));
     }
 }

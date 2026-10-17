@@ -89,7 +89,7 @@ class SettingsRealWindowFxTest {
             trust.trust(a);
             trust.trust(b);
             window.refreshTrustedFolders();
-            Region workspace = page("WORKSPACE");
+            Region workspace = page("ADVANCED"); // Trusted Folders moved there from Workspace
             ListView<String> list = FxTestSupport.field(window, "trustedFoldersList");
             assertEquals(2, list.getItems().size());
 
@@ -124,7 +124,8 @@ class SettingsRealWindowFxTest {
             ToolbarCoordinator toolbar = FxTestSupport.field(fx.controller, "toolbarCoordinator");
             int before = toolbar.effectiveLayout().size();
 
-            List<String> currentItems = FxTestSupport.field(window, "toolbarCurrentItems");
+            List<String> currentItems =
+                    FxTestSupport.field(FxTestSupport.<Object>field(window, "toolbarSettings"), "currentItems");
             @SuppressWarnings("unchecked")
             ListView<String> current = SettingsRig.all(toolbarPage, ListView.class).stream()
                     .filter(v -> v.getItems() == currentItems)
@@ -241,7 +242,11 @@ class SettingsRealWindowFxTest {
                 Button reset = (Button) SettingsRig.button(advanced, tr("settings.resetDefaults"));
                 List<SettingsRig.Shown> shown = SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, reset::fire);
                 assertEquals(2, shown.size(), "the question, then why it was not done");
-                assertEquals(tr("settings.reset.confirm"), shown.get(0).content());
+                // The question names the backup it is about to write.
+                assertTrue(shown.get(0)
+                        .content()
+                        .startsWith(tr("settings.reset.confirm", "\u0000").split("\u0000")[0]));
+                assertTrue(shown.get(0).content().contains("settings.json.before-reset-"));
                 String[] around = tr("settings.reset.backupFailed", "\u0000").split("\u0000");
                 assertTrue(
                         shown.get(1).content().startsWith(around[0]),

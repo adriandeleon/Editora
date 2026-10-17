@@ -11,7 +11,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Opening Settings must not change which language-server command is in force.
@@ -107,6 +110,48 @@ class SettingsKeepsProjectLspCommandFxTest {
                     com.editora.lsp.LspServerRegistry.defaultCommandFor("python"),
                     LspTestHooks.configuredCommand(manager, "python"),
                     "an untrusted folder no longer chooses what runs");
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /**
+     * The LSP page shows the global commands; a card says when this window's project file overrides its
+     * server, so an edit there that "does nothing" is explained (the project's command is the one running).
+     */
+    @Test
+    void theLspPageSaysWhatTheProjectOverrides() throws Exception {
+        FxTestSupport.bootToolkit();
+        Path proj = Files.createDirectories(work.resolve("projN"));
+        Files.createDirectories(proj.resolve(".editora"));
+        String override = "/usr/bin/env project-pinned-pyright --stdio";
+        Files.writeString(
+                proj.resolve(".editora/settings.json"),
+                "{\"lspCommands\":{\"python\":\"" + override + "\"},\"lspEnabled\":{\"rust\":false}}\n");
+        FxWindowFixture fx = FxWindowFixture.create(Files.createTempDirectory(work, "cfg"), shared -> {});
+        try {
+            Project p = fx.shared.projects().createOrGet("projN", proj);
+            fx.shared.getTrustStore().trust(proj);
+            fx.shared.getSettings().setLspSupport(true);
+            FxTestSupport.runOnFx(() -> fx.windowManager.openOrFocus(p));
+            FxTestSupport.drainFx();
+            MainController window = controllerFor(fx, p.id());
+            LspManager manager = FxTestSupport.field(window, "lspManager");
+            FxTestSupport.runOnFx(() -> LspTestHooks.useFakeSessions(manager));
+            SettingsWindow settings = FxTestSupport.field(window, "settingsWindow");
+            javafx.stage.Stage stage = FxTestSupport.field(window, "stage");
+            FxTestSupport.runOnFx(() -> settings.show(stage));
+            FxTestSupport.drainFx();
+            java.util.Map<String, javafx.scene.control.Label> notes = FxTestSupport.field(settings, "lspProjectLabels");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(
+                        tr("settings.lsp.project.command", override),
+                        notes.get("python").getText());
+                assertTrue(notes.get("python").isVisible());
+                assertEquals(tr("settings.lsp.project.off"), notes.get("rust").getText());
+                assertFalse(notes.get("java").isVisible(), "nothing overridden");
+                FxTestSupport.<javafx.stage.Stage>field(settings, "stage").close();
+            });
         } finally {
             fx.dispose();
         }

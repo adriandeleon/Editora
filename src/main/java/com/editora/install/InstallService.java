@@ -174,6 +174,13 @@ public final class InstallService {
                 Path dest = configDir.resolve(s.destSubpath());
                 Files.createDirectories(dest);
                 String python = onPath("python3") ? "python3" : "python";
+                // Python is on PATH but pip need not be (Debian/Ubuntu ship it separately): say that, rather than
+                // the bare "No module named pip" of the install itself.
+                if (!ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, List.of(python, "-m", "pip", "--version"))
+                        .ok()) {
+                    throw new InstallException(s.id() + ": pip is not available for " + python
+                            + " — install pip (on Debian or Ubuntu, the python3-pip package), then try again");
+                }
                 runCommand(InstallCatalog.pipInstallTargetArgv(python, dest, s.pipPackage()), s.id());
             }
             case VSIX -> installVsix(s, configDir);

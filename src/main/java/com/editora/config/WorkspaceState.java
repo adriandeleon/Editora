@@ -46,8 +46,11 @@ public class WorkspaceState {
      *
      * <p>v16 → v17 added {@code interpreter} / {@code interpreterOptions} to {@link RunConfiguration} (a shell
      * configuration's override of the script's shebang). Additive; blank keeps the shebang, as before.
+     *
+     * <p>v17 → v18 added {@code pythonInterpreter} (the Python picked for this project in the status bar).
+     * Additive; blank means detected (activated environment, project venv, setting, PATH), as before.
      */
-    public static final int SCHEMA_VERSION = 17;
+    public static final int SCHEMA_VERSION = 18;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -153,6 +156,11 @@ public class WorkspaceState {
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
+    /**
+     * The Python interpreter picked for this project (an absolute path, or one relative to the project root,
+     * optionally with arguments), or "" to detect it — see {@code run.PythonInterpreters}. Additive in v18.
+     */
+    private String pythonInterpreter = "";
 
     // --- Zen (distraction-free) mode (per window). zenMode is a per-window effective overlay folded into
     //     the chrome/view-settings application (MainController.zenActive) — it hides chrome WITHOUT mutating
@@ -503,6 +511,14 @@ public class WorkspaceState {
 
     public void setDebugWatches(List<String> debugWatches) {
         this.debugWatches = debugWatches == null ? new ArrayList<>() : debugWatches;
+    }
+
+    public String getPythonInterpreter() {
+        return pythonInterpreter == null ? "" : pythonInterpreter;
+    }
+
+    public void setPythonInterpreter(String pythonInterpreter) {
+        this.pythonInterpreter = pythonInterpreter == null ? "" : pythonInterpreter.strip();
     }
 
     public String getHttpEnvironment() {

@@ -151,7 +151,7 @@ public final class DapServerRegistry {
             return List.of();
         }
         String cmd = command == null || command.isBlank() ? d.defaultInterpreter : command;
-        return tokenize(cmd);
+        return com.editora.run.ProgramArgs.commandLine(cmd);
     }
 
     /**

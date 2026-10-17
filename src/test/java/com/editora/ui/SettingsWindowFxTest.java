@@ -224,12 +224,12 @@ class SettingsWindowFxTest {
     void searchTextCoversTitleDescriptionAndKeywords() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Node row = SettingsWindow.settingRow("Schriftgröße", "Größe der Editorschrift in Punkt", new TextField());
-            String text = SettingsWindow.searchText("font size", row, new Label("Darstellung"), null);
-            assertTrue(SettingsWindow.matches("schrift", text), "localized title is searchable");
-            assertTrue(SettingsWindow.matches("punkt größe", text), "description words, any order");
-            assertTrue(SettingsWindow.matches("size", text), "English keywords still work");
-            assertTrue(SettingsWindow.matches("darstellung", text), "the card heading finds its rows");
-            assertFalse(SettingsWindow.matches("schrift farbe", text));
+            String text = SettingsSearch.searchText("font size", row, new Label("Darstellung"), null);
+            assertTrue(SettingsSearch.matches("schrift", text), "localized title is searchable");
+            assertTrue(SettingsSearch.matches("punkt größe", text), "description words, any order");
+            assertTrue(SettingsSearch.matches("size", text), "English keywords still work");
+            assertTrue(SettingsSearch.matches("darstellung", text), "the card heading finds its rows");
+            assertFalse(SettingsSearch.matches("schrift farbe", text));
         });
     }
 }

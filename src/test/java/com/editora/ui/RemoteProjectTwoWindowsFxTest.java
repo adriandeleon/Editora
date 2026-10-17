@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The whole path with real windows: a remote project's window opens not connected and says so; a connect
- * made in another window is carried out again by the project's own window, which then shows the folder on a
- * connection of its own, while the window the connect came from is left as it was.
+ * made in another window hands its logged-in session to the project's own window, which then shows the folder
+ * without logging in again, while the window the connect came from is left as it was.
  */
 @Tag("fx")
 class RemoteProjectTwoWindowsFxTest {
@@ -33,7 +33,7 @@ class RemoteProjectTwoWindowsFxTest {
     }
 
     @Test
-    void theProjectsWindowConnectsForItselfAndTheOtherWindowIsLeftAlone(@TempDir Path dir) throws Exception {
+    void theProjectsWindowTakesTheLoginOverAndTheOtherWindowIsLeftAlone(@TempDir Path dir) throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
             Files.createDirectories(sftp.serverPath("app/src"));
@@ -68,6 +68,7 @@ class RemoteProjectTwoWindowsFxTest {
             RemoteFileSystems engine = sftp.newEngine(dir);
             FxTestSupport.runOnFx(() -> setEngine(second.remoteCoordinator(), engine));
             Path found = sftp.reconnect().resolve("app"); // the first window's connect form succeeds
+            int logins = sftp.logins();
 
             FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), found, "password".toCharArray()));
 
@@ -79,15 +80,24 @@ class RemoteProjectTwoWindowsFxTest {
             assertNotNull(shown, "the project's window never showed the folder");
             assertEquals("/app", shown.toString());
             assertEquals("sftp://" + authority + "/app", Vfs.toStorableString(shown));
-            assertTrue(engine.isConnected(authority), "on a connection of its own");
+            assertTrue(engine.isConnected(authority), "on the connection it was handed");
+            assertEquals(logins, sftp.logins(), "one login served both windows (a 2FA code is good only once)");
             assertEquals(shown, project.rootPath(), "which is what the project's root now resolves to");
             assertFalse(FxTestSupport.callOnFx(() -> second.remoteCoordinator().showsDisconnected()));
             assertFalse(
                     sftp.fileSystems().isConnected(authority),
-                    "the first window's connection only found the folder, and is closed");
+                    "the first window's connection only found the folder: it is the project window's now");
             assertNull(
                     FxTestSupport.callOnFx(() -> FxTestSupport.<Path>field(first, "projectRoot")),
                     "the first window's tree is not the remote folder");
+
+            sftp.fileSystems().shutdown(); // the first window closes
+            Files.writeString(sftp.serverPath("app/after.txt"), "still here");
+            Path shownRoot = shown;
+            assertEquals(
+                    "still here",
+                    Files.readString(shownRoot.resolve("after.txt")),
+                    "the project's window stays connected when the window that logged in closes");
         }
     }
 

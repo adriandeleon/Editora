@@ -44,6 +44,11 @@ final class TestNavigationCoordinator {
 
         RunCoordinator runCoordinator();
 
+        /** The window's debugger (Debug Test on a Python test). */
+        default DebugCoordinator debugCoordinator() {
+            return null;
+        }
+
         TestRunCoordinator testRunCoordinator();
 
         LspCoordinator lspCoordinator();
@@ -70,6 +75,89 @@ final class TestNavigationCoordinator {
 
     TestNavigationCoordinator(Host host) {
         this.host = host;
+        this.pythonTests = new PythonTestRunner(new PythonTestRunner.Host() {
+            @Override
+            public RunCoordinator runCoordinator() {
+                return host.runCoordinator();
+            }
+
+            @Override
+            public TestRunCoordinator testRunCoordinator() {
+                return host.testRunCoordinator();
+            }
+
+            @Override
+            public Path projectRoot() {
+                return TestNavigationCoordinator.this.projectRoot();
+            }
+
+            @Override
+            public String interpreterChoice() {
+                return host.config().getWorkspaceState().getPythonInterpreter();
+            }
+
+            @Override
+            public com.editora.config.Settings settings() {
+                return host.config().getSettings();
+            }
+
+            @Override
+            public void setStatus(String message) {
+                host.setStatus(message);
+            }
+
+            @Override
+            public void openAndGoto(Path file, int line0, int col0) {
+                host.openAndGoto(file, line0, col0);
+            }
+
+            @Override
+            public void debugTests(
+                    Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {
+                if (host.debugCoordinator() != null) {
+                    host.debugCoordinator().debugPythonTests(anchor, cwd, pytestIds, unittestIds, label);
+                }
+            }
+
+            @Override
+            public void openFrame(com.editora.test.TestNode node, Runnable fallback) {
+                com.editora.run.StackTraceLinks.Link frame =
+                        TestRunCoordinator.firstFrame(node.stackTrace(), node.sourceFileHint());
+                if (frame == null) {
+                    fallback.run();
+                } else {
+                    openRunLink(frame, fallback);
+                }
+            }
+        });
+    }
+
+    /** Python tests (pytest, else unittest) — the gutter ▶ of a test file, Run Test at Caret, {@code test.run}. */
+    final PythonTestRunner pythonTests;
+
+    /** Runs the tests of a Python test file (Run File on {@code test_*.py}); false when it has none. */
+    boolean runPythonTestFile(Path file, String text) {
+        if (file == null
+                || !com.editora.test.PytestScanner.isTestFile(file.getFileName().toString())
+                || com.editora.test.PytestScanner.scan(text).isEmpty()) {
+            return false;
+        }
+        pythonTests.run(file, text, null);
+        return true;
+    }
+
+    /** Whether {@code root} looks like a Python project (for {@code test.run} with no Python file in front). */
+    static boolean looksLikePythonProject(Path root) {
+        if (root == null || com.editora.vfs.Vfs.isRemote(root)) {
+            return false;
+        }
+        for (String marker :
+                List.of("pyproject.toml", "setup.py", "setup.cfg", "pytest.ini", "tox.ini", "conftest.py")) {
+            if (java.nio.file.Files.isRegularFile(root.resolve(marker))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A stack-trace location double-clicked in the Run/Debug console: resolve + jump. An absolute
@@ -275,11 +363,20 @@ final class TestNavigationCoordinator {
 
     /** {@code test.run}: run the {@code test} task of the first detected build tool for the active context. */
     void runTestsForContext() {
+        EditorBuffer active = host.activeBuffer();
+        if (active != null && active.isPython() && active.getPath() != null) {
+            pythonTests.runAll(active.getPath()); // a Python file in front: its project's tests
+            return;
+        }
         for (BuildCoordinator c : host.buildCoordinators()) {
             if (c.isEnabled() && c.isDetected()) {
                 c.runTask(com.editora.test.TestRunRecognizer.defaultTestTask(c.tool()), List.of());
                 return;
             }
+        }
+        if (looksLikePythonProject(projectRoot())) {
+            pythonTests.runAll(null);
+            return;
         }
         host.setStatus(tr("status.testrunner.noBuildTool"));
     }
@@ -356,6 +453,15 @@ final class TestNavigationCoordinator {
 
     /** Gutter test ▶ / {@code test.runAtCaret}: run one class/method via the detected JVM build tool. */
     void runSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        runSingleTest(host.activeBuffer(), target);
+    }
+
+    /** As above, for a ▶ in {@code buffer}: a Python test runs through pytest (else unittest). */
+    void runSingleTest(EditorBuffer buffer, com.editora.test.JavaTestScanner.TestTarget target) {
+        if (buffer != null && buffer.isPython() && buffer.getPath() != null) {
+            pythonTests.run(buffer.getPath(), buffer.getContent(), target);
+            return;
+        }
         for (BuildCoordinator c : host.buildCoordinators()) {
             if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
                 c.runTask(
@@ -371,6 +477,10 @@ final class TestNavigationCoordinator {
     /** Runs/debugs a test method (or its whole class) at the caret. */
     void runTestAtCaret(boolean classLevel, boolean debug) {
         EditorBuffer b = host.activeBuffer();
+        // A pytest file's test at the caret is debugged with debugpy running pytest (Fixer D's hunk).
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
+            return;
+        }
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));
@@ -385,6 +495,12 @@ final class TestNavigationCoordinator {
 
     /** Editor context-menu path for a scanned JUnit class/method. */
     void debugSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isPython() && host.debugCoordinator() != null) {
+            host.debugCoordinator().debugPythonTest(b, DebugCoordinator.pytestTarget(b.getContent(), target));
+            return;
+        }
         for (BuildCoordinator c : host.buildCoordinators()) {
             if ((c.tool() == BuildTool.MAVEN || c.tool() == BuildTool.GRADLE) && c.isEnabled() && c.isDetected()) {
                 host.testRunCoordinator().debugSingleTest(c.tool(), target, args -> c.runTask(args, List.of()));

@@ -84,7 +84,7 @@ final class Quotes {
             return true;
         }
         for (int i = start; i < at; i++) {
-            if ("rbfuRBFU".indexOf(text.charAt(i)) < 0) {
+            if ("rbfutRBFUT".indexOf(text.charAt(i)) < 0) {
                 return true;
             }
         }

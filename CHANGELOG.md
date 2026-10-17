@@ -7,8 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Switching the AI provider no longer sends one provider's API key to another provider's server.** Anthropic
+  and the OpenAI-compatible provider shared one endpoint and model, so after a switch to Anthropic the Anthropic
+  key went to the OpenAI-compatible server set up before (and the other way round), within seconds and again on
+  every Settings open. The OpenAI-compatible provider now has its own endpoint, model and inline-completion model.
+  Settings schema 127 moves an existing OpenAI-compatible endpoint and models to the new fields.
+- **Export Configuration leaves the AI API keys out** by default. The export dialog has an "Include AI API keys"
+  checkbox, and the Advanced page and the status line say when they were left out.
+- **The Settings Sync repository field refuses a URL with a password or token in it** (`https://user:TOKEN@…`)
+  and suggests a credential helper (`gh auth setup-git`) or SSH, so the token is not stored in settings.json, the
+  export or the clone.
+
 ### Added
 
+- **Settings search ranks its results.** A hit in a setting's title beats one in its description, a whole word
+  beats part of a word, and the page with the best row opens; matching rows are tinted. Synonyms find settings
+  known by another name (zoom, line endings, encoding, hotkey, colour scheme, soft wrap, gutter), and the search
+  also finds commands in the Keymaps list. Ctrl+F (⌘F) focuses the search, typing on the sidebar starts one, and the
+  sidebar scrolls to the page that opens.
+- **Saving `settings.json` in an Editora tab applies it** in every window, and the Advanced page lists anything in
+  the file that was ignored or changed on load (unknown keys, wrong types, out-of-range values).
+- **Restore from Backup…** on the Advanced page brings back settings from a backup that Reset to Defaults wrote.
+- **AI Actions: Test connection.** Opening Settings no longer sends a request to the AI provider. The connection
+  is checked while the AI Actions page is shown, a result is reused for three minutes, and Test connection checks
+  again.
+- **Keymaps:** **Remove** (and the Delete key) unbinds a command. The filter finds words in any order, and a query
+  that reads as a chord (Ctrl+Shift+S, C-S-s, ⇧⌘S, Ctrl+K Ctrl+W) lists the commands on that chord.
+- **Tool Windows page:** rows are grouped Left / Right / Bottom in stripe order, and **Restore Default Layout** puts
+  the tool windows back where they start.
+- **Editor theme "Automatic"** follows the app theme again after you picked an editor theme.
+- **Remote page:** **Connect…** opens the Connect form for the selected site; host, port and user are checked as
+  you type; a missing key file is flagged.
+- **MCP page:** shows whether the server runs and where, with **Copy Endpoint Command** and **New Token**.
+- **Debugging page:** an **Install…** button on each adapter card.
+- **Web page:** choose the browser HTML preview opens in; a Found / Not found row for Node.js.
+- **LSP page:** a card says when the project's `.editora/settings.json` overrides its server command.
+- **Appearance:** while text zoom is not 100% a row says so, with Reset zoom, and the live preview uses the zoomed
+  size. A "Your own themes" row opens the themes folder and reloads themes.
+- **Settings Sync:** Cancel while Connect looks at the repository; the page says what is not synced.
 - **23 more bundled file templates** (New File From Template), 32 in all:
   - **Code:** JUnit 5 Test (in the folder's package), Java Shebang Script (an extensionless file the `java`
     launcher runs directly), pytest Test Module, and a Node.js TypeScript Project (module, `node:test` test,
@@ -23,6 +61,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Project files:** License: MIT (this year and your author name), License: Apache 2.0 (verbatim), `.gitignore`
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
+- **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
+  activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
+  Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store
+  stub). Run, run configurations, Debug, Pyright, Doctor and the formatter all use the same answer.
+  - A **status-bar item** on Python files shows the interpreter and why (`Python 3.13.5 (.venv)`); click it (or
+    `Python: Select Interpreter`) to pick one of the project's environments, a Python on PATH, or any file, per
+    project. "Detect automatically" goes back to the rules above.
+  - Pyright is told the interpreter, so a venv's packages resolve without a `pyrightconfig.json`.
+  - On SSH hosts, WSL and containers the project's venv is found on that machine; a new **`python` host tool**
+    sets the host's Python.
+- **Python tests: a pytest runner.** Test files (`test_*.py`, `*_test.py`) get a gutter ▶ on every test function,
+  class and method and one for the whole file; results fill the Test Results window, with Rerun, Rerun Failed and
+  run-one-row. It uses pytest when the interpreter has it, else `unittest` for `TestCase` tests, else says how to
+  install pytest. **Debug Test** works from a test line and from a Test Results row.
+- **Python: Format Document runs Ruff or Black** (the project venv's first, then PATH), also with language
+  servers off. Doctor shows which one it will use.
+- **Python run configurations:** an **Interpreter** and **Interpreter options** field, and a new **Python module**
+  type that runs `python -m <name>`.
+- **Debugging:** a **hit count** for breakpoints (Edit Breakpoint), an **exception breakpoint picker** that lists what
+  the debugger offers (Python: raised, uncaught, user-uncaught), **Debug File** next to Run File in the editor's
+  menu, and the exit code at the end of a Python debug session.
+- **Python editing:** folding by indentation (so sticky scroll pins Python scopes), and highlighting for pip
+  requirements files.
+- **"Turn on Python code intelligence?"** — a one-time offer when the first Python file opens while language
+  servers are off.
+
+### Changed
+
+- **Python Run:**
+  - The script runs in its own folder with the project root and `src/` on `PYTHONPATH`, so package imports work.
+  - A saved run configuration writes that folder into Working directory.
+  - Output streams as the program prints (`PYTHONUNBUFFERED`) and is UTF-8 on every platform.
+  - A specific shebang (`python3.12`, `pypy3`, `uv run --script`) is honoured.
+  - **Stop** sends Ctrl-C first, so `finally` blocks and `atexit` handlers run, and the console's first line shows
+    the command that ran.
+- **Python Debug** runs the program in the same folder, with the same interpreter and `PYTHONPATH` as Run.
+  - A program that reads `input()` gets the program console.
+  - An uncaught exception stops the debugger, as in VS Code.
+  - `multiprocessing` children run instead of waiting for a debugger.
+- **Python typing:**
+  - `else`, `elif`, `except`, `finally` and `case` line up with their statement as you type the `:`.
+  - Enter after `return`, `pass`, `raise`, `break` or `continue` steps out a level.
+  - Wrapped statements and open brackets indent as PEP 8 shows.
+  - In Python and YAML, Backspace in the indentation removes one level and no longer joins the line above.
+- **Python code intelligence:**
+  - Unused names are faded and deprecated calls struck through.
+  - Go to Definition into the standard library or site-packages stays on the project's server and opens the file
+    read-only.
+  - Organize Imports works for Python and for any server with a `source.organizeImports` action.
+  - Python keeps its server up to 50,000 lines.
+  - Untitled Python buffers get it too.
+- **Python highlighting:** generics (`def f[T]`, `class C[T]`), `type` aliases, t-strings, `match` used as a name, and
+  `0x`/`j` numbers. `__init__` and other methods named like builtins are back in Structure.
+- **Python indentation:** a file's indent size is guessed from its statements only, so PEP 8 hanging indents no
+  longer make it 8 spaces.
+- **Language names:** the status bar and the language picker show readable names ("pip requirements").
+- **Quotes:** `f"`, `rb"` and the other string prefixes auto-close in Python, and `"""` closes itself.
+- **File types:**
+  - `Pipfile`, `poetry.lock`, `uv.lock` and `pdm.lock` open as TOML; `Pipfile.lock` and `.ipynb` as JSON.
+  - `uv run`, `pipx run`, `pypy` and free-threaded `python3.14t` shebangs are Python.
+  - Toggle Comment in an INI file uses the comment character the file already uses.
+
+### Fixed
+
+- **Python:**
+  - Run used `python3` from PATH whatever the project or the Debug setting said.
+  - Output arrived only when the program ended, with stderr ahead of stdout.
+  - On Windows the Store stub ran, and `print('✓')` raised `UnicodeEncodeError`.
+  - Changing a Python configuration's working directory broke its target.
+  - ▶ on a test file reported exit code 0 without running a test.
+- **Python Debug:**
+  - Debugging a `multiprocessing` program hung.
+  - `input()` raised `EOFError`.
+  - An interpreter with arguments or an `env` prefix hung or lost them.
+  - A breakpoint the debugger moved onto a conditional one silently dropped its condition.
+  - Hovering `p.x` showed the local `x`.
+  - debugpy installed without Node and is no longer fetched again while debugging is off.
+- **Python code intelligence:**
+  - A new module created outside Editora never resolved until a restart.
+  - Windows with no project saw no file changes at all.
+  - A nested `requirements.txt` split the project's server.
+  - A missing custom server command was offered the Pyright installer.
+  - An empty "…" stayed in the status bar.
+  - The hover cut off Pyright's signature block.
+  - Structure showed return types with a trailing colon.
+- **Python console links:**
+  - Extensionless scripts, warnings and pytest/mypy/ruff `file.py:12:` lines are now links.
+  - So are pdb's `> file.py(12)` lines and paths containing quotes.
+- **Python Project template:** its README commands work on a fresh project.
+- **Spell check:** it now checks the first word of an f-string. Common Python terms (kwargs, asyncio, noqa) are no
+  longer flagged.
+- **Go to Symbol without a language server:** Python methods show their class.
+
+### Changed
+
+- **Remote: one login per connect.** Connecting to a remote folder from another window no longer logs in a
+  second time for the project's own window: that window takes over the session you just logged in with. A
+  password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
+  them. Closing the window you connected from leaves the project's window connected.
+- **Settings switches that only change the editor view** (line numbers, minimap, rulers, wrapping, tab size…)
+  no longer rebuild the rest of every window; with many files open they apply about five times faster.
+- **Reset to Defaults keeps your AI API keys and the Settings Sync connection.** Its question lists what is reset
+  and what is kept and names the backup it writes, and Cancel is the default button.
+- **Number fields refuse a value out of range** (shown in red with the range) instead of quietly clamping it.
+- **Off switches are visible** in every theme, and a disabled switch is grey.
+- **Changing the language** shows "Restart Editora to apply" on its row instead of a dialog at every step.
+- **The Settings window stays where you put it** for the rest of the session, and says once that changes apply as
+  you make them.
+- **Beta pages** carry one Beta pill beside the page title; Settings text grows with the app's font size.
+- **List editors apply as you type.** Snippets, Templates, Abbreviations, External Tools and Remote sites no longer
+  have a Save button; every change is saved as you make it, as on every other page. Macros keeps Save / Revert.
+- **Deleting asks first** on every list editor ("Delete “x”?", Cancel is the default). Removing a Remote site also
+  offers to forget that commands may run on its host.
+- **Settings that depend on a switch grey out while it is off**, with a note naming the switch, on every page (AI,
+  AI Agent, LSP, Debugging, Mermaid, Diagrams, Typst, Git, Remote, Spell Check, rulers, plugins).
+- **Bad input is shown, not thrown away.** A ruler list, a TODO pattern, a Remote port or host, a plugin registry
+  URL or a sync branch that cannot be used turns its field red with the reason and keeps what you typed.
+- **The Editor page is regrouped** into Display, Editing and Clipboard, with Saving right after Indentation; the LSP
+  switches on Code Completion are titled "Language server features". Updates and Trusted folders moved to Advanced.
+- **Every page has a one-line subtitle**, and help text names the pages that really exist.
+- **Shortcuts recorded in Settings show in the active keymap's notation**, in the recorder, the conflict question and
+  the status line. A bare letter is refused as the first key of a shortcut.
+- **Macro, external-tool and run-configuration shortcuts follow a keymap switch.** Other custom shortcuts are kept
+  per keymap, and the Keymap row and "Reset all shortcuts" say so.
+- **Snippets can be added for every language**, and snippet and template bodies use Emacs keys only under the Emacs
+  keymap.
+- **The font list** drops weight variants and math/symbol fonts and marks the bundled fonts; themes are tagged
+  (light) or (dark).
+- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
+  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
+    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
+  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
+    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
+    Add Personal Note are hidden.
+  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
+    Manager.
+  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
+    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
+    hidden.
+  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
+    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
+
+### Fixed
+
+- **"Snippets: Manage", "Sync setup" and the Doctor links opened an empty page** when a search was left in the
+  Settings search box.
+- **What Settings search found depended on which pages you had opened** before searching.
+- **A change in another window wiped text you were typing** in an open Settings window, and every reopen ran
+  `git --version`.
+- **Shortcut chips in Settings used the editor theme's colours** instead of the app theme's.
+- **A multi-line abbreviation was saved flattened** when you clicked into it and out again. The expansion is now a
+  multi-line field, and nothing is saved unless you change it.
+- **With one saved Remote site, the first edit emptied and greyed out the form.**
+- **Escape in a macro's Key step closed Settings** instead of recording Escape.
+- **Reset on a shortcut whose default chord another command took did nothing.** It now offers to take the chord back.
+- **A blank template Id discarded every other edit in the form.**
+- **Two macros could share a name**, and a duplicate abbreviation key (ignoring case) overrode the other silently.
+- **"Add pattern" on the TODO page matched every TODO a second time.**
+- **The TODO part-colour pickers showed old colours** after Reset or a change made elsewhere.
+- **Tool Windows ▲ / ▼ sometimes did nothing visible.**
+- **"Rulers by language" accepted names that never matched**, and a mistyped ruler list was silently replaced.
+- **"Enable plugins" left every plugin's checkbox greyed** until Reload.
+- **A wrong git or gh path said "install git"** and locked the Enable Git switch on.
+- **Browse… beside the API key and model fields opened a file chooser.**
+- **A server, agent or debugger path with a space in it never started.**
+- **The AI status pill stayed "Connected"** after turning AI off.
+- **The Markdown page** split the pasted-image rows, had a scroller inside the page, and a blank gap.
+- **A broken plugin.json showed the parser's internals**; Browse plugins… hid Settings before the picker opened.
+- **Java debug-adapter detection ran on the UI thread.**
 
 ### Changed
 

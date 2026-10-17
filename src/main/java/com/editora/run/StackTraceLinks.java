@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  * Pure detection of source locations in program output (unit-tested), so the Run/Debug consoles can make
  * stack-trace lines clickable. Recognizes the frame formats of the three runnable/debuggable languages:
  * Java ({@code at pkg.Cls.m(File.java:12)} — bare file name), Python ({@code File "/path/x.py", line 12}
- * — usually absolute), and Node ({@code at fn (/path/x.js:12:5)} or a bare {@code /path/x.js:12:5}).
+ * — usually absolute — plus warnings, pytest and linters' {@code x.py:12:} and pdb's {@code > x.py(12)}), and Node ({@code at fn (/path/x.js:12:5)} or a bare {@code /path/x.js:12:5}).
  *
  * <p>Shell scripts too: bash's errors ({@code /path/x.sh: line 7: foo: command not found}), dash's
  * ({@code /path/x.sh: 7: foo: not found}), and the lines of an execution trace, whose prompt Run with Trace sets
@@ -34,7 +34,20 @@ public final class StackTraceLinks {
 
     // Line numbers are {@code \d{1,9}}: a longer digit run is not a line number, and would overflow parseInt.
     private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d{1,9})\\)");
-    private static final Pattern PYTHON = Pattern.compile("File \"([^\"]+\\.py[a-z]?)\", line (\\d{1,9})(?!\\d)");
+    /**
+     * A traceback frame: {@code File "<path>", line N}. Any path — an extensionless script run through its
+     * shebang is still Python, and a path may hold a {@code "} (Python prints it unescaped) — but not the
+     * pseudo-files {@code <stdin>}, {@code <string>}, {@code <frozen runpy>}.
+     */
+    private static final Pattern PYTHON = Pattern.compile("File \"(?!<)(.+?)\", line (\\d{1,9})(?!\\d)");
+    /**
+     * {@code path.py:N:} at a word start — a warning ({@code app.py:12: DeprecationWarning}), pytest's failure
+     * location ({@code tests/test_x.py:14: AssertionError}), mypy/ruff/flake8 ({@code app.py:3:5: error}).
+     */
+    private static final Pattern PYTHON_LOCATION =
+            Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\.pyi?):(\\d{1,9}):");
+    /** pdb's current frame: {@code > /path/app.py(12)main()}. */
+    private static final Pattern PDB = Pattern.compile("^> (.+?\\.pyi?)\\((\\d{1,9})\\)");
     /**
      * Anchored at a token start (the lookbehind): unanchored, the pattern was retried from every index of a
      * long unbroken token — a 64K base64 line — each time consuming the rest and backing off, which froze the
@@ -103,9 +116,11 @@ public final class StackTraceLinks {
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
         }
-        m = PYTHON.matcher(line);
-        if (m.find()) {
-            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        for (Pattern python : List.of(PYTHON, PDB, PYTHON_LOCATION)) {
+            m = python.matcher(line);
+            if (m.find()) {
+                return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+            }
         }
         m = NODE.matcher(line);
         if (m.find()) {

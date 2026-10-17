@@ -699,6 +699,10 @@ public final class TextMateHighlighter {
         if (scope.startsWith("keyword")) {
             return "keyword";
         }
+        // A number's base prefix (0x, 0o, 0b) and imaginary suffix (j) are part of the number, not keywords.
+        if (scope.startsWith("storage.type.number") || scope.startsWith("storage.type.imaginary.number")) {
+            return "number";
+        }
         if (scope.startsWith("storage")) {
             return classifyStorage(scope);
         }
@@ -733,6 +737,10 @@ public final class TextMateHighlighter {
         }
         if (scope.startsWith("variable.language")) {
             return "keyword";
+        }
+        // Python's module dunders (__name__, __file__, self.__dict__) are variables, not type names.
+        if (scope.startsWith("support.variable.magic.python")) {
+            return "variable";
         }
         if (scope.startsWith("support.constant")) {
             return "constant";

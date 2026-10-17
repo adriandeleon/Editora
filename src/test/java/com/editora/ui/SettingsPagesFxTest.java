@@ -191,7 +191,7 @@ class SettingsPagesFxTest {
         FxTestSupport.runOnFx(() -> {
             List<String> trusted = new ArrayList<>(List.of("/work/a", "/work/b", "/work/c"));
             rig.show();
-            Region page = rig.page("WORKSPACE");
+            Region page = rig.page("ADVANCED"); // moved there from Workspace
             ListView<String> list = rig.control("trustedFoldersList");
             Button revoke = (Button) SettingsRig.button(page, tr("settings.trustedFolders.revoke"));
             Button revokeAll = (Button) SettingsRig.button(page, tr("settings.trustedFolders.revokeAll"));
@@ -242,6 +242,7 @@ class SettingsPagesFxTest {
     @Test
     void anInstallButtonAsksForItsOwnToolAndDoesNothingUntilAnInstallerIsWired() throws Exception {
         FxTestSupport.runOnFx(() -> {
+            rig.settings.setLspSupport(true); // the language-server cards follow the LSP switch
             rig.show();
             Map<String, Button> buttons = rig.control("installButtons");
             List<String> languages = new ArrayList<>();
@@ -473,14 +474,14 @@ class SettingsPagesFxTest {
             settings.setTodoPatterns(new ArrayList<>(List.of(new TodoPattern("FIXME", "\\bFIXME\\b", "", true, true))));
             rig.show();
             Region page = rig.page("TODO");
-            VBox rows = rig.control("todoPatternsBox");
+            VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
             assertEquals(1, rows.getChildren().size());
 
             SettingsRig.button(page, tr("settings.todo.add")).fire();
             assertEquals(2, settings.getTodoPatterns().size());
             TodoPattern added = settings.getTodoPatterns().get(1);
-            assertEquals(tr("settings.todo.newName"), added.getName());
-            assertEquals("\\bTODO\\b", added.getPattern());
+            assertEquals("", added.getName(), "a new pattern starts empty, to be named");
+            assertEquals("", added.getPattern(), "and matches nothing until then");
             assertTrue(added.isEnabled());
             assertEquals(2, rows.getChildren().size());
             assertEquals(1, rig.applied.size());
@@ -519,7 +520,12 @@ class SettingsPagesFxTest {
                     ((HBox) rows.getChildren().get(0)).getChildren().get(3);
             assertEquals(Color.web("#E5C07B"), first.getValue());
 
-            ((Button) ((HBox) rows.getChildren().get(0)).getChildren().get(5)).fire(); // remove FIXME
+            SettingsRig.answering(
+                    ButtonBar.ButtonData.OK_DONE,
+                    () -> ((Button) ((HBox) rows.getChildren().get(0))
+                                    .getChildren()
+                                    .get(5))
+                            .fire()); // remove FIXME, confirmed
             assertEquals(1, settings.getTodoPatterns().size());
             assertEquals("HACK", settings.getTodoPatterns().get(0).getName());
             assertEquals(1, rows.getChildren().size());
@@ -539,7 +545,7 @@ class SettingsPagesFxTest {
                     new TodoPattern("A", "A", "not-a-colour", true, true),
                     new TodoPattern("B", "B", "#0000FF", true, true))));
             rig.show();
-            VBox rows = rig.control("todoPatternsBox");
+            VBox rows = FxTestSupport.field(rig.<Object>control("todoSettings"), "patternsBox");
             assertEquals(
                     Color.web("#E5C07B"),
                     ((ColorPicker) ((HBox) rows.getChildren().get(0))
@@ -611,7 +617,8 @@ class SettingsPagesFxTest {
             assertEquals(List.of("file"), rig.events);
             browse.fire();
             assertEquals(List.of("file", "browse"), rig.events);
-            assertFalse(rig.stage().isShowing(), "the registry picker opens in the main window, behind this one");
+            // E14: the picker (in the main window) hides this one only when it actually opens, not on the click.
+            assertTrue(rig.stage().isShowing(), "a registry that fails to load leaves Settings where it was");
         });
     }
 
@@ -630,11 +637,12 @@ class SettingsPagesFxTest {
             assertTrue(warn.isVisible());
             assertEquals(tr("settings.plugins.customRegistry", "plugins.example.org"), warn.getText());
 
+            // E8: not an https:// address — refused, and the registry in use stays.
             SettingsRig.typeAndEnter(registry, "not a url at all");
-            assertEquals(tr("settings.plugins.customRegistry", "not a url at all"), warn.getText());
-
+            assertEquals("https://plugins.example.org/index.json", settings.getPluginRegistryUrl());
             SettingsRig.typeAndEnter(registry, "mailto:someone"); // a URI with no host
-            assertEquals(tr("settings.plugins.customRegistry", "?"), warn.getText());
+            assertEquals("https://plugins.example.org/index.json", settings.getPluginRegistryUrl());
+            assertEquals(tr("settings.plugins.customRegistry", "plugins.example.org"), warn.getText());
 
             int applied = rig.applied.size();
             SettingsRig.typeAndEnter(registry, ""); // emptied: back to the bundled registry
