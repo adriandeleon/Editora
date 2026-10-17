@@ -44,7 +44,8 @@ public final class McpServer {
      *  restarting the server (keeping the same port/token/endpoint file, so a connected agent stays connected). */
     private volatile McpTools tools;
 
-    private final String token;
+    /** Replaced by {@link #newToken()}; read on every request's worker thread. */
+    private volatile String token;
 
     private HttpServer server;
     private ExecutorService pool;
@@ -93,6 +94,17 @@ public final class McpServer {
 
     public String token() {
         return token;
+    }
+
+    /**
+     * Replaces the bearer token (Settings → MCP "New Token"), keeping the port: an agent set up with the old
+     * token is refused from now on and must be given the new endpoint command. Rewrites the endpoint file.
+     */
+    public synchronized void newToken() {
+        token = randomToken();
+        if (server != null) {
+            writeEndpointFile();
+        }
     }
 
     /** The loopback endpoint URL, or {@code ""} when not running. */

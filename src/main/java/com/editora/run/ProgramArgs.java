@@ -160,6 +160,29 @@ public final class ProgramArgs {
         return true;
     }
 
+    /**
+     * A configured tool command as argv. A value that names an existing file is that one executable, spaces and
+     * all: Settings' Browse… writes a bare absolute path, and {@code C:\Program Files\…} or {@code /Users/John
+     * Smith/…} used to split into a program that does not exist. Anything else is {@link #tokenize}d, so a
+     * multi-token command or a hand-quoted path still works. Blank/null yields an empty list.
+     */
+    public static List<String> commandLine(String text) {
+        if (text == null || text.isBlank()) {
+            return new ArrayList<>();
+        }
+        String raw = text.strip();
+        if (raw.indexOf(' ') >= 0 && raw.indexOf('"') < 0 && raw.indexOf('\'') < 0) {
+            try {
+                if (java.nio.file.Files.isRegularFile(java.nio.file.Path.of(raw))) {
+                    return new ArrayList<>(List.of(raw));
+                }
+            } catch (RuntimeException e) {
+                // not a path on this file system: tokenize it
+            }
+        }
+        return tokenize(raw);
+    }
+
     /** Splits a configured command line into argv tokens (lenient, no escapes); blank/null yields an empty list. */
     public static List<String> tokenize(String text) {
         List<String> out = new ArrayList<>();
