@@ -54,4 +54,25 @@ public final class ExceptionFilterCatalog {
     public static String uncaughtFilter(String language) {
         return caughtFilter(language) == null ? null : "uncaught";
     }
+
+    /**
+     * The label {@code option} is shown with, in the UI's language: the labels of the filters above — which the
+     * adapters themselves also use (java-debug reports "Caught Exceptions" and "Uncaught Exceptions") — are
+     * translated; any other label an adapter declares is shown as it sent it.
+     */
+    public static String displayLabel(DapModels.ExceptionFilterOption option) {
+        String label = option == null ? null : option.label();
+        if (label == null) {
+            return "";
+        }
+        String key =
+                switch (label) {
+                    case "Caught Exceptions" -> "debug.exceptionFilter.caught";
+                    case "Uncaught Exceptions" -> "debug.exceptionFilter.uncaught";
+                    case "Raised Exceptions" -> "debug.exceptionFilter.raised";
+                    case "User Uncaught Exceptions" -> "debug.exceptionFilter.userUncaught";
+                    default -> null;
+                };
+        return key == null ? label : com.editora.i18n.Messages.tr(key);
+    }
 }

@@ -45,6 +45,7 @@ class DapManagerSessionFxTest {
 
     @BeforeAll
     static void bootToolkit() throws Exception {
+        com.editora.i18n.Messages.init("en"); // the adapter's errors are shown in the UI's language
         FxToolkit.registerPrimaryStage();
     }
 
@@ -660,6 +661,34 @@ class DapManagerSessionFxTest {
                 errors.get(0));
         awaitEvents("INACTIVE", 1);
         onFx(() -> assertFalse(dap.isActive()));
+    }
+
+    @Test
+    void aRefusalIsSaidWithoutTheJavaExceptionNamesTheAdapterPutsBeforeIt() throws Exception {
+        project();
+        adapter.launchFailure =
+                "org.eclipse.debug.core.DebugException: com.sun.jdi.connect.VMStartException: the JVM did not start";
+
+        onFx(() -> dap.startLaunch(file, "java", noPicker, "", root));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals("launch failed: the JVM did not start", errors.get(0));
+    }
+
+    @Test
+    void theManagersOwnMessagesAreInTheUiLanguage() throws Exception {
+        com.editora.i18n.Messages.init("de");
+        try {
+            onFx(() -> dap.startLaunch(dir.resolve("notes.txt"), "plaintext", noPicker));
+            onFx(() -> dap.startLaunch(null, "java", noPicker));
+        } finally {
+            com.editora.i18n.Messages.init("en");
+        }
+        assertEquals(
+                List.of(
+                        "Dieser Dateityp lässt sich nicht debuggen.",
+                        "Öffnen Sie zuerst eine Java-Datei zum Debuggen."),
+                errors);
     }
 
     @Test

@@ -581,7 +581,7 @@ public final class DapManager {
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
-            listener.onError("Debugging is not supported for this file type.");
+            listener.onError(tr("debug.error.notSupported"));
         }
     }
 
@@ -747,7 +747,7 @@ public final class DapManager {
                 return;
             }
             if (err != null) {
-                fail(epoch, "resolveMainClass failed: " + msg(err));
+                fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
                 return;
             }
             List<MainClassOption> options = parseMainClasses(res);
@@ -763,7 +763,7 @@ public final class DapManager {
                 // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
                 String fqn = own != null ? own : mainClassFromFile(file);
                 if (fqn == null) {
-                    fail(epoch, "No main class could be determined for this file.");
+                    fail(epoch, tr("debug.error.noMainClass"));
                     return;
                 }
                 compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
@@ -1000,11 +1000,11 @@ public final class DapManager {
                 && enabled
                 && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
         if (!javaDebugUsable() && !hostPlugin) {
-            listener.onError("Java debugging is not available (enable it and install the java-debug plugin).");
+            listener.onError(tr("debug.error.javaUnavailable"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a Java file to debug first.");
+            listener.onError(tr("debug.error.openJavaFile"));
             return false;
         }
         if (client != null) {
@@ -1098,13 +1098,13 @@ public final class DapManager {
         // NPE from its search engine instead of anything actionable. Callers check first and say something
         // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
         if (opt.mainClass() == null || opt.mainClass().isBlank()) {
-            cb.accept(ResolvedLaunch.failed("No main class to run — set one on the run configuration."));
+            cb.accept(ResolvedLaunch.failed(tr("debug.error.configNeedsMainClass")));
             return;
         }
         String proj = opt.projectName() == null ? "" : opt.projectName();
         lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath: " + msg(err)));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
                 return;
             }
             List<String> modulepaths = new ArrayList<>();
@@ -1122,9 +1122,7 @@ public final class DapManager {
                                 + proj + "'); raw result type="
                                 + (res == null ? "null" : res.getClass().getName())
                                 + " value=" + abbreviate(String.valueOf(res)));
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath for " + opt.mainClass()
-                        + " — make sure the Java project has finished importing (watch the LSP status), "
-                        + "then try again."));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", opt.mainClass())));
                 return;
             }
             lsp.executeCommand(
@@ -1326,7 +1324,7 @@ public final class DapManager {
                                 false,
                                 epoch)));
             } catch (Exception e) {
-                fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
+                fail(epoch, tr("debug.error.compileLaunchFailed", fqn, msg(e)));
             } finally {
                 if (!retained && out != null) {
                     removeCompilation(out, removal);
@@ -1380,7 +1378,7 @@ public final class DapManager {
         com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(file);
         com.editora.process.TargetCache cache = target.cache();
         if (cache == null) {
-            throw new java.io.IOException("the host has no folder for Editora's files");
+            throw new java.io.IOException(tr("debug.error.hostNoCache"));
         }
         String folder = "debug-classes/" + java.util.UUID.randomUUID();
         Path directory = target.toPath(cache.makeDirectories(folder));
@@ -1642,12 +1640,12 @@ public final class DapManager {
                 return;
             }
             if (err != null) {
-                fail(epoch, "Could not start the debug session: " + msg(err));
+                fail(epoch, tr("debug.error.sessionFailed", msg(err)));
                 return;
             }
             int port = asInt(res);
             if (port <= 0) {
-                fail(epoch, "The debug adapter did not return a port.");
+                fail(epoch, tr("debug.error.noPort"));
                 return;
             }
             // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
@@ -1670,7 +1668,7 @@ public final class DapManager {
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
             io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
                 if (e != null) {
-                    fail(epoch, "Could not connect to the debug adapter: " + msg(e));
+                    fail(epoch, tr("debug.error.connectFailed", msg(e)));
                     return;
                 }
                 if (!isCurrent(epoch, c)) {
@@ -1679,7 +1677,7 @@ public final class DapManager {
                 }
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
-                        fail(epoch, (attach ? "attach" : "launch") + " failed: " + msg(le));
+                        fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                         return;
                     }
                     // Running once the adapter has the program, not when the request left: until then
@@ -1740,7 +1738,7 @@ public final class DapManager {
         }
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
         if (spec == null) {
-            listener.onError("No debug adapter is configured for this file type.");
+            listener.onError(tr("debug.error.noAdapter"));
             return;
         }
         restartAction = () -> startProgram(file, language, module);
@@ -1766,10 +1764,10 @@ public final class DapManager {
                         startSocket(file, spec, bps, filters, epoch);
                     }
                 } else {
-                    fail(epoch, "Unsupported debug transport for " + language + ".");
+                    fail(epoch, tr("debug.error.transport", language));
                 }
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -1810,11 +1808,11 @@ public final class DapManager {
             return false;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a file to debug first.");
+            listener.onError(tr("debug.error.openFile"));
             return false;
         }
         if (!com.editora.process.ExecTargets.runsHere(file)) {
@@ -1825,9 +1823,7 @@ public final class DapManager {
             }
         } else if (!isLanguageAvailable(language)) {
             listener.onError(
-                    "python".equals(language)
-                            ? "Python debugging is not available (enable it and install debugpy)."
-                            : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
+                    "python".equals(language) ? tr("debug.error.pythonUnavailable") : tr("debug.error.jsUnavailable"));
             return false;
         }
         if (client != null) {
@@ -1896,10 +1892,7 @@ public final class DapManager {
         if (pytest.fallback() != null) {
             return pytest.fallback();
         }
-        fail(
-                epoch,
-                "pytest is not installed for " + program.executable()
-                        + " — install it in that environment (python -m pip install pytest).");
+        fail(epoch, tr("debug.error.pytestMissing", program.executable()));
         return null;
     }
 
@@ -1999,7 +1992,7 @@ public final class DapManager {
         }
         c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to debugpy: " + msg(e) + AdapterStderr.suffix(stderr));
+                fail(epoch, tr("debug.error.debugpyConnect", msg(e)) + AdapterStderr.suffix(stderr));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -2029,10 +2022,12 @@ public final class DapManager {
             t = t.getCause();
         }
         if (t instanceof java.util.concurrent.TimeoutException) {
-            return "debugpy did not start the program within " + DapClient.requestTimeoutSeconds()
-                    + " s — check that the Python interpreter runs: " + launch.get("python");
+            return tr(
+                    "debug.error.debugpyNoStart",
+                    String.valueOf(DapClient.requestTimeoutSeconds()),
+                    String.valueOf(launch.get("python")));
         }
-        return "launch failed: " + msg(error);
+        return tr("debug.error.launchFailed", msg(error));
     }
 
     /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
@@ -2044,7 +2039,7 @@ public final class DapManager {
             long epoch)
             throws Exception {
         if (jsServer == null) {
-            fail(epoch, "The vscode-js-debug adapter was not found.");
+            fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
         int port = freePort();
@@ -2083,11 +2078,11 @@ public final class DapManager {
             return;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return;
         }
         if (!isLanguageAvailable("javascript")) {
-            listener.onError("JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            listener.onError(tr("debug.error.jsUnavailable"));
             return;
         }
         if (client != null) {
@@ -2104,7 +2099,7 @@ public final class DapManager {
         startupTask = io.submit(() -> {
             try {
                 if (jsServer == null) {
-                    fail(epoch, "The vscode-js-debug adapter was not found.");
+                    fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
                 int serverPort = freePort();
@@ -2129,7 +2124,7 @@ public final class DapManager {
                         null,
                         attach);
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -2173,7 +2168,7 @@ public final class DapManager {
         }
         c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to vscode-js-debug: " + msg(e));
+                fail(epoch, tr("debug.error.jsConnect", msg(e)));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -2186,7 +2181,13 @@ public final class DapManager {
                                     LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false)))
                     .whenComplete((v, le) -> {
                         if (le != null) {
-                            fail(epoch, (attachArgs != null ? "attach failed: " : "launch failed: ") + msg(le));
+                            fail(
+                                    epoch,
+                                    tr(
+                                            attachArgs != null
+                                                    ? "debug.error.attachFailed"
+                                                    : "debug.error.launchFailed",
+                                            msg(le)));
                         }
                     });
             Platform.runLater(() -> {
@@ -2207,15 +2208,13 @@ public final class DapManager {
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
     private String remoteProblem(Path file, String language) {
         if (!debuggableOnHost(language)) {
-            return "Debugging this language on a remote host is not available yet.";
+            return tr("debug.error.remoteLanguage");
         }
         if ("python".equals(language) ? !pythonEnabled : !jsEnabled) {
-            return "python".equals(language)
-                    ? "Python debugging is turned off (Settings → Debugging)."
-                    : "JavaScript debugging is turned off (Settings → Debugging).";
+            return "python".equals(language) ? tr("debug.error.remotePythonOff") : tr("debug.error.remoteJsOff");
         }
         if (!com.editora.process.ExecTargets.forPath(file).isAvailable()) {
-            return "Commands cannot run on this file's host (connect, and allow running commands there).";
+            return tr("debug.error.remoteNoCommands");
         }
         return null;
     }
@@ -2287,10 +2286,7 @@ public final class DapManager {
         List<String> probe = python.argv(List.of("-c", "import debugpy"));
         if (!ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), probe, python.env())
                 .ok()) {
-            fail(
-                    epoch,
-                    "debugpy is not installed for " + python.executable() + " on " + target.id()
-                            + " (install it there with pip, or set the host's Python for debugging).");
+            fail(epoch, tr("debug.error.remoteDebugpyMissing", python.executable(), target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2372,9 +2368,8 @@ public final class DapManager {
             fail(
                     epoch,
                     found.exit() == 2
-                            ? "node is not installed on " + target.id() + "."
-                            : "vscode-js-debug (dapDebugServer.js) was not found on " + target.id()
-                                    + " (install it there, or set its path for the host).");
+                            ? tr("debug.error.remoteNodeMissing", target.id())
+                            : tr("debug.error.remoteJsMissing", target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2391,7 +2386,7 @@ public final class DapManager {
         int remotePort = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
         if (remotePort < 0) {
             com.editora.process.ProcessRegistry.killTree(proc);
-            fail(epoch, "vscode-js-debug did not start on " + target.id() + ".");
+            fail(epoch, tr("debug.error.remoteJsNoStart", target.id()));
             return;
         }
         com.editora.process.PortForward forward;
@@ -3406,7 +3401,9 @@ public final class DapManager {
             // "java.util.concurrent.TimeoutException" told the user nothing
             return tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds());
         }
-        return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
+        // java-debug words a refusal as the Java exception behind it: "org.eclipse.debug.core.DebugException:
+        // com.sun.jdi.…: what happened". Only what happened is for the user.
+        return t == null ? "" : DapErrors.userText(t.getMessage() == null ? t.toString() : t.getMessage());
     }
 
     // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------

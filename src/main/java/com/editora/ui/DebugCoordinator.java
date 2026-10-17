@@ -1278,6 +1278,15 @@ final class DebugCoordinator {
 
             @Override
             public void onError(String message) {
+                if (com.editora.dap.DapErrors.multiLine(message)) {
+                    // A compiler's or adapter's report does not fit the one-line status bar: the whole of it
+                    // goes to the Debug console, the status bar names its first line and says where the rest is.
+                    panel().appendOutput(message.endsWith("\n") ? message : message + "\n", "stderr");
+                    host.setStatus(tr(
+                            "status.debug.error",
+                            tr("debug.error.detailsInConsole", com.editora.dap.DapErrors.firstLine(message))));
+                    return;
+                }
                 host.setStatus(tr("status.debug.error", message));
             }
 
@@ -2734,7 +2743,8 @@ final class DebugCoordinator {
 
     /** A picker row: the filter's label, marked when it is on for {@code language}. */
     String exceptionRow(String language, DapModels.ExceptionFilterOption o) {
-        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ") + o.label();
+        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ")
+                + com.editora.dap.ExceptionFilterCatalog.displayLabel(o);
     }
 
     /** Turns {@code language}'s exception filter {@code filter} on or off (the picker's choice), and says so. */
