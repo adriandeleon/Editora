@@ -97,13 +97,13 @@ class BashSettingsPageFxTest {
     @Test
     void theCardSaysWhetherShellCheckAndShfmtAreThereAndOffersToInstallThem(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
-        Map<String, javafx.scene.control.Label> status = FxTestSupport.field(window, "bashToolStatusLabels");
+        Map<String, ToolStatusRow> status = FxTestSupport.field(window, "bashToolStatusLabels");
         Map<String, javafx.scene.control.Button> installs = FxTestSupport.field(window, "installButtons");
 
         commit(row("lsp.bash.shfmtPath"), dir.resolve("nowhere/shfmt").toString());
         assertEquals(
-                com.editora.i18n.Messages.tr("settings.lsp.bash.shfmtMissing"),
-                FxTestSupport.callOnFx(() -> status.get("shfmt").getText()));
+                com.editora.i18n.Messages.tr("settings.tool.notFound", "shfmt"),
+                FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()));
         assertEquals(
                 false, FxTestSupport.callOnFx(() -> installs.get("tool:shfmt").isDisable()), "Install… offered");
 
@@ -111,8 +111,8 @@ class BashSettingsPageFxTest {
         assertTrue(shfmt.toFile().setExecutable(true));
         commit(row("lsp.bash.shfmtPath"), shfmt.toString());
         assertEquals(
-                com.editora.i18n.Messages.tr("settings.lsp.bash.toolFound", "shfmt", shfmt.toString()),
-                FxTestSupport.callOnFx(() -> status.get("shfmt").getText()));
+                com.editora.i18n.Messages.tr("settings.tool.found", "shfmt", shfmt.toString()),
+                FxTestSupport.callOnFx(() -> status.get("shfmt").pill().getText()));
         assertEquals(
                 true, FxTestSupport.callOnFx(() -> installs.get("tool:shfmt").isDisable()));
         commit(row("lsp.bash.shfmtPath"), "");
