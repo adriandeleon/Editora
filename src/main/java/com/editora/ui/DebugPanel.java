@@ -56,6 +56,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Start a debug session when idle, or continue when suspended (the green play button). */
         void start();
 
+        /** The call stack's context menu for {@code frame} of {@code frames} (Restart Frame); empty: no menu. */
+        default List<javafx.scene.control.MenuItem> stackMenuItems(
+                DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
+            return List.of();
+        }
+
         /** Pause a running program (DAP pause). */
         void pause();
 
@@ -323,6 +329,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (f != null && f == pressedOn[0] && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
                 reportFrame(f);
             }
+        });
+        // Call-stack context menu (Restart Frame), built for the frame it opens on; the keyboard's menu key too.
+        javafx.scene.control.ContextMenu stackMenu = new javafx.scene.control.ContextMenu();
+        stack.setOnContextMenuRequested(e -> {
+            DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
+            List<javafx.scene.control.MenuItem> items =
+                    f == null ? List.of() : actions.stackMenuItems(f, List.copyOf(stack.getItems()));
+            stackMenu.getItems().setAll(items);
+            if (!items.isEmpty()) {
+                stackMenu.show(stack, e.getScreenX(), e.getScreenY());
+            }
+            e.consume();
         });
 
         // Variables: rich cells — name, muted " = ", type-colored value, muted type suffix.

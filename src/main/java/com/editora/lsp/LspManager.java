@@ -4517,6 +4517,52 @@ public final class LspManager {
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null)));
     }
 
+    /** What a jdtls {@code java/buildWorkspace} reported ({@code BuildWorkspaceStatus}), or {@link #UNAVAILABLE}. */
+    public enum BuildOutcome {
+        FAILED,
+        SUCCEEDED,
+        WITH_ERRORS,
+        CANCELLED,
+        /** No Java server for the file, or the request itself failed. */
+        UNAVAILABLE
+    }
+
+    /**
+     * Builds the Java workspace {@code file} belongs to — incrementally unless {@code full} — and reports how it
+     * went (callback on the FX thread). With autobuild off this is what turns saved sources into class files
+     * jdtls (and java-debug inside it, for hot code replace) can see.
+     */
+    public void buildJavaWorkspace(Path file, boolean full, Consumer<BuildOutcome> cb) {
+        LanguageServerSession s = file == null ? null : sessionFor(file);
+        if (s == null || !LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId())) {
+            Platform.runLater(() -> cb.accept(BuildOutcome.UNAVAILABLE));
+            return;
+        }
+        s.rawRequest("java/buildWorkspace", full, BUILD_WORKSPACE_TIMEOUT)
+                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
+                .whenComplete((r, e) -> {
+                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
+                    Platform.runLater(() -> cb.accept(outcome));
+                });
+    }
+
+    /** Pure: jdtls's {@code BuildWorkspaceStatus} — an ordinal (0 FAILED, 1 SUCCEED, 2 WITH_ERROR, 3 CANCELLED)
+     *  or its name, possibly as a gson primitive. */
+    static BuildOutcome buildOutcome(Object reply) {
+        String text = reply instanceof com.google.gson.JsonPrimitive p ? p.getAsString() : String.valueOf(reply);
+        text = text.strip();
+        if (text.endsWith(".0")) {
+            text = text.substring(0, text.length() - 2); // a number gson read as a double
+        }
+        return switch (text.toUpperCase(java.util.Locale.ROOT)) {
+            case "0", "FAILED" -> BuildOutcome.FAILED;
+            case "1", "SUCCEED", "SUCCEEDED" -> BuildOutcome.SUCCEEDED;
+            case "2", "WITH_ERROR", "WITH_ERRORS" -> BuildOutcome.WITH_ERRORS;
+            case "3", "CANCELLED" -> BuildOutcome.CANCELLED;
+            default -> BuildOutcome.UNAVAILABLE;
+        };
+    }
+
     /**
      * Organize imports for a whole file ({@code java/organizeImports}, #746) and apply the resulting edit.
      *

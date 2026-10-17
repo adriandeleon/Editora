@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 126;
+    public static final int SCHEMA_VERSION = 127;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -648,6 +648,12 @@ public class Settings {
      * typed to. Only a launch is affected, not an attach, and not the Python/JavaScript adapters.
      */
     private boolean debugProgramConsole = true;
+    /**
+     * Java debugging: when a saved change reaches the running program (hot code replace) — {@code auto} on
+     * every save during a session, {@code manual} only on Debug: Apply Code Changes, {@code off} never on its
+     * own (the command still applies). Read by {@code DapManager.CodeReplaceMode.of}.
+     */
+    private String debugHotCodeReplace = "auto";
     /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
      *  auto-detect common install locations (VS Code java extension, mason, …). */
     private String javaDebugPluginPath = "";
@@ -2794,6 +2800,14 @@ public class Settings {
 
     public void setDebugProgramConsole(boolean debugProgramConsole) {
         this.debugProgramConsole = debugProgramConsole;
+    }
+
+    public String getDebugHotCodeReplace() {
+        return debugHotCodeReplace == null || debugHotCodeReplace.isBlank() ? "auto" : debugHotCodeReplace;
+    }
+
+    public void setDebugHotCodeReplace(String debugHotCodeReplace) {
+        this.debugHotCodeReplace = debugHotCodeReplace;
     }
 
     public String getJavaDebugPluginPath() {

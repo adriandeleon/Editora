@@ -4521,6 +4521,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void sourceSaved(EditorBuffer buffer) {
+            if (debugCoordinator != null) {
+                debugCoordinator.sourceSaved(buffer); // hot code replace into a running Java session
+            }
+        }
+
+        @Override
         public void editorConfigSaved() {
             if (windowManager == null) {
                 applyEditorConfigLocal();

@@ -99,6 +99,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsGotoTargetsRequest}. */
     public volatile boolean gotoTargets;
 
+    /** When set (before the client connects), sessions advertise {@code supportsRestartFrame}, as java-debug. */
+    public volatile boolean restartFrame;
+
+    /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
+    public volatile boolean stepInTargets;
+
     /** When set (before the client connects), every {@code launch}/{@code attach} is refused with this message. */
     public volatile String launchFailure;
 
@@ -424,6 +430,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (gotoTargets) {
                 capabilities.setSupportsGotoTargetsRequest(true);
             }
+            if (restartFrame) {
+                capabilities.setSupportsRestartFrame(true);
+            }
+            if (stepInTargets) {
+                capabilities.setSupportsStepInTargetsRequest(true);
+            }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             if (!javaDebug) {
                 // The event follows the response, as the protocol orders them.
@@ -594,6 +606,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         @Override
         public CompletableFuture<Void> stepIn(StepInArguments args) {
+            stepIns.add(args);
             record("stepIn");
             return stepResult();
         }
@@ -825,6 +838,76 @@ public final class FakeDebugAdapter implements AutoCloseable {
             gotoRequests.add(args);
             record("goto");
             return gotoFailure != null ? refused(gotoFailure) : CompletableFuture.completedFuture(null);
+        }
+
+        // --- java-debug's hot code replace, restart frame and step-in targets -----------------------------
+
+        /** Every {@code stepIn}, with its {@code targetId} (smart step into) when it has one. */
+        public final List<StepInArguments> stepIns = new CopyOnWriteArrayList<>();
+
+        /** The body every {@code redefineClasses} answers with, as java-debug words it. */
+        public volatile Map<String, Object> redefineAnswer = Map.of("changedClasses", List.of());
+
+        /** The {@code hotcodereplace} events ({changeType, message}) sent before each {@code redefineClasses} answer. */
+        public volatile List<String[]> redefineNotices = List.of();
+
+        /** When set, every {@code redefineClasses} is refused with this message. */
+        public volatile String redefineFailure;
+
+        /** java-debug's own request: load the classes jdtls rebuilt into the running program. */
+        @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("redefineClasses")
+        public CompletableFuture<Map<String, Object>> redefineClasses(Object args) {
+            for (String[] notice : redefineNotices) {
+                hotCodeReplace(notice[0], notice[1]); // java-debug reports progress and problems before answering
+            }
+            record("redefineClasses");
+            return redefineFailure != null
+                    ? refused(redefineFailure)
+                    : CompletableFuture.completedFuture(redefineAnswer);
+        }
+
+        /** java-debug's non-standard {@code hotcodereplace} event. */
+        public void hotCodeReplace(String changeType, String message) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("changeType", changeType);
+            body.put("message", message);
+            remote.notify("hotcodereplace", body);
+        }
+
+        /** The frame id of every {@code restartFrame}. */
+        public final List<Integer> restartedFrames = new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<Void> restartFrame(org.eclipse.lsp4j.debug.RestartFrameArguments args) {
+            restartedFrames.add(args.getFrameId());
+            record("restartFrame");
+            return stepResult();
+        }
+
+        /** The labels {@code stepInTargets} answers with; target ids are 100, 101, … in this order. */
+        public volatile List<String> stepTargetLabels = List.of();
+
+        /** The frame id of every {@code stepInTargets}. */
+        public final List<Integer> stepTargetFrames = new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.StepInTargetsResponse> stepInTargets(
+                org.eclipse.lsp4j.debug.StepInTargetsArguments args) {
+            stepTargetFrames.add(args.getFrameId());
+            record("stepInTargets");
+            List<org.eclipse.lsp4j.debug.StepInTarget> targets = new java.util.ArrayList<>();
+            List<String> labels = stepTargetLabels;
+            for (int i = 0; i < labels.size(); i++) {
+                org.eclipse.lsp4j.debug.StepInTarget t = new org.eclipse.lsp4j.debug.StepInTarget();
+                t.setId(100 + i);
+                t.setLabel(labels.get(i));
+                t.setLine(frameLine);
+                targets.add(t);
+            }
+            org.eclipse.lsp4j.debug.StepInTargetsResponse response =
+                    new org.eclipse.lsp4j.debug.StepInTargetsResponse();
+            response.setTargets(targets.toArray(new org.eclipse.lsp4j.debug.StepInTarget[0]));
+            return CompletableFuture.completedFuture(response);
         }
     }
 }

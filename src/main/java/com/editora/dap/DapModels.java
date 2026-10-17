@@ -115,4 +115,28 @@ public final class DapModels {
 
     /** An exception filter an adapter offers ({@code exceptionBreakpointFilters}): its id, label and default. */
     public record ExceptionFilterOption(String filter, String label, boolean byDefault) {}
+
+    /**
+     * What java-debug's {@code redefineClasses} did: the classes it replaced in the running program, or the
+     * reason it could not ({@code error}, empty when it worked). No classes and no error: nothing had changed.
+     */
+    public record CodeReplace(List<String> changedClasses, String error) {
+
+        public CodeReplace {
+            changedClasses = changedClasses == null ? List.of() : List.copyOf(changedClasses);
+            error = error == null ? "" : error.strip();
+        }
+
+        public boolean failed() {
+            return !error.isEmpty();
+        }
+    }
+
+    /** One call the debugger can step into on the current line ({@code stepInTargets}): its id and label. */
+    public record StepTarget(int id, String label, int line) {
+
+        public StepTarget {
+            label = label == null ? "" : label.strip();
+        }
+    }
 }
