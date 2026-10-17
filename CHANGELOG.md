@@ -233,6 +233,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the host's; remote launch arguments were quoted for this machine's OS.
   - java-debug's "different versions of JVMs" warning no longer clutters the console, and a program java-debug
     started now ends with "The program ended." instead of a made-up exit code 0.
+  - Debugger launch, connect and adapter errors were English in every language and could start with Java class
+    names (`org.eclipse.debug.core.DebugException: …`); they are now translated and plain, and a report of
+    several lines goes to the Debug console with its first line in the status bar.
 
 ### Changed
 
