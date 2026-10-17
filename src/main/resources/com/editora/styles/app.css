@@ -3701,6 +3701,45 @@
     -fx-padding: 1 6 1 6;
 }
 .http-panel .http-run-summary { -fx-text-fill: -color-fg-muted; }
+/* The Run All results list: a title line (the count as a pill), then one row per request — status pill, name with
+   the method and path muted, time, tests (red only when one failed). Its own scroll; the panel caps its height. */
+.http-panel .http-run-list {
+    -fx-padding: 2 0 4 0;
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 1 0;
+}
+.http-panel .http-run-title { -fx-font-weight: bold; }
+.http-panel .http-run-pill.http-run-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-run-pill.http-run-partial { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-run-pill.http-run-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-run-detail { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-tests-note { -fx-text-fill: -state-red; }
+.http-panel .http-run-rows {
+    -fx-fixed-cell-size: 2em;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-run-rows .list-cell { -fx-padding: 0 6 0 4; -fx-background-color: transparent; }
+.http-panel .http-run-rows .list-cell:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-run-rows .list-cell:selected { -fx-background-color: -state-sel; }
+/* From the keyboard the focused row is outlined (the selection alone does not say the list has focus). */
+.http-panel .http-run-rows:focus-visible .list-cell:focused {
+    -fx-border-color: -focus-ring;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+}
+.http-panel .http-run-status { -fx-font-size: 0.9em; -fx-padding: 0 6 0 6; }
+.http-panel .http-run-status.http-status-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-run-status.http-status-redirect { -fx-text-fill: -state-accent; -fx-background-color: -state-accent-bg; }
+.http-panel .http-run-status.http-status-client-error { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-run-status.http-status-server-error,
+.http-panel .http-run-status.http-status-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-run-status.http-status-cancelled { -fx-text-fill: -color-fg-muted; -fx-background-color: -color-neutral-muted; }
+.http-panel .http-run-rows .list-cell .http-run-path,
+.http-panel .http-run-rows .list-cell .http-run-time,
+.http-panel .http-run-rows .list-cell .http-run-tests { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-rows .list-cell .http-run-tests.http-test-failed { -fx-text-fill: -state-red; }
 /* The tab strip: muted tabs, the selected one underlined in accent (a background layer, so the keyboard focus
    ring below can use the border without moving anything); counts as small chips, red/amber/green by meaning. */
 .http-panel .http-tabs {

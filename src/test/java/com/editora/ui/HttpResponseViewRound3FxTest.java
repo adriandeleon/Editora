@@ -506,8 +506,21 @@ class HttpResponseViewRound3FxTest {
         HttpClientPanel p = c.panelForTest(b);
         FxTestSupport.runOnFx(() -> p.controlsForTest().runButton().fire()); // Cancel
         releaseSlow.countDown();
-        await(() -> p.runSummaryForTest() != null);
-        assertEquals(tr("httppanel.runAllCancelled", 2, 4, 0L), FxTestSupport.callOnFx(p::runSummaryForTest));
+        HttpRunList list = p.runListForTest();
+        await(list::isShown);
+        assertTrue(
+                FxTestSupport.callOnFx(list::titleForTest)
+                        .startsWith(tr("httppanel.runList.title") + " · " + tr("httppanel.runList.cancelled", 2, 4)),
+                FxTestSupport.callOnFx(list::titleForTest));
+        assertTrue(
+                FxTestSupport.callOnFx(list::getAccessibleText).startsWith(tr("httppanel.runAllCancelled", 2, 4, 0L)),
+                "not \"all 2 succeeded\"");
+        assertEquals(
+                List.of("A", "B"),
+                FxTestSupport.callOnFx(() -> list.listForTest().getItems().stream()
+                        .map(HttpRunRows.Row::name)
+                        .toList()),
+                "the two that finished are listed");
     }
 
     // --- X7, X12, X13, Z10: an untitled buffer's "save first" result ---------------------------------------------
@@ -570,7 +583,7 @@ class HttpResponseViewRound3FxTest {
         host.awaitStatus(s -> s.startsWith("GET " + url("/kept"))); // the result replaced the status-bar note
         assertEquals(
                 tr("status.http.rerunAtCaret", "GET " + url("/gone")),
-                FxTestSupport.callOnFx(p::runSummaryForTest),
+                FxTestSupport.callOnFx(p::runNoticeForTest),
                 "the panel still says which request ran");
     }
 

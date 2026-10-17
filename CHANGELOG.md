@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Project files:** License: MIT (this year and your author name), License: Apache 2.0 (verbatim), `.gitignore`
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
+- **HTTP Client: Run All lists every request.** After Run All the response view used to show one response and a
+  line like "Run All: 3 of 10 failed". Now a results list sits above the tabs: a title ("Run All · 3 of 10 failed ·
+  4.1 s"), then one row per request in run order with its status, name, method and path, time, and tests (`✗ 2/3`
+  in red when one failed). The first failure is selected and shown; selecting another row shows that response in
+  the tabs. **Only failures** hides the rest, the chevron collapses the list, and the list scrolls on its own so
+  the tabs keep their room. Enter or a double-click goes to the request in the editor; right-click a row to run it
+  again or copy it as cURL. A cancelled Run All lists the requests that finished. The list stays until the next run
+  or Clear.
 
 ### Changed
 

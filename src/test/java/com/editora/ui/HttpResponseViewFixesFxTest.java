@@ -297,7 +297,14 @@ class HttpResponseViewFixesFxTest {
         String saved = awaitSaved(ops, file, s -> s.split("\"requestIndex\"", -1).length - 1 == 10);
         assertTrue(saved.contains("/lonely"), "the only response of Lonely is still saved: " + saved);
         HttpClientPanel p = c.panelForTest(b);
-        assertEquals(tr("httppanel.runAllOk", 6), FxTestSupport.callOnFx(p::runSummaryForTest));
+        HttpRunList list = p.runListForTest();
+        assertTrue(FxTestSupport.callOnFx(list::isShown), "the last Run All is listed");
+        assertEquals(
+                6, FxTestSupport.callOnFx(() -> list.listForTest().getItems().size()));
+        assertTrue(
+                FxTestSupport.callOnFx(list::titleForTest)
+                        .startsWith(tr("httppanel.runList.title") + " · " + tr("httppanel.runList.ok", 6)),
+                FxTestSupport.callOnFx(list::titleForTest));
     }
 
     // --- U13: an untitled buffer's "not sent — save first" results are never written ---------------------------

@@ -302,6 +302,7 @@ final class HttpClientCoordinator {
         });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
+        p.setOnJumpToRequest(entry -> jumpToRequest(buffer, entry));
         p.setOnEscape(() -> {
             // In Preview the editor is hidden, so focusing it did nothing: show it beside the response first.
             if (buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
@@ -477,7 +478,8 @@ final class HttpClientCoordinator {
                         List.of(unsent),
                         new long[] {System.currentTimeMillis()},
                         identitySet(List.of(unsent)),
-                        false);
+                        false,
+                        0);
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
@@ -503,7 +505,8 @@ final class HttpClientCoordinator {
                                 List.of(ex),
                                 new long[] {startedAt},
                                 Set.of(),
-                                false);
+                                false,
+                                0);
                     } else if (cancelling.remove(buffer, run[0])) {
                         landCancelled(
                                 buffer,
@@ -579,6 +582,28 @@ final class HttpClientCoordinator {
         if (p != null) {
             p.showRunNotice(instead); // the status bar's message was replaced by the result within milliseconds
         }
+    }
+
+    /**
+     * A Run All row's Enter or double-click: puts the caret on the request {@code entry} came from (found as Run again
+     * finds it, {@link HttpRerunTarget}) and focuses the editor, leaving Preview for Split so the editor shows. Says so
+     * when the request is no longer in the file.
+     */
+    void jumpToRequest(EditorBuffer buffer, HttpHistoryEntry entry) {
+        if (buffer == null || entry == null) {
+            return;
+        }
+        List<HttpFile.Request> requests = HttpFile.parse(buffer.getContent());
+        int index = HttpRerunTarget.find(requests, entry);
+        if (index < 0) {
+            host.setStatus(tr("status.http.requestGone"));
+            return;
+        }
+        if (buffer.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.PREVIEW) {
+            buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
+        }
+        buffer.jumpToLine(requests.get(index).startLine());
+        focusWhenShown(buffer.getArea()); // right after leaving Preview the editor is not in the scene yet
     }
 
     /** Makes {@code run} the buffer's current run, cancelling the one it replaces. */
@@ -686,7 +711,7 @@ final class HttpClientCoordinator {
             Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
                 revealResult(b);
-                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
+                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true, 0);
                 return;
             }
             startRun(b, label);
@@ -726,7 +751,8 @@ final class HttpClientCoordinator {
                                     merged(reqs.size(), sent, exchanges, skipped),
                                     startedAt,
                                     unsent,
-                                    true);
+                                    true,
+                                    0);
                         } else if (cancelling.remove(b, run[0])) {
                             landCancelled(
                                     b,
@@ -932,7 +958,9 @@ final class HttpClientCoordinator {
 
     /**
      * Lands a run's {@code exchanges} (for {@code requests} at {@code indexes}) in the response view and the
-     * saved history, and says in the status bar what was sent (variables resolved) and how it went.
+     * saved history, and says in the status bar what was sent (variables resolved) and how it went. A Run All
+     * ({@code all}) is listed one row per request; {@code cancelledOf} is how many requests a cancelled one had (0: it
+     * finished).
      */
     private void finishRun(
             EditorBuffer buffer,
@@ -941,7 +969,8 @@ final class HttpClientCoordinator {
             List<HttpExchange> exchanges,
             long[] startedAt,
             Set<HttpExchange> unsent,
-            boolean all) {
+            boolean all,
+            int cancelledOf) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         long now = System.currentTimeMillis();
         List<HttpHistoryEntry> entries = new ArrayList<>();
@@ -958,8 +987,11 @@ final class HttpClientCoordinator {
         }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
-            p.showEntries(entries);
-            p.showRunSummary(all ? HttpStatusText.runAllSummary(exchanges) : null);
+            if (all) {
+                p.showRunAll(entries, cancelledOf); // one row per request above the tabs
+            } else {
+                p.showEntries(entries);
+            }
             history.persist(buffer);
         }
         if (!exchanges.isEmpty()) {
@@ -999,11 +1031,8 @@ final class HttpClientCoordinator {
             return;
         }
         long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
-        finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1);
-        HttpClientPanel p = panelFor(buffer);
-        if (p != null && total > 1) {
-            p.showRunSummary(HttpStatusText.runAllCancelledSummary(kept, total)); // not "Run All: all 2 succeeded"
-        }
+        // A cancelled Run All lists what finished under "Cancelled · 2 of 4 ran", not "all 2 succeeded".
+        finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1, total > 1 ? total : 0);
         // One request whose answer was in before the cancel took effect: "1 of 1 requests had finished" read oddly.
         host.setStatus(
                 total > 1 ? tr("status.http.cancelledAfter", kept.size(), total) : tr("status.http.cancelledTooLate"));
