@@ -539,4 +539,27 @@ class SettingsFrameFxTest {
             });
         }
     }
+
+    @Test
+    void chordChipsFollowTheAppThemeNotTheEditorTheme() throws Exception {
+        try (var fx = FxWindowFixture.create(java.nio.file.Files.createTempDirectory("editora-fx-test"), shared -> {
+            shared.getSettings().setTheme("Editora Dark"); // the editor theme stays Editora Light
+        })) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                sidebar.getSelectionModel().select(category(sidebar, "KEYMAPS"));
+                Stage stage = FxTestSupport.field(window, "stage");
+                stage.getScene().getRoot().applyCss();
+                Node chip = stage.getScene().getRoot().lookup(".shortcut-chord");
+                assertTrue(chip != null, "a bound command shows its chord");
+                assertEquals(
+                        javafx.scene.paint.Color.web("#9aa2d4"),
+                        ((javafx.scene.control.Labeled) chip).getTextFill(),
+                        "the dark periwinkle on the dark window");
+                stage.hide();
+            });
+        }
+    }
 }
