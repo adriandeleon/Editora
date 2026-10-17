@@ -79,6 +79,8 @@ class DebugProgramConsoleFxTest {
     private final List<String> events = new CopyOnWriteArrayList<>();
     private final List<String[]> output = new CopyOnWriteArrayList<>();
     private final List<Long> started = new ArrayList<>();
+    private final List<List<String>> runtimes = new CopyOnWriteArrayList<>();
+    private final List<Path> runtimeWheres = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -117,6 +119,12 @@ class DebugProgramConsoleFxTest {
                 @Override
                 public void onProgramExit(int code) {
                     events.add("exit=" + code);
+                }
+
+                @Override
+                public void onDebuggeeRuntime(List<String> runtime, Path where, Map<String, String> env) {
+                    runtimes.add(runtime);
+                    runtimeWheres.add(where);
                 }
             });
         });
@@ -219,12 +227,25 @@ class DebugProgramConsoleFxTest {
         assertEquals("integratedTerminal", session.launchArgs.get("console"));
         assertEquals(Boolean.TRUE, session.initializeArgs.getSupportsRunInTerminalRequest());
         assertEquals(List.of(), errors);
+        // The launch names the java it runs the program with, and that java says which it is.
+        await("the debuggee's runtime", () -> !runtimes.isEmpty());
+        assertEquals(List.of(List.of(javaExec())), runtimes);
+        assertEquals(List.of(file.getParent()), runtimeWheres);
+        java.util.concurrent.CompletableFuture<com.editora.run.RuntimeVersion> probed =
+                new java.util.concurrent.CompletableFuture<>();
+        onFx(() ->
+                com.editora.run.RuntimeProbe.probe(runtimes.get(0), runtimeWheres.get(0), Map.of(), probed::complete));
+        assertTrue(
+                probed.get(20, TimeUnit.SECONDS).label().startsWith("Java " + System.getProperty("java.version")),
+                probed.get().label());
 
         onFx(() -> dap.startAttach(file, "localhost", 5005));
         FakeDebugAdapter.Session attached = adapter.awaitSession();
         attached.awaitRequest("attach");
         assertNotEquals(Boolean.TRUE, attached.initializeArgs.getSupportsRunInTerminalRequest());
         assertFalse(attached.launchArgs.containsKey("console"));
+        Thread.sleep(200); // the launch reported its runtime from the FX thread; an attach has none to report
+        assertEquals(1, runtimes.size(), runtimes.toString());
         // An attach has no program of its own: asked anyway, it answers with an error, as every session did.
         assertThrows(
                 ExecutionException.class,

@@ -75,6 +75,13 @@ before-launch step, or any earlier one), independent of the active buffer's runn
 refreshes that gate with the process already gone, so a gate that only counted live processes closed the
 console on the output it had just streamed; like Test Results, the window stays available once used.
 
+The Run and Debug windows' runtime chip comes from `run.RuntimeProbe`, which asks the launched argv's first
+word (`RuntimeVersion.probeFor`: `java`, a Python, `node`/npm, `bash`, `zsh`, `fish`, GNU `make`) for its version
+in the launch's folder and environment, off the FX thread and uncached, beside the launch rather than before it.
+`RunCoordinator.streamRun` probes every run; `DapManager.Listener.onDebuggeeRuntime` reports a debug launch's
+`javaExec`, debugpy interpreter or `node` (never an attach). Each coordinator drops an answer that arrives after
+a newer run or session began.
+
 Every open of a file runs `MainController.restorePerFileState` (folds, bookmarks, breakpoints, personal
 notes, read-only pin) — the ordinary load, session restore, and the background opens used by workspace
 edits, diff/merge apply, agent writes and run-configuration restore (`attachBackground`). The mark stores are
