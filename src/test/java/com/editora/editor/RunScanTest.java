@@ -104,4 +104,55 @@ class RunScanTest {
         assertTrue(RunScan.scan(inputs("shell", "mvnw"), "echo hi\n").runnable(), "a wrapper script is run");
         assertFalse(ShellFiles.isStartupFile("install.sh"));
     }
+
+    @Test
+    void theMainGuardInAnySpellingButNotInsideAString() {
+        // C14: a guard quoted in a docstring took the ▶; reversed or parenthesised guards fell back to line 1.
+        assertEquals(
+                6,
+                RunScan.pythonRunLine(
+                        "a.py",
+                        "\"\"\"Usage:\nif __name__ == \"__main__\":\n\"\"\"\nimport sys\n\n\nif __name__ == \"__main__\":\n"));
+        assertEquals(1, RunScan.pythonRunLine("a.py", "x = 1\nif '__main__' == __name__:\n"));
+        assertEquals(1, RunScan.pythonRunLine("a.py", "x = 1\nif (__name__ == \"__main__\"):\n"));
+        assertEquals(1, RunScan.pythonRunLine("a.py", "x = 1\nif __name__ == \"__main__\" and not DEBUG:\n"));
+        assertEquals(
+                2,
+                RunScan.pythonRunLine("a.py", "x = 1\n# if __name__ == \"__main__\":\nif __name__ == '__main__':\n"));
+    }
+
+    @Test
+    void stubsAndImportedFilesGetNoRunGlyph() {
+        // A13: .pyi stubs, __init__.py and conftest.py all showed ▶ on line 1.
+        assertFalse(RunScan.scan(inputs("python", "mod.pyi"), "def f(x: int) -> str: ...\n")
+                .runnable());
+        assertFalse(RunScan.scan(inputs("python", "__init__.py"), "from .a import b\n")
+                .runnable());
+        assertFalse(
+                RunScan.scan(inputs("python", "conftest.py"), "import pytest\n").runnable());
+        assertEquals(
+                1,
+                RunScan.scan(inputs("python", "__init__.py"), "x = 1\nif __name__ == \"__main__\":\n")
+                        .line());
+        assertEquals(
+                0, RunScan.scan(inputs("python", "__main__.py"), "print(1)\n").line());
+    }
+
+    @Test
+    void aTestFileGetsAPytestGlyphPerTestAndOneForTheFile() {
+        // C10: ▶ on test_x.py ran it as a script — no test ran, exit code 0.
+        String text =
+                "import pytest\n\n\ndef test_add():\n    assert 1 == 2\n\n\nclass TestShop:\n    def test_buy(self):\n        pass\n";
+        RunScan.Result r = RunScan.scan(inputs("python", "test_shop.py"), text);
+        assertTrue(r.runnable());
+        assertEquals(-1, r.line(), "no plain script ▶");
+        assertEquals(List.of(0, 3, 7, 8), List.copyOf(r.testLines().keySet()));
+        assertEquals("", r.testLines().get(0).className());
+        assertEquals(null, r.testLines().get(0).methodName(), "line 1: the whole file");
+        assertEquals("test_add", r.testLines().get(3).methodName());
+        assertEquals("TestShop", r.testLines().get(7).className());
+        assertEquals("test_buy", r.testLines().get(8).methodName());
+        assertEquals(
+                0, RunScan.scan(inputs("python", "test_empty.py"), "x = 1\n").line(), "no tests: a script");
+    }
 }

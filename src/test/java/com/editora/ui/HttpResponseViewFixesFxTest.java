@@ -18,7 +18,6 @@ import javafx.animation.Animation;
 import javafx.animation.Timeline;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.TextArea;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
@@ -256,11 +255,14 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         finished();
         HttpClientPanel p = c.panelForTest(b);
-        TextArea headers = p.controlsForTest().headersArea();
-        String shown = FxTestSupport.callOnFx(headers::getText);
-        assertTrue(shown.startsWith("HTTP"), "the headers box starts with the status line: " + shown);
+        String shown = FxTestSupport.callOnFx(p::headersForTest);
+        assertTrue(shown.startsWith("HTTP"), "the Headers tab starts with the status line: " + shown);
         assertFalse(shown.contains("⚠"), "no warning sits among the headers");
-        assertEquals(tr("httppanel.warnings", 8), FxTestSupport.callOnFx(p::warnBadgeForTest));
+        assertEquals("Notes 8", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.NOTES)));
+        assertEquals(
+                tr("httppanel.tab.notes") + " — " + tr("httppanel.warnings", 8),
+                FxTestSupport.callOnFx(
+                        () -> p.tabsForTest().button(HttpResponseTab.NOTES).getAccessibleText()));
         String notes = FxTestSupport.callOnFx(p::notesForTest);
         assertTrue(
                 notes.contains("{{u1}}") && notes.contains("{{u8}}"), "every warning is in the notes block: " + notes);
@@ -380,7 +382,8 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.drainFx();
         javafx.scene.control.ComboBox<?> history = p.controlsForTest().historyPicker();
         double w = FxTestSupport.callOnFx(history::getWidth);
-        assertTrue(w <= 280 - 60, "the History picker narrowed to the panel: " + w);
+        // The picker has no "History:" label any more: on a row of its own it may take the panel's inner width.
+        assertTrue(w <= 280 - 12, "the History picker narrowed to the panel: " + w);
     }
 
     // --- support ------------------------------------------------------------------------------------------------

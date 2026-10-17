@@ -27,7 +27,19 @@ final class InstallPromptCoordinator {
         boolean isLocalBuffer(EditorBuffer b);
 
         boolean lspEnabled();
+
+        /** Turns the language-server feature on (the Python banner's "Turn on", review B15). */
+        default void turnOnLsp() {}
+
+        /** Opens Settings on the language-server page (a configured server command was not found, B8). */
+        default void openLspSettings() {}
     }
+
+    /** Whether this window already offered (or was told "Not now" about) Python code intelligence. */
+    private boolean pythonLspOffered;
+
+    /** The buffer showing that offer until it is answered (weakly: a closed tab lets it go). */
+    private java.lang.ref.WeakReference<EditorBuffer> pythonLspOfferBuffer = new java.lang.ref.WeakReference<>(null);
 
     private final java.util.Set<EditorBuffer> installDismissed =
             java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
@@ -52,6 +64,32 @@ final class InstallPromptCoordinator {
             buffer.showInstallBar(false);
             return;
         }
+        // Language servers are off (the default): the first Python file this window opens asks once whether to
+        // turn them on, since nothing else says Python code intelligence exists (review B15).
+        if (!host.lspEnabled() && buffer == pythonLspOfferBuffer.get()) {
+            return; // still unanswered: the offer stays on its tab
+        }
+        if (!host.lspEnabled()
+                && buffer.isPython()
+                && !pythonLspOffered
+                && !host.chrome().simpleModeActive()) {
+            pythonLspOffered = true;
+            pythonLspOfferBuffer = new java.lang.ref.WeakReference<>(buffer);
+            buffer.setInstallPrompt(
+                    tr("install.banner.enablePython"),
+                    tr("install.banner.turnOn"),
+                    () -> {
+                        pythonLspOfferBuffer.clear();
+                        buffer.showInstallBar(false);
+                        host.turnOnLsp();
+                    },
+                    () -> {
+                        pythonLspOfferBuffer.clear();
+                        buffer.showInstallBar(false);
+                    });
+            buffer.showInstallBar(true);
+            return;
+        }
         // A live LSP session already serving this file ⇒ its server is present; never nag.
         if (host.lspCoordinator().isManaged(buffer.getPath())) {
             buffer.showInstallBar(false);
@@ -60,6 +98,23 @@ final class InstallPromptCoordinator {
         // The rich bundles (Java/Python/JS LSP+DAP, Mermaid CLI) first…
         java.util.Optional<com.editora.install.InstallCatalog.Lang> lang =
                 com.editora.install.InstallCatalog.forBufferLanguage(buffer.getLanguage());
+        String custom = lang.isPresent() && langSupportMissing(lang.get())
+                ? host.lspCoordinator().customServerCommand(bundleServerId(lang.get()))
+                : null;
+        if (custom != null) {
+            // The user chose another server (pylsp, basedpyright, a path) and it is missing: installing the
+            // bundle would install Pyright and leave that setting pointing at nothing (review B8).
+            buffer.setInstallPrompt(
+                    tr("install.banner.commandMissing", custom),
+                    tr("install.banner.openSettings"),
+                    host::openLspSettings,
+                    () -> {
+                        installDismissed.add(buffer);
+                        buffer.showInstallBar(false);
+                    });
+            buffer.showInstallBar(true);
+            return;
+        }
         if (lang.isPresent() && langSupportMissing(lang.get())) {
             com.editora.install.InstallCatalog.Lang l = lang.get();
             offerInstall(
@@ -141,6 +196,16 @@ final class InstallPromptCoordinator {
                 && !host.chrome().simpleModeActive()
                 && !installDismissed.contains(buffer)
                 && host.isLocalBuffer(buffer);
+    }
+
+    /** The language server a bundle installs ({@code null} for Mermaid, which has none). */
+    static String bundleServerId(com.editora.install.InstallCatalog.Lang lang) {
+        return switch (lang) {
+            case JAVA -> "java";
+            case PYTHON -> "python";
+            case JAVASCRIPT -> "typescript";
+            case MERMAID -> null;
+        };
     }
 
     /** Whether the rich bundle for {@code lang} is missing its primary tool (feature on but tool absent). */

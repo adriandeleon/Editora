@@ -355,6 +355,7 @@ class MessagesTest {
             Map.entry("structure.line", new int[] {0}),
             Map.entry("status.testrunner.debugAttaching", new int[] {0}),
             Map.entry("status.debug.breakpointMoved", new int[] {0, 1}),
+            Map.entry("status.debug.breakpointMerged", new int[] {0, 1}),
             Map.entry("agent.context.header", new int[] {1}),
             Map.entry("agent.exited", new int[] {0}),
             Map.entry("csvgrid.column", new int[] {0}),

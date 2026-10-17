@@ -1,6 +1,6 @@
 {
   "name": "Python Project",
-  "description": "A Python package with a main module, a test, a pyproject.toml and a README (multi-file)",
+  "description": "A Python package (src layout) with a main module, a test, a pyproject.toml and a README (multi-file)",
   "language": "python",
   "files": [
     {
@@ -13,9 +13,16 @@
         "requires-python = \">=3.11\"",
         "dependencies = []",
         "",
+        "[project.scripts]",
+        "${packageName:app} = \"${packageName:app}.main:main\"",
+        "",
         "[build-system]",
         "requires = [\"setuptools>=68\"]",
-        "build-backend = \"setuptools.build_meta\""
+        "build-backend = \"setuptools.build_meta\"",
+        "",
+        "[tool.pytest.ini_options]",
+        "pythonpath = [\"src\"]",
+        "testpaths = [\"tests\"]"
       ]
     },
     {
@@ -39,11 +46,18 @@
     {
       "path": "tests/test_main.py",
       "body": [
+        "import unittest",
+        "",
         "from ${packageName:app} import __version__",
         "",
         "",
-        "def test_version() -> None:",
-        "    assert __version__ == \"0.1.0\""
+        "class TestVersion(unittest.TestCase):",
+        "    def test_version(self) -> None:",
+        "        self.assertEqual(__version__, \"0.1.0\")",
+        "",
+        "",
+        "if __name__ == \"__main__\":",
+        "    unittest.main()"
       ]
     },
     {
@@ -53,15 +67,27 @@
         "",
         "${description:A Python project}",
         "",
+        "## Set up",
+        "",
+        "The package lives in `src/`, so install it (editable) into a virtual environment once:",
+        "",
+        "```bash",
+        "python3 -m venv .venv",
+        "source .venv/bin/activate      # Windows: .venv\\Scripts\\activate",
+        "pip install -e .",
+        "```",
+        "",
         "## Run",
         "",
         "```bash",
-        "python -m ${packageName:app}.main",
+        "python -m ${packageName:app}.main     # or the installed command: ${packageName:app}",
         "```",
         "",
         "## Test",
         "",
         "```bash",
+        "python -m unittest discover -s tests",
+        "# or, with pytest installed (pip install pytest):",
         "pytest",
         "```",
         "",

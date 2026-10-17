@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
@@ -156,8 +155,7 @@ class HttpClientRunFlowFxTest {
     }
 
     private String panelStatus(EditorBuffer b) throws Exception {
-        Label status = panel(b).controlsForTest().statusLabel();
-        return FxTestSupport.callOnFx(status::getText);
+        return FxTestSupport.callOnFx(() -> panel(b).statusForTest());
     }
 
     @Test
@@ -481,7 +479,7 @@ class HttpClientRunFlowFxTest {
         assertEquals(2, ops.opened.size());
 
         // Clear empties the viewer and its actions.
-        Button clear = panel(b).controlsForTest().clearButton();
+        javafx.scene.control.MenuItem clear = panel(b).controlsForTest().clearItem();
         FxTestSupport.runOnFx(clear::fire);
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
         assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
