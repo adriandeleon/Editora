@@ -328,6 +328,7 @@ class CompletionAssistFxTest {
         });
         assertTrue(BufferCompletion.enterEndsTheLine("shell", "else", "    else"));
         assertFalse(BufferCompletion.enterEndsTheLine("shell", "elseif", "    else"), "a longer row is still offered");
-        assertFalse(BufferCompletion.enterEndsTheLine("java", "else", "    else"), "only shell");
+        assertTrue(BufferCompletion.enterEndsTheLine("python", "try", "    try"), "Python's keyword snippets too");
+        assertFalse(BufferCompletion.enterEndsTheLine("java", "else", "    else"), "only shell and Python");
     }
 }
