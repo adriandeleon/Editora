@@ -11,6 +11,7 @@ import javafx.application.Platform;
 import com.editora.editor.EditorBuffer;
 import com.editora.run.PythonInterpreters;
 import com.editora.run.PythonInterpreters.PythonInterpreter;
+import com.editora.run.PythonRunPlan;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -53,9 +54,9 @@ final class PythonInterpreterCoordinator {
     private final Map<String, String> versions = new ConcurrentHashMap<>();
 
     /** The values a resolution reads, captured on the FX thread so a background thread can use them. */
-    private record Snapshot(Path projectRoot, String choice, String setting) {}
+    private record Snapshot(Path projectRoot, String choice, com.editora.config.Settings settings) {}
 
-    private volatile Snapshot snapshot = new Snapshot(null, "", "");
+    private volatile Snapshot snapshot = new Snapshot(null, "", null);
 
     /** Bumped per status request, so a slow answer for a tab the user has left is dropped. */
     private int statusGen;
@@ -68,14 +69,36 @@ final class PythonInterpreterCoordinator {
     void captureSnapshot() {
         com.editora.config.ConfigManager config = host.config();
         String choice = config == null ? "" : config.getWorkspaceState().getPythonInterpreter();
-        String setting = config == null ? "" : config.getSettings().getPythonDebugCommand();
-        snapshot = new Snapshot(host.projectRoot(), choice, setting);
+        snapshot = new Snapshot(host.projectRoot(), choice, config == null ? null : config.getSettings());
     }
 
-    /** The interpreter for {@code file} (null = the project/folder as a whole). Off the FX thread. */
+    /**
+     * The interpreter for {@code file} (null = the project/folder as a whole), named as the machine it runs on
+     * names it. Off the FX thread: on a remote host, a WSL distribution or a container the venv is looked for
+     * there, through Run's own planning ({@link PythonRunLauncher}, {@link PythonRunPlan}); a lookup over a
+     * dropped connection falls back to that host's own {@code python3}, as Run does.
+     */
     PythonInterpreter resolve(Path file) {
         Snapshot s = snapshot;
-        return PythonInterpreters.resolveLocal(file, s.projectRoot(), "", s.choice(), s.setting());
+        Path where = file != null ? file : s.projectRoot();
+        String setting = PythonRunLauncher.setting(where, s.settings());
+        PythonRunPlan.Host machine = PythonRunLauncher.hostFor(where);
+        if (machine.local()) {
+            return PythonInterpreters.resolveLocal(file, s.projectRoot(), "", s.choice(), setting);
+        }
+        PythonRunPlan.Request request =
+                PythonRunPlan.Request.file(file, s.projectRoot(), "", List.of(), "", s.choice(), setting);
+        try {
+            return PythonRunPlan.plan(request, machine).interpreter();
+        } catch (RuntimeException e) {
+            return PythonRunPlan.plan(request, machine.withoutLookups()).interpreter();
+        }
+    }
+
+    /** Whether {@code file} (or the project, for null) runs its tools on another machine. */
+    boolean elsewhere(Path file) {
+        Path where = file != null ? file : snapshot.projectRoot();
+        return where != null && !com.editora.process.ExecTargets.runsHere(where);
     }
 
     /**
@@ -83,26 +106,28 @@ final class PythonInterpreterCoordinator {
      * or null to let the server look for one. Off the FX thread (the {@code LspManager} start executor).
      */
     String pythonPathForServerRoot(Path root) {
-        if (root == null || com.editora.vfs.Vfs.isRemote(root)) {
+        if (root == null) {
             return null;
         }
         // A file directly in the root: the venv search starts at the root itself and walks up to the project.
         return PythonInterpreterView.pythonPathForServer(resolve(root.resolve("__editora__.py")));
     }
 
-    /** Updates the status-bar item for the active buffer: shown on local Python files only (FX thread). */
+    /** Updates the status-bar item for the active buffer: shown on Python files, local or remote (FX thread). */
     void refreshStatus(EditorBuffer buffer) {
         int gen = ++statusGen;
         boolean python = buffer != null && buffer.isPython();
         Path path = python ? buffer.getPath() : null;
-        if (!python || (path != null && com.editora.vfs.Vfs.isRemote(path))) {
+        if (!python) {
             host.setStatusItem(null, null);
             return;
         }
         captureSnapshot();
+        boolean remote = elsewhere(path);
         Thread.ofVirtual().name("python-interpreter-status").start(() -> {
             PythonInterpreter interp = resolve(path);
-            String version = versionOf(PythonInterpreterView.executable(interp));
+            // A remote interpreter is not run here for its version: the item names it and says why.
+            String version = remote ? "" : versionOf(interp.executablePath());
             Platform.runLater(() -> {
                 if (gen == statusGen) {
                     host.setStatusItem(
@@ -126,15 +151,27 @@ final class PythonInterpreterCoordinator {
         captureSnapshot();
         Path file = buffer == null ? null : buffer.getPath();
         Path root = snapshot.projectRoot() != null ? snapshot.projectRoot() : file == null ? null : file.getParent();
-        boolean windows = PythonInterpreters.isWindows();
+        PythonRunPlan.Host machine = PythonRunLauncher.hostFor(file != null ? file : root);
+        boolean windows = machine.windows();
         Thread.ofVirtual().name("python-interpreter-choices").start(() -> {
             PythonInterpreter current = resolve(file);
-            List<Path> venvs = new java.util.ArrayList<>(PythonInterpreters.listVenvs(root, windows));
-            PythonInterpreters.findProjectVenv(file, snapshot.projectRoot(), Files::isRegularFile, windows)
-                    .filter(v -> !venvs.contains(v))
-                    .ifPresent(venvs::add);
+            List<Path> found = new java.util.ArrayList<>();
+            try {
+                found.addAll(PythonInterpreters.listVenvs(root, windows));
+                PythonInterpreters.findProjectVenv(file, snapshot.projectRoot(), Files::isRegularFile, windows)
+                        .filter(v -> !found.contains(v))
+                        .ifPresent(found::add);
+            } catch (RuntimeException e) {
+                // a dropped connection: only what resolved, PATH and Browse… are offered
+            }
+            // Elsewhere an environment is offered as that machine names it, and nothing is run here for a version.
+            List<Path> venvs = machine.local()
+                    ? found
+                    : found.stream()
+                            .map(v -> Path.of(machine.toTarget().apply(v)))
+                            .toList();
             List<PythonInterpreterView.Choice> choices = PythonInterpreterView.choices(
-                    current, venvs, windows, PythonInterpreters::onAugmentedPath, this::versionOf);
+                    current, venvs, windows, machine.onPath(), machine.local() ? this::versionOf : exe -> "");
             Platform.runLater(() -> showPicker(choices, root));
         });
     }

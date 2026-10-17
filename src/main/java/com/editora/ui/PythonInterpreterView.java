@@ -63,7 +63,7 @@ final class PythonInterpreterView {
     /** The status-bar text: {@code Python 3.13.5 (.venv)}, {@code Python 3.12 (PATH)}, {@code python3.11 (picked)}. */
     static String statusText(PythonInterpreter interp, String version) {
         String name = version == null || version.isBlank()
-                ? fileName(executable(interp))
+                ? fileName(interp.executablePath())
                 : tr("python.interpreter.status", version);
         return name + " (" + reason(interp) + ")";
     }
@@ -96,32 +96,21 @@ final class PythonInterpreterView {
     }
 
     /**
-     * The executable of an interpreter command, past an {@code env NAME=value} prefix — what a language server
-     * is told to analyse with.
+     * The interpreter path to give Pyright: an absolute executable (as the machine the server runs on names it),
+     * or null when there is none worth giving (a bare name nobody found on PATH — Pyright's own lookup does no
+     * worse).
      */
-    static String executable(PythonInterpreter interp) {
-        List<String> c = interp.command();
-        int i = 0;
-        if ("env".equals(c.get(0))) {
-            i = 1;
-            while (i < c.size() - 1 && c.get(i).matches("[A-Za-z_][A-Za-z0-9_]*=.*")) {
-                i++;
-            }
-        }
-        return c.get(i);
+    static String pythonPathForServer(PythonInterpreter interp) {
+        return isAbsolute(interp.executablePath()) ? interp.executablePath() : null;
     }
 
     /**
-     * The interpreter path to give Pyright: an absolute executable, or null when there is none worth giving
-     * (a bare name nobody found on PATH — Pyright's own lookup does no worse).
+     * Whether {@code exe} is an absolute path on any machine: {@code /…} (POSIX, also how a remote host or WSL
+     * names it), {@code C:\\…} or {@code \\\\server\\…}. Checked as text, since a remote host's path need not be
+     * absolute on this one.
      */
-    static String pythonPathForServer(PythonInterpreter interp) {
-        String exe = executable(interp);
-        try {
-            return Path.of(exe).isAbsolute() ? exe : null;
-        } catch (RuntimeException e) {
-            return null;
-        }
+    static boolean isAbsolute(String exe) {
+        return exe != null && (exe.startsWith("/") || exe.startsWith("\\\\") || exe.matches("[A-Za-z]:[\\\\/].*"));
     }
 
     private static String fileName(String exe) {
@@ -182,7 +171,7 @@ final class PythonInterpreterView {
         out.add(new Choice(
                 Kind.AUTO, "", tr("python.interpreter.pick.auto"), tr("python.interpreter.pick.autoDetail")));
         if (current != null) {
-            String exe = executable(current);
+            String exe = current.executablePath();
             rows.put(
                     exe,
                     new Choice(
