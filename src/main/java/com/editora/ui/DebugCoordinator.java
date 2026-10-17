@@ -361,7 +361,6 @@ final class DebugCoordinator {
         return enabled && RemoteExec.runsFor(file);
     }
 
-    /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
         if (beforeLaunch.isActive()) {
@@ -489,6 +488,7 @@ final class DebugCoordinator {
         };
     }
 
+    /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
     void ifDebug(Runnable action) {
         if (debugSupportEnabled()) {
             action.run();
@@ -1636,7 +1636,6 @@ final class DebugCoordinator {
 
     // --- debug commands ----------------------------------------------------------------------------
 
-    /** Starts a launch debug session for the active file (saving first, like Run). */
     /** Program arguments read as Run reads them; null after saying why when a quote is never closed. */
     private List<String> debugArgs(String text) {
         try {
@@ -1647,6 +1646,10 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Debug ▸ Start for the active file (saving first, like Run) — or Continue, when the session there is
+     * paused or stepping.
+     */
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
         if (dapManager.isActive()) {
@@ -1971,7 +1974,7 @@ final class DebugCoordinator {
      * Debugs {@code target} of pytest file {@code b} ({@code null}: the whole file): {@code python -m pytest
      * <node id>} under debugpy, from the project root (the file's folder with no project), under the file's
      * interpreter. Without pytest, a {@code unittest.TestCase} test runs under {@code python -m unittest}
-     * instead. Public for the per-test gutter ▶'s Debug entry (LEAD-WIRE: Fixer C's gutter calls this).
+     * instead. Public for the per-test gutter ▶'s Debug entry ({@code TestNavigationCoordinator}).
      */
     public void debugPythonTest(EditorBuffer b, com.editora.test.PytestScanner.TestTarget target) {
         Path file = b == null ? null : b.getPath();
