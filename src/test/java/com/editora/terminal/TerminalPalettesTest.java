@@ -97,6 +97,12 @@ class TerminalPalettesTest {
     }
 
     @Test
+    void darkThemesKeepWhiteOnBlackReadable() {
+        Color[] ansi = TerminalPalettes.EDITORA_DARK.ansi();
+        assertTrue(TerminalPalettes.contrast(ansi[0], ansi[7]) > 4.5);
+    }
+
+    @Test
     void whiteAndBrightWhiteStayDistinct() {
         Color[] ansi = TerminalPalettes.EDITORA_DARK.ansi();
         assertTrue(!ansi[7].equals(ansi[15]));

@@ -18,6 +18,9 @@ import javafx.scene.paint.Color;
  *       program that sets colour 7 writes invisible text.
  *   <li>Bright black (8) is halfway between text and ground: what dim and secondary text uses.
  * </ul>
+ *
+ * <p>No palette rescues a prompt built for a dark terminal: agnoster's {@code user@host} segment is the
+ * <em>default</em> foreground on ANSI black, so on any light theme it is dark on dark.
  */
 public final class TerminalPalettes {
 

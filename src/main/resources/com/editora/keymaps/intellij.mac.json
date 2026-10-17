@@ -74,5 +74,6 @@
   "Cmd-S-f9": "debug.breakpoints",
   "Cmd-f5": "debug.restart",
   "S-f7": "debug.smartStepInto",
-  "Cmd-f9": "debug.applyCodeChanges"
+  "Cmd-f9": "debug.applyCodeChanges",
+  "M-f12": "tool.terminal"
 }

@@ -1,8 +1,46 @@
 # Integrated terminal
 
-Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The emulator, the view and
-a local shell are in `com.editora.terminal`; nothing opens a terminal yet. The tool window, "Open in
-Terminal", and the SSH, container and WSL connectors follow.
+Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
+runs shells on this machine. "Open in Terminal" and the SSH, container and WSL connectors follow.
+
+## The tool window
+
+- **`ui/TerminalCoordinator`** owns the panel and the commands: `tool.terminal` (toggle; opening it starts a
+  shell if none is running), `terminal.new` (another tab), `terminal.close` (the selected one).
+  `MainController` keeps the `ToolWindow` (bottom, `Icons.terminal()`; Build Output moved to `Icons.tools()`)
+  and calls `applySettings`/`applyTheme` from `applyEditorTheme`, which runs on every settings apply.
+- **`ui/TerminalPanel`**: one tab per shell, with a "+" floating at the strip's right end and a target chip
+  ("Local") on each tab. A tab's title follows the shell's title or directory. Disposal is driven off the
+  tab list (✕, Close Terminal, the shell exiting, the window closing), so every path ends the shell. Tabs are
+  not reorderable: a reorder is a remove plus an add, which the list listener would read as a close.
+- **Where a shell starts:** the project folder when it is local, else the active file's folder, else home. A
+  remote project still gets a local shell until its host has a connector.
+- **Closing a busy shell asks first** (`RunningProgram`: the shell's child processes; Settings → Terminal can
+  turn it off). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
+  `UnixPtyProcess` throws from `toHandle()`, which the registry needs, so `LocalPtyConnector.trackableProcess()`
+  wraps it (`PtyHandleProcess`). Before that wrapper, tracking threw after the shell had started.
+
+## Keys
+
+A focused terminal owns the keyboard. `TerminalPanel` sets `KeyDispatcher.SHELL_KEYS`, a predicate that says
+which chords still reach Editora (`TerminalKeys.reachesEditora`). The dispatcher leaves every other press to
+the terminal, before prefixes, prefix arguments and the plain-Alt guard. So Ctrl+C is SIGINT, Ctrl+W deletes a
+word, Escape is vim's, and Emacs's C-x is the shell's.
+
+- Through by default: `tool.*`, `palette.show`, `search.everywhere`, `terminal.*` (Settings → Terminal →
+  Commands that reach Editora; `Settings.DEFAULT_TERMINAL_IDE_COMMANDS`, kept equal to
+  `TerminalKeys.DEFAULT_IDE_COMMANDS` by a test). On macOS every Cmd chord reaches Editora too.
+- Copy and Paste are the terminal's own: Ctrl+Shift+C/V, Cmd+C/V on macOS. A filter on the panel runs before
+  the view's, which would otherwise encode Ctrl+Shift+C as ^C.
+- Bindings: `tool.terminal` is Alt+F12 (IntelliJ) and Ctrl+` (VS Code, CUA, Sublime); `terminal.new` is
+  Ctrl+Shift+` in the last three. Emacs has no binding (`M-x`).
+
+## Settings
+
+Settings → Terminal (Languages & Tools), schema 130: `terminalShell` (blank = login shell),
+`terminalFontSize` (0 = the editor's size; the face is always the editor's), `terminalCursor`, `terminalBell`,
+`terminalScrollback`, `terminalIdeCommands`, `terminalConfirmClose`. Font, cursor, bell and the key list apply
+to open terminals. Scrollback and shell apply from the next tab.
 
 ## Where the code came from
 
@@ -44,8 +82,13 @@ ground and toward black on a light one. ANSI white is the text colour pulled tow
 light theme it is dark: a program that sets colour 7 must stay readable. `EDITORA_DARK` and `EDITORA_LIGHT`
 are derived from the flagship themes; their normal colours match Termina's hand-made pair.
 
-Reading the *active* theme's colours needs a scene. The adaptive themes take theirs from the AtlantaFX
-`-color-*` variables, which only a window's stylesheets resolve. That comes with the tool window.
+The active theme's colours are read from the scene (`ThemeSampler`). It adds invisible probe nodes styled
+like the editor (`.editor-area`, `.text.keyword`, …) to the panel, applies CSS, and reads back what resolved.
+That works for the adaptive themes too, whose colours are AtlantaFX `-color-*` variables only the window's
+stylesheets resolve. If the panel is not in a scene or a colour is not plain, the flagship palette matching
+the UI's darkness is used. Each tab's content wrapper is painted the terminal's background, so a part row
+below the grid matches. The selected tab uses the app-wide `-editor-surface` fill, so it merges into the
+terminal as it does into the editor.
 
 ## Known behaviour
 
@@ -53,5 +96,7 @@ Reading the *active* theme's colours needs a scene. The adaptive themes take the
   shell) can read 0×0 if it asks at once. See `TerminalImageCheck`.
 - Local shell cwd tracking (`ProcessCwd`) works on Linux (`/proc`) and macOS (`proc_pidinfo` via JNA), not
   Windows. Remote shells will report their directory with OSC 7.
-- The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`.
-  Editora's stylesheet has no `.terminal-scroll-bar` rule yet; it comes with the tool window.
+- The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`
+  (`.terminal-scroll-bar` in `app.css`, Termina's rules).
+- No palette rescues a prompt built for a dark terminal. Oh My Bash's agnoster theme draws `user@host` in the
+  default foreground on ANSI black, which is dark on dark in any light theme.

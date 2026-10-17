@@ -78,5 +78,7 @@
   "C-l": "edit.selectLine",
   "C-]": "edit.indentLines",
   "C-[": "edit.outdentLines",
-  "f6": "debug.pause"
+  "f6": "debug.pause",
+  "C-back-quote": "tool.terminal",
+  "C-S-back-quote": "terminal.new"
 }
