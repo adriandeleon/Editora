@@ -104,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Debug variables use the editor's syntax colours.** Names, values and types in the Debug tool window's
+  variables and watches are coloured like code in the current editor theme — strings, numbers, `true`/`null`/`None`
+  and type names — including each element of a list or dict value, instead of the app's status colours.
 - **Settings: every external tool row looks and reads the same** — language servers, debug adapters, Mermaid,
   Diagrams, Typst, build tools, Node.js and AI agents show "tool: found (path)" or "tool: not found", then
   Install… or a link. Diagrams links to its install help, and Build Tools says whether the command it would run

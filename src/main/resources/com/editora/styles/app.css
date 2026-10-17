@@ -3921,17 +3921,13 @@
 /* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */
 .debug-panel .debug-frame-name { -fx-fill: -color-fg-default; }
 .debug-panel .debug-frame-loc { -fx-fill: -color-fg-muted; }
-/* Rich variable cells: name, muted " = ", type-colored value, muted type suffix. */
-.debug-panel .debug-var-name { -fx-fill: -color-fg-default; }
+/* Rich variable cells: name, value and type take the editor's syntax token colours (.text.variable,
+   .text.string/number/constant/type — DebugValues.runs), so values follow the editor theme; the " = "
+   stays muted. */
 .debug-panel .debug-var-eq { -fx-fill: -color-fg-muted; }
-.debug-panel .debug-var-type { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-scope-row { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 .debug-panel .debug-add-watch { -fx-fill: -color-accent-fg; }
-.debug-panel .debug-val-string { -fx-fill: -state-green; }  /* like the run/start accent */
-.debug-panel .debug-val-number { -fx-fill: -state-accent; }
-.debug-panel .debug-val-bool { -fx-fill: -state-amber; }
-.debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
-.debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+.debug-panel .debug-val-plain { -fx-fill: -color-fg-default; }
 /* A watch the adapter could not evaluate: its message, not a value. */
 .debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
