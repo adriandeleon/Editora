@@ -40,7 +40,6 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -160,8 +159,7 @@ public final class HttpClientPanel extends VBox {
     private final VBox headersBox;
     private final CodeArea bodyArea = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> bodyScroll = new VirtualizedScrollPane<>(bodyArea);
-    private final ImageView imageView = new ImageView();
-    private final ScrollPane imageScroll = new ScrollPane(imageView);
+    private final HttpImageView imageView = new HttpImageView();
     private final VBox bodyBox;
     private final Map<HttpResponseTab, Node> tabContent = new EnumMap<>(HttpResponseTab.class);
 
@@ -354,10 +352,8 @@ public final class HttpClientPanel extends VBox {
         // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
         installCopyMenu(bodyArea); // RichTextFX has no default menu — add Copy / Select All for the response
-        imageView.setPreserveRatio(true);
-        imageScroll.setVisible(false);
-        imageScroll.getStyleClass().add("http-image");
-        StackPane bodyHost = new StackPane(bodyScroll, imageScroll);
+        imageView.setVisible(false);
+        StackPane bodyHost = new StackPane(bodyScroll, imageView);
         bodyNote.getStyleClass().add("http-body-note");
         bodyNote.setWrapText(true);
         bodyNote.setMaxWidth(Double.MAX_VALUE);
@@ -957,8 +953,8 @@ public final class HttpClientPanel extends VBox {
         tabs.setAvailable(EnumSet.of(HttpResponseTab.BODY));
         showBodyNote(null);
         bodyArea.clear();
-        imageView.setImage(null);
-        imageScroll.setVisible(false);
+        imageView.clear();
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
     }
 
@@ -974,7 +970,7 @@ public final class HttpClientPanel extends VBox {
         CompletableFuture<Void> done = new CompletableFuture<>();
         bodyRender = done;
         bodyArea.replaceText(""); // never leave the previous response under the new status + headers
-        imageView.setImage(null);
+        imageView.clear();
         String shownRequest =
                 request.length() > MAX_BODY_CHARS ? request.substring(0, MAX_BODY_CHARS) + "\n…" : request;
         requestArea.replaceText(shownRequest);
@@ -1015,7 +1011,7 @@ public final class HttpClientPanel extends VBox {
 
     /** A request that failed: its error where the body would be (PR 2 turns it into an error card). */
     private void showError(HttpResult r) {
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         showBodyNote(null);
         bodyArea.replaceText("⚠  " + r.shownError());
@@ -1038,13 +1034,13 @@ public final class HttpClientPanel extends VBox {
     private void applyBody(HttpHistoryEntry entry, HttpBodyRendering.Rendered rendered) {
         HttpResult r = entry.result();
         if (rendered.image() != null) {
-            imageView.setImage(rendered.image());
-            imageScroll.setVisible(true);
+            imageView.show(rendered.image(), r.contentType(), r.sizeBytes());
+            imageView.setVisible(true);
             bodyScroll.setVisible(false);
             bodyArea.replaceText("");
             return;
         }
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         HttpResponseFormat.BodyView view = rendered.view();
         StringBuilder text = new StringBuilder(rendered.text());
@@ -1170,7 +1166,11 @@ public final class HttpClientPanel extends VBox {
 
     /** Whether the body pane currently shows a picture. Test accessor. */
     boolean showsImageForTest() {
-        return imageScroll.isVisible() && imageView.getImage() != null;
+        return imageView.isVisible() && imageView.hasImage();
+    }
+
+    HttpImageView imageViewForTest() {
+        return imageView;
     }
 
     /** The note above the body (a cut view or history), or null when none shows. Test accessor. */

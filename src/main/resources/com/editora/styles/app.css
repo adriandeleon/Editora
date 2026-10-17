@@ -3760,6 +3760,20 @@
 .http-panel .http-test-passed { -fx-text-fill: -state-green; }
 .http-panel .http-test-failed { -fx-text-fill: -state-red; }
 .http-panel .http-body-note { -fx-text-fill: -state-amber; -fx-padding: 2 4 2 4; }
+/* An image response: a caption ("PNG · 160 × 160 · 858 B") and Fit / 100% segments over the picture, which sits on a
+   checkerboard (drawn in code, half-transparent grey, so it reads on any theme). The segments reuse the view toggle's. */
+.http-panel .http-image-bar { -fx-padding: 2 4 4 4; }
+.http-panel .http-image-caption { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-image-toggles {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 2;
+}
+.http-panel .http-image-scroll,
+.http-panel .http-image-scroll > .viewport { -fx-background-color: -color-bg-default; }
+.http-panel .http-image-frame { -fx-border-color: -color-border-muted; }
 .http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests.http-test-passed { -fx-text-fill: -state-green; }

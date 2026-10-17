@@ -43,6 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
     to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
 
+### Changed
+
+- **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
+  per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's
+  `"id" : 42` with `[ {` on one line). HTML responses, such as a one-line 404 page, are indented one element per
+  line, with text and inline tags kept together and the contents of `<pre>`, `<script>`, `<style>`,
+  `<textarea>` and comments left as they are; a page the server already indented, or one too irregular to
+  format safely, is shown as received. Only the view changes: Save response and Open in tab still write the
+  body exactly as it arrived.
+- **HTTP Client: image responses say what they are.** A caption line gives the format, the size in pixels and
+  the size in bytes ("PNG · 160 × 160 · 858 B"), the picture sits on a checkerboard so transparent parts show,
+  and **Fit** (the default, which scales a large picture down to the panel's width but never enlarges a small
+  one) and **100%** switch between fitting and the actual size.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added
