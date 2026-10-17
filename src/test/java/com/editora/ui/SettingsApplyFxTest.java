@@ -205,7 +205,7 @@ class SettingsApplyFxTest {
                 assertEquals(!before, check.isSelected(), command + " moves its switch");
             });
             ComboBox<String> language = control("spellLanguageCombo");
-            assertEquals(!settings.isSpellCheck(), language.isDisable());
+            assertEquals(!settings.isSpellCheck(), language.isDisabled(), "its row follows spell check");
         });
     }
 
