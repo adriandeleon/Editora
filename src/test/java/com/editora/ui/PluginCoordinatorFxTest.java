@@ -498,6 +498,30 @@ class PluginCoordinatorFxTest {
         }
     }
 
+    /**
+     * Settings → Plugins → Browse hid the Settings window at once, so a registry that failed left it gone with
+     * the reason behind it. It now hides only when the picker (an overlay it would cover) actually opens.
+     */
+    @Test
+    void settingsStepsAsideOnlyWhenThePickerOpens() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, Files.createDirectories(sandbox.resolve("aside")));
+            byte[] zip = greeterZip("1.0", false);
+            rig.web.serve(ZIP_URL, zip);
+            SettingsWindow w = FxTestSupport.field(rig.fx.controller, "settingsWindow");
+            javafx.stage.Stage stage = FxTestSupport.field(w, "stage");
+            FxTestSupport.runOnFx(() -> w.show(FxTestSupport.field(rig.fx.controller, "stage")));
+
+            rig.browse(index(zip, ""), false); // refused: unsigned
+            assertTrue(FxTestSupport.callOnFx(stage::isShowing), "Settings stays, the refusal is shown");
+
+            FxTestSupport.runOnFx(() -> rig.settings().setPluginRequireSignature(false));
+            rig.browseAgain();
+            assertTrue(FxTestSupport.callOnFx(() -> rig.palette().isShown()));
+            assertFalse(FxTestSupport.callOnFx(stage::isShowing), "out of the picker's way");
+        }
+    }
+
     /** "Require signed plugins" is on by default: an unsigned registry is not even listed. */
     @Test
     void anUnsignedRegistryIsBlockedWhileSignedPluginsAreRequired() throws Exception {

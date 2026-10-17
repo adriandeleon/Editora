@@ -53,7 +53,8 @@ class NewFileMenuFxTest {
 
     @SuppressWarnings("unchecked")
     private static Menu newMenuFor(ProjectPanel panel, Path dir) {
-        return (Menu) FxTestSupport.call(panel, "newMenu", new Class<?>[] {TreeItem.class}, new TreeItem<>(dir));
+        return (Menu) FxTestSupport.call(
+                panel, "newMenu", new Class<?>[] {TreeItem.class, boolean.class}, new TreeItem<>(dir), false);
     }
 
     private static List<String> labels(List<MenuItem> items) {

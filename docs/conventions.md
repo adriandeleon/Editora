@@ -33,6 +33,27 @@ A Settings-window control is not enough on its own. Add a command that flips/pro
   the shared save notices that preferences changed and re-applies them there (see
   [config-and-migrations](subsystems/config-and-migrations.md#changes-reach-every-window)).
 
+## Adding a setting to the Settings window
+
+A preference touches five places; miss one and it is applied but never saved, or saved but never shown.
+
+1. **Model**: the field, default and getter/setter in `Settings` (with a schema bump and migration, see
+   [Config and schema](#config-and-schema)).
+2. **Control**: built once in `SettingsWindow` (or the page's own class), its listener writing the field and
+   calling `apply()` — unless `loading` is set. Text fields commit on Enter or focus loss
+   (`commitOnEnterOrBlur`), numbers use `IntSpinners.editable` (invalid text is marked, never committed).
+3. **Row**: placed on its page with `checkRow` / `controlRow` / `cardRow` and English search keywords. The
+   search also reads the row's title, description, prompts and a combo's choices; a list inside a row is not
+   searched (see `SettingsSearch`).
+4. **Load**: one line in `load()` (or the page's own load) setting the control from `Settings`. Another
+   window's change re-runs it, so it must be safe to run at any time.
+5. **Palette command and strings**: see the next sections.
+
+`SettingsRoundTripFxTest` changes every switch, number and choice field, restarts on the same config folder
+and checks each one reads back — a new control is covered the day it is added; list it there only when it
+cannot round-trip (it asks first, or is not a preference). Changes apply as they are made: there is no Save
+button on a page (Macros' Save/Revert is the one exception).
+
 ## Localize every user-facing string
 
 Never hand a raw English literal to a JavaFX control. Use

@@ -102,6 +102,6 @@ public final class AcpAgentRegistry {
         String configured = overrides == null ? null : overrides.get(id);
         String def = defaultCommandFor(id);
         String cmd = configured == null || configured.isBlank() ? def : configured;
-        return cmd.isBlank() ? List.of() : ProgramArgs.tokenize(cmd);
+        return cmd.isBlank() ? List.of() : ProgramArgs.commandLine(cmd);
     }
 }

@@ -52,7 +52,8 @@ final class SnippetsEditor {
             Consumer<String> warn,
             Predicate<String> confirm,
             BiConsumer<CodeArea, String> highlight,
-            Consumer<CodeArea> editorKeys) {}
+            Consumer<CodeArea> editorKeys,
+            Predicate<String> confirmDelete) {}
 
     private final SnippetManager manager;
     private final Hooks hooks;
@@ -108,6 +109,30 @@ final class SnippetsEditor {
         return null;
     }
 
+    /** The first trigger of {@code entry} with whitespace in it — one Tab can never expand — or null. Pure. */
+    static String spacedTrigger(Entry entry) {
+        for (String t : entry.prefixes()) {
+            if (t.chars().anyMatch(Character::isWhitespace)) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The languages the picker offers: {@code global}, then every language that has snippets or that Editora
+     * knows — a language with no snippets yet used to be unreachable from here. Pure.
+     */
+    static List<String> languages(List<String> withSnippets, java.util.Collection<String> known) {
+        java.util.TreeSet<String> rest = new java.util.TreeSet<>(known);
+        rest.addAll(withSnippets);
+        rest.remove("global");
+        List<String> out = new ArrayList<>();
+        out.add("global");
+        out.addAll(rest);
+        return out;
+    }
+
     /** Whether {@code entry} matches the list filter (name, any trigger or description, ignoring case). Pure. */
     static boolean matches(Entry entry, String filter) {
         String f = filter == null ? "" : filter.strip().toLowerCase(Locale.ROOT);
@@ -123,7 +148,9 @@ final class SnippetsEditor {
 
     Node node() {
         ComboBox<String> languageBox = new ComboBox<>(FXCollections.observableArrayList(
-                manager == null ? List.of("global") : manager.languagesWithSnippets()));
+                manager == null
+                        ? List.of("global")
+                        : languages(manager.languagesWithSnippets(), com.editora.editor.LanguageRegistry.names())));
         languageBox.setValue(language);
 
         TextField filter = new TextField();
@@ -169,9 +196,13 @@ final class SnippetsEditor {
         Runnable showClash = () -> {
             Entry cur = list.getSelectionModel().getSelectedItem();
             String[] shared = cur == null ? null : sharedTrigger(cur, items);
-            clash.setText(shared == null ? "" : tr("settings.snippet.triggerShared", shared[0], shared[1]));
-            clash.setVisible(shared != null);
-            clash.setManaged(shared != null);
+            String spaced = cur == null ? null : spacedTrigger(cur);
+            String text = (spaced == null ? "" : tr("settings.snippet.triggerSpace", spaced))
+                    + (spaced != null && shared != null ? "\n" : "")
+                    + (shared == null ? "" : tr("settings.snippet.triggerShared", shared[0], shared[1]));
+            clash.setText(text);
+            clash.setVisible(!text.isEmpty());
+            clash.setManaged(!text.isEmpty());
         };
 
         Consumer<String> load = keep -> {
@@ -281,6 +312,17 @@ final class SnippetsEditor {
                 commit.run();
             }
         });
+        // Live: the other fields apply once typing pauses. A name is applied on Enter or leaving it, never
+        // half typed — each pause would rename the snippet on disk.
+        PauseCommit.watch(
+                () -> {
+                    if (!name.isFocused()) {
+                        commit.run();
+                    }
+                },
+                prefix.textProperty(),
+                description.textProperty(),
+                body.textProperty());
 
         // Load the form when a different row is selected.
         list.getSelectionModel().selectedItemProperty().addListener((o, was, s) -> {
@@ -342,7 +384,10 @@ final class SnippetsEditor {
                         problem.visibleProperty()));
         remove.setOnAction(e -> {
             Entry s = list.getSelectionModel().getSelectedItem();
-            if (s != null && s.source() == Source.USER && write(() -> manager.removeUserEntry(language, s.name()))) {
+            if (s != null
+                    && s.source() == Source.USER
+                    && hooks.confirmDelete().test(s.name())
+                    && write(() -> manager.removeUserEntry(language, s.name()))) {
                 load.accept(s.name()); // a removed edit reverts to its bundled snippet
             }
         });
@@ -386,14 +431,7 @@ final class SnippetsEditor {
         }
         VBox.setVgrow(left, Priority.ALWAYS);
 
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, problem, form, clash, saveRow);
+        VBox right = new VBox(8, problem, form, clash);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 

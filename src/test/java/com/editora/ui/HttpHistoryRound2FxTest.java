@@ -465,16 +465,20 @@ class HttpHistoryRound2FxTest {
     @Test
     void theExportDialogLeavesTheHttpHistoryOutUnlessTicked() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            javafx.scene.control.Dialog<Boolean> d = ExportConfigDialog.build(null);
+            javafx.scene.control.Dialog<ExportConfigDialog.Choice> d = ExportConfigDialog.build(null, true, false);
             javafx.scene.control.CheckBox box =
                     (javafx.scene.control.CheckBox) d.getDialogPane().lookup("#include-http-history");
             assertFalse(box.isSelected(), "off by default");
             assertEquals(tr("dialog.exportConfig.includeHttpHistory"), box.getText());
             javafx.scene.control.ButtonType export =
                     d.getDialogPane().getButtonTypes().get(0);
-            assertEquals(false, d.getResultConverter().call(export));
+            assertEquals(
+                    new ExportConfigDialog.Choice(false, false),
+                    d.getResultConverter().call(export));
             box.setSelected(true);
-            assertEquals(true, d.getResultConverter().call(export));
+            assertEquals(
+                    new ExportConfigDialog.Choice(true, false),
+                    d.getResultConverter().call(export));
             assertEquals(null, d.getResultConverter().call(javafx.scene.control.ButtonType.CANCEL), "cancelled");
         });
     }

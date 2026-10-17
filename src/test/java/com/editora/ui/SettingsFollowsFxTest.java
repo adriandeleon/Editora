@@ -227,10 +227,10 @@ class SettingsFollowsFxTest {
                     rig.<CheckBox>control("lineNumbersCheck").isSelected());
             assertEquals(
                     "tab", rig.<ComboBox<String>>control("indentStyleCombo").getValue());
-            assertTrue(rig.<CheckBox>control("noteIndicatorsCheck").isDisable(), "no indicators without notes");
+            assertFalse(rig.<CheckBox>control("notesCheck").isSelected(), "no indicators without notes");
             assertEquals(theme, rig.<ComboBox<String>>control("themeCombo").getValue());
             assertEquals(
-                    EditorThemes.normalize(settings.getEditorTheme()),
+                    settings.isEditorThemeUserSet() ? EditorThemes.normalize(settings.getEditorTheme()) : "",
                     rig.<ComboBox<String>>control("editorThemeCombo").getValue());
 
             assertEquals(List.of(), rig.applied, "showing what changed elsewhere is not an edit");
@@ -292,14 +292,26 @@ class SettingsFollowsFxTest {
     @Test
     void theAiPageShowsTheResultOfTheConnectionCheck() throws Exception {
         List<BiConsumer<Boolean, String>> probes = new ArrayList<>();
+        List<Boolean> fresh = new ArrayList<>();
         FxTestSupport.runOnFx(() -> {
-            rig.window.setAiConnectionProbe(probes::add);
+            settings.setAiEnabled(true);
+            settings.setAiSupport(true); // with AI Actions off a failed check is neutral, not red
+            rig.window.setAiConnectionProbe((isFresh, onResult) -> {
+                fresh.add(isFresh);
+                probes.add(onResult);
+            });
             rig.show();
+            rig.page("APPEARANCE");
         });
-        FxTestSupport.drainFx(); // the check is started once the fields are filled in
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(0, probes.size(), "opening Settings sends no AI request");
+            showAiActions();
+        });
+        FxTestSupport.drainFx(); // the check starts once the AI Actions page is on screen
         FxTestSupport.runOnFx(() -> {
             Label status = rig.control("aiStatusLabel");
-            assertEquals(1, probes.size());
+            assertEquals(List.of(false), fresh, "one check, which may reuse a recent result");
             assertEquals(tr("settings.ai.checking"), status.getText());
             probes.get(0).accept(false, "connection refused");
             assertEquals(tr("settings.ai.connectFailed", "connection refused"), status.getText());
@@ -307,7 +319,52 @@ class SettingsFollowsFxTest {
             probes.get(0).accept(true, "");
             assertEquals(tr("settings.ai.connected"), status.getText());
             assertTrue(status.getStyleClass().contains("settings-git-found"));
+            SettingsRig.button(status.getParent(), tr("settings.ai.testConnection"))
+                    .fire();
+            assertEquals(List.of(false, true), fresh, "Test connection asks for a fresh check");
+            for (String field : List.of("aiApiKeyField", "aiModelField", "aiCompletionModelField")) {
+                TextField f = rig.control(field);
+                assertTrue(
+                        SettingsRig.all(f.getParent(), javafx.scene.control.Button.class)
+                                .isEmpty(),
+                        field + " has no Browse… (it pasted a file path in as the key)");
+            }
         });
+    }
+
+    /** Turning the master AI switch off updates the AI Actions status at once (it kept saying "Connected"). */
+    @Test
+    void theMasterSwitchUpdatesTheAiStatus() throws Exception {
+        List<BiConsumer<Boolean, String>> probes = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            settings.setAiEnabled(true);
+            rig.window.setAiConnectionProbe((isFresh, onResult) -> probes.add(onResult));
+            rig.show();
+            showAiActions();
+        });
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            probes.get(probes.size() - 1).accept(true, "");
+            Label status = rig.control("aiStatusLabel");
+            assertEquals(tr("settings.ai.connected"), status.getText());
+            CheckBox master = rig.control("aiMasterCheck");
+            int before = probes.size();
+            master.setSelected(false);
+            javafx.animation.PauseTransition debounce = rig.control("aiStatusDebounce");
+            debounce.getOnFinished().handle(null); // the debounce elapsing
+            assertEquals(before + 1, probes.size(), "the switch re-checks");
+            assertEquals(tr("settings.ai.checking"), status.getText(), "no stale Connected");
+        });
+    }
+
+    private void showAiActions() {
+        ListView<Object> sidebar = rig.control("sidebar");
+        sidebar.getItems().stream()
+                .filter(i -> i instanceof Enum<?> e
+                        && e.name().equals("AI")
+                        && e.getClass().getSimpleName().equals("Category"))
+                .findFirst()
+                .ifPresent(i -> sidebar.getSelectionModel().select(i));
     }
 
     // --- AI providers ----------------------------------------------------------------------------
@@ -385,12 +442,13 @@ class SettingsFollowsFxTest {
             // The master switch gates the two features under it.
             CheckBox master = rig.control("aiMasterCheck");
             CheckBox actions = rig.control("aiCheck");
-            CheckBox agent = rig.control("agentCheck");
+            TextField agentCommand = rig.<java.util.Map<String, TextField>>control("agentCommandFields")
+                    .get("claude");
             master.setSelected(false);
             assertFalse(settings.isAiEnabled());
-            assertTrue(actions.isDisable() && agent.isDisable());
+            assertTrue(endpoint.isDisabled() && agentCommand.isDisabled());
             master.setSelected(true);
-            assertFalse(actions.isDisable() || agent.isDisable());
+            assertFalse(endpoint.isDisabled() || agentCommand.isDisabled());
             actions.setSelected(!actions.isSelected());
             assertEquals(actions.isSelected(), settings.isAiSupport());
         });
@@ -414,7 +472,7 @@ class SettingsFollowsFxTest {
                             "", "x", "", "", ExternalTool.StdinSource.NONE, ExternalTool.OutputTarget.CONSOLE, true))));
             rig.show();
             Region page = rig.page("EXTERNAL_TOOLS");
-            ListView<ExternalTool> list = rig.control("externalToolList");
+            ListView<ExternalTool> list = FxTestSupport.field(rig.control("externalToolsEditor"), "list");
             assertEquals(2, list.getItems().size());
             rig.stage().getScene().getRoot().applyCss();
             rig.stage().getScene().getRoot().layout();

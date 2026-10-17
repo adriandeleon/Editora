@@ -43,12 +43,17 @@ final class ShortcutCapture {
         return Action.RECORD;
     }
 
+    /** Where the field keeps the recorded sequence in keymap tokens ({@code C-S-k f5}); it shows it formatted. */
+    private static final Object RECORDED = new Object();
+
     /**
-     * A read-only field that shows the chords pressed into it. {@code onCommit} receives the recorded
-     * sequence on Enter; {@code onCancel} runs on Escape. The field's text is the sequence, so a Save
-     * button beside it can commit {@code field.getText()} too.
+     * A read-only field that shows the chords pressed into it, in the active keymap's notation through
+     * {@code display} ({@code Ctrl+Shift+K F5}, {@code ⇧⌘K}, or {@code C-S-k f5} under Emacs). {@code onCommit}
+     * receives the recorded sequence in keymap tokens on Enter; {@code onCancel} runs on Escape. A Save button
+     * beside it commits {@link #recorded}.
      */
-    static TextField field(Consumer<String> onCommit, Runnable onCancel) {
+    static TextField field(
+            java.util.function.UnaryOperator<String> display, Consumer<String> onCommit, Runnable onCancel) {
         TextField capture = new TextField();
         capture.setEditable(false);
         capture.setPromptText(tr("settings.shortcuts.recording"));
@@ -58,18 +63,25 @@ final class ShortcutCapture {
         capture.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             e.consume();
             boolean modified = e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShiftDown();
-            switch (decide(e.getCode(), modified, capture.getText())) {
+            String sofar = recorded(capture);
+            switch (decide(e.getCode(), modified, sofar)) {
                 case CANCEL -> onCancel.run();
-                case COMMIT -> onCommit.accept(capture.getText());
+                case COMMIT -> onCommit.accept(sofar);
                 case RECORD -> {
                     String token = KeyDispatcher.chord(e);
                     if (token != null) { // null: a modifier-only press
-                        String sofar = capture.getText();
-                        capture.setText(sofar == null || sofar.isEmpty() ? token : sofar + ' ' + token);
+                        String seq = sofar.isEmpty() ? token : sofar + ' ' + token;
+                        capture.getProperties().put(RECORDED, seq);
+                        capture.setText(display.apply(seq));
                     }
                 }
             }
         });
         return capture;
+    }
+
+    /** The sequence recorded into a {@link #field} so far, in keymap tokens; empty when nothing was. */
+    static String recorded(TextField capture) {
+        return capture.getProperties().get(RECORDED) instanceof String s ? s : "";
     }
 }
