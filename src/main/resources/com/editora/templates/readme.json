@@ -1,0 +1,27 @@
+{
+  "name": "README",
+  "description": "A project README with getting-started, usage, contributing and license sections",
+  "language": "markdown",
+  "fileName": "README.md",
+  "body": [
+    "# ${projectName:my-project}",
+    "",
+    "${description:One sentence about what this project does and who it is for.}",
+    "",
+    "## Getting started",
+    "",
+    "What to install, and how to build and run the project for the first time.",
+    "",
+    "## Usage",
+    "",
+    "${cursor}",
+    "",
+    "## Contributing",
+    "",
+    "Pull requests are welcome. For a large change, please open an issue first to discuss it.",
+    "",
+    "## License",
+    "",
+    "See [LICENSE](LICENSE)."
+  ]
+}

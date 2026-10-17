@@ -1,0 +1,20 @@
+{
+  "name": "pytest Test Module",
+  "description": "A pytest test module with a fixture and a first test",
+  "language": "python",
+  "fileName": "${baseName:test_example}.py",
+  "body": [
+    "\"\"\"Tests for ${summary:the module under test}.\"\"\"",
+    "",
+    "import pytest",
+    "",
+    "",
+    "@pytest.fixture",
+    "def numbers() -> list[int]:",
+    "    return [1, 2, 3]",
+    "",
+    "",
+    "def test_sum(numbers: list[int]) -> None:",
+    "    ${cursor}assert sum(numbers) == 6"
+  ]
+}

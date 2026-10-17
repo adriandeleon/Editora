@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **23 more bundled file templates** (New File From Template), 32 in all:
+  - **Code:** JUnit 5 Test (in the folder's package), Java Shebang Script (an extensionless file the `java`
+    launcher runs directly), pytest Test Module, and a Node.js TypeScript Project (module, `node:test` test,
+    `tsconfig.json`, README).
+  - **Files Editora previews or runs:** Typst Document, Typst Document + Template (`template.typ` plus a document
+    that imports it), Mermaid Diagram, Markwhen Timeline, and HTTP Requests + Environments (a `.http` file with
+    `@assert`/`@capture` checks plus dev/prod `http-client.env.json` and `http-client.private.env.json`).
+  - **Containers:** Dockerfile (Java), a multi-stage Maven build that runs the jar on a JRE as a non-root user,
+    and the same with a `compose.yaml` and a `.dockerignore`.
+  - **Writing:** README, Changelog (Keep a Changelog), Architecture Decision Record, Blog Post (YAML front matter,
+    dated file name) and Meeting Notes.
+  - **Project files:** License: MIT (this year and your author name), License: Apache 2.0 (verbatim), `.gitignore`
+    for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
+  - The multi-file ones are also offered by New Project From Template.
+
 ### Changed
 
 - **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.

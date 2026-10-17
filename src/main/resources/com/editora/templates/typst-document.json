@@ -1,0 +1,23 @@
+{
+  "name": "Typst Document",
+  "description": "A Typst document with page setup, a title block and numbered headings",
+  "language": "typst",
+  "fileName": "${baseName:document}.typ",
+  "body": [
+    "#set document(title: \"${title:Title}\", author: \"${author}\")",
+    "#set page(paper: \"${paper:a4}\", margin: 2.5cm, numbering: \"1\")",
+    "#set text(size: 11pt)",
+    "#set heading(numbering: \"1.\")",
+    "#set par(justify: true)",
+    "",
+    "#align(center)[",
+    "  #text(18pt, weight: \"bold\")[${title:Title}]",
+    "  #v(4pt)",
+    "  ${author} · ${date}",
+    "]",
+    "",
+    "= Introduction",
+    "",
+    "${cursor}"
+  ]
+}
