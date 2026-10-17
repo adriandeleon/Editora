@@ -305,7 +305,7 @@ class SettingsControlsFxTest {
             ComboBox<String> editorTheme = rig.control("editorThemeCombo");
             assertEquals(Themes.normalize(settings.getTheme()), theme.getValue());
             List<String> others = theme.getItems().stream()
-                    .filter(name -> !name.equals(theme.getValue()))
+                    .filter(name -> !ThemeGroups.isHeading(name) && !name.equals(theme.getValue()))
                     .limit(2)
                     .toList();
 
@@ -325,7 +325,8 @@ class SettingsControlsFxTest {
                     "the preview is recoloured");
 
             String picked = editorTheme.getItems().stream()
-                    .filter(name -> !name.isEmpty() && !name.equals(settings.getEditorTheme()))
+                    .filter(name ->
+                            !name.isEmpty() && !ThemeGroups.isHeading(name) && !name.equals(settings.getEditorTheme()))
                     .findFirst()
                     .orElseThrow();
             editorTheme.setValue(picked);
