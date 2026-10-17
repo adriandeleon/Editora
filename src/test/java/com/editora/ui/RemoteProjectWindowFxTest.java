@@ -110,7 +110,10 @@ class RemoteProjectWindowFxTest {
         RemoteFileSystems other = sftp.newEngine(dir);
         Ops otherOps = new Ops();
         otherOps.window = projects.createOrGet("app", appRoot());
-        RemoteCoordinator projectWindow = new RemoteCoordinator(new Host(), otherOps, other);
+        Host otherHost = new Host();
+        // Off, as in setUp: with it on, the mount puts the host question, a modal dialog left open for later tests.
+        otherHost.settings.setRemoteExecution(false);
+        RemoteCoordinator projectWindow = new RemoteCoordinator(otherHost, otherOps, other);
         try {
             FxTestSupport.runOnFx(() -> projectWindow.adoptForWindowProject(ops.openedWith.get(), live));
 
