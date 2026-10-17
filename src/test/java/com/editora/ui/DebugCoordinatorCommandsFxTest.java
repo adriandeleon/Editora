@@ -393,6 +393,23 @@ class DebugCoordinatorCommandsFxTest {
 
     // --- Debug (the active file) ------------------------------------------------------------------------
 
+    /** One "unavailable" message covered Python debugging switched off and debugpy missing alike. */
+    @Test
+    void aPythonFileThatCannotBeDebuggedSaysWhy() throws Exception {
+        buffer(loose.resolve("app.py"), "print(1)\n");
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("status.debug.debugpyMissing", "python3")), statuses());
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> {
+            host.settings.setPythonDebugEnabled(false);
+            debug.debugStart();
+            host.settings.setPythonDebugEnabled(true);
+        });
+        assertEquals(List.of(tr("status.debug.pythonOff")), statuses());
+        assertEquals(0, adapter.sessionCount());
+    }
+
     @Test
     void debugOnNothingDebuggableSaysWhyAndStartsNothing() throws Exception {
         FxTestSupport.runOnFx(() -> debug.debugStart());

@@ -59,6 +59,7 @@ class PythonDebugLaunchFxTest {
     private DapManager dap;
     private final List<String> errors = new CopyOnWriteArrayList<>();
     private final List<List<DapModels.StackFrameInfo>> stops = new CopyOnWriteArrayList<>();
+    private final List<String> commandLines = new CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -94,7 +95,11 @@ class PythonDebugLaunchFxTest {
                 }
 
                 @Override
-                public void onOutput(String text, String category) {}
+                public void onOutput(String text, String category) {
+                    if (DapManager.COMMAND_CATEGORY.equals(category)) {
+                        commandLines.add(text);
+                    }
+                }
 
                 @Override
                 public void onError(String message) {

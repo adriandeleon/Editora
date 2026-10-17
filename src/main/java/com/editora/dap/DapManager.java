@@ -575,6 +575,9 @@ public final class DapManager implements DapClient.Host {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
     }
 
+    /** The output category of Editora's own line saying what a launch runs (drawn muted by the Debug panel). */
+    public static final String COMMAND_CATEGORY = "editora.command";
+
     /** The project a Python launch belongs to (null: none) — its venv, and its root on PYTHONPATH. */
     private volatile Path pythonProjectRoot;
 
@@ -1520,6 +1523,8 @@ public final class DapManager implements DapClient.Host {
         boolean console = programConsole;
         PythonLaunch.Target target =
                 module != null ? module : PythonLaunch.Target.script(file.toString(), programArgs, cwdOf(file));
+        // What runs, first in the console (muted): which Python, in which venv, with which arguments.
+        onOutput(epoch, PythonLaunch.commandLine(program, target) + "\n", COMMAND_CATEGORY);
         String inherited = System.getenv("PYTHONPATH");
         Map<String, Object> launch = PythonLaunch.request(
                 target,

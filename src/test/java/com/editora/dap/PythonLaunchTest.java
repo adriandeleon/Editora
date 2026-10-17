@@ -105,4 +105,18 @@ class PythonLaunchTest {
         assertTrue(text.contains("/usr/bin/env"), text);
         assertFalse(text.contains("TimeoutException"), text);
     }
+
+    @Test
+    void theCommandLineIsWhatATerminalWouldRun() {
+        assertEquals(
+                "K=v /venv/bin/python -X dev '/my app/run.py' a 'two words'",
+                PythonLaunch.commandLine(
+                        python("env", "K=v", "/venv/bin/python", "-X", "dev"),
+                        PythonLaunch.Target.script("/my app/run.py", List.of("a", "two words"), "/my app")));
+        assertEquals(
+                "python3 -m pytest tests/test_a.py::TestX::test_y",
+                PythonLaunch.commandLine(
+                        python("python3"),
+                        PythonLaunch.Target.module("pytest", List.of("tests/test_a.py::TestX::test_y"), "/p")));
+    }
 }
