@@ -848,6 +848,26 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void resetAll() {
                 editorSettings.resetAllShortcuts();
             }
+
+            @Override
+            public String display(String chordSeq) {
+                return keymap.display(chordSeq);
+            }
+
+            @Override
+            public void clear(String commandId) {
+                editorSettings.clearShortcut(commandId);
+            }
+
+            @Override
+            public java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
+                return editorSettings.takenDefaults(commandId);
+            }
+
+            @Override
+            public void forget(String commandId) {
+                editorSettings.forgetShortcut(commandId);
+            }
         });
         this.settingsWindow.setRunConfigsChangedHandler(
                 runConfigurations

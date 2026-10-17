@@ -124,6 +124,18 @@ class MacroSettingsPaneActionsFxTest {
 
                     @Override
                     public void resetAll() {}
+
+                    @Override
+                    public void clear(String commandId) {
+                        log.add("clear " + commandId);
+                        chords.remove(commandId);
+                    }
+
+                    @Override
+                    public void forget(String commandId) {
+                        log.add("forget " + commandId);
+                        chords.remove(commandId);
+                    }
                 };
             }
 
@@ -381,8 +393,8 @@ class MacroSettingsPaneActionsFxTest {
             assertTrue(SettingsRig.texts(keybindingRow()).contains(typed), "the row shows the chord now bound");
 
             log.clear();
-            SettingsRig.button(keybindingRow(), tr("settings.shortcuts.reset")).fire();
-            assertEquals(List.of("reset " + command, "shortcutsChanged"), log);
+            SettingsRig.button(keybindingRow(), tr("settings.shortcuts.remove")).fire();
+            assertEquals(List.of("clear " + command, "shortcutsChanged"), log);
             assertTrue(SettingsRig.texts(keybindingRow()).contains(tr("settings.shortcuts.unbound")));
         });
     }
@@ -406,7 +418,7 @@ class MacroSettingsPaneActionsFxTest {
 
             SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, delete::fire);
             assertNull(config.getMacroStore().findById("sample"));
-            assertEquals(List.of("reset " + command, "macrosChanged"), log);
+            assertEquals(List.of("forget " + command, "macrosChanged"), log);
             assertFalse(chords.containsKey(command));
             assertEquals(1, pane.macroList().getItems().size());
             assertEquals(

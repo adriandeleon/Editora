@@ -83,6 +83,23 @@ class SettingsListEditorsFxTest {
         throw new IllegalStateException(text);
     }
 
+    /** The Abbreviations form: the key field and the (multi-line) expansion. */
+    private static List<javafx.scene.control.TextInputControl> abbrevFields(SettingsWindow w) {
+        AbbreviationsEditor editor = FxTestSupport.field(w, "abbreviationsEditor");
+        return List.of(editor.abbrev, editor.expansion);
+    }
+
+    /** Answers every "Delete …?" / "… loses it" question of {@code w} with {@code yes}, without a dialog. */
+    private static void answer(SettingsWindow w, boolean yes) {
+        try {
+            var f = SettingsWindow.class.getDeclaredField("confirmLoss");
+            f.setAccessible(true);
+            f.set(w, (java.util.function.BiPredicate<String, String>) (title, body) -> yes);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static List<TextField> fields(Region page) {
         return all(page, TextField.class, new ArrayList<>());
     }
@@ -138,7 +155,8 @@ class SettingsListEditorsFxTest {
                         "example.org", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Example", "/srv"));
 
                 shown(fx);
-                ObservableList<Abbreviation> abbrevs = FxTestSupport.field(w, "abbrevItems");
+                ObservableList<Abbreviation> abbrevs =
+                        FxTestSupport.<AbbreviationsEditor>field(w, "abbreviationsEditor").items;
                 ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
                 assertEquals(1, abbrevs.size(), "the page shows the abbreviation defined from the editor");
                 assertEquals(1, sites.size(), "the page shows the site Connect remembered");
@@ -182,16 +200,17 @@ class SettingsListEditorsFxTest {
                 SettingsWindow w = shown(fx);
                 Region pg = page(w, "ABBREVIATIONS");
                 button(pg, tr("settings.abbrev.add")).fire();
-                List<TextField> tfs = fields(pg);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
                 tfs.get(0).setText("omw");
                 tfs.get(1).setText("on my way");
-                button(pg, tr("settings.save")).fire();
+                tfs.get(0).fireEvent(new ActionEvent()); // Enter applies the form
                 assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
                 assertEquals(
                         Map.of("omw", "on my way"),
                         FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"),
                         "the open buffer expands the new abbreviation without another setting changing");
 
+                answer(w, true);
                 button(pg, tr("settings.abbrev.remove")).fire();
                 assertEquals(Map.of(), FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"));
                 FxTestSupport.<Stage>field(w, "stage").hide();
@@ -207,13 +226,50 @@ class SettingsListEditorsFxTest {
                 w.showAbbreviations(FxTestSupport.<Stage>field(w, "stage").getOwner()); // the page is on screen
                 Region pg = page(w, "ABBREVIATIONS");
                 button(pg, tr("settings.abbrev.add")).fire();
-                List<TextField> tfs = fields(pg);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
                 tfs.get(0).setText("omw");
                 tfs.get(1).requestFocus();
                 assertTrue(tfs.get(1).isFocused());
                 tfs.get(1).setText("on my way"); // no Enter, no Save, no click elsewhere
                 FxTestSupport.<Stage>field(w, "stage").close();
                 assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
+            });
+        }
+    }
+
+    @Test
+    void aMultiLineExpansionKeepsItsLineBreaksThroughAFocusPassAndAnEdit() throws Exception {
+        Path dir = Files.createTempDirectory("abbrev-multiline");
+        try (var fx = FxWindowFixture.create(dir, shared -> {
+            shared.setAbbreviations(new ArrayList<>(List.of(new Abbreviation("sig", "Best regards,\nAdrian"))));
+            shared.saveAbbreviations();
+        })) {
+            Path file = fx.configDir.resolve("abbreviations.json");
+            String before = Files.readString(file);
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx);
+                w.showAbbreviations(FxTestSupport.<Stage>field(w, "stage").getOwner());
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
+                assertEquals(
+                        "Best regards,\nAdrian", tfs.get(1).getText(), "the expansion is shown with its line break");
+                tfs.get(1).requestFocus();
+                tfs.get(0).requestFocus(); // a focus pass: nothing typed
+                FxTestSupport.<Stage>field(w, "stage").close(); // closing commits the focused field too
+                assertEquals(
+                        "Best regards,\nAdrian",
+                        fx.shared.getAbbreviations().get(0).getExpansion());
+            });
+            assertEquals(before, Files.readString(file), "a focus pass does not rewrite the store");
+
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx);
+                List<javafx.scene.control.TextInputControl> tfs = abbrevFields(w);
+                tfs.get(1).setText("Best regards,\nAdrian\nEditora");
+                tfs.get(0).fireEvent(new ActionEvent()); // Enter applies the form
+                assertEquals(
+                        "Best regards,\nAdrian\nEditora",
+                        fx.shared.getAbbreviations().get(0).getExpansion());
+                FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }
     }
@@ -245,9 +301,8 @@ class SettingsListEditorsFxTest {
                     list.getSelectionModel().select(single);
                     String bundledId = list.getItems().get(single).id();
 
-                    // Enter, Save and a focus loss without an edit: still the bundled template.
+                    // Enter and a focus loss without an edit: still the bundled template.
                     name.fireEvent(new ActionEvent());
-                    button(pg, tr("settings.save")).fire();
                     name.requestFocus();
                     list.requestFocus();
                     assertEquals(List.of(), names(dir), "no user override without an edit");
@@ -256,15 +311,12 @@ class SettingsListEditorsFxTest {
                     button(pg, tr("settings.template.add")).fire();
                     id.setText("mine-a");
                     body.replaceText("BODY A");
-                    button(pg, tr("settings.save")).fire();
+                    name.fireEvent(new ActionEvent());
                     button(pg, tr("settings.template.add")).fire();
                     body.replaceText("BODY B");
                     String secondId = id.getText();
                     id.setText("mine-a");
-                    assertEquals(
-                            1,
-                            dismissingDialogs(
-                                    () -> button(pg, tr("settings.save")).fire()));
+                    assertEquals(1, dismissingDialogs(() -> id.fireEvent(new ActionEvent())));
                     assertEquals(secondId, id.getText(), "the id field is put back");
                     assertEquals(
                             "BODY A",
@@ -290,7 +342,7 @@ class SettingsListEditorsFxTest {
                     assertFalse(Files.exists(fx.configDir.resolve("escaped.json")));
                     assertEquals(List.of("mine-a.json", secondId + ".json"), names(dir));
                     // The edit that came with the refused id is still saved once the id is valid.
-                    button(pg, tr("settings.save")).fire();
+                    name.fireEvent(new ActionEvent());
                     assertTrue(Files.readString(dir.resolve(secondId + ".json")).contains("BODY B"));
                     FxTestSupport.<Stage>field(w, "stage").hide();
                 } catch (Exception e) {
@@ -321,7 +373,7 @@ class SettingsListEditorsFxTest {
                     CodeArea body = all(pg, CodeArea.class, new ArrayList<>()).get(0);
                     Button add = button(pg, tr("settings.snippet.add"));
                     Button toggle = button(pg, tr("settings.snippet.disable"));
-                    Button save = button(pg, tr("settings.save"));
+                    Runnable save = () -> tfs.get(1).fireEvent(new ActionEvent()); // Enter in Name applies
                     assertFalse(body.isWrapText(), "a body is code and is not soft-wrapped");
                     assertTrue(lang.getItems().containsAll(List.of("typst", "typescriptreact", "lua")), "N12");
 
@@ -335,7 +387,7 @@ class SettingsListEditorsFxTest {
 
                     // Changing a bundled snippet's trigger changes that snippet: the old trigger is gone.
                     prefix.setText("floop, fl");
-                    save.fire();
+                    save.run();
                     org.junit.jupiter.api.Assertions.assertNotNull(manager.byPrefix("java", "floop"));
                     org.junit.jupiter.api.Assertions.assertNotNull(
                             manager.byPrefix("java", "fl"), "several triggers, comma-separated");
@@ -352,7 +404,7 @@ class SettingsListEditorsFxTest {
                     filter.clear();
                     add.fire();
                     prefix.setText("fl");
-                    save.fire();
+                    save.run();
                     javafx.scene.control.Label clash =
                             all(pg, javafx.scene.control.Label.class, new ArrayList<>()).stream()
                                     .filter(l -> l.getText().contains("\"fl\""))
@@ -406,7 +458,7 @@ class SettingsListEditorsFxTest {
                     TextField prefix = tfs.get(2);
                     CodeArea body = all(pg, CodeArea.class, new ArrayList<>()).get(0);
                     Button add = button(pg, tr("settings.snippet.add"));
-                    Button save = button(pg, tr("settings.save"));
+                    Runnable save = () -> name.fireEvent(new ActionEvent()); // Enter applies the form
 
                     // A bundled snippet whose description spans lines: Enter without an edit writes nothing.
                     lang.setValue("cpp");
@@ -421,7 +473,7 @@ class SettingsListEditorsFxTest {
                     add.fire();
                     prefix.setText("first");
                     body.replaceText("FIRST BODY");
-                    save.fire();
+                    save.run();
                     add.fire();
                     List<Snippet> user = manager.userSnippets("global");
                     assertEquals(2, user.size(), "both new snippets are on disk: " + user);
@@ -433,7 +485,7 @@ class SettingsListEditorsFxTest {
                     String secondName = name.getText();
                     name.setText(firstName);
                     body.replaceText("SECOND BODY");
-                    assertEquals(1, dismissingDialogs(save::fire));
+                    assertEquals(1, dismissingDialogs(save));
                     assertEquals(secondName, name.getText(), "the name field is put back");
                     user = manager.userSnippets("global");
                     assertEquals(2, user.size());

@@ -325,10 +325,7 @@ public class SettingsWindow {
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
     private boolean loadingExternalTool = false;
-    private ListView<com.editora.config.Abbreviation> abbrevList;
-    private final javafx.collections.ObservableList<com.editora.config.Abbreviation> abbrevItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private boolean loadingAbbrev = false;
+    private AbbreviationsEditor abbreviationsEditor;
     private CheckBox abbrevModeCheck;
 
     /** Working copy of the saved SFTP connections, edited live by the Remote master-detail page. */
@@ -336,10 +333,8 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
-    /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
+    /** The uncommitted text in the Remote form, asked for before the list is re-read. */
     private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
-
-    private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
     /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
     private ListView<com.editora.vfs.RemoteConnection> remoteList;
 
@@ -2137,7 +2132,7 @@ public class SettingsWindow {
     }
 
     private VBox keymapsPage() {
-        VBox p = page(tr("settings.cat.keymaps"));
+        VBox p = page(tr("settings.cat.keymaps"), tr("settings.keymaps.subtitle"));
         Card mainCard = card(p, null);
         controlRow(
                 mainCard,
@@ -2157,7 +2152,10 @@ public class SettingsWindow {
         ScrollPane scroll = new ScrollPane(shortcutListBox);
         shortcutScroll = scroll;
         scroll.setFitToWidth(true);
-        scroll.setPrefHeight(320);
+        // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
+        scroll.prefHeightProperty()
+                .bind(javafx.beans.binding.Bindings.max(
+                        320, stage.heightProperty().subtract(415)));
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
         note.setWrapText(true);
@@ -2178,30 +2176,29 @@ public class SettingsWindow {
         return p;
     }
 
-    /**
-     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
-     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
-     */
     /** Asks before Templates → Remove deletes a user template file. Replaceable so a test can answer. */
     private java.util.function.Predicate<com.editora.template.Template> confirmTemplateRemoval =
             this::confirmTemplateRemovalDialog;
 
     private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
         String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.template.removeConfirm", name, t.id() + ".json"),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("settings.template.remove"));
-        confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return confirmLoss.test(
+                tr("settings.template.remove"), tr("settings.template.removeConfirm", name, t.id() + ".json"));
     }
 
+    /**
+     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
+     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
+     */
     private boolean confirmResetAllShortcuts() {
         Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
+                Alert.AlertType.CONFIRMATION,
+                tr(
+                        "dialog.shortcut.resetAll.body",
+                        com.editora.command.KeymapManager.displayName(com.editora.command.KeymapManager.resolveName(
+                                config.getSettings().getKeymap()))),
+                ButtonType.OK,
+                ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
         confirm.setHeaderText(null);
@@ -2231,13 +2228,11 @@ public class SettingsWindow {
         shortcutListBox.getChildren().clear();
         shortcutRowsById.clear();
         shortcutTabStop = null;
-        String q = shortcutFilter == null ? "" : shortcutFilter.getText().trim().toLowerCase(Locale.ROOT);
+        String q = shortcutFilter == null ? "" : shortcutFilter.getText();
+        String typedChord = com.editora.command.ChordQuery.parse(q);
+        String chordShown = typedChord == null ? null : shortcutActions.display(typedChord);
         for (Shortcut s : shortcutActions.rows()) {
-            boolean match = q.isEmpty()
-                    || s.title().toLowerCase(Locale.ROOT).contains(q)
-                    || s.id().toLowerCase(Locale.ROOT).contains(q)
-                    || (s.chord() != null && s.chord().toLowerCase(Locale.ROOT).contains(q));
-            if (match) {
+            if (shortcutMatches(s, q, chordShown)) {
                 HBox row = shortcutRow(s);
                 shortcutRowsById.put(s.id(), row);
                 shortcutListBox.getChildren().add(row);
@@ -2259,6 +2254,26 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Whether a shortcut row matches the filter: every word of {@code query} in its title or id ("file save"
+     * finds "File: Save"), or in its chord as text; or — when the query reads as a chord in any notation — that
+     * chord, shown as {@code chordShown}, is the row's chord or the start of it. Pure.
+     */
+    static boolean shortcutMatches(Shortcut s, String query, String chordShown) {
+        // A query that reads as a chord is matched as one: as text "Ctrl+S" also hit "Ctrl+Shift+S".
+        String chordText = chordShown != null || s.chord() == null ? "" : s.chord();
+        String text = (s.title() + ' ' + s.id() + ' ' + chordText).toLowerCase(Locale.ROOT);
+        boolean words = true;
+        for (String w :
+                (query == null ? "" : query).toLowerCase(Locale.ROOT).strip().split("\\s+")) {
+            words &= text.contains(w);
+        }
+        return words
+                || (chordShown != null
+                        && s.chord() != null
+                        && (s.chord().equals(chordShown) || s.chord().startsWith(chordShown + ' ')));
+    }
+
     /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
     private HBox shortcutRow(Shortcut s) {
         HBox row = new HBox(8);
@@ -2273,14 +2288,15 @@ public class SettingsWindow {
             row.getStyleClass().add("shortcut-row-recording");
             // Enter saves and Escape cancels from inside the field: it records Tab like any other key, so
             // the Save button beside it cannot be reached from the keyboard.
-            TextField capture = ShortcutCapture.field(seq -> commitRecording(s.id(), seq), () -> {
-                recordingCommandId = null;
-                refreshShortcuts(s.id());
-            });
+            TextField capture =
+                    ShortcutCapture.field(shortcutActions::display, seq -> commitRecording(s.id(), seq), () -> {
+                        recordingCommandId = null;
+                        refreshShortcuts(s.id());
+                    });
             Button save = new Button(tr("settings.shortcuts.save"));
             save.getStyleClass().add("success");
             save.setDefaultButton(false);
-            save.setOnAction(e -> commitRecording(s.id(), capture.getText()));
+            save.setOnAction(e -> commitRecording(s.id(), ShortcutCapture.recorded(capture)));
             Button cancel = new Button(tr("settings.shortcuts.cancel"));
             cancel.setOnAction(e -> {
                 recordingCommandId = null;
@@ -2342,6 +2358,12 @@ public class SettingsWindow {
                         || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
                     select.run();
                     e.consume();
+                } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
+                        || e.getCode() == javafx.scene.input.KeyCode.BACK_SPACE) {
+                    if (s.chord() != null) {
+                        removeShortcut(s.id());
+                    }
+                    e.consume();
                 } else if (target >= 0) {
                     if (target < all.size()) {
                         all.get(target).requestFocus();
@@ -2356,11 +2378,11 @@ public class SettingsWindow {
                     refreshShortcuts();
                 });
                 Button reset = new Button(tr("settings.shortcuts.reset"));
-                reset.setOnAction(e -> {
-                    shortcutActions.reset(s.id());
-                    refreshShortcuts(s.id());
-                });
-                row.getChildren().addAll(record, reset);
+                reset.setOnAction(e -> resetShortcut(s.id()));
+                Button remove = new Button(tr("settings.shortcuts.remove"));
+                remove.setDisable(s.chord() == null);
+                remove.setOnAction(e -> removeShortcut(s.id()));
+                row.getChildren().addAll(record, reset, remove);
             }
         }
         return row;
@@ -2388,6 +2410,47 @@ public class SettingsWindow {
         }
     }
 
+    /** Unbinds a command from the list (its Remove button, or Delete on its row). */
+    private void removeShortcut(String commandId) {
+        shortcutActions.clear(commandId);
+        refreshShortcuts(commandId);
+    }
+
+    /** Resets a command to its keymap default, asking first when that takes a chord back from another command. */
+    private void resetShortcut(String commandId) {
+        List<com.editora.command.KeybindingEdits.Conflict> taken = shortcutActions.takenDefaults(commandId);
+        if (!taken.isEmpty()) {
+            StringBuilder lines = new StringBuilder();
+            for (var c : taken) {
+                lines.append("\n   ")
+                        .append(shortcutActions.display(c.chord()))
+                        .append("  —  ")
+                        .append(titleOf(c.commandId()));
+            }
+            if (!confirmLoss.test(
+                    tr("dialog.shortcut.conflict.title"),
+                    tr("dialog.shortcut.reclaim.body", titleOf(commandId), lines.toString()))) {
+                return;
+            }
+        }
+        shortcutActions.reset(commandId);
+        refreshShortcuts(commandId);
+    }
+
+    /** Asks before a step that loses something; Cancel is the default answer. Replaceable so a test can answer. */
+    private java.util.function.BiPredicate<String, String> confirmLoss = this::confirmCancelDefault;
+
+    private boolean confirmCancelDefault(String title, String body) {
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(title);
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().setMinWidth(460);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.OK)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
     /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
     private void commitRecording(String commandId, String sequence) {
         recordingCommandId = null;
@@ -2405,15 +2468,23 @@ public class SettingsWindow {
         if (seq.isEmpty()) {
             return false;
         }
+        if (com.editora.command.KeybindingEdits.typesText(seq)) {
+            // Bound, the key would run the command instead of typing its character, everywhere.
+            macroWarn(tr("settings.shortcuts.typesText", shortcutActions.display(seq.split(" ")[0])));
+            return false;
+        }
         List<com.editora.command.KeybindingEdits.Conflict> conflicts = shortcutActions.conflicts(seq, commandId);
         if (!conflicts.isEmpty()) {
             StringBuilder affected = new StringBuilder();
             for (var c : conflicts) {
-                affected.append("\n   ").append(c.chord()).append("  —  ").append(titleOf(c.commandId()));
+                affected.append("\n   ")
+                        .append(shortcutActions.display(c.chord()))
+                        .append("  —  ")
+                        .append(titleOf(c.commandId()));
             }
             Alert confirm = Dialogs.styled(new Alert(
                     Alert.AlertType.CONFIRMATION,
-                    tr("dialog.shortcut.conflict.body", seq, affected.toString()),
+                    tr("dialog.shortcut.conflict.body", shortcutActions.display(seq), affected.toString()),
                     ButtonType.OK,
                     ButtonType.CANCEL));
             confirm.initOwner(stage);
@@ -2457,7 +2528,7 @@ public class SettingsWindow {
     }
 
     private VBox macrosPage() {
-        VBox p = page(tr("settings.cat.macros"));
+        VBox p = page(tr("settings.cat.macros"), tr("settings.macros.subtitle"));
         Card mainCard = card(p, null);
         macroPane = new MacroSettingsPane(new MacroSettingsPane.Host() {
             @Override
@@ -4658,7 +4729,7 @@ public class SettingsWindow {
     }
 
     private VBox snippetsPage() {
-        VBox p = page(tr("settings.cat.snippets"));
+        VBox p = page(tr("settings.cat.snippets"), tr("settings.snippets.subtitle"));
         Card expansion = card(p, null);
         checkRow(
                 expansion,
@@ -4673,7 +4744,9 @@ public class SettingsWindow {
                         this::macroWarn,
                         this::confirmSnippetSave,
                         SettingsWindow::highlightSnippetBody,
-                        SettingsWindow::installEmacsKeys));
+                        SettingsWindow::installEmacsKeys,
+                        name -> confirmLoss.test(
+                                tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))));
         reloadSnippets = snippetsEditor::reload;
         cardRow(
                 mainCard,
@@ -4702,7 +4775,7 @@ public class SettingsWindow {
     }
 
     private VBox templatesPage() {
-        VBox p = page(tr("settings.cat.templates"));
+        VBox p = page(tr("settings.cat.templates"), tr("settings.templates.subtitle"));
         Card author = card(p, tr("settings.section.templates"));
         controlRow(
                 author,
@@ -4826,8 +4899,11 @@ public class SettingsWindow {
                 return;
             }
             com.editora.template.Template cur = templateItems.get(i);
-            if (cur.isMultiFile() || id.getText().trim().isEmpty()) {
-                return; // multi-file templates are read-only here; an id is required
+            if (cur.isMultiFile()) {
+                return; // multi-file templates are read-only here
+            }
+            if (id.getText().trim().isEmpty()) {
+                id.setText(cur.id()); // the id names the file: a blank one keeps the old, and the rest still saves
             }
             if (templateFormText.get().equals(templateFormLoaded.get())) {
                 return; // a field merely lost focus — a bundled template must not become a user override for that
@@ -4920,6 +4996,17 @@ public class SettingsWindow {
                 commit.run();
             }
         });
+        PauseCommit.watch( // live, but never a half-typed id (it is the file name)
+                () -> {
+                    if (!id.isFocused()) {
+                        commit.run();
+                    }
+                },
+                name.textProperty(),
+                description.textProperty(),
+                language.textProperty(),
+                fileName.textProperty(),
+                body.textProperty());
 
         list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
             int i = now == null ? -1 : now.intValue();
@@ -5027,14 +5114,6 @@ public class SettingsWindow {
         keepWidth(add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
-        // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        right.getChildren().add(1, saveRow); // between the form and the multi-file note
         VBox.setVgrow(form, Priority.ALWAYS);
 
         loadTemplates.run();
@@ -5617,7 +5696,7 @@ public class SettingsWindow {
 
     /** Deep-copies the persisted tools so the working list edits independently until persisted. */
     private VBox abbreviationsPage() {
-        VBox p = page(tr("settings.cat.abbreviations"));
+        VBox p = page(tr("settings.cat.abbreviations"), tr("settings.abbrev.subtitle"));
         Card mainCard = card(p, null);
         abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
         abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
@@ -5630,150 +5709,15 @@ public class SettingsWindow {
         cardRow(
                 mainCard,
                 Category.ABBREVIATIONS,
-                abbreviationsEditor(),
+                (abbreviationsEditor = new AbbreviationsEditor(
+                                config,
+                                this::apply,
+                                this::macroWarn,
+                                name -> confirmLoss.test(
+                                        tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))))
+                        .node(),
                 "abbrev abbreviation expand text replacement snippet shortcut dictionary emacs");
         return p;
-    }
-
-    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion). */
-    private javafx.scene.Node abbreviationsEditor() {
-        reloadAbbrevs();
-
-        ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
-        abbrevList = list;
-        list.setPrefSize(200, 380);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.config.Abbreviation a, boolean empty) {
-                super.updateItem(a, empty);
-                setText(
-                        empty || a == null || a.getAbbreviation().isBlank()
-                                ? (empty || a == null ? null : tr("settings.abbrev.unnamed"))
-                                : a.getAbbreviation());
-            }
-        });
-
-        TextField abbrev = new TextField();
-        TextField expansion = new TextField();
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.abbrev.abbreviation"), abbrev);
-        formRow(form, 1, tr("settings.abbrev.expansion"), expansion);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        Runnable commit = () -> {
-            com.editora.config.Abbreviation a = list.getSelectionModel().getSelectedItem();
-            if (a == null || loadingAbbrev) {
-                return;
-            }
-            a.setAbbreviation(abbrev.getText());
-            a.setExpansion(expansion.getText());
-            list.refresh();
-            persistAbbrevs();
-        };
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(abbrev);
-        wire.accept(expansion);
-        abbrevFormEdit = () -> {
-            com.editora.config.Abbreviation cur = list.getSelectionModel().getSelectedItem();
-            return cur == null
-                    ? PendingFormEdit.none()
-                    : PendingFormEdit.capture(
-                            List.of(abbrev, expansion), List.of(cur.getAbbreviation(), cur.getExpansion()));
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingAbbrev = true;
-            try {
-                form.setDisable(now == null);
-                abbrev.setText(now == null ? "" : now.getAbbreviation());
-                expansion.setText(now == null ? "" : now.getExpansion());
-            } finally {
-                loadingAbbrev = false;
-            }
-        });
-
-        Button add = new Button(tr("settings.abbrev.add"));
-        add.setOnAction(e -> {
-            com.editora.config.Abbreviation a = new com.editora.config.Abbreviation("", "");
-            abbrevItems.add(a);
-            persistAbbrevs();
-            list.getSelectionModel().select(a);
-            abbrev.requestFocus();
-        });
-        Button remove = new Button(tr("settings.abbrev.remove"));
-        remove.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                abbrevItems.remove(i);
-                persistAbbrevs();
-            }
-        });
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-
-        VBox left = new VBox(6, list);
-        VBox.setVgrow(list, Priority.ALWAYS);
-        VBox right = new VBox(8, form);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-        if (!abbrevItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox top = new HBox(12, left, right);
-        top.setAlignment(Pos.TOP_LEFT);
-        VBox.setVgrow(top, Priority.ALWAYS);
-        HBox buttons = new HBox(6, add, remove, spacer(), save);
-        buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, top, buttons);
-    }
-
-    private void persistAbbrevs() {
-        config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
-        config.saveAbbreviations();
-        apply(); // buffers hold a copy of the table: push the new one to every window's open buffers
-    }
-
-    private void reloadAbbrevs() {
-        if (sameAbbrevs(abbrevItems, config.getAbbreviations())) {
-            return;
-        }
-        var selected =
-                abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
-        String selectedKey = selected == null ? null : selected.getAbbreviation();
-        PendingFormEdit typing = abbrevFormEdit.get(); // before the items change: that reloads the form
-        abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
-        if (abbrevList != null && selectedKey != null) {
-            for (var a : abbrevItems) {
-                if (selectedKey.equals(a.getAbbreviation())) {
-                    abbrevList.getSelectionModel().select(a);
-                    typing.restore(); // the entry being edited is still there: what was typed stays typed
-                    break;
-                }
-            }
-        }
-    }
-
-    private static java.util.List<com.editora.config.Abbreviation> copyAbbrevs(
-            java.util.List<com.editora.config.Abbreviation> src) {
-        java.util.List<com.editora.config.Abbreviation> out = new java.util.ArrayList<>();
-        for (com.editora.config.Abbreviation a : src) {
-            out.add(new com.editora.config.Abbreviation(a.getAbbreviation(), a.getExpansion()));
-        }
-        return out;
     }
 
     private static java.util.List<com.editora.externaltool.ExternalTool> copyTools(
@@ -5857,6 +5801,10 @@ public class SettingsWindow {
     static void installEmacsKeys(CodeArea area) {
         installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            com.editora.command.KeymapManager keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+            if (keymap != null && !com.editora.command.KeymapManager.DEFAULT.equals(keymap.activeName())) {
+                return; // Emacs keys under the Emacs keymap only: under CUA, Ctrl+A selects all, Ctrl+D is not delete
+            }
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
             boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
             if (!ctrl && !alt) {
@@ -8467,7 +8415,9 @@ public class SettingsWindow {
      */
     private void reloadStoreBackedEditors() {
         reloadExternalTools();
-        reloadAbbrevs();
+        if (abbreviationsEditor != null) {
+            abbreviationsEditor.reload();
+        }
         reloadRemote();
     }
 
@@ -8505,23 +8455,6 @@ public class SettingsWindow {
                             && x.getStdin() == y.getStdin()
                             && x.getOutput() == y.getOutput()
                             && x.isEnabled() == y.isEnabled())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean sameAbbrevs(
-            java.util.List<com.editora.config.Abbreviation> a, java.util.List<com.editora.config.Abbreviation> b) {
-        if (a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            com.editora.config.Abbreviation x = a.get(i);
-            com.editora.config.Abbreviation y = b.get(i);
-            if (x != y
-                    && !(java.util.Objects.equals(x.getAbbreviation(), y.getAbbreviation())
-                            && java.util.Objects.equals(x.getExpansion(), y.getExpansion()))) {
                 return false;
             }
         }
@@ -8949,6 +8882,24 @@ public class SettingsWindow {
         void reset(String commandId);
 
         void resetAll();
+
+        /** {@code chordSeq} in the active keymap's notation — what the list shows ({@code Ctrl+S}, {@code ⌘S}). */
+        default String display(String chordSeq) {
+            return chordSeq;
+        }
+
+        /** Unbinds {@code commandId}: its own bindings and its keymap defaults. */
+        default void clear(String commandId) {}
+
+        /** The default chords of {@code commandId} another command's override now holds (Reset takes them back). */
+        default java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
+            return java.util.List.of();
+        }
+
+        /** Drops every binding of a command that is gone (a deleted macro), in every keymap. */
+        default void forget(String commandId) {
+            reset(commandId);
+        }
     }
 
     /**
