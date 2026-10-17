@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * v127→128: {@code debugHotCodeReplace}, {@code debugStepFilters}, {@code debugShowStatics} and
+ * v128→129: {@code debugHotCodeReplace}, {@code debugStepFilters}, {@code debugShowStatics} and
  * {@code debugExceptionTypes} are new — nothing else changes, and each starts at its default.
  */
 class HotCodeReplaceSettingMigrationTest {
@@ -20,10 +20,10 @@ class HotCodeReplaceSettingMigrationTest {
 
     @Test
     void theHotCodeReplaceSettingArrivesWithoutTouchingAnythingElse() throws Exception {
-        JsonNode v127 = mapper.readTree("{\"schemaVersion\":127,\"debugSupport\":true,\"debugProgramConsole\":false}");
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v127.deepCopy(), mapper);
+        JsonNode v128 = mapper.readTree("{\"schemaVersion\":128,\"debugSupport\":true,\"debugProgramConsole\":false}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v128.deepCopy(), mapper);
 
-        assertEquals(128, Settings.SCHEMA_VERSION);
+        assertEquals(129, Settings.SCHEMA_VERSION);
         assertEquals(Settings.SCHEMA_VERSION, out.get("schemaVersion").asInt(), "stamped current");
         assertTrue(out.get("debugSupport").asBoolean());
         assertFalse(out.get("debugProgramConsole").asBoolean());
@@ -34,7 +34,7 @@ class HotCodeReplaceSettingMigrationTest {
         assertTrue(upgraded.isDebugShowStatics());
         assertEquals("", upgraded.getDebugExceptionTypes());
 
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":128,\"debugHotCodeReplace\":\"manual\"}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":129,\"debugHotCodeReplace\":\"manual\"}");
         assertEquals("manual", mapper.treeToValue(chosen, Settings.class).getDebugHotCodeReplace());
         assertEquals("auto", new Settings().getDebugHotCodeReplace());
     }

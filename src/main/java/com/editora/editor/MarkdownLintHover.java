@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import javafx.scene.control.Tooltip;
@@ -19,18 +20,32 @@ final class MarkdownLintHover {
     private final CodeArea area;
     /** The overlay to read, or null while linting is off for the buffer. */
     private final Supplier<MarkdownLintOverlay> overlay;
+    /** A line under the messages for the marks hovered (how to fix them), or null for none. */
+    private final Function<List<MarkdownLint.Diagnostic>, String> footer;
 
     private Tooltip tooltip;
     /** Text currently shown — skips a re-{@code show()} (flicker) on each pointer move. */
     private String shown;
 
-    private MarkdownLintHover(CodeArea area, Supplier<MarkdownLintOverlay> overlay) {
+    private MarkdownLintHover(
+            CodeArea area,
+            Supplier<MarkdownLintOverlay> overlay,
+            Function<List<MarkdownLint.Diagnostic>, String> footer) {
         this.area = area;
         this.overlay = overlay;
+        this.footer = footer == null ? hits -> null : footer;
     }
 
     static void install(CodeArea area, Supplier<MarkdownLintOverlay> overlay) {
-        MarkdownLintHover hover = new MarkdownLintHover(area, overlay);
+        install(area, overlay, null);
+    }
+
+    /** {@link #install(CodeArea, Supplier)}, with {@code footer} adding a line under the messages (null: none). */
+    static void install(
+            CodeArea area,
+            Supplier<MarkdownLintOverlay> overlay,
+            Function<List<MarkdownLint.Diagnostic>, String> footer) {
+        MarkdownLintHover hover = new MarkdownLintHover(area, overlay, footer);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, hover::onMove);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hover.hide());
     }
@@ -49,7 +64,8 @@ final class MarkdownLintHover {
                 hide();
                 return;
             }
-            String text = text(hits);
+            String extra = footer.apply(hits);
+            String text = extra == null || extra.isEmpty() ? text(hits) : text(hits) + "\n" + extra;
             if (tooltip != null && tooltip.isShowing() && text.equals(shown)) {
                 return;
             }

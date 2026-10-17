@@ -374,6 +374,10 @@ public class EditorBuffer implements TabContent {
     private Node viewModeControl;
     /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
     private Node htmlPreviewControl;
+    /** The {@code .http} environment pill, kept beside the Editor/Split/Preview toggle in every mode. */
+    private Node httpEnvControl;
+    /** Holds the environment pill and the view toggle side by side over a preview (Split and Preview modes). */
+    private final HBox previewCornerRow = previewCornerRow();
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
     private Node logControl;
     /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
@@ -632,6 +636,8 @@ public class EditorBuffer implements TabContent {
     private boolean httpFeatureEnabled;
     /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
     private final HttpGutter httpGutter = new HttpGutter();
+    /** A {@code .http} buffer's last results after its request lines, and the ▶ colours they give (U11). */
+    private final HttpResultMarks httpResults = new HttpResultMarks();
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -1016,7 +1022,7 @@ public class EditorBuffer implements TabContent {
                         ? "test-run-marker"
                         : line == httpGutter.runningGlyphLine(this::isFoldedLine)
                                 ? FoldManager.HTTP_RUNNING_CLASS
-                                : null,
+                                : httpResults.glyphClass(line), // the ▶ of a request that ran: its outcome
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -1095,6 +1101,9 @@ public class EditorBuffer implements TabContent {
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             shiftCodeLenses(changes);
+            if (httpResults.shift(changes, area)) {
+                refreshInlayAreas(); // a request's result follows it when lines are added above
+            }
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
@@ -1890,6 +1899,7 @@ public class EditorBuffer implements TabContent {
                     debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
                     items.add(debugRequest);
                 }
+                items.addAll(HttpVariableFixes.menuItems(httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
                 items.add(new SeparatorMenuItem());
             } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -2533,8 +2543,16 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** The inlays of one line: its hints, then — after the last character — its code lens. */
+    /** The inlays of one line: its hints, its code lens, then a {@code .http} request's last result. */
     private java.util.List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> lsp = lspInlaysOn(line);
+        return httpResults.isEmpty() || line < 0 || line >= area.getParagraphs().size()
+                ? lsp
+                : httpResults.inlays(line, lsp, area.getParagraphLength(line));
+    }
+
+    /** The LSP inlays of one line: its hints, then — after the last character — its code lens. */
+    private java.util.List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
         java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
         java.util.List<CodeLens> lenses = codeLensByLine.get(line);
         if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
@@ -2615,6 +2633,7 @@ public class EditorBuffer implements TabContent {
      * look and hand cursor a pick would have given it are set here.
      */
     private void installCodeLensClick(CodeArea a) {
+        httpResults.install(a); // and on a .http request's result
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
                 return;
@@ -3629,6 +3648,21 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
+    /** The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"). */
+    public java.util.List<CodeAction> httpVariableFixesAt(CodeArea view, int offset) {
+        return HttpVariableFixes.at(httpVariableMarks, httpGutter.hooks(), view, offset);
+    }
+
+    /** Offers the variable fixes at the caret in the code-action popup (Code Actions); false when there are none. */
+    public boolean showHttpVariableFixes() {
+        CodeArea view = getFocusedArea();
+        java.util.List<CodeAction> fixes = httpVariableFixesAt(view, view.getCaretPosition());
+        if (!fixes.isEmpty()) {
+            showCodeActions(fixes, HttpVariableFixes::apply);
+        }
+        return !fixes.isEmpty();
+    }
+
     /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
     public java.util.List<MarkdownLint.Diagnostic> httpVariableDiagnostics() {
         return httpVariableMarks.diagnostics();
@@ -3656,6 +3690,31 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpRunning(int index, String requestLine) {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
+    }
+
+    /** Each request's last result after its line, and its ▶ coloured by it ({@link HttpResultMarks}); empty: none. */
+    public void setHttpResults(java.util.List<HttpLineResult> results) {
+        if (!httpResults.isEmpty() || (results != null && !results.isEmpty())) {
+            repaintHttpResults(httpResults.set(results, this::paragraphTextOrNull));
+        }
+    }
+
+    /** The results shown after the request lines, by line. */
+    public java.util.List<HttpLineResult> httpResults() {
+        return httpResults.all();
+    }
+
+    /** Runs the click action of the result after {@code line}, as a click on it does; false when it has none. */
+    public boolean activateHttpResult(int line) {
+        return httpResults.activate(line);
+    }
+
+    private void repaintHttpResults(java.util.Set<Integer> lines) {
+        if (lines != null) {
+            ensureInlayFactory();
+            refreshInlayAreas();
+            lines.forEach(this::refreshGutterLine);
+        }
     }
 
     /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
@@ -3917,6 +3976,7 @@ public class EditorBuffer implements TabContent {
         runnable = now.runnable();
         runLine = now.line();
         httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
+        repaintHttpResults(httpResults.reanchor(now.httpLines(), this::paragraphTextOrNull)); // edited: it goes
         makeTargets = now.makeTargets();
         testLines = now.testLines();
         mainLines = now.mainLines();
@@ -4446,6 +4506,27 @@ public class EditorBuffer implements TabContent {
     /** Whether the floating HTML "open in browser" control is currently attached. */
     public boolean hasHtmlPreviewControl() {
         return htmlPreviewControl != null;
+    }
+
+    /**
+     * Overlays a {@code .http} file's environment pill beside the Editor/Split/Preview toggle — on the code pane in
+     * Editor mode, over the response view in Split and Preview, so it is there in every mode; {@code null} removes it.
+     */
+    public void setHttpEnvControl(Node control) {
+        if (httpEnvControl == control) {
+            return;
+        }
+        if (httpEnvControl != null) {
+            removeCornerControl(httpEnvControl);
+            previewCornerRow.getChildren().remove(httpEnvControl);
+        }
+        this.httpEnvControl = control;
+        rebuildViewHost();
+    }
+
+    /** Whether the {@code .http} environment pill is attached. */
+    public boolean hasHttpEnvControl() {
+        return httpEnvControl != null;
     }
 
     /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
@@ -5877,10 +5958,11 @@ public class EditorBuffer implements TabContent {
         Node content;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
             StackPane host = previewModeHost();
-            if (viewModeControl != null) {
-                StackPane.setAlignment(viewModeControl, Pos.TOP_RIGHT);
-                StackPane.setMargin(viewModeControl, new Insets(6, 10, 0, 0));
-                host.getChildren().add(viewModeControl);
+            Node corner = previewCorner();
+            if (corner != null) {
+                StackPane.setAlignment(corner, Pos.TOP_RIGHT);
+                StackPane.setMargin(corner, new Insets(6, 10, 0, 0));
+                host.getChildren().add(corner);
             }
             content = host;
             if (markdownViewMode == MarkdownViewMode.SPLIT) {
@@ -6284,6 +6366,30 @@ public class EditorBuffer implements TabContent {
     private void detachViewModeControl() {
         removeCornerControl(viewModeControl);
         removeCornerControl(htmlPreviewControl);
+        removeCornerControl(httpEnvControl);
+        removeCornerControl(previewCornerRow);
+        previewCornerRow.getChildren().clear();
+    }
+
+    /**
+     * What sits at the top-right of a preview: the view toggle, with the {@code .http} environment pill to its left
+     * when the buffer has one (both in one row, so they never overlap).
+     */
+    private Node previewCorner() {
+        if (httpEnvControl == null) {
+            return viewModeControl;
+        }
+        previewCornerRow.getChildren().setAll(httpEnvControl);
+        if (viewModeControl != null) {
+            previewCornerRow.getChildren().add(viewModeControl);
+        }
+        return previewCornerRow;
+    }
+
+    private static HBox previewCornerRow() {
+        HBox row = cornerControlRow();
+        row.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE); // a StackPane overlay keeps its own size
+        return row;
     }
 
     private void removeCornerControl(Node control) {
@@ -6300,11 +6406,15 @@ public class EditorBuffer implements TabContent {
         if (csvPreviewHost != null) {
             csvPreviewHost.getChildren().remove(control);
         }
+        if (httpPreviewHost != null) {
+            httpPreviewHost.getChildren().remove(control);
+        }
     }
 
     /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
      *  They share one row ({@link #cornerControls}), so however many are present they sit side by side. */
     private void attachControlToCodePane() {
+        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? httpEnvControl : null);
         placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
         placeStickyScroll();
@@ -6411,6 +6521,9 @@ public class EditorBuffer implements TabContent {
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
+        if (inlayFactoryInstalled) {
+            area2.setInlayFactory(this::inlaysOn); // hints, lenses and results set before the split opened
+        }
         imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
@@ -7034,7 +7147,10 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        MarkdownLintHover.install(a, () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null);
+        MarkdownLintHover.install(
+                a,
+                () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
+                hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         debugHover.install(a);
         installNoteHover(a);

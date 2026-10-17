@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 128;
+    public static final int SCHEMA_VERSION = 129;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -518,6 +518,11 @@ public class Settings {
     private String httpNodePath = "";
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
+    /**
+     * Show each {@code .http} request's last result after its method/URL line, and colour its ▶ by the outcome: on
+     * by default.
+     */
+    private boolean httpInlineResults = true;
     /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
     private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
@@ -960,6 +965,14 @@ public class Settings {
 
     public void setHttpScriptsEnabled(boolean httpScriptsEnabled) {
         this.httpScriptsEnabled = httpScriptsEnabled;
+    }
+
+    public boolean isHttpInlineResults() {
+        return httpInlineResults;
+    }
+
+    public void setHttpInlineResults(boolean httpInlineResults) {
+        this.httpInlineResults = httpInlineResults;
     }
 
     public String getHttpNodePath() {

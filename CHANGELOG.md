@@ -83,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
   in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
   jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
-  ones. `Include` lines are followed. `ProxyCommand` is not supported.
+  ones. `Include` lines are followed, globs too (`Include conf.d/*`, on Windows as well). `ProxyCommand` is not
+  supported.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store
@@ -131,8 +132,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Breakpoint, and while paused Run to Cursor, Show Value and Add to Watches.
 - **JDK and library frames show their source** (read-only) when you step into them or click them.
 
+- **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
+  how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
+  status is in the outcome's colour, failed tests are red, and the request's ▶ takes the colour too (amber for a
+  4xx, red for a 5xx, a failure or failed tests).
+  - Click the result to show that response in the response view; hover it to see when it ran.
+  - The results come from the response history, so they are back when the file is reopened, and Clear removes them.
+    A request whose line you edit loses its result.
+  - The text is not part of the file: it is never copied, searched, saved or undone.
+  - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
+    Request Lines`.
+
 ### Changed
 
+- **Debug variables use the editor's syntax colours.** Names, values and types in the Debug tool window's
+  variables and watches are coloured like code in the current editor theme — strings, numbers, `true`/`null`/`None`
+  and type names — including each element of a list or dict value, instead of the app's status colours.
 - **Settings: every external tool row looks and reads the same** — language servers, debug adapters, Mermaid,
   Diagrams, Typst, build tools, Node.js and AI agents show "tool: found (path)" or "tool: not found", then
   Install… or a link. Diagrams links to its install help, and Build Tools says whether the command it would run
@@ -196,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Debug Test and Debug via Build** use a free JDWP port for Maven test JVMs and Spring Boot, attach every forked
   JVM in turn, and Stop ends the test or build run too.
 - **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
-- **Settings schema 128** adds the hot code replace, step filter, static fields and exception class settings;
+- **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
   workspace schema 19 keeps the exception toggles per project.
 
 ### Fixed
@@ -349,8 +364,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
   stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
   - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
-    3xx, amber 4xx, red 5xx and failures), the time and size, then History and the environment. Its tooltip has
-    the full status line and when the request was sent.
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
+    status line and when the request was sent.
   - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
     (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
     default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
@@ -360,8 +375,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the request as sent, highlighted like a `.http` file and filling the tab.
   - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
     their shortcuts in the tooltips; Clear is in the **⋯** menu.
-  - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
-    to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
+    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
+- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
+  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
+  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
+  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
+  file no longer goes out without an environment because the response view was not open yet. The Environment
+  picker in the response view is gone; each file keeps the environment it had.
+  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
+    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
+    names the fix, and with another environment selected it says which ones define the variable.
+  - A variable sent empty is reported with the environments that define it. Each response in History records
+    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
+  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
 
 ## [0.22.0] - 2026-10-16
 

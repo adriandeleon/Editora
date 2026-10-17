@@ -256,11 +256,14 @@ public enum ConfigSchema {
                     // v126→127: the OpenAI-compatible provider gets its own endpoint/model/inline model (it shared
                     // the Anthropic ones, so a provider switch sent one provider's key to the other's server).
                     Map.entry(126, (Migration) ConfigMigrations::splitOpenaiEndpoint),
-                    // v127→128: + debugHotCodeReplace ("auto": saved Java code reaches a running debug
+                    // v127→128: + httpInlineResults (additive: absent is the default, on — a request line shows
+                    // its last result after a run; nobody had a choice to keep).
+                    Map.entry(127, (Migration) ConfigMigrations::identity),
+                    // v128→129: + debugHotCodeReplace ("auto": saved Java code reaches a running debug
                     // session on save) and debugStepFilters / debugShowStatics / debugExceptionTypes (step
                     // filters on and statics shown — what java-debug is now told; every exception, as before).
                     // Additive: no earlier file could have chosen otherwise.
-                    Map.entry(127, (Migration) ConfigMigrations::identity)),
+                    Map.entry(128, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -354,10 +357,19 @@ public enum ConfigSchema {
     // and the file gained clearedAt — all additive (absent ⇒ unknown / never cleared).
     // v2 → v3: + landedAt, urlTemplate, fingerprint per response (additive).
     // v3 → v4: + tests, what each response's @assert checks and handlers found (additive; absent ⇒ none ran).
+    // v4 → v5: + environment, the one each response was sent in (additive; absent ⇒ unknown).
     HTTP_HISTORY(
             HttpResponseHistory.SCHEMA_VERSION,
             1,
-            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity, 3, ConfigMigrations::identity));
+            Map.of(
+                    1,
+                    ConfigMigrations::identity,
+                    2,
+                    ConfigMigrations::identity,
+                    3,
+                    ConfigMigrations::identity,
+                    4,
+                    ConfigMigrations::identity));
 
     private final int currentVersion;
     private final int assumedLegacyVersion;

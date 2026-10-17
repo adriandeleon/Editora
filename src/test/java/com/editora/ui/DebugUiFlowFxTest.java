@@ -1252,6 +1252,32 @@ class DebugUiFlowFxTest {
         }
     }
 
+    /** Values were drawn in the UI's state colours, not the editor's: they now take its syntax token colours. */
+    @Test
+    void variableRowsUseTheEditorsSyntaxColours() throws Exception {
+        FxTestSupport.callOnFx(() -> {
+            DebugPanel.VarRow row = new DebugPanel.VarRow("s", "'hi'", "str", 0, 1, DebugPanel.Kind.VARIABLE);
+            javafx.scene.text.TextFlow flow = (javafx.scene.text.TextFlow)
+                    FxTestSupport.call(panel, "renderRow", new Class[] {DebugPanel.VarRow.class}, row);
+            javafx.scene.text.Text string = new javafx.scene.text.Text("'x'");
+            string.getStyleClass().addAll("text", "string"); // what the editor draws a string in
+            javafx.scene.text.Text plain = new javafx.scene.text.Text("x");
+            // A scene styled like the window's (the Debug window may be closed, or detached into its own).
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(flow, string, plain);
+            box.getStyleClass().add("debug-panel");
+            Stage stage = FxTestSupport.field(fx.controller, "stage");
+            new javafx.scene.Scene(box).getStylesheets().setAll(stage.getScene().getStylesheets());
+            box.applyCss();
+            List<javafx.scene.Node> runs = flow.getChildren();
+            assertEquals(List.of("text", "variable"), List.copyOf(runs.get(0).getStyleClass()));
+            assertEquals(List.of("text", "string"), List.copyOf(runs.get(2).getStyleClass()));
+            assertEquals(List.of("text", "type"), List.copyOf(runs.get(3).getStyleClass()));
+            assertEquals(string.getFill(), ((javafx.scene.text.Text) runs.get(2)).getFill());
+            assertNotEquals(plain.getFill(), ((javafx.scene.text.Text) runs.get(2)).getFill());
+            return null;
+        });
+    }
+
     /** The style classes of the value part of a rendered variables row. */
     private List<String> valueClasses(DebugPanel.VarRow row) throws Exception {
         return FxTestSupport.callOnFx(() -> {

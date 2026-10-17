@@ -16,8 +16,14 @@ import java.util.function.IntFunction;
 
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
+import javafx.geometry.Side;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.Clipboard;
 
 import com.editora.config.HttpResponseHistory;
@@ -112,6 +118,9 @@ final class HttpClientCoordinator {
             return false;
         }
 
+        /** Opens {@code file} in an editor tab (an env file, from the environment menu). */
+        default void openFile(Path file) {}
+
         /** The folder Editora copies its response-handler runner to; null when handlers cannot run. */
         default Path scriptCacheDir() {
             return null;
@@ -146,8 +155,24 @@ final class HttpClientCoordinator {
      *  can use the response of one run earlier. Cleared when the environment changes or the buffer closes. */
     private final Map<EditorBuffer, CapturedResponses> captures = new IdentityHashMap<>();
 
-    /** The environment chosen for each buffer's file ({@code ""} = none), once known (FX thread only). */
+    /**
+     * The environment chosen for each buffer's file ({@code ""} = none), once known (FX thread only): picked in the
+     * pill or the status bar, or remembered in the file's saved history. The source of truth for every run, the
+     * {@code {{variable}}} marks and the saved history; validated against {@link #environmentNames} when read.
+     */
     private final Map<EditorBuffer, String> environments = new IdentityHashMap<>();
+
+    /** The environment names each buffer's env files define, as last read (FX thread only). */
+    private final Map<EditorBuffer, List<String>> environmentNames = new IdentityHashMap<>();
+
+    /** Each {@code .http} buffer's environment pill, beside its Editor/Split/Preview toggle; dropped with its panel. */
+    private final Map<EditorBuffer, HttpEnvPill> pills = new IdentityHashMap<>();
+
+    /** The environment menu now open (from a pill, the status bar or the command), or null. */
+    private ContextMenu environmentMenu;
+
+    /** Told when the active buffer's environment, or whether it has one, may have changed (the status bar). */
+    private Runnable environmentShown = () -> {};
 
     /** Each panel's saved history: read, saved, merged across windows, and moved with its file. */
     private final HttpHistorySync history;
@@ -165,9 +190,10 @@ final class HttpClientCoordinator {
                 host,
                 ops::historyStore,
                 this::panelFor,
-                environments::get,
+                this::persistedEnvironment,
                 environments::putIfAbsent, // a remembered environment never replaces this file's own choice
                 this::refreshEnvironments);
+        history.setOnRestored(this::refreshInlineResults); // a restored history shows on the request lines too
         this.actions = new HttpResponseActions(host, ops);
         service.setRedirectGuard(new HttpRedirectGuard(host, ops::history));
     }
@@ -199,12 +225,20 @@ final class HttpClientCoordinator {
         if (want && !has) {
             HttpClientPanel p = createPanelFor(buffer);
             panels.put(buffer, p);
+            HttpEnvPill pill = new HttpEnvPill(() -> showEnvironmentMenu(buffer, pills.get(buffer), Side.BOTTOM));
+            pills.put(buffer, pill);
             gateRun(buffer, p);
+            buffer.setHttpEnvControl(pill); // the environment, beside the view toggle, before any run (U3)
             buffer.setHttpPreviewNode(p); // makes hasPreview() true → the toggle attaches (controller)
+            showEnvironment(buffer);
             refreshEnvironments(buffer);
             history.attached(buffer, p);
         } else if (!want && has) {
+            buffer.setHttpEnvControl(null);
+            pills.remove(buffer);
+            environmentNames.remove(buffer);
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
+            buffer.setHttpResults(List.of()); // no History behind them any more
             HttpClientPanel gone = panels.remove(buffer);
             history.detached(buffer);
             HttpClientService.Handle run = running.remove(buffer);
@@ -278,6 +312,8 @@ final class HttpClientCoordinator {
             history.closed(closed);
             captures.remove(closed);
             environments.remove(closed);
+            environmentNames.remove(closed);
+            pills.remove(closed);
             envCache.forget(closed.getPath(), ops.projectRoot());
             cancelling.remove(closed); // a cancelled run's late results have no panel to land in
             HttpClientService.Handle run = running.remove(closed);
@@ -295,11 +331,6 @@ final class HttpClientCoordinator {
                 actions::openInTab,
                 s.getFontFamily(),
                 editorFontSize());
-        p.setOnEnvironmentChanged(env -> {
-            environments.put(buffer, env);
-            history.persist(buffer);
-            environmentListener.accept(buffer); // the editor's {{variable}} marks follow the choice
-        });
         p.setOnCancel(() -> cancelRun(buffer));
         p.setOnRun(entry -> runAgain(buffer, entry));
         p.setOnEscape(() -> {
@@ -309,7 +340,10 @@ final class HttpClientCoordinator {
             }
             focusWhenShown(buffer.getArea());
         });
-        p.setOnCleared(() -> history.cleared(buffer));
+        p.setOnCleared(() -> {
+            history.cleared(buffer);
+            refreshInlineResults(buffer); // a cleared History leaves no result on the request lines
+        });
         return p;
     }
 
@@ -369,11 +403,13 @@ final class HttpClientCoordinator {
         host.forEachBuffer(b -> {
             b.setHttpEnabled(on && host.isLocalBuffer(b));
             ensureHttpPreview(b);
+            refreshInlineResults(b); // the setting may have changed
         });
         String family = host.settings().getFontFamily();
         int size = editorFontSize();
         panels.values().forEach(p -> p.setEditorFont(family, size));
         ops.updateRunGating();
+        environmentShown.run(); // the status bar's segment comes and goes with the feature
     }
 
     /** Runs the request whose block contains {@code line} of {@code buffer} (run glyph, editor menu, command). */
@@ -465,6 +501,7 @@ final class HttpClientCoordinator {
         Map<String, String> vars = shownVariables(buffer); // for the label and the save-first check only
         Path baseDir = folderOf(buffer); // null: an untitled scratch buffer
         CapturedResponses session = capturesFor(buffer);
+        String env = selectedEnvironment(buffer); // what this run resolves against, recorded with its result
         if (baseDir == null) {
             List<String> needs = HttpScratch.needsFolder(parsed, vars);
             if (!needs.isEmpty()) {
@@ -477,7 +514,8 @@ final class HttpClientCoordinator {
                         List.of(unsent),
                         new long[] {System.currentTimeMillis()},
                         identitySet(List.of(unsent)),
-                        false);
+                        false,
+                        env);
                 return; // a body file, >> or $dotenv has no folder to resolve against
             }
         }
@@ -489,7 +527,7 @@ final class HttpClientCoordinator {
         // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
         run[0] = service.run(
                 parsed,
-                environmentFor(buffer),
+                environmentFor(buffer, env),
                 baseDir,
                 session,
                 HttpSecretGate.forBuffer(buffer, ops),
@@ -503,7 +541,8 @@ final class HttpClientCoordinator {
                                 List.of(ex),
                                 new long[] {startedAt},
                                 Set.of(),
-                                false);
+                                false,
+                                env);
                     } else if (cancelling.remove(buffer, run[0])) {
                         landCancelled(
                                 buffer,
@@ -512,7 +551,8 @@ final class HttpClientCoordinator {
                                 List.of(ex),
                                 new long[] {startedAt},
                                 Set.of(),
-                                1);
+                                1,
+                                env);
                     }
                 });
         track(buffer, run[0]);
@@ -665,6 +705,7 @@ final class HttpClientCoordinator {
                     : b.getPath().getFileName().toString();
             Path baseDir = folderOf(b); // null: an untitled scratch buffer
             CapturedResponses session = capturesFor(b);
+            String env = selectedEnvironment(b); // what this run resolves against, recorded with its results
             // An untitled buffer sends what it can; a request needing the file's folder reports "save first".
             Map<Integer, HttpExchange> skipped = new LinkedHashMap<>();
             List<Integer> sent = new ArrayList<>();
@@ -686,7 +727,7 @@ final class HttpClientCoordinator {
             Set<HttpExchange> unsent = identitySet(skipped.values());
             if (sent.isEmpty()) {
                 revealResult(b);
-                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true);
+                finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true, env);
                 return;
             }
             startRun(b, label);
@@ -700,7 +741,7 @@ final class HttpClientCoordinator {
             HttpClientService.Handle[] run = new HttpClientService.Handle[1];
             run[0] = service.runAll(
                     toSend,
-                    environmentFor(b),
+                    environmentFor(b, env),
                     baseDir,
                     session,
                     HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
@@ -726,7 +767,8 @@ final class HttpClientCoordinator {
                                     merged(reqs.size(), sent, exchanges, skipped),
                                     startedAt,
                                     unsent,
-                                    true);
+                                    true,
+                                    env);
                         } else if (cancelling.remove(b, run[0])) {
                             landCancelled(
                                     b,
@@ -735,7 +777,8 @@ final class HttpClientCoordinator {
                                     merged(reqs.size(), sent, exchanges, skipped),
                                     startedAt,
                                     unsent,
-                                    reqs.size());
+                                    reqs.size(),
+                                    env);
                         }
                     });
             track(b, run[0]);
@@ -764,19 +807,132 @@ final class HttpClientCoordinator {
         return out;
     }
 
-    /** {@code http.selectEnvironment}: reveal the response preview and focus its environment picker. */
+    /**
+     * {@code http.selectEnvironment}: opens the active {@code .http} file's environment menu at its pill, once the env
+     * files are read again (they may have changed) — in any view mode, before any run. The menu takes the arrow keys
+     * and Enter; Escape closes it and leaves the caret in the editor.
+     */
     void selectEnvironment() {
         ifHttp(() -> {
             EditorBuffer b = host.activeBuffer();
-            HttpClientPanel p = panelFor(b);
-            if (p == null) {
+            HttpEnvPill pill = b == null ? null : pills.get(b);
+            if (pill == null) {
                 host.setStatus(tr("status.http.noRequest"));
                 return;
             }
-            b.revealHttpPreview();
-            refreshEnvironments(b);
-            p.focusEnvironment();
+            refreshEnvironments(b, () -> {
+                if (host.activeBuffer() == b && pills.get(b) == pill) {
+                    showEnvironmentMenu(b, pill, Side.BOTTOM);
+                }
+            });
         });
+    }
+
+    /**
+     * Opens {@code buffer}'s environment menu at {@code anchor} (its pill, or the status-bar segment, above which it
+     * opens): the file's environments and "No environment", the selected one checked; a disabled line saying why there
+     * is nothing to choose, and why an env file contributes nothing; and an entry to open each env file the file has.
+     * Not shown while {@code anchor} is not on screen (the menu is still built, for tests).
+     */
+    void showEnvironmentMenu(EditorBuffer buffer, Node anchor, Side side) {
+        if (buffer == null || pills.get(buffer) == null) {
+            return;
+        }
+        if (environmentMenu != null) {
+            environmentMenu.hide();
+        }
+        ContextMenu menu = new ContextMenu();
+        menu.getStyleClass().add("http-env-menu");
+        menu.getItems().setAll(environmentMenuItems(buffer));
+        menu.setOnHidden(e -> {
+            if (environmentMenu == menu) {
+                environmentMenu = null;
+            }
+            Node area = buffer.getFocusedArea();
+            if (host.activeBuffer() == buffer && area.getScene() != null) {
+                area.requestFocus(); // Escape, or a pick: back to typing (in Preview there is no editor to focus)
+            }
+        });
+        environmentMenu = menu;
+        if (anchor != null
+                && anchor.getScene() != null
+                && anchor.getScene().getWindow() != null
+                && anchor.getScene().getWindow().isShowing()) {
+            menu.show(anchor, side, 0, side == Side.TOP ? -2 : 2);
+        }
+    }
+
+    private List<MenuItem> environmentMenuItems(EditorBuffer buffer) {
+        List<MenuItem> items = new ArrayList<>();
+        ToggleGroup group = new ToggleGroup();
+        String selected = selectedEnvironment(buffer);
+        List<String> names = environmentNames.getOrDefault(buffer, List.of());
+        for (String name : names) {
+            items.add(environmentItem(buffer, group, name, name, name.equals(selected)));
+        }
+        items.add(environmentItem(buffer, group, tr("httpenv.none"), "", selected.isEmpty()));
+        HttpEnvironments.EnvFiles files = envFilesFor(buffer);
+        if (names.isEmpty()) {
+            items.add(disabledItem(HttpEnvChoice.emptyHint(files)));
+        }
+        for (String problem : files.problems()) {
+            items.add(disabledItem(problem));
+        }
+        if (files.dir() != null && host.isLocalBuffer(buffer)) {
+            List<MenuItem> open = new ArrayList<>();
+            if (files.publicJson() != null) {
+                open.add(openEnvFileItem(files.dir().resolve(com.editora.http.HttpEnv.PUBLIC_FILE)));
+            }
+            if (files.privateJson() != null) {
+                open.add(openEnvFileItem(files.dir().resolve(com.editora.http.HttpEnv.PRIVATE_FILE)));
+            }
+            if (!open.isEmpty()) {
+                items.add(new SeparatorMenuItem());
+                items.addAll(open);
+            }
+        }
+        return items;
+    }
+
+    private MenuItem environmentItem(
+            EditorBuffer buffer, ToggleGroup group, String label, String name, boolean selected) {
+        RadioMenuItem item = new RadioMenuItem(label);
+        item.setToggleGroup(group);
+        item.setSelected(selected);
+        item.setUserData(name);
+        item.setOnAction(e -> chooseEnvironment(buffer, name));
+        return item;
+    }
+
+    private static MenuItem disabledItem(String text) {
+        MenuItem item = new MenuItem(text);
+        item.setDisable(true);
+        return item;
+    }
+
+    private MenuItem openEnvFileItem(Path file) {
+        MenuItem item = new MenuItem(tr("httpenv.open", file.getFileName().toString()));
+        item.setOnAction(e -> ops.openFile(file));
+        return item;
+    }
+
+    /**
+     * Selects {@code environment} ({@code ""} or null: none) for {@code buffer}'s file — from the pill's menu, the
+     * status bar's, or the "Use environment" quick fix: remembered in the file's saved history, and the marks, the
+     * pill and the status bar follow. The next run resolves against it.
+     */
+    void chooseEnvironment(EditorBuffer buffer, String environment) {
+        if (buffer == null || panelFor(buffer) == null) {
+            return;
+        }
+        String name = environment == null ? "" : environment;
+        boolean changed = !name.equals(environments.get(buffer));
+        environments.put(buffer, name);
+        if (changed) {
+            history.persist(buffer);
+        }
+        showEnvironment(buffer);
+        environmentListener.accept(buffer); // the editor's {{variable}} marks follow the choice
     }
 
     /**
@@ -848,11 +1004,17 @@ final class HttpClientCoordinator {
     }
 
     /**
-     * Updates this buffer's environment picker from the env files that apply to it ({@link HttpEnvironments} says
-     * which folder) with the names of both files, read in the background ({@link HttpEnvCache}) and applied on the
-     * FX thread. Called when the preview is attached, on a tab switch and when the window regains focus.
+     * Updates this buffer's environment names (its pill and menu) from the env files that apply to it ({@link
+     * HttpEnvironments} says which folder) with the names of both files, read in the background ({@link
+     * HttpEnvCache}) and applied on the FX thread. Called when the preview is attached, on a tab switch and when the
+     * window regains focus.
      */
     void refreshEnvironments(EditorBuffer buffer) {
+        refreshEnvironments(buffer, null);
+    }
+
+    /** {@link #refreshEnvironments(EditorBuffer)}, then {@code then} on the FX thread once the files are read. */
+    private void refreshEnvironments(EditorBuffer buffer, Runnable then) {
         HttpClientPanel p = panelFor(buffer);
         if (p == null) {
             return;
@@ -862,10 +1024,44 @@ final class HttpClientCoordinator {
             if (panelFor(buffer) != p || !java.util.Objects.equals(file, buffer.getPath())) {
                 return; // closed, switched off or saved elsewhere meanwhile (a newer refresh follows a Save As)
             }
-            String chosen = environments.get(buffer);
-            p.setEnvironments(read.files().names(), chosen != null ? chosen : ops.savedEnvironment());
+            environmentNames.put(buffer, read.files().names());
+            showEnvironment(buffer);
             environmentListener.accept(buffer); // the list (or the env files) may have changed
+            if (then != null) {
+                then.run();
+            }
         });
+    }
+
+    /** Shows {@code buffer}'s environment on its pill and, for the active buffer, in the status bar. */
+    private void showEnvironment(EditorBuffer buffer) {
+        HttpEnvPill pill = pills.get(buffer);
+        if (pill != null) {
+            pill.show(selectedEnvironment(buffer), HttpEnvChoice.sources(envFilesFor(buffer)));
+        }
+        if (buffer == host.activeBuffer()) {
+            environmentShown.run();
+        }
+    }
+
+    /** Sets who is told when the active buffer's environment may have changed (the status bar's segment). */
+    void setEnvironmentShownListener(Runnable listener) {
+        this.environmentShown = listener == null ? () -> {} : listener;
+    }
+
+    /**
+     * The status bar's text for {@code buffer}'s environment ("Env: dev", "No environment"), or null when it shows
+     * none: not an {@code .http} file, or the HTTP Client is off.
+     */
+    String environmentLabel(EditorBuffer buffer) {
+        return buffer != null && pills.containsKey(buffer) && isEnabled()
+                ? HttpEnvChoice.label(selectedEnvironment(buffer))
+                : null;
+    }
+
+    /** The env files that apply to {@code buffer}, as last read (no file access). */
+    private HttpEnvironments.EnvFiles envFilesFor(EditorBuffer buffer) {
+        return envCache.last(buffer.getPath(), ops.projectRoot()).files();
     }
 
     /**
@@ -891,10 +1087,39 @@ final class HttpClientCoordinator {
         this.environmentListener = listener == null ? b -> {} : listener;
     }
 
-    /** The environment selected for {@code buffer}'s file ({@code ""}: none), as a run would use it. */
+    /**
+     * The environment selected for {@code buffer}'s file ({@code ""}: none), as a run would use it: its own choice,
+     * else the window-wide one of older versions ({@link WindowOps#savedEnvironment}), as long as its env files (as
+     * last read) define it.
+     */
     String selectedEnvironment(EditorBuffer buffer) {
-        HttpClientPanel p = panelFor(buffer);
-        return p == null ? "" : p.getSelectedEnvironment();
+        if (buffer == null || panelFor(buffer) == null) {
+            return "";
+        }
+        String chosen = environments.get(buffer);
+        return HttpEnvironments.choose(
+                chosen != null ? chosen : ops.savedEnvironment(), environmentNames.getOrDefault(buffer, List.of()));
+    }
+
+    /** What a buffer's saved history records as its environment: its own choice as made, else what is selected. */
+    private String persistedEnvironment(EditorBuffer buffer) {
+        String chosen = environments.get(buffer);
+        return chosen != null ? chosen : selectedEnvironment(buffer);
+    }
+
+    /** The environment names {@code buffer}'s env files define, as last read. Test accessor. */
+    List<String> environmentNamesForTest(EditorBuffer buffer) {
+        return List.copyOf(environmentNames.getOrDefault(buffer, List.of()));
+    }
+
+    /** {@code buffer}'s environment pill, or null. Test accessor. */
+    HttpEnvPill envPillForTest(EditorBuffer buffer) {
+        return pills.get(buffer);
+    }
+
+    /** The environment menu now open (or last built while its anchor was off screen), or null. Test accessor. */
+    ContextMenu environmentMenuForTest() {
+        return environmentMenu;
     }
 
     /**
@@ -905,6 +1130,56 @@ final class HttpClientCoordinator {
         return buffer == null
                 ? null
                 : envCache.last(buffer.getPath(), ops.projectRoot()).dir();
+    }
+
+    // --- results on the request lines (U11) ---
+
+    /**
+     * Puts each request's last result after its method/URL line in {@code buffer}'s editor — the newest History entry
+     * whose request still reads that line ({@link HttpInlineResult#newestPerRequest}) — or removes them all when the
+     * setting is off, the buffer has no panel or runs nothing from here. Called when a run lands, a saved history is
+     * restored, History is cleared and the settings are applied; the editor keeps them on their lines in between.
+     */
+    void refreshInlineResults(EditorBuffer buffer) {
+        if (buffer == null) {
+            return;
+        }
+        HttpClientPanel p = panelFor(buffer);
+        List<HttpHistoryEntry> entries = p == null ? List.of() : p.history();
+        if (entries.isEmpty() || !host.settings().isHttpInlineResults() || !host.isLocalBuffer(buffer)) {
+            buffer.setHttpResults(List.of());
+            return;
+        }
+        String text = buffer.getContent();
+        List<HttpFile.Request> requests = HttpFile.parse(text);
+        String[] lines = text.split("\n", -1);
+        long now = System.currentTimeMillis();
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        List<com.editora.editor.HttpLineResult> results = new ArrayList<>();
+        HttpInlineResult.newestPerRequest(requests, entries).forEach((index, entry) -> {
+            int line = requests.get(index).startLine();
+            if (line < 0 || line >= lines.length) {
+                return;
+            }
+            HttpResult r = entry.result();
+            results.add(new com.editora.editor.HttpLineResult(
+                    line,
+                    lines[line],
+                    HttpInlineResult.segments(r),
+                    HttpInlineResult.glyphClass(r),
+                    tr("httpinline.tooltip", HttpInlineResult.ranAt(entry.at(), now, zone)),
+                    () -> showInlineResult(buffer, entry)));
+        });
+        buffer.setHttpResults(results);
+    }
+
+    /** A click on a request line's result: the response view shows that History entry. */
+    private void showInlineResult(EditorBuffer buffer, HttpHistoryEntry entry) {
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            buffer.revealHttpPreview(); // in Editor mode the response view is hidden, as before a run
+            p.showHistoryEntry(entry);
+        }
     }
 
     // --- internals ---
@@ -941,26 +1216,41 @@ final class HttpClientCoordinator {
             List<HttpExchange> exchanges,
             long[] startedAt,
             Set<HttpExchange> unsent,
-            boolean all) {
+            boolean all,
+            String environment) {
         buffer.setHttpRunning(-1); // the ■ turns back into ▶
         long now = System.currentTimeMillis();
+        Map<String, List<String>> definedIn = null; // read once, and only when a variable was sent empty
         List<HttpHistoryEntry> entries = new ArrayList<>();
         for (int i = 0; i < exchanges.size(); i++) {
             HttpFile.Parsed req = i < requests.size() ? requests.get(i) : null;
             HttpExchange ex = exchanges.get(i);
+            boolean noLog = (req != null && req.directives().noLog()) || unsent.contains(ex);
+            List<String> warnings = ex.result().warnings();
+            if (warnings != null && !warnings.isEmpty()) {
+                if (definedIn == null) {
+                    definedIn = HttpEnvChoice.definedIn(envFilesFor(buffer));
+                }
+                List<String> explained = HttpEnvChoice.explainWarnings(warnings, environment, definedIn);
+                if (explained != warnings) { // "{{token}} was sent as empty text: … (defined in dev, staging)"
+                    ex = ex.withResult(ex.result().withWarnings(explained));
+                }
+            }
             entries.add(HttpHistoryEntry.ran(
                     ex,
                     req,
                     i < indexes.size() ? indexes.get(i) : -1,
                     startedAt != null && i < startedAt.length ? startedAt[i] : now,
                     // # @no-log, and an untitled buffer's "not sent — save first": shown now, never written to disk
-                    (req != null && req.directives().noLog()) || unsent.contains(ex)));
+                    noLog,
+                    environment));
         }
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             p.showEntries(entries);
             p.showRunSummary(all ? HttpStatusText.runAllSummary(exchanges) : null);
             history.persist(buffer);
+            refreshInlineResults(buffer);
         }
         if (!exchanges.isEmpty()) {
             host.setStatus(all ? HttpStatusText.finishedAll(exchanges) : HttpStatusText.finished(exchanges.get(0)));
@@ -979,7 +1269,8 @@ final class HttpClientCoordinator {
             List<HttpExchange> exchanges,
             long[] startedAt,
             Set<HttpExchange> unsent,
-            int total) {
+            int total,
+            String environment) {
         List<HttpFile.Parsed> keptRequests = new ArrayList<>();
         List<Integer> keptIndexes = new ArrayList<>();
         List<HttpExchange> kept = new ArrayList<>();
@@ -999,7 +1290,7 @@ final class HttpClientCoordinator {
             return;
         }
         long[] starts = keptStarts.stream().mapToLong(Long::longValue).toArray();
-        finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1);
+        finishRun(buffer, keptRequests, keptIndexes, kept, starts, unsent, total > 1, environment);
         HttpClientPanel p = panelFor(buffer);
         if (p != null && total > 1) {
             p.showRunSummary(HttpStatusText.runAllCancelledSummary(kept, total)); // not "Run All: all 2 succeeded"
@@ -1014,7 +1305,7 @@ final class HttpClientCoordinator {
      * before a run (the "Running …" label) and the untitled save-first check. No file access; may be a moment old.
      */
     private Map<String, String> shownVariables(EditorBuffer buffer) {
-        return envCache.last(buffer.getPath(), ops.projectRoot()).files().variables(selectedEnvironment(buffer));
+        return envFilesFor(buffer).variables(selectedEnvironment(buffer));
     }
 
     /**
@@ -1024,10 +1315,8 @@ final class HttpClientCoordinator {
      * request, the file's folder for {@code $dotenv}, and the buffer's captured responses. An env file that cannot be
      * read is named first among the warnings (not only as "{{x}} sent as empty").
      */
-    private RunEnvironment environmentFor(EditorBuffer buffer) {
-        // This buffer's own picker — each .http file has its own panel, so a run always resolves {{vars}}
-        // against the environment selected for the file being run.
-        String env = selectedEnvironment(buffer);
+    private RunEnvironment environmentFor(EditorBuffer buffer, String env) {
+        // The environment selected for the file being run (each .http buffer has its own choice), as the run started.
         Path file = buffer.getPath();
         Path project = ops.projectRoot();
         return () -> {
@@ -1039,8 +1328,7 @@ final class HttpClientCoordinator {
     /** The buffer's chaining session, cleared first when the selected environment changed since its last run. */
     private CapturedResponses capturesFor(EditorBuffer buffer) {
         CapturedResponses session = captures.computeIfAbsent(buffer, b -> new CapturedResponses());
-        HttpClientPanel p = panelFor(buffer);
-        session.resetUnlessEnvironment(p == null ? "" : p.getSelectedEnvironment());
+        session.resetUnlessEnvironment(selectedEnvironment(buffer));
         return session;
     }
 

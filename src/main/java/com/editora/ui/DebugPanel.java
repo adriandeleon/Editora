@@ -603,8 +603,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 flow.getChildren().add(add);
             }
             case VARIABLE, WATCH -> {
+                // Name, value and type in the editor's syntax token colours (.text.<class> from the active
+                // editor theme), so a value reads like the code it came from.
                 Text name = new Text(row.name());
-                name.getStyleClass().add("debug-var-name");
+                name.getStyleClass().addAll("text", "variable");
                 if (row.kind() == Kind.VARIABLE
                         && row.value().isEmpty()
                         && row.ref() > 0
@@ -618,16 +620,28 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
-                // A failed watch's message on one line: wrapped, it drew over the rows below (review C17).
-                Text value = new Text(row.failed() ? DebugPanelText.oneLine(row.value(), 160) : row.value());
-                // A watch that did not evaluate shows the adapter's message where its value would be: it
-                // must not be coloured as one ("Cannot evaluate…" is not a string or a number).
-                value.getStyleClass()
-                        .add(row.failed() ? "debug-val-error" : DebugValues.cssClass(DebugValues.kind(row.value())));
-                flow.getChildren().addAll(name, eq, value);
+                flow.getChildren().addAll(name, eq);
+                if (row.failed()) {
+                    // A watch that did not evaluate shows the adapter's message where its value would be: it
+                    // must not be coloured as one ("Cannot evaluate…" is not a string or a number).
+                    // On one line: wrapped, it drew over the rows below (review C17).
+                    Text value = new Text(DebugPanelText.oneLine(row.value(), 160));
+                    value.getStyleClass().add("debug-val-error");
+                    flow.getChildren().add(value);
+                } else {
+                    for (DebugValues.Run run : DebugValues.runs(row.value())) {
+                        Text value = new Text(run.text());
+                        if (run.token() != null) {
+                            value.getStyleClass().addAll("text", run.token());
+                        } else {
+                            value.getStyleClass().add("debug-val-plain");
+                        }
+                        flow.getChildren().add(value);
+                    }
+                }
                 if (row.type() != null && !row.type().isBlank()) {
                     Text type = new Text("  " + row.type());
-                    type.getStyleClass().add("debug-var-type");
+                    type.getStyleClass().addAll("text", "type");
                     flow.getChildren().add(type);
                 }
             }

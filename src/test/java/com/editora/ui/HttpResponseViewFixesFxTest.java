@@ -202,14 +202,12 @@ class HttpResponseViewFixesFxTest {
         HttpClientCoordinator c = coordinator(new Ops(config));
         String text = "GET {{host}}/one\n\n###\nGET {{host}}/items/{{id}}\n";
         EditorBuffer b = open(c, work.resolve("t.http"), text);
-        javafx.scene.control.ComboBox<String> env =
-                c.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("a"));
+        FxTestSupport.runOnFx(() -> c.chooseEnvironment(b, "a"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         finished();
         FxTestSupport.runOnFx(() -> {
             b.getArea().insertText(0, "POST {{host}}/other\n\n###\n"); // position 1 is now /one
-            env.setValue("b"); // the URL it sent no longer equals what the template gives now
+            c.chooseEnvironment(b, "b"); // the URL it sent no longer equals what the template gives now
         });
         hits.clear();
         Button run = c.panelForTest(b).controlsForTest().runButton();

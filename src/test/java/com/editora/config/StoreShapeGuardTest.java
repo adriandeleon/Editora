@@ -64,7 +64,7 @@ class StoreShapeGuardTest {
         ROOTS.put(ConfigSchema.TRUST, TrustStore.class);
         ROOTS.put(ConfigSchema.HTTP_HISTORY, HttpResponseHistory.Stored.class);
 
-        PINNED.put(ConfigSchema.SETTINGS, "128:b69f3d4b656f8550");
+        PINNED.put(ConfigSchema.SETTINGS, "129:e54b7e9658ead8ab");
         PINNED.put(ConfigSchema.WORKSPACE, "19:1b71a4eb74913278");
         PINNED.put(ConfigSchema.BOOKMARKS, "2:c932fc9b729bab63");
         PINNED.put(ConfigSchema.BREAKPOINTS, "2:fce8c823144b83b9");
@@ -79,7 +79,7 @@ class StoreShapeGuardTest {
         PINNED.put(ConfigSchema.MACROS, "2:659c0d0ea97b3b12");
         PINNED.put(ConfigSchema.ABBREVIATIONS, "1:37b204a82fd27de2");
         PINNED.put(ConfigSchema.TRUST, "1:97df8267c8a7cf79");
-        PINNED.put(ConfigSchema.HTTP_HISTORY, "4:ce157138b7212ce2");
+        PINNED.put(ConfigSchema.HTTP_HISTORY, "5:0fa7c56855a1a291");
     }
 
     @Test

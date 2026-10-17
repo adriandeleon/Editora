@@ -385,6 +385,7 @@ public class SettingsWindow {
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox httpScriptsCheck;
+    private CheckBox httpInlineResultsCheck;
     private TextField httpNodeField;
     private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
@@ -927,23 +928,33 @@ public class SettingsWindow {
         searchEmpty.setWrapText(true);
         searchEmpty.setVisible(false);
 
-        contentScroll = new ScrollPane();
+        contentScroll = new ScrollPane() {
+            // A page is never wider than the viewport beside a vertical scrollbar, so a short page keeps the
+            // room a long page's scrollbar takes and the cards' right edges (and the switches on them) sit at
+            // the same x on every page. The cap is set here, before the skin lays out, not from the bar's
+            // visibility: the skin flips that inside this same pass, and the relayout a padding change then
+            // asked for could be lost — the MCP page ended a scrollbar's width further right on macOS.
+            @Override
+            protected void layoutChildren() {
+                if (getContent() instanceof Region page) {
+                    page.setMaxWidth(Math.max(0, getWidth() - snappedLeftInset() - snappedRightInset() - barWidth()));
+                }
+                super.layoutChildren();
+            }
+
+            private double barWidth() {
+                for (Node n : getChildrenUnmodifiable()) {
+                    if (n instanceof javafx.scene.control.ScrollBar bar
+                            && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
+                        return snapSizeX(bar.prefWidth(-1));
+                    }
+                }
+                return 0; // no skin yet
+            }
+        };
         contentScroll.setFitToWidth(true);
         contentScroll.getStyleClass().add("settings-content");
         HBox.setHgrow(contentScroll, Priority.ALWAYS);
-        // A short page keeps the room a long page's scrollbar takes, so the cards' right edges (and the
-        // switches on them) sit at the same x on every page.
-        contentScroll.skinProperty().addListener((o, was, skin) -> {
-            for (Node n : contentScroll.lookupAll(".scroll-bar")) {
-                if (n instanceof javafx.scene.control.ScrollBar bar
-                        && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
-                    Runnable reserve = () ->
-                            contentScroll.setPadding(new Insets(0, bar.isVisible() ? 0 : bar.prefWidth(-1), 0, 0));
-                    bar.visibleProperty().addListener((ob, a, b) -> reserve.run());
-                    reserve.run();
-                }
-            }
-        });
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
@@ -1634,6 +1645,11 @@ public class SettingsWindow {
             config.getSettings().setHttpScriptsEnabled(now);
             apply();
             refreshHttpNodeStatus();
+        });
+        httpInlineResultsCheck = new CheckBox(tr("settings.httpClient.inlineResults"));
+        httpInlineResultsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHttpInlineResults(now);
+            apply();
         });
         httpNodeField = new TextField();
         httpNodeField.setPromptText("node");
@@ -3930,6 +3946,12 @@ public class SettingsWindow {
                 httpCheck,
                 tr("settings.httpClient.hint"),
                 "http client rest request enable run send response built-in");
+        checkRow(
+                http,
+                Category.WEB,
+                httpInlineResultsCheck,
+                tr("settings.httpClient.inlineResultsHint"),
+                "http client result status inline request line gutter run outcome editor ghost");
         checkRow(
                 http,
                 Category.WEB,
@@ -7976,6 +7998,7 @@ public class SettingsWindow {
             refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
+            httpInlineResultsCheck.setSelected(settings.isHttpInlineResults());
             httpNodeField.setText(settings.getHttpNodePath());
             refreshHttpNodeStatus();
             syncHtmlBrowser();

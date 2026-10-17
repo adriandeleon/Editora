@@ -634,6 +634,15 @@ final class WindowCommandRegistrar {
                                         host.httpClient()::applySupport)));
         host.registry()
                 .register(Command.of(
+                        "http.toggleInlineResults",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "http.toggleInlineResults",
+                                        () -> host.config().getSettings().isHttpInlineResults(),
+                                        v -> host.config().getSettings().setHttpInlineResults(v),
+                                        host.httpClient()::applySupport)));
+        host.registry()
+                .register(Command.of(
                         "view.toggleDebug",
                         () -> host.editorSettings()
                                 .toggleSetting(
@@ -2225,7 +2234,17 @@ final class WindowCommandRegistrar {
                 host.ifLsp(host.lspCoordinator()::formatDocument);
             }
         }));
-        host.registry().register(Command.of("lsp.codeActions", () -> host.ifLsp(host.lspCoordinator()::codeActions)));
+        // In a .http file the code actions are the {{variable}} fixes ("Use environment dev"), which need no server.
+        host.registry().register(Command.of("lsp.codeActions", () -> {
+            EditorBuffer active = host.activeBuffer();
+            if (active != null && active.isHttpFile() && host.httpClient().isEnabled()) {
+                if (!active.showHttpVariableFixes()) {
+                    host.setStatus(tr("status.lsp.noCodeActions"));
+                }
+                return;
+            }
+            host.ifLsp(host.lspCoordinator()::codeActions);
+        }));
         host.registry()
                 .register(Command.of(
                         "lsp.signatureHelp",

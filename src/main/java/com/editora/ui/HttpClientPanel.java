@@ -74,7 +74,7 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>One header row: the <b>Run/Cancel</b> button with its chord from the keymap, the status as a pill coloured by
  * outcome ({@code 200 OK}; "Running … 1.2 s" while a request is in flight), the timing and size, then the History
- * and Environment pickers ({@link HttpHeaderRow}). Under it a tab strip ({@link HttpTabStrip}): <b>Body</b> (the
+ * picker ({@link HttpHeaderRow}). Under it a tab strip ({@link HttpTabStrip}): <b>Body</b> (the
  * default) · <b>Headers</b> (a name/value list) · <b>Tests</b> · <b>Request</b> (as it was actually sent, variables
  * resolved) · <b>Notes</b> (warnings and files written), with counts, and the actions as icons at its right end. A
  * run switches to Tests on its own only when a test or a script failed ({@link HttpResponseTab#choose}); otherwise
@@ -130,7 +130,6 @@ public final class HttpClientPanel extends VBox {
     /** A note above the body when the view or the saved history holds only part of it (it used to sit at the end). */
     private final Label bodyNote = new Label();
 
-    private final ComboBox<String> envCombo = new ComboBox<>();
     private final ComboBox<HttpHistoryEntry> historyCombo = new ComboBox<>();
     private final HttpHeaderRow header;
     private final HttpTabStrip tabs;
@@ -181,9 +180,6 @@ public final class HttpClientPanel extends VBox {
     private final List<HttpHistoryEntry> history = new ArrayList<>();
     private final ZoneId zone = ZoneId.systemDefault();
 
-    /** Receives the chosen environment name ({@code ""} = none) so the controller can persist it. */
-    private Consumer<String> onEnvironmentChanged;
-
     /** Run again: the selected entry (to re-send that request), or null (run the request at the caret). */
     private Consumer<HttpHistoryEntry> onRun = e -> {};
 
@@ -191,7 +187,6 @@ public final class HttpClientPanel extends VBox {
     private Runnable onEscape = () -> {};
     private Runnable onCleared = () -> {};
 
-    private boolean updatingEnv;
     private boolean updatingHistory;
     private boolean running;
     private String fontStyle;
@@ -250,28 +245,6 @@ public final class HttpClientPanel extends VBox {
         runSummary.setWrapText(true);
         showBadge(runSummary, null);
 
-        // PR 3 moves the environment beside the editor; until then a compact picker at the header's right end.
-        envCombo.getStyleClass().add("http-env");
-        envCombo.setPrefWidth(120);
-        envCombo.setMinWidth(Region.USE_PREF_SIZE);
-        Icons.name(envCombo, tr("httppanel.environmentName"));
-        envCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String s) {
-                return s == null || s.isEmpty() ? tr("httppanel.noEnv") : s;
-            }
-
-            @Override
-            public String fromString(String s) {
-                return s;
-            }
-        });
-        envCombo.valueProperty().addListener((o, a, b) -> {
-            if (!updatingEnv && onEnvironmentChanged != null) {
-                onEnvironmentChanged.accept(b == null ? "" : b);
-            }
-        });
-
         historyCombo.getStyleClass().add("http-history");
         historyCombo.setMinWidth(0); // the header row sizes it: it narrows first in a tight Split
         historyCombo.setMaxWidth(HttpPanelLayout.HISTORY_MAX_WIDTH);
@@ -297,7 +270,7 @@ public final class HttpClientPanel extends VBox {
                 }
             }
         });
-        header = new HttpHeaderRow(runHost, status, meta, historyCombo, envCombo);
+        header = new HttpHeaderRow(runHost, status, meta, historyCombo);
 
         // --- the actions: icons at the strip's end, Clear (and the icons, when folded) in the "⋯" menu ---
         wrapToggle.setGraphic(Icons.wrap());
@@ -853,11 +826,16 @@ public final class HttpClientPanel extends VBox {
         HttpExchange ex = entry.exchange();
         HttpResult r = ex.result();
         String sent = TIME.format(Instant.ofEpochMilli(entry.at()).atZone(zone));
-        setStatus(
-                HttpStatusText.pill(r),
-                HttpStatusText.styleClass(r),
-                HttpStatusText.timing(r),
-                HttpStatusText.summary(r) + "\n" + tr("httppanel.sentAt", sent));
+        String tip = HttpStatusText.summary(r) + "\n" + tr("httppanel.sentAt", sent);
+        String timing = HttpStatusText.timing(r);
+        // Which environment this response was sent in: the pill beside the editor says what the next run uses.
+        String env = entry.environment();
+        if (env != null && !env.isEmpty()) {
+            String note = tr("httppanel.envNote", env);
+            timing = timing.isEmpty() ? note : tr("httppanel.statusLine", timing, note);
+            tip += "\n" + tr("httppanel.sentIn", env);
+        }
+        setStatus(HttpStatusText.pill(r), HttpStatusText.styleClass(r), timing, tip);
         showNotes(r.warnings(), r.written()); // an unsent header, a truncated body…; the files a ">>" wrote
         boolean preRequest = HttpStatusText.preRequestFailed(r);
         showTests(r.tests(), preRequest);
@@ -1089,7 +1067,6 @@ public final class HttpClientPanel extends VBox {
 
     /** The panel's controls, for tests that drive or read them (compile-checked, instead of private fields by name). */
     record Controls(
-            ComboBox<String> environmentPicker,
             ComboBox<HttpHistoryEntry> historyPicker,
             Button runButton,
             Label runChord,
@@ -1112,7 +1089,6 @@ public final class HttpClientPanel extends VBox {
     /** The panel's controls as they are now. Test accessor. */
     Controls controlsForTest() {
         return new Controls(
-                envCombo,
                 historyCombo,
                 runButton,
                 runChord,
@@ -1211,32 +1187,6 @@ public final class HttpClientPanel extends VBox {
         onCleared.run();
     }
 
-    /** Populates the environment picker; {@code active} ({@code ""} = none) is selected when this file has it. */
-    public void setEnvironments(List<String> names, String active) {
-        updatingEnv = true;
-        List<String> items = new ArrayList<>();
-        items.add(""); // the "no environment" option
-        if (names != null) {
-            items.addAll(names);
-        }
-        if (!items.equals(envCombo.getItems())) {
-            envCombo.getItems().setAll(items);
-        }
-        envCombo.setValue(HttpEnvironments.choose(active, items)); // a name this file does not define → none
-        envCombo.setDisable(items.size() <= 1);
-        updatingEnv = false;
-    }
-
-    /** The selected environment name, or {@code ""} for none. */
-    public String getSelectedEnvironment() {
-        String v = envCombo.getValue();
-        return v == null ? "" : v;
-    }
-
-    public void setOnEnvironmentChanged(Consumer<String> onEnvironmentChanged) {
-        this.onEnvironmentChanged = onEnvironmentChanged;
-    }
-
     /** The selected exchange (for Copy as cURL / Open in tab), or {@code null}. */
     public HttpExchange getSelectedExchange() {
         HttpHistoryEntry e = historyCombo.getValue();
@@ -1246,11 +1196,6 @@ public final class HttpClientPanel extends VBox {
     /** The selected history entry, or {@code null}. */
     HttpHistoryEntry getSelectedEntry() {
         return historyCombo.getValue();
-    }
-
-    /** Focuses the environment picker (the {@code http.selectEnvironment} command's target). */
-    public void focusEnvironment() {
-        envCombo.requestFocus();
     }
 
     /** After a Run All: "Run All: 3 of 13 failed" under the header (null hides it). */
@@ -1275,6 +1220,25 @@ public final class HttpClientPanel extends VBox {
     }
 
     /**
+     * Selects {@code entry} in History and shows it — a click on a request's result in the editor. The entry is
+     * found by its saved key, since trimming may have replaced it with a copy without its body. False when History
+     * no longer holds it.
+     */
+    public boolean showHistoryEntry(HttpHistoryEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        String key = entry.storedKey();
+        for (HttpHistoryEntry e : history) {
+            if (e == entry || e.storedKey().equals(key)) {
+                historyCombo.setValue(e); // its listener shows it (also during a run, as a pick from History does)
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * The tab closed or the feature was switched off: stops the elapsed-time animation (an indefinite timeline
      * kept the panel, its history and the closed buffer alive), drops the shown response and every callback.
      */
@@ -1291,7 +1255,6 @@ public final class HttpClientPanel extends VBox {
         onCancel = null;
         onEscape = () -> {};
         onCleared = () -> {};
-        onEnvironmentChanged = null;
     }
 
     /** The notes (warnings, files written) shown, or "" when there are none. Test accessor. */
