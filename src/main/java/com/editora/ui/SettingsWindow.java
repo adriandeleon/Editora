@@ -949,6 +949,19 @@ public class SettingsWindow {
         contentScroll.setFitToWidth(true);
         contentScroll.getStyleClass().add("settings-content");
         HBox.setHgrow(contentScroll, Priority.ALWAYS);
+        // A short page keeps the room a long page's scrollbar takes, so the cards' right edges (and the
+        // switches on them) sit at the same x on every page.
+        contentScroll.skinProperty().addListener((o, was, skin) -> {
+            for (Node n : contentScroll.lookupAll(".scroll-bar")) {
+                if (n instanceof javafx.scene.control.ScrollBar bar
+                        && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
+                    Runnable reserve = () ->
+                            contentScroll.setPadding(new Insets(0, bar.isVisible() ? 0 : bar.prefWidth(-1), 0, 0));
+                    bar.visibleProperty().addListener((ob, a, b) -> reserve.run());
+                    reserve.run();
+                }
+            }
+        });
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
@@ -4863,7 +4876,7 @@ public class SettingsWindow {
         bodyLabel.setLabelFor(body);
         form.add(bodyLabel, 0, 5, 2, 1);
         form.add(body, 0, 6, 2, 1);
-        body.setMinWidth(180);
+        body.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
@@ -5314,7 +5327,7 @@ public class SettingsWindow {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         }
         // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
         if (field instanceof CodeArea) {
