@@ -99,6 +99,14 @@ final class DoctorCoordinator {
         default String pythonInterpreterChoice() {
             return "";
         }
+
+        /**
+         * Resolves the window's Python interpreter — what Pyright is told and the formatter is looked for beside
+         * — or null when the window cannot say. Called on the FX thread; the returned supplier runs off it.
+         */
+        default java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreter() {
+            return null;
+        }
     }
 
     private final CoordinatorHost host;
@@ -161,6 +169,45 @@ final class DoctorCoordinator {
         return probe(row, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(argv);
             return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.bashTool", command);
+        });
+    }
+
+    /** Which Python the Python language server analyses with, and why (review B16). */
+    private DoctorService.CheckSpec pythonInterpreterRow() {
+        var resolver = ops.pythonInterpreter();
+        DoctorCheck row = DoctorCheck.checking(
+                        "lsp.python.interpreter", "lsp", tr("doctor.label.pythonInterpreter"), "")
+                .withSettings("debug");
+        if (resolver == null) {
+            return terminal(row.disabled());
+        }
+        return probe(row, base -> {
+            var interp = resolver.get();
+            List<String> command = interp.command();
+            DoctorProbes.Presence p = DoctorProbes.version(command);
+            String what = String.join(" ", command) + " (" + PythonInterpreterView.reason(interp) + ")";
+            return p.present()
+                    ? base.ok(p.version() + " — " + what)
+                    : base.missing("doctor.tip.pythonInterpreter", what);
+        });
+    }
+
+    /** Ruff or Black for Format Document on Python files (adl's decision 4). */
+    private DoctorService.CheckSpec pythonFormatterRow() {
+        var resolver = ops.pythonInterpreter();
+        DoctorCheck row =
+                DoctorCheck.checking("python.formatter", "lsp", tr("doctor.label.pythonFormatter"), "ruff / black");
+        return probe(row, base -> {
+            Path venv = resolver == null ? null : resolver.get().venv();
+            var found = com.editora.format.PythonFormatter.findLocal(venv);
+            if (found.isEmpty()) {
+                return base.warn("", "doctor.tip.pythonFormatter");
+            }
+            DoctorProbes.Presence p = DoctorProbes.version(List.of(found.get().executable()));
+            String version = p.present() && !p.version().isBlank()
+                    ? p.version()
+                    : found.get().name();
+            return base.ok(version + " — " + found.get().executable());
         });
     }
 
@@ -272,12 +319,19 @@ final class DoctorCoordinator {
                 if (install != DoctorCheck.Install.NONE) {
                     row = row.withInstall(install, installArgFor(serverId));
                 }
+                boolean python = "python".equals(serverId);
                 specs.add(probe(row, base -> {
                     String path = DoctorProbes.resolvedPath(argv);
-                    return path.isEmpty()
-                            ? base.missing("doctor.tip.missing", argv.isEmpty() ? base.label() : argv.get(0))
-                            : base.ok(path);
+                    if (path.isEmpty()) {
+                        return base.missing("doctor.tip.missing", argv.isEmpty() ? base.label() : argv.get(0));
+                    }
+                    // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
+                    String version = python ? com.editora.doctor.DoctorRules.npmPackageVersion(Path.of(path)) : "";
+                    return base.ok(version.isEmpty() ? path : version + " — " + path);
                 }));
+                if (python) {
+                    specs.add(pythonInterpreterRow());
+                }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
                     // gets no diagnostics and Format Document changes nothing.
@@ -291,6 +345,7 @@ final class DoctorCoordinator {
                     .withSettings("lsp")
                     .disabled()));
         }
+        specs.add(pythonFormatterRow()); // Format Document on .py works with the language server off too
 
         // Debugging -------------------------------------------------------------------------------
         if (ops.debugFeatureEnabled()) {
@@ -489,7 +544,6 @@ final class DoctorCoordinator {
         });
     }
 
-    /** A Run-section interpreter row: absent is only a WARN (needed just for that file type). */
     /**
      * The Python that Run, Debug and the tests use for this window's project — the same resolver they use (its
      * venv, the picked or global interpreter, else {@code python3}/{@code python}, {@code py -3} on Windows) —
@@ -513,6 +567,7 @@ final class DoctorCoordinator {
         });
     }
 
+    /** A Run-section interpreter row: absent is only a WARN (needed just for that file type). */
     private static DoctorService.CheckSpec optionalRunTool(
             String id, String label, List<String> cmd, List<String> fallback, String fileKind) {
         DoctorCheck row = DoctorCheck.checking(id, "run", label, cmd.get(0));

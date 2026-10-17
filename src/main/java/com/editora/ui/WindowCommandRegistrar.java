@@ -2161,13 +2161,20 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.reloadProject", () -> host.ifLsp(host.lspCoordinator()::reloadProject)));
         // Not behind ifLsp: the caches stay on disk after LSP is turned off.
         host.registry().register(Command.of("lsp.clearJavaIndexCaches", host.lspCoordinator()::clearJavaIndexCaches));
+        // Not behind ifLsp either: Run and Debug follow the picked interpreter too.
+        host.registry()
+                .register(Command.of("python.selectInterpreter", host.lspCoordinator()::selectPythonInterpreter));
         host.registry()
                 .register(Command.of(
                         "lsp.toggleProjectProblems",
                         () -> host.ifLsp(() -> host.lspCoordinator()
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
-        host.registry()
-                .register(Command.of("lsp.formatDocument", () -> host.ifLsp(host.lspCoordinator()::formatDocument)));
+        host.registry().register(Command.of("lsp.formatDocument", () -> {
+            // Python: Ruff/Black unless a language server formats it — with the language server off too.
+            if (!host.lspCoordinator().formatPythonExternally()) {
+                host.ifLsp(host.lspCoordinator()::formatDocument);
+            }
+        }));
         host.registry().register(Command.of("lsp.codeActions", () -> host.ifLsp(host.lspCoordinator()::codeActions)));
         host.registry()
                 .register(Command.of(

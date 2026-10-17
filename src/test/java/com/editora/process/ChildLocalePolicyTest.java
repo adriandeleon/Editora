@@ -81,6 +81,7 @@ class ChildLocalePolicyTest {
             Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter, javac of the user's file
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
+            Map.entry("format/PythonFormatter.java", 1), // Ruff/Black on the user's file names (decision 4)
             Map.entry("git/GitService.java", 1), // user-initiated commands: they run the user's hooks
             Map.entry("github/GitHubService.java", 1), // a failed CI log, streamed to keep its tail: shown, not parsed
             Map.entry("http/NodeResponseScripts.java", 1), // an HTTP response handler: its log is shown (minimal env)

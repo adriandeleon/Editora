@@ -265,4 +265,16 @@ class LspServerRegistryTest {
         assertEquals("javascript", LspServerRegistry.protocolLanguageId("javascript"));
         assertEquals("shellscript", LspServerRegistry.protocolLanguageId("shell"), "LSP's id for shell scripts");
     }
+
+    /**
+     * The large-source tier (10,000 lines by default) turns language servers off; Python keeps Pyright to
+     * 50,000 lines, which it checks in seconds (Python review B10).
+     */
+    @Test
+    void pythonKeepsItsServerInTheLargeFileTier() {
+        assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("java", true, 12_000));
+        assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
+    }
 }

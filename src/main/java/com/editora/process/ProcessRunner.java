@@ -511,6 +511,10 @@ public final class ProcessRunner {
             return cached;
         }
         LinkedHashSet<String> dirs = new LinkedHashSet<>();
+        // An environment Editora was started from (`source .venv/bin/activate && editora`) leads: the login
+        // shell rebuilds PATH from the profile and loses the activation, and putting that first sent every
+        // python3 lookup (Pyright's, Run's) to the system Python (review B2).
+        dirs.addAll(activatedEnvironmentBins(System.getenv(), File.pathSeparatorChar == ';'));
         addPathEntries(dirs, loginShellPath());
         addPathEntries(dirs, System.getenv("PATH"));
         for (String d : EXTRA_PATH_DIRS) {
@@ -521,6 +525,31 @@ public final class ProcessRunner {
         String built = String.join(File.pathSeparator, dirs);
         cachedPath = built;
         return built;
+    }
+
+    /**
+     * The executable folders of an activated Python environment in {@code env}: {@code $VIRTUAL_ENV} then
+     * {@code $CONDA_PREFIX} ({@code bin}, or on Windows {@code Scripts} plus a conda root's own folder). Pure.
+     */
+    static List<String> activatedEnvironmentBins(java.util.Map<String, String> env, boolean windows) {
+        List<String> out = new java.util.ArrayList<>();
+        for (String var : List.of("VIRTUAL_ENV", "CONDA_PREFIX")) {
+            String dir = env == null ? null : env.get(var);
+            if (dir == null || dir.isBlank()) {
+                continue;
+            }
+            String root = dir.strip();
+            String sep = windows ? "\\" : "/";
+            if (windows) {
+                out.add(root + sep + "Scripts");
+                if ("CONDA_PREFIX".equals(var)) {
+                    out.add(root);
+                }
+            } else {
+                out.add(root + sep + "bin");
+            }
+        }
+        return List.copyOf(out);
     }
 
     private static final AtomicBoolean PATH_WARM_STARTED = new AtomicBoolean();

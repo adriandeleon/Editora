@@ -4943,6 +4943,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         public boolean lspEnabled() {
             return MainController.this.lspEnabled();
         }
+
+        @Override
+        public void turnOnLsp() {
+            if (!config.getSettings().isLspSupport()) {
+                toggleLsp();
+            }
+        }
+
+        @Override
+        public void openLspSettings() {
+            settingsWindow.showDoctorTarget("lsp", stage);
+        }
     });
 
     private final CoordinatorHost coordinatorHost = new Services();
@@ -6273,6 +6285,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setStatusBarPython(String text, String tooltip) {
+            statusBar.setPythonInterpreter(text, tooltip);
+        }
+
+        @Override
         public void setProblemsAvailable(boolean available) {
             if (problemsToolWindow != null) {
                 toolWindows.setAvailable(problemsToolWindow, available);
@@ -6661,6 +6678,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+
+                @Override
+                public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                        pythonInterpreter() {
+                    return lspCoordinator.pythonInterpreterForDoctor();
                 }
             });
 
