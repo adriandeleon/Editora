@@ -474,6 +474,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             case VARIABLE, WATCH -> {
                 Text name = new Text(row.name());
                 name.getStyleClass().add("debug-var-name");
+                if (row.kind() == Kind.VARIABLE
+                        && row.value().isEmpty()
+                        && row.ref() > 0
+                        && (row.type() == null || row.type().isBlank())) {
+                    flow.getChildren().add(name); // a group (debugpy's "special variables"), not "name = "
+                    return flow;
+                }
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
                 Text value = new Text(row.value());
@@ -1018,9 +1025,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
         StyleSpans<Collection<String>> spans = null;
-        if ("stderr".equals(category) && !text.isEmpty()) {
+        if (("stderr".equals(category) || DapManager.COMMAND_CATEGORY.equals(category)) && !text.isEmpty()) {
+            // The program's stderr in red; the command line Editora ran, muted (as a Run trace line).
+            String style = "stderr".equals(category) ? "run-stderr" : "run-trace";
             spans = new StyleSpansBuilder<Collection<String>>()
-                    .add(List.of("run-stderr"), text.length())
+                    .add(List.of(style), text.length())
                     .create();
         }
         appender.append(text, spans);

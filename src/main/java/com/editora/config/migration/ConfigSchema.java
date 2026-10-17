@@ -308,7 +308,8 @@ public enum ConfigSchema {
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
-    BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: Breakpoint gained `hitCondition` (additive; absent ⇒ every hit).
+    BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */

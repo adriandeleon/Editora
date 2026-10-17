@@ -50,4 +50,28 @@ class DebugIdentifiersTest {
         assertEquals(List.of(), DebugIdentifiers.matchesIn(null, Set.of("a")));
         assertEquals(List.of(), DebugIdentifiers.matchesIn("a + b", Set.of()));
     }
+
+    @Test
+    void hoveringAnAttributeEvaluatesTheWholeChain() {
+        String line = "        self.total = total + p.x";
+        assertEquals("self.total", DebugIdentifiers.expressionAt(line, line.indexOf("total"))); // the attribute
+        assertEquals("self", DebugIdentifiers.expressionAt(line, line.indexOf("self")));
+        assertEquals("total", DebugIdentifiers.expressionAt(line, line.lastIndexOf("total") + 2)); // the variable
+        assertEquals("p.x", DebugIdentifiers.expressionAt(line, line.length() - 1));
+        assertEquals("a.b.c", DebugIdentifiers.expressionAt("print(a.b.c)", 10));
+    }
+
+    @Test
+    void aChainStopsAtACallOrAnIndex() {
+        assertEquals("x", DebugIdentifiers.expressionAt("f().x", 4)); // hovering must not call f
+        assertEquals("x", DebugIdentifiers.expressionAt("a[0].x", 5));
+        assertEquals(null, DebugIdentifiers.expressionAt("a + b", 2));
+    }
+
+    @Test
+    void anAttributeIsNotTheVariableOfTheSameName() {
+        // stopped where a local x exists, "p.x" must not be annotated with that x
+        assertEquals(List.of("p"), DebugIdentifiers.matchesIn("print(p.x)", Set.of("p", "x")));
+        assertEquals(List.of("x", "self"), DebugIdentifiers.matchesIn("x = self . x", Set.of("x", "self")));
+    }
 }

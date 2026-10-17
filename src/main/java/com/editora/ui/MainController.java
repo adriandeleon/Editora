@@ -2513,6 +2513,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public Path projectRoot() {
+                        return windowProjectRoot();
+                    }
+
+                    @Override
+                    public String pythonInterpreterChoice() {
+                        return config.getWorkspaceState().getPythonInterpreter();
+                    }
+
+                    @Override
                     public void openLink(com.editora.run.StackTraceLinks.Link link) {
                         testNavigation.openRunLink(link);
                     }
@@ -4830,6 +4840,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public RunCoordinator runCoordinator() {
                     return runCoordinator;
+                }
+
+                @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
                 }
 
                 @Override
