@@ -6,6 +6,7 @@ import java.io.StringReader;
 import java.net.SocketAddress;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
@@ -127,23 +128,37 @@ final class SshConfigFile implements HostConfigEntryResolver {
         }
     }
 
-    /** The files an {@code Include} names: {@code ~} is home, a relative name is under {@code ~/.ssh}; globs sorted. */
+    /**
+     * The files an {@code Include} names: {@code ~} is home, a relative name is under {@code ~/.ssh}; globs sorted.
+     * A name that is no path here names nothing.
+     */
     private List<Path> resolveInclude(String name) {
         Path sshDir = config.toAbsolutePath().getParent();
         Path home = sshDir.getParent();
-        Path path;
-        if (name.equals("~") || name.startsWith("~/")) {
-            path = home.resolve(name.length() <= 2 ? "" : name.substring(2));
-        } else {
-            path = Path.of(name).isAbsolute() ? Path.of(name) : sshDir.resolve(name);
-        }
-        String leaf = path.getFileName() == null ? "" : path.getFileName().toString();
-        if (leaf.indexOf('*') < 0 && leaf.indexOf('?') < 0) {
-            return List.of(path);
+        // Split the leaf off as text first: a glob is no path on Windows, where '*' and '?' are illegal.
+        int cut = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        String folder = name.substring(0, cut + 1);
+        String leaf = name.substring(cut + 1);
+        Path dir;
+        try {
+            if (name.equals("~")) {
+                return List.of(home);
+            } else if (folder.startsWith("~/") || folder.startsWith("~\\")) {
+                dir = home.resolve(folder.substring(2));
+            } else {
+                dir = folder.isEmpty()
+                        ? sshDir
+                        : Path.of(folder).isAbsolute() ? Path.of(folder) : sshDir.resolve(folder);
+            }
+            if (leaf.indexOf('*') < 0 && leaf.indexOf('?') < 0) {
+                return List.of(dir.resolve(leaf));
+            }
+        } catch (InvalidPathException e) {
+            return List.of();
         }
         List<Path> matches = new ArrayList<>();
-        try (DirectoryStream<Path> dir = Files.newDirectoryStream(path.getParent(), leaf)) {
-            dir.forEach(p -> {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, leaf)) {
+            stream.forEach(p -> {
                 if (Files.isRegularFile(p)) {
                     matches.add(p);
                 }

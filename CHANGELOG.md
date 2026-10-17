@@ -83,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
   in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
   jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
-  ones. `Include` lines are followed. `ProxyCommand` is not supported.
+  ones. `Include` lines are followed, globs too (`Include conf.d/*`, also on Windows); an `Include` that names
+  no valid path is skipped and the rest of the config still applies. `ProxyCommand` is not supported.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store

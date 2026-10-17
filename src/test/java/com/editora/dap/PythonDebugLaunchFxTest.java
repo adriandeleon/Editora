@@ -206,7 +206,11 @@ class PythonDebugLaunchFxTest {
                 "the project root and src/ come first: " + pythonPath);
         assertFalse(
                 pythonPath.contains(site.toString()), "Editora's debugpy folder stays the adapter's: " + pythonPath);
-        assertEquals(venvPython, logged("__adapter__").get("exe").getAsString(), "venv imports debugpy: adapter too");
+        // By its venv, not sys.executable's spelling: macOS Python names /var/folders/… by its real /private/var.
+        assertEquals(
+                project.resolve(".venv").toRealPath(),
+                Path.of(logged("__adapter__").get("prefix").getAsString()).toRealPath(),
+                "venv imports debugpy: adapter too");
         assertEquals(
                 List.of("\"" + venvPython + "\" \"" + file + "\" one \"two words\"\n"), // "my project"
                 commandLines,
