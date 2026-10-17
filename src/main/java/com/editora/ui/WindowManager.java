@@ -1231,6 +1231,13 @@ public class WindowManager {
         shared.markSettingsApplied();
     }
 
+    /** Whether {@code file} is the shared {@code settings.json}. */
+    public boolean isSettingsFile(Path file) {
+        return file.toAbsolutePath()
+                .normalize()
+                .equals(shared.getSettingsFile().toAbsolutePath().normalize());
+    }
+
     /**
      * {@code settings.json} was saved in an editor tab: re-reads it into the shared settings and applies it in
      * every window (theme, keymap, view settings, open Settings windows). Returns the status line saying so.

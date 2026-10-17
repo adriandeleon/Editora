@@ -188,7 +188,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Keyboard macros (record/replay/save/run); see {@link MacroCoordinator}. Created in {@link #init}. */
     MacroCoordinator macroCoordinator;
 
-    private CommandPalette palette;
+    CommandPalette palette;
     private FindReplaceBar findBar;
     StatusBar statusBar;
     private FileBreadcrumb breadcrumb;
@@ -374,7 +374,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private final RecentFilesCheck recentCheck = new RecentFilesCheck();
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
-    private WelcomePane welcomePane;
+    WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
     private Tab welcomeTab;
     /** The single open Doctor tab (external-tool health screen), or null — the {@code welcomeTab} pattern. */
@@ -1475,36 +1475,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Re-applies preferences + the editor theme to this window after a Settings change in any window. */
     public void reapplyAfterSharedSettingsChange(Settings settings) {
-        editorSettings.applyViewSettingsToAllBuffers(settings);
-        updateBufferToolWindows(); // a feature toggle (Markdown lint, external tools, …) may re-gate a window
-        // A build tool may have just been switched back on in Settings. Its cached detection was cleared the
-        // last time refresh() ran while it was off, and every other apply path only re-derives the stripe from
-        // that cache — so without a real re-detect the tool stays "not detected" (no stripe, no tasks tree)
-        // until an unrelated tab switch or focus-regain happens to run one. The palette toggle command always
-        // did this; the Settings checkbox did not.
-        refreshBuildTools();
-        // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
-        // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
-        refreshToolbarTooltips();
-        if (toolbarCoordinator != null) {
-            toolbarCoordinator.rebuild(); // the toolbar layout is a shared setting — rebuild from it
-        }
-        if (palette != null) {
-            palette.refreshBindings();
-        }
-        if (toolWindows != null) {
-            toolWindows.refreshTooltips();
-        }
-        if (welcomePane != null) {
-            welcomePane.refresh();
-        }
-        installPrompts.maybeOfferInstall(
-                activeBuffer()); // the install-prompts toggle / a feature gate may have changed
-        fileWorkflows.applyAdminSaveSupport(); // the admin-save toggle may have flipped
-        runConfigurations.refreshRunConfigs(); // the Settings page edits the same list this selector shows
-        lspCoordinator.reloadProjectSettings(); // pick up an edited .editora/settings.json
-        remoteExecSettingsMayHaveChanged();
+        settingsReapply.run(settings); // only what the changed settings reach (SettingsReapply)
     }
+
+    private final SettingsReapply settingsReapply = new SettingsReapply(this);
 
     /** The remote-execution setting, or this window's host's agreement or tools, may have been edited. */
     public void remoteExecSettingsMayHaveChanged() {
@@ -4535,12 +4509,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void fileSaved(Path file) {
             snippetCoordinator.fileSaved(file);
-            if (windowManager != null
-                    && file.toAbsolutePath()
-                            .normalize()
-                            .equals(config.getSettingsFile().toAbsolutePath().normalize())) {
-                MainController.this.setStatus(
-                        windowManager.settingsFileSaved()); // a hand edit applies on save, not at the next start
+            if (windowManager != null && windowManager.isSettingsFile(file)) {
+                MainController.this.setStatus(windowManager.settingsFileSaved()); // a hand edit applies on save
             }
         }
 
@@ -7498,7 +7468,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Re-applies every toolbar tooltip's chord from the current keymap (after a live keymap switch). */
-    private void refreshToolbarTooltips() {
+    void refreshToolbarTooltips() {
         for (ToolbarTip t : toolbarTips) {
             applyToolbarTip(t.button(), t.base(), t.commandId());
         }

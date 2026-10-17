@@ -607,4 +607,37 @@ class SettingsFrameFxTest {
             }
         }
     }
+
+    @Test
+    void aViewSwitchReachesTheBuffersWithoutRebuildingTheRestOfTheWindow() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+            javafx.scene.control.CheckBox minimap = FxTestSupport.field(window, "minimapCheck");
+            javafx.scene.control.CheckBox git = FxTestSupport.field(window, "gitCheck");
+            java.nio.file.Path file = java.nio.file.Files.writeString(
+                    java.nio.file.Files.createTempFile("editora-reapply", ".txt"), "text\n");
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(file);
+                workflows.loadInto(b, file);
+                FxTestSupport.call(
+                        fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, b, true);
+                return b;
+            });
+            FxTestSupport.runOnFx(() -> {
+                minimap.setSelected(!minimap.isSelected()); // the first re-apply is a full one (nothing known yet)
+                List<Node> items = List.copyOf(bar.getItems());
+                minimap.setSelected(!minimap.isSelected());
+                assertEquals(minimap.isSelected(), (boolean) FxTestSupport.<Boolean>field(buffer, "minimapVisible"));
+                assertEquals(items, bar.getItems(), "a view switch does not rebuild the toolbar");
+                git.setSelected(!git.isSelected());
+                assertTrue(!items.equals(bar.getItems()), "a feature switch still re-applies everything");
+                git.setSelected(!git.isSelected());
+                FxTestSupport.<Stage>field(window, "stage").hide();
+            });
+        }
+    }
 }
