@@ -422,6 +422,7 @@ public final class HttpClientPanel extends VBox {
         StackPane.setAlignment(errorCard, Pos.TOP_LEFT);
         StackPane bodyStack = new StackPane(bodyBox, emptyState, errorCard, previousPane);
         bodyStack.getStyleClass().add("http-body-stack");
+        unmanagedWhenHidden(bodyStack);
 
         // --- Headers ---
         headersStatus.getStyleClass().add("http-headers-status");
@@ -463,6 +464,7 @@ public final class HttpClientPanel extends VBox {
         for (HttpResponseTab t : HttpResponseTab.values()) {
             content.getChildren().add(tabContent.get(t));
         }
+        unmanagedWhenHidden(content);
         showTab(HttpResponseTab.BODY);
         showNotes(List.of(), List.of());
         showTests(HttpTests.NONE, false);
@@ -1346,6 +1348,16 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** Shows {@code tab}'s content (the strip's selection changed, by the user or by a run). */
+    /**
+     * Only the shown child of {@code stack} counts in its size. A hidden empty state (a row per request) or tab used to
+     * ask for its full height, and the panel took that room from the Run All list above the tabs.
+     */
+    private static void unmanagedWhenHidden(StackPane stack) {
+        for (Node child : stack.getChildren()) {
+            child.managedProperty().bind(child.visibleProperty());
+        }
+    }
+
     private void showTab(HttpResponseTab tab) {
         tabContent.forEach((t, node) -> node.setVisible(t == tab));
     }

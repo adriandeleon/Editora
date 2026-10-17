@@ -354,10 +354,14 @@ class HttpRunListFxTest {
         }
         EditorBuffer b = open(c, work.resolve("many.http"), text.toString());
         HttpClientPanel p = c.panelForTest(b);
+        // Already in Split: a run reveals the response view (Editor → Split), and that rebuild would take the panel
+        // back
+        // out of this test's stage into the buffer's own (unshown) view, where the list keeps a stale height.
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT));
         FxTestSupport.callOnFx(() -> {
             Stage s = new Stage();
             stages.add(s);
-            s.setScene(new Scene(p, 900, 600));
+            s.setScene(new Scene(new javafx.scene.layout.StackPane(p), 900, 600));
             s.show();
             return s;
         });

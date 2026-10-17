@@ -398,6 +398,11 @@ class HttpResponseViewRound3FxTest {
         FxTestSupport.runOnFx(
                 () -> p.tabsForTest().button(HttpResponseTab.NOTES).fire());
         FxTestSupport.drainFx();
+        // A hidden tab takes no part in layout: the one just shown is laid out on the next pass.
+        FxTestSupport.runOnFx(() -> {
+            p.applyCss();
+            p.layout();
+        });
         double row = rowHeight();
         double notes =
                 FxTestSupport.callOnFx(() -> p.controlsForTest().notesArea().getHeight());
