@@ -58,4 +58,33 @@ class RulerColumnsTest {
         assertNull(RulerColumns.parseByLanguage(": 100"), "no language");
         assertNull(RulerColumns.parseByLanguage("java: x"));
     }
+
+    @Test
+    void aLanguageListIsFoundWhateverTheCaseItWasTypedIn() {
+        assertEquals(List.of(100), RulerColumns.resolve(List.of(80), Map.of("Java", List.of(100)), "java", null));
+        assertEquals(Map.of("java", List.of(100)), RulerColumns.parseByLanguage("Java: 100"), "stored lower-cased");
+    }
+
+    @Test
+    void saysWhatIsWrongWithATypedList() {
+        assertNull(RulerColumns.problem("80, 120"));
+        assertNull(RulerColumns.problem(""));
+        assertEquals(
+                new RulerColumns.Problem(RulerColumns.Problem.Kind.NOT_A_COLUMN, ";"),
+                RulerColumns.problem("80 ; 120"));
+        assertEquals(
+                new RulerColumns.Problem(RulerColumns.Problem.Kind.NOT_A_COLUMN, "2000"),
+                RulerColumns.problem("80, 2000"));
+        List<String> known = List.of("java", "python", "shell");
+        assertNull(RulerColumns.byLanguageProblem("Java: 100; python: 79, 88; shell:", known));
+        assertEquals(
+                new RulerColumns.Problem(RulerColumns.Problem.Kind.UNKNOWN_LANGUAGE, "bash"),
+                RulerColumns.byLanguageProblem("java: 100; bash: 80", known));
+        assertEquals(
+                new RulerColumns.Problem(RulerColumns.Problem.Kind.NO_LANGUAGE, "java 100"),
+                RulerColumns.byLanguageProblem("java 100", known));
+        assertEquals(
+                new RulerColumns.Problem(RulerColumns.Problem.Kind.NOT_A_COLUMN, "x"),
+                RulerColumns.byLanguageProblem("java: x", known));
+    }
 }

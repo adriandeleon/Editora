@@ -74,6 +74,34 @@ public final class SyncEngine {
         return url != null && !url.isBlank() && !url.strip().startsWith("-") && GitSafety.isSafeRevision(url.strip());
     }
 
+    /**
+     * Whether {@code url} carries a secret: a password after the user name ({@code https://me:TOKEN@host/…}), or
+     * a user name that is itself an access token ({@code https://ghp_…@github.com/…}). Settings Sync refuses
+     * such a URL — it would sit in plain text in the settings file, its exports and the clone's
+     * {@code .git/config}. An SSH user ({@code git@host:…}, {@code ssh://git@host/…}) is never a secret. Pure.
+     */
+    public static boolean hasCredentials(String url) {
+        if (url == null) {
+            return false;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^\\s*([A-Za-z][A-Za-z0-9+.-]*)://([^/@?#]*)@")
+                .matcher(url);
+        if (!m.find()) {
+            return false; // no scheme (scp-like git@host:path) or no user-info
+        }
+        String scheme = m.group(1).toLowerCase(java.util.Locale.ROOT);
+        String userInfo = m.group(2);
+        int colon = userInfo.indexOf(':');
+        if (colon >= 0) {
+            return colon < userInfo.length() - 1; // "user:secret"
+        }
+        return (scheme.equals("http") || scheme.equals("https")) && looksLikeToken(userInfo);
+    }
+
+    private static boolean looksLikeToken(String user) {
+        return user.matches("(ghp|gho|ghu|ghs|ghr)_\\w+|github_pat_\\w+|glpat-[\\w-]+") || user.matches("[\\w-]{30,}");
+    }
+
     /** Whether {@code branch} is a plain branch name. */
     public static boolean isUsableBranch(String branch) {
         return branch != null

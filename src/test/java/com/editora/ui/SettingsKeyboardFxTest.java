@@ -176,9 +176,9 @@ class SettingsKeyboardFxTest {
                     HBox selected = rows.get(id[0]);
                     assertNotSame(second[0], selected, "the list was rebuilt");
                     assertEquals(
-                            2,
+                            3,
                             all(selected, Button.class, new ArrayList<>()).size(),
-                            "Enter selects the row and reveals Record and Reset");
+                            "Enter selects the row and reveals Record, Reset and Remove");
                     assertSame(selected, stage[0].getScene().getFocusOwner(), "focus stays on the selected row");
                     javafx.event.Event.fireEvent(selected, press(KeyCode.ENTER));
                 });
@@ -366,9 +366,9 @@ class SettingsKeyboardFxTest {
                 assertFalse(hidden.contains(cat), name);
                 assertSame(cat, sidebar.getSelectionModel().getSelectedItem(), name + " is opened");
             }
-            assertTrue(SettingsWindow.namesPage(" tool w", "Tool Windows"));
-            assertFalse(SettingsWindow.namesPage("to", "Tool Windows"), "too short to name a page");
-            assertFalse(SettingsWindow.namesPage("windows", "Tool Windows"));
+            assertTrue(SettingsSearch.namesPage(" tool w", "Tool Windows"));
+            assertFalse(SettingsSearch.namesPage("to", "Tool Windows"), "too short to name a page");
+            assertFalse(SettingsSearch.namesPage("windows", "Tool Windows"));
 
             // Escape: first the query, then the window.
             javafx.event.Event.fireEvent(search, press(KeyCode.ESCAPE));

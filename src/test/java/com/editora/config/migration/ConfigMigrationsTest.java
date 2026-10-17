@@ -31,7 +31,44 @@ class ConfigMigrationsTest {
                 .put("codexAgentCommand", "/custom/codex-acp");
         ObjectNode expected = previous.deepCopy().put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
         expected.put("pdfPageSize", "letter"); // v115→116 writes down the size a file without the key was using
+        // v126→127 gives the OpenAI-compatible provider its own endpoint and model.
+        expected.put("aiModel", "").put("aiModelOpenai", "local-model");
+        expected.put("aiEndpoint", "").put("aiEndpointOpenai", "http://localhost:1234/v1/chat/completions");
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
+    }
+
+    @Test
+    void openaiEndpointAndModelsMoveToTheirOwnFields() throws Exception {
+        ObjectNode openai = (ObjectNode) mapper.readTree("""
+                {"aiProvider":"openai","aiEndpoint":"https://openrouter.example/v1/chat/completions",
+                 "aiModel":"m","aiCompletionModel":"small","aiApiKey":"sk-ant-x","aiApiKeyOpenai":"or-key"}""");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitOpenaiEndpoint(openai);
+        assertEquals(
+                "https://openrouter.example/v1/chat/completions",
+                out.get("aiEndpointOpenai").asText());
+        assertEquals("m", out.get("aiModelOpenai").asText());
+        assertEquals("small", out.get("aiCompletionModelOpenai").asText());
+        assertEquals("", out.get("aiEndpoint").asText(), "the Anthropic key no longer goes to that server");
+        assertEquals("", out.get("aiModel").asText());
+        assertEquals(out.deepCopy(), ConfigMigrations.splitOpenaiEndpoint(out), "safe to repeat");
+    }
+
+    @Test
+    void anOpenaiShapedLeftoverEndpointLeavesAnthropicButAProxyStays() throws Exception {
+        ObjectNode leftover = (ObjectNode) mapper.readTree("""
+                {"aiProvider":"anthropic","aiEndpoint":"http://192.168.1.5:8080/v1/chat/completions/",
+                 "aiModel":"claude-x"}""");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitOpenaiEndpoint(leftover);
+        assertEquals("", out.get("aiEndpoint").asText());
+        assertEquals(
+                "http://192.168.1.5:8080/v1/chat/completions/",
+                out.get("aiEndpointOpenai").asText());
+        assertEquals("claude-x", out.get("aiModel").asText(), "an Anthropic model stays Anthropic's");
+        assertFalse(out.has("aiModelOpenai"));
+
+        ObjectNode proxy = (ObjectNode) mapper.readTree("""
+                {"aiEndpoint":"https://proxy.example/v1/messages","aiModel":"claude-x"}""");
+        assertEquals(proxy.deepCopy(), ConfigMigrations.splitOpenaiEndpoint(proxy));
     }
 
     @Test
@@ -374,7 +411,7 @@ class ConfigMigrationsTest {
         ObjectNode expected = current.deepCopy();
         expected.put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
 
-        assertEquals(104, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
+        assertEquals(127, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, current.deepCopy(), mapper);
 
         assertEquals(expected, out, "nothing but the marker changes");
