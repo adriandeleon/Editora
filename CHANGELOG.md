@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Project files:** License: MIT (this year and your author name), License: Apache 2.0 (verbatim), `.gitignore`
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
+- **Remote: logins ask what they need, while they run.** The connect form no longer has a Secret field. A
+  password, a key's passphrase, and a server's own questions — a 2FA or one-time code, a Duo answer — are asked
+  for in a login dialog when the server or the key needs them, as `ssh` does. A wrong answer is asked for again;
+  a cancelled passphrase skips that key and the login goes on.
+  - Password logins no longer try your default SSH keys first, and a key login uses only that key.
+  - A failed connect says why: the host could not be reached, did not answer, its host key has changed (with
+    the `ssh-keygen -R` line to remove the old entry), or the login was refused. Cancelling only says so in the
+    status bar.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store

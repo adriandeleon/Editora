@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
+import com.editora.vfs.ConnectFailure;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.editora.vfs.RemoteConnection;
 import com.editora.vfs.RemoteFileSystems;
@@ -62,6 +63,7 @@ class RemoteProjectWindowFxTest {
         // The tests about that question switch it on.
         host.settings.setRemoteExecution(false);
         remote = new RemoteCoordinator(host, ops, sftp.fileSystems());
+        remote.connectFailureShown = ops::reportError; // no modal dialog in a test: counted as the Ops report
     }
 
     @AfterEach
@@ -145,6 +147,59 @@ class RemoteProjectWindowFxTest {
         assertNull(ops.openedLive.get(), "a connection in use here is not handed away");
         assertArrayEquals("password".toCharArray(), ops.openedSecret.get(), "the login is passed on instead");
         assertTrue(sftp.fileSystems().isConnected(sftp.connection().id()));
+    }
+
+    @Test
+    void aLoginThePersonCancelledOrAHostKeyTheyDeclinedOnlyShowsInTheStatusBar() throws Exception {
+        AtomicReference<String> dialog = new AtomicReference<>();
+        remote.connectFailureShown = (header, body) -> dialog.set(header);
+        RemoteConnection conn = sftp.connection();
+
+        for (ConnectFailure.Kind kind : List.of(ConnectFailure.Kind.CANCELLED, ConnectFailure.Kind.HOST_KEY_DECLINED)) {
+            FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                    conn, new RemoteFileSystems.Result(false, null, "x", new ConnectFailure(kind, "x"))));
+            assertNull(dialog.get(), kind + ": they did it themselves, nothing to explain");
+            assertEquals(com.editora.i18n.Messages.tr("status.remote.cancelled", conn.displayLabel()), host.last);
+        }
+    }
+
+    @Test
+    void theFailureDialogIsSizedToItsTextAsItWraps() {
+        assertEquals(1, RemoteCoordinator.wrappedLines("short", 64));
+        assertEquals(3, RemoteCoordinator.wrappedLines("x".repeat(130), 64), "one long line wraps to three");
+        assertEquals(4, RemoteCoordinator.wrappedLines("x".repeat(70) + "\n\n" + "y", 64), "blank lines count");
+    }
+
+    @Test
+    void aChangedHostKeySaysHowToForgetTheOldOneAndARefusedLoginWhatToCheck() throws Exception {
+        java.util.Map<String, String> shown = new java.util.LinkedHashMap<>();
+        remote.connectFailureShown = shown::put;
+        RemoteConnection conn = sftp.connection();
+
+        FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                conn,
+                new RemoteFileSystems.Result(
+                        false,
+                        null,
+                        "Server key did not validate",
+                        new ConnectFailure(ConnectFailure.Kind.HOST_KEY_CHANGED, "Server key did not validate"))));
+        FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                conn,
+                new RemoteFileSystems.Result(
+                        false,
+                        null,
+                        "No more authentication methods available",
+                        new ConnectFailure(
+                                ConnectFailure.Kind.AUTH_FAILED, "No more authentication methods available"))));
+
+        List<String> headers = List.copyOf(shown.keySet());
+        assertEquals(2, headers.size());
+        String changed = shown.get(headers.get(0));
+        assertTrue(
+                changed.contains("ssh-keygen -R [127.0.0.1]:" + conn.port()),
+                "names the known_hosts entry to remove: " + changed);
+        assertTrue(changed.endsWith("Server key did not validate"), "the underlying message stays, last");
+        assertTrue(shown.get(headers.get(1)).contains("authorized_keys"), shown.get(headers.get(1)));
     }
 
     @Test
