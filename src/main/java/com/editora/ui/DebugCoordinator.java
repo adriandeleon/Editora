@@ -143,6 +143,14 @@ final class DebugCoordinator {
         /** Persists the exception-breakpoint choices (workspace state + save). */
         default void persistDebugExceptionFilters(Map<String, List<String>> filters) {}
 
+        /** Whether Mute Breakpoints was left on for this project (workspace state). */
+        default boolean debugBreakpointsMuted() {
+            return false;
+        }
+
+        /** Persists Mute Breakpoints (workspace state + save). */
+        default void persistDebugBreakpointsMuted(boolean muted) {}
+
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
@@ -272,6 +280,7 @@ final class DebugCoordinator {
             built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
             debugPanel = built;
             refreshExceptionToggles();
+            built.setBreakpointsMuted(breakpointsMuted); // the state line says so from the start
         }
         return debugPanel;
     }
@@ -2728,6 +2737,10 @@ final class DebugCoordinator {
                 dapManager.setExceptionFilters(language, filters);
             }
         });
+        if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
+            breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
+            showBreakpointsMuted();
+        }
     }
 
     /**
@@ -2820,6 +2833,7 @@ final class DebugCoordinator {
      *  restore persisted breakpoints). Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         buffer.setBreakpointsEnabled(debugSupportEnabled() && isDebuggableBuffer(buffer));
+        buffer.getBreakpointManager().setMuted(breakpointsMuted ? tr("debug.breakpoint.muted") : null);
         buffer.setGutterBreakpointClick((b, line) -> {
             if (breakpointAllowed(b, line)) {
                 b.toggleBreakpoint(line);
@@ -3094,7 +3108,10 @@ final class DebugCoordinator {
 
     // --- review C: breakpoints list, mute, gutter and editor menus, Show Value -----------------------------
 
-    /** Mute Breakpoints: the adapter is told no breakpoints until it is turned off again (this window only). */
+    /**
+     * Mute Breakpoints: the adapter is told no breakpoints until it is turned off again. Kept per project in the
+     * workspace state and restored when the window starts; every breakpoint glyph is drawn faded meanwhile.
+     */
     private boolean breakpointsMuted;
 
     boolean breakpointsMuted() {
@@ -3128,8 +3145,19 @@ final class DebugCoordinator {
                 }
             }
         }
+        ops.persistDebugBreakpointsMuted(breakpointsMuted);
+        showBreakpointsMuted();
         panel().setBreakpointsMuted(breakpointsMuted);
         host.setStatus(tr(breakpointsMuted ? "status.debug.breakpointsMuted" : "status.debug.breakpointsUnmuted"));
+    }
+
+    /** Shows Mute Breakpoints on every breakpoint glyph (faded, and said on hover) and in the Debug window. */
+    private void showBreakpointsMuted() {
+        String hover = breakpointsMuted ? tr("debug.breakpoint.muted") : null;
+        host.forEachBuffer(b -> b.getBreakpointManager().setMuted(hover));
+        if (debugPanel != null) {
+            debugPanel.setBreakpointsMuted(breakpointsMuted);
+        }
     }
 
     /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
