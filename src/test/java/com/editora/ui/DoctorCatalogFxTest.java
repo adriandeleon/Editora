@@ -193,15 +193,42 @@ class DoctorCatalogFxTest {
 
         List<DoctorService.CheckSpec> specs = specs(host, ops);
 
-        DoctorCheck interpreter = spec(specs, "lsp.python.interpreter").probe().get();
+        // One interpreter row (in Run: Run, Debug, the tests and Pyright all use it), with version and reason.
+        assertFalse(has(specs, "lsp.python.interpreter"), "no second interpreter row under Language Servers");
+        DoctorCheck interpreter = spec(specs, "run.python").probe().get();
         assertEquals(DoctorStatus.OK, interpreter.status());
-        assertTrue(interpreter.detail().startsWith("Python 3.99.1 — " + python), interpreter.detail());
+        assertEquals("Python 3.99.1 — " + python + " (.venv)", interpreter.detail());
         DoctorCheck formatter = spec(specs, "python.formatter").probe().get();
         assertEquals(DoctorStatus.OK, formatter.status());
         assertTrue(formatter.detail().equals("ruff 0.99.0 — " + venv.resolve("bin/ruff")), formatter.detail());
 
         ops.lsp = false;
         assertTrue(has(specs(host, ops), "python.formatter"), "Format Document on .py works without LSP");
+    }
+
+    /** A remote file's interpreter is named as its host names it, and not run on this machine for a version. */
+    @Test
+    void aRemoteInterpreterIsNamedNotProbed() throws Exception {
+        Host host = new Host();
+        var remote = new com.editora.run.PythonInterpreters.PythonInterpreter(
+                List.of("/home/u/proj/.venv/bin/python"),
+                com.editora.run.PythonInterpreters.Source.PROJECT_VENV,
+                java.nio.file.Path.of("/home/u/proj/.venv"));
+        Ops ops = new Ops() {
+            @Override
+            public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                    pythonInterpreter() {
+                return () -> remote;
+            }
+
+            @Override
+            public boolean pythonInterpreterElsewhere() {
+                return true;
+            }
+        };
+        DoctorCheck row = spec(specs(host, ops), "run.python").probe().get();
+        assertEquals(DoctorStatus.OK, row.status());
+        assertEquals("/home/u/proj/.venv/bin/python (.venv)", row.detail());
     }
 
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {

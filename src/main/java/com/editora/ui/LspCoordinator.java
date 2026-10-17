@@ -2476,9 +2476,19 @@ final class LspCoordinator {
     /** For Doctor (FX thread): resolves, off the FX thread, the interpreter of the active Python file or project. */
     java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreterForDoctor() {
         pythonInterpreters.captureSnapshot();
-        EditorBuffer b = host.activeBuffer();
-        Path file = b != null && b.isPython() && !com.editora.vfs.Vfs.isRemote(lspPath(b)) ? lspPath(b) : null;
+        Path file = doctorPythonFile();
         return () -> pythonInterpreters.resolve(file);
+    }
+
+    /** For Doctor (FX thread): whether that interpreter runs on another machine. */
+    boolean pythonInterpreterElsewhereForDoctor() {
+        return pythonInterpreters.elsewhere(doctorPythonFile());
+    }
+
+    /** The active Python file Doctor's interpreter row is about (null = the project as a whole). */
+    private Path doctorPythonFile() {
+        EditorBuffer b = host.activeBuffer();
+        return b != null && b.isPython() ? b.getPath() : null;
     }
 
     /** {@code python.selectInterpreter}: the interpreter picker for the active file's project. */

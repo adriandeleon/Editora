@@ -107,6 +107,11 @@ final class DoctorCoordinator {
         default java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreter() {
             return null;
         }
+
+        /** Whether that interpreter runs on another machine (a remote host, WSL, a container): not run here. */
+        default boolean pythonInterpreterElsewhere() {
+            return false;
+        }
     }
 
     private final CoordinatorHost host;
@@ -172,26 +177,6 @@ final class DoctorCoordinator {
         });
     }
 
-    /** Which Python the Python language server analyses with, and why (review B16). */
-    private DoctorService.CheckSpec pythonInterpreterRow() {
-        var resolver = ops.pythonInterpreter();
-        DoctorCheck row = DoctorCheck.checking(
-                        "lsp.python.interpreter", "lsp", tr("doctor.label.pythonInterpreter"), "")
-                .withSettings("debug");
-        if (resolver == null) {
-            return terminal(row.disabled());
-        }
-        return probe(row, base -> {
-            var interp = resolver.get();
-            List<String> command = interp.command();
-            DoctorProbes.Presence p = DoctorProbes.version(command);
-            String what = String.join(" ", command) + " (" + PythonInterpreterView.reason(interp) + ")";
-            return p.present()
-                    ? base.ok(p.version() + " — " + what)
-                    : base.missing("doctor.tip.pythonInterpreter", what);
-        });
-    }
-
     /** Ruff or Black for Format Document on Python files (adl's decision 4). */
     private DoctorService.CheckSpec pythonFormatterRow() {
         var resolver = ops.pythonInterpreter();
@@ -199,6 +184,9 @@ final class DoctorCoordinator {
                 DoctorCheck.checking("python.formatter", "lsp", tr("doctor.label.pythonFormatter"), "ruff / black");
         return probe(row, base -> {
             Path venv = resolver == null ? null : resolver.get().venv();
+            if (venv != null && venv.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+                venv = null; // Ruff/Black run on this machine: a remote environment's tools cannot
+            }
             var found = com.editora.format.PythonFormatter.findLocal(venv);
             if (found.isEmpty()) {
                 return base.warn("", "doctor.tip.pythonFormatter");
@@ -329,9 +317,6 @@ final class DoctorCoordinator {
                     String version = python ? com.editora.doctor.DoctorRules.npmPackageVersion(Path.of(path)) : "";
                     return base.ok(version.isEmpty() ? path : version + " — " + path);
                 }));
-                if (python) {
-                    specs.add(pythonInterpreterRow());
-                }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
                     // gets no diagnostics and Format Document changes nothing.
@@ -553,17 +538,27 @@ final class DoctorCoordinator {
         java.nio.file.Path root = ops.projectRoot();
         String choice = ops.pythonInterpreterChoice();
         String setting = s.getPythonDebugCommand();
-        DoctorCheck row = DoctorCheck.checking("run.python", "run", "Python", "python");
+        // The window's resolver when it has one: the active Python file's interpreter (its venv, the picked one,
+        // a remote host's) — what the status bar shows and Pyright is told, so Doctor has one Python row.
+        var resolver = ops.pythonInterpreter();
+        boolean elsewhere = resolver != null && ops.pythonInterpreterElsewhere();
+        DoctorCheck row = DoctorCheck.checking("run.python", "run", tr("doctor.label.pythonInterpreter"), "python")
+                .withSettings("debug");
         return probe(row, base -> {
-            com.editora.run.PythonInterpreters.PythonInterpreter py =
-                    com.editora.run.PythonInterpreters.resolveLocal(null, root, "", choice, setting);
+            com.editora.run.PythonInterpreters.PythonInterpreter py = resolver != null
+                    ? resolver.get()
+                    : com.editora.run.PythonInterpreters.resolveLocal(null, root, "", choice, setting);
+            String what = String.join(" ", py.command()) + " (" + PythonInterpreterView.reason(py) + ")";
+            if (elsewhere) {
+                return base.ok(what); // it runs on that machine, not here: named, not probed
+            }
             List<String> argv = new ArrayList<>(com.editora.run.PythonLaunch.withoutEnvPrefix(py.command()));
             argv.add("--version");
             String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
             if (!version.startsWith("Python")) {
-                return base.warn(String.join(" ", py.command()), "doctor.tip.runOptional", "Python");
+                return base.warn(what, "doctor.tip.pythonInterpreter", String.join(" ", py.command()));
             }
-            return base.ok(version + " — " + String.join(" ", py.command()));
+            return base.ok(version + " — " + what);
         });
     }
 
