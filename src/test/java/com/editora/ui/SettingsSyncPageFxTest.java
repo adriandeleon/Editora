@@ -130,12 +130,24 @@ class SettingsSyncPageFxTest {
 
     /** Waits until no connect attempt and no sync run is in progress. */
     private void awaitIdle() throws Exception {
+        workerDone();
         SettingsRig.awaitFx(
                 "settings sync to come to rest",
                 () -> control("syncConnectMessage") == null
                         && sync.state().phase() != SettingsSync.Phase.SYNCING
                         && !FxTestSupport.<Boolean>field(sync, "running"));
+        workerDone(); // a disconnect deletes the clone there
         FxTestSupport.drainFx();
+    }
+
+    /**
+     * Waits for what the sync worker was given so far. A connect's look at the repository is not a sync run —
+     * nothing above waits for it — and after Cancel it still fetches into {@code sync/repo}: the temp folder
+     * deleted under it failed with "directory not empty" on macOS.
+     */
+    private void workerDone() throws Exception {
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(sync, "worker");
+        worker.submit(() -> {}).get(60, TimeUnit.SECONDS); // one thread: everything queued before it has run
     }
 
     private void connect(String url, String branch) throws Exception {
