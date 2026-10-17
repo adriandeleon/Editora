@@ -385,6 +385,7 @@ public class SettingsWindow {
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox httpScriptsCheck;
+    private CheckBox httpInlineResultsCheck;
     private TextField httpNodeField;
     private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
@@ -1635,6 +1636,11 @@ public class SettingsWindow {
             config.getSettings().setHttpScriptsEnabled(now);
             apply();
             refreshHttpNodeStatus();
+        });
+        httpInlineResultsCheck = new CheckBox(tr("settings.httpClient.inlineResults"));
+        httpInlineResultsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHttpInlineResults(now);
+            apply();
         });
         httpNodeField = new TextField();
         httpNodeField.setPromptText("node");
@@ -3894,6 +3900,12 @@ public class SettingsWindow {
                 httpCheck,
                 tr("settings.httpClient.hint"),
                 "http client rest request enable run send response built-in");
+        checkRow(
+                http,
+                Category.WEB,
+                httpInlineResultsCheck,
+                tr("settings.httpClient.inlineResultsHint"),
+                "http client result status inline request line gutter run outcome editor ghost");
         checkRow(
                 http,
                 Category.WEB,
@@ -7901,6 +7913,7 @@ public class SettingsWindow {
             refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
+            httpInlineResultsCheck.setSelected(settings.isHttpInlineResults());
             httpNodeField.setText(settings.getHttpNodePath());
             refreshHttpNodeStatus();
             syncHtmlBrowser();

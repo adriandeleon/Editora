@@ -1220,6 +1220,25 @@ public final class HttpClientPanel extends VBox {
     }
 
     /**
+     * Selects {@code entry} in History and shows it — a click on a request's result in the editor. The entry is
+     * found by its saved key, since trimming may have replaced it with a copy without its body. False when History
+     * no longer holds it.
+     */
+    public boolean showHistoryEntry(HttpHistoryEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        String key = entry.storedKey();
+        for (HttpHistoryEntry e : history) {
+            if (e == entry || e.storedKey().equals(key)) {
+                historyCombo.setValue(e); // its listener shows it (also during a run, as a pick from History does)
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * The tab closed or the feature was switched off: stops the elapsed-time animation (an indefinite timeline
      * kept the panel, its history and the closed buffer alive), drops the shown response and every callback.
      */
