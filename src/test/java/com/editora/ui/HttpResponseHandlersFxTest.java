@@ -292,7 +292,7 @@ class HttpResponseHandlersFxTest {
         // On disk: the test results are kept with the response.
         HttpHistorySync.awaitIdleForTest();
         String onDisk = Files.readString(ops.store.fileFor(file));
-        assertTrue(onDisk.contains("\"schemaVersion\" : 4") || onDisk.contains("\"schemaVersion\":4"), onDisk);
+        assertTrue(onDisk.contains("\"schemaVersion\" : 5") || onDisk.contains("\"schemaVersion\":5"), onDisk);
         assertTrue(onDisk.contains("token present"), onDisk);
         assertTrue(onDisk.contains("expected == 8, got 7"), onDisk);
         HttpResponseHistory.Stored stored = ops.store.load(file);
@@ -366,10 +366,18 @@ class HttpResponseHandlersFxTest {
             String block = FxTestSupport.callOnFx(p::testsForTest);
             String badge = FxTestSupport.callOnFx(
                     () -> p.tabsForTest().button(HttpResponseTab.TESTS).getAccessibleText());
+            // A response handler that stopped shows Tests; a pre-request script that stopped kept its request unsent,
+            // a send failure, which opens on its card in Body (decision 4) — the card offers the script's output.
+            boolean pre = "pre".equals(e.name());
             assertEquals(
-                    HttpResponseTab.TESTS,
+                    pre ? HttpResponseTab.BODY : HttpResponseTab.TESTS,
                     FxTestSupport.callOnFx(p::selectedTabForTest),
-                    "a script that stopped shows Tests");
+                    "a script that stopped shows Tests, or the card when nothing was sent");
+            if (pre) {
+                assertEquals(
+                        HttpFailureKind.SCRIPT,
+                        FxTestSupport.callOnFx(() -> p.errorCardForTest().kindForTest()));
+            }
             assertTrue(
                     FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS))
                             .endsWith("✗"),

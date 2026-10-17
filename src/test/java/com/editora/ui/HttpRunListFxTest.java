@@ -363,6 +363,7 @@ class HttpRunListFxTest {
         });
         HttpRunList list = runAll(c, p);
         FxTestSupport.drainFx();
+        await(() -> list.getHeight() > 60); // its rows land a layout pass after the list is shown
         double listHeight = FxTestSupport.callOnFx(list::getHeight);
         double panelHeight = FxTestSupport.callOnFx(p::getHeight);
         assertTrue(listHeight > 60, "it shows: " + listHeight);

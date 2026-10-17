@@ -86,6 +86,11 @@ final class HttpVariableMarks {
         });
     }
 
+    /** The marks at 0-based {@code paragraph} and {@code column} (empty while off). */
+    List<MarkdownLint.Diagnostic> at(int paragraph, int column) {
+        return enabled ? overlay.get().at(paragraph, column) : List.of();
+    }
+
     /** The marks currently shown (empty while off). */
     List<MarkdownLint.Diagnostic> diagnostics() {
         return enabled ? overlay.get().diagnostics() : List.of();

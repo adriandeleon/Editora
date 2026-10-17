@@ -17,6 +17,7 @@ import org.junit.jupiter.api.TestInstance;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -199,17 +200,37 @@ class HttpClientPanelFxTest {
     void whileARequestRunsTheOldResponseIsClearedAndTheElapsedTimeShown() throws Exception {
         HttpClientPanel p = panel();
         show(p, exchange("old", ok("old body", "text/plain", List.of())));
+        HttpHistoryEntry old =
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getValue());
         FxTestSupport.runOnFx(() -> p.started("GET http://x.test/slow"));
         assertEquals("", FxTestSupport.callOnFx(p::shownBodyForTest), "the previous body is not left under Running");
         String text = FxTestSupport.callOnFx(p::statusForTest);
         assertTrue(text.contains("GET http://x.test/slow") && text.contains(" s"), text);
+        assertTrue(text.startsWith(HttpPanelStatesFxTest.runningPrefix("GET http://x.test/slow")), text);
+        // U7: the previous response is one labelled row, and the progress line runs.
+        String row = FxTestSupport.callOnFx(p::previousRowForTest);
+        assertNotNull(row, "the previous response's row shows");
+        assertTrue(row.contains("200 OK") && row.contains("old"), row);
+        assertTrue(FxTestSupport.callOnFx(() -> p.controlsForTest().progress().isVisible()));
         FxTestSupport.runOnFx(() -> p.progress(1, 5, "GET http://x.test/b"));
         assertTrue(FxTestSupport.callOnFx(p::statusForTest)
                 .contains(tr("httppanel.runningOf", 2, 5, "GET http://x.test/b")));
         FxTestSupport.runOnFx(p::cancelled);
-        // X10: nothing is shown under "Cancelled" (the old response read as this one's); it is still in History.
+        // X10 / U7: the old body is not shown under "Cancelled after" (it read as this one's): its row comes back, and
+        // History shows it selected rather than blank. Nothing is "selected" for the actions until it is shown.
         assertEquals(null, FxTestSupport.callOnFx(p::getSelectedExchange));
-        assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
+        String cancelled = FxTestSupport.callOnFx(p::statusForTest);
+        assertTrue(
+                cancelled.startsWith(
+                        tr("httppanel.cancelledAfter", "").replace(" s", "").strip()),
+                cancelled);
+        assertTrue(cancelled.endsWith(" s"), cancelled);
+        assertEquals("", FxTestSupport.callOnFx(p::shownBodyForTest));
+        assertNotNull(FxTestSupport.callOnFx(p::previousRowForTest));
+        assertSame(
+                old,
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getValue()));
+        assertFalse(FxTestSupport.callOnFx(() -> p.controlsForTest().progress().isVisible()));
         assertEquals(
                 1,
                 FxTestSupport.callOnFx(

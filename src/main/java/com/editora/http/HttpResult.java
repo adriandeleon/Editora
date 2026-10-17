@@ -66,6 +66,24 @@ public record HttpResult(
                 tests);
     }
 
+    /** This result with {@code warnings} in place of its own. */
+    public HttpResult withWarnings(List<String> warnings) {
+        return new HttpResult(
+                status,
+                headers,
+                body,
+                contentType,
+                elapsedMs,
+                sizeBytes,
+                error,
+                warnings,
+                rawBody,
+                truncated,
+                written,
+                protocol,
+                tests);
+    }
+
     /** How far into the payload {@link #looksBinary} looks for a NUL byte (git's heuristic). */
     private static final int SNIFF_BYTES = 8000;
 

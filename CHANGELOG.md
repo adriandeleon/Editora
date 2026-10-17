@@ -32,13 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again or copy it as cURL. A cancelled Run All lists the requests that finished. The list stays until the next run
   or Clear.
 
+- **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
+  how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
+  status is in the outcome's colour, failed tests are red, and the request's ▶ takes the colour too (amber for a
+  4xx, red for a 5xx, a failure or failed tests).
+  - Click the result to show that response in the response view; hover it to see when it ran.
+  - The results come from the response history, so they are back when the file is reopened, and Clear removes them.
+    A request whose line you edit loses its result.
+  - The text is not part of the file: it is never copied, searched, saved or undone.
+  - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
+    Request Lines`.
+
 ### Changed
 
 - **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
   stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
   - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
-    3xx, amber 4xx, red 5xx and failures), the time and size, then History and the environment. Its tooltip has
-    the full status line and when the request was sent.
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History. Its tooltip has the full
+    status line and when the request was sent.
   - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
     (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
     default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
@@ -48,10 +59,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the request as sent, highlighted like a `.http` file and filling the tab.
   - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
     their shortcuts in the tooltips; Clear is in the **⋯** menu.
+  - In a narrow panel History narrows first, then the time and size hide, then History moves to a
+    second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
+- **HTTP Client: the environment is chosen beside the editor.** A `.http` file shows its environment on a pill
+  beside the Editor/Split/Preview toggle ("Env: dev", or "No environment"), in every view mode and as soon as the
+  file opens, and in the status bar. Clicking either opens the file's environments; `HTTP: Select Environment`
+  opens the same menu from the keyboard (arrow keys and Enter; Escape goes back to the editor). The first run of a
+  file no longer goes out without an environment because the response view was not open yet. The Environment
+  picker in the response view is gone; each file keeps the environment it had.
+  - **Use environment dev:** an unresolved `{{variable}}` that an environment of the file defines offers that
+    environment as a quick fix — right-click it, or use the Code Actions chord with the caret on it. Its tooltip
+    names the fix, and with another environment selected it says which ones define the variable.
+  - A variable sent empty is reported with the environments that define it. Each response in History records
+    the environment it was sent in, and the response view shows it beside the time and size ("env dev").
+  - The menu says when no `http-client.env.json` was found for the file, and opens the env files it has.
+
   - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
     to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
-
-### Changed
+- **HTTP Client: the response view says what is going on between responses.**
+  - **Before the first run** (and after Clear) it shows which request Run will send — the one at the caret, by its
+    `###` title — your Run shortcut, that the gutter's ▶ runs a request, and the file's requests: click one (or
+    press Enter on it) to run it.
+  - **While a request is sent**, the status says "Sending Get one user… 1.2 s" ("Sending 3 of 10: …" in a Run
+    All) over a thin progress line, and the response shown before is one "Previous: 200 OK · 16:42:31 · getUser"
+    row, which you can click to see it. Its body no longer disappears without a trace, nor shows under the new
+    run.
+  - **While a trust prompt is open** it says "Waiting for your answer…" without a clock; the time counts from
+    when the request is sent.
+  - **After Cancel** it says how long the request ran, and the previous response's row comes back, selected in
+    History.
+  - **A request that got no response** shows a card in the Body tab naming what went wrong (Connection refused,
+    Host not found, Timed out, Certificate problem, Not sent…) with the explanation and Run again and Copy as
+    cURL buttons; a pre-request script that did not run also offers its output. The view opens on that card.
 
 - **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
   per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's

@@ -1214,6 +1214,25 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
+/* .http: the environment pill beside the view toggle ("● Env: dev ▾"), in every view mode and before any run — the
+   environment a run will use. Muted ("No environment", hollow dot) when none is selected. */
+.http-env-pill {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 4 10 4 9;
+    -fx-opacity: 0.92;
+    -fx-cursor: hand;
+}
+.http-env-pill:hover { -fx-opacity: 1; -fx-border-color: -color-border-default; }
+.http-env-pill .http-env-pill-text { -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: -state-accent; }
+.http-env-pill .http-env-pill-chevron { -fx-font-size: 10px; -fx-text-fill: -color-fg-muted; }
+.http-env-pill .http-env-dot { -fx-fill: -state-green; }
+.http-env-pill:none .http-env-pill-text { -fx-text-fill: -color-fg-muted; }
+.http-env-pill:none .http-env-dot { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 1; }
+.status-bar .status-http-env:none { -fx-text-fill: -color-fg-muted; }
+
 /* The log viewer's control bar (Follow / level / pattern / what is showing), docked above a log's text.
    A bar of its own, not a control floating over the corner: log lines are the longest the editor shows. */
 .log-controls {
@@ -3447,6 +3466,46 @@
     -fx-underline: true;
 }
 
+/* A .http request's last result after its line (U11): "200 OK · 83 ms · ✗ 1 of 3 tests". One inlay per coloured
+   part, all at the end of the line: the status first (set apart from the request, in its outcome's colour, upright),
+   then the muted rest (italic, like an inlay hint) and the failed tests in red. Clickable: EditorBuffer's
+   HttpResultMarks sets the hover state and the hand cursor, the labels being mouse-transparent. */
+.inlay.http-result-ok,
+.inlay.http-result-redirect,
+.inlay.http-result-client-error,
+.inlay.http-result-server-error,
+.inlay.http-result-failed,
+.inlay.http-result-cancelled {
+    -fx-font-style: normal;
+    -fx-font-size: 0.9em;
+    -fx-opacity: 1;
+    -fx-padding: 0 0 0 1.5em;
+}
+.inlay.http-result,
+.inlay.http-result-tests-failed {
+    -fx-font-size: 0.9em;
+    -fx-padding: 0;
+}
+.inlay.http-result-tests-failed { -fx-font-style: normal; -fx-opacity: 1; }
+/* The label's own .text node: the editor themes fill every .text under .editor-area with the code colour, which
+   wins over a label's -fx-text-fill. */
+.inlay.http-result .text { -fx-fill: -color-fg-muted; }
+.inlay.http-result-ok .text { -fx-fill: -state-green; }
+.inlay.http-result-redirect .text { -fx-fill: -state-accent; }
+.inlay.http-result-client-error .text,
+.inlay.http-result-cancelled .text { -fx-fill: -state-amber; }
+.inlay.http-result-server-error .text,
+.inlay.http-result-failed .text,
+.inlay.http-result-tests-failed .text { -fx-fill: -state-red; }
+.inlay.http-result:result-hover,
+.inlay.http-result-ok:result-hover,
+.inlay.http-result-redirect:result-hover,
+.inlay.http-result-client-error:result-hover,
+.inlay.http-result-server-error:result-hover,
+.inlay.http-result-failed:result-hover,
+.inlay.http-result-cancelled:result-hover,
+.inlay.http-result-tests-failed:result-hover { -fx-underline: true; }
+
 /* ---- Markdown selection format bar (floating, anchored above the selection) ---- */
 .markdown-format-bar {
     -fx-background-color: -color-bg-default;
@@ -3813,6 +3872,66 @@
 .http-panel .http-image-scroll,
 .http-panel .http-image-scroll > .viewport { -fx-background-color: -color-bg-default; }
 .http-panel .http-image-frame { -fx-border-color: -color-border-muted; }
+
+/* The states between responses. While a request is sent: a thin indeterminate line under the header, and the response
+   shown before it as one muted "Previous: …" row. */
+.http-panel .http-progress { -fx-pref-height: 3; -fx-min-height: 3; -fx-max-height: 3; -fx-padding: 0; }
+.http-panel .http-progress > .track {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-progress > .bar {
+    -fx-background-color: -color-accent-emphasis;
+    -fx-background-insets: 0;
+    -fx-background-radius: 2;
+    -fx-padding: 1.5 0 1.5 0;
+}
+.http-panel .http-previous {
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 5 9 5 9;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.http-panel .http-previous:hover { -fx-text-fill: -color-fg-default; -fx-background-color: -color-neutral-muted; }
+/* Before any response: which request Run sends, the Run chord, the gutter's ▶, and the file's requests as rows. */
+.http-panel .http-empty-lead { -fx-fill: -color-fg-muted; -fx-font-size: 1.15em; }
+.http-panel .http-empty-name { -fx-fill: -color-fg-default; -fx-font-size: 1.15em; -fx-font-weight: bold; }
+.http-panel .http-empty-hint { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-empty-heading { -fx-text-fill: -color-fg-muted; -fx-font-weight: bold; -fx-font-size: 0.92em; }
+.http-panel .http-empty-scroll,
+.http-panel .http-empty-scroll > .viewport { -fx-background-color: transparent; -fx-padding: 0; }
+.http-panel .http-empty-row { -fx-padding: 4 8 4 8; -fx-background-radius: 5; -fx-cursor: hand; }
+.http-panel .http-empty-row:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-empty-row:caret { -fx-background-color: -state-sel; }
+.http-panel .http-empty-method {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-weight: bold;
+    -fx-text-fill: -state-accent;
+    -fx-min-width: 4.2em;
+}
+.http-panel .http-empty-name-cell { -fx-text-fill: -color-fg-default; }
+.http-panel .http-empty-url { -fx-text-fill: -color-fg-muted; }
+/* A request that got no response: a card naming the failure (red), its explanation (selectable), what to do next. */
+.http-panel .http-error-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+}
+.http-panel .http-error-title { -fx-text-fill: -state-red; -fx-font-weight: bold; -fx-font-size: 1.15em; }
+.http-panel .http-error-text,
+.http-panel .http-error-text .scroll-pane,
+.http-panel .http-error-text .scroll-pane .viewport,
+.http-panel .http-error-text .scroll-pane .content {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-error-text { -fx-text-fill: -color-fg-default; }
 .http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests.http-test-passed { -fx-text-fill: -state-green; }
@@ -4028,6 +4147,17 @@
 /* A .http request in flight: its ▶ turns into a red ■ that cancels it. */
 .run-marker.http-running-marker { -fx-fill: -state-red; }
 .fold-gutter .run-slot:hover .run-marker.http-running-marker { -fx-fill: derive(-state-red, 25%); }
+/* A .http request that ran: its ▶ takes the outcome's colour (green stays the plain ▶'s). */
+.run-marker.http-result-redirect { -fx-fill: -state-accent; }
+.run-marker.http-result-client-error,
+.run-marker.http-result-cancelled { -fx-fill: -state-amber; }
+.run-marker.http-result-server-error,
+.run-marker.http-result-failed { -fx-fill: -state-red; }
+.fold-gutter .run-slot:hover .run-marker.http-result-redirect { -fx-fill: derive(-state-accent, 25%); }
+.fold-gutter .run-slot:hover .run-marker.http-result-client-error,
+.fold-gutter .run-slot:hover .run-marker.http-result-cancelled { -fx-fill: derive(-state-amber, 25%); }
+.fold-gutter .run-slot:hover .run-marker.http-result-server-error,
+.fold-gutter .run-slot:hover .run-marker.http-result-failed { -fx-fill: derive(-state-red, 25%); }
 
 /* Gutter breakpoint dot (leftmost strip). Plain = solid red; conditional/logpoint tint it; disabled is
    hollow/grey. A faint dot previews on hover over an empty strip so the click target is discoverable. */

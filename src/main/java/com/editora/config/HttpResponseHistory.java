@@ -57,7 +57,7 @@ public final class HttpResponseHistory {
      * response landed, its request's URL as written and a fingerprint of the request (all additive). v3 → v4: + what
      * each response's {@code @assert} checks and response handlers found ({@link Tests}; additive).
      */
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     /** Responses remembered per {@code .http} file (newest first). */
     public static final int MAX_RESPONSES = 10;
@@ -111,7 +111,8 @@ public final class HttpResponseHistory {
      * entry saved by a version before schema 2. {@code landedAt} is when the response arrived (0 before schema 3:
      * {@code at} stands in), which a Clear is compared with; {@code urlTemplate} the request's URL as written
      * ({@code {{…}}} kept) and {@code fingerprint} a digest of its text, by which Run finds it again. {@code tests}
-     * are what its checks and handlers found (null when it ran none, and before schema 4).
+     * are what its checks and handlers found (null when it ran none, and before schema 4). {@code environment} is the
+     * environment the request was sent in ({@code ""}: none; null when unknown, and before schema 5).
      */
     public record Response(
             long at,
@@ -138,7 +139,64 @@ public final class HttpResponseHistory {
             long landedAt,
             String urlTemplate,
             String fingerprint,
-            Tests tests) {
+            Tests tests,
+            String environment) {
+
+        /** An entry without its environment (as a version-4 file holds them). */
+        public Response(
+                long at,
+                String name,
+                int requestIndex,
+                String method,
+                String url,
+                List<Header> requestHeaders,
+                String requestBody,
+                int status,
+                List<Header> headers,
+                String body,
+                boolean bodyCut,
+                boolean binary,
+                String contentType,
+                long elapsedMs,
+                long sizeBytes,
+                String error,
+                List<String> warnings,
+                boolean truncated,
+                String protocol,
+                String charset,
+                Sent sent,
+                long landedAt,
+                String urlTemplate,
+                String fingerprint,
+                Tests tests) {
+            this(
+                    at,
+                    name,
+                    requestIndex,
+                    method,
+                    url,
+                    requestHeaders,
+                    requestBody,
+                    status,
+                    headers,
+                    body,
+                    bodyCut,
+                    binary,
+                    contentType,
+                    elapsedMs,
+                    sizeBytes,
+                    error,
+                    warnings,
+                    truncated,
+                    protocol,
+                    charset,
+                    sent,
+                    landedAt,
+                    urlTemplate,
+                    fingerprint,
+                    tests,
+                    null);
+        }
 
         /** An entry without test results (as a version-3 file holds them). */
         public Response(
@@ -325,7 +383,8 @@ public final class HttpResponseHistory {
                     landedAt,
                     urlTemplate,
                     fingerprint,
-                    tests);
+                    tests,
+                    environment);
         }
 
         /** This entry with {@code requestHeaders} and {@code headers} masked again by today's rules. */
@@ -355,7 +414,8 @@ public final class HttpResponseHistory {
                     landedAt,
                     urlTemplate,
                     fingerprint,
-                    tests);
+                    tests,
+                    environment);
         }
 
         private static List<Header> remask(List<Header> headers) {
