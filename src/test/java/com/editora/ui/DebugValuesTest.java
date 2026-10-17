@@ -54,6 +54,8 @@ class DebugValuesTest {
         assertEquals(DebugValues.PAGE_SIZE, DebugValues.nextPage(0, 65_536));
         assertEquals(36, DebugValues.nextPage(65_500, 65_536));
         assertEquals(0, DebugValues.nextPage(65_536, 65_536));
+        assertEquals(104, DebugValues.nextPage(0, 104), "a short tail is not a page of its own");
+        assertEquals(DebugValues.PAGE_SIZE, DebugValues.nextPage(0, 126));
     }
 
     /** D2-2: a frame source that is not a file still gets a readable name. */

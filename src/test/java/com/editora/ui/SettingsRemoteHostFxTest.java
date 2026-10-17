@@ -65,6 +65,7 @@ class SettingsRemoteHostFxTest {
             RemoteConnection site = new RemoteConnection(
                     "build.example", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Build", "");
             FxTestSupport.runOnFx(() -> {
+                fx.shared.getSettings().setRemoteExecution(true); // the host section follows it
                 fx.shared.putConnection(site);
                 fx.shared.allowRemoteExec(site.id());
                 fx.shared.setRemoteTools(

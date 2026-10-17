@@ -232,9 +232,12 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow a = shown(fx.controller);
                 SettingsWindow b = shown(other);
                 try {
-                    ObservableList<RemoteConnection> sitesA = FxTestSupport.field(a, "remoteItems");
-                    ObservableList<RemoteConnection> sitesB = FxTestSupport.field(b, "remoteItems");
-                    ObservableList<Abbreviation> abbrevsA = FxTestSupport.field(a, "abbrevItems");
+                    ObservableList<RemoteConnection> sitesA =
+                            FxTestSupport.field(FxTestSupport.field(a, "remoteSites"), "items");
+                    ObservableList<RemoteConnection> sitesB =
+                            FxTestSupport.field(FxTestSupport.field(b, "remoteSites"), "items");
+                    ObservableList<Abbreviation> abbrevsA =
+                            FxTestSupport.<AbbreviationsEditor>field(a, "abbreviationsEditor").items;
 
                     // What a Connect that finishes while the user is on Settings > Remote does.
                     fx.shared.putConnection(new RemoteConnection(
@@ -286,8 +289,10 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow w = shown(fx.controller);
                 try {
                     // --- Remote sites ---
-                    ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
-                    ListView<RemoteConnection> siteList = FxTestSupport.field(w, "remoteList");
+                    ObservableList<RemoteConnection> sites =
+                            FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "items");
+                    ListView<RemoteConnection> siteList =
+                            FxTestSupport.field(FxTestSupport.field(w, "remoteSites"), "list");
                     siteList.getSelectionModel().select(0);
                     List<TextField> remote = all(
                             all(page(w, "REMOTE"), javafx.scene.layout.GridPane.class, new ArrayList<>())
@@ -337,15 +342,11 @@ class SettingsFollowUpsFxTest {
                     assertFalse("gone.example.org".equals(host.getText()), "the form follows the new selection");
 
                     // --- Abbreviations ---
-                    ObservableList<Abbreviation> abbrevs = FxTestSupport.field(w, "abbrevItems");
-                    ListView<Abbreviation> abbrevList = FxTestSupport.field(w, "abbrevList");
+                    AbbreviationsEditor editor = FxTestSupport.field(w, "abbreviationsEditor");
+                    ObservableList<Abbreviation> abbrevs = editor.items;
+                    ListView<Abbreviation> abbrevList = editor.list;
                     abbrevList.getSelectionModel().select(0);
-                    List<TextField> fields = all(
-                            all(page(w, "ABBREVIATIONS"), javafx.scene.layout.GridPane.class, new ArrayList<>())
-                                    .get(0),
-                            TextField.class,
-                            new ArrayList<>());
-                    TextField expansion = fields.get(1);
+                    javafx.scene.control.TextArea expansion = editor.expansion;
                     assertEquals("by the way", expansion.getText(), "precondition");
                     expansion.setText("by the way, ");
                     expansion.positionCaret(12);
@@ -362,7 +363,7 @@ class SettingsFollowUpsFxTest {
                             abbrevList.getSelectionModel().getSelectedItem().getAbbreviation());
                     assertEquals("by the way, ", expansion.getText(), "what was being typed is still there");
                     assertEquals(12, expansion.getCaretPosition());
-                    expansion.getOnAction().handle(new javafx.event.ActionEvent());
+                    editor.abbrev.fireEvent(new javafx.event.ActionEvent()); // Enter applies the form
                     assertTrue(fx.shared.getAbbreviations().stream()
                             .anyMatch(a -> a.getAbbreviation().equals("btw")
                                     && a.getExpansion().equals("by the way, ")));
@@ -417,7 +418,7 @@ class SettingsFollowUpsFxTest {
                     name.setText("Two Line  ");
                     name.fireEvent(new ActionEvent());
                     language.setText(" java");
-                    button(pg, tr("settings.save")).fire();
+                    language.fireEvent(new ActionEvent()); // Enter applies it (there is no Save button)
                     assertEquals(List.of(), names(dir), "whitespace the save trims away is not an edit");
                     java.util.Set<String> userIds = FxTestSupport.field(w, "templateUserIds");
                     assertFalse(userIds.contains("two-line"), "still a bundled template");

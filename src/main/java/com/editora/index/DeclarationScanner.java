@@ -62,6 +62,7 @@ public final class DeclarationScanner {
                 ? SourceBlanker.blankShell(text, Commenter.styleFor(language))
                 : SourceBlanker.blank(text, Commenter.styleFor(language));
         boolean braces = DeclarationRules.braceScoped(language);
+        boolean python = "python".equals(language);
 
         List<Symbol> out = new ArrayList<>();
         // The enclosing type, tracked by the brace depth at which it opened. A plain stack of names would
@@ -83,6 +84,14 @@ public final class DeclarationScanner {
                         && depth <= scopes.get(scopes.size() - 1).depth()) {
                     scopes.remove(scopes.size() - 1);
                 }
+            } else if (python && !lineText.isBlank()) {
+                // Python: a class's members are the lines indented deeper than its `class` line (strings and
+                // comments are already blanked, so a docstring's lines are blank here).
+                int indent = indentWidth(lineText);
+                while (!scopes.isEmpty()
+                        && indent <= scopes.get(scopes.size() - 1).depth()) {
+                    scopes.remove(scopes.size() - 1);
+                }
             }
             String container =
                     scopes.isEmpty() ? "" : scopes.get(scopes.size() - 1).name();
@@ -92,6 +101,10 @@ public final class DeclarationScanner {
                 out.add(found);
                 if (braces && isTypeLike(found.kind())) {
                     scopes.add(new Scope(found.name(), depth));
+                } else if (python
+                        && found.kind() == SymbolKind.TYPE
+                        && lineText.strip().startsWith("class")) {
+                    scopes.add(new Scope(found.name(), indentWidth(lineText)));
                 }
             }
 
@@ -180,6 +193,22 @@ public final class DeclarationScanner {
             return params.isEmpty() || params.matches("[\\w$<>\\[\\], .?]*\\w+\\s+\\w+[\\w$<>\\[\\], .?]*");
         }
         return false;
+    }
+
+    /** A line's leading indent width (a tab counts to the next multiple of 8, as Python reads it). */
+    private static int indentWidth(String lineText) {
+        int w = 0;
+        for (int i = 0; i < lineText.length(); i++) {
+            char c = lineText.charAt(i);
+            if (c == ' ') {
+                w++;
+            } else if (c == '\t') {
+                w = (w / 8 + 1) * 8;
+            } else {
+                break;
+            }
+        }
+        return w;
     }
 
     private static boolean isTypeLike(SymbolKind kind) {

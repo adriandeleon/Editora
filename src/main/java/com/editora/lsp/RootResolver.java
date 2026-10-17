@@ -50,6 +50,31 @@ public final class RootResolver {
     }
 
     /**
+     * As {@link #resolve(Path, Path, List)} with markers in tiers: the nearest ancestor holding a marker of the
+     * first tier wins, else of the second, and so on; then the file's folder.
+     */
+    public static Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers) {
+        String home = System.getProperty("user.home");
+        return resolveTiered(projectRoot, filePath, tiers, home == null || home.isBlank() ? null : Path.of(home));
+    }
+
+    /** {@link #resolveTiered(Path, Path, List)} with the user's home directory supplied (tests). */
+    static Path resolveTiered(Path projectRoot, Path filePath, List<List<String>> tiers, Path home) {
+        if (tiers == null || tiers.size() <= 1) {
+            return resolve(projectRoot, filePath, tiers == null || tiers.isEmpty() ? List.of() : tiers.get(0), home);
+        }
+        Path abs = filePath == null ? null : filePath.toAbsolutePath().normalize();
+        for (List<String> tier : tiers) {
+            Path found = findMarkerRoot(abs, tier);
+            if (found != null && !tooBroad(found, home)) {
+                // The project root, when there is one and it holds the file, still wins over any marker.
+                return resolve(projectRoot, filePath, tier, home);
+            }
+        }
+        return resolve(projectRoot, filePath, List.of(), home);
+    }
+
+    /**
      * Whether {@code file} lies under {@code projectRoot} once symlinks are resolved. A project opened as
      * {@code ~/work/proj} (with {@code work} a symlink) and a location that arrives under its real path are
      * the same project: answering with the project root, in the spelling it was opened with, keeps them on

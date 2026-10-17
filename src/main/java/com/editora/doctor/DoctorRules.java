@@ -69,4 +69,37 @@ public final class DoctorRules {
         }
         return "";
     }
+
+    /**
+     * {@code name version} from the npm {@code package.json} of the package a launcher belongs to — for a
+     * server that answers {@code --version} with an error, like {@code pyright-langserver}. The launcher's real
+     * path is followed (npm links {@code bin/pyright-langserver} into the package) and up to three folders
+     * above it are looked at. "" when there is none.
+     */
+    public static String npmPackageVersion(java.nio.file.Path launcher) {
+        try {
+            java.nio.file.Path dir = launcher.toRealPath().getParent();
+            for (int i = 0; i < 3 && dir != null; i++, dir = dir.getParent()) {
+                java.nio.file.Path pkg = dir.resolve("package.json");
+                if (java.nio.file.Files.isRegularFile(pkg)) {
+                    return packageJsonVersion(java.nio.file.Files.readString(pkg));
+                }
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            // unreadable: no version, the path alone is still shown
+        }
+        return "";
+    }
+
+    /** Pure: {@code "name version"} from a {@code package.json}'s text, or "" without a version. */
+    static String packageJsonVersion(String json) {
+        var name =
+                java.util.regex.Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+        var version = java.util.regex.Pattern.compile("\"version\"\\s*:\\s*\"([^\"]+)\"")
+                .matcher(json);
+        if (!version.find()) {
+            return "";
+        }
+        return name.find() ? name.group(1) + " " + version.group(1) : version.group(1);
+    }
 }

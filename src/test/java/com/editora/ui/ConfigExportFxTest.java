@@ -56,6 +56,58 @@ class ConfigExportFxTest {
         assertEquals(List.of(), zipsIn(home, prefix), "nothing was exported into " + home);
     }
 
+    /**
+     * A saved AI API key is a billable credential, and an export is what people hand to someone else: the
+     * command asks, with "Include AI API keys" off, and the zip's settings.json then holds the key blank.
+     */
+    @Test
+    void anExportLeavesTheAiApiKeysOutUnlessTheUserIncludesThem() throws Exception {
+        fx = FxWindowFixture.create();
+        FxTestSupport.runOnFx(() -> fx.shared.getSettings().setAiApiKey("sk-ant-FAKE-BILLABLE"));
+        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+        FxTestSupport.runOnFx(() -> javafx.application.Platform.runLater(() -> registry.run("config.export")));
+        DialogPane ask = awaitPane(tr("dialog.exportConfig.ask"));
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.CheckBox keys = (javafx.scene.control.CheckBox) ask.lookup("#include-api-keys");
+            assertTrue(keys.isVisible() && !keys.isSelected(), "asked, and off by default");
+            assertEquals(null, ask.lookup("#include-http-history"), "no HTTP history to ask about");
+            ((javafx.scene.control.Button) ask.lookupButton(ask.getButtonTypes().getFirst())).fire();
+        });
+        Path zip = awaitOnlyFile(fx.exportDir);
+        awaitDialog(tr("dialog.exportConfig.done"));
+        String settings;
+        try (var zf = new java.util.zip.ZipFile(zip.toFile())) {
+            settings =
+                    new String(zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+        }
+        assertTrue(settings.contains("\"aiApiKey\" : \"\""), settings);
+        assertTrue(!settings.contains("FAKE-BILLABLE"), "the key never reaches the zip");
+        assertEquals("sk-ant-FAKE-BILLABLE", fx.shared.getSettings().getAiApiKey(), "and stays in Editora");
+    }
+
+    /** The showing dialog whose header is {@code header} (left open). */
+    private static DialogPane awaitPane(String header) throws Exception {
+        long deadline = System.nanoTime() + 30_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            DialogPane pane = FxTestSupport.callOnFx(() -> {
+                for (Window window : List.copyOf(Window.getWindows())) {
+                    if (window.isShowing()
+                            && window.getScene() != null
+                            && window.getScene().getRoot() instanceof DialogPane p
+                            && header.equals(p.getHeaderText())) {
+                        return p;
+                    }
+                }
+                return null;
+            });
+            if (pane != null) {
+                return pane;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("the \"" + header + "\" dialog never showed");
+    }
+
     private static List<Path> zipsIn(Path dir, String prefix) throws Exception {
         try (Stream<Path> files = Files.list(dir)) {
             return files.filter(f -> {

@@ -76,4 +76,17 @@ class ScriptRunCommandTest {
         assertEquals(
                 List.of("bash", "/w/x.sh", "a", "b"), ScriptRunCommand.build("shell", "/w/x.sh", List.of("a", "b")));
     }
+
+    @Test
+    void aPythonModuleIsAScriptTypeThatNeedsAModuleName() {
+        // C7: a Python configuration could not run `python -m pkg.mod`.
+        assertTrue(ScriptRunCommand.isScript("python-module"));
+        assertTrue(ScriptRunCommand.isPython("python-module"));
+        assertTrue(ScriptRunCommand.needsTarget("python-module"));
+        assertEquals(
+                List.of("python3", "-m", "app.main"), ScriptRunCommand.build("python-module", "app.main", List.of()));
+        assertTrue(ScriptRunCommand.build("python-module", " ", List.of()).isEmpty());
+        assertTrue(RunConfigFields.usesInterpreter("python"), "C1: a Python configuration can name its interpreter");
+        assertFalse(RunConfigFields.usesScriptFile("python-module"));
+    }
 }

@@ -7,6 +7,7 @@ import java.util.List;
 
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 
 import com.editora.editor.EditorBuffer;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -95,5 +97,78 @@ class TabContextMenuFxTest {
         } finally {
             fx.dispose();
         }
+    }
+
+    /**
+     * Simple UI mode trims the tab menu as it trims the menu bar — no Git, Local History, diff, terminal or
+     * bulk-close entries, and no doubled separators where they were — and the same, already built menu comes
+     * back in full when the mode is turned off.
+     */
+    @Test
+    void simpleModeTrimsTheMenuAndTurningItOffRestoresIt(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("notes.txt"), "one\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                Files.createDirectories(dir.resolve("config")),
+                false,
+                false,
+                false,
+                List.of(new MainController.OpenTarget(file, 0, 0)),
+                c -> {});
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                c.chrome.toggleSimpleMode();
+                assertTrue(c.chrome.simpleModeActive());
+                EditorArea area = FxTestSupport.field(c, "editorArea");
+                Tab tab = area.tabs().stream()
+                        .filter(t -> FxTestSupport.call(c, "bufferOf", new Class<?>[] {Tab.class}, t)
+                                instanceof EditorBuffer)
+                        .findFirst()
+                        .orElseThrow();
+                ContextMenu menu = tab.getContextMenu();
+                menu.getOnShowing().handle(null); // builds the lazy menu, as its first showing does
+                assertEquals(
+                        List.of(
+                                tr("menu.save"),
+                                tr("menu.saveAs"),
+                                "-",
+                                tr("menu.print"),
+                                tr("menu.exportPdf"),
+                                "-",
+                                tr("menu.close"),
+                                tr("menu.closeOthers"),
+                                tr("menu.closeAll"),
+                                "-",
+                                tr("menu.revealInFileManager"),
+                                tr("menu.copyPath"),
+                                tr("menu.rename")),
+                        visibleEntries(menu));
+
+                c.chrome.toggleSimpleMode();
+                assertFalse(c.chrome.simpleModeActive());
+                menu.getOnShowing().handle(null); // a later showing of the same menu
+                List<String> full = visibleEntries(menu);
+                for (String key : List.of(
+                        "menu.closeUnmodified",
+                        "menu.closeLeft",
+                        "menu.closeRight",
+                        "project.menu.git",
+                        "menu.compareWith",
+                        "menu.openTerminal",
+                        "menu.pin")) {
+                    assertTrue(full.contains(tr(key)), key + " in " + full);
+                }
+            });
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /** The menu as drawn: visible items by label, a visible separator as {@code "-"}. */
+    private static List<String> visibleEntries(ContextMenu menu) {
+        return menu.getItems().stream()
+                .filter(MenuItem::isVisible)
+                .map(item -> item instanceof SeparatorMenuItem ? "-" : item.getText())
+                .toList();
     }
 }

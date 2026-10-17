@@ -76,6 +76,7 @@ public final class Commenter {
                     "makefile",
                     "just",
                     "gitattributes",
+                    "pip-requirements",
                     "ignore",
                     "graphql" -> new CommentStyle("#", null, null);
             case "powershell" -> new CommentStyle("#", "<#", "#>");
@@ -136,7 +137,37 @@ public final class Commenter {
         if (intoHereDoc(text, selStart, selEnd, language)) {
             return null;
         }
-        return toggle(text, selStart, selEnd, styleFor(language));
+        CommentStyle style = "ini".equals(language) ? iniStyle(text) : styleFor(language);
+        return toggle(text, selStart, selEnd, style);
+    }
+
+    /**
+     * INI's comment character for this file: {@code ;} unless the file's own comments use {@code #} — as
+     * setup.cfg, tox.ini, .flake8, .editorconfig and most Python tool configs do.
+     */
+    static CommentStyle iniStyle(String text) {
+        int hash = 0;
+        int semi = 0;
+        int limit = Math.min(text.length(), 200_000);
+        int i = 0;
+        while (i < limit) {
+            while (i < limit && (text.charAt(i) == ' ' || text.charAt(i) == '\t')) {
+                i++;
+            }
+            if (i < limit) {
+                if (text.charAt(i) == '#') {
+                    hash++;
+                } else if (text.charAt(i) == ';') {
+                    semi++;
+                }
+            }
+            int nl = text.indexOf('\n', i);
+            if (nl < 0) {
+                break;
+            }
+            i = nl + 1;
+        }
+        return new CommentStyle(hash > semi ? "#" : ";", null, null);
     }
 
     /**

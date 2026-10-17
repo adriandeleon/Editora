@@ -31,7 +31,44 @@ class ConfigMigrationsTest {
                 .put("codexAgentCommand", "/custom/codex-acp");
         ObjectNode expected = previous.deepCopy().put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
         expected.put("pdfPageSize", "letter"); // v115→116 writes down the size a file without the key was using
+        // v126→127 gives the OpenAI-compatible provider its own endpoint and model.
+        expected.put("aiModel", "").put("aiModelOpenai", "local-model");
+        expected.put("aiEndpoint", "").put("aiEndpointOpenai", "http://localhost:1234/v1/chat/completions");
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
+    }
+
+    @Test
+    void openaiEndpointAndModelsMoveToTheirOwnFields() throws Exception {
+        ObjectNode openai = (ObjectNode) mapper.readTree("""
+                {"aiProvider":"openai","aiEndpoint":"https://openrouter.example/v1/chat/completions",
+                 "aiModel":"m","aiCompletionModel":"small","aiApiKey":"sk-ant-x","aiApiKeyOpenai":"or-key"}""");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitOpenaiEndpoint(openai);
+        assertEquals(
+                "https://openrouter.example/v1/chat/completions",
+                out.get("aiEndpointOpenai").asText());
+        assertEquals("m", out.get("aiModelOpenai").asText());
+        assertEquals("small", out.get("aiCompletionModelOpenai").asText());
+        assertEquals("", out.get("aiEndpoint").asText(), "the Anthropic key no longer goes to that server");
+        assertEquals("", out.get("aiModel").asText());
+        assertEquals(out.deepCopy(), ConfigMigrations.splitOpenaiEndpoint(out), "safe to repeat");
+    }
+
+    @Test
+    void anOpenaiShapedLeftoverEndpointLeavesAnthropicButAProxyStays() throws Exception {
+        ObjectNode leftover = (ObjectNode) mapper.readTree("""
+                {"aiProvider":"anthropic","aiEndpoint":"http://192.168.1.5:8080/v1/chat/completions/",
+                 "aiModel":"claude-x"}""");
+        ObjectNode out = (ObjectNode) ConfigMigrations.splitOpenaiEndpoint(leftover);
+        assertEquals("", out.get("aiEndpoint").asText());
+        assertEquals(
+                "http://192.168.1.5:8080/v1/chat/completions/",
+                out.get("aiEndpointOpenai").asText());
+        assertEquals("claude-x", out.get("aiModel").asText(), "an Anthropic model stays Anthropic's");
+        assertFalse(out.has("aiModelOpenai"));
+
+        ObjectNode proxy = (ObjectNode) mapper.readTree("""
+                {"aiEndpoint":"https://proxy.example/v1/messages","aiModel":"claude-x"}""");
+        assertEquals(proxy.deepCopy(), ConfigMigrations.splitOpenaiEndpoint(proxy));
     }
 
     @Test
@@ -374,7 +411,7 @@ class ConfigMigrationsTest {
         ObjectNode expected = current.deepCopy();
         expected.put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
 
-        assertEquals(104, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
+        assertEquals(127, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, current.deepCopy(), mapper);
 
         assertEquals(expected, out, "nothing but the marker changes");
@@ -411,25 +448,25 @@ class ConfigMigrationsTest {
         assertEquals(java.util.List.of("yaml", "java"), kept.getSpellDisabledLanguages());
     }
 
-    /** v126→127: httpInlineResults is new and on — results show after the request lines; nothing else moves. */
+    /** v127→128: httpInlineResults is new and on — results show after the request lines; nothing else moves. */
     @Test
     void httpInlineResultsArriveOnWithoutTouchingAnythingElse() throws Exception {
-        JsonNode v126 = mapper.readTree(
-                "{\"schemaVersion\":126,\"httpClientSupport\":false,\"httpScriptsEnabled\":false,\"fontSize\":15}");
+        JsonNode v127 = mapper.readTree(
+                "{\"schemaVersion\":127,\"httpClientSupport\":false,\"httpScriptsEnabled\":false,\"fontSize\":15}");
 
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v126.deepCopy(), mapper);
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v127.deepCopy(), mapper);
 
         assertEquals(
                 com.editora.config.Settings.SCHEMA_VERSION,
                 out.get("schemaVersion").asInt());
-        assertEquals(127, out.get("schemaVersion").asInt());
+        assertEquals(128, out.get("schemaVersion").asInt());
         assertFalse(out.has("httpInlineResults"), "left to the default");
         com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
         assertTrue(loaded.isHttpInlineResults(), "on for everyone, as nobody had a choice yet");
         assertFalse(loaded.isHttpClientSupport(), "the other HTTP choices are kept");
         assertFalse(loaded.isHttpScriptsEnabled());
         assertEquals(15, loaded.getFontSize());
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":127,\"httpInlineResults\":false}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":128,\"httpInlineResults\":false}");
         assertFalse(mapper.treeToValue(
                         ConfigMigrations.upgrade(ConfigSchema.SETTINGS, chosen.deepCopy(), mapper),
                         com.editora.config.Settings.class)

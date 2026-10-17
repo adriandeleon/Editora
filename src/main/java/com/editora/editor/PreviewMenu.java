@@ -12,6 +12,10 @@ import static com.editora.i18n.Messages.tr;
  * The right-click menu of a buffer's rendered preview: Copy (rendered text), the link or code block under the
  * pointer, the exports that apply to the buffer's kind, Print. Built once per buffer; the actions are the
  * buffer's injected handlers, read when an item is chosen.
+ *
+ * <p>In Simple UI mode the menu keeps the copy actions, Go to Source, Enlarge, Export to PDF and Print — as the
+ * Simple File menu keeps Print and Export to PDF — and hides Copy HTML, the other export formats (Word,
+ * OpenDocument, PNG, SVG, Markwhen JSON). Checked on every showing, as the menu outlives a toggle.
  */
 final class PreviewMenu {
 
@@ -77,6 +81,7 @@ final class PreviewMenu {
         copyAll.setGraphic(MenuIcons.copy());
         copyAll.setOnAction(ev -> copyAll(b));
         ContextMenu menu = new ContextMenu(copyAll);
+        List<MenuItem> fullOnly = new java.util.ArrayList<>(); // hidden in Simple UI mode
         if (b.isMarkdown()) {
             // The selection: Copy is offered while there is one; Select All makes one.
             MenuItem copy = new MenuItem(tr("previewmenu.copy"));
@@ -115,6 +120,7 @@ final class PreviewMenu {
             copyHtml.setGraphic(MenuIcons.code());
             copyHtml.setOnAction(ev -> b.copyPreviewHtmlSource());
             menu.getItems().add(copyHtml);
+            fullOnly.add(copyHtml);
         }
         menu.getItems().add(new SeparatorMenuItem());
         if (b.isMarkwhen()) {
@@ -132,6 +138,7 @@ final class PreviewMenu {
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> b.previewPrintHandler.run());
             menu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf, print);
+            fullOnly.add(json);
             menu.setOnShowing(ev -> viewToggle.setText(
                     b.getMarkwhenView() == EditorBuffer.MarkwhenView.TIMELINE
                             ? tr("markwhen.switchToCalendar")
@@ -150,6 +157,7 @@ final class PreviewMenu {
                 svg.setGraphic(MenuIcons.download());
                 svg.setOnAction(ev -> b.previewExportSvgHandler.run());
                 menu.getItems().addAll(png, svg);
+                fullOnly.addAll(List.of(png, svg));
             }
             // Word / OpenDocument export — Markdown only (not standalone diagrams).
             if (b.isMarkdown()) {
@@ -160,12 +168,18 @@ final class PreviewMenu {
                 odt.setGraphic(MenuIcons.download());
                 odt.setOnAction(ev -> b.previewExportOdtHandler.run());
                 menu.getItems().addAll(docx, odt);
+                fullOnly.addAll(List.of(docx, odt));
             }
             MenuItem print = new MenuItem(tr("previewmenu.print"));
             print.setGraphic(MenuIcons.print());
             print.setOnAction(ev -> b.previewPrintHandler.run());
             menu.getItems().addAll(new SeparatorMenuItem(), print);
         }
+        // An event handler, not setOnShowing: the branches above each install their own onShowing.
+        menu.addEventHandler(javafx.stage.WindowEvent.WINDOW_SHOWING, ev -> {
+            boolean full = !b.isSimpleMenu();
+            fullOnly.forEach(item -> item.setVisible(full));
+        });
         menu.getStyleClass().add("editor-context-menu");
         return menu;
     }

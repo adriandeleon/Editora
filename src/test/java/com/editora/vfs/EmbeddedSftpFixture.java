@@ -14,7 +14,6 @@ import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.util.buffer.Buffer;
 import org.apache.sshd.common.util.buffer.BufferUtils;
 import org.apache.sshd.server.SshServer;
-import org.apache.sshd.server.auth.password.AcceptAllPasswordAuthenticator;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
@@ -74,6 +73,8 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     /** The account's home directory on the host (real-shell mode): commands run with {@code HOME} here. */
     private final Path home;
 
+    private final java.util.concurrent.atomic.AtomicInteger logins = new java.util.concurrent.atomic.AtomicInteger();
+
     private EmbeddedSftpFixture(Path base, boolean realShell) throws Exception {
         serverRoot = Files.createDirectories(base.resolve("remote-root")).toRealPath();
         home = Files.createDirectories(base.resolve("remote-home")).toRealPath();
@@ -83,7 +84,10 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         server.setHost("127.0.0.1");
         server.setPort(0);
         server.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(base.resolve("host-key.ser")));
-        server.setPasswordAuthenticator(AcceptAllPasswordAuthenticator.INSTANCE);
+        server.setPasswordAuthenticator((user, password, session) -> {
+            logins.incrementAndGet(); // every password checked (keyboard-interactive answers come here too)
+            return true;
+        });
         if (realShell) {
             // No chroot, so a path means the same file to SFTP and to the commands the server runs.
             server.setFileSystemFactory(org.apache.sshd.common.file.nativefs.NativeFileSystemFactory.INSTANCE);
@@ -135,11 +139,16 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     }
 
     /**
-     * Another window's connection engine for this server: its own SSH client, a throwaway {@code known_hosts}
+     * Another window's connection engine for this server: its own {@code known_hosts}, a throwaway one,
      * and a host-key prompt that says yes — never the user's own file, never a dialog. The caller shuts it down.
      */
     public RemoteFileSystems newEngine(Path base) {
         return new RemoteFileSystems((host, port, keyType, fingerprint) -> true, base.resolve("known_hosts-2"));
+    }
+
+    /** How many times a client has logged in to this server (password or keyboard-interactive). */
+    public int logins() {
+        return logins.get();
     }
 
     public List<String> commands() {

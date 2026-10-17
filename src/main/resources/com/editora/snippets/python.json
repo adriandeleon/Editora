@@ -1,8 +1,8 @@
 {
-    "#!/usr/bin/env pythonX": {
+    "#!/usr/bin/env python3": {
         "prefix": "#env",
-        "body": "#!/usr/bin/env python$0",
-        "description": "Shebang line for the first python in PATH"
+        "body": "#!/usr/bin/env python3$0",
+        "description": "Shebang line for the first python3 in PATH"
     },
     "pyright ignore line": {
         "prefix": "#ignore",
@@ -131,11 +131,11 @@
     "class template": {
         "prefix": "classi",
         "body": [
-            "class ${1:ClassName}($2):",
-            "\t\"\"\"${3:docstring for $1.}\"\"\"",
-            "\tdef __init__(self, ${4:arg}):",
-            "\t\t${5:super($1, self).__init__()}",
-            "\t\tself.$4 = $4$0"
+            "class ${1:ClassName}:",
+            "\t\"\"\"${2:Docstring for $1.}\"\"\"",
+            "",
+            "\tdef __init__(self, ${3:arg}) -> None:",
+            "\t\tself.$3 = $3$0"
         ],
         "description": "Class definition template"
     },
@@ -170,7 +170,7 @@
     },
     "except as": {
         "prefix": "exceptas",
-        "body": ["except ${1:Exception} as ${2:e}:", "\t${3:raise $2}"],
+        "body": ["except ${1:Exception} as ${2:e}:", "\t${3:raise}"],
         "description": "'except as' statement"
     },
     "try/except": {
@@ -179,7 +179,7 @@
             "try:",
             "\t${1:pass}",
             "except ${2:Exception} as ${3:e}:",
-            "\t${4:raise $3}"
+            "\t${4:raise}"
         ],
         "description": "try/except blocks"
     },
@@ -189,7 +189,7 @@
             "try:",
             "\t${1:pass}",
             "except ${2:Exception} as ${3:e}:",
-            "\t${4:raise $3}",
+            "\t${4:raise}",
             "else:",
             "\t${5:pass}"
         ],
@@ -201,7 +201,7 @@
             "try:",
             "\t${1:pass}",
             "except ${2:Exception} as ${3:e}:",
-            "\t${4:raise $3}",
+            "\t${4:raise}",
             "finally:",
             "\t${5:pass}"
         ],

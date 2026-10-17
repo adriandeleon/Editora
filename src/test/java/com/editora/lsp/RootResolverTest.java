@@ -135,4 +135,45 @@ class RootResolverTest {
 
         assertEquals(project.toAbsolutePath().normalize(), RootResolver.resolve(project, real, MARKERS, null));
     }
+
+    /**
+     * A {@code docs/requirements.txt} (Read the Docs) made {@code docs/} a Python server root of its own, where
+     * the project's own package did not resolve (Python review B9): a pyproject (or setup.py/cfg) above wins,
+     * then the repository, and only then the nearest requirements file.
+     */
+    @Test
+    void pythonPrefersItsProjectFileThenTheRepoOverANestedRequirementsFile(@TempDir Path tmp) throws IOException {
+        var tiers = LspServerRegistry.rootMarkerTiersForServer("python");
+        Path repo = Files.createDirectories(tmp.resolve("repo"));
+        Files.createFile(repo.resolve("pyproject.toml"));
+        Path docs = Files.createDirectories(repo.resolve("docs"));
+        Files.createFile(docs.resolve("requirements.txt"));
+        Path conf = Files.createFile(docs.resolve("conf.py"));
+        assertEquals(repo.toAbsolutePath().normalize(), RootResolver.resolveTiered(null, conf, tiers, null));
+
+        Path git = Files.createDirectories(tmp.resolve("gitrepo"));
+        Files.createDirectories(git.resolve(".git"));
+        Path tools = Files.createDirectories(git.resolve("tools"));
+        Files.createFile(tools.resolve("requirements.txt"));
+        assertEquals(
+                git.toAbsolutePath().normalize(),
+                RootResolver.resolveTiered(null, Files.createFile(tools.resolve("x.py")), tiers, null));
+
+        Path loose = Files.createDirectories(tmp.resolve("scripts"));
+        Files.createFile(loose.resolve("requirements.txt"));
+        Path sub = Files.createDirectories(loose.resolve("sub"));
+        assertEquals(
+                loose.toAbsolutePath().normalize(),
+                RootResolver.resolveTiered(null, Files.createFile(sub.resolve("y.py")), tiers, null),
+                "no project file and no repo: the requirements file still marks the root");
+
+        Path mono = Files.createDirectories(tmp.resolve("mono"));
+        Files.createDirectories(mono.resolve(".git"));
+        Path svc = Files.createDirectories(mono.resolve("svc"));
+        Files.createFile(svc.resolve("pyproject.toml"));
+        assertEquals(
+                svc.toAbsolutePath().normalize(),
+                RootResolver.resolveTiered(null, Files.createFile(svc.resolve("m.py")), tiers, null),
+                "a nested package in a monorepo keeps its own root");
+    }
 }

@@ -129,7 +129,7 @@ class AiRewriteStopFxTest {
         settings.setAiEnabled(true);
         settings.setAiSupport(true);
         settings.setAiProvider("openai");
-        settings.setAiEndpoint("http://127.0.0.1:" + server.getAddress().getPort());
+        settings.setAiEndpointOpenai("http://127.0.0.1:" + server.getAddress().getPort());
         return settings;
     }
 
