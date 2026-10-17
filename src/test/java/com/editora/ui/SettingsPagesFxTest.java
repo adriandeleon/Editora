@@ -611,7 +611,8 @@ class SettingsPagesFxTest {
             assertEquals(List.of("file"), rig.events);
             browse.fire();
             assertEquals(List.of("file", "browse"), rig.events);
-            assertFalse(rig.stage().isShowing(), "the registry picker opens in the main window, behind this one");
+            // E14: the picker (in the main window) hides this one only when it actually opens, not on the click.
+            assertTrue(rig.stage().isShowing(), "a registry that fails to load leaves Settings where it was");
         });
     }
 
@@ -630,11 +631,12 @@ class SettingsPagesFxTest {
             assertTrue(warn.isVisible());
             assertEquals(tr("settings.plugins.customRegistry", "plugins.example.org"), warn.getText());
 
+            // E8: not an https:// address — refused, and the registry in use stays.
             SettingsRig.typeAndEnter(registry, "not a url at all");
-            assertEquals(tr("settings.plugins.customRegistry", "not a url at all"), warn.getText());
-
+            assertEquals("https://plugins.example.org/index.json", settings.getPluginRegistryUrl());
             SettingsRig.typeAndEnter(registry, "mailto:someone"); // a URI with no host
-            assertEquals(tr("settings.plugins.customRegistry", "?"), warn.getText());
+            assertEquals("https://plugins.example.org/index.json", settings.getPluginRegistryUrl());
+            assertEquals(tr("settings.plugins.customRegistry", "plugins.example.org"), warn.getText());
 
             int applied = rig.applied.size();
             SettingsRig.typeAndEnter(registry, ""); // emptied: back to the bundled registry
