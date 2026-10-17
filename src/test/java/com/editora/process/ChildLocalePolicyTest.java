@@ -96,6 +96,7 @@ class ChildLocalePolicyTest {
             Map.entry("mermaid/Mermaid.java", 2), // render + export
             Map.entry("process/DesktopActions.java", 1), // terminal / file manager
             Map.entry("run/RunService.java", 1), // the user's program
+            Map.entry("terminal/LocalShell.java", 1), // the integrated terminal's shell
             Map.entry("terminal/TerminalImageCheck.java", 1), // a shell on a pseudo-terminal
             Map.entry("typst/TypstRenderer.java", 2), // render + export
             Map.entry("ui/PluginCoordinator.java", 1), // a plugin's own command
@@ -115,6 +116,7 @@ class ChildLocalePolicyTest {
             "process/ProcessRegistry.java", // `kill -INT` for Stop on a Python program, standard environment
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
+            "terminal/LocalShell.java", // pty4j's PtyProcessBuilder, with applyUserEnv
             "terminal/TerminalImageCheck.java", // pty4j's PtyProcessBuilder, with applyUserEnv
             "web/HtmlPreviewService.java");
 

@@ -75,6 +75,10 @@ module com.editora {
     requires pty4j;
     requires kotlin.stdlib;
     requires org.slf4j;
+    // macOS has no /proc, so reading a local shell's working directory means proc_pidinfo through JNA
+    // (terminal/ProcessCwd). JNA is on the path for pty4j, but arriving through another module does not make it
+    // readable by this one.
+    requires com.sun.jna;
 
     opens com.editora to
             javafx.fxml;
