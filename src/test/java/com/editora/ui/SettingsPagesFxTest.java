@@ -191,7 +191,7 @@ class SettingsPagesFxTest {
         FxTestSupport.runOnFx(() -> {
             List<String> trusted = new ArrayList<>(List.of("/work/a", "/work/b", "/work/c"));
             rig.show();
-            Region page = rig.page("WORKSPACE");
+            Region page = rig.page("ADVANCED"); // moved there from Workspace
             ListView<String> list = rig.control("trustedFoldersList");
             Button revoke = (Button) SettingsRig.button(page, tr("settings.trustedFolders.revoke"));
             Button revokeAll = (Button) SettingsRig.button(page, tr("settings.trustedFolders.revokeAll"));

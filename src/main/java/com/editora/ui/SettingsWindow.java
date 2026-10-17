@@ -2065,7 +2065,7 @@ public class SettingsWindow {
     }
 
     private VBox appearancePage() {
-        VBox p = page(tr("settings.cat.appearance"));
+        VBox p = page(tr("settings.cat.appearance"), tr("settings.appearance.subtitle"));
         Card mainCard = card(p, null);
         // The hints are row descriptions, not labels boxed with the combo: such a box is as wide as its
         // (translated) hint and left-aligns the combo inside, so the four combos sat at four x positions.
@@ -2539,7 +2539,7 @@ public class SettingsWindow {
     }
 
     private VBox editorPage() {
-        VBox p = page(tr("settings.cat.editor"));
+        VBox p = page(tr("settings.cat.editor"), tr("settings.editor.subtitle"));
         Card display = card(p, tr("settings.section.display"));
         checkRow(display, Category.EDITOR, columnRulerCheck, null, "80 column ruler guide margin");
         display.body()
@@ -3388,7 +3388,7 @@ public class SettingsWindow {
     }
 
     private VBox spellPage() {
-        VBox p = page(tr("settings.cat.spellCheck"));
+        VBox p = page(tr("settings.cat.spellCheck"), tr("settings.spellCheck.subtitle"));
         Card main = card(p, null);
         checkRow(main, Category.SPELL_CHECK, spellCheckBox, null, "spell check spelling enable");
         main.body()
@@ -3577,7 +3577,7 @@ public class SettingsWindow {
 
     /** GENERAL ▸ Interface: window-chrome visibility + the Simple/Zen minimal-UI modes. */
     private VBox interfacePage() {
-        VBox p = page(tr("settings.cat.interface"));
+        VBox p = page(tr("settings.cat.interface"), tr("settings.interface.subtitle"));
         Card chrome = card(p, tr("settings.section.chrome"));
         checkRow(chrome, Category.INTERFACE, menuBarCheck, null, "menu bar menubar chrome");
         checkRow(chrome, Category.INTERFACE, toolbarCheck, null, "toolbar buttons chrome");
@@ -3622,7 +3622,7 @@ public class SettingsWindow {
 
     /** GENERAL ▸ Workspace: project + personal-notes features and local file history. */
     private VBox workspacePage() {
-        VBox p = page(tr("settings.cat.workspace"));
+        VBox p = page(tr("settings.cat.workspace"), tr("settings.workspace.subtitle"));
         Card features = card(p, tr("settings.section.features"));
         checkRow(features, Category.WORKSPACE, projectsCheck, tr("settings.projects.tip"), "projects workspace folder");
         checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
@@ -3661,54 +3661,12 @@ public class SettingsWindow {
                 null,
                 historyMaxTotalSpinner,
                 "local history max total size megabytes project budget");
-        Card updates = card(p, tr("settings.section.updates"));
-        checkRow(
-                updates,
-                Category.WORKSPACE,
-                updateCheckCheck,
-                tr("settings.updates.note"),
-                "check for updates new version github release startup network privacy");
-
-        Card trust = card(p, tr("settings.section.trustedFolders"));
-        Label trustNote = note(tr("settings.trustedFolders.note"));
-        trustNote.setWrapText(true);
-        trustNote.setMaxWidth(440);
-        cardRow(trust, Category.WORKSPACE, trustNote, "workspace trust build wrapper mvnw gradlew security");
-        trustedFoldersList.setPrefHeight(120);
-        trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
-        Button revoke = new Button(tr("settings.trustedFolders.revoke"));
-        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
-        revoke.disableProperty()
-                .bind(trustedFoldersList
-                        .getSelectionModel()
-                        .selectedItemProperty()
-                        .isNull());
-        revoke.setOnAction(e -> {
-            String sel = trustedFoldersList.getSelectionModel().getSelectedItem();
-            if (sel != null && trustActions != null) {
-                trustActions.revoke(sel);
-                refreshTrustedFolders();
-            }
-        });
-        revokeAll.setOnAction(e -> {
-            if (trustActions != null) {
-                trustActions.revokeAll();
-                refreshTrustedFolders();
-            }
-        });
-        revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
-        cardRow(trust, Category.WORKSPACE, trustedFoldersList, "workspace trust trusted folders list revoke");
-        cardRow(
-                trust,
-                Category.WORKSPACE,
-                new HBox(8, revoke, revokeAll),
-                "workspace trust revoke remove trusted folder");
         return p;
     }
 
     /** EDITOR ▸ Code Completion: the autocomplete master + per-source sub-toggles, quick-doc, semantic tokens. */
     private VBox completionPage() {
-        VBox p = page(tr("settings.cat.completion"));
+        VBox p = page(tr("settings.cat.completion"), tr("settings.completion.subtitle"));
         Card auto = card(p, tr("settings.section.completion"));
         checkRow(
                 auto, Category.COMPLETION, autocompleteCheck, null, "autocomplete completion suggestions enable popup");
@@ -3785,7 +3743,7 @@ public class SettingsWindow {
     /** EDITOR ▸ TODO: in-editor TODO/FIXME highlighting + the per-pattern editor. */
     private VBox todoPage() {
         todoSettings = new TodoSettingsPane(config::getSettings, this::apply);
-        VBox p = page(tr("settings.cat.todo"));
+        VBox p = page(tr("settings.cat.todo"), tr("settings.todo.subtitle"));
         Card todoHl = card(p, tr("settings.section.todo"));
         checkRow(
                 todoHl,
@@ -4307,7 +4265,7 @@ public class SettingsWindow {
     }
 
     private VBox searchPage() {
-        VBox p = page(tr("settings.cat.search"));
+        VBox p = page(tr("settings.cat.search"), tr("settings.search.subtitle"));
         Card c = card(p, null);
         ripgrepStatusLabel = new Label(tr("settings.search.checking"));
         ripgrepStatusLabel.getStyleClass().add("settings-git-status");
@@ -4335,7 +4293,7 @@ public class SettingsWindow {
                 c2,
                 Category.SEARCH,
                 searchGitignoreCheck,
-                null,
+                tr("settings.search.gitignore.desc"),
                 "search exclude gitignore ignored target node_modules build dist folders files");
         return p;
     }
@@ -7427,6 +7385,55 @@ public class SettingsWindow {
         });
     }
 
+    /**
+     * Updates and Trusted Folders, on the Advanced page: neither is about the workspace, where they used to
+     * sit and where nobody looked for them.
+     */
+    private void updatesAndTrustCards(VBox p) {
+        Card updates = card(p, tr("settings.section.updates"));
+        checkRow(
+                updates,
+                Category.ADVANCED,
+                updateCheckCheck,
+                tr("settings.updates.note"),
+                "check for updates new version github release startup network privacy");
+
+        Card trust = card(p, tr("settings.section.trustedFolders"));
+        Label trustNote = note(tr("settings.trustedFolders.note"));
+        trustNote.setWrapText(true);
+        trustNote.setMaxWidth(440);
+        cardRow(trust, Category.ADVANCED, trustNote, "workspace trust build wrapper mvnw gradlew security");
+        trustedFoldersList.setPrefHeight(120);
+        trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
+        Button revoke = new Button(tr("settings.trustedFolders.revoke"));
+        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
+        revoke.disableProperty()
+                .bind(trustedFoldersList
+                        .getSelectionModel()
+                        .selectedItemProperty()
+                        .isNull());
+        revoke.setOnAction(e -> {
+            String sel = trustedFoldersList.getSelectionModel().getSelectedItem();
+            if (sel != null && trustActions != null) {
+                trustActions.revoke(sel);
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.setOnAction(e -> {
+            if (trustActions != null) {
+                trustActions.revokeAll();
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
+        cardRow(trust, Category.ADVANCED, trustedFoldersList, "workspace trust trusted folders list revoke");
+        cardRow(
+                trust,
+                Category.ADVANCED,
+                new HBox(8, revoke, revokeAll),
+                "workspace trust revoke remove trusted folder");
+    }
+
     private VBox advancedPage() {
         VBox p = page(tr("settings.cat.advanced"));
         Card fileSection = card(p, tr("settings.section.file"));
@@ -7492,6 +7499,7 @@ public class SettingsWindow {
                 Category.ADVANCED,
                 debugBox,
                 "debug log logs errors warnings exceptions diagnostics bug report console");
+        updatesAndTrustCards(p); // moved from Workspace (B20)
         return p;
     }
 
@@ -7501,7 +7509,7 @@ public class SettingsWindow {
      * live-applied through {@link #toolbarActions} (persist + rebuild every window's toolbar).
      */
     private Region toolbarPage() {
-        VBox p = page(tr("settings.cat.toolbar"));
+        VBox p = page(tr("settings.cat.toolbar"), tr("settings.toolbar.subtitle"));
         // The on/off switch for the bar itself, also on the Interface page: it is what people look for here.
         checkRow(card(p, null), Category.TOOLBAR, toolbarCheck, null, "show hide toolbar buttons");
         Card sec = card(p, tr("settings.toolbar.section"));

@@ -567,4 +567,33 @@ class SettingsContentPagesFxTest {
             assertTrue(SettingsRig.texts(page).contains(tr("settings.userThemes.reload")));
         });
     }
+
+    @Test
+    void eachOfThesePagesSaysWhatItIsForAndUpdatesAndTrustLiveOnAdvanced() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            for (String cat : List.of(
+                    "APPEARANCE",
+                    "INTERFACE",
+                    "TOOLBAR",
+                    "WORKSPACE",
+                    "TOOL_WINDOWS",
+                    "EDITOR",
+                    "COMPLETION",
+                    "TODO",
+                    "SPELL_CHECK",
+                    "SEARCH")) {
+                boolean subtitled = SettingsRig.all(categoryPage(cat), javafx.scene.control.Label.class).stream()
+                        .anyMatch(l -> l.getStyleClass().contains("settings-page-subtitle"));
+                assertTrue(subtitled, cat);
+            }
+            List<String> workspace = SettingsRig.texts(categoryPage("WORKSPACE"));
+            List<String> advanced = SettingsRig.texts(categoryPage("ADVANCED"));
+            assertFalse(workspace.contains(tr("settings.checkForUpdates")));
+            assertFalse(workspace.contains(tr("settings.section.trustedFolders")));
+            assertTrue(advanced.contains(tr("settings.checkForUpdates")));
+            assertTrue(advanced.contains(tr("settings.section.trustedFolders")));
+            assertTrue(SettingsRig.texts(categoryPage("SEARCH")).contains(tr("settings.search.gitignore.desc")));
+        });
+    }
 }

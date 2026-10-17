@@ -89,7 +89,7 @@ class SettingsRealWindowFxTest {
             trust.trust(a);
             trust.trust(b);
             window.refreshTrustedFolders();
-            Region workspace = page("WORKSPACE");
+            Region workspace = page("ADVANCED"); // Trusted Folders moved there from Workspace
             ListView<String> list = FxTestSupport.field(window, "trustedFoldersList");
             assertEquals(2, list.getItems().size());
 
