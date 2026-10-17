@@ -482,6 +482,11 @@ final class LspCoordinator {
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnServerStatus(this::onServerStatus);
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
+        // A server root the Project panel's watcher does not cover gets a watcher of its own (review B7).
+        lspManager.setWatchSessionRoots(root -> {
+            Path project = watchedProjectRoot;
+            return project == null || !root.startsWith(project.toAbsolutePath().normalize());
+        });
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnStartFailed(this::onStartFailed);
@@ -1395,6 +1400,25 @@ final class LspCoordinator {
     private Path projectSettingsRoot;
     private com.editora.config.ProjectSettings projectSettingsCache = EMPTY_PROJECT_SETTINGS;
 
+    /**
+     * The command {@code serverId} runs when the user chose one other than the default (a path, another server),
+     * else null — so a missing custom server is not "fixed" by installing the default one (review B8).
+     */
+    String customServerCommand(String serverId) {
+        if (serverId == null) {
+            return null;
+        }
+        String command = serverCommand(serverId);
+        if (command == null || command.isBlank()) {
+            return null;
+        }
+        String normalized = String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(command));
+        String fallback = com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId);
+        return normalized.equals(String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(fallback)))
+                ? null
+                : command.strip();
+    }
+
     private String serverCommand(String serverId) {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
     }
@@ -2087,7 +2111,12 @@ final class LspCoordinator {
                 && path != null
                 && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
-                && !buffer.isHeavyFile() // intermediate large-source tier also skips LSP (keeps highlighting)
+                // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
+                // Python keeps Pyright to 50,000 lines (review B10).
+                && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
+                        buffer.getLanguage(),
+                        buffer.isHeavyFile(),
+                        buffer.getArea().getParagraphs().size())
                 // While narrowed the area holds only the region, so every position the server sends or
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
@@ -2097,6 +2126,8 @@ final class LspCoordinator {
                 && (remote
                         ? remoteServerAvailable(buffer, path, serverId)
                         : Boolean.TRUE.equals(serverAvailable.get(serverId)));
+        buffer.setHeavyFileLspAllowed(buffer.isHeavyFile() && eligible); // B10: within the language's limit
+        watchedProjectRoot = ops.lspProjectRoot();
         if (eligible && "python".equals(serverId)) {
             pythonInterpreters.captureSnapshot(); // what the server's start resolves its interpreter from
         }
@@ -2195,10 +2226,10 @@ final class LspCoordinator {
         if (origin != null) {
             return origin.root(); // a library file reached from the project: read in the project's server (B4)
         }
-        return com.editora.lsp.RootResolver.resolve(
+        return com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(),
                 buffer.getPath(),
-                com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId));
+                com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
     }
 
     /** Library files already put in View mode once (Enable Editing then sticks). */
@@ -2341,6 +2372,9 @@ final class LspCoordinator {
             } else command.run();
         };
     }
+
+    /** The project root whose files the Project panel watches (null = none), for the server-start thread. */
+    private volatile Path watchedProjectRoot;
 
     /** The window's Python interpreter: status-bar item, picker, and what Pyright is told (review B1). */
     final PythonInterpreterCoordinator pythonInterpreters;
@@ -5564,6 +5598,9 @@ final class LspCoordinator {
         scroll.setFocusTraversable(false);
         scroll.setMaxWidth(HOVER_MAX_WIDTH);
         scroll.setMaxHeight(hoverMaxHeight(area));
+        // Wide enough for the signature: the popup sized itself to the docstring's prose, so Pyright's
+        // `def helper(` block scrolled sideways under its own language tag (Python review B12).
+        scroll.setMinWidth(hoverCodeWidth(markdown));
         VBox box = new VBox(scroll);
         box.getStyleClass().add("lsp-hover-popup");
         box.setMaxWidth(HOVER_MAX_WIDTH);
@@ -5604,6 +5641,35 @@ final class LspCoordinator {
         } else {
             popup.show(area, 0, 0);
         }
+    }
+
+    /** Average advance of the hover's code font, per character (a slight over-estimate is harmless). */
+    static final double HOVER_CODE_CHAR_WIDTH = 8.4;
+
+    /** Code-block chrome inside the hover: block padding, the scroll pane's inner padding, the scroll bar. */
+    static final double HOVER_CODE_CHROME = 72;
+
+    /**
+     * Pure: the text-column width a hover needs to show its fenced code without a sideways scroll — the
+     * longest code line in characters — clamped to {@link #HOVER_MAX_WIDTH}; 0 without a code block.
+     */
+    static double hoverCodeWidth(String markdown) {
+        if (markdown == null) {
+            return 0;
+        }
+        int longest = 0;
+        boolean inFence = false;
+        for (String line : markdown.split("\\R", -1)) {
+            String t = line.strip();
+            if (t.startsWith("```") || t.startsWith("~~~")) {
+                inFence = !inFence;
+                continue;
+            }
+            if (inFence) {
+                longest = Math.max(longest, line.length());
+            }
+        }
+        return longest == 0 ? 0 : Math.min(HOVER_MAX_WIDTH, longest * HOVER_CODE_CHAR_WIDTH + HOVER_CODE_CHROME);
     }
 
     /** Widest a hover popup's text column gets. */

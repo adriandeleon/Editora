@@ -250,6 +250,53 @@ public final class LspManager {
         });
     }
 
+    /**
+     * Which local server roots get a {@link RootWatcher} of their own: those nothing else reports file changes
+     * for (no project, or a root outside it). Read off the FX thread when a session starts.
+     */
+    private volatile java.util.function.Predicate<Path> watchRoot = root -> false;
+
+    /** Root → its watcher; at most {@link #MAX_ROOT_WATCHERS}, closed with the manager. */
+    private final Map<Path, RootWatcher> rootWatchers = new ConcurrentHashMap<>();
+
+    static final int MAX_ROOT_WATCHERS = 8;
+
+    /** Installs which server roots this manager watches itself (review B7). */
+    public void setWatchSessionRoots(java.util.function.Predicate<Path> watch) {
+        watchRoot = watch == null ? root -> false : watch;
+    }
+
+    /** Starts watching {@code root} when it should be and is not yet (any thread). */
+    private void ensureRootWatcher(Path root) {
+        if (closed
+                || root == null
+                || !com.editora.process.ExecTargets.runsHere(root)
+                || RootResolver.isBroadRoot(root)) {
+            return;
+        }
+        Path key = root.toAbsolutePath().normalize();
+        if (rootWatchers.containsKey(key) || rootWatchers.size() >= MAX_ROOT_WATCHERS || !watchRoot.test(key)) {
+            return;
+        }
+        RootWatcher w = RootWatcher.start(key, batch -> Platform.runLater(() -> notifyWatchedFiles(batch)));
+        if (w != null && rootWatchers.putIfAbsent(key, w) != null) {
+            w.close(); // another start won
+        }
+        if (closed) {
+            closeRootWatchers();
+        }
+    }
+
+    private void closeRootWatchers() {
+        rootWatchers.values().forEach(RootWatcher::close);
+        rootWatchers.clear();
+    }
+
+    /** The roots watched by this manager itself (tests). */
+    java.util.Set<Path> watchedRoots() {
+        return java.util.Set.copyOf(rootWatchers.keySet());
+    }
+
     /** The workspace root of the session serving {@code file}, or null when none does. */
     public Path sessionRoot(Path file) {
         LanguageServerSession s = sessionFor(file);
@@ -1067,6 +1114,7 @@ public final class LspManager {
             if (PYTHON_SERVER_ID.equals(serverId)) {
                 session.setPythonPath(resolvePythonPath(root)); // as the production start does, before initialize
             }
+            ensureRootWatcher(root);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -1149,6 +1197,9 @@ public final class LspManager {
                     : remote ? List.of() : bundles;
             if (PYTHON_SERVER_ID.equals(serverId) && !remote) {
                 session.setPythonPath(resolvePythonPath(root)); // before initialize: the first answer counts
+            }
+            if (!remote) {
+                ensureRootWatcher(root); // file changes nobody else reports reach this server (B7)
             }
             session.configureStart(
                     startCommand,
@@ -3948,6 +3999,7 @@ public final class LspManager {
     public void close() {
         closed = true;
         enabled = false;
+        closeRootWatchers();
         shutdownAll();
         pendingEvictions.values().forEach(timer -> timer.cancel(false));
         pendingEvictions.clear();

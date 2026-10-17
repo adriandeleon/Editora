@@ -83,6 +83,18 @@ class PythonLspFxTest {
         return fakes.get(0);
     }
 
+    private static <T> T onFx(java.util.concurrent.Callable<T> task) throws Exception {
+        var f = new java.util.concurrent.CompletableFuture<T>();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                f.complete(task.call());
+            } catch (Exception e) {
+                f.completeExceptionally(e);
+            }
+        });
+        return f.get(10, TimeUnit.SECONDS);
+    }
+
     private static List<Object> ask(LanguageServerSession session, String... sections) {
         var items = java.util.Arrays.stream(sections)
                 .map(section -> {
@@ -229,5 +241,42 @@ class PythonLspFxTest {
         assertEquals(
                 LspManager.OrganizeOutcome.UNSUPPORTED,
                 this.<LspManager.OrganizeOutcome>await(cb -> manager.organizeImportsAny(ts, 1, 18, cb)));
+    }
+
+    /**
+     * With no project the Project panel's watcher is not there, and nothing told the server that git or a
+     * terminal created a module: it stayed unresolved until a restart (review B7). The server root is watched.
+     */
+    @Test
+    void aModuleCreatedOnDiskReachesTheServerWithoutAProject() throws Exception {
+        manager.setWatchSessionRoots(r -> true);
+        FakeLanguageServer fake = open();
+        Files.createDirectories(root.resolve(".venv"));
+        Path module = Files.writeString(root.resolve("newmod.py"), "def nm() -> int:\n    return 2\n");
+        String uri = module.toUri().toString();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        boolean seen = false;
+        while (!seen && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+            seen = onFx(() -> List.copyOf(fake.watchedFiles)).stream()
+                    .flatMap(p -> p.getChanges().stream())
+                    .anyMatch(e -> e.getUri().equals(uri) && e.getType() == org.eclipse.lsp4j.FileChangeType.Created);
+        }
+        assertTrue(seen, "a Created event for the new module: " + fake.watchedFiles);
+        assertTrue(manager.watchedRoots().contains(root.toAbsolutePath().normalize()));
+        manager.close();
+        assertTrue(manager.watchedRoots().isEmpty(), "closed with the window");
+    }
+
+    /** Folders a server never reads are not watched: hidden ones, packages, caches, environments. */
+    @Test
+    void foldersNoServerReadsAreSkipped() throws Exception {
+        Path venv = Files.createDirectories(root.resolve("env"));
+        Files.writeString(venv.resolve("pyvenv.cfg"), "home = /usr\n");
+        assertTrue(RootWatcher.skipped(venv));
+        assertTrue(RootWatcher.skipped(root.resolve(".git")));
+        assertTrue(RootWatcher.skipped(root.resolve("node_modules")));
+        assertTrue(RootWatcher.skipped(root.resolve("__pycache__")));
+        assertFalse(RootWatcher.skipped(Files.createDirectories(root.resolve("pkg"))));
     }
 }

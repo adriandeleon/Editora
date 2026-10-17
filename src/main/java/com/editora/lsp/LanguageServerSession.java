@@ -1343,11 +1343,18 @@ final class LanguageServerSession implements LanguageClient {
         return message == null || message.isBlank() || message.strip().matches("\\d+%") ? null : message.strip();
     }
 
-    /** Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage. */
+    /**
+     * Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage — or null when
+     * there is nothing to say: Pyright begins every analysis with an empty title, and "…" then sat in the status
+     * bar long after the work had ended (Python review B11). The loading bar still spins either way.
+     */
     static String progressText(String title, String message, Integer percentage) {
-        StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "…" : title.strip());
+        StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "" : title.strip());
         if (message != null && !message.isBlank()) {
-            sb.append(" — ").append(message.strip());
+            sb.append(sb.isEmpty() ? "" : " — ").append(message.strip());
+        }
+        if (sb.isEmpty()) {
+            return null;
         }
         if (percentage != null) {
             sb.append(" (").append(percentage).append("%)");

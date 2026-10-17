@@ -285,7 +285,10 @@ class LspManagerTest {
                 "Importing projects — 3/10 (30%)",
                 LanguageServerSession.progressText("Importing projects", "3/10", 30));
         assertEquals("Build (75%)", LanguageServerSession.progressText("Build", "  ", 75));
-        assertEquals("…", LanguageServerSession.progressText(null, null, null), "no title still yields something");
+        // Pyright begins each analysis with an empty title: nothing to echo, so nothing is left behind (B11).
+        assertNull(LanguageServerSession.progressText(null, null, null), "nothing to say: no '…' left in the bar");
+        assertNull(LanguageServerSession.progressText("", "  ", 40));
+        assertEquals("1 file to analyze", LanguageServerSession.progressText("", "1 file to analyze", null));
     }
 
     // --- Semantic-tokens delta (#679) ----------------------------------------------------------

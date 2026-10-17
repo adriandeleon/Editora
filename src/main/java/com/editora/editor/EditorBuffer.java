@@ -3886,12 +3886,19 @@ public class EditorBuffer implements TabContent {
 
     /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
      *  document open/close + requests; this only gates the editor surface. */
+    /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
+    private boolean heavyFileLspAllowed;
+
+    public void setHeavyFileLspAllowed(boolean allowed) {
+        heavyFileLspAllowed = allowed;
+    }
+
     public void setLspActive(boolean on) {
         // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
         // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
         // is implied by hugeFile (see setReadOnly), so this single guard covers both.
-        this.lspActive = on && isLspLanguage() && !largeFile && !heavyFile;
+        this.lspActive = on && isLspLanguage() && !largeFile && (!heavyFile || heavyFileLspAllowed);
         lastLspSentVersion = -1; // an (de)activation re-syncs via didOpen; force the next change-send to fire
         if (this.lspActive || lspOverlay != null) {
             lspOverlay().setActive(this.lspActive);

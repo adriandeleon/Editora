@@ -4928,6 +4928,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         public boolean lspEnabled() {
             return MainController.this.lspEnabled();
         }
+
+        @Override
+        public void turnOnLsp() {
+            if (!config.getSettings().isLspSupport()) {
+                toggleLsp();
+            }
+        }
+
+        @Override
+        public void openLspSettings() {
+            settingsWindow.showDoctorTarget("lsp", stage);
+        }
     });
 
     private final CoordinatorHost coordinatorHost = new Services();
