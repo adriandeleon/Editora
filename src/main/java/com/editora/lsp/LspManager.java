@@ -228,13 +228,13 @@ public final class LspManager {
     }
 
     /**
-     * Re-resolves every running local Python session's interpreter (the project's pick changed, a venv was
+     * Re-resolves every running Python session's interpreter (the project's pick changed, a venv was
      * created) off the FX thread; a session whose answer changed is pushed the new {@code python.pythonPath}.
      */
     public void refreshPythonInterpreters() {
         List<LanguageServerSession> python = new ArrayList<>();
         for (LanguageServerSession s : sessionsByRoot.values()) {
-            if (PYTHON_SERVER_ID.equals(s.serverId()) && com.editora.process.ExecTargets.runsHere(s.root())) {
+            if (PYTHON_SERVER_ID.equals(s.serverId())) {
                 python.add(s);
             }
         }
@@ -1195,8 +1195,9 @@ public final class LspManager {
             List<String> startBundles = remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
                     ? remoteDebugBundles(root, bundles)
                     : remote ? List.of() : bundles;
-            if (PYTHON_SERVER_ID.equals(serverId) && !remote) {
-                session.setPythonPath(resolvePythonPath(root)); // before initialize: the first answer counts
+            if (PYTHON_SERVER_ID.equals(serverId)) {
+                // Before initialize: the first answer counts. A remote server is told the path as its host names it.
+                session.setPythonPath(resolvePythonPath(root));
             }
             if (!remote) {
                 ensureRootWatcher(root); // file changes nobody else reports reach this server (B7)

@@ -110,4 +110,13 @@ class PythonInterpreterViewTest {
                 exe -> "");
         assertTrue(rows.stream().noneMatch(r -> r.kind() == PythonInterpreterView.Kind.PATH));
     }
+
+    /** A remote host's path is absolute as text, whatever this machine's own path rules are. */
+    @Test
+    void anAbsolutePathIsRecognisedOnAnyMachine() {
+        assertTrue(PythonInterpreterView.isAbsolute("/home/u/proj/.venv/bin/python"));
+        assertTrue(PythonInterpreterView.isAbsolute("C:\\py\\python.exe"));
+        assertTrue(PythonInterpreterView.isAbsolute("\\\\server\\share\\python.exe"));
+        org.junit.jupiter.api.Assertions.assertFalse(PythonInterpreterView.isAbsolute("python3"));
+    }
 }

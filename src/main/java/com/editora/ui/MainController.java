@@ -6685,6 +6685,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                         pythonInterpreter() {
                     return lspCoordinator.pythonInterpreterForDoctor();
                 }
+
+                @Override
+                public boolean pythonInterpreterElsewhere() {
+                    return lspCoordinator.pythonInterpreterElsewhereForDoctor();
+                }
             });
 
     // --- MCP server (loopback HTTP, exposes editor state + commands to an LLM agent) --------------
