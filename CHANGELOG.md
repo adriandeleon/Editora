@@ -231,6 +231,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A broken plugin.json showed the parser's internals**; Browse plugins… hid Settings before the picker opened.
 - **Java debug-adapter detection ran on the UI thread.**
 
+### Changed
+
+- **HTTP Client: the response view gives the body the room.** The Request, Tests, warnings and headers used to
+  stack above the body, which a normal Split left three lines. Now one header row and a tab strip come first.
+  - **One header row:** Run (with its shortcut from your keymap), the status as a coloured pill (green 2xx, blue
+    3xx, amber 4xx, red 5xx and failures), the time and size, then History and the environment. Its tooltip has
+    the full status line and when the request was sent.
+  - **Tabs:** Body · Headers · Tests · Request · Notes, with counts: the number of headers, tests passed of total
+    (red when one failed), and warnings plus files written (amber when there is a warning). Body is shown by
+    default. A run switches to Tests on its own only when a test or a script failed; warnings never switch tabs.
+    The tab you pick stays across runs while a response has it. Tab reaches the tabs, and the arrow keys, Home and
+    End move between them.
+  - **Headers** are a name/value list: right-click to copy a value, a header, or all of them. **Request** shows
+    the request as sent, highlighted like a `.http` file and filling the tab.
+  - **The actions are icons** at the end of the tab strip (Wrap, Copy as cURL, Open in tab, Save response), with
+    their shortcuts in the tooltips; Clear is in the **⋯** menu.
+  - In a narrow panel History narrows first, then the time and size hide, then History and the environment move
+    to a second row. The icons fold into the ⋯ menu, then the counted tabs show only their counts.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added

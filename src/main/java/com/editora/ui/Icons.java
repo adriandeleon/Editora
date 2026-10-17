@@ -829,6 +829,16 @@ final class Icons {
                 + "M11.7 8a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0");
     }
 
+    /** Soft wrap: two lines, the second bending back under the first — the response view's Wrap toggle. */
+    static Node wrap() {
+        return line("M2 4h12M2 8h9a2 2 0 0 1 0 4H8M9.5 10.5L8 12l1.5 1.5M2 12h3");
+    }
+
+    /** A frame with an arrow out of its corner — open the response in an editor tab. */
+    static Node openInTab() {
+        return line("M9 2h5v5M14 2L8 8M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5");
+    }
+
     /** Material "remove" (minus) — "Unstage" git context-menu item. */
     static Node remove() {
         return of("M19 13H5v-2h14v2z");
