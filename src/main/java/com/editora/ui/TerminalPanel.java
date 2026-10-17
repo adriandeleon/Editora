@@ -27,6 +27,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
+import com.editora.terminal.LinkActions;
 import com.editora.terminal.RunningProgram;
 import com.editora.terminal.SyntaxColors;
 import com.editora.terminal.TerminalConnector;
@@ -91,6 +92,7 @@ final class TerminalPanel extends StackPane {
     private TerminalPalette fallbackPalette = TerminalPalettes.EDITORA_DARK;
     private Consumer<String> onError = message -> {};
     private Supplier<List<MenuItem>> menuExtras = List::of;
+    private LinkActions linkActions;
 
     TerminalPanel(Shells shells, CloseGuard closeGuard, Supplier<Path> directory) {
         this.shells = shells;
@@ -146,9 +148,24 @@ final class TerminalPanel extends StackPane {
         views.values().forEach(v -> v.setMenuExtras(this.menuExtras));
     }
 
+    /** Where a clicked link goes: files into the editor, URLs to the browser. Without it links are inert. */
+    void setLinkActions(LinkActions linkActions) {
+        this.linkActions = linkActions;
+        views.values().forEach(v -> v.setLinkActions(linkActions));
+    }
+
+    /** The link actions every tab uses, or null. */
+    LinkActions linkActions() {
+        return linkActions;
+    }
+
     /** Opens a new tab with a shell in the coordinator's directory, and focuses it. */
     void newTerminal() {
-        Path dir = directory.get();
+        newTerminal(directory.get());
+    }
+
+    /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
+    void newTerminal(Path dir) {
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
         view.setPalette(palette);
@@ -262,6 +279,7 @@ final class TerminalPanel extends StackPane {
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);
+        view.setLinkActions(linkActions);
     }
 
     private boolean mayClose(Tab tab) {

@@ -245,6 +245,99 @@ class TerminalPanelFxTest {
         assertFalse(fx(panel::hasTerminals), "Close ends it");
     }
 
+    @Test
+    void openInTerminalStartsTheShellInTheFolderAsked(@TempDir Path project, @TempDir Path elsewhere) throws Exception {
+        show(fakeShells(), (title, programs) -> true, project);
+        fx(() -> {
+            panel.newTerminal(elsewhere);
+            return null;
+        });
+        assertEquals(List.of(elsewhere), openedIn);
+    }
+
+    @Test
+    void aModifierClickOnAPathInTheOutputOpensItAtItsLineAndColumn(@TempDir Path dir) throws Exception {
+        Path file = java.nio.file.Files.writeString(dir.resolve("Foo.java"), "class Foo {}\n");
+        List<String> opened = new ArrayList<>();
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.setLinkActions(new com.editora.terminal.LinkActions() {
+                @Override
+                public void openUrl(String url) {
+                    opened.add("url " + url);
+                }
+
+                @Override
+                public void openFile(Path f, int line, int column) {
+                    opened.add(f + ":" + line + ":" + column);
+                }
+            });
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit(file + ":12:3\r\nsee https://example.com/docs\r\n");
+        await(() -> call(() -> screen().contains("example.com")), "the output on screen");
+        // A click is only a link once the view has a size: before its first layout every point is outside it.
+        await(
+                () -> call(() ->
+                        panel.activeView().getWidth() > 0 && panel.activeView().getHeight() > 0),
+                "a layout");
+
+        clickWithLinkModifier(1, 0); // a column inside the path on the first row
+        clickWithLinkModifier(6, 1); // inside the URL on the second row
+
+        assertEquals(List.of(file + ":12:3", "url https://example.com/docs"), opened);
+    }
+
+    /** A primary press with the platform's link modifier (Cmd on macOS, Ctrl elsewhere) at a cell. */
+    private void clickWithLinkModifier(int column, int row) throws Exception {
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
+        fx(() -> {
+            var view = panel.activeView();
+            var size = view.getSession().getTerminal().getSize();
+            double cellWidth = view.getWidth() / size.getColumns();
+            double cellHeight = view.getHeight() / size.getRows();
+            // A MouseEvent is built in scene coordinates; firing it at the view makes them local again.
+            var at = view.localToScene((column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+            double x = at.getX();
+            double y = at.getY();
+            Event.fireEvent(
+                    view,
+                    new javafx.scene.input.MouseEvent(
+                            javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                            x,
+                            y,
+                            x,
+                            y,
+                            javafx.scene.input.MouseButton.PRIMARY,
+                            1,
+                            false,
+                            !mac,
+                            false,
+                            mac,
+                            true,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            null));
+            return null;
+        });
+    }
+
+    private String screen() throws Exception {
+        var buffer = panel.activeView().getSession().getTextBuffer();
+        buffer.lock();
+        try {
+            return buffer.getScreenLines();
+        } finally {
+            buffer.unlock();
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private TerminalPanel.Shells fakeShells() {

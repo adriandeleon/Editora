@@ -5918,6 +5918,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void hideToolWindow() {
                     toolWindows.close(terminalToolWindow);
                 }
+
+                @Override
+                public void openLink(java.nio.file.Path file, int line, int column) {
+                    if (java.nio.file.Files.isDirectory(file)) {
+                        openAndNavigate(file, -1); // reveals it in the Project tree
+                    } else {
+                        openAndGoto(file, Math.max(0, line - 1), Math.max(0, column - 1));
+                    }
+                }
             });
 
     final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
@@ -8683,7 +8692,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 msg -> Platform.runLater(() -> setStatus(tr("status.reveal.failed", msg))));
     }
 
-    /** Opens a terminal at {@code path}'s containing folder. Shared by the command, tab menu, and tree. */
+    /**
+     * Opens a terminal at {@code path}'s containing folder (or {@code path}, a folder): a tab in the Terminal
+     * tool window, or the system's terminal when Settings → Terminal says so. Shared by the command, tab menu,
+     * breadcrumb and tree.
+     */
     void openTerminalAt(Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
@@ -8691,6 +8704,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (!local) {
             setStatus(tr("status.reveal.remote"));
+            return;
+        }
+        if (!config.getSettings().isTerminalUseExternal()) {
+            Path abs = path.toAbsolutePath();
+            terminalCoordinator.openAt(isDir ? abs : abs.getParent());
             return;
         }
         com.editora.process.DesktopActions.openTerminal(

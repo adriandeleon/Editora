@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 130;
+    public static final int SCHEMA_VERSION = 131;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -677,6 +677,8 @@ public class Settings {
     private boolean terminalBell = true;
     /** Integrated terminal: ask before closing a tab whose shell is running a program. */
     private boolean terminalConfirmClose = true;
+    /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
+    private boolean terminalUseExternal = false;
 
     /**
      * The commands a focused terminal still lets through; every other key goes to the shell. Exact ids or
@@ -2978,6 +2980,14 @@ public class Settings {
 
     public void setTerminalConfirmClose(boolean terminalConfirmClose) {
         this.terminalConfirmClose = terminalConfirmClose;
+    }
+
+    public boolean isTerminalUseExternal() {
+        return terminalUseExternal;
+    }
+
+    public void setTerminalUseExternal(boolean terminalUseExternal) {
+        this.terminalUseExternal = terminalUseExternal;
     }
 
     public java.util.List<String> getTerminalIdeCommands() {

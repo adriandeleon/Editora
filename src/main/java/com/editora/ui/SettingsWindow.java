@@ -3893,6 +3893,14 @@ public class SettingsWindow {
                 Settings::getTerminalShell,
                 Settings::setTerminalShell,
                 "terminal shell bash zsh fish powershell cmd login");
+        switchRow(
+                shell,
+                cat,
+                "terminal.useExternal",
+                true,
+                Settings::isTerminalUseExternal,
+                Settings::setTerminalUseExternal,
+                "terminal open in terminal here external system application gnome konsole iterm");
         Card display = card(p, tr("settings.section.terminalDisplay"));
         intRow(
                 display,

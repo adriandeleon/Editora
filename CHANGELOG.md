@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Its font is the editor's.
   - Build Output's stripe icon is now the tools glyph; the terminal glyph is the Terminal's.
   - Closing a terminal that is running a program asks first.
+  - **Open Terminal Here** (tab menu, Project tree, breadcrumb, command) opens a tab there instead of the
+    system's terminal; Settings → Terminal → "Open Terminal Here uses the system terminal" brings the old
+    behaviour back.
+  - Ctrl+click (Cmd+click on macOS) a `path:line:col` in the output to open the file at that place, or a URL
+    to open it in the browser.
   - Settings → Terminal: the shell, text size, cursor, bell, scrollback, and which commands reach Editora.
   - The terminal is Termina's (github.com/adriandeleon/Termina), ported. Terminals on remote hosts,
     containers and WSL come next.
