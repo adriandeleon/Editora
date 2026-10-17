@@ -1738,6 +1738,9 @@ public class ToolWindowManager {
         if (own != null) {
             return own;
         }
+        if (side == ToolWindow.Side.BOTTOM && tw.firstOpenShare() > 0) {
+            return Math.min(s.getBottomDividerPosition(), 1 - tw.firstOpenShare());
+        }
         return switch (side) {
             case LEFT -> s.getLeftDividerPosition();
             case RIGHT -> s.getRightDividerPosition();

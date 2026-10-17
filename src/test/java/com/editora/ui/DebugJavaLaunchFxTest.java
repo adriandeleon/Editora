@@ -347,7 +347,7 @@ class DebugJavaLaunchFxTest {
                 "",
                 "",
                 javafx.scene.input.KeyCode.R,
-                false,
+                true, // Restart is Shift+R in the panel (a bare r restarted the program by accident, review C2)
                 false,
                 false,
                 false)));

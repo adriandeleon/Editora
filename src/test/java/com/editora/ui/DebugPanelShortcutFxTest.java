@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,6 +55,36 @@ class DebugPanelShortcutFxTest {
         return new KeyEvent(KeyEvent.KEY_PRESSED, KeyEvent.CHAR_UNDEFINED, "", code, false, control, false, false);
     }
 
+    private static KeyEvent shifted(KeyCode code) {
+        return new KeyEvent(KeyEvent.KEY_PRESSED, KeyEvent.CHAR_UNDEFINED, "", code, true, false, false, false);
+    }
+
+    /**
+     * Review C2: typing in the panel ("work") restarted and then stopped the program. Stop and Restart need Shift;
+     * a bare k or r does nothing and is left to the list it was typed in; a capital N does not step.
+     */
+    @Test
+    void stopAndRestartNeedShiftAndBareLettersDoNotEndTheProgram() throws Exception {
+        Object[] r = FxTestSupport.callOnFx(() -> {
+            List<String> invoked = new ArrayList<>();
+            DebugPanel panel = new DebugPanel(recording(invoked));
+            panel.setState(DapManager.State.SUSPENDED);
+            KeyEvent bareK = key(KeyCode.K, false);
+            FxTestSupport.call(panel, "handleDebugKey", new Class[] {KeyEvent.class}, bareK);
+            KeyEvent bareR = key(KeyCode.R, false);
+            FxTestSupport.call(panel, "handleDebugKey", new Class[] {KeyEvent.class}, bareR);
+            panel.fireEvent(shifted(KeyCode.N));
+            List<String> afterBare = List.copyOf(invoked);
+            panel.fireEvent(shifted(KeyCode.K));
+            panel.fireEvent(shifted(KeyCode.R));
+            return new Object[] {afterBare, List.copyOf(invoked), bareK.isConsumed(), bareR.isConsumed()};
+        });
+        assertEquals(List.of(), r[0], "bare k, bare r and Shift+N fire nothing");
+        assertEquals(List.of("stop", "restart"), r[1], "Shift+K stops, Shift+R restarts");
+        assertFalse((Boolean) r[2], "a bare k is not swallowed: it is type-ahead in the list");
+        assertFalse((Boolean) r[3]);
+    }
+
     @Test
     void suspendedSingleKeysFireTheMatchingControls() throws Exception {
         List<String> calls = FxTestSupport.callOnFx(() -> {
@@ -79,12 +110,12 @@ class DebugPanelShortcutFxTest {
             DebugPanel panel = new DebugPanel(recording(invoked));
             panel.setState(DapManager.State.RUNNING); // pause + stop enabled; the step controls are disabled
             panel.fireEvent(key(KeyCode.P, false));
-            panel.fireEvent(key(KeyCode.K, false));
+            panel.fireEvent(shifted(KeyCode.K));
             panel.fireEvent(key(KeyCode.N, false)); // step over is disabled while running
             return invoked;
         });
         assertTrue(calls.contains("pause"), "p → pause");
-        assertTrue(calls.contains("stop"), "k → stop");
+        assertTrue(calls.contains("stop"), "Shift+K → stop");
         assertFalse(calls.contains("stepOver"), "a disabled control does not fire");
     }
 
