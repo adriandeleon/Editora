@@ -1579,12 +1579,16 @@ public final class DapManager implements DapClient.Host {
      */
     private HostPython planProgram(Path file, com.editora.process.ExecTarget target, boolean local) {
         com.editora.run.PythonRunPlan.Request asked = pythonRequest;
+        String firstLine = asked != null ? asked.firstLine() : null;
+        if (com.editora.run.PythonLaunch.isRunner(com.editora.run.PythonLaunch.shebang(firstLine))) {
+            firstLine = null; // debugpy needs an interpreter, not `uv run --script`: the project's Python runs it
+        }
         com.editora.run.PythonRunPlan.Request request = com.editora.run.PythonRunPlan.Request.file(
                 file,
                 asked != null ? asked.projectRoot() : pythonRootFor(file),
                 target.toTargetPath(file),
                 List.of(),
-                asked != null ? asked.firstLine() : null,
+                firstLine,
                 asked != null ? asked.projectChoice() : pythonProjectChoice,
                 asked != null ? asked.setting() : local ? pythonCommand : "");
         com.editora.run.PythonRunPlan.Host host = pythonHost != null

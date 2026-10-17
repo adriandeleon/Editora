@@ -60,6 +60,11 @@ final class PythonTestRunner {
          */
         default void debugTests(
                 Path anchor, Path cwd, List<String> pytestIds, List<String> unittestIds, String label) {}
+
+        /** Whether tests run in {@code where} can be debugged (the Python debugger is set up for that machine). */
+        default boolean canDebug(Path where) {
+            return false;
+        }
     }
 
     private final Host host;
@@ -316,6 +321,11 @@ final class PythonTestRunner {
             @Override
             public void stop() {
                 host.runCoordinator().stopRun();
+            }
+
+            @Override
+            public boolean canDebug() {
+                return host.canDebug(pytest ? scope.rootDir() : scope.unittestDir());
             }
 
             @Override

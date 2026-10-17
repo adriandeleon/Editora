@@ -82,6 +82,16 @@ public final class PythonLaunch {
         return new Shebang(List.copyOf(interpreter), List.of(), java.util.Collections.unmodifiableMap(env));
     }
 
+    /**
+     * Whether the file's shebang hands it to a runner ({@code uv run --script}, {@code pipx run}, {@code poetry
+     * run python}) rather than naming a Python. The debugger cannot start a program through one: debugpy is
+     * given an interpreter, so Debug runs such a file under the project's Python instead.
+     */
+    public static boolean isRunner(Shebang shebang) {
+        return shebang.specific()
+                && looksLikeRunner(baseName(shebang.interpreter().get(0)));
+    }
+
     /** Runners that take a Python script: {@code uv run --script}, {@code pipx run}, {@code poetry run python}. */
     private static boolean looksLikeRunner(String base) {
         return base.equals("uv") || base.equals("pipx") || base.equals("poetry") || base.equals("pdm");

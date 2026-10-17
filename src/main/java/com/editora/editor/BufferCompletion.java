@@ -249,15 +249,16 @@ final class BufferCompletion {
     }
 
     /**
-     * Whether Enter should close the popup and type a newline instead of accepting {@code label}: in shell,
-     * when the label is exactly the word just typed. Shell's snippets are named after its keywords
+     * Whether Enter should close the popup and type a newline instead of accepting {@code label}: in shell and
+     * Python, when the label is exactly the word just typed (Python's {@code try}, {@code if}, {@code for} …
+     * snippets are named after keywords too, so {@code try} with {@code trya} listed took the snippet). Shell's snippets are named after its keywords
      * ({@code else}, {@code break}, {@code case} …), so {@code else}, a pause, then Enter used to insert the
      * {@code else} snippet with a {@code command} placeholder instead of ending the line — and skipped the
      * {@code else} de-indent. Accepting a row that only repeats the typed word adds nothing else worth a
      * keystroke; Tab still accepts it (and expands a snippet).
      */
     static boolean enterEndsTheLine(String language, String label, String lineBeforeCaret) {
-        if (!"shell".equals(language) || label == null || label.isEmpty()) {
+        if (!("shell".equals(language) || "python".equals(language)) || label == null || label.isEmpty()) {
             return false;
         }
         int start = lineBeforeCaret.length();

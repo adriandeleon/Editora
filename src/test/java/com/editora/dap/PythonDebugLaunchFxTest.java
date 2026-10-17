@@ -159,15 +159,27 @@ class PythonDebugLaunchFxTest {
         return out;
     }
 
-    /** A project with a {@code .venv} (an interpreter linked to the system one, as {@code venv} makes it). */
+    /** The site-packages folder of the last {@link #projectWithVenv()} (for a stand-in pytest). */
+    private Path venvSite;
+
+    /**
+     * A project with a real {@code .venv} made by {@code python3 -m venv --without-pip} (fast, offline). A
+     * hand-made symlink to {@code /usr/bin/python3} is not a venv on macOS, where that path is a shim that
+     * starts another binary, so the venv's own site-packages were never on the path there.
+     */
     private Path projectWithVenv() throws Exception {
         Path project = Files.createDirectories(base.resolve("my project"));
         Files.writeString(project.resolve("pyproject.toml"), "[project]\nname = \"x\"\n");
         Files.createDirectories(project.resolve("src"));
-        Path bin = Files.createDirectories(project.resolve(".venv/bin"));
-        Files.writeString(
-                project.resolve(".venv/pyvenv.cfg"), "home = /usr/bin\ninclude-system-site-packages = false\n");
-        Files.createSymbolicLink(bin.resolve("python"), Path.of("/usr/bin/python3"));
+        Path venv = project.resolve(".venv");
+        Process p = new ProcessBuilder("python3", "-m", "venv", "--without-pip", venv.toString())
+                .redirectErrorStream(true)
+                .start();
+        p.getInputStream().readAllBytes();
+        assumeTrue(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0, "python3 with venv is installed");
+        try (var lib = Files.list(venv.resolve("lib"))) {
+            venvSite = lib.findFirst().orElseThrow().resolve("site-packages");
+        }
         return project;
     }
 
@@ -258,13 +270,7 @@ class PythonDebugLaunchFxTest {
     @Test
     void aTestIsDebuggedUnderPytestInTheProjectFolder() throws Exception {
         Path project = projectWithVenv();
-        String version = new String(new ProcessBuilder(
-                                "/usr/bin/python3", "-c", "import sys; print('%d.%d' % sys.version_info[:2])")
-                        .start()
-                        .getInputStream()
-                        .readAllBytes())
-                .strip();
-        Path stand = Files.createDirectories(project.resolve(".venv/lib/python" + version + "/site-packages/pytest"));
+        Path stand = Files.createDirectories(venvSite.resolve("pytest"));
         Files.writeString(stand.resolve("__init__.py"), "");
         Path test = testFile(project);
         configure("", false);

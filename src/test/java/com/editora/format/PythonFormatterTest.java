@@ -35,7 +35,7 @@ class PythonFormatterTest {
         Map<String, String> path = Map.of("ruff", "/usr/bin/ruff", "black", "/usr/bin/black");
         var found = PythonFormatter.find(venv, false, exists::contains, n -> Optional.ofNullable(path.get(n)));
         assertEquals(
-                new PythonFormatter.Found("black", "/p/.venv/bin/black", true),
+                new PythonFormatter.Found("black", Path.of("/p/.venv/bin/black").toString(), true),
                 found.orElseThrow(),
                 "the project pinned Black in its environment: that beats a Ruff on PATH");
         found = PythonFormatter.find(null, false, p -> false, n -> Optional.ofNullable(path.get(n)));
@@ -52,10 +52,10 @@ class PythonFormatterTest {
     void theArgvFormatsStdinAsTheNamedFile() {
         Path file = Path.of("/p/app.py");
         assertEquals(
-                List.of("/bin/ruff", "format", "--stdin-filename", "/p/app.py", "-"),
+                List.of("/bin/ruff", "format", "--stdin-filename", file.toString(), "-"),
                 new PythonFormatter.Found("ruff", "/bin/ruff", false).argv(file));
         assertEquals(
-                List.of("/bin/black", "-q", "--stdin-filename", "/p/app.py", "-"),
+                List.of("/bin/black", "-q", "--stdin-filename", file.toString(), "-"),
                 new PythonFormatter.Found("black", "/bin/black", false).argv(file));
         assertEquals(
                 List.of("/bin/black", "-q", "-"), new PythonFormatter.Found("black", "/bin/black", false).argv(null));
