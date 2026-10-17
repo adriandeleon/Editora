@@ -827,6 +827,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
         this.settingsWindow.setAiConnectionProbe(
                 aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
+        this.settingsWindow.setLspProjectNotes(id -> lspCoordinator.projectOverrideNote(id)); // project overrides
         this.settingsWindow.setOnKeymapChanged(editorSettings::reloadKeymap); // picker/combo → live keymap switch
         this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
             @Override

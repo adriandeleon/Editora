@@ -245,13 +245,11 @@ class SettingsControlsFxTest {
             CheckBox console = rig.control("debugProgramConsoleCheck");
             debug.setSelected(false);
             assertFalse(settings.isDebugSupport());
-            assertTrue(fields.get("python").isDisable());
-            assertTrue(enables.get("python").isDisable());
-            assertTrue(console.isDisable());
+            assertTrue(fields.get("python").isDisabled());
+            assertTrue(fields.get("java").isDisabled(), "the Java card too (it holds the console switch)");
             debug.setSelected(true);
             assertTrue(settings.isDebugSupport());
-            assertFalse(fields.get("python").isDisable());
-            assertFalse(console.isDisable());
+            assertFalse(fields.get("python").isDisabled());
 
             console.setSelected(!console.isSelected());
             assertEquals(console.isSelected(), settings.isDebugProgramConsole());
