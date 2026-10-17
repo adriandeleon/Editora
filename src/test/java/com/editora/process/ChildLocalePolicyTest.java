@@ -78,7 +78,8 @@ class ChildLocalePolicyTest {
             Map.entry("agent/AcpClient.java", 1), // the agent CLI
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
-            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter, javac of the user's file
+            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter
+            Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("format/PythonFormatter.java", 1), // Ruff/Black on the user's file names (decision 4)
@@ -146,7 +147,7 @@ class ChildLocalePolicyTest {
 
     @Test
     void theOneParseStableChildOfTheDebuggerIsItsProbe() throws IOException {
-        // DapManager starts both kinds. Its adapters and the javac of the user's file are counted above; what
+        // DapManager starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
         // may still use the C locale is the local availability probe and, for a remote file, the host's three
         // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
         // path).
