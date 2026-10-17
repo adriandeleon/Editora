@@ -99,6 +99,11 @@ final class TestRunCoordinator implements TestRunHook {
 
         /** Opens the test's source. */
         void jump(TestNode node);
+
+        /** Debugs one test, or a suite row's tests; false when this run's tests cannot be debugged. */
+        default boolean debug(TestNode node) {
+            return false;
+        }
     }
 
     /** JVM report poll interval — reports appear per class as each finishes; ~750 ms is responsive + cheap. */
@@ -743,7 +748,9 @@ final class TestRunCoordinator implements TestRunHook {
         }
         if (external != null) {
             if (debug) {
-                host.setStatus(tr("status.testrunner.debugUnsupported"));
+                if (!external.debug(node)) {
+                    host.setStatus(tr("status.testrunner.debugUnsupported"));
+                }
             } else {
                 external.runOne(node);
             }
