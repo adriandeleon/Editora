@@ -118,6 +118,14 @@ final class DebugCoordinator {
         /** Persists the debug-watch expressions (workspace state + durable save). */
         void persistDebugWatches(List<String> watches);
 
+        /** The persisted exception-breakpoint choices, per debug-adapter language (workspace state). */
+        default Map<String, List<String>> debugExceptionFilters() {
+            return Map.of();
+        }
+
+        /** Persists the exception-breakpoint choices (workspace state + save). */
+        default void persistDebugExceptionFilters(Map<String, List<String>> filters) {}
+
         /** The per-file breakpoint map ({@code breakpoints.json}); path-string → that file's breakpoints. */
         Map<String, List<Breakpoint>> breakpointMap();
 
@@ -252,6 +260,7 @@ final class DebugCoordinator {
             }
             built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
             debugPanel = built;
+            refreshExceptionToggles();
         }
         return debugPanel;
     }
@@ -463,6 +472,7 @@ final class DebugCoordinator {
      * breakpoint gutter + Debug window. Runs at init + every settings apply.
      */
     void applySupport() {
+        restoreExceptionFilters();
         var s = host.settings();
         boolean on = debugSupportEnabled(); // effective: off in Simple UI mode
         dapManager.configure(
@@ -1033,6 +1043,7 @@ final class DebugCoordinator {
                 }
                 if (state == DapManager.State.STARTING) {
                     nameSession(sessionLabel); // ending the replaced session cleared it
+                    refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     shownFrame = null;
@@ -1242,6 +1253,11 @@ final class DebugCoordinator {
             @Override
             public void endInput() {
                 endProgramInput();
+            }
+
+            @Override
+            public void toggleExceptions(boolean caught) {
+                toggleExceptionKind(caught);
             }
 
             @Override
@@ -2229,9 +2245,12 @@ final class DebugCoordinator {
 
     /** Turns {@code language}'s exception filter {@code filter} on or off (the picker's choice), and says so. */
     void toggleExceptionFilter(String language, String filter) {
+        restoreExceptionFilters();
         List<DapModels.ExceptionFilterOption> options = dapManager.exceptionFilterOptions(language);
         List<String> next = toggledFilter(dapManager.exceptionFiltersFor(language), filter, options);
         dapManager.setExceptionFilters(language, next);
+        ops.persistDebugExceptionFilters(dapManager.exceptionChoices()); // C12: kept across restarts, per project
+        refreshExceptionToggles();
         host.setStatus(exceptionStatus(language, next, options));
     }
 
@@ -2243,6 +2262,59 @@ final class DebugCoordinator {
         EditorBuffer b = host.activeBuffer();
         String language = b == null ? null : b.getLanguage();
         return language != null && DapServerRegistry.isDebuggable(language) ? language : null;
+    }
+
+    // --- Caught / Uncaught exception toggles (Run menu + Debug window) ---------------------------------
+
+    /** Whether the persisted exception choices have been handed to the debug manager. */
+    private boolean exceptionFiltersRestored;
+
+    /** Hands the exception choices this project saved to the debug manager, once (B10 / C12). */
+    void restoreExceptionFilters() {
+        if (exceptionFiltersRestored) {
+            return;
+        }
+        exceptionFiltersRestored = true;
+        ops.debugExceptionFilters().forEach((language, filters) -> {
+            if (language != null && filters != null) {
+                dapManager.setExceptionFilters(language, filters);
+            }
+        });
+    }
+
+    /**
+     * The language the Caught / Uncaught toggles act on: the live session's, else the active file's — and Java
+     * when neither says (the toggles are always there to set up the next Java session).
+     */
+    String exceptionToggleLanguage() {
+        String language = exceptionLanguage();
+        return com.editora.dap.ExceptionFilterCatalog.caughtFilter(language) == null ? "java" : language;
+    }
+
+    /** Whether the Caught ({@code caught}) or Uncaught toggle is on for {@link #exceptionToggleLanguage()}. */
+    boolean exceptionToggleOn(boolean caught) {
+        restoreExceptionFilters();
+        String language = exceptionToggleLanguage();
+        String filter = caught
+                ? com.editora.dap.ExceptionFilterCatalog.caughtFilter(language)
+                : com.editora.dap.ExceptionFilterCatalog.uncaughtFilter(language);
+        return filter != null && dapManager.exceptionFiltersFor(language).contains(filter);
+    }
+
+    /** The Caught or Uncaught toggle (commands {@code debug.exceptions.caught} / {@code .uncaught}, panel). */
+    void toggleExceptionKind(boolean caught) {
+        String language = exceptionToggleLanguage();
+        String filter = caught
+                ? com.editora.dap.ExceptionFilterCatalog.caughtFilter(language)
+                : com.editora.dap.ExceptionFilterCatalog.uncaughtFilter(language);
+        toggleExceptionFilter(language, filter);
+    }
+
+    /** Shows the toggles' state in the Debug window (when it has been built). */
+    private void refreshExceptionToggles() {
+        if (debugPanel != null) {
+            debugPanel.setExceptionToggles(exceptionToggleOn(true), exceptionToggleOn(false));
+        }
     }
 
     /** Pure: {@code current} with {@code filter} turned on or off, in the order the adapter lists its filters. */

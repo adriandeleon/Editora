@@ -247,6 +247,8 @@ final class MenuBarModel {
                                 "debug.start",
                                 "debug.stop",
                                 "debug.toggleBreakpoint",
+                                "debug.exceptions.caught",
+                                "debug.exceptions.uncaught",
                                 SEPARATOR,
                                 "debug.stepOver",
                                 "debug.stepInto",

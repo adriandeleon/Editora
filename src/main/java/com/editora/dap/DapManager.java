@@ -261,6 +261,11 @@ public final class DapManager implements DapClient.Host {
         return ExceptionFilterCatalog.known(language);
     }
 
+    /** The exception filters chosen per language (a language not listed uses its adapter's defaults). */
+    public Map<String, List<String>> exceptionChoices() {
+        return new java.util.LinkedHashMap<>(exceptionChoices);
+    }
+
     /** The exception filters in force for {@code language}: the chosen ones, else the adapter's defaults. */
     public List<String> exceptionFiltersFor(String language) {
         List<String> chosen = exceptionChoices.get(language);

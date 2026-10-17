@@ -2048,6 +2048,19 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isDebugProgramConsole(),
                                         v -> host.config().getSettings().setDebugProgramConsole(v),
                                         host.debugCoordinator()::applySupport)));
+        // Fixer B: the Caught / Uncaught exception-breakpoint toggles (checked in the Run menu).
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.caught",
+                        () -> host.debugCoordinator().exceptionToggleOn(true),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(true))));
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.uncaught",
+                        () -> host.debugCoordinator().exceptionToggleOn(false),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(false))));
         host.registry()
                 .register(Command.of(
                         "debug.addWatch", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatch)));
