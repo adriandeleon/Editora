@@ -1225,7 +1225,6 @@ public class SettingsWindow {
         noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);
         // The note-indicator toggle is only meaningful while Personal Notes is enabled.
         notesCheck.selectedProperty().addListener((obs, was, now) -> {
-            noteIndicatorsCheck.setDisable(!now);
             refreshToolWindowRows(); // reflect on the Tool Windows page's Personal Notes row
         });
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
@@ -1342,9 +1341,6 @@ public class SettingsWindow {
         spellCheckBox = new CheckBox(tr("settings.enableSpell"));
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setSpellCheck(now);
-            if (spellLanguageCombo != null) {
-                spellLanguageCombo.setDisable(!now);
-            }
             apply();
         });
         dictEnableCheck = new CheckBox(tr("settings.dict.enable"));
@@ -2507,6 +2503,10 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.editor"));
         Card display = card(p, tr("settings.section.display"));
         checkRow(display, Category.EDITOR, columnRulerCheck, null, "80 column ruler guide margin");
+        display.body()
+                .getChildren()
+                .add(SettingsDependents.note(columnRulerCheck.selectedProperty(), tr("settings.showRuler")));
+        int firstRulerRow = rows.size();
         // A value that does not read as columns keeps the current ones (textRow shows what was kept).
         textRow(
                 display,
@@ -2527,6 +2527,14 @@ public class SettingsWindow {
                 v -> rulerProblem(com.editora.editor.RulerColumns.byLanguageProblem(
                         v, SpellFileTypesEditor.languageNames(config.getSettings()))),
                 "rulers per language ruler columns margin line length");
+        SettingsDependents.bind(columnRulerCheck.selectedProperty(), rowsSince(firstRulerRow));
+        // Simple UI mode hides some of what this card shows, whatever the switches below say.
+        Label simpleOverrides = note(tr("settings.simpleModeOverrides"));
+        simpleOverrides.setWrapText(true);
+        simpleOverrides.getStyleClass().add("settings-row-desc");
+        simpleOverrides.visibleProperty().bind(simpleModeCheck.selectedProperty());
+        simpleOverrides.managedProperty().bind(simpleOverrides.visibleProperty());
+        display.body().getChildren().add(simpleOverrides);
         switchRow(
                 display,
                 Category.EDITOR,
@@ -2566,12 +2574,17 @@ public class SettingsWindow {
                 Settings::setTypewriterMode,
                 "typewriter mode centre center caret line middle scrolling focus writing");
         checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        int noteIndicatorsRow = rows.size();
         checkRow(
                 display,
                 Category.EDITOR,
                 noteIndicatorsCheck,
                 tr("settings.showNoteIndicators.desc"),
                 "personal notes highlight start marker indicators");
+        SettingsDependents.bind(notesCheck.selectedProperty(), rowsSince(noteIndicatorsRow));
+        display.body()
+                .getChildren()
+                .add(SettingsDependents.note(notesCheck.selectedProperty(), tr("settings.enableNotes")));
         switchRow(
                 display,
                 Category.EDITOR,
@@ -3339,6 +3352,10 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.spellCheck"));
         Card main = card(p, null);
         checkRow(main, Category.SPELL_CHECK, spellCheckBox, null, "spell check spelling enable");
+        main.body()
+                .getChildren()
+                .add(SettingsDependents.note(spellCheckBox.selectedProperty(), tr("settings.enableSpell")));
+        int firstSpellRow = rows.size();
         controlRow(
                 main,
                 Category.SPELL_CHECK,
@@ -3392,6 +3409,7 @@ public class SettingsWindow {
                 dictLinks,
                 "dictionary open technical personal file dictionary.txt bundled terms");
         cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
+        SettingsDependents.bind(spellCheckBox.selectedProperty(), rowsSince(firstSpellRow));
         return p;
     }
 
@@ -3553,8 +3571,13 @@ public class SettingsWindow {
                 simpleModeCheck,
                 tr("settings.simpleMode.note"),
                 "simple minimal ui mode chrome distraction");
-        checkRow(modes, Category.INTERFACE, zenCheck, null, "zen distraction free focus mode");
-        checkRow(modes, Category.INTERFACE, expertCheck, null, "expert focus mode keeps line numbers status bar");
+        checkRow(modes, Category.INTERFACE, zenCheck, tr("settings.zen.note"), "zen distraction free focus mode");
+        checkRow(
+                modes,
+                Category.INTERFACE,
+                expertCheck,
+                tr("settings.expert.note"),
+                "expert focus mode keeps line numbers status bar");
         return p;
     }
 
@@ -3671,11 +3694,14 @@ public class SettingsWindow {
                 null,
                 "completion documentation quick doc popup javadoc ctrl q");
         Card lsp = card(p, tr("settings.section.lspFeatures"));
+        // Every row here needs a language server: greyed out, with the reason, while LSP is off.
+        lsp.body().getChildren().add(SettingsDependents.note(lspCheck.selectedProperty(), tr("settings.enableLsp")));
+        int firstLspRow = rows.size();
         checkRow(
                 lsp,
                 Category.COMPLETION,
                 semanticHighlightCheck,
-                tr("settings.semanticHighlight.lspNote"),
+                null,
                 "semantic highlighting lsp tokens types parameters fields deprecated");
         checkRow(
                 lsp,
@@ -3683,14 +3709,12 @@ public class SettingsWindow {
                 inlayHintsCheck,
                 null,
                 "inlay hints parameter names inferred types lsp annotations");
-        inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         checkRow(
                 lsp,
                 Category.COMPLETION,
                 codeLensCheck,
                 tr("settings.codeLens.note"),
                 "code lens vision references usages implementations count lsp");
-        codeLensCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         controlRow(
                 lsp,
                 Category.COMPLETION,
@@ -3701,9 +3725,7 @@ public class SettingsWindow {
         // Sub-setting of the checkbox above (master/sub pattern): meaningless while hints are off.
         inlayHintModeCombo
                 .disableProperty()
-                .bind(lspCheck.selectedProperty()
-                        .not()
-                        .or(inlayHintsCheck.selectedProperty().not()));
+                .bind(inlayHintsCheck.selectedProperty().not());
         checkRow(
                 lsp,
                 Category.COMPLETION,
@@ -3717,10 +3739,7 @@ public class SettingsWindow {
                 smartSemicolonCheck,
                 null,
                 "smart semicolon detection statement end java jdtls");
-        onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
-        semanticHighlightCheck
-                .disableProperty()
-                .bind(lspCheck.selectedProperty().not());
+        SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }
 
@@ -7557,6 +7576,11 @@ public class SettingsWindow {
         cardRow(card, cat, settingRow(check.getText(), description, switchFor(check)), keywords);
     }
 
+    /** The nodes of the rows added since {@code from} (a {@code rows.size()} taken before adding them). */
+    private Node[] rowsSince(int from) {
+        return rows.subList(from, rows.size()).stream().map(SettingRow::node).toArray(Node[]::new);
+    }
+
     /** A labeled field/control as a card row: title left, the control right (kit "Git command" shape). */
     private void controlRow(Card card, Category cat, String title, String description, Node control, String keywords) {
         cardRow(card, cat, settingRow(title, description, control), keywords);
@@ -8121,7 +8145,6 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             notesCheck.setSelected(settings.isNotesSupport());
             noteIndicatorsCheck.setSelected(settings.isShowNoteIndicators());
-            noteIndicatorsCheck.setDisable(!settings.isNotesSupport());
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
@@ -8151,7 +8174,6 @@ public class SettingsWindow {
             dictEnableCheck.setSelected(settings.isPersonalDictionary());
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
-            spellLanguageCombo.setDisable(!settings.isSpellCheck());
             syncSpellFileTypes();
             menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
@@ -8752,10 +8774,8 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());
             noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
-            noteIndicatorsCheck.setDisable(!s.isNotesSupport());
             spellCheckBox.setSelected(s.isSpellCheck());
             spellLanguageCombo.setValue(s.getSpellLanguage());
-            spellLanguageCombo.setDisable(!s.isSpellCheck());
             menuBarCheck.setSelected(s.isShowMenuBar());
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());

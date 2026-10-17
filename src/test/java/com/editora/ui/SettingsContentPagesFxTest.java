@@ -440,4 +440,86 @@ class SettingsContentPagesFxTest {
                     "the language-server card says what it is");
         });
     }
+
+    /** The on/off switch titled {@code title} on {@code page}. */
+    private static SettingSwitch switchNamed(Region page, String title) {
+        return SettingsRig.all(page, SettingSwitch.class).stream()
+                .filter(sw -> title.equals(sw.getAccessibleText()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no switch " + title));
+    }
+
+    private static boolean noteShown(Region page, String text) {
+        return SettingsRig.all(page, javafx.scene.control.Label.class).stream()
+                .anyMatch(l -> text.equals(l.getText()) && l.isVisible() && l.isManaged());
+    }
+
+    @Test
+    void everyLanguageServerOnlyRowIsGreyedOutWithTheReasonWhileLspIsOff() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setLspSupport(false);
+            rig.show();
+            Region page = rig.page("COMPLETION");
+            String why = tr("settings.dependsOn", tr("settings.enableLsp"));
+            for (String row :
+                    List.of("settings.lspPasteImports", "settings.lspSmartSemicolon", "settings.inlayHints")) {
+                assertTrue(switchNamed(page, tr(row)).isDisabled(), row);
+            }
+            assertTrue(noteShown(page, why));
+            rig.<CheckBox>control("lspCheck").setSelected(true);
+            assertFalse(switchNamed(page, tr("settings.lspPasteImports")).isDisabled());
+            assertFalse(switchNamed(page, tr("settings.lspSmartSemicolon")).isDisabled());
+            assertFalse(noteShown(page, why));
+        });
+    }
+
+    @Test
+    void rowsThatOnlyMatterWhileAnotherSwitchIsOnSaySo() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            Region editor = categoryPage("EDITOR");
+            Map<String, javafx.scene.control.Control> controls = rig.control("settingControls");
+
+            rig.<CheckBox>control("columnRulerCheck").setSelected(false);
+            assertTrue(controls.get("rulers").isDisabled(), "no rulers to place");
+            assertTrue(controls.get("languageRulers").isDisabled());
+            assertTrue(noteShown(editor, tr("settings.dependsOn", tr("settings.showRuler"))));
+            rig.<CheckBox>control("columnRulerCheck").setSelected(true);
+            assertFalse(controls.get("rulers").isDisabled());
+
+            rig.<CheckBox>control("notesCheck").setSelected(false);
+            assertTrue(switchNamed(editor, tr("settings.showNoteIndicators")).isDisabled());
+            assertTrue(noteShown(editor, tr("settings.dependsOn", tr("settings.enableNotes"))));
+            rig.<CheckBox>control("notesCheck").setSelected(true);
+            assertFalse(switchNamed(editor, tr("settings.showNoteIndicators")).isDisabled());
+
+            assertFalse(noteShown(editor, tr("settings.simpleModeOverrides")));
+            rig.<CheckBox>control("simpleModeCheck").setSelected(true);
+            assertTrue(noteShown(editor, tr("settings.simpleModeOverrides")), "Simple UI mode hides line numbers");
+            rig.<CheckBox>control("simpleModeCheck").setSelected(false);
+
+            Region spell = rig.page("SPELL_CHECK");
+            rig.<CheckBox>control("spellCheckBox").setSelected(false);
+            assertTrue(
+                    rig.<javafx.scene.Node>control("spellFileTypes").isDisabled(),
+                    "file types of a checker that is off");
+            assertTrue(switchNamed(spell, tr("settings.dict.technical")).isDisabled());
+            assertTrue(rig.<javafx.scene.Node>control("spellLanguageCombo").isDisabled());
+            rig.<CheckBox>control("spellCheckBox").setSelected(true);
+            assertFalse(rig.<javafx.scene.Node>control("spellFileTypes").isDisabled());
+            assertFalse(rig.<javafx.scene.Node>control("spellLanguageCombo").isDisabled());
+        });
+    }
+
+    @Test
+    void aDisabledToolWindowRowNamesThePageThatTurnsItOn() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setProjectSupport(false);
+            rig.show();
+            rig.page("TOOL_WINDOWS");
+            String note = twRow("project").disabledNote().getText();
+            assertTrue(note.contains(tr("settings.cat.workspace").strip()), note);
+            assertTrue(twRow("project").disabledNote().isVisible());
+        });
+    }
 }

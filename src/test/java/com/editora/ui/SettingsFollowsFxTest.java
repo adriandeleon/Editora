@@ -227,7 +227,7 @@ class SettingsFollowsFxTest {
                     rig.<CheckBox>control("lineNumbersCheck").isSelected());
             assertEquals(
                     "tab", rig.<ComboBox<String>>control("indentStyleCombo").getValue());
-            assertTrue(rig.<CheckBox>control("noteIndicatorsCheck").isDisable(), "no indicators without notes");
+            assertFalse(rig.<CheckBox>control("notesCheck").isSelected(), "no indicators without notes");
             assertEquals(theme, rig.<ComboBox<String>>control("themeCombo").getValue());
             assertEquals(
                     settings.isEditorThemeUserSet() ? EditorThemes.normalize(settings.getEditorTheme()) : "",
