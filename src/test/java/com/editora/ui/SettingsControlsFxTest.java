@@ -312,17 +312,20 @@ class SettingsControlsFxTest {
             theme.setValue(others.get(0));
             assertEquals(others.get(0), settings.getTheme());
             assertEquals(EditorThemes.defaultFor(others.get(0)), settings.getEditorTheme());
-            assertEquals(settings.getEditorTheme(), editorTheme.getValue(), "the combo follows");
+            assertEquals("", editorTheme.getValue(), "the combo says Automatic: it follows");
             assertFalse(settings.isEditorThemeUserSet(), "following is not the user's choice");
             assertEquals(Themes.stylesheetFor(others.get(0)), javafx.application.Application.getUserAgentStylesheet());
             assertEquals(1, rig.applied.size());
             assertTrue(
-                    rig.stage().getScene().getStylesheets().contains(EditorThemes.stylesheetFor(editorTheme.getValue()))
-                            || EditorThemes.stylesheetFor(editorTheme.getValue()) == null,
+                    rig.stage()
+                                    .getScene()
+                                    .getStylesheets()
+                                    .contains(EditorThemes.stylesheetFor(settings.getEditorTheme()))
+                            || EditorThemes.stylesheetFor(settings.getEditorTheme()) == null,
                     "the preview is recoloured");
 
             String picked = editorTheme.getItems().stream()
-                    .filter(name -> !name.equals(editorTheme.getValue()))
+                    .filter(name -> !name.isEmpty() && !name.equals(settings.getEditorTheme()))
                     .findFirst()
                     .orElseThrow();
             editorTheme.setValue(picked);
@@ -351,8 +354,8 @@ class SettingsControlsFxTest {
             ComboBox<String> family = rig.control("fontFamily");
             assertEquals(Themes.normalize("A Theme That Was Removed"), theme.getValue());
             assertEquals(theme.getValue(), settings.getTheme());
-            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), editorTheme.getValue());
-            assertEquals(editorTheme.getValue(), settings.getEditorTheme());
+            assertEquals("", editorTheme.getValue(), "never picked: Automatic");
+            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), settings.getEditorTheme());
             assertEquals("A Font This Machine Lacks", family.getValue(), "the font in force stays selectable");
             assertEquals("A Font This Machine Lacks", family.getItems().get(0));
             assertEquals(List.of(), rig.applied);

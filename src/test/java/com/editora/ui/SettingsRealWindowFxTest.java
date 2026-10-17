@@ -89,7 +89,7 @@ class SettingsRealWindowFxTest {
             trust.trust(a);
             trust.trust(b);
             window.refreshTrustedFolders();
-            Region workspace = page("WORKSPACE");
+            Region workspace = page("ADVANCED"); // Trusted Folders moved there from Workspace
             ListView<String> list = FxTestSupport.field(window, "trustedFoldersList");
             assertEquals(2, list.getItems().size());
 
@@ -124,7 +124,8 @@ class SettingsRealWindowFxTest {
             ToolbarCoordinator toolbar = FxTestSupport.field(fx.controller, "toolbarCoordinator");
             int before = toolbar.effectiveLayout().size();
 
-            List<String> currentItems = FxTestSupport.field(window, "toolbarCurrentItems");
+            List<String> currentItems =
+                    FxTestSupport.field(FxTestSupport.<Object>field(window, "toolbarSettings"), "currentItems");
             @SuppressWarnings("unchecked")
             ListView<String> current = SettingsRig.all(toolbarPage, ListView.class).stream()
                     .filter(v -> v.getItems() == currentItems)

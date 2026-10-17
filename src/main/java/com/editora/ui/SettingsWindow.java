@@ -38,8 +38,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -223,6 +221,9 @@ public class SettingsWindow {
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
     private ComboBox<String> editorThemeCombo;
+    /** "Text zoom is 160% …  Reset zoom", in its own row under Font size; shown only while zoomed. */
+    private HBox zoomNote;
+
     private Spinner<Integer> tabSizeSpinner;
     private Spinner<Integer> fillColumnSpinner;
     private Spinner<Integer> largeFileThresholdSpinner;
@@ -302,21 +303,12 @@ public class SettingsWindow {
     private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
     private CheckBox todoHighlightCheck;
-    private javafx.scene.layout.VBox todoPatternsBox;
-    private javafx.scene.control.ColorPicker todoTagColorPicker;
-    private javafx.scene.control.ColorPicker todoCriticalColorPicker;
-    private javafx.scene.control.ColorPicker todoHighColorPicker;
-    private javafx.scene.control.ColorPicker todoMediumColorPicker;
-    private javafx.scene.control.ColorPicker todoLowColorPicker;
+    private TodoSettingsPane todoSettings;
     private VBox markdownLintRulesBox;
     /** The External Tools page's editor (see {@link ExternalToolsEditor}); null until that page is built. */
     private ExternalToolsEditor externalToolsEditor;
 
-    // Toolbar page state: the current-toolbar token list and the not-yet-added catalog items.
-    private final javafx.collections.ObservableList<String> toolbarCurrentItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private final javafx.collections.ObservableList<String> toolbarAvailableItems =
-            javafx.collections.FXCollections.observableArrayList();
+    private ToolbarSettingsPane toolbarSettings;
     private ToolbarActions toolbarActions; // → MainController/ToolbarCoordinator
     private Runnable refreshToolbarLists; // re-reads the effective layout when the page is shown
 
@@ -477,42 +469,10 @@ public class SettingsWindow {
 
     private CheckBox zenCheck;
     private CheckBox expertCheck;
-    private CheckBox projectShowCheck;
-    private ComboBox<ToolWindow.Side> projectSideCombo;
-    private ToolWindow projectToolWindowRef;
-    private Label projectDisabledNote;
-    // The Commit tool-window-placement row, disabled until Git is enabled.
-    private CheckBox commitShowCheck;
-    private ComboBox<ToolWindow.Side> commitSideCombo;
-    private Button commitMoveUp;
-    private Button commitMoveDown;
-    private ToolWindow commitToolWindowRef;
-    private Label commitDisabledNote;
-    // The Personal Notes tool-window-placement row, disabled until Personal Notes is enabled.
-    private CheckBox notesShowCheck;
-    private ComboBox<ToolWindow.Side> notesSideCombo;
-    private Button notesMoveUp;
-    private Button notesMoveDown;
-    private ToolWindow notesToolWindowRef;
-    private Label notesDisabledNote;
-    // Problems follows LSP; Debug follows Debugging. Standalone Run is always configurable.
-    private CheckBox problemsShowCheck;
-    private ComboBox<ToolWindow.Side> problemsSideCombo;
-    private Button problemsMoveUp;
-    private Button problemsMoveDown;
-    private ToolWindow problemsToolWindowRef;
-    private Label problemsDisabledNote;
-    private CheckBox runShowCheck;
-    private ComboBox<ToolWindow.Side> runSideCombo;
-    private Button runMoveUp;
-    private Button runMoveDown;
-    private ToolWindow runToolWindowRef;
-    private CheckBox debugShowCheck;
-    private ComboBox<ToolWindow.Side> debugSideCombo;
-    private Button debugMoveUp;
-    private Button debugMoveDown;
-    private ToolWindow debugToolWindowRef;
-    private Label debugDisabledNote;
+    private ToolWindowsSettingsPane toolWindowSettings;
+    /** The Tool Windows page's card for each side; its rows are laid out again after every change. */
+    private final Map<ToolWindow.Side, Card> toolWindowCards = new EnumMap<>(ToolWindow.Side.class);
+
     private ComboBox<String> autoSaveCombo;
     private CheckBox pdfLineNumbersCheck;
     private CheckBox pdfHighlightCheck;
@@ -550,10 +510,6 @@ public class SettingsWindow {
 
     private boolean built;
     private boolean loading;
-    /** Re-read each Tool Windows row from the tool-window manager; run by {@link #load} under the flag below. */
-    private final List<Runnable> toolWindowRowSyncs = new ArrayList<>();
-
-    private boolean syncingToolWindowRows;
 
     public SettingsWindow(
             ConfigManager config,
@@ -1157,6 +1113,8 @@ public class SettingsWindow {
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
+        fontFamily.setCellFactory(v ->
+                labelledCell(name -> Fonts.BUNDLED.contains(name) ? tr("settings.fontFamily.bundled", name) : name));
         fontFamily.valueProperty().addListener((obs, old, now) -> {
             if (loading || now == null) {
                 return;
@@ -1178,6 +1136,8 @@ public class SettingsWindow {
         themeCombo = new ComboBox<>();
         themeCombo.getItems().setAll(Themes.names());
         themeCombo.setPrefWidth(220);
+        themeCombo.setCellFactory(
+                v -> labelledCell(name -> withShade(name, Themes.themeFor(name).isDarkMode())));
         themeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1185,27 +1145,37 @@ public class SettingsWindow {
             config.getSettings().setTheme(now);
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
             if (!config.getSettings().isEditorThemeUserSet()) {
-                String match = EditorThemes.defaultFor(now);
-                config.getSettings().setEditorTheme(match);
-                loading = true;
-                editorThemeCombo.setValue(match);
-                loading = false;
+                config.getSettings().setEditorTheme(EditorThemes.defaultFor(now));
+                applyPreviewTheme(config.getSettings().getEditorTheme());
             }
             apply();
         });
 
+        // The first item, "", is "Automatic": the editor theme follows the app theme, as on a fresh install.
+        // Once another was picked there used to be no way back short of resetting every setting.
         editorThemeCombo = new ComboBox<>();
-        editorThemeCombo.getItems().setAll(EditorThemes.names());
+        editorThemeCombo.getItems().setAll(editorThemeChoices());
         editorThemeCombo.setPrefWidth(220);
+        editorThemeCombo.setCellFactory(v -> editorThemeCell());
+        editorThemeCombo.setButtonCell(editorThemeCell());
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
             if (now != null) {
-                applyPreviewTheme(now); // keep the preview in sync even on programmatic set
+                applyPreviewTheme(
+                        now.isEmpty()
+                                ? EditorThemes.defaultFor(config.getSettings().getTheme())
+                                : now);
             }
             if (loading || now == null) {
                 return;
             }
-            config.getSettings().setEditorTheme(now);
-            config.getSettings().setEditorThemeUserSet(true);
+            boolean automatic = now.isEmpty();
+            config.getSettings()
+                    .setEditorTheme(
+                            automatic
+                                    ? EditorThemes.defaultFor(
+                                            config.getSettings().getTheme())
+                                    : now);
+            config.getSettings().setEditorThemeUserSet(!automatic);
             apply();
         });
 
@@ -1254,8 +1224,7 @@ public class SettingsWindow {
         noteIndicatorsCheck = viewCheck(tr("settings.showNoteIndicators"), Settings::setShowNoteIndicators);
         // The note-indicator toggle is only meaningful while Personal Notes is enabled.
         notesCheck.selectedProperty().addListener((obs, was, now) -> {
-            noteIndicatorsCheck.setDisable(!now);
-            updateNotesRowEnabled(); // reflect on the Tool Windows page's Personal Notes row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Personal Notes row
         });
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
@@ -1371,9 +1340,6 @@ public class SettingsWindow {
         spellCheckBox = new CheckBox(tr("settings.enableSpell"));
         spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setSpellCheck(now);
-            if (spellLanguageCombo != null) {
-                spellLanguageCombo.setDisable(!now);
-            }
             apply();
         });
         dictEnableCheck = new CheckBox(tr("settings.dict.enable"));
@@ -1457,14 +1423,14 @@ public class SettingsWindow {
         projectsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setProjectSupport(now);
             apply();
-            updateProjectRowEnabled();
+            refreshToolWindowRows();
         });
 
         gitCheck = new CheckBox(tr("settings.enableGit"));
         gitCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGitSupport(now);
             apply();
-            updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Commit row
             refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
         });
 
@@ -1876,7 +1842,7 @@ public class SettingsWindow {
         debugCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugSupport(now);
             apply();
-            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
         });
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
@@ -1908,7 +1874,7 @@ public class SettingsWindow {
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLspSupport(now);
             apply();
-            updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Problems row
+            refreshToolWindowRows(); // reflect on the Tool Windows page's Problems row
             refreshLspStatus();
         });
         for (LspServerUi srv : lspServerUis()) {
@@ -2099,7 +2065,7 @@ public class SettingsWindow {
     }
 
     private VBox appearancePage() {
-        VBox p = page(tr("settings.cat.appearance"));
+        VBox p = page(tr("settings.cat.appearance"), tr("settings.appearance.subtitle"));
         Card mainCard = card(p, null);
         // The hints are row descriptions, not labels boxed with the combo: such a box is as wide as its
         // (translated) hint and left-aligns the combo inside, so the four combos sat at four x positions.
@@ -2118,6 +2084,17 @@ public class SettingsWindow {
                 fontFamily,
                 "font family typeface monospace");
         controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
+        // Text zoom (status bar −/+, the zoom commands) scales the size above; without this the field and the
+        // preview showed 18 while the editor drew 29 px.
+        Hyperlink resetZoom = new Hyperlink(tr("settings.fontZoom.reset"));
+        resetZoom.setOnAction(e -> {
+            config.getSettings().setFontZoom(1.0);
+            apply();
+        });
+        zoomNote = new HBox(8, note(""), resetZoom);
+        zoomNote.setAlignment(Pos.CENTER_LEFT);
+        zoomNote.getStyleClass().add("settings-row");
+        mainCard.body().getChildren().add(zoomNote); // not a search row: it shows only while zoomed
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
@@ -2132,6 +2109,29 @@ public class SettingsWindow {
                 tr("settings.editorThemeNote"),
                 editorThemeCombo,
                 "editor theme syntax colors highlighting");
+        Hyperlink openThemes = new Hyperlink(tr("settings.userThemes.open"));
+        openThemes.setOnAction(e -> {
+            Path dir = config.getConfigDir().resolve("themes");
+            try {
+                java.nio.file.Files.createDirectories(dir);
+                java.nio.file.Files.createDirectories(config.getConfigDir().resolve("editor-themes"));
+            } catch (java.io.IOException ex) {
+                return; // a config folder that cannot be written to has no themes to show
+            }
+            com.editora.process.DesktopActions.reveal(dir, true, msg -> {});
+        });
+        Hyperlink reloadThemes = new Hyperlink(tr("settings.userThemes.reload"));
+        reloadThemes.setOnAction(e -> {
+            UserThemes.load(config.getConfigDir());
+            syncThemes();
+        });
+        controlRow(
+                mainCard,
+                Category.APPEARANCE,
+                tr("settings.userThemes"),
+                tr("settings.userThemes.desc"),
+                new HBox(12, openThemes, reloadThemes),
+                "user themes custom stylesheet css folder reload own theme");
         Card previewSection = card(p, tr("settings.livePreview"));
         cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
         return p;
@@ -2615,9 +2615,13 @@ public class SettingsWindow {
     }
 
     private VBox editorPage() {
-        VBox p = page(tr("settings.cat.editor"));
+        VBox p = page(tr("settings.cat.editor"), tr("settings.editor.subtitle"));
         Card display = card(p, tr("settings.section.display"));
         checkRow(display, Category.EDITOR, columnRulerCheck, null, "80 column ruler guide margin");
+        display.body()
+                .getChildren()
+                .add(SettingsDependents.note(columnRulerCheck.selectedProperty(), tr("settings.showRuler")));
+        int firstRulerRow = rows.size();
         // A value that does not read as columns keeps the current ones (textRow shows what was kept).
         textRow(
                 display,
@@ -2625,12 +2629,8 @@ public class SettingsWindow {
                 "rulers",
                 "80, 120",
                 st -> com.editora.editor.RulerColumns.format(st.getRulers()),
-                (st, v) -> {
-                    java.util.List<Integer> columns = com.editora.editor.RulerColumns.parse(v);
-                    if (columns != null) {
-                        st.setRulers(columns);
-                    }
-                },
+                (st, v) -> st.setRulers(com.editora.editor.RulerColumns.parse(v)),
+                v -> rulerProblem(com.editora.editor.RulerColumns.problem(v)),
                 "rulers ruler columns column margin line length 80 100 120");
         textRow(
                 display,
@@ -2638,14 +2638,18 @@ public class SettingsWindow {
                 "languageRulers",
                 "java: 100; python: 79, 88",
                 st -> com.editora.editor.RulerColumns.formatByLanguage(st.getLanguageRulers()),
-                (st, v) -> {
-                    java.util.Map<String, java.util.List<Integer>> perLanguage =
-                            com.editora.editor.RulerColumns.parseByLanguage(v);
-                    if (perLanguage != null) {
-                        st.setLanguageRulers(perLanguage);
-                    }
-                },
+                (st, v) -> st.setLanguageRulers(com.editora.editor.RulerColumns.parseByLanguage(v)),
+                v -> rulerProblem(com.editora.editor.RulerColumns.byLanguageProblem(
+                        v, SpellFileTypesEditor.languageNames(config.getSettings()))),
                 "rulers per language ruler columns margin line length");
+        SettingsDependents.bind(columnRulerCheck.selectedProperty(), rowsSince(firstRulerRow));
+        // Simple UI mode hides some of what this card shows, whatever the switches below say.
+        Label simpleOverrides = note(tr("settings.simpleModeOverrides"));
+        simpleOverrides.setWrapText(true);
+        simpleOverrides.getStyleClass().add("settings-row-desc");
+        simpleOverrides.visibleProperty().bind(simpleModeCheck.selectedProperty());
+        simpleOverrides.managedProperty().bind(simpleOverrides.visibleProperty());
+        display.body().getChildren().add(simpleOverrides);
         switchRow(
                 display,
                 Category.EDITOR,
@@ -2661,14 +2665,8 @@ public class SettingsWindow {
                 display,
                 Category.EDITOR,
                 stickyScrollCheck,
-                null,
+                tr("settings.stickyScroll.desc"),
                 "sticky scroll pinned scope headers class method context");
-        checkRow(
-                display,
-                Category.EDITOR,
-                symbolIndexCheck,
-                null,
-                "symbol index go to symbol project declarations without language server");
         checkRow(
                 display,
                 Category.EDITOR,
@@ -2690,6 +2688,18 @@ public class SettingsWindow {
                 Settings::isTypewriterMode,
                 Settings::setTypewriterMode,
                 "typewriter mode centre center caret line middle scrolling focus writing");
+        checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        int noteIndicatorsRow = rows.size();
+        checkRow(
+                display,
+                Category.EDITOR,
+                noteIndicatorsCheck,
+                tr("settings.showNoteIndicators.desc"),
+                "personal notes highlight start marker indicators");
+        SettingsDependents.bind(notesCheck.selectedProperty(), rowsSince(noteIndicatorsRow));
+        display.body()
+                .getChildren()
+                .add(SettingsDependents.note(notesCheck.selectedProperty(), tr("settings.enableNotes")));
         switchRow(
                 display,
                 Category.EDITOR,
@@ -2698,49 +2708,50 @@ public class SettingsWindow {
                 Settings::isStatusBarWordCount,
                 Settings::setStatusBarWordCount,
                 "status bar word count words reading time markdown plain text");
-        checkRow(display, Category.EDITOR, whitespaceCheck, null, "hidden characters whitespace spaces tabs eol");
+        Card editing = card(p, tr("settings.section.editing"));
         checkRow(
-                display,
-                Category.EDITOR,
-                noteIndicatorsCheck,
-                null,
-                "personal notes highlight start marker indicators");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 multiCaretCheck,
                 null,
                 "multiple cursors carets column box selection alt drag vs code");
         checkRow(
-                display,
-                Category.EDITOR,
-                copyLineNoSelectionCheck,
-                null,
-                "copy cut whole current line empty no selection clipboard vs code");
-        checkRow(
-                display,
-                Category.EDITOR,
-                copyWithHighlightingCheck,
-                null,
-                "copy syntax highlighting html colors paste slack document rich text vs code");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 autoRenameTagCheck,
                 null,
                 "auto rename tag html xml paired close mirror vs code");
         checkRow(
-                display,
-                Category.EDITOR,
-                autoFillCheck,
-                null,
-                "auto fill mode break wrap prose lines fill column emacs");
-        checkRow(
-                display,
+                editing,
                 Category.EDITOR,
                 autoCloseTagsCheck,
                 null,
                 "auto close tags html xml closing tag insert body vs code");
+        checkRow(
+                editing,
+                Category.EDITOR,
+                autoFillCheck,
+                tr("settings.autoFill.desc"),
+                "auto fill mode break wrap prose lines fill column emacs");
+        checkRow(
+                editing,
+                Category.EDITOR,
+                symbolIndexCheck,
+                tr("settings.symbolIndex.desc"),
+                "symbol index go to symbol project declarations without language server");
+        Card clipboard = card(p, tr("settings.section.clipboard"));
+        checkRow(
+                clipboard,
+                Category.EDITOR,
+                copyLineNoSelectionCheck,
+                null,
+                "copy cut whole current line empty no selection clipboard vs code");
+        checkRow(
+                clipboard,
+                Category.EDITOR,
+                copyWithHighlightingCheck,
+                null,
+                "copy syntax highlighting html colors paste slack document rich text vs code");
         Card indent = card(p, tr("settings.section.indentation"));
         controlRow(
                 indent,
@@ -2755,7 +2766,7 @@ public class SettingsWindow {
                 indent,
                 Category.EDITOR,
                 tr("settings.fillColumn"),
-                null,
+                tr("settings.fillColumn.desc"),
                 fillColumnSpinner,
                 "fill column wrap paragraph reflow emacs m-q width");
         checkRow(
@@ -2764,6 +2775,24 @@ public class SettingsWindow {
                 editorConfigCheck,
                 null,
                 "editorconfig indent style size charset end of line trailing whitespace final newline");
+        Card saving = card(p, tr("settings.section.saving"));
+        Label delayLabel = note(tr("settings.autoSave.delay"));
+        delayLabel.setLabelFor(autoSaveDelaySpinner);
+        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
+        autoSaveBox.setAlignment(Pos.CENTER_LEFT);
+        controlRow(
+                saving,
+                Category.EDITOR,
+                tr("settings.autoSave"),
+                null,
+                autoSaveBox,
+                "auto save autosave delay inactivity focus");
+        checkRow(
+                saving,
+                Category.EDITOR,
+                adminSaveCheck,
+                tr("settings.adminSave.note"),
+                "save administrator root sudo pkexec permission etc linux polkit");
         Card performance = card(p, tr("settings.section.performance"));
         HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
         largeFileBox.setAlignment(Pos.CENTER_LEFT);
@@ -2819,28 +2848,6 @@ public class SettingsWindow {
                 pomPreviewCheck,
                 null,
                 "maven pom xml preview dependencies plugins properties versions summary");
-        Card saving = card(p, tr("settings.section.saving"));
-        Label delayLabel = note(tr("settings.autoSave.delay"));
-        delayLabel.setLabelFor(autoSaveDelaySpinner);
-        HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
-        autoSaveBox.setAlignment(Pos.CENTER_LEFT);
-        controlRow(
-                saving,
-                Category.EDITOR,
-                tr("settings.autoSave"),
-                null,
-                autoSaveBox,
-                "auto save autosave delay inactivity focus");
-        checkRow(
-                saving,
-                Category.EDITOR,
-                adminSaveCheck,
-                null,
-                "save administrator root sudo pkexec permission etc linux");
-        Label adminSaveNote = note(tr("settings.adminSave.note"));
-        adminSaveNote.setWrapText(true);
-        adminSaveNote.setMaxWidth(440);
-        cardRow(saving, Category.EDITOR, adminSaveNote, "save administrator root permission linux pkexec");
         Card pdf = card(p, tr("settings.section.pdf"));
         checkRow(
                 pdf,
@@ -3318,18 +3325,65 @@ public class SettingsWindow {
             java.util.function.Function<Settings, String> get,
             java.util.function.BiConsumer<Settings, String> set,
             String keywords) {
+        textRow(card, cat, key, prompt, get, set, null, keywords);
+    }
+
+    /**
+     * As above, with {@code problem} saying why typed text cannot be kept (null when it can). Text it rejects
+     * is not saved: the field turns red with the reason as its tooltip and keeps the text until it is fixed.
+     */
+    private void textRow(
+            Card card,
+            Category cat,
+            String key,
+            String prompt,
+            java.util.function.Function<Settings, String> get,
+            java.util.function.BiConsumer<Settings, String> set,
+            java.util.function.Function<String, String> problem,
+            String keywords) {
         TextField field = new TextField();
         field.setPromptText(prompt);
         field.setPrefWidth(220);
         field.setAccessibleText(tr("settings." + key));
         settingControls.put(key, field);
         commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
+            String why = problem == null ? null : problem.apply(now);
+            showProblem(field, why);
+            if (why != null) {
+                return;
+            }
             set.accept(config.getSettings(), now);
             field.setText(get.apply(config.getSettings())); // as kept: a name that is not one reads as the default
             apply();
         });
         controlRow(card, cat, tr("settings." + key), tr("settings." + key + ".desc"), field, keywords);
-        settingSyncs.add(st -> field.setText(get.apply(st)));
+        settingSyncs.add(st -> {
+            field.setText(get.apply(st));
+            showProblem(field, null);
+        });
+    }
+
+    /** The field message for a typed ruler list that cannot be read, or null. */
+    private static String rulerProblem(com.editora.editor.RulerColumns.Problem problem) {
+        if (problem == null) {
+            return null;
+        }
+        return switch (problem.kind()) {
+            case NOT_A_COLUMN ->
+                tr(
+                        "settings.rulers.notAColumn",
+                        problem.part(),
+                        String.valueOf(com.editora.editor.RulerColumns.MAX_COLUMN));
+            case NO_LANGUAGE -> tr("settings.rulers.noLanguage", problem.part());
+            case UNKNOWN_LANGUAGE -> tr("settings.rulers.unknownLanguage", problem.part());
+        };
+    }
+
+    /** Marks {@code field} as holding text that is not kept ({@code why} != null), with the reason, or clears it. */
+    private static void showProblem(TextField field, String why) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
+        field.setTooltip(why == null ? null : new Tooltip(why));
+        field.setAccessibleHelp(why);
     }
 
     /**
@@ -3402,132 +3456,14 @@ public class SettingsWindow {
         }
     }
 
-    /** The TODO/highlight pattern editor: one row per pattern (enabled / name / regex / color / case) plus
-     *  an "Add" button. Edits write back to {@code Settings.todoPatterns} and apply live. */
-    private javafx.scene.Node todoPatternsEditor() {
-        todoPatternsBox = new VBox(4);
-        Button add = new Button(tr("settings.todo.add"));
-        add.setOnAction(e -> {
-            java.util.List<com.editora.todo.TodoPattern> list = mutableTodoPatterns();
-            list.add(new com.editora.todo.TodoPattern(
-                    tr("settings.todo.newName"),
-                    "\\bTODO\\b",
-                    com.editora.todo.TodoPatterns.DEFAULT_COLOR,
-                    false,
-                    true));
-            config.getSettings().setTodoPatterns(list);
-            rebuildTodoRows();
-            apply();
-        });
-        VBox box = new VBox(6, todoPatternsBox, add);
-        rebuildTodoRows();
-        return box;
-    }
-
-    private java.util.List<com.editora.todo.TodoPattern> mutableTodoPatterns() {
-        return new java.util.ArrayList<>(config.getSettings().getTodoPatterns());
-    }
-
-    private void rebuildTodoRows() {
-        if (todoPatternsBox == null) {
-            return;
-        }
-        todoPatternsBox.getChildren().clear();
-        int size = config.getSettings().getTodoPatterns().size();
-        for (int i = 0; i < size; i++) {
-            todoPatternsBox.getChildren().add(todoRow(i));
-        }
-    }
-
-    private javafx.scene.Node todoRow(int index) {
-        com.editora.todo.TodoPattern p = config.getSettings().getTodoPatterns().get(index);
-        CheckBox enabled = new CheckBox();
-        enabled.setSelected(p.isEnabled());
-        enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
-        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + p.getName());
-        TextField name = new TextField(p.getName());
-        name.setPromptText(tr("settings.todo.namePrompt"));
-        name.setPrefWidth(110);
-        TextField regex = new TextField(p.getPattern());
-        regex.setPromptText(tr("settings.todo.regexPrompt"));
-        HBox.setHgrow(regex, Priority.ALWAYS);
-        javafx.scene.control.ColorPicker color = new javafx.scene.control.ColorPicker(parseColor(p.getColor()));
-        color.setTooltip(new Tooltip(tr("settings.todo.colorPrompt")));
-        color.setPrefWidth(56);
-        CheckBox caseSensitive = new CheckBox(tr("settings.todo.case"));
-        caseSensitive.setSelected(p.isCaseSensitive());
-        Button remove = new Button("✕");
-        remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
-        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + p.getName());
-
-        Runnable commit = () -> {
-            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
-            if (index >= cur.size()) {
-                return;
-            }
-            com.editora.todo.TodoPattern up = cur.get(index);
-            up.setEnabled(enabled.isSelected());
-            up.setName(name.getText());
-            // A malformed expression is skipped by TodoPatterns.compile, so saving it silently switched the
-            // keyword off. Flag the field and keep the stored pattern until the expression is valid.
-            String problem = com.editora.todo.TodoPatterns.syntaxProblem(regex.getText());
-            regex.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problem != null);
-            regex.setTooltip(problem == null ? null : new Tooltip(tr("settings.todo.regexInvalid", problem)));
-            if (problem == null) {
-                up.setPattern(regex.getText());
-            }
-            up.setColor(toHex(color.getValue()));
-            up.setCaseSensitive(caseSensitive.isSelected());
-            config.getSettings().setTodoPatterns(cur);
-            apply();
-        };
-        // Checkboxes + the color picker apply immediately; text fields commit on Enter / focus-loss.
-        enabled.selectedProperty().addListener((o, a, b) -> commit.run());
-        caseSensitive.selectedProperty().addListener((o, a, b) -> commit.run());
-        color.valueProperty().addListener((o, a, b) -> commit.run());
-        name.setOnAction(e -> commit.run());
-        regex.setOnAction(e -> commit.run());
-        java.util.function.Consumer<TextField> onBlur =
-                tf -> tf.focusedProperty().addListener((o, was, now) -> {
-                    if (!now) {
-                        commit.run();
-                    }
-                });
-        onBlur.accept(name);
-        onBlur.accept(regex);
-        remove.setOnAction(e -> {
-            java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
-            if (index < cur.size()) {
-                cur.remove(index);
-            }
-            config.getSettings().setTodoPatterns(cur);
-            rebuildTodoRows();
-            apply();
-        });
-        HBox row = new HBox(6, enabled, name, regex, color, caseSensitive, remove);
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
-    }
-
-    private static javafx.scene.paint.Color parseColor(String web) {
-        try {
-            return javafx.scene.paint.Color.web(web == null || web.isBlank() ? "#E5C07B" : web);
-        } catch (RuntimeException e) {
-            return javafx.scene.paint.Color.web("#E5C07B");
-        }
-    }
-
-    private static String toHex(javafx.scene.paint.Color c) {
-        return String.format(
-                "#%02X%02X%02X",
-                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
-                        Math.round(c.getBlue() * 255));
-    }
-
     private VBox spellPage() {
-        VBox p = page(tr("settings.cat.spellCheck"));
+        VBox p = page(tr("settings.cat.spellCheck"), tr("settings.spellCheck.subtitle"));
         Card main = card(p, null);
         checkRow(main, Category.SPELL_CHECK, spellCheckBox, null, "spell check spelling enable");
+        main.body()
+                .getChildren()
+                .add(SettingsDependents.note(spellCheckBox.selectedProperty(), tr("settings.enableSpell")));
+        int firstSpellRow = rows.size();
         controlRow(
                 main,
                 Category.SPELL_CHECK,
@@ -3581,6 +3517,7 @@ public class SettingsWindow {
                 dictLinks,
                 "dictionary open technical personal file dictionary.txt bundled terms");
         cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
+        SettingsDependents.bind(spellCheckBox.selectedProperty(), rowsSince(firstSpellRow));
         return p;
     }
 
@@ -3709,7 +3646,7 @@ public class SettingsWindow {
 
     /** GENERAL ▸ Interface: window-chrome visibility + the Simple/Zen minimal-UI modes. */
     private VBox interfacePage() {
-        VBox p = page(tr("settings.cat.interface"));
+        VBox p = page(tr("settings.cat.interface"), tr("settings.interface.subtitle"));
         Card chrome = card(p, tr("settings.section.chrome"));
         checkRow(chrome, Category.INTERFACE, menuBarCheck, null, "menu bar menubar chrome");
         checkRow(chrome, Category.INTERFACE, toolbarCheck, null, "toolbar buttons chrome");
@@ -3742,27 +3679,21 @@ public class SettingsWindow {
                 simpleModeCheck,
                 tr("settings.simpleMode.note"),
                 "simple minimal ui mode chrome distraction");
-        checkRow(modes, Category.INTERFACE, zenCheck, null, "zen distraction free focus mode");
-        checkRow(modes, Category.INTERFACE, expertCheck, null, "expert focus mode keeps line numbers status bar");
+        checkRow(modes, Category.INTERFACE, zenCheck, tr("settings.zen.note"), "zen distraction free focus mode");
+        checkRow(
+                modes,
+                Category.INTERFACE,
+                expertCheck,
+                tr("settings.expert.note"),
+                "expert focus mode keeps line numbers status bar");
         return p;
     }
 
     /** GENERAL ▸ Workspace: project + personal-notes features and local file history. */
     private VBox workspacePage() {
-        VBox p = page(tr("settings.cat.workspace"));
+        VBox p = page(tr("settings.cat.workspace"), tr("settings.workspace.subtitle"));
         Card features = card(p, tr("settings.section.features"));
-        // The projects toggle keeps its "ⓘ" detail tooltip beside the switch.
-        Label projectsInfo = new Label("ⓘ");
-        projectsInfo.getStyleClass().add("info-badge");
-        Tooltip projectsTip = new Tooltip(tr("settings.projects.tip"));
-        projectsTip.setWrapText(true);
-        projectsTip.setMaxWidth(380);
-        Tooltip.install(projectsInfo, projectsTip);
-        cardRow(
-                features,
-                Category.WORKSPACE,
-                settingRow(projectsCheck.getText(), null, new HBox(8, projectsInfo, switchFor(projectsCheck))),
-                "projects workspace folder");
+        checkRow(features, Category.WORKSPACE, projectsCheck, tr("settings.projects.tip"), "projects workspace folder");
         checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
         checkRow(features, Category.WORKSPACE, notesCheck, null, "personal notes annotations enable feature");
         checkRow(
@@ -3799,54 +3730,12 @@ public class SettingsWindow {
                 null,
                 historyMaxTotalSpinner,
                 "local history max total size megabytes project budget");
-        Card updates = card(p, tr("settings.section.updates"));
-        checkRow(
-                updates,
-                Category.WORKSPACE,
-                updateCheckCheck,
-                tr("settings.updates.note"),
-                "check for updates new version github release startup network privacy");
-
-        Card trust = card(p, tr("settings.section.trustedFolders"));
-        Label trustNote = note(tr("settings.trustedFolders.note"));
-        trustNote.setWrapText(true);
-        trustNote.setMaxWidth(440);
-        cardRow(trust, Category.WORKSPACE, trustNote, "workspace trust build wrapper mvnw gradlew security");
-        trustedFoldersList.setPrefHeight(120);
-        trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
-        Button revoke = new Button(tr("settings.trustedFolders.revoke"));
-        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
-        revoke.disableProperty()
-                .bind(trustedFoldersList
-                        .getSelectionModel()
-                        .selectedItemProperty()
-                        .isNull());
-        revoke.setOnAction(e -> {
-            String sel = trustedFoldersList.getSelectionModel().getSelectedItem();
-            if (sel != null && trustActions != null) {
-                trustActions.revoke(sel);
-                refreshTrustedFolders();
-            }
-        });
-        revokeAll.setOnAction(e -> {
-            if (trustActions != null) {
-                trustActions.revokeAll();
-                refreshTrustedFolders();
-            }
-        });
-        revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
-        cardRow(trust, Category.WORKSPACE, trustedFoldersList, "workspace trust trusted folders list revoke");
-        cardRow(
-                trust,
-                Category.WORKSPACE,
-                new HBox(8, revoke, revokeAll),
-                "workspace trust revoke remove trusted folder");
         return p;
     }
 
     /** EDITOR ▸ Code Completion: the autocomplete master + per-source sub-toggles, quick-doc, semantic tokens. */
     private VBox completionPage() {
-        VBox p = page(tr("settings.cat.completion"));
+        VBox p = page(tr("settings.cat.completion"), tr("settings.completion.subtitle"));
         Card auto = card(p, tr("settings.section.completion"));
         checkRow(
                 auto, Category.COMPLETION, autocompleteCheck, null, "autocomplete completion suggestions enable popup");
@@ -3870,12 +3759,15 @@ public class SettingsWindow {
                 completionDocCheck,
                 null,
                 "completion documentation quick doc popup javadoc ctrl q");
-        Card lsp = card(p, null);
+        Card lsp = card(p, tr("settings.section.lspFeatures"));
+        // Every row here needs a language server: greyed out, with the reason, while LSP is off.
+        lsp.body().getChildren().add(SettingsDependents.note(lspCheck.selectedProperty(), tr("settings.enableLsp")));
+        int firstLspRow = rows.size();
         checkRow(
                 lsp,
                 Category.COMPLETION,
                 semanticHighlightCheck,
-                tr("settings.semanticHighlight.lspNote"),
+                null,
                 "semantic highlighting lsp tokens types parameters fields deprecated");
         checkRow(
                 lsp,
@@ -3883,14 +3775,12 @@ public class SettingsWindow {
                 inlayHintsCheck,
                 null,
                 "inlay hints parameter names inferred types lsp annotations");
-        inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         checkRow(
                 lsp,
                 Category.COMPLETION,
                 codeLensCheck,
                 tr("settings.codeLens.note"),
                 "code lens vision references usages implementations count lsp");
-        codeLensCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         controlRow(
                 lsp,
                 Category.COMPLETION,
@@ -3901,9 +3791,7 @@ public class SettingsWindow {
         // Sub-setting of the checkbox above (master/sub pattern): meaningless while hints are off.
         inlayHintModeCombo
                 .disableProperty()
-                .bind(lspCheck.selectedProperty()
-                        .not()
-                        .or(inlayHintsCheck.selectedProperty().not()));
+                .bind(inlayHintsCheck.selectedProperty().not());
         checkRow(
                 lsp,
                 Category.COMPLETION,
@@ -3917,16 +3805,14 @@ public class SettingsWindow {
                 smartSemicolonCheck,
                 null,
                 "smart semicolon detection statement end java jdtls");
-        onTypeFormattingCheck.disableProperty().bind(lspCheck.selectedProperty().not());
-        semanticHighlightCheck
-                .disableProperty()
-                .bind(lspCheck.selectedProperty().not());
+        SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }
 
     /** EDITOR ▸ TODO: in-editor TODO/FIXME highlighting + the per-pattern editor. */
     private VBox todoPage() {
-        VBox p = page(tr("settings.cat.todo"));
+        todoSettings = new TodoSettingsPane(config::getSettings, this::apply);
+        VBox p = page(tr("settings.cat.todo"), tr("settings.todo.subtitle"));
         Card todoHl = card(p, tr("settings.section.todo"));
         checkRow(
                 todoHl,
@@ -3934,77 +3820,20 @@ public class SettingsWindow {
                 todoHighlightCheck,
                 tr("settings.todoSyntax"),
                 "todo fixme highlight patterns tags comments annotations");
-        cardRow(todoHl, Category.TODO, todoPatternsEditor(), "todo fixme pattern regex color add remove edit");
+        cardRow(todoHl, Category.TODO, todoSettings.patternsEditor(), "todo fixme pattern regex color add remove edit");
         Card partColors = card(p, tr("settings.section.todoPartColors"));
         cardRow(
                 partColors,
                 Category.TODO,
-                todoPartColorsEditor(),
+                todoSettings.partColorsEditor(),
                 "todo tag priority critical high medium low part color");
         return p;
     }
 
-    /** The five per-part color pickers ({@code [tag]} + the four {@code (priority)} levels) for a structured
-     *  TODO comment; each writes its {@code Settings} field and applies live. */
-    private javafx.scene.Node todoPartColorsEditor() {
-        Settings s = config.getSettings();
-        todoTagColorPicker =
-                partColorPicker(s.getTodoTagColor(), c -> config.getSettings().setTodoTagColor(c));
-        todoCriticalColorPicker = partColorPicker(
-                s.getTodoPriorityCriticalColor(), c -> config.getSettings().setTodoPriorityCriticalColor(c));
-        todoHighColorPicker = partColorPicker(
-                s.getTodoPriorityHighColor(), c -> config.getSettings().setTodoPriorityHighColor(c));
-        todoMediumColorPicker = partColorPicker(
-                s.getTodoPriorityMediumColor(), c -> config.getSettings().setTodoPriorityMediumColor(c));
-        todoLowColorPicker = partColorPicker(
-                s.getTodoPriorityLowColor(), c -> config.getSettings().setTodoPriorityLowColor(c));
-        // A GridPane, not a row of HBoxes: the labels differ in width ("Tag" vs "Critical priority") and in
-        // every locale, so a per-row minimum width leaves the pickers ragged the moment one label outgrows
-        // it. A shared first column sizes itself to the widest label, whatever that turns out to be.
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(8);
-        grid.setVgap(6);
-        addPartColorRow(grid, 0, tr("settings.todo.part.tag"), todoTagColorPicker);
-        addPartColorRow(grid, 1, tr("settings.todo.part.critical"), todoCriticalColorPicker);
-        addPartColorRow(grid, 2, tr("settings.todo.part.high"), todoHighColorPicker);
-        addPartColorRow(grid, 3, tr("settings.todo.part.medium"), todoMediumColorPicker);
-        addPartColorRow(grid, 4, tr("settings.todo.part.low"), todoLowColorPicker);
-        return grid;
-    }
-
-    private javafx.scene.control.ColorPicker partColorPicker(String web, java.util.function.Consumer<String> setter) {
-        javafx.scene.control.ColorPicker cp = new javafx.scene.control.ColorPicker(parseColor(web));
-        cp.setPrefWidth(56);
-        cp.valueProperty().addListener((o, a, b) -> {
-            setter.accept(toHex(b));
-            apply();
-        });
-        return cp;
-    }
-
-    private static void addPartColorRow(
-            javafx.scene.layout.GridPane grid, int row, String label, javafx.scene.control.ColorPicker picker) {
-        Label l = new Label(label);
-        grid.add(l, 0, row);
-        grid.add(picker, 1, row);
-        javafx.scene.layout.GridPane.setValignment(l, javafx.geometry.VPos.CENTER);
-    }
-
     /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
     public void syncTodoPartColors() {
-        Settings s = config.getSettings();
-        quietly(() -> {
-            setPicker(todoTagColorPicker, s.getTodoTagColor());
-            setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
-            setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
-            setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
-            setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
-        });
-    }
-
-    private static void setPicker(javafx.scene.control.ColorPicker picker, String web) {
-        if (picker != null) {
-            picker.setValue(parseColor(web));
+        if (todoSettings != null) {
+            todoSettings.syncPartColors();
         }
     }
 
@@ -4610,7 +4439,7 @@ public class SettingsWindow {
     }
 
     private VBox searchPage() {
-        VBox p = page(tr("settings.cat.search"));
+        VBox p = page(tr("settings.cat.search"), tr("settings.search.subtitle"));
         Card c = card(p, null);
         ripgrepStatusLabel = new Label(tr("settings.search.checking"));
         ripgrepStatusLabel.getStyleClass().add("settings-git-status");
@@ -4638,7 +4467,7 @@ public class SettingsWindow {
                 c2,
                 Category.SEARCH,
                 searchGitignoreCheck,
-                null,
+                tr("settings.search.gitignore.desc"),
                 "search exclude gitignore ignored target node_modules build dist folders files");
         return p;
     }
@@ -7067,13 +6896,6 @@ public class SettingsWindow {
      * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
      */
     /** Names a ▲/▼ pair for a screen reader (and a tooltip): on their own they announce as the glyphs. */
-    private static void nameReorderButtons(Button up, Button down) {
-        up.setAccessibleText(tr("bookmarks.moveUp"));
-        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
-        down.setAccessibleText(tr("bookmarks.moveDown"));
-        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
-    }
-
     private static void keepWidth(Region... controls) {
         for (Region control : controls) {
             control.setMinWidth(Region.USE_PREF_SIZE);
@@ -7355,168 +7177,99 @@ public class SettingsWindow {
     private VBox toolWindowsPage() {
         // The page hint reads as the subtitle, like the other pages.
         VBox p = page(tr("settings.cat.toolWindows"), tr("settings.toolWindows.hint"));
-        Card mainCard = card(p, null);
-        // The tool-stripe toggle now lives on the Interface page; "show hidden files" on the Workspace page.
-
-        List<Runnable> moveRefreshers = new ArrayList<>();
-        Runnable refreshMoves = () -> moveRefreshers.forEach(Runnable::run);
-        for (ToolWindow tw : toolWindows.getStripeToolWindows()) {
-            CheckBox showCheck = new CheckBox(tr("settings.show"));
-            showCheck.setSelected(toolWindows.isVisible(tw));
-
-            ComboBox<ToolWindow.Side> sideCombo = new ComboBox<>();
-            sideCombo.getItems().setAll(ToolWindow.Side.values());
-            sideCombo.setConverter(new StringConverter<>() {
-                @Override
-                public String toString(ToolWindow.Side side) {
-                    return sideName(side);
-                }
-
-                @Override
-                public ToolWindow.Side fromString(String s) {
-                    for (ToolWindow.Side side : ToolWindow.Side.values()) {
-                        if (sideName(side).equals(s)) {
-                            return side;
-                        }
-                    }
-                    return null; // the combo is not editable: nothing types a name into it
-                }
-            });
-            sideCombo.setValue(toolWindows.currentSide(tw));
-            sideCombo.setDisable(!showCheck.isSelected());
-
-            Button moveUp = new Button("▲");
-            Button moveDown = new Button("▼");
-            moveUp.getStyleClass().addAll("flat", "reorder-button");
-            moveDown.getStyleClass().addAll("flat", "reorder-button");
-            moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
-            moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
-            moveUp.setAccessibleText(tr("settings.moveEarlier") + " — " + tw.getTitle());
-            moveDown.setAccessibleText(tr("settings.moveLater") + " — " + tw.getTitle());
-            Runnable refreshThisRow = () -> {
-                boolean shown = showCheck.isSelected();
-                moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
-                moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
-            };
-            moveRefreshers.add(refreshThisRow);
-            // The row is built once, but the window can be moved or hidden from the main window meanwhile.
-            toolWindowRowSyncs.add(() -> {
-                showCheck.setSelected(toolWindows.isVisible(tw));
-                sideCombo.setValue(toolWindows.currentSide(tw));
-                sideCombo.setDisable(!showCheck.isSelected());
-                refreshThisRow.run();
-            });
-            moveUp.setOnAction(e -> {
-                toolWindows.move(tw, -1);
-                refreshMoves.run();
-            });
-            moveDown.setOnAction(e -> {
-                toolWindows.move(tw, 1);
-                refreshMoves.run();
-            });
-
-            showCheck.selectedProperty().addListener((obs, was, visible) -> {
-                if (syncingToolWindowRows) {
-                    return;
-                }
-                toolWindows.setVisible(tw, visible);
-                sideCombo.setDisable(!visible);
-                refreshMoves.run();
-            });
-            sideCombo.valueProperty().addListener((obs, old, now) -> {
-                if (now != null && !syncingToolWindowRows) {
-                    toolWindows.setSide(tw, now);
-                    refreshMoves.run();
-                }
-            });
-            if ("project".equals(tw.getId())) {
-                projectShowCheck = showCheck;
-                projectSideCombo = sideCombo;
-                projectToolWindowRef = tw;
-            } else if ("commit".equals(tw.getId())) {
-                commitShowCheck = showCheck;
-                commitSideCombo = sideCombo;
-                commitMoveUp = moveUp;
-                commitMoveDown = moveDown;
-                commitToolWindowRef = tw;
-            } else if ("notes".equals(tw.getId())) {
-                notesShowCheck = showCheck;
-                notesSideCombo = sideCombo;
-                notesMoveUp = moveUp;
-                notesMoveDown = moveDown;
-                notesToolWindowRef = tw;
-            } else if ("problems".equals(tw.getId())) {
-                problemsShowCheck = showCheck;
-                problemsSideCombo = sideCombo;
-                problemsMoveUp = moveUp;
-                problemsMoveDown = moveDown;
-                problemsToolWindowRef = tw;
-            } else if ("run".equals(tw.getId())) {
-                runShowCheck = showCheck;
-                runSideCombo = sideCombo;
-                runMoveUp = moveUp;
-                runMoveDown = moveDown;
-                runToolWindowRef = tw;
-            } else if ("debug".equals(tw.getId())) {
-                debugShowCheck = showCheck;
-                debugSideCombo = sideCombo;
-                debugMoveUp = moveUp;
-                debugMoveDown = moveDown;
-                debugToolWindowRef = tw;
-            }
-
-            // A card row like every other page: the window's name on the left (with the gated ones'
-            // explanation as its description), and show / side / reorder pinned right.
-            Label title = new Label(tw.getTitle());
-            title.getStyleClass().add("settings-row-title");
-            VBox main = new VBox(2, title);
-            HBox.setHgrow(main, Priority.ALWAYS);
-            HBox reorder = new HBox(2, moveUp, moveDown);
-            SettingSwitch show = switchFor(showCheck);
-            show.setAccessibleText(tw.getTitle()); // this row is hand-built, so name its controls here
-            sideCombo.setAccessibleText(tw.getTitle());
-            title.setLabelFor(show);
-            HBox controls = new HBox(8, show, sideCombo, reorder);
-            controls.setAlignment(Pos.CENTER_RIGHT);
-            controls.setMinWidth(Region.USE_PREF_SIZE);
-            HBox rowBox = new HBox(16, main, controls);
-            rowBox.setAlignment(Pos.CENTER_LEFT);
-            rowBox.getStyleClass().add("settings-row");
-            // For the context-gated windows, a muted note explaining why the row may be disabled.
-            if ("project".equals(tw.getId())) {
-                projectDisabledNote = note(tr("settings.toolWindows.projectDisabled"));
-                projectDisabledNote.setWrapText(true);
-                projectDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(projectDisabledNote);
-            } else if ("commit".equals(tw.getId())) {
-                commitDisabledNote = note(tr("settings.toolWindows.commitDisabled"));
-                commitDisabledNote.setWrapText(true);
-                commitDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(commitDisabledNote);
-            } else if ("notes".equals(tw.getId())) {
-                notesDisabledNote = note(tr("settings.toolWindows.notesDisabled"));
-                notesDisabledNote.setWrapText(true);
-                notesDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(notesDisabledNote);
-            } else if ("problems".equals(tw.getId())) {
-                problemsDisabledNote = note(tr("settings.toolWindows.problemsDisabled"));
-                problemsDisabledNote.setWrapText(true);
-                problemsDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(problemsDisabledNote);
-            } else if ("debug".equals(tw.getId())) {
-                debugDisabledNote = note(tr("settings.toolWindows.debugDisabled"));
-                debugDisabledNote.setWrapText(true);
-                debugDisabledNote.getStyleClass().add("settings-row-desc");
-                main.getChildren().add(debugDisabledNote);
-            }
-            cardRow(mainCard, Category.TOOL_WINDOWS, rowBox, "tool window " + tw.getTitle() + " placement side show");
+        Card layout = card(p, null);
+        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
+        restore.setOnAction(e -> toolWindowSettings.restoreDefaultLayout());
+        cardRow(
+                layout,
+                Category.TOOL_WINDOWS,
+                settingRow(tr("settings.toolWindows.layout"), tr("settings.toolWindows.layoutNote"), restore),
+                "tool windows layout restore default reset project window");
+        for (ToolWindow.Side side : ToolWindow.Side.values()) {
+            toolWindowCards.put(side, card(p, sideName(side)));
         }
-        refreshMoves.run();
-        updateProjectRowEnabled();
-        updateGitRowEnabled();
-        updateNotesRowEnabled();
-        updateLspToolRowsEnabled();
+        toolWindowSettings = new ToolWindowsSettingsPane(toolWindows, config::getSettings, this::placeToolWindowRows);
+        for (ToolWindowsSettingsPane.Row row : toolWindowSettings.rows()) {
+            cardRow(
+                    toolWindowCards.get(toolWindows.currentSide(row.window())),
+                    Category.TOOL_WINDOWS,
+                    row.node(),
+                    "tool window " + row.window().getTitle() + " placement side show");
+        }
+        toolWindowSettings.load();
         return p;
+    }
+
+    /**
+     * Puts the Tool Windows rows under the card of their side, in stripe order, and moves each row's search
+     * entry to that card (so a search hides a side's card once none of its rows match).
+     */
+    private void placeToolWindowRows(Map<ToolWindow.Side, List<Node>> bySide) {
+        bySide.forEach((side, nodes) -> {
+            Card card = toolWindowCards.get(side);
+            List<Node> shown = new ArrayList<>(nodes);
+            if (shown.isEmpty()) {
+                Label none = note(tr("settings.toolWindows.noneOnSide"));
+                none.getStyleClass().add("settings-row");
+                shown.add(none);
+            }
+            card.body().getChildren().setAll(shown);
+            for (int i = 0; i < rows.size(); i++) {
+                SettingRow r = rows.get(i);
+                if (nodes.contains(r.node()) && r.card() != card.box()) {
+                    rows.set(i, new SettingRow(r.category(), r.node(), r.keywords(), r.section(), card.box()));
+                }
+            }
+        });
+    }
+
+    /**
+     * Updates and Trusted Folders, on the Advanced page: neither is about the workspace, where they used to
+     * sit and where nobody looked for them.
+     */
+    private void updatesAndTrustCards(VBox p) {
+        Card updates = card(p, tr("settings.section.updates"));
+        checkRow(
+                updates,
+                Category.ADVANCED,
+                updateCheckCheck,
+                tr("settings.updates.note"),
+                "check for updates new version github release startup network privacy");
+
+        Card trust = card(p, tr("settings.section.trustedFolders"));
+        Label trustNote = note(tr("settings.trustedFolders.note"));
+        trustNote.setWrapText(true);
+        trustNote.setMaxWidth(440);
+        cardRow(trust, Category.ADVANCED, trustNote, "workspace trust build wrapper mvnw gradlew security");
+        trustedFoldersList.setPrefHeight(120);
+        trustedFoldersList.setPlaceholder(new Label(tr("settings.trustedFolders.empty")));
+        Button revoke = new Button(tr("settings.trustedFolders.revoke"));
+        Button revokeAll = new Button(tr("settings.trustedFolders.revokeAll"));
+        revoke.disableProperty()
+                .bind(trustedFoldersList
+                        .getSelectionModel()
+                        .selectedItemProperty()
+                        .isNull());
+        revoke.setOnAction(e -> {
+            String sel = trustedFoldersList.getSelectionModel().getSelectedItem();
+            if (sel != null && trustActions != null) {
+                trustActions.revoke(sel);
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.setOnAction(e -> {
+            if (trustActions != null) {
+                trustActions.revokeAll();
+                refreshTrustedFolders();
+            }
+        });
+        revokeAll.disableProperty().bind(Bindings.isEmpty(trustedFoldersList.getItems()));
+        cardRow(trust, Category.ADVANCED, trustedFoldersList, "workspace trust trusted folders list revoke");
+        cardRow(
+                trust,
+                Category.ADVANCED,
+                new HBox(8, revoke, revokeAll),
+                "workspace trust revoke remove trusted folder");
     }
 
     private VBox advancedPage() {
@@ -7584,6 +7337,7 @@ public class SettingsWindow {
                 Category.ADVANCED,
                 debugBox,
                 "debug log logs errors warnings exceptions diagnostics bug report console");
+        updatesAndTrustCards(p); // moved from Workspace (B20)
         return p;
     }
 
@@ -7593,156 +7347,19 @@ public class SettingsWindow {
      * live-applied through {@link #toolbarActions} (persist + rebuild every window's toolbar).
      */
     private Region toolbarPage() {
-        VBox p = page(tr("settings.cat.toolbar"));
+        VBox p = page(tr("settings.cat.toolbar"), tr("settings.toolbar.subtitle"));
+        // The on/off switch for the bar itself, also on the Interface page: it is what people look for here.
+        checkRow(card(p, null), Category.TOOLBAR, toolbarCheck, null, "show hide toolbar buttons");
         Card sec = card(p, tr("settings.toolbar.section"));
-
         Label desc = note(tr("settings.toolbar.note"));
         desc.setWrapText(true);
         desc.setMaxWidth(560);
         cardRow(sec, Category.TOOLBAR, desc, "toolbar customize icons order add remove reorder drag");
-
-        ListView<String> available = new ListView<>(toolbarAvailableItems);
-        ListView<String> current = new ListView<>(toolbarCurrentItems);
-        available.setCellFactory(v -> toolbarCell());
-        current.setCellFactory(v -> toolbarCell());
-        // Tall enough for the default toolbar layout (~20 items) to be read without scrolling.
-        available.setPrefSize(260, 460);
-        current.setPrefSize(260, 460);
-
-        Label availLabel = new Label(tr("settings.toolbar.available"));
-        Label curLabel = new Label(tr("settings.toolbar.current"));
-        availLabel.getStyleClass().add("settings-section");
-        curLabel.getStyleClass().add("settings-section");
-        VBox availBox = new VBox(4, availLabel, available);
-        VBox curBox = new VBox(4, curLabel, current);
-        javafx.scene.layout.VBox.setVgrow(available, Priority.ALWAYS);
-        javafx.scene.layout.VBox.setVgrow(current, Priority.ALWAYS);
-
-        Button add = new Button(tr("settings.toolbar.add"));
-        Button remove = new Button(tr("settings.toolbar.remove"));
-        Button up = new Button("▲");
-        Button down = new Button("▼");
-        nameReorderButtons(up, down);
-        up.getStyleClass().addAll("flat", "reorder-button");
-        down.getStyleClass().addAll("flat", "reorder-button");
-        add.setMaxWidth(Double.MAX_VALUE);
-        remove.setMaxWidth(Double.MAX_VALUE);
-        Region midGap = new Region();
-        javafx.scene.layout.VBox.setVgrow(midGap, Priority.ALWAYS);
-        VBox mid = new VBox(6, add, remove, midGap, up, down);
-        mid.setAlignment(Pos.CENTER);
-        mid.setMinWidth(Region.USE_PREF_SIZE); // as wide as its (translated) buttons, never "Hinzufüg…"
-        keepWidth(availLabel, curLabel);
-
-        HBox lists = new HBox(10, availBox, mid, curBox);
-        HBox.setHgrow(availBox, Priority.ALWAYS);
-        HBox.setHgrow(curBox, Priority.ALWAYS);
-        cardRow(sec, Category.TOOLBAR, lists, "toolbar available current add remove up down move");
-
-        Button sepBtn = new Button(tr("settings.toolbar.addSeparator"));
-        Button restore = new Button(tr("settings.toolbar.restoreDefault"));
-        HBox bottom = new HBox(6, sepBtn, spacer(), restore);
-        cardRow(sec, Category.TOOLBAR, bottom, "toolbar separator restore default reset");
-
-        Runnable refresh = () -> {
-            if (toolbarActions == null) {
-                return;
-            }
-            java.util.List<String> cur = toolbarActions.current();
-            toolbarCurrentItems.setAll(cur);
-            java.util.Set<String> used = new java.util.HashSet<>(cur);
-            java.util.List<String> avail = new java.util.ArrayList<>();
-            for (com.editora.toolbar.ToolbarCatalog.Item it : com.editora.toolbar.ToolbarCatalog.items()) {
-                if (!used.contains(it.id())) {
-                    avail.add(it.id());
-                }
-            }
-            toolbarAvailableItems.setAll(avail);
-        };
-        refreshToolbarLists = refresh;
-        refresh.run();
-
-        // Commit the working list, then re-read the effective (sanitized) layout and optionally reselect.
-        java.util.function.IntConsumer commit = reselect -> {
-            if (toolbarActions != null) {
-                toolbarActions.apply(new java.util.ArrayList<>(toolbarCurrentItems));
-            }
-            refresh.run();
-            if (reselect >= 0 && reselect < toolbarCurrentItems.size()) {
-                current.getSelectionModel().select(reselect);
-            }
-        };
-
-        add.setOnAction(e -> {
-            String sel = available.getSelectionModel().getSelectedItem();
-            if (sel == null) {
-                return;
-            }
-            int at = current.getSelectionModel().getSelectedIndex();
-            if (at < 0) {
-                toolbarCurrentItems.add(sel);
-            } else {
-                toolbarCurrentItems.add(at + 1, sel);
-            }
-            commit.accept(-1);
-        });
-        remove.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx < 0) {
-                return;
-            }
-            toolbarCurrentItems.remove(idx);
-            commit.accept(Math.min(idx, toolbarCurrentItems.size() - 1));
-        });
-        up.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx > 0) {
-                java.util.Collections.swap(toolbarCurrentItems, idx, idx - 1);
-                commit.accept(idx - 1);
-            }
-        });
-        down.setOnAction(e -> {
-            int idx = current.getSelectionModel().getSelectedIndex();
-            if (idx >= 0 && idx < toolbarCurrentItems.size() - 1) {
-                java.util.Collections.swap(toolbarCurrentItems, idx, idx + 1);
-                commit.accept(idx + 1);
-            }
-        });
-        sepBtn.setOnAction(e -> {
-            int at = current.getSelectionModel().getSelectedIndex();
-            String s = com.editora.toolbar.ToolbarCatalog.SEPARATOR;
-            if (at < 0) {
-                toolbarCurrentItems.add(s);
-            } else {
-                toolbarCurrentItems.add(at + 1, s);
-            }
-            commit.accept(-1);
-        });
-        restore.setOnAction(e -> {
-            if (toolbarActions != null) {
-                toolbarActions.restoreDefault();
-            }
-            refresh.run();
-        });
-
+        toolbarSettings = new ToolbarSettingsPane(() -> toolbarActions);
+        refreshToolbarLists = toolbarSettings::refresh;
+        cardRow(sec, Category.TOOLBAR, toolbarSettings.lists(), "toolbar available current add remove up down move");
+        cardRow(sec, Category.TOOLBAR, toolbarSettings.bottomButtons(), "toolbar separator restore default reset");
         return p;
-    }
-
-    /** A ListView cell showing a toolbar item's icon + label (a divider label for the separator token). */
-    private ListCell<String> toolbarCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(String token, boolean empty) {
-                super.updateItem(token, empty);
-                if (empty || token == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                setText(ToolbarCoordinator.labelFor(token));
-                setGraphic(ToolbarCoordinator.iconFor(token));
-            }
-        };
     }
 
     // --- page helpers ---
@@ -7842,6 +7459,11 @@ public class SettingsWindow {
      */
     private void checkRow(Card card, Category cat, CheckBox check, String description, String keywords) {
         cardRow(card, cat, settingRow(check.getText(), description, switchFor(check)), keywords);
+    }
+
+    /** The nodes of the rows added since {@code from} (a {@code rows.size()} taken before adding them). */
+    private Node[] rowsSince(int from) {
+        return rows.subList(from, rows.size()).stream().map(SettingRow::node).toArray(Node[]::new);
     }
 
     /** A labeled field/control as a card row: title left, the control right (kit "Git command" shape). */
@@ -8205,8 +7827,17 @@ public class SettingsWindow {
         if (preview == null || fontFamily.getValue() == null || fontSize.getValue() == null) {
             return;
         }
-        preview.setStyle(
-                "-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: " + fontSize.getValue() + "px;");
+        double zoom = config.getSettings().getFontZoom();
+        int shown = Math.max(1, (int) Math.round(fontSize.getValue() * zoom)); // as the editor computes it
+        preview.setStyle("-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: " + shown + "px;");
+        if (zoomNote != null) {
+            boolean zoomed = Math.abs(zoom - 1.0) > 1e-9;
+            zoomNote.setVisible(zoomed);
+            zoomNote.setManaged(zoomed);
+            ((Label) zoomNote.getChildren().getFirst())
+                    .setText(tr(
+                            "settings.fontZoom.note", String.valueOf(Math.round(zoom * 100)), String.valueOf(shown)));
+        }
     }
 
     // --- reset -----------------------------------------------------------------------------------
@@ -8334,7 +7965,7 @@ public class SettingsWindow {
             if (!editorTheme.equals(settings.getEditorTheme())) {
                 settings.setEditorTheme(editorTheme);
             }
-            editorThemeCombo.setValue(editorTheme);
+            editorThemeCombo.setValue(settings.isEditorThemeUserSet() ? editorTheme : "");
             tabSizeSpinner.getValueFactory().setValue(settings.getTabSize());
             indentStyleCombo.setValue(settings.getIndentStyle());
             fillColumnSpinner.getValueFactory().setValue(settings.getFillColumn());
@@ -8349,7 +7980,6 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(settings.isShowWhitespace());
             notesCheck.setSelected(settings.isNotesSupport());
             noteIndicatorsCheck.setSelected(settings.isShowNoteIndicators());
-            noteIndicatorsCheck.setDisable(!settings.isNotesSupport());
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
@@ -8379,7 +8009,6 @@ public class SettingsWindow {
             dictEnableCheck.setSelected(settings.isPersonalDictionary());
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
-            spellLanguageCombo.setDisable(!settings.isSpellCheck());
             syncSpellFileTypes();
             menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
@@ -8420,19 +8049,13 @@ public class SettingsWindow {
             }
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
-            rebuildTodoRows();
+            todoSettings.load();
             rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(settings.isProjectSupport());
-            syncingToolWindowRows = true;
-            try {
-                toolWindowRowSyncs.forEach(Runnable::run);
-            } finally {
-                syncingToolWindowRows = false;
-            }
-            updateProjectRowEnabled();
+            toolWindowSettings.load();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             gitPathField.setText(settings.getGitPath());
@@ -8452,9 +8075,6 @@ public class SettingsWindow {
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
             updateHistoryRowsEnabled();
-            updateGitRowEnabled();
-            updateNotesRowEnabled();
-            updateLspToolRowsEnabled();
             mermaidCheck.setSelected(settings.isMermaidSupport());
             mmdcPathField.setText(settings.getMmdcPath());
             maidPathField.setText(settings.getMaidPath());
@@ -8559,130 +8179,10 @@ public class SettingsWindow {
         probeGit(); // re-check git availability each time Settings opens
     }
 
-    private void updateProjectRowEnabled() {
-        if (projectShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isProjectSupport();
-        boolean visible = on && projectToolWindowRef != null && toolWindows.isVisible(projectToolWindowRef);
-        projectShowCheck.setSelected(visible);
-        projectShowCheck.setDisable(!on);
-        projectSideCombo.setDisable(!visible);
-        if (projectDisabledNote != null) {
-            projectDisabledNote.setVisible(!on);
-            projectDisabledNote.setManaged(!on);
-        }
-    }
-
-    /**
-     * Disables the Commit tool-window-placement row when Git is off (the window can't be shown until
-     * Git is enabled). Unlike the Project row, the Show checkbox value is left untouched — Git's
-     * availability is transient, not the user's persisted visibility preference.
-     */
-    private void updateGitRowEnabled() {
-        if (commitShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isGitSupport();
-        commitShowCheck.setDisable(!on);
-        if (commitDisabledNote != null) {
-            commitDisabledNote.setVisible(!on);
-            commitDisabledNote.setManaged(!on);
-        }
-        if (!on) {
-            commitSideCombo.setDisable(true);
-            commitMoveUp.setDisable(true);
-            commitMoveDown.setDisable(true);
-        } else {
-            boolean shown = commitShowCheck.isSelected();
-            commitSideCombo.setDisable(!shown);
-            commitMoveUp.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, -1));
-            commitMoveDown.setDisable(!shown || !toolWindows.canMove(commitToolWindowRef, 1));
-        }
-    }
-
-    /**
-     * Disables the Personal Notes tool-window-placement row when the feature is off (the window can't be
-     * shown until it's enabled). Like the Commit row, the Show checkbox value is left untouched — notes
-     * availability is transient, not the user's persisted visibility preference.
-     */
-    private void updateNotesRowEnabled() {
-        if (notesShowCheck == null) {
-            return;
-        }
-        boolean on = config.getSettings().isNotesSupport();
-        notesShowCheck.setDisable(!on);
-        if (notesDisabledNote != null) {
-            notesDisabledNote.setVisible(!on);
-            notesDisabledNote.setManaged(!on);
-        }
-        if (!on) {
-            notesSideCombo.setDisable(true);
-            notesMoveUp.setDisable(true);
-            notesMoveDown.setDisable(true);
-        } else {
-            boolean shown = notesShowCheck.isSelected();
-            notesSideCombo.setDisable(!shown);
-            notesMoveUp.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, -1));
-            notesMoveDown.setDisable(!shown || !toolWindows.canMove(notesToolWindowRef, 1));
-        }
-    }
-
-    /**
-     * Disables the feature-gated tool-window rows when their feature is off: Problems needs the LSP
-     * feature on; Debug needs Debugging (DAP) on (independent of LSP — Python/JS debugging doesn't use LSP,
-     * and {@code MainController.applyDebugGating} makes the Debug window available on {@code debugSupport}
-     * alone). Like the Commit/Notes rows, the Show checkbox value is left untouched — availability is
-     * transient, not the user's persisted visibility preference.
-     */
-    private void updateLspToolRowsEnabled() {
-        boolean lsp = config.getSettings().isLspSupport();
-        updateTransientRow(
-                lsp,
-                problemsShowCheck,
-                problemsSideCombo,
-                problemsMoveUp,
-                problemsMoveDown,
-                problemsDisabledNote,
-                problemsToolWindowRef);
-        updateTransientRow(true, runShowCheck, runSideCombo, runMoveUp, runMoveDown, null, runToolWindowRef);
-        updateTransientRow(
-                config.getSettings().isDebugSupport(),
-                debugShowCheck,
-                debugSideCombo,
-                debugMoveUp,
-                debugMoveDown,
-                debugDisabledNote,
-                debugToolWindowRef);
-    }
-
-    /** Shared logic for a context-gated tool-window row: gray out the controls + show the "disabled" note
-     *  when {@code on} is false, else restore the normal show/side/move enabling. */
-    private void updateTransientRow(
-            boolean on,
-            CheckBox show,
-            ComboBox<ToolWindow.Side> side,
-            Button up,
-            Button down,
-            Label disabledNote,
-            ToolWindow ref) {
-        if (show == null) {
-            return;
-        }
-        show.setDisable(!on);
-        if (disabledNote != null) {
-            disabledNote.setVisible(!on);
-            disabledNote.setManaged(!on);
-        }
-        if (!on) {
-            side.setDisable(true);
-            up.setDisable(true);
-            down.setDisable(true);
-        } else {
-            boolean shown = show.isSelected();
-            side.setDisable(!shown);
-            up.setDisable(!shown || !toolWindows.canMove(ref, -1));
-            down.setDisable(!shown || !toolWindows.canMove(ref, 1));
+    /** Re-applies the Tool Windows rows' feature gates (Projects, Git, Notes, LSP, Debugging changed). */
+    private void refreshToolWindowRows() {
+        if (toolWindowSettings != null) {
+            toolWindowSettings.refresh();
         }
     }
 
@@ -8705,7 +8205,7 @@ public class SettingsWindow {
         loading = true;
         try {
             projectsCheck.setSelected(config.getSettings().isProjectSupport());
-            updateProjectRowEnabled();
+            refreshToolWindowRows();
         } finally {
             loading = prev;
         }
@@ -8945,7 +8445,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
-        updateLspToolRowsEnabled(); // refresh the Problems and Debug row gates
+        refreshToolWindowRows(); // refresh the Problems and Debug row gates
         refreshLspStatus();
     }
 
@@ -9054,6 +8554,53 @@ public class SettingsWindow {
         }
     }
 
+    /** A list cell showing {@code label.apply(item)} for each item. */
+    private static ListCell<String> labelledCell(java.util.function.Function<String, String> label) {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : label.apply(item));
+            }
+        };
+    }
+
+    /** A theme's name, marked dark or light when the name itself does not say which (Dracula, Yacht…). */
+    private static String withShade(String name, boolean dark) {
+        if (name.contains("Light") || name.contains("Dark")) {
+            return name;
+        }
+        return tr(dark ? "settings.theme.dark" : "settings.theme.light", name);
+    }
+
+    /** "" (Automatic) followed by every editor theme. */
+    private static List<String> editorThemeChoices() {
+        List<String> choices = new ArrayList<>();
+        choices.add("");
+        choices.addAll(EditorThemes.names());
+        return choices;
+    }
+
+    /** An editor-theme cell: "Automatic" for "", else the theme's name. */
+    private ListCell<String> editorThemeCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String name, boolean empty) {
+                super.updateItem(name, empty);
+                setText(
+                        empty || name == null
+                                ? null
+                                : name.isEmpty()
+                                        ? tr("settings.editorTheme.auto")
+                                        : withShade(
+                                                name,
+                                                EditorThemes.editorBackgroundFor(name)
+                                                                .getBrightness()
+                                                        < 0.5));
+            }
+        };
+    }
+
     public void syncThemes() {
         if (!built) {
             return;
@@ -9062,10 +8609,12 @@ public class SettingsWindow {
         loading = true;
         try {
             themeCombo.getItems().setAll(Themes.names()); // pick up user themes reloaded from the config folder
-            editorThemeCombo.getItems().setAll(EditorThemes.names());
+            editorThemeCombo.getItems().setAll(editorThemeChoices());
             themeCombo.setValue(config.getSettings().getTheme());
             editorThemeCombo.setValue(
-                    EditorThemes.normalize(config.getSettings().getEditorTheme()));
+                    config.getSettings().isEditorThemeUserSet()
+                            ? EditorThemes.normalize(config.getSettings().getEditorTheme())
+                            : "");
         } finally {
             loading = prev;
         }
@@ -9101,10 +8650,8 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());
             noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
-            noteIndicatorsCheck.setDisable(!s.isNotesSupport());
             spellCheckBox.setSelected(s.isSpellCheck());
             spellLanguageCombo.setValue(s.getSpellLanguage());
-            spellLanguageCombo.setDisable(!s.isSpellCheck());
             menuBarCheck.setSelected(s.isShowMenuBar());
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
@@ -9141,7 +8688,7 @@ public class SettingsWindow {
             }
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
-            rebuildTodoRows();
+            todoSettings.rebuildRows();
             rebuildMarkdownLintRules();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
@@ -9155,36 +8702,9 @@ public class SettingsWindow {
 
     // --- monospace font discovery ----------------------------------------------------------------
 
-    private static List<String> monospaceFamilies() {
-        Text narrow = new Text("iiiiiiiiii");
-        Text wide = new Text("WWWWWWWWWW");
-        List<String> families = new ArrayList<>();
-        for (String family : Font.getFamilies()) {
-            Font font = Font.font(family, 14);
-            if (font == null) {
-                continue;
-            }
-            narrow.setFont(font);
-            wide.setFont(font);
-            if (Math.abs(narrow.getLayoutBounds().getWidth()
-                            - wide.getLayoutBounds().getWidth())
-                    < 0.5) {
-                families.add(family);
-            }
-        }
-        return families;
-    }
-
     /** The editor-font picker choices (bundled monospace families first, then system monospace). */
     public static List<String> fontFamilyChoices() {
-        Fonts.ensureAllLoaded(); // the deferred families must be registered before the picker lists them
-        List<String> choices = new ArrayList<>(Fonts.BUNDLED);
-        for (String family : monospaceFamilies()) {
-            if (!choices.contains(family)) {
-                choices.add(family);
-            }
-        }
-        return choices;
+        return FontChoices.forThisMachine();
     }
 
     private void apply() {

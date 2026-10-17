@@ -664,7 +664,8 @@ class SettingsListEditorsFxTest {
         try (var fx = FxWindowFixture.create()) {
             FxTestSupport.runOnFx(() -> {
                 SettingsWindow w = shown(fx);
-                javafx.scene.layout.VBox rows = FxTestSupport.field(w, "todoPatternsBox");
+                javafx.scene.layout.VBox rows =
+                        FxTestSupport.field(FxTestSupport.<Object>field(w, "todoSettings"), "patternsBox");
                 List<TextField> tfs = all(rows.getChildren().get(0), TextField.class, new ArrayList<>());
                 TextField name = tfs.get(0);
                 TextField regex = tfs.get(1);

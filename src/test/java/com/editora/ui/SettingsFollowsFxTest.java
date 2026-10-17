@@ -227,10 +227,10 @@ class SettingsFollowsFxTest {
                     rig.<CheckBox>control("lineNumbersCheck").isSelected());
             assertEquals(
                     "tab", rig.<ComboBox<String>>control("indentStyleCombo").getValue());
-            assertTrue(rig.<CheckBox>control("noteIndicatorsCheck").isDisable(), "no indicators without notes");
+            assertFalse(rig.<CheckBox>control("notesCheck").isSelected(), "no indicators without notes");
             assertEquals(theme, rig.<ComboBox<String>>control("themeCombo").getValue());
             assertEquals(
-                    EditorThemes.normalize(settings.getEditorTheme()),
+                    settings.isEditorThemeUserSet() ? EditorThemes.normalize(settings.getEditorTheme()) : "",
                     rig.<ComboBox<String>>control("editorThemeCombo").getValue());
 
             assertEquals(List.of(), rig.applied, "showing what changed elsewhere is not an edit");
