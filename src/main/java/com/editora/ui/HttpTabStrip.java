@@ -130,14 +130,13 @@ final class HttpTabStrip extends HBox {
         if (e.isShortcutDown() || e.isAltDown()) {
             return;
         }
-        HttpResponseTab to =
-                switch (e.getCode()) {
-                    case LEFT, KP_LEFT -> HttpResponseTab.step(t, -1, available);
-                    case RIGHT, KP_RIGHT -> HttpResponseTab.step(t, 1, available);
-                    case HOME -> HttpResponseTab.end(false, available);
-                    case END -> HttpResponseTab.end(true, available);
-                    default -> null;
-                };
+        HttpResponseTab to = switch (e.getCode()) {
+            case LEFT, KP_LEFT -> HttpResponseTab.step(t, -1, available);
+            case RIGHT, KP_RIGHT -> HttpResponseTab.step(t, 1, available);
+            case HOME -> HttpResponseTab.end(false, available);
+            case END -> HttpResponseTab.end(true, available);
+            default -> null;
+        };
         if (to == null) {
             return;
         }

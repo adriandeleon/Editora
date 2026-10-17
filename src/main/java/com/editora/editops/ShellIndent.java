@@ -87,12 +87,11 @@ final class ShellIndent {
             String body = firstBodyIndent(r, item.headerLine(), line, tabSize);
             return body != null ? body : r.indentOf(item.headerLine()) + unitOrDefault(unit, r, item, tabSize);
         }
-        ShellScan.Kind kind =
-                switch (word) {
-                    case "fi", "else", "elif" -> ShellScan.Kind.IF;
-                    case "done" -> ShellScan.Kind.LOOP;
-                    default -> ShellScan.Kind.CASE; // esac
-                };
+        ShellScan.Kind kind = switch (word) {
+            case "fi", "else", "elif" -> ShellScan.Kind.IF;
+            case "done" -> ShellScan.Kind.LOOP;
+            default -> ShellScan.Kind.CASE; // esac
+        };
         ShellScan.Block b = r.innermostOpen(kind);
         return b == null ? null : r.indentOf(b.headerLine());
     }

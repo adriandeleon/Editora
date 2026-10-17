@@ -694,12 +694,11 @@ public final class HttpFile {
         }
         long n = Long.parseLong(m.group(1));
         String unit = m.group(2) == null ? "s" : m.group(2).toLowerCase(Locale.ROOT);
-        long ms =
-                switch (unit) {
-                    case "ms" -> n;
-                    case "m" -> n * 60_000L;
-                    default -> n * 1000L;
-                };
+        long ms = switch (unit) {
+            case "ms" -> n;
+            case "m" -> n * 60_000L;
+            default -> n * 1000L;
+        };
         return ms > 0 ? ms : -1;
     }
 

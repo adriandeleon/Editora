@@ -140,13 +140,12 @@ public final class FstabDescribe {
 
     /** A compact fsck + dump note, e.g. "fsck: after root · not backed up". */
     public static String checkLine(FstabEntry e) {
-        String fsck =
-                switch (e.pass()) {
-                    case 0 -> "never fsck-checked";
-                    case 1 -> "fsck-checked first (root)";
-                    case 2 -> "fsck-checked after root";
-                    default -> "fsck pass " + e.pass();
-                };
+        String fsck = switch (e.pass()) {
+            case 0 -> "never fsck-checked";
+            case 1 -> "fsck-checked first (root)";
+            case 2 -> "fsck-checked after root";
+            default -> "fsck pass " + e.pass();
+        };
         String dump = e.dump() == 1 ? "included in dump backups" : "not backed up by dump";
         return fsck + " · " + dump;
     }

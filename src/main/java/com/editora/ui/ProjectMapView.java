@@ -3430,13 +3430,12 @@ final class ProjectMapView extends VBox {
                 }
                 double shift = inheritedShift + (verticalFlow ? columnWorldY - baseWorldY : columnWorldX - baseWorldX);
                 flowShift.put(id, shift);
-                double farEdge =
-                        switch (flowDirection) {
-                            case LEFT_TO_RIGHT -> columnWorldX - 10 + cardWidth;
-                            case RIGHT_TO_LEFT -> columnWorldX - 10;
-                            case TOP_TO_BOTTOM -> columnWorldY - COLUMN_TOP_INSET + cardHeight;
-                            case BOTTOM_TO_TOP -> columnWorldY - COLUMN_TOP_INSET;
-                        };
+                double farEdge = switch (flowDirection) {
+                    case LEFT_TO_RIGHT -> columnWorldX - 10 + cardWidth;
+                    case RIGHT_TO_LEFT -> columnWorldX - 10;
+                    case TOP_TO_BOTTOM -> columnWorldY - COLUMN_TOP_INSET + cardHeight;
+                    case BOTTOM_TO_TOP -> columnWorldY - COLUMN_TOP_INSET;
+                };
                 flowBand.merge(depth, farEdge - shift, direction > 0 ? Math::max : Math::min);
                 if (parentColumn != null) {
                     if (verticalFlow) {

@@ -83,15 +83,14 @@ final class PythonInterpreterView {
 
     /** The status-bar tooltip: the full command and why it was chosen. */
     static String tooltip(PythonInterpreter interp) {
-        String why =
-                switch (interp.source()) {
-                    case CONFIGURATION -> tr("python.interpreter.why.configuration");
-                    case PROJECT_CHOICE -> tr("python.interpreter.why.picked");
-                    case VIRTUAL_ENV -> tr("python.interpreter.why.activated");
-                    case PROJECT_VENV -> tr("python.interpreter.why.venv");
-                    case SETTING -> tr("python.interpreter.why.setting");
-                    case PATH -> tr("python.interpreter.why.path");
-                };
+        String why = switch (interp.source()) {
+            case CONFIGURATION -> tr("python.interpreter.why.configuration");
+            case PROJECT_CHOICE -> tr("python.interpreter.why.picked");
+            case VIRTUAL_ENV -> tr("python.interpreter.why.activated");
+            case PROJECT_VENV -> tr("python.interpreter.why.venv");
+            case SETTING -> tr("python.interpreter.why.setting");
+            case PATH -> tr("python.interpreter.why.path");
+        };
         return String.join(" ", interp.command()) + "\n" + why + "\n" + tr("python.interpreter.clickToChange");
     }
 
