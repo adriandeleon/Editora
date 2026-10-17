@@ -331,7 +331,8 @@ class SettingsSyncPageFxTest {
             assertEquals(7, (int) FxTestSupport.<Integer>field(sync, "timerMinutes"), "the timer runs at it");
             minutes.getEditor().setText("0");
             minutes.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(1, settings.getSyncIntervalMinutes(), "never below a minute");
+            assertEquals(7, settings.getSyncIntervalMinutes(), "never below a minute: 0 is refused, not saved");
+            assertTrue(minutes.getEditor().getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
 
             // With automatic sync on, a local change schedules a run instead of waiting for the interval.
             Animation dirty = FxTestSupport.field(sync, "dirty");
