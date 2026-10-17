@@ -289,9 +289,8 @@ class HttpClientRunFlowFxTest {
                 dir.resolve("all.http"),
                 "### one\nGET {{base}}/json\nX-Token: {{token}}\n\n### two\nGET {{base}}/missing\n");
 
-        ComboBox<String> env = panel(b).controlsForTest().environmentPicker();
-        assertEquals(List.of("", "dev", "prod"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
-        assertEquals("dev", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
+        assertEquals(List.of("dev", "prod"), FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)));
+        assertEquals("dev", FxTestSupport.callOnFx(() -> coordinator.selectedEnvironment(b)));
         assertFalse(
                 Files.exists(ops.store.fileFor(dir.resolve("all.http"))),
                 "restoring the saved environment is not a change to save");
@@ -308,23 +307,30 @@ class HttpClientRunFlowFxTest {
                         () -> panel(b).getSelectedExchange().result().status()),
                 "a Run All lands on the request that failed");
 
-        // Choosing another environment in the picker is remembered for this file.
-        FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        // Choosing another environment (the pill's menu) is remembered for this file.
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "prod"));
         HttpHistorySync.awaitIdleForTest(); // saved off the FX thread
         assertEquals("prod", ops.store.load(dir.resolve("all.http")).environment);
-        FxTestSupport.runOnFx(() -> env.setValue(null));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, null));
         HttpHistorySync.awaitIdleForTest();
         assertEquals("", ops.store.load(dir.resolve("all.http")).environment);
-        assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
+        assertEquals("", FxTestSupport.callOnFx(() -> coordinator.selectedEnvironment(b)));
 
-        // The command reveals the response panel and refreshes the list from disk.
+        // The command opens the environment menu once the list is read again from disk.
         Files.writeString(dir.resolve("http-client.env.json"), "{\"only\":{}}");
         FxTestSupport.runOnFx(coordinator::selectEnvironment);
         HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         assertEquals(
-                List.of("", "only", "dev"),
-                FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())),
+                List.of("only", "dev"),
+                FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)),
                 "the public file's names, then those only the private file defines");
+        assertEquals(
+                List.of("only", "dev", tr("httpenv.none")),
+                FxTestSupport.callOnFx(() -> coordinator.environmentMenuForTest().getItems().stream()
+                        .filter(i -> i instanceof javafx.scene.control.RadioMenuItem)
+                        .map(javafx.scene.control.MenuItem::getText)
+                        .toList()),
+                "the menu offers them, and No environment");
     }
 
     /**
@@ -339,9 +345,8 @@ class HttpClientRunFlowFxTest {
         String text = "GET " + url("/json") + "\nX-Token: {{token}}\n";
         EditorBuffer b = httpBuffer(sub.resolve("api.http"), text);
         assertEquals(
-                List.of(""),
-                FxTestSupport.callOnFx(() -> List.copyOf(
-                        panel(b).controlsForTest().environmentPicker().getItems())),
+                List.of(),
+                FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)),
                 "no environments offered");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(1);
@@ -351,8 +356,7 @@ class HttpClientRunFlowFxTest {
         Files.createDirectories(dir.resolve(".git"));
         FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b));
         HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
-        FxTestSupport.runOnFx(
-                () -> panel(b).controlsForTest().environmentPicker().setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(2);
         assertEquals("json parent-value", hits.get(1), "the repository root's env file is used");

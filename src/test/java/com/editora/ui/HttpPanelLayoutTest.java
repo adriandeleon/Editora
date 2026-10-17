@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HttpPanelLayoutTest {
 
     private static final double RUN = 140;
-    private static final double ENV = 120;
 
     @Test
     void theHistoryPickerGrowsInAWidePanelAndKeepsItsUsualWidthInASplit() {
@@ -21,7 +20,7 @@ class HttpPanelLayoutTest {
 
     @Test
     void aWideHeaderKeepsEverythingOnOneRow() {
-        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(1280, RUN, 60, 60, 95, ENV);
+        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(1280, RUN, 60, 60, 95);
         assertEquals(1, f.rows());
         assertTrue(f.meta());
         assertEquals(60, f.status(), 1e-9);
@@ -29,45 +28,43 @@ class HttpPanelLayoutTest {
     }
 
     @Test
-    void historyNarrowsFirstThenTheTimingHidesThenThePickersWrap() {
+    void historyNarrowsFirstThenTheTimingHidesThenHistoryWraps() {
         // Room for everything with History at 200 px: History narrows, nothing else changes.
-        double tight = RUN + 60 + 95 + 200 + ENV + 4 * HttpPanelLayout.GAP;
-        HttpPanelLayout.HeaderFit narrowed = HttpPanelLayout.header(tight, RUN, 60, 60, 95, ENV);
+        double tight = RUN + 60 + 95 + 200 + 3 * HttpPanelLayout.GAP;
+        HttpPanelLayout.HeaderFit narrowed = HttpPanelLayout.header(tight, RUN, 60, 60, 95);
         assertEquals(1, narrowed.rows());
         assertTrue(narrowed.meta());
         assertEquals(200, narrowed.history(), 1e-9);
         // History at its least no longer fits beside the timing: the timing hides first.
-        double noMeta = RUN + 60 + HttpPanelLayout.HISTORY_MIN_WIDTH + ENV + 3 * HttpPanelLayout.GAP + 50;
-        HttpPanelLayout.HeaderFit hidden = HttpPanelLayout.header(noMeta, RUN, 60, 60, 95, ENV);
+        double noMeta = RUN + 60 + HttpPanelLayout.HISTORY_MIN_WIDTH + 2 * HttpPanelLayout.GAP + 50;
+        HttpPanelLayout.HeaderFit hidden = HttpPanelLayout.header(noMeta, RUN, 60, 60, 95);
         assertEquals(1, hidden.rows());
         assertFalse(hidden.meta());
         assertEquals(60, hidden.status(), 1e-9, "the status is whole");
         assertTrue(hidden.history() >= HttpPanelLayout.HISTORY_MIN_WIDTH);
-        // Narrower still: History and Environment go to a second row; the status stays whole.
-        HttpPanelLayout.HeaderFit wrapped = HttpPanelLayout.header(400, RUN, 100, 100, 95, ENV);
+        // Narrower still: History goes to a second row; the status stays whole.
+        HttpPanelLayout.HeaderFit wrapped = HttpPanelLayout.header(400, RUN, 100, 100, 95);
         assertEquals(2, wrapped.rows());
         assertEquals(100, wrapped.status(), 1e-9);
         assertTrue(wrapped.meta(), "on its own row the status has room for the timing again");
-        assertEquals(400 - HttpPanelLayout.GAP - ENV, wrapped.history(), 1e-9);
+        assertEquals(HttpPanelLayout.HISTORY_WIDTH, wrapped.history(), 1e-9, "History has its row to itself");
     }
 
     @Test
-    void aRunningStatusIsCutBeforeThePickersWrap() {
+    void aRunningStatusIsCutBeforeHistoryWraps() {
         double room = 640;
-        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(room, RUN, 420, 120, 0, ENV);
+        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(room, RUN, 420, 120, 0);
         assertEquals(1, f.rows());
         assertEquals(HttpPanelLayout.HISTORY_MIN_WIDTH, f.history(), 1e-9);
-        assertEquals(room - RUN - 3 * HttpPanelLayout.GAP - HttpPanelLayout.HISTORY_MIN_WIDTH - ENV, f.status(), 1e-9);
+        assertEquals(room - RUN - 2 * HttpPanelLayout.GAP - HttpPanelLayout.HISTORY_MIN_WIDTH, f.status(), 1e-9);
     }
 
     @Test
-    void theNarrowestPanelPutsEnvironmentOnARowOfItsOwnAndAHeaderWithoutItNeedsFewerRows() {
-        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(248, RUN, 60, 60, 95, ENV);
-        assertEquals(3, f.rows());
+    void theNarrowestPanelGivesHistoryTheSecondRow() {
+        HttpPanelLayout.HeaderFit f = HttpPanelLayout.header(248, RUN, 60, 60, 95);
+        assertEquals(2, f.rows());
         assertEquals(60, f.status(), 1e-9);
-        HttpPanelLayout.HeaderFit noEnv = HttpPanelLayout.header(248, RUN, 60, 60, 95, 0);
-        assertEquals(2, noEnv.rows());
-        assertEquals(248, noEnv.history(), 1e-9, "History takes the second row");
+        assertEquals(248, f.history(), 1e-9, "History takes the second row");
     }
 
     @Test

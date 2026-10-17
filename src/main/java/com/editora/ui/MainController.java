@@ -731,6 +731,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
+        statusBar.setOnHttpEnvironmentClicked(() -> httpClient.showEnvironmentMenu(
+                activeBuffer(), statusBar.httpEnvSegmentNode(), javafx.geometry.Side.TOP));
         this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath, this::windowProjectRoot);
         // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
         // the editor area itself.
@@ -994,7 +996,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             containerCoordinator.windowFocused(); // a dev container may have been started or stopped meanwhile
         }
         diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
-        httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the pickers and {{variable}} marks
+        httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the env pills and {{variable}} marks
     }
 
     // --- plugins ----------------------------------------------------------------------------------
@@ -2263,6 +2265,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
             httpClient.refreshFor(activeBuffer()); // …and the .http response preview
+            refreshHttpEnvSegment(); // the status bar's "Env: dev" follows the active .http file
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             installPrompts.maybeOfferInstall(
                     activeBuffer()); // offer to install this language's LSP/DAP if it's missing
@@ -6399,6 +6402,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void openFile(Path file) {
+                    fileWorkflows.openPath(file);
+                }
+
+                @Override
                 public Path projectRoot() {
                     return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
                 }
@@ -6450,10 +6458,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         public java.nio.file.Path envDir(EditorBuffer buffer) {
             return httpClient.envDirFor(buffer);
         }
+
+        @Override
+        public void choose(EditorBuffer buffer, String environment) {
+            httpClient.chooseEnvironment(buffer, environment); // the "Use environment dev" quick fix
+        }
     });
 
     {
         httpClient.setEnvironmentListener(httpVariableHints::refresh);
+        httpClient.setEnvironmentShownListener(this::refreshHttpEnvSegment);
+    }
+
+    /** Shows the active {@code .http} file's environment in the status bar ("Env: dev"), or hides the segment. */
+    private void refreshHttpEnvSegment() {
+        if (statusBar == null) {
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        String label = httpClient.environmentLabel(b);
+        statusBar.setHttpEnvironment(
+                label, label != null && httpClient.selectedEnvironment(b).isEmpty());
     }
 
     // --- AI Agent (an embedded ACP agent — Claude Code etc. — in the chat tool window) -------------
@@ -8857,7 +8882,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.consoleInUse());
         }
         if (http && httpClient.isEnabled()) {
-            httpClient.refreshEnvironments(buffer); // the response preview's environment picker
+            httpClient.refreshEnvironments(buffer); // the .http file's environment pill and menu
         }
     }
 

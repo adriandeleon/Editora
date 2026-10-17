@@ -82,7 +82,7 @@ final class HttpHistorySync {
     /**
      * @param store the window's history store (may answer null: keep nothing)
      * @param panels each buffer's response panel (null when it has none)
-     * @param chosenEnvironment the environment chosen for a buffer's file, or null when none is known yet
+     * @param chosenEnvironment the environment to save for a buffer's file: its own choice, else the one selected
      * @param environmentRestored told the environment a saved history remembers for a buffer's file (it applies only
      *     when the file has no choice yet)
      * @param refreshEnvironments re-reads a buffer's environment list after its history (and choice) arrived
@@ -293,7 +293,7 @@ final class HttpHistorySync {
         }
         HttpResponseHistory.Stored state = new HttpResponseHistory.Stored();
         String env = chosenEnvironment.apply(buffer);
-        state.environment = env == null ? p.getSelectedEnvironment() : env;
+        state.environment = env == null ? "" : env;
         state.clearedAt = t.clearedAt;
         for (HttpHistoryEntry e : p.history()) {
             if (!e.noLog()) {

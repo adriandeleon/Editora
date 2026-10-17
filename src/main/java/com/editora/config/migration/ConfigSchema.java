@@ -347,10 +347,19 @@ public enum ConfigSchema {
     // and the file gained clearedAt — all additive (absent ⇒ unknown / never cleared).
     // v2 → v3: + landedAt, urlTemplate, fingerprint per response (additive).
     // v3 → v4: + tests, what each response's @assert checks and handlers found (additive; absent ⇒ none ran).
+    // v4 → v5: + environment, the one each response was sent in (additive; absent ⇒ unknown).
     HTTP_HISTORY(
             HttpResponseHistory.SCHEMA_VERSION,
             1,
-            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity, 3, ConfigMigrations::identity));
+            Map.of(
+                    1,
+                    ConfigMigrations::identity,
+                    2,
+                    ConfigMigrations::identity,
+                    3,
+                    ConfigMigrations::identity,
+                    4,
+                    ConfigMigrations::identity));
 
     private final int currentVersion;
     private final int assumedLegacyVersion;
