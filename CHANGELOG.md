@@ -114,6 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Untitled Python buffers get it too.
 - **Python highlighting:** generics (`def f[T]`, `class C[T]`), `type` aliases, t-strings, `match` used as a name, and
   `0x`/`j` numbers. `__init__` and other methods named like builtins are back in Structure.
+- **Python snippets:** Enter after a keyword such as `try` ends the line instead of inserting the `try` snippet; Tab
+  still expands it.
 - **Python indentation:** a file's indent size is guessed from its statements only, so PEP 8 hanging indents no
   longer make it 8 spaces.
 - **Language names:** the status bar and the language picker show readable names ("pip requirements").
@@ -137,6 +139,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An interpreter with arguments or an `env` prefix hung or lost them.
   - A breakpoint the debugger moved onto a conditional one silently dropped its condition.
   - Hovering `p.x` showed the local `x`.
+  - A Python row in Test Results had no Debug This Test item.
+  - A file with a `uv run --script` (or pipx, Poetry, PDM) shebang handed debugpy the runner instead of a Python;
+    Debug runs it under the project's Python.
   - debugpy installed without Node and is no longer fetched again while debugging is off.
 - **Python code intelligence:**
   - A new module created outside Editora never resolved until a restart.
