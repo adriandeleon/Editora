@@ -970,31 +970,6 @@ public class SettingsWindow {
         sidebar.setPrefWidth(216);
         sidebar.setMinWidth(216);
         sidebar.setCellFactory(v -> new CategoryCell());
-        // The arrow, Home/End and Page keys only ever land on a category that can be opened: never on a
-        // group header, and never on one the running search has disabled.
-        sidebar.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
-                return;
-            }
-            List<Object> items = sidebar.getItems();
-            int from = sidebar.getSelectionModel().getSelectedIndex();
-            int page = (int) Math.max(1, sidebar.getHeight() / 34 - 1);
-            int target = SettingsSidebarNav.target(
-                    items.size(),
-                    from,
-                    e.getCode(),
-                    page,
-                    i -> items.get(i) instanceof Category c && !searchHiddenCats.contains(c));
-            if (target == SettingsSidebarNav.NOT_A_NAVIGATION_KEY) {
-                return;
-            }
-            e.consume();
-            if (target >= 0 && target != from) {
-                sidebar.getSelectionModel().clearAndSelect(target);
-                sidebar.getFocusModel().focus(target);
-                revealSidebarRow(target);
-            }
-        });
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category) { // group headers aren't pages
                 showContent();
@@ -1011,25 +986,6 @@ public class SettingsWindow {
                     // A command or a search can pick a page far down the list: keep its row in view.
                     revealSidebarRow(sidebar.getSelectionModel().getSelectedIndex());
                 });
-            }
-        });
-        // Typing a letter on the sidebar searches; Down in the search box goes on to the pages.
-        sidebar.addEventHandler(javafx.scene.input.KeyEvent.KEY_TYPED, e -> {
-            String ch = e.getCharacter();
-            if (!e.isControlDown()
-                    && !e.isMetaDown()
-                    && !e.isAltDown()
-                    && ch.codePoints().allMatch(Character::isLetterOrDigit)
-                    && !ch.isEmpty()) {
-                searchField.requestFocus();
-                searchField.appendText(ch);
-                e.consume();
-            }
-        });
-        searchField.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.DOWN) {
-                sidebar.requestFocus();
-                e.consume();
             }
         });
 
@@ -1083,29 +1039,13 @@ public class SettingsWindow {
                         SettingsWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
-        // Escape leaves: first a running search, then the window. A filter, because a ListView (the
-        // sidebar, where the focus usually is) swallows Escape — so what really uses the key is exempted
-        // by name in escapeIsTaken. An open combo popup or context menu takes the key before the scene.
-        scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.F && e.isShortcutDown() && !e.isAltDown()) {
-                e.consume(); // Ctrl/Cmd+F: the search box, wherever the focus is
-                searchField.requestFocus();
-                searchField.selectAll();
-                return;
-            }
-            if (e.getCode() != javafx.scene.input.KeyCode.ESCAPE
-                    || e.isShortcutDown()
-                    || e.isAltDown()
-                    || escapeIsTaken(e.getTarget())) {
-                return;
-            }
-            e.consume();
-            if (!searchField.getText().isEmpty()) {
-                searchField.clear();
-            } else {
-                stage.close();
-            }
-        });
+        SettingsKeys.install(
+                scene,
+                stage,
+                searchField,
+                sidebar,
+                i -> sidebar.getItems().get(i) instanceof Category c && !searchHiddenCats.contains(c),
+                item -> item instanceof Group);
         stage.setScene(scene);
         // The list-and-form pages commit a field when it loses the focus, and closing the window does not
         // take the focus away: text typed last (an abbreviation's expansion, a site's host) was dropped.
@@ -1117,38 +1057,8 @@ public class SettingsWindow {
         sidebar.getSelectionModel().select(Category.APPEARANCE);
     }
 
-    /**
-     * Whether Escape pressed on {@code target} is that control's own: the shortcut recorder (cancels the
-     * recording), a snippet/template body (a text editor — not a request to close the window), a cell
-     * being edited, or a combo whose popup is open.
-     */
-    private static boolean escapeIsTaken(Object target) {
-        for (Node n = target instanceof Node node ? node : null; n != null; n = n.getParent()) {
-            if (n instanceof CodeArea
-                    || n.getStyleClass().contains("shortcut-capture")
-                    || (n instanceof javafx.scene.control.Cell<?> cell && cell.isEditing())
-                    || (n instanceof javafx.scene.control.ComboBoxBase<?> combo && combo.isShowing())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Scrolls the sidebar just far enough to show row {@code index} (the keyboard moved the selection). */
     private void revealSidebarRow(int index) {
-        if (index < 0) {
-            return;
-        }
-        if (sidebar.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
-            javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
-            javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
-            if (first != null && last != null && index > first.getIndex() && index < last.getIndex()) {
-                return; // fully in view already
-            }
-        }
-        // Going up, show the group header above the category too rather than cutting it off.
-        boolean up = index > 0 && sidebar.getItems().get(index - 1) instanceof Group;
-        sidebar.scrollTo(up ? index - 1 : index);
+        SettingsKeys.reveal(sidebar, index, item -> item instanceof Group);
     }
 
     /**
