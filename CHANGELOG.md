@@ -279,6 +279,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
 - **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
   workspace schema 19 keeps the exception toggles per project.
+- **Syntax highlighting for C#, CSS, dotenv, PowerShell and SQL is updated** to the shiki tm-grammars 1.32.22
+  grammars (from 1.31.15).
+  - CSS colours nested rules (`&`, `> h2` inside a rule), `@layer` name lists, `@import … layer(…)` and the
+    operators inside `calc()`.
+  - C# knows `union` declarations and the `#:ref` directive of file-based apps, and an interpolation that opens
+    at the end of a line no longer ends the string.
+  - SQL colours a `[bracketed identifier]` and its `]]` escape; a numeric dotenv value (`PORT=8080`) is a number.
+  - PowerShell colours automatic variables (`$Error`, `$Host`, `$PSHome`…) as variables, not constants.
+- **IBM Plex Mono is updated from 2.3 to 2.5.** The ASCII control pictures (␀ ␉ ␊ ␛, U+2400–2421) now come from
+  Plex itself instead of a fallback font, so they keep the editor's column width, and Plex covers more
+  transliteration letters and combining marks. The four font files add about 145 KB to the package.
 
 ### Fixed
 
