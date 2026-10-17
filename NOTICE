@@ -105,7 +105,8 @@ hosts.tmLanguage.json, deb822.tmLanguage.json, apt-sources.tmLanguage.json,
 interfaces.tmLanguage.json, debian-changelog.tmLanguage.json) — like the HTTP
 grammar (http.tmLanguage.json), the Java properties grammar
 (properties.tmLanguage.json), and the Git attributes grammar
-(gitattributes.tmLanguage.json) — were written for Editora and are covered by
+(gitattributes.tmLanguage.json), and the pip requirements grammar
+(pip-requirements.tmLanguage.json) — were written for Editora and are covered by
 Editora's own MIT License (above).
 
 These remain under their original upstream licenses (predominantly MIT). All
@@ -124,7 +125,8 @@ Kotlin, Ruby, C, C++, Rust, Go, C#, Markdown, JSON, CSS, HTML, YAML, INI, SQL,
 systemd, desktop entries, dotenv, SSH config, Git config, crontab, Caddyfile,
 fstab, hosts, .properties, deb822 (Debian control / APT sources), APT
 sources.list, network interfaces, Debian changelog, unified diff/patch,
-Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes.
+Makefile, justfile, Protocol Buffers, GraphQL, Astro, .gitattributes, pip
+requirements.
 
 ================================================================================
 Bundled fonts

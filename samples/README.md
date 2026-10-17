@@ -278,6 +278,7 @@ inert samples (fake values, not real system files).
 - `samples/config/etc/apt/sources.list` — classic one-line APT `sources.list` (apt-sources grammar).
 - `samples/config/etc/network/interfaces` — Debian ifupdown config (matched under a `network/` dir).
 - `samples/config/debian/changelog` — Debian packaging changelog (matched under a `debian/` dir).
+- `samples/config/requirements.txt` — pip requirements: names, extras, specifiers, markers, `-r`/`-c`/`-e` options (by file name: `requirements*.txt`, `constraints*.txt`, `requirements.in`).
 
 ## hex/ — hex viewer (binary files)
 
