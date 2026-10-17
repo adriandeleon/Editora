@@ -954,6 +954,7 @@ final class EditorSettingsCoordinator {
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
         buffer.wrap().setPreference(s.isWordWrap(), s.isWordWrapProse()); // applied by the buffer's language
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
+        buffer.setSimpleMenu(simple); // ... and trims the right-click menu to the editing actions
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }

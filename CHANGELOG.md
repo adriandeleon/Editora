@@ -116,6 +116,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer flagged.
 - **Go to Symbol without a language server:** Python methods show their class.
 
+### Changed
+
+- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
+  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
+    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
+  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
+    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
+    Add Personal Note are hidden.
+  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
+    Manager.
+  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
+    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
+    hidden.
+  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
+    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
+
 ## [0.22.0] - 2026-10-16
 
 ### Added
