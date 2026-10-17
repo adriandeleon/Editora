@@ -205,6 +205,32 @@ public final class InstallCatalog {
             String destSubpath,
             String verifyEntry) {}
 
+    /**
+     * The missing steps split by whether their prerequisites are {@code present}: {@code runnable} ones install
+     * now, {@code blocked} ones wait for what they {@code need}. Python support is Pyright (npm) and debugpy
+     * (pip): without Node, debugpy alone still installs instead of nothing at all.
+     */
+    public record Plan(List<Step> runnable, List<Step> blocked, Set<Prereq> need) {}
+
+    /** Splits {@code missing} by {@code present} prerequisites. Pure. */
+    public static Plan plan(List<Step> missing, Set<Prereq> present) {
+        List<Step> runnable = new ArrayList<>();
+        List<Step> blocked = new ArrayList<>();
+        Set<Prereq> need = java.util.EnumSet.noneOf(Prereq.class);
+        for (Step s : missing) {
+            Set<Prereq> lacking = java.util.EnumSet.noneOf(Prereq.class);
+            lacking.addAll(s.prereqs());
+            lacking.removeAll(present);
+            if (lacking.isEmpty()) {
+                runnable.add(s);
+            } else {
+                blocked.add(s);
+                need.addAll(lacking);
+            }
+        }
+        return new Plan(List.copyOf(runnable), List.copyOf(blocked), need);
+    }
+
     /** The Open VSX "latest release" metadata URL for an extension. Pure. */
     public static String openVsxLatestUrl(String namespace, String name) {
         return "https://open-vsx.org/api/" + namespace + "/" + name + "/latest";

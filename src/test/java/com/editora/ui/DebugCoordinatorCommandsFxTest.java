@@ -393,6 +393,23 @@ class DebugCoordinatorCommandsFxTest {
 
     // --- Debug (the active file) ------------------------------------------------------------------------
 
+    /** One "unavailable" message covered Python debugging switched off and debugpy missing alike. */
+    @Test
+    void aPythonFileThatCannotBeDebuggedSaysWhy() throws Exception {
+        buffer(loose.resolve("app.py"), "print(1)\n");
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("status.debug.debugpyMissing", "python3")), statuses());
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> {
+            host.settings.setPythonDebugEnabled(false);
+            debug.debugStart();
+            host.settings.setPythonDebugEnabled(true);
+        });
+        assertEquals(List.of(tr("status.debug.pythonOff")), statuses());
+        assertEquals(0, adapter.sessionCount());
+    }
+
     @Test
     void debugOnNothingDebuggableSaysWhyAndStartsNothing() throws Exception {
         FxTestSupport.runOnFx(() -> debug.debugStart());
@@ -836,21 +853,38 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     @Test
-    void uncaughtExceptionBreakpointsAreToggledForTheLiveSessionToo() throws Exception {
+    void exceptionBreakpointsArePickedPerFilterAndReachTheLiveSession() throws Exception {
         open("src/main/java/demo/Args.java");
         mainClasses("demo.Args");
         FakeDebugAdapter.Session session = launch();
-        assertEquals(0, session.exceptionBreakpoints.size(), "none by default");
+        assertEquals(0, session.exceptionBreakpoints.size(), "java-debug has none on by default");
+        var uncaught = new com.editora.dap.DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false);
+        assertEquals("    Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
 
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequest("setExceptionBreakpoints");
         assertEquals(
                 List.of("uncaught"), List.of(session.exceptionBreakpoints.get(0).getFilters()));
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        assertEquals("✓ Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequests("setExceptionBreakpoints", 2);
         assertEquals(List.of(), List.of(session.exceptionBreakpoints.get(1).getFilters()));
 
-        assertEquals(List.of(tr("status.debug.exceptionsOn"), tr("status.debug.exceptionsOff")), statuses());
+        assertEquals(
+                List.of(
+                        tr("status.debug.exceptionFilters", "Java", "Uncaught Exceptions"),
+                        tr("status.debug.exceptionFiltersNone", "Java")),
+                statuses());
+    }
+
+    @Test
+    void theExceptionFilterOrderIsTheAdapters() {
+        var options = com.editora.dap.ExceptionFilterCatalog.known("python");
+        assertEquals(List.of("uncaught"), DebugCoordinator.toggledFilter(List.of(), "uncaught", options));
+        assertEquals(
+                List.of("raised", "uncaught"), DebugCoordinator.toggledFilter(List.of("uncaught"), "raised", options));
+        assertEquals(
+                List.of("raised"), DebugCoordinator.toggledFilter(List.of("raised", "uncaught"), "uncaught", options));
     }
 
     @Test

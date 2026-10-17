@@ -110,6 +110,8 @@ public final class StatusBar extends HBox {
     private final Label csvField = segment("csv.copyAsMarkdownTable", tr("statusbar.tip.csvField"));
 
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
+    /** The Python interpreter of the active Python file; click to pick another ({@code python.selectInterpreter}). */
+    private final Label pythonInterpreter = segment("python.selectInterpreter", "");
     /** The dictionary the active buffer is spell-checked with ({@code en-US}); clickable → the language
      *  picker. Hidden when the buffer is not being checked, so its presence also says that it is. */
     private final Label spell = segment("spell.setLanguage", tr("statusbar.tip.spell"));
@@ -236,6 +238,9 @@ public final class StatusBar extends HBox {
         httpEnv.setVisible(false); // shown only for an .http buffer with the HTTP Client on
         httpEnv.setManaged(false);
 
+        pythonInterpreter.getStyleClass().add("status-python");
+        pythonInterpreter.setVisible(false); // shown only on a Python file
+        pythonInterpreter.setManaged(false);
         lsp.getStyleClass().add("status-lsp");
         lsp.setVisible(false); // shown only when the active file is served by a language server
         lsp.setManaged(false);
@@ -304,6 +309,7 @@ public final class StatusBar extends HBox {
                         zoomGroup(),
                         position,
                         csvField,
+                        pythonInterpreter,
                         language,
                         spell,
                         narrowed,
@@ -736,6 +742,15 @@ public final class StatusBar extends HBox {
         applyLspStatusVisibility();
     }
 
+    /** Shows the Python interpreter item ({@code text}, hover {@code tooltip}); {@code null} hides it. */
+    public void setPythonInterpreter(String text, String tooltip) {
+        boolean show = text != null && !text.isBlank() && !simpleMode;
+        pythonInterpreter.setText(show ? text : "");
+        pythonInterpreter.setTooltip(show && tooltip != null ? new Tooltip(tooltip) : null);
+        pythonInterpreter.setVisible(show);
+        pythonInterpreter.setManaged(show);
+    }
+
     /** Shows/hides the indeterminate progress bar while a language server is starting/loading. */
     public void setLspLoading(boolean loading) {
         lspLoadingState = loading;
@@ -1106,11 +1121,11 @@ public final class StatusBar extends HBox {
         return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
-    /** Capitalizes a language name for display (e.g. {@code "java"} -> {@code "Java"}). */
+    /** A language id as it reads in the status bar ({@code "java"} → {@code "Java"}; see {@code LanguageNames}). */
     private static String displayLanguage(String name) {
         if (name == null || name.isEmpty()) {
             return tr("statusbar.plainText");
         }
-        return name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
+        return com.editora.editor.LanguageNames.display(name);
     }
 }

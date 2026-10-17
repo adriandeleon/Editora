@@ -82,6 +82,30 @@ final class TestRunCoordinator implements TestRunHook {
         void attachDebugger(String className, String host, int port);
     }
 
+    /**
+     * A test run Editora starts itself rather than through a build tool — pytest, or Python's unittest — whose
+     * output streams in the Run console and whose results it feeds in here. It answers the panel's actions.
+     */
+    interface ExternalRun {
+        void rerun();
+
+        /** Reruns just these failed tests. */
+        void rerunFailed(List<TestNode> failed);
+
+        /** Runs one test, or a suite row's tests. */
+        void runOne(TestNode node);
+
+        void stop();
+
+        /** Opens the test's source. */
+        void jump(TestNode node);
+
+        /** Debugs one test, or a suite row's tests; false when this run's tests cannot be debugged. */
+        default boolean debug(TestNode node) {
+            return false;
+        }
+    }
+
     /** JVM report poll interval — reports appear per class as each finishes; ~750 ms is responsive + cheap. */
     private static final long POLL_MS = 750;
 
@@ -173,6 +197,53 @@ final class TestRunCoordinator implements TestRunHook {
         }
     }
 
+    /** The external run the tree shows, or null when it shows a build tool's (see {@link ExternalRun}). */
+    private ExternalRun external;
+
+    /**
+     * Starts showing an external run ({@link ExternalRun}): a fresh tree, the Test Results window, the timer.
+     * False when the Test Runner is off, or a build tool's test run is still going (it keeps the tree).
+     */
+    boolean startExternalRun(String label, Path workingDir, ExternalRun driver) {
+        if (!isEnabled() || (currentRun != null && currentRun.isRunning() && currentTool != null)) {
+            return false;
+        }
+        stopPolling();
+        currentTool = null;
+        external = driver;
+        currentRun = new TestRun(null, workingDir, List.of(label), List.of(), System.currentTimeMillis());
+        parser = null;
+        fileBased = false;
+        npm = false;
+        tapDecided = false;
+        npmSniff.clear();
+        seeded = false;
+        followTarget = null;
+        awaitingAttachFor = null;
+        panel().startRun(label);
+        ops.setTestResultsAvailable(true);
+        ops.openTestResults();
+        startElapsedTimer();
+        ++runGeneration;
+        return true;
+    }
+
+    /** Results of the external run, as they arrive (FX thread). */
+    void externalResults(List<ParsedSuite> suites) {
+        if (external != null && currentRun != null && currentRun.isRunning()) {
+            mergeAll(suites);
+        }
+    }
+
+    /** The external run ended with {@code code} ({@code -1} when it was stopped or could not start). */
+    void finishExternalRun(int code) {
+        if (external == null || currentRun == null || !currentRun.isRunning()) {
+            return;
+        }
+        stopElapsedTimer();
+        completeRun(currentRun, runGeneration, code);
+    }
+
     private boolean isEnabled() {
         return host.settings().isTestRunner() && !host.simpleModeActive();
     }
@@ -197,6 +268,7 @@ final class TestRunCoordinator implements TestRunHook {
             return false;
         }
         currentTool = tool;
+        external = null;
         currentRun = new TestRun(tool, workingDir, taskArgs, toggleArgs, System.currentTimeMillis());
         parser = TestResultParsers.forTool(tool);
         fileBased = TestResultParsers.isFileBased(tool);
@@ -618,7 +690,9 @@ final class TestRunCoordinator implements TestRunHook {
      * frame does not resolve — which a failed test never got while its frame was opened here directly.
      */
     private void activate(TestNode node) {
-        if (node != null) {
+        if (node != null && external != null) {
+            external.jump(node);
+        } else if (node != null) {
             ops.jumpToTest(node, currentTool);
         }
     }
@@ -670,6 +744,16 @@ final class TestRunCoordinator implements TestRunHook {
 
     private void runOne(TestNode node, boolean debug) {
         if (node == null || currentRun == null || node.className() == null) {
+            return;
+        }
+        if (external != null) {
+            if (debug) {
+                if (!external.debug(node)) {
+                    host.setStatus(tr("status.testrunner.debugUnsupported"));
+                }
+            } else {
+                external.runOne(node);
+            }
             return;
         }
         BuildTool tool = currentRun.tool();
@@ -725,13 +809,24 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     void rerun() {
-        if (currentRun != null) {
+        if (external != null) {
+            external.rerun();
+        } else if (currentRun != null) {
             ops.runTest(currentRun.tool(), currentRun.workingDir(), currentRun.taskArgs(), currentRun.toggleArgs());
         }
     }
 
     void rerunFailed() {
         if (currentRun == null) {
+            return;
+        }
+        if (external != null) {
+            List<TestNode> failed = currentRun.root().failedLeaves();
+            if (failed.isEmpty()) {
+                external.rerun();
+            } else {
+                external.rerunFailed(failed);
+            }
             return;
         }
         List<String> failed = currentRun.failedTestFilters();
@@ -744,7 +839,9 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     void stop() {
-        if (currentTool != null) {
+        if (external != null) {
+            external.stop();
+        } else if (currentTool != null) {
             ops.stopTest(currentTool);
         }
     }

@@ -68,7 +68,11 @@ public final class DapModels {
     }
 
     /** A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log. */
-    public record LineBreakpoint(int line, String condition, String logMessage) {}
+    public record LineBreakpoint(int line, String condition, String logMessage, String hitCondition) {
+        public LineBreakpoint(int line, String condition, String logMessage) {
+            this(line, condition, logMessage, null);
+        }
+    }
 
     /** All breakpoints for one source file. */
     public record FileBreakpoints(Path file, List<LineBreakpoint> breakpoints) {}
@@ -108,4 +112,7 @@ public final class DapModels {
             return type.isEmpty() && message.isEmpty();
         }
     }
+
+    /** An exception filter an adapter offers ({@code exceptionBreakpointFilters}): its id, label and default. */
+    public record ExceptionFilterOption(String filter, String label, boolean byDefault) {}
 }

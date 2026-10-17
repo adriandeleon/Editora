@@ -65,6 +65,7 @@ final class RunScan {
         int line;
         List<Integer> httpLines = List.of();
         Map<Integer, String> makeTargets = Map.of();
+        Map<Integer, JavaTestScanner.TestTarget> pythonTests = Map.of();
         String language = in.language();
         if (in.httpEligible()) {
             httpLines = HttpFile.parse(text).stream()
@@ -82,8 +83,9 @@ final class RunScan {
             runnable = !targets.isEmpty();
             line = -1; // Makefile uses the target line map, not a single entry line
         } else if (in.eligible() && "python".equals(language)) {
-            runnable = true;
-            line = pythonRunLine(text); // the __main__ guard, else the first line
+            pythonTests = pythonTestLines(in.name(), text);
+            line = pythonTests.isEmpty() ? pythonRunLine(in.name(), text) : -1; // tests: their own ▶ each
+            runnable = line >= 0 || !pythonTests.isEmpty();
         } else if (in.eligible() && "shell".equals(language) && !ShellFiles.isStartupFile(in.name())) {
             // (A sourced startup file — .bashrc, .xinitrc, .envrc … — is never run: no ▶ for it.)
             // Gated like Python, by the Run feature alone: shell Run used to also need LSP and the Bash server
@@ -103,7 +105,7 @@ final class RunScan {
         }
         // JUnit test glyphs are additive to whatever the run type above decided (a test file is usually neither
         // compact-source nor a script), so they OR into runnable and get their own line→target map.
-        Map<Integer, JavaTestScanner.TestTarget> testLines = Map.of();
+        Map<Integer, JavaTestScanner.TestTarget> testLines = pythonTests;
         if (in.testEligible()) {
             Map<Integer, JavaTestScanner.TestTarget> tl = new LinkedHashMap<>();
             for (JavaTestScanner.TestTarget t : JavaTestScanner.scan(text)) {
@@ -126,17 +128,67 @@ final class RunScan {
         return new Result(runnable, line, httpLines, makeTargets, testLines, mainLines);
     }
 
-    private static final Pattern PYTHON_MAIN_GUARD =
-            Pattern.compile("^\\s*if\\s+__name__\\s*==\\s*['\"]__main__['\"]\\s*:");
+    /**
+     * The {@code __main__} guard in any of its spellings: either quote, either order, in parentheses, or as the
+     * first operand of a longer condition ({@code if __name__ == "__main__" and not DEBUG:}).
+     */
+    private static final Pattern PYTHON_MAIN_GUARD = Pattern.compile(
+            "^\\s*if\\s*\\(?\\s*(?:__name__\\s*==\\s*(['\"])__main__\\1|(['\"])__main__\\2\\s*==\\s*__name__)");
 
-    /** The gutter Run line for a Python script: the {@code if __name__ == "__main__":} guard, else line 0. */
-    static int pythonRunLine(String text) {
+    /** Files that are imported, never run: a stub, and (unless they have a guard) a package or pytest's conftest. */
+    private static boolean pythonLibraryFile(String name) {
+        return name != null && (name.equals("__init__.py") || name.equals("conftest.py"));
+    }
+
+    /**
+     * The gutter Run line for a Python script: its {@code __main__} guard (one inside a string or docstring
+     * does not count), else line 0 — or -1, no ▶ at all, for a {@code .pyi} stub, and for {@code __init__.py}
+     * and {@code conftest.py} without a guard (imported, never run).
+     */
+    static int pythonRunLine(String name, String text) {
+        if (name != null && name.endsWith(".pyi")) {
+            return -1;
+        }
         String[] lines = text.split("\n", -1);
-        for (int i = 0; i < lines.length; i++) {
-            if (PYTHON_MAIN_GUARD.matcher(lines[i]).find()) {
+        String[] code = com.editora.test.PytestScanner.blank(text).split("\n", -1);
+        for (int i = 0; i < lines.length && i < code.length; i++) {
+            // The blanked line still starts with `if` only when the line is code, not text in a string.
+            if (code[i].stripLeading().startsWith("if")
+                    && PYTHON_MAIN_GUARD.matcher(lines[i]).find()) {
                 return i;
             }
         }
-        return 0;
+        return pythonLibraryFile(name) ? -1 : 0;
+    }
+
+    /** As {@link #pythonRunLine(String, String)} for a file of no particular name. */
+    static int pythonRunLine(String text) {
+        return pythonRunLine(null, text);
+    }
+
+    /**
+     * The pytest ▶ glyphs of a test file ({@code test_*.py}, {@code *_test.py}): one per test function, test
+     * class and test method, plus one on the first line for the whole file when no test sits there. A test is
+     * carried as a {@link JavaTestScanner.TestTarget}: {@code className} is the test class, or {@code ""} at
+     * module level; {@code methodName} is the function, or null for a class (or, with {@code ""}, the file).
+     * Empty for any other file, and for a test file with no tests (it runs as a script).
+     */
+    static Map<Integer, JavaTestScanner.TestTarget> pythonTestLines(String name, String text) {
+        if (!com.editora.test.PytestScanner.isTestFile(name)) {
+            return Map.of();
+        }
+        List<com.editora.test.PytestScanner.TestTarget> tests = com.editora.test.PytestScanner.scan(text);
+        if (tests.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, JavaTestScanner.TestTarget> out = new LinkedHashMap<>();
+        if (tests.get(0).line() > 0) {
+            out.put(0, new JavaTestScanner.TestTarget(0, "", null, false)); // the whole file
+        }
+        for (com.editora.test.PytestScanner.TestTarget t : tests) {
+            String cls = t.className() == null ? "" : t.className();
+            out.put(t.line(), new JavaTestScanner.TestTarget(t.line(), cls, t.functionName(), false));
+        }
+        return out;
     }
 }

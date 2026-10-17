@@ -79,6 +79,20 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    /** The "Python Script" template's shape (shebang, docstring, main guard), so both ways of starting one agree. */
+    private static final String PYTHON = """
+            #!/usr/bin/env python3
+            \"""Module summary.\"""
+
+
+            def main() -> None:
+                {cursor}
+
+
+            if __name__ == "__main__":
+                main()
+            """;
+
     /** The same strict-mode preamble as the "Zsh Script" template, so both ways of starting one agree. */
     private static final String ZSH = """
             #!/usr/bin/env zsh
@@ -155,7 +169,8 @@ public final class NewFileCatalog {
             new Category(
                     "scripts",
                     List.of(
-                            NewFileType.named("scripts.python", "Python", "script", "py"),
+                            NewFileType.named("scripts.python", "Python", "script", "py")
+                                    .withTemplate(PYTHON),
                             NewFileType.named("scripts.shell", "Shell", "script", "sh")
                                     .withTemplate(BASH),
                             NewFileType.named("scripts.zsh", "Zsh", "script", "zsh")

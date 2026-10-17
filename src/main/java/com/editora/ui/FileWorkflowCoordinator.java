@@ -1171,6 +1171,14 @@ final class FileWorkflowCoordinator {
         if (load.longLine()) {
             return tr("status.longLineFileTier", load.maxLineLength());
         }
+        if (load.heavy()
+                && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
+                        com.editora.editor.LanguageRegistry.forFileName(
+                                String.valueOf(load.file().getFileName())),
+                        true,
+                        load.lines())) {
+            return tr("status.largeFileTierKeepsLsp", load.lines()); // a Python file keeps Pyright (B10)
+        }
         return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
     }
 

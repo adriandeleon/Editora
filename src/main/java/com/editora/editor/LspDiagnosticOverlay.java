@@ -213,6 +213,10 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
             if (look.faded()) {
                 g.fillRect(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight()); // unused code reads faded
             }
+            if (look.struck()) {
+                double mid = b.getMinY() + b.getHeight() / 2;
+                g.strokeLine(b.getMinX(), mid, b.getMaxX(), mid); // a deprecated call reads struck through
+            }
             if (look.dotted()) {
                 dots(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
             } else {
@@ -226,14 +230,15 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
 
     /**
      * How a diagnostic is drawn: a hint (ShellCheck's "style" level) as a faint dotted line rather than the same
-     * wavy underline as real information, and code tagged {@code Unnecessary} (an unused variable) faded.
+     * wavy underline as real information, code tagged {@code Unnecessary} (an unused variable) faded, and code
+     * tagged {@code Deprecated} struck through.
      */
-    record Look(boolean dotted, double opacity, boolean faded) {}
+    record Look(boolean dotted, double opacity, boolean faded, boolean struck) {}
 
     /** The {@link Look} of {@code d}. Pure. */
     static Look lookOf(LspDiagnostic d) {
         boolean hint = d.severity() == LspDiagnostic.Severity.HINT;
-        return new Look(hint, hint ? 0.6 : 1.0, d.unnecessary());
+        return new Look(hint, hint ? 0.6 : 1.0, d.unnecessary(), d.deprecated());
     }
 
     private void dots(GraphicsContext g, double x0, double x1, double y) {

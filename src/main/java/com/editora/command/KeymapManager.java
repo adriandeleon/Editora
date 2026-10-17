@@ -108,6 +108,32 @@ public class KeymapManager {
         }
     }
 
+    /** Bundled keymap name + platform → its stock bindings (read once; they never change while running). */
+    private static final Map<String, Map<String, String>> STOCK = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The stock bindings of bundled keymap {@code name} on the given platform (no user or plugin layers). */
+    public static Map<String, String> defaults(String name, boolean mac) {
+        return STOCK.computeIfAbsent(resolveName(name) + (mac ? ".mac" : ""), k -> {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed(name, mac);
+            return Collections.unmodifiableMap(new LinkedHashMap<>(km.bindings()));
+        });
+    }
+
+    /**
+     * Whether any bundled keymap binds {@code commandId} by default on the given platform. A command none of
+     * them binds (a saved macro, an external tool, a run configuration) has no keymap-specific meaning, so its
+     * user binding can follow a keymap switch.
+     */
+    public static boolean boundByAnyKeymap(String commandId, boolean mac) {
+        for (String name : AVAILABLE.keySet()) {
+            if (defaults(name, mac).containsValue(commandId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Sentinel override value meaning "unbind this chord" (suppress a base-keymap default). */
     public static final String UNBIND = "";
 

@@ -51,6 +51,11 @@ public final class MermaidService {
      * {@code npx -y @probelabs/maid}, whose probe costs ~6.5 s, on the same single thread that serves live
      * {@code .mmd} linting and exports: toggling a checkbox parked a multi-second job in front of them.
      */
+    /** Forgets the cached availability, so the next {@link #detect} probes again (Settings' Re-check). */
+    public void invalidate() {
+        this.cached = null;
+    }
+
     public void setPaths(String mmdcPath, String maidPath) {
         String mmdc = mmdcPath == null ? "" : mmdcPath;
         String maid = maidPath == null ? "" : maidPath;

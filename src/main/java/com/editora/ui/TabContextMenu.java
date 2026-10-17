@@ -10,7 +10,13 @@ import com.editora.editor.EditorBuffer;
 
 import static com.editora.i18n.Messages.tr;
 
-/** The right-click menu of an editor tab; built lazily on first use by {@link MainController}. */
+/**
+ * The right-click menu of an editor tab; built lazily on first use by {@link MainController}.
+ *
+ * <p>Simple UI mode trims it, as it trims the menu bar, to saving, printing, closing and the file's own
+ * place on disk: the Git, Local History, diff, terminal and bulk-close entries are hidden while the mode is on
+ * and come back when it is off (the check runs on every showing, so a menu built before a toggle follows it).
+ */
 final class TabContextMenu {
     private TabContextMenu() {}
 
@@ -154,6 +160,14 @@ final class TabContextMenu {
                         pin,
                         rename);
         menu.setOnShowing(e -> {
+            boolean simple = c.chrome.simpleModeActive();
+            closeUnmodified.setVisible(!simple);
+            closeLeft.setVisible(!simple);
+            closeRight.setVisible(!simple);
+            terminal.setVisible(!simple);
+            // Unpin stays reachable for a tab pinned before the mode was turned on: a pinned tab survives
+            // Close Others / Close All, and Simple mode must not leave it stuck.
+            pin.setVisible(!simple || c.pinned.contains(tab));
             closeLeft.setDisable(c.eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(c.eligibleToRight(tab).isEmpty());
             boolean hasPath = buffer.getPath() != null;
@@ -163,16 +177,18 @@ final class TabContextMenu {
             terminal.setDisable(!localPath);
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
+            compareWith.setVisible(!simple);
             compareWith.setDisable(!hasPath); // not a Git action — works on any two files
             // Local History records saved local files only; greyed out while the feature is off.
-            localHistory.setVisible(localPath);
+            localHistory.setVisible(localPath && !simple);
             localHistory.setDisable(!c.historyCoordinator.isEnabled());
             // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
-            openPatch.setVisible(hasPath
+            openPatch.setVisible(!simple
+                    && hasPath
                     && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));
             // The Git submenu is only shown for a saved file (an untitled buffer can't be in a repo) and is
             // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
-            gitMenu.setVisible(hasPath);
+            gitMenu.setVisible(hasPath && !simple);
             GitPathScope scope = hasPath ? c.git.scopeOf(buffer.getPath()) : GitPathScope.NONE;
             gitMenu.setDisable(scope == GitPathScope.NONE);
             // Nothing to revert on a clean file; ignore is for untracked ones. For a file of another
@@ -183,6 +199,7 @@ final class TabContextMenu {
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(tr(c.pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
+            LazyContextMenu.collapseSeparators(menu.getItems());
         });
     }
 }

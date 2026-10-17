@@ -19,9 +19,20 @@ public final class RunConfigWorkingDirectory {
      * Editora process happened to be started, which is what {@code Path.of("sub")} on its own meant. With no
      * base to resolve against the answer is {@code null}: the caller reports it instead of running somewhere
      * arbitrary.
+     *
+     * <p>A Python script with no explicit directory runs in <b>its own folder</b>, as Run File does (the project
+     * root goes on {@code PYTHONPATH} instead), so a script that opens {@code data.txt} beside itself behaves
+     * the same from its gutter ▶ and from its configuration. A Python module ({@code python -m}) has no folder of
+     * its own and runs at the project root.
      */
     public static Path resolve(RunConfiguration cfg, Path projectRoot) {
         Path scriptFolder = scriptFolder(cfg);
+        if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type())) {
+            Path script = script(cfg, projectRoot, null);
+            if (script != null && script.isAbsolute() && script.getParent() != null) {
+                return script.getParent();
+            }
+        }
         if (!cfg.workingDir().isBlank()) {
             // In a remote project a directory names a folder on the project's host, not on this machine.
             if (projectRoot != null && !isLocal(projectRoot)) {
@@ -56,6 +67,34 @@ public final class RunConfigWorkingDirectory {
                 ? Path.of(cfg.target().strip())
                 : dir.resolve(cfg.target().strip());
         return target.normalize();
+    }
+
+    /**
+     * The script a Python or shell configuration runs. A relative target is relative to the project root — what
+     * Save as Run Configuration and Browse write, and what the form says — so changing the Working directory
+     * no longer turns {@code src/app/main.py} into {@code src/src/app/main.py}. A target that only exists
+     * relative to the working directory {@code dir} (how older configurations could be written) still resolves
+     * there. With no project, it is relative to {@code dir}. {@code null} for other types or a blank target.
+     */
+    public static Path script(RunConfiguration cfg, Path projectRoot, Path dir) {
+        if (!isFileScript(cfg) || cfg.target().isBlank()) {
+            return null;
+        }
+        String target = cfg.target().strip();
+        if (projectRoot == null) {
+            return script(cfg, dir);
+        }
+        Path fromRoot;
+        try {
+            fromRoot = projectRoot.resolve(target).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+        if (dir == null || dir.equals(projectRoot) || !isLocal(projectRoot) || java.nio.file.Files.exists(fromRoot)) {
+            return fromRoot;
+        }
+        Path fromDir = script(cfg, dir);
+        return fromDir != null && java.nio.file.Files.exists(fromDir) ? fromDir : fromRoot;
     }
 
     /** An absolute script target's folder; null for a relative or non-file target. */

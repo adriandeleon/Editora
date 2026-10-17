@@ -120,7 +120,7 @@
     "class-declaration": {
       "patterns": [
         {
-          "begin": "\\s*(class)\\s+(?=[_[:alpha:]]\\w*\\s*([(:]))",
+          "begin": "\\s*(class)\\s+(?=[_[:alpha:]]\\w*\\s*([(:\\[]))",
           "beginCaptures": {
             "1": {
               "name": "storage.type.class.python"
@@ -136,6 +136,9 @@
           "patterns": [
             {
               "include": "#class-name"
+            },
+            {
+              "include": "#type-parameters"
             },
             {
               "include": "#class-inheritance"
@@ -210,9 +213,6 @@
       "patterns": [
         {
           "include": "#illegal-object-name"
-        },
-        {
-          "include": "#builtin-possible-callables"
         },
         {
           "match": "\\b([_[:alpha:]]\\w*)\\b",
@@ -366,9 +366,6 @@
     },
     "decorator-name": {
       "patterns": [
-        {
-          "include": "#builtin-callables"
-        },
         {
           "include": "#illegal-object-name"
         },
@@ -1323,7 +1320,7 @@
       "name": "keyword.operator.quantifier.regexp"
     },
     "fstring-fnorm-quoted-multi-line": {
-      "begin": "\\b([Ff])([BUbu])?('''|\"\"\")",
+      "begin": "\\b([FfTt])([BUbu])?('''|\"\"\")",
       "beginCaptures": {
         "1": {
           "name": "string.interpolated.python string.quoted.multi.python storage.type.string.python"
@@ -1361,7 +1358,7 @@
       ]
     },
     "fstring-fnorm-quoted-single-line": {
-      "begin": "\\b([Ff])([BUbu])?(([\"']))",
+      "begin": "\\b([FfTt])([BUbu])?(([\"']))",
       "beginCaptures": {
         "1": {
           "name": "string.interpolated.python string.quoted.single.python storage.type.string.python"
@@ -1596,7 +1593,7 @@
       "name": "string.interpolated.python string.quoted.raw.multi.python"
     },
     "fstring-raw-quoted-multi-line": {
-      "begin": "\\b([Rr][Ff]|[Ff][Rr])('''|\"\"\")",
+      "begin": "\\b([Rr][FfTt]|[FfTt][Rr])('''|\"\"\")",
       "beginCaptures": {
         "1": {
           "name": "string.interpolated.python string.quoted.raw.multi.python storage.type.string.python"
@@ -1631,7 +1628,7 @@
       ]
     },
     "fstring-raw-quoted-single-line": {
-      "begin": "\\b([Rr][Ff]|[Ff][Rr])(([\"']))",
+      "begin": "\\b([Rr][FfTt]|[FfTt][Rr])(([\"']))",
       "beginCaptures": {
         "1": {
           "name": "string.interpolated.python string.quoted.raw.single.python storage.type.string.python"
@@ -1717,6 +1714,17 @@
           "match": "(=?(?:![ars])?)(:\\w?[<=>^]?[- +]?#?\\d*,?(\\.\\d+)?[%EFGXb-gnosx]?)(?=})"
         },
         {
+          "captures": {
+            "1": {
+              "name": "storage.type.format.python"
+            },
+            "2": {
+              "name": "storage.type.format.python"
+            }
+          },
+          "match": "(=?(?:![ars])?)(:[^{}\\n'\"\\])]*)(?=})"
+        },
+        {
           "include": "#fstring-terminator-multi-tail"
         }
       ]
@@ -1793,6 +1801,17 @@
             }
           },
           "match": "(=?(?:![ars])?)(:\\w?[<=>^]?[- +]?#?\\d*,?(\\.\\d+)?[%EFGXb-gnosx]?)(?=})"
+        },
+        {
+          "captures": {
+            "1": {
+              "name": "storage.type.format.python"
+            },
+            "2": {
+              "name": "storage.type.format.python"
+            }
+          },
+          "match": "(=?(?:![ars])?)(:[^{}\\n'\"\\])]*)(?=})"
         },
         {
           "include": "#fstring-terminator-single-tail"
@@ -1932,7 +1951,7 @@
       ]
     },
     "function-declaration": {
-      "begin": "\\s*(?:\\b(async)\\s+)?\\b(def)\\s+(?=[_[:alpha:]]\\p{word}*\\s*\\()",
+      "begin": "\\s*(?:\\b(async)\\s+)?\\b(def)\\s+(?=[_[:alpha:]]\\p{word}*\\s*[\\(\\[])",
       "beginCaptures": {
         "1": {
           "name": "storage.type.function.async.python"
@@ -1953,6 +1972,9 @@
           "include": "#function-def-name"
         },
         {
+          "include": "#type-parameters"
+        },
+        {
           "include": "#parameters"
         },
         {
@@ -1967,9 +1989,6 @@
       "patterns": [
         {
           "include": "#illegal-object-name"
-        },
-        {
-          "include": "#builtin-possible-callables"
         },
         {
           "match": "\\b([_[:alpha:]]\\w*)\\b",
@@ -3620,6 +3639,9 @@
     "statement": {
       "patterns": [
         {
+          "include": "#type-alias-statement"
+        },
+        {
           "include": "#import"
         },
         {
@@ -3680,7 +3702,7 @@
               "name": "keyword.control.flow.python"
             }
           },
-          "match": "^\\s*(case|match)(?=\\s*([-\"#'(+:\\[{\\w\\d]|$))\\b"
+          "match": "^\\s*(case|match)(?=\\s*([-\"#'(+:\\[{\\w\\d]|$))\\b(?=.*:\\s*(?:#.*)?$)"
         }
       ]
     },
@@ -4166,6 +4188,73 @@
         },
         {
           "include": "#string-brace-formatting"
+        }
+      ]
+    },
+    "type-parameters": {
+      "begin": "(\\[)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.type-parameters.begin.python"
+        }
+      },
+      "end": "(\\])",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.type-parameters.end.python"
+        }
+      },
+      "name": "meta.type.parameters.python",
+      "patterns": [
+        {
+          "match": "\\*\\*|\\*",
+          "name": "keyword.operator.unpacking.parameter.python"
+        },
+        {
+          "captures": {
+            "1": {
+              "name": "entity.name.type.parameter.python"
+            }
+          },
+          "match": "(?:(?<=\\[)|(?<=,)|(?<=\\*))\\s*([_[:alpha:]]\\w*)"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.parameters.python"
+        },
+        {
+          "match": ":",
+          "name": "punctuation.separator.annotation.python"
+        },
+        {
+          "match": "=(?!=)",
+          "name": "keyword.operator.assignment.python"
+        },
+        {
+          "include": "#expression"
+        }
+      ]
+    },
+    "type-alias-statement": {
+      "begin": "^\\s*(type)\\s+([_[:alpha:]]\\w*)\\s*(?=[\\[=])",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.type-alias.python"
+        },
+        "2": {
+          "name": "entity.name.type.alias.python"
+        }
+      },
+      "end": "(=)|(?=\\n)",
+      "endCaptures": {
+        "1": {
+          "name": "keyword.operator.assignment.python"
+        }
+      },
+      "name": "meta.type-alias.python",
+      "patterns": [
+        {
+          "include": "#type-parameters"
         }
       ]
     }

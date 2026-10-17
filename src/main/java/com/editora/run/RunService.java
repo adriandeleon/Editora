@@ -51,6 +51,12 @@ public final class RunService {
     private volatile boolean posixShell;
 
     /**
+     * Whether Stop interrupts the running program first (Ctrl-C) rather than terminating it: a Python program
+     * on this machine, so its {@code finally} blocks, {@code with} exits and {@code atexit} handlers run.
+     */
+    private volatile boolean interruptOnStop;
+
+    /**
      * The bounded, batched stdout/stderr pump shared with {@code build.BuildService}. A program's console
      * drops its oldest queued lines when the UI cannot keep up (the newest output is what matters, and the
      * program is never slowed down), and flushes a line that stops short of a newline so a prompt shows.
@@ -291,7 +297,8 @@ public final class RunService {
         }
         current = process;
         posixShell = isPosixShell(argv.get(0));
-        listener.onStart(String.join(" ", command));
+        interruptOnStop = !remote && com.editora.run.PythonLaunch.isPythonProgram(argv.get(0));
+        listener.onStart(commandLine(command));
         OutputPump.Sink sink = new OutputPump.Sink() {
             @Override
             public void line(String text, boolean stderr) {
@@ -326,6 +333,25 @@ public final class RunService {
                 "run-wait");
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    /**
+     * {@code argv} as one line a user can read and paste back into a shell: a word with spaces or quotes in it
+     * is quoted.
+     */
+    public static String commandLine(List<String> argv) {
+        StringBuilder sb = new StringBuilder();
+        for (String a : argv) {
+            if (!sb.isEmpty()) {
+                sb.append(' ');
+            }
+            if (a.isEmpty() || a.chars().anyMatch(c -> Character.isWhitespace(c) || c == '"' || c == '\'')) {
+                sb.append('"').append(a.replace("\"", "\\\"")).append('"');
+            } else {
+                sb.append(a);
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -369,7 +395,12 @@ public final class RunService {
     public void stop() {
         Process p = current;
         if (p != null && p.isAlive()) {
-            com.editora.process.ProcessRegistry.killTree(p);
+            if (interruptOnStop) {
+                // Python: SIGINT first (KeyboardInterrupt), so cleanup runs; killed after the grace period.
+                com.editora.process.ProcessRegistry.interruptThenKillTree(p);
+            } else {
+                com.editora.process.ProcessRegistry.killTree(p);
+            }
         }
     }
 
