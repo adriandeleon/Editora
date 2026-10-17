@@ -1919,7 +1919,7 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
-            List<MenuItem> debugItems = debugMenuContributor == null ? null : debugMenuContributor.get();
+            List<MenuItem> debugItems = debugMenuContributor == null || simpleMenu ? null : debugMenuContributor.get();
             if (debugItems != null && !debugItems.isEmpty()) {
                 items.addAll(debugItems);
                 items.add(new SeparatorMenuItem());
