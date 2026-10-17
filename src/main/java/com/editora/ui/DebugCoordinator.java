@@ -118,6 +118,12 @@ final class DebugCoordinator {
         /** Persists the debug-watch expressions (workspace state + durable save). */
         void persistDebugWatches(List<String> watches);
 
+        /**
+         * Opens the read-only source jdtls has for {@code uri} (a {@code jdt://} class file) at {@code line0},
+         * routed through {@code anchor}'s language server, and hands the tab to {@code opened}.
+         */
+        default void openLibraryFrame(Path anchor, String uri, int line0, Consumer<EditorBuffer> opened) {}
+
         /** The persisted exception-breakpoint choices, per debug-adapter language (workspace state). */
         default Map<String, List<String>> debugExceptionFilters() {
             return Map.of();
@@ -1075,8 +1081,9 @@ final class DebugCoordinator {
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {
                 panel().setStopReason(reason);
-                // Selects the first frame that has source to show → selectFrame highlights + loads vars.
-                int shown = firstFrameWithSource(frames, DebugCoordinator.this::hasSource);
+                // Selects the first frame that has source to show → selectFrame highlights + loads vars. A step
+                // that went into library code shows that code (B5): the user asked to go there.
+                int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
                 panel().setCallStack(frames, shown);
                 if (shown > 0) {
                     host.setStatus(tr(
@@ -1339,6 +1346,19 @@ final class DebugCoordinator {
      * Pure: the frame a new stop selects — the topmost one whose source can be shown, so pausing a thread that
      * sits in {@code Thread.sleep} lands on the caller's line rather than nowhere; the top frame when none can.
      */
+    /**
+     * Pure: the frame a stop selects. After a step into a JDK or library class whose text jdtls can supply (a
+     * {@code jdt://} source), that frame: the user asked to go there, and showing the caller instead made Step
+     * Into look as if it did nothing (B5). Any other stop: {@link #firstFrameWithSource}.
+     */
+    static int frameToShow(
+            String reason, List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
+        if ("step".equals(reason) && !frames.isEmpty() && frames.get(0).sourceUri() != null) {
+            return 0;
+        }
+        return firstFrameWithSource(frames, has);
+    }
+
     static int firstFrameWithSource(List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
         for (int i = 0; i < frames.size() && i < MAX_SOURCE_SEARCH; i++) {
             if (has.test(frames.get(i))) {
@@ -1355,6 +1375,17 @@ final class DebugCoordinator {
             return;
         }
         if (!hasSource(frame)) {
+            if (frame.sourceUri() != null && dapManager.debugFile() != null) {
+                // B5: a JDK or library class jdtls can supply the text of (java/classFileContents) — shown in its
+                // read-only library tab, as go-to-definition and the console's stack-trace links already do.
+                ops.openLibraryFrame(dapManager.debugFile(), frame.sourceUri(), frame.line(), lib -> {
+                    if (shownFrame == frame && dapManager.state() == DapManager.State.SUSPENDED) {
+                        clearExecHighlight();
+                        paintExecutionLine(lib, frame);
+                    }
+                });
+                return;
+            }
             // Asking for it anyway opened a loading tab, failed, removed the tab again and reported "Failed to
             // open" as an error — on every stop and step inside library code. Say what is the case instead;
             // the frame stays selected with its variables, and the other frames stay a click away.
