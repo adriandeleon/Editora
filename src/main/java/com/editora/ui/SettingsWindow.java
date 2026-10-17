@@ -4001,6 +4001,11 @@ public class SettingsWindow {
     private Spinner<Integer> syncIntervalSpinner;
     /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
     private String syncConnectMessage;
+    /** Connect's look at the repository is under way; {@link #syncConnectRun} tells a cancelled one apart. */
+    private boolean syncChecking;
+
+    private int syncConnectRun;
+    private Button syncCancelButton;
     /**
      * Why the last Connect or Create did not go through (an unusable URL, an unreachable repository, a gh
      * error). Kept, rather than written to the label once, so that a refresh arriving afterwards — the
@@ -4065,7 +4070,15 @@ public class SettingsWindow {
                 "sync repository url git remote github gitlab clone ssh https");
         syncBranchField = new TextField();
         syncBranchField.setPrefWidth(140);
+        syncBranchField.textProperty().addListener((o, was, now) -> {
+            boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
+            syncBranchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
+            syncBranchField.setTooltip(bad ? new Tooltip(tr("settings.sync.branch.invalid")) : null);
+        });
         commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
+            if (!text.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(text.strip())) {
+                return; // red, with the reason; the branch in use stays
+            }
             config.getSettings().setSyncBranch(text);
             config.save();
             syncNotice = null;
@@ -4112,6 +4125,14 @@ public class SettingsWindow {
                 settingsSync.syncAllowingLargeRemoval();
             }
         });
+        syncCancelButton = new Button(tr("settings.sync.cancel"));
+        syncCancelButton.setOnAction(
+                e -> { // stops waiting; git finishes (or times out) on its own, unused
+                    syncConnectRun++;
+                    syncChecking = false;
+                    syncConnectMessage = null;
+                    showSyncNotice(tr("settings.sync.cancelled"));
+                });
         Button openFolder = new Button(tr("settings.sync.openFolder"));
         openFolder.setOnAction(e -> openSyncFolder());
         cardRow(
@@ -4124,7 +4145,7 @@ public class SettingsWindow {
                                 6,
                                 syncStateLabel,
                                 syncAccountLabel,
-                                new HBox(8, syncNowButton, syncAnywayButton, openFolder))),
+                                new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
                 "sync now status last synced received sent conflict backups folder github account signed in");
 
         Card what = card(p, tr("settings.sync.what"));
@@ -4136,6 +4157,7 @@ public class SettingsWindow {
         checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
         checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
         checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
+        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences keymap macros");
 
         Card when = card(p, null);
         syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
@@ -4238,6 +4260,8 @@ public class SettingsWindow {
                 && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
         syncAnywayButton.setVisible(needsConfirmation);
         syncAnywayButton.setManaged(needsConfirmation);
+        syncCancelButton.setVisible(syncChecking);
+        syncCancelButton.setManaged(syncChecking);
         String account = connected && settingsSync != null ? settingsSync.account() : "";
         syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
         syncAccountLabel.setVisible(!account.isEmpty());
@@ -4272,14 +4296,25 @@ public class SettingsWindow {
             showSyncNotice(tr("settings.sync.repo.credentials")); // the stored URL is not the one shown
             return;
         }
+        String typedBranch = syncBranchField.getText().strip();
+        if (!typedBranch.isEmpty() && !com.editora.sync.SyncEngine.isUsableBranch(typedBranch)) {
+            showSyncNotice(tr("settings.sync.branch.invalid")); // nor is the stored branch
+            return;
+        }
         String branch = settings.getSyncBranch();
         if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
             showSyncNotice(tr("status.sync.invalidRepository"));
             return;
         }
         syncConnectMessage = tr("sync.state.checking");
+        int run = ++syncConnectRun;
+        syncChecking = true;
         refreshSyncControls();
         settingsSync.preview(url, branch, report -> {
+            if (run != syncConnectRun) {
+                return; // cancelled: the user stopped waiting for this look
+            }
+            syncChecking = false;
             syncConnectMessage = null;
             if (!report.ok()) {
                 showSyncNotice(SettingsSync.problemText(report));

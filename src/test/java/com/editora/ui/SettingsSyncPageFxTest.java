@@ -155,7 +155,7 @@ class SettingsSyncPageFxTest {
         assertEquals(tr("status.sync.invalidRepository"), status());
 
         connect(remote.toString(), "not..a/branch");
-        assertEquals(tr("status.sync.invalidRepository"), status());
+        assertEquals(tr("settings.sync.branch.invalid"), status(), "the field says it too, and keeps main");
 
         connect("--upload-pack=evil", "main"); // an option is not a repository
         assertEquals(tr("status.sync.invalidRepository"), status());
@@ -488,5 +488,54 @@ class SettingsSyncPageFxTest {
             url.fireEvent(new javafx.event.ActionEvent());
             assertEquals("git@github.com:me/editora-sync.git", settings.getSyncRepoUrl());
         });
+    }
+
+    /** A branch git would refuse used to be saved without a word, failing only at Connect. */
+    @Test
+    void aBranchNameGitWouldRefuseIsNotSaved() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            TextField branch = control("syncBranchField");
+            SettingsRig.typeAndEnter(branch, "a..b");
+            assertEquals("main", settings.getSyncBranch());
+            assertTrue(branch.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertEquals(tr("settings.sync.branch.invalid"), branch.getTooltip().getText());
+            SettingsRig.typeAndEnter(branch, "editora/sync");
+            assertEquals("editora/sync", settings.getSyncBranch());
+            assertTrue(SettingsRig.texts(FxTestSupport.<Stage>field(window, "stage")
+                            .getScene()
+                            .getRoot())
+                    .contains(tr("settings.sync.notSynced")));
+        });
+    }
+
+    /** Connect's look at the repository could take minutes with no way out; Cancel stops waiting. */
+    @Test
+    void connectCanBeCancelledWhileItLooksAtTheRepository() throws Exception {
+        open(null);
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(sync, "worker");
+        worker.execute(
+                () -> { // stands for a slow network: the look waits behind this
+                    try {
+                        hold.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        connect(remote.toUri().toString(), "main");
+        FxTestSupport.runOnFx(() -> {
+            Button cancel = control("syncCancelButton");
+            assertTrue(cancel.isVisible(), "offered while it looks");
+            cancel.fire();
+            assertFalse(cancel.isVisible());
+            assertEquals(
+                    tr("settings.sync.cancelled"),
+                    this.<Label>control("syncStateLabel").getText());
+            assertFalse(this.<Button>control("syncConnectButton").isDisabled(), "Connect can be pressed again");
+        });
+        hold.countDown();
+        awaitIdle();
+        assertFalse(settings.isSyncEnabled(), "the look that finished after Cancel connects nothing");
     }
 }
