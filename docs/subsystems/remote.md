@@ -9,10 +9,42 @@ described in the `vfs/` entry of the [architecture catalog](../reference/archite
 A remote file is an ordinary `java.nio.file.Path` on a non-default filesystem (Apache MINA SSHD's
 `SftpFileSystem`), owned by the window's `vfs/RemoteFileSystems`. `Vfs.isLocal(path)` is the predicate every
 local-only feature gates on; `Vfs.toStorableString` / `parseStorable` round-trip a remote path as an
-`sftp://user@host:port/path` URI. Each window has its own engine and its own SSH client.
+`sftp://user@host:port/path` URI. Each window has its own engine; all of them connect through one SSH client
+(`vfs/SshClients`), started with the first engine and stopped with the last. The client's host-key check asks
+the engine that owns the session (the `SshClients.ENGINE` attribute: the connect's context, or the session's
+own once another engine adopts it), so each window keeps its own `known_hosts` and its own prompt.
 
 `Remote: Disconnect` closes the SSH session, not only the SFTP channel: the session also carries commands and
 forwarded ports.
+
+## Logging in
+
+The connect form takes no password: what a login needs is asked for while it runs, as `ssh` asks at the
+terminal. `vfs/LoginPrompt` is the window's question (in the app, `RemoteCoordinator.answerLogin`, a blocking
+FX dialog on the pattern of the host-key question, 120 s to answer); `vfs/LoginQuestions` puts it for the
+engine that owns the session (`SshClients.engineOf`), so a window's login asks in that window.
+
+- **Keyboard-interactive** (a server's own questions — where 2FA codes come from): the shared client's
+  `UserInteraction` is `vfs/LoginInteraction`. The server's name, instruction and prompts are shown as sent,
+  each answer hidden unless the server allows echo.
+- **Password**: a given password (`connect`'s `secret`, used by tests) is the first try; then
+  `resolveAuthPasswordAttempt` asks, up to three in all.
+- **Key passphrase**: asked only when a key turns out to be encrypted (`RemoteFileSystems.Passphrases`, the
+  key provider's `FilePasswordProvider`), three tries; cancelling skips that key and the login goes on.
+- What each method may use: `PASSWORD` no keys (MINA's default keys were tried first before); `KEY` that file;
+  `DEFAULT_KEYS` the default `~/.ssh` keys. Each may still answer the server's questions, so a key + 2FA
+  server works. After the login the session's key provider is emptied, so no passphrase outlives it.
+- Time spent answering is left out of the login deadline (`PromptClock`, the #486 rule for host-key prompts,
+  now for every question); MINA's own `AUTH_TIMEOUT` is raised to 15 minutes so it never ends a login first.
+- Cancelling a password or server question sets `LoginQuestions.CANCELLED` (and the engine's per-connect flag,
+  since a closed session's attributes are cleared): nothing more is asked and the connect fails as
+  `CANCELLED`, which the status bar reports without a dialog.
+
+**Why a connect failed** is `vfs/ConnectFailure`: unreachable, timed out, host key declined, host key changed
+(`KnownHostsServerKeyVerifier`'s modified-key acceptor records it), login refused, cancelled, other.
+`RemoteCoordinator.reportConnectFailure` shows a "Remote" dialog with advice for the kind (for a changed key,
+the `ssh-keygen -R` line naming the entry) and the underlying message; a cancel or a declined key only sets
+the status.
 
 ## Projects
 
@@ -25,13 +57,16 @@ A remote folder is a `config/Project` whose `root` is its `sftp://` URI.
 - `TrustStore` keys a remote folder by its URI and only matches folders on the same filesystem, so a remote
   `/srv/app` and the local `/srv/app` are trusted separately.
 
-**One window per project, and that window holds the connection.** An SSH session belongs to the SSH client
-of the window that opened it and cannot be handed to another window. So when the connect form succeeds in
-window A for a folder that is not A's project, `RemoteCoordinator.connected` creates the project, closes A's
-connection (unless A's tabs still use that host) and calls `WindowManager.openRemoteProject`, which opens the
-project's window and has it log in again with the same credentials (`connectForWindowProject`). The secret
-is copied for that second login and wiped after it. With projects turned off, the folder is mounted in the
-current window as before.
+**One window per project, and that window holds the connection.** When the connect form succeeds in window
+A for a folder that is not A's project, `RemoteCoordinator.connected` creates the project and hands A's
+logged-in session over: `RemoteFileSystems.handOff` gives it up without closing it, and
+`WindowManager.openRemoteProject` opens the project's window, whose engine `adopt`s it
+(`adoptForWindowProject`). One login serves both windows, which matters when it took a one-time 2FA code.
+The session's close listener asks `SshClients.engineOf` which engine to tell, so a drop after the handover
+reaches the project's window, and closing A leaves the project's window connected. When A's tabs still use
+that host (or A shows it), the session stays in A and the project's window logs in for itself
+(`connectForWindowProject`) with a copy of the secret, wiped after it. With projects turned off, the folder is
+mounted in the current window as before.
 
 **Not connected.** A remote project's window whose host is not connected shows "Not connected to …" with a
 Reconnect button in place of the Project tree (`ProjectPanel.showDisconnected`, state held by

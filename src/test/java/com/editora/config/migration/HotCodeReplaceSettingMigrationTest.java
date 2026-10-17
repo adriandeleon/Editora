@@ -10,24 +10,31 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** v126→127: {@code debugHotCodeReplace} is new — nothing else changes, and it starts at "auto". */
+/**
+ * v127→128: {@code debugHotCodeReplace}, {@code debugStepFilters}, {@code debugShowStatics} and
+ * {@code debugExceptionTypes} are new — nothing else changes, and each starts at its default.
+ */
 class HotCodeReplaceSettingMigrationTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
     void theHotCodeReplaceSettingArrivesWithoutTouchingAnythingElse() throws Exception {
-        JsonNode v126 = mapper.readTree("{\"schemaVersion\":126,\"debugSupport\":true,\"debugProgramConsole\":false}");
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v126.deepCopy(), mapper);
+        JsonNode v127 = mapper.readTree("{\"schemaVersion\":127,\"debugSupport\":true,\"debugProgramConsole\":false}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v127.deepCopy(), mapper);
 
-        assertEquals(127, Settings.SCHEMA_VERSION);
+        assertEquals(128, Settings.SCHEMA_VERSION);
         assertEquals(Settings.SCHEMA_VERSION, out.get("schemaVersion").asInt(), "stamped current");
         assertTrue(out.get("debugSupport").asBoolean());
         assertFalse(out.get("debugProgramConsole").asBoolean());
         assertFalse(out.has("debugHotCodeReplace"), "left to the default");
-        assertEquals("auto", mapper.treeToValue(out, Settings.class).getDebugHotCodeReplace());
+        Settings upgraded = mapper.treeToValue(out, Settings.class);
+        assertEquals("auto", upgraded.getDebugHotCodeReplace());
+        assertTrue(upgraded.isDebugStepFilters());
+        assertTrue(upgraded.isDebugShowStatics());
+        assertEquals("", upgraded.getDebugExceptionTypes());
 
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":127,\"debugHotCodeReplace\":\"manual\"}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":128,\"debugHotCodeReplace\":\"manual\"}");
         assertEquals("manual", mapper.treeToValue(chosen, Settings.class).getDebugHotCodeReplace());
         assertEquals("auto", new Settings().getDebugHotCodeReplace());
     }

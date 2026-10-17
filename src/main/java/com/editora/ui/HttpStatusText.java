@@ -125,6 +125,39 @@ final class HttpStatusText {
                 "httppanel.summary", statusWithReason(r.status()), String.valueOf(r.elapsedMs()), size(r.sizeBytes()));
     }
 
+    /** The status pill: {@code 404 Not Found}, "Not sent" or "Request failed". */
+    static String pill(HttpResult r) {
+        if (notSent(r)) {
+            return tr("httppanel.notSent");
+        }
+        if (r == null || r.failed()) {
+            return tr("httppanel.requestFailed");
+        }
+        return statusWithReason(r.status());
+    }
+
+    /** The timing and size beside the pill ({@code 32 ms · 44 B}), or "" for a request that failed. */
+    static String timing(HttpResult r) {
+        if (r == null || r.failed()) {
+            return "";
+        }
+        return tr("httppanel.timing", String.valueOf(r.elapsedMs()), size(r.sizeBytes()));
+    }
+
+    /**
+     * The Tests tab's count: passed of total ({@code 2/3}); "✗" when no test ran but a script stopped with an error;
+     * null when there is nothing to count (no tests, or only a script's log).
+     */
+    static String testsCount(HttpTests t) {
+        if (t == null || t.isEmpty()) {
+            return null;
+        }
+        if (t.tests().isEmpty()) {
+            return t.error() == null ? null : "✗";
+        }
+        return t.passed() + "/" + t.tests().size();
+    }
+
     /** The UI language's locale, for numbers in the response view ({@code 1,4 s} in German). */
     static Locale uiLocale() {
         return Locale.forLanguageTag(com.editora.i18n.Messages.current());

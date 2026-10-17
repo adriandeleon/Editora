@@ -41,8 +41,13 @@ public final class IndentWindow {
      * may keep the result until one of those characters changes.
      */
     public static String unit(Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize) {
+        return unit(doc, tabSize, insertSpaces, indentSize, null);
+    }
+
+    /** As {@link #unit(Doc, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
+    public static String unit(Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize, String language) {
         String head = insertSpaces != null ? "" : doc.text(0, Math.min(doc.length(), HEAD_CHARS));
-        return Indenter.unitFor(head, tabSize, insertSpaces, indentSize);
+        return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
     }
 
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */

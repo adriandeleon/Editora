@@ -18,13 +18,21 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
 final class IndentKeys {
 
     private final CodeArea area;
+    private final java.util.function.Supplier<String> language;
     private String detected;
     private int detectedTabSize;
+    private String detectedLanguage;
     private int detections;
 
     /** {@code area} is the buffer's primary area; a split's second view shares its document. */
     IndentKeys(CodeArea area) {
+        this(area, () -> null);
+    }
+
+    /** As {@link #IndentKeys(CodeArea)}, reading the unit the way the buffer's {@code language} reads indentation. */
+    IndentKeys(CodeArea area, java.util.function.Supplier<String> language) {
         this.area = area;
+        this.language = language;
         area.plainTextChanges().subscribe(change -> {
             if (change.getPosition() < IndentWindow.HEAD_CHARS) {
                 detected = null;
@@ -37,9 +45,11 @@ final class IndentKeys {
         if (insertSpaces != null) {
             return Indenter.unitFor("", tabSize, insertSpaces, indentSize);
         }
-        if (detected == null || detectedTabSize != tabSize) {
-            detected = IndentWindow.unit(doc(area), tabSize, null, null);
+        String lang = language.get();
+        if (detected == null || detectedTabSize != tabSize || !java.util.Objects.equals(detectedLanguage, lang)) {
+            detected = IndentWindow.unit(doc(area), tabSize, null, null, lang);
             detectedTabSize = tabSize;
+            detectedLanguage = lang;
             detections++;
         }
         return detected;

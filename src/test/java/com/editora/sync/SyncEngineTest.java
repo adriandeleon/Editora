@@ -402,4 +402,20 @@ class SyncEngineTest {
         assertFalse(SyncEngine.isUsableBranch("a b"));
         assertTrue(SyncEngine.isUsableBranch("sync/laptop"));
     }
+
+    @Test
+    void aUrlCarryingAPasswordOrATokenIsRecognised() {
+        assertTrue(SyncEngine.hasCredentials("https://me:secret@github.com/me/sync.git"));
+        assertTrue(SyncEngine.hasCredentials("https://x-access-token:FAKE@github.com/me/sync.git"));
+        assertTrue(SyncEngine.hasCredentials("https://ghp_FAKEFAKEFAKE0000@github.com/me/sync.git"));
+        assertTrue(SyncEngine.hasCredentials("https://github_pat_11FAKE_FAKE@github.com/me/sync.git"));
+        assertTrue(SyncEngine.hasCredentials("https://oauth2:glpat-FAKE-x@gitlab.com/me/sync.git"));
+        assertTrue(SyncEngine.hasCredentials("ssh://git:hunter2@example.org/sync.git"));
+        assertFalse(SyncEngine.hasCredentials("git@github.com:me/sync.git"));
+        assertFalse(SyncEngine.hasCredentials("ssh://git@example.org:2222/sync.git"));
+        assertFalse(SyncEngine.hasCredentials("https://me@bitbucket.org/me/sync.git"), "a plain user name is fine");
+        assertFalse(SyncEngine.hasCredentials("https://github.com/me/sync.git"));
+        assertFalse(SyncEngine.hasCredentials("/srv/git/sync.git"));
+        assertFalse(SyncEngine.hasCredentials(null));
+    }
 }

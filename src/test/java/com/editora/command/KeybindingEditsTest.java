@@ -156,4 +156,30 @@ class KeybindingEditsTest {
         var m = map("C-xy C-s", "some.cmd");
         assertTrue(KeybindingEdits.conflicts(m, "C-x", "other").isEmpty());
     }
+
+    @Test
+    void resetTakesBackADefaultChordAnotherCommandWasGiven() {
+        // file.save took find.show's C-s; find.show was left with nothing.
+        Map<String, String> ov = KeybindingEdits.rebind(base(), map(), "file.save", "C-s");
+        assertNull(effective(base(), ov, "C-x C-s"));
+        assertEquals(
+                java.util.List.of(new KeybindingEdits.Conflict("C-s", "file.save", KeybindingEdits.ConflictKind.EXACT)),
+                KeybindingEdits.taken(base(), ov, "find.show"));
+        Map<String, String> reset = KeybindingEdits.reset(base(), ov, "find.show");
+        assertEquals("find.show", effective(base(), reset, "C-s"), "Reset gives the chord back");
+        assertTrue(KeybindingEdits.taken(base(), reset, "find.show").isEmpty());
+        assertTrue(KeybindingEdits.taken(base(), map(), "find.show").isEmpty(), "nothing taken by default");
+    }
+
+    @Test
+    void aKeyThatTypesTextCannotBeginAShortcut() {
+        for (String s : new String[] {"e", "S-e", "5", "/", "space", "S-space", "e C-x", ";"}) {
+            assertTrue(KeybindingEdits.typesText(s), s);
+        }
+        for (String s : new String[] {
+            "C-e", "M-e", "Cmd-e", "C-S-e", "f5", "S-f5", "tab", "enter", "escape", "C--", "C-x e", "", " "
+        }) {
+            org.junit.jupiter.api.Assertions.assertFalse(KeybindingEdits.typesText(s), s);
+        }
+    }
 }

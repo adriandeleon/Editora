@@ -69,7 +69,13 @@ public final class Indenter {
             Boolean insertSpaces,
             Integer indentSize) {
         return smartTab(
-                text, selStart, selEnd, language, tabSize, shift, unitFor(text, tabSize, insertSpaces, indentSize));
+                text,
+                selStart,
+                selEnd,
+                language,
+                tabSize,
+                shift,
+                unitFor(text, tabSize, insertSpaces, indentSize, language));
     }
 
     /**
@@ -281,7 +287,7 @@ public final class Indenter {
      *  override when {@code insertSpaces != null} (else {@link #detectUnit}). */
     public static EnterEdit enterEdit(
             String text, int caret, String language, int tabSize, Boolean insertSpaces, Integer indentSize) {
-        return enterEdit(text, caret, language, unitFor(text, tabSize, insertSpaces, indentSize));
+        return enterEdit(text, caret, language, unitFor(text, tabSize, insertSpaces, indentSize, language));
     }
 
     /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
@@ -816,8 +822,13 @@ public final class Indenter {
     /** The indent unit to use: an EditorConfig override when {@code insertSpaces != null} (tab, or
      *  {@code indentSize}/{@code tabSize} spaces), else the document's {@link #detectUnit detected} unit. */
     public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
+        return unitFor(text, tabSize, insertSpaces, indentSize, null);
+    }
+
+    /** As {@link #unitFor(String, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
+    public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize, String language) {
         if (insertSpaces == null) {
-            return detectUnit(text, tabSize);
+            return detectUnit(text, tabSize, language);
         }
         if (insertSpaces) {
             int n = indentSize != null && indentSize > 0 ? indentSize : tabSize;
@@ -836,6 +847,23 @@ public final class Indenter {
      * falls back to <b>spaces</b> — matching VSCode/IntelliJ's "spaces unless the file is detected to use
      * tabs" default.
      */
+    public static String detectUnit(String text, int tabSize, String language) {
+        if (!"python".equals(language)) {
+            return detectUnit(text, tabSize);
+        }
+        // Python: only lines that start a statement vote. A PEP 8 hanging indent (`def f(` / 8 spaces of
+        // arguments) or a docstring's text is not a block step, and enough of them made a 4-space file 8.
+        String head = text.length() > MAX_SCAN ? text.substring(0, MAX_SCAN) : text; // the same head every caller reads
+        StringBuilder statements = new StringBuilder(head.length());
+        for (PythonScan.Line line : PythonScan.scan(head)) {
+            if (line.logicalStart()) {
+                statements.append(head, line.start(), line.end()).append('\n');
+            }
+        }
+        return detectUnit(statements.toString(), tabSize);
+    }
+
+    /** {@link #detectUnit(String, int, String)} with no language: every indented line votes. */
     public static String detectUnit(String text, int tabSize) {
         int limit = Math.min(text.length(), MAX_SCAN);
         int[] votes = null;

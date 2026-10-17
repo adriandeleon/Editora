@@ -11,8 +11,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.editora.command.KeymapManager;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
+import com.editora.vfs.ConnectFailure;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.editora.vfs.RemoteConnection;
+import com.editora.vfs.RemoteFileSystems;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +63,7 @@ class RemoteProjectWindowFxTest {
         // The tests about that question switch it on.
         host.settings.setRemoteExecution(false);
         remote = new RemoteCoordinator(host, ops, sftp.fileSystems());
+        remote.connectFailureShown = ops::reportError; // no modal dialog in a test: counted as the Ops report
     }
 
     @AfterEach
@@ -77,7 +80,7 @@ class RemoteProjectWindowFxTest {
     }
 
     @Test
-    void connectingFromAnotherWindowOpensTheProjectsOwnWindowAndHandsItTheLogin() throws Exception {
+    void connectingFromAnotherWindowOpensTheProjectsOwnWindowAndHandsItTheConnection() throws Exception {
         char[] secret = "password".toCharArray();
 
         FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), appRoot(), secret));
@@ -87,12 +90,116 @@ class RemoteProjectWindowFxTest {
         assertEquals(appUri(), project.root(), "the project is the folder on that host");
         assertEquals("app", project.name());
         assertEquals(List.of(project), projects.list());
-        assertEquals("/app", ops.openedWith.get().lastPath(), "its window connects straight to the folder");
-        assertArrayEquals("password".toCharArray(), ops.openedSecret.get(), "the login is passed on, not wiped here");
+        assertEquals("/app", ops.openedWith.get().lastPath(), "its window opens straight to the folder");
+        assertNotNull(ops.openedLive.get(), "the logged-in session is handed over");
+        assertEquals(sftp.connection().id(), ops.openedLive.get().authority());
+        assertNull(ops.openedSecret.get(), "nothing to log in with again");
+        assertArrayEquals(new char[8], secret, "the password is wiped: nobody needs it now");
         assertTrue(ops.roots.isEmpty(), "this window's tree is left alone");
         assertFalse(
                 sftp.fileSystems().isConnected(sftp.connection().id()),
-                "the connection that only found the folder is closed: its window holds its own");
+                "this window no longer holds the connection: the project's window does");
+        ops.openedLive.get().close();
+    }
+
+    @Test
+    void theProjectsWindowTakesTheConnectionOverWithoutLoggingInAgain() throws Exception {
+        FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), appRoot(), "password".toCharArray()));
+        RemoteFileSystems.LiveConnection live = ops.openedLive.get();
+        assertNotNull(live);
+        int logins = sftp.logins();
+
+        RemoteFileSystems other = sftp.newEngine(dir);
+        Ops otherOps = new Ops();
+        otherOps.window = projects.createOrGet("app", appRoot());
+        Host otherHost = new Host();
+        // Off, as in setUp: with it on, the mount puts the host question, a modal dialog left open for later tests.
+        otherHost.settings.setRemoteExecution(false);
+        RemoteCoordinator projectWindow = new RemoteCoordinator(otherHost, otherOps, other);
+        try {
+            FxTestSupport.runOnFx(() -> projectWindow.adoptForWindowProject(ops.openedWith.get(), live));
+
+            assertEquals(logins, sftp.logins(), "no second login");
+            assertTrue(other.isConnected(sftp.connection().id()), "the project's window holds the connection");
+            assertEquals(List.of(appRoot()), otherOps.roots, "and shows its folder");
+            Files.writeString(sftp.serverPath("app/hello.txt"), "hi");
+            assertEquals("hi", Files.readString(otherOps.roots.getFirst().resolve("hello.txt")), "over SFTP");
+
+            sftp.fileSystems().shutdown(); // the window that logged in closes
+            assertEquals(
+                    "hi",
+                    Files.readString(otherOps.roots.getFirst().resolve("hello.txt")),
+                    "closing the first window leaves the project's window connected");
+        } finally {
+            other.shutdown();
+        }
+    }
+
+    @Test
+    void aConnectionThisWindowStillShowsStaysAndTheProjectsWindowLogsInItself() throws Exception {
+        ops.projectsOn = false; // this window shows the host's folder first, as it did before projects
+        FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), appRoot(), null));
+        ops.projectsOn = true;
+        char[] secret = "password".toCharArray();
+
+        FxTestSupport.runOnFx(() -> remote.connected(sftp.connection(), appRoot(), secret));
+
+        assertNull(ops.openedLive.get(), "a connection in use here is not handed away");
+        assertArrayEquals("password".toCharArray(), ops.openedSecret.get(), "the login is passed on instead");
+        assertTrue(sftp.fileSystems().isConnected(sftp.connection().id()));
+    }
+
+    @Test
+    void aLoginThePersonCancelledOrAHostKeyTheyDeclinedOnlyShowsInTheStatusBar() throws Exception {
+        AtomicReference<String> dialog = new AtomicReference<>();
+        remote.connectFailureShown = (header, body) -> dialog.set(header);
+        RemoteConnection conn = sftp.connection();
+
+        for (ConnectFailure.Kind kind : List.of(ConnectFailure.Kind.CANCELLED, ConnectFailure.Kind.HOST_KEY_DECLINED)) {
+            FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                    conn, new RemoteFileSystems.Result(false, null, "x", new ConnectFailure(kind, "x"))));
+            assertNull(dialog.get(), kind + ": they did it themselves, nothing to explain");
+            assertEquals(com.editora.i18n.Messages.tr("status.remote.cancelled", conn.displayLabel()), host.last);
+        }
+    }
+
+    @Test
+    void theFailureDialogIsSizedToItsTextAsItWraps() {
+        assertEquals(1, RemoteCoordinator.wrappedLines("short", 64));
+        assertEquals(3, RemoteCoordinator.wrappedLines("x".repeat(130), 64), "one long line wraps to three");
+        assertEquals(4, RemoteCoordinator.wrappedLines("x".repeat(70) + "\n\n" + "y", 64), "blank lines count");
+    }
+
+    @Test
+    void aChangedHostKeySaysHowToForgetTheOldOneAndARefusedLoginWhatToCheck() throws Exception {
+        java.util.Map<String, String> shown = new java.util.LinkedHashMap<>();
+        remote.connectFailureShown = shown::put;
+        RemoteConnection conn = sftp.connection();
+
+        FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                conn,
+                new RemoteFileSystems.Result(
+                        false,
+                        null,
+                        "Server key did not validate",
+                        new ConnectFailure(ConnectFailure.Kind.HOST_KEY_CHANGED, "Server key did not validate"))));
+        FxTestSupport.runOnFx(() -> remote.reportConnectFailure(
+                conn,
+                new RemoteFileSystems.Result(
+                        false,
+                        null,
+                        "No more authentication methods available",
+                        new ConnectFailure(
+                                ConnectFailure.Kind.AUTH_FAILED, "No more authentication methods available"))));
+
+        List<String> headers = List.copyOf(shown.keySet());
+        assertEquals(2, headers.size());
+        String changed = shown.get(headers.get(0));
+        assertTrue(
+                changed.contains("ssh-keygen -R [127.0.0.1]:" + conn.port()),
+                "names the known_hosts entry to remove: " + changed);
+        assertTrue(changed.endsWith("Server key did not validate"), "the underlying message stays, last");
+        assertTrue(shown.get(headers.get(1)).contains("authorized_keys"), shown.get(headers.get(1)));
     }
 
     @Test
@@ -292,6 +399,7 @@ class RemoteProjectWindowFxTest {
         final AtomicReference<Project> openedProject = new AtomicReference<>();
         final AtomicReference<RemoteConnection> openedWith = new AtomicReference<>();
         final AtomicReference<char[]> openedSecret = new AtomicReference<>();
+        final AtomicReference<RemoteFileSystems.LiveConnection> openedLive = new AtomicReference<>();
         volatile Project window;
         volatile boolean projectsOn = true;
         volatile Runnable onError = () -> {};
@@ -380,9 +488,11 @@ class RemoteProjectWindowFxTest {
         }
 
         @Override
-        public void openRemoteProject(Project project, RemoteConnection conn, char[] secret) {
+        public void openRemoteProject(
+                Project project, RemoteConnection conn, RemoteFileSystems.LiveConnection live, char[] secret) {
             openedProject.set(project);
             openedWith.set(conn);
+            openedLive.set(live);
             openedSecret.set(secret);
         }
     }

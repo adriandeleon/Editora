@@ -8,6 +8,8 @@ import java.util.Optional;
 import com.editora.run.PythonInterpreters.PythonInterpreter;
 import com.editora.run.PythonInterpreters.Source;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +65,7 @@ class PythonInterpreterViewTest {
 
     /** A pick inside the project is stored relative, so the project folder can move; outside, absolute. */
     @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "POSIX path literals: \\p is not absolute there")
     void aPickInsideTheProjectIsStoredRelative() {
         Path root = Path.of("/home/u/proj");
         assertEquals(".venv/bin/python", PythonInterpreterView.storedChoice(root, "/home/u/proj/.venv/bin/python"));
@@ -72,6 +75,7 @@ class PythonInterpreterViewTest {
 
     /** Detect automatically, the one in use, the project's environments, the PATH Pythons once each, Browse…. */
     @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "POSIX path literals: \\p is not absolute there")
     void thePickerListsEachInterpreterOnce() {
         Map<String, String> onPath = Map.of(
                 "python3", "/usr/bin/python3", "python", "/usr/bin/python3", "python3.12", "/usr/local/bin/python3.12");

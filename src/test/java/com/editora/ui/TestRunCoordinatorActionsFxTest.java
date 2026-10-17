@@ -296,6 +296,11 @@ class TestRunCoordinatorActionsFxTest {
                 debugged.add(node.className() + "#" + node.methodName());
                 return true;
             }
+
+            @Override
+            public boolean canDebug() {
+                return true;
+            }
         };
         TestNode row = new TestNode(TestNodeKind.TEST, "tests.test_cart.TestCart#test_add", "test_add");
         row.setClassName("tests.test_cart.TestCart");
@@ -306,6 +311,11 @@ class TestRunCoordinatorActionsFxTest {
         });
         assertEquals(List.of("tests.test_cart.TestCart#test_add"), debugged);
         assertEquals(List.of(), statuses);
+        // The row menu offers Debug for this run although Java debugging is not set up (debugAvailable false):
+        // it was the Java debugger's availability that decided, so a Python user never saw the item.
+        assertTrue(FxTestSupport.callOnFx(
+                () -> FxTestSupport.<java.util.function.BooleanSupplier>field(coordinator.panel(), "debugAvailable")
+                        .getAsBoolean()));
     }
 
     @Test

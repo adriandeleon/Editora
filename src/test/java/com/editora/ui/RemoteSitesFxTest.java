@@ -185,23 +185,21 @@ class RemoteSitesFxTest {
     }
 
     @Test
-    void connectingASavedSitePreFillsTheFormButNeverTheSecret() throws Exception {
+    void connectingASavedSitePreFillsTheFormAndAsksForNoSecret() throws Exception {
         FxTestSupport.runOnFx(() -> {
             list().getSelectionModel().select(BUILD);
             button(panel, tr("remotePanel.connect")).fire();
         });
         Parent form = form();
         assertNotNull(form, "the connection form");
-        assertEquals(List.of("build.example.test", "2222", "ci", "/keys/ci_ed25519", "", "/srv/app"), values(form));
+        assertEquals(List.of("build.example.test", "2222", "ci", "/keys/ci_ed25519", "/srv/app"), values(form));
         Button connect = FxTestSupport.callOnFx(() -> button(form, tr("remote.connect.button")));
         assertFalse(FxTestSupport.callOnFx(connect::isDisabled));
 
-        // A key file is named, so the key field and its passphrase are in play.
+        // A key file is named, so the key field is in play; its passphrase, if any, is asked for while logging in.
         List<TextField> fields = fields(form);
         assertFalse(FxTestSupport.callOnFx(() -> fields.get(3).isDisabled()));
-        PasswordField secret = (PasswordField) fields.get(4);
-        assertFalse(FxTestSupport.callOnFx(secret::isDisabled));
-        assertEquals(tr("remote.passphrasePrompt"), FxTestSupport.callOnFx(secret::getPromptText));
+        assertTrue(fields.stream().noneMatch(PasswordField.class::isInstance), "no secret is typed into the form");
 
         // Double-click and Enter on a row do the same as the button.
         FxTestSupport.runOnFx(() -> {
@@ -257,7 +255,7 @@ class RemoteSitesFxTest {
         Parent form = form();
         assertNotNull(form);
         List<TextField> fields = fields(form);
-        assertEquals(List.of("", "22", System.getProperty("user.name", ""), "", "", ""), values(form));
+        assertEquals(List.of("", "22", System.getProperty("user.name", ""), "", ""), values(form));
         Button connect = FxTestSupport.callOnFx(() -> button(form, tr("remote.connect.button")));
         assertTrue(FxTestSupport.callOnFx(connect::isDisabled), "no host yet");
 
@@ -271,19 +269,14 @@ class RemoteSitesFxTest {
         ComboBox<RemoteConnection.AuthMethod> auth =
                 (ComboBox<RemoteConnection.AuthMethod>) FxTestSupport.callOnFx(() -> form.lookup(".combo-box"));
         TextField key = fields.get(3);
-        PasswordField secret = (PasswordField) fields.get(4);
         assertEquals(RemoteConnection.AuthMethod.DEFAULT_KEYS, FxTestSupport.callOnFx(auth::getValue));
         assertTrue(FxTestSupport.callOnFx(key::isDisabled));
-        assertTrue(FxTestSupport.callOnFx(secret::isDisabled), "the default keys need nothing typed");
 
         FxTestSupport.runOnFx(() -> auth.setValue(RemoteConnection.AuthMethod.PASSWORD));
-        assertTrue(FxTestSupport.callOnFx(key::isDisabled));
-        assertFalse(FxTestSupport.callOnFx(secret::isDisabled));
-        assertEquals(tr("remote.secretPrompt"), FxTestSupport.callOnFx(secret::getPromptText));
+        assertTrue(FxTestSupport.callOnFx(key::isDisabled), "the password is asked for while logging in");
 
         FxTestSupport.runOnFx(() -> auth.setValue(RemoteConnection.AuthMethod.KEY));
         assertFalse(FxTestSupport.callOnFx(key::isDisabled));
-        assertEquals(tr("remote.passphrasePrompt"), FxTestSupport.callOnFx(secret::getPromptText));
 
         // The picker names each method.
         assertEquals(

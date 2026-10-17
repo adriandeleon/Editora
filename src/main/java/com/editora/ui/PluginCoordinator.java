@@ -351,6 +351,10 @@ final class PluginCoordinator {
             return;
         }
         String url = config.getSettings().getPluginRegistryUrl();
+        if (!com.editora.plugin.PluginRegistry.isHttps(url)) { // a hand-edited settings.json can still hold one
+            host.setStatus(tr("settings.plugins.registryNotHttps"));
+            return;
+        }
         host.setStatus(tr("status.plugins.fetching"));
         boolean requireSig = config.getSettings().isPluginRequireSignature();
         pluginRegistry.fetch(url, r -> {
@@ -371,6 +375,9 @@ final class PluginCoordinator {
             }
             if (!browseSigned) {
                 host.setStatus(tr("status.plugins.unsignedAllowed"));
+            }
+            if (settingsWindow != null) {
+                settingsWindow.hideForMainWindowPicker(); // it would cover the picker
             }
             browsePalette.show(host.window());
         });

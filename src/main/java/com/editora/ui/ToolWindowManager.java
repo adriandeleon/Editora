@@ -1700,20 +1700,36 @@ public class ToolWindowManager {
         return list;
     }
 
-    /** Whether {@code tw} can move by {@code delta} (-1 earlier / +1 later) among its same-side peers. */
+    /**
+     * The windows a user sees and orders on {@code side} — those with a row in Settings ▸ Tool Windows whose
+     * stripe button the user keeps shown — in display order. A window the user hid, or one that never has a
+     * stripe button (File Information, Search), is not a neighbour to swap with: swapping with it changed
+     * nothing anyone could see.
+     */
+    public List<ToolWindow> stripeOrder(ToolWindow.Side side) {
+        List<ToolWindow> list = new ArrayList<>();
+        for (ToolWindow tw : orderedOnSide(side)) {
+            if (!stripeOmitted.contains(tw.getId()) && isVisible(tw)) {
+                list.add(tw);
+            }
+        }
+        return list;
+    }
+
+    /** Whether {@code tw} can move by {@code delta} (-1 earlier / +1 later) among its {@link #stripeOrder} peers. */
     public boolean canMove(ToolWindow tw, int delta) {
-        List<ToolWindow> peers = orderedOnSide(currentSide(tw));
+        List<ToolWindow> peers = stripeOrder(currentSide(tw));
         int idx = peers.indexOf(tw);
         int target = idx + delta;
         return idx >= 0 && target >= 0 && target < peers.size();
     }
 
-    /** Moves {@code tw} one slot earlier (-1) or later (+1) among its same-side peers; persists. */
+    /** Moves {@code tw} one slot earlier (-1) or later (+1) among its {@link #stripeOrder} peers; persists. */
     public boolean move(ToolWindow tw, int delta) {
         if (!canMove(tw, delta)) {
             return false;
         }
-        List<ToolWindow> peers = orderedOnSide(currentSide(tw));
+        List<ToolWindow> peers = stripeOrder(currentSide(tw));
         ToolWindow other = peers.get(peers.indexOf(tw) + delta);
         List<String> order = config.getWorkspaceState().getToolWindowOrder();
         ensureInOrder(tw.getId());
@@ -1722,6 +1738,38 @@ public class ToolWindowManager {
         relayoutStripe(currentSide(tw));
         config.save();
         return true;
+    }
+
+    /**
+     * Puts every tool window back on its registered side, shown or hidden as it is by default, in registration
+     * order — the layout of a fresh window. A window that is open and changes side, or is hidden now, closes.
+     * The layout is part of this window's session (per project), so other projects keep theirs.
+     */
+    public void resetLayout() {
+        Map<ToolWindow, ToolWindow.Side> before = new HashMap<>();
+        byId.values().forEach(tw -> before.put(tw, currentSide(tw)));
+        var state = config.getWorkspaceState();
+        state.getToolWindowSides().clear();
+        state.getToolWindowVisible().clear();
+        state.getToolWindowOrder().clear();
+        byId.keySet().forEach(this::ensureInOrder);
+        for (ToolWindow tw : byId.values()) {
+            Button button = stripeButtons.get(tw);
+            if (isOpen(tw) && (before.get(tw) != currentSide(tw) || !shouldShowButton(tw))) {
+                close(tw);
+            }
+            if (button == null) {
+                continue;
+            }
+            for (ToolWindow.Side side : ToolWindow.Side.values()) {
+                stripeFor(side).getChildren().remove(button);
+            }
+            if (shouldShowButton(tw)) {
+                addButtonOrdered(tw, button);
+            }
+        }
+        updateStripeVisibility();
+        config.save();
     }
 
     /**

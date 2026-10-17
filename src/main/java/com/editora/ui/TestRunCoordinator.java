@@ -109,6 +109,11 @@ final class TestRunCoordinator implements TestRunHook {
         default boolean debug(TestNode node) {
             return false;
         }
+
+        /** Whether its rows offer Debug (the Python debugger is set up for where they run). */
+        default boolean canDebug() {
+            return false;
+        }
     }
 
     /** JVM report poll interval — reports appear per class as each finishes; ~750 ms is responsive + cheap. */
@@ -188,7 +193,8 @@ final class TestRunCoordinator implements TestRunHook {
             panel.setOnActivate(this::activate);
             panel.setOnRerunOne(this::rerunOne);
             panel.setOnDebugOne(this::debugOne);
-            panel.setDebugAvailable(ops::debugAvailable);
+            // A row's Debug item: an external (Python) run's own debugger, else the build tool's (Java).
+            panel.setDebugAvailable(() -> external != null ? external.canDebug() : ops.debugAvailable());
             if (outputFontFamily != null) {
                 panel.setOutputFont(outputFontFamily, outputFontSize);
             }
