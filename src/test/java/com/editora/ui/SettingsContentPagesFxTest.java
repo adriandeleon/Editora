@@ -543,4 +543,28 @@ class SettingsContentPagesFxTest {
             assertFalse(zoomRow.isVisible());
         });
     }
+
+    @Test
+    void theFontAndThemePickersSayWhatEachChoiceIs() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            Region page = rig.page("APPEARANCE");
+            ComboBox<String> family = rig.control("fontFamily");
+            ComboBox<String> theme = rig.control("themeCombo");
+            javafx.scene.control.ListCell<String> fontCell =
+                    family.getCellFactory().call(null);
+            FxTestSupport.call(
+                    fontCell, "updateItem", new Class<?>[] {Object.class, boolean.class}, "JetBrains Mono", false);
+            assertEquals(tr("settings.fontFamily.bundled", "JetBrains Mono"), fontCell.getText());
+            javafx.scene.control.ListCell<String> themeCell =
+                    theme.getCellFactory().call(null);
+            FxTestSupport.call(themeCell, "updateItem", new Class<?>[] {Object.class, boolean.class}, "Dracula", false);
+            assertEquals(tr("settings.theme.dark", "Dracula"), themeCell.getText());
+            FxTestSupport.call(
+                    themeCell, "updateItem", new Class<?>[] {Object.class, boolean.class}, "Nord Light", false);
+            assertEquals("Nord Light", themeCell.getText(), "the name already says it");
+            assertTrue(family.getItems().stream().noneMatch(f -> f.startsWith("MathJax_")));
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.userThemes.reload")));
+        });
+    }
 }

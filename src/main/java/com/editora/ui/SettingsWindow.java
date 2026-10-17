@@ -38,8 +38,6 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -1120,6 +1118,8 @@ public class SettingsWindow {
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
+        fontFamily.setCellFactory(v ->
+                labelledCell(name -> Fonts.BUNDLED.contains(name) ? tr("settings.fontFamily.bundled", name) : name));
         fontFamily.valueProperty().addListener((obs, old, now) -> {
             if (loading || now == null) {
                 return;
@@ -1141,6 +1141,8 @@ public class SettingsWindow {
         themeCombo = new ComboBox<>();
         themeCombo.getItems().setAll(Themes.names());
         themeCombo.setPrefWidth(220);
+        themeCombo.setCellFactory(
+                v -> labelledCell(name -> withShade(name, Themes.themeFor(name).isDarkMode())));
         themeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -2107,6 +2109,29 @@ public class SettingsWindow {
                 tr("settings.editorThemeNote"),
                 editorThemeCombo,
                 "editor theme syntax colors highlighting");
+        Hyperlink openThemes = new Hyperlink(tr("settings.userThemes.open"));
+        openThemes.setOnAction(e -> {
+            Path dir = config.getConfigDir().resolve("themes");
+            try {
+                java.nio.file.Files.createDirectories(dir);
+                java.nio.file.Files.createDirectories(config.getConfigDir().resolve("editor-themes"));
+            } catch (java.io.IOException ex) {
+                return; // a config folder that cannot be written to has no themes to show
+            }
+            com.editora.process.DesktopActions.reveal(dir, true, msg -> {});
+        });
+        Hyperlink reloadThemes = new Hyperlink(tr("settings.userThemes.reload"));
+        reloadThemes.setOnAction(e -> {
+            UserThemes.load(config.getConfigDir());
+            syncThemes();
+        });
+        controlRow(
+                mainCard,
+                Category.APPEARANCE,
+                tr("settings.userThemes"),
+                tr("settings.userThemes.desc"),
+                new HBox(12, openThemes, reloadThemes),
+                "user themes custom stylesheet css folder reload own theme");
         Card previewSection = card(p, tr("settings.livePreview"));
         cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
         return p;
@@ -8721,6 +8746,25 @@ public class SettingsWindow {
         }
     }
 
+    /** A list cell showing {@code label.apply(item)} for each item. */
+    private static ListCell<String> labelledCell(java.util.function.Function<String, String> label) {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : label.apply(item));
+            }
+        };
+    }
+
+    /** A theme's name, marked dark or light when the name itself does not say which (Dracula, Yacht…). */
+    private static String withShade(String name, boolean dark) {
+        if (name.contains("Light") || name.contains("Dark")) {
+            return name;
+        }
+        return tr(dark ? "settings.theme.dark" : "settings.theme.light", name);
+    }
+
     /** "" (Automatic) followed by every editor theme. */
     private static List<String> editorThemeChoices() {
         List<String> choices = new ArrayList<>();
@@ -8743,7 +8787,11 @@ public class SettingsWindow {
                                                 "settings.editorTheme.auto",
                                                 EditorThemes.defaultFor(
                                                         config.getSettings().getTheme()))
-                                        : name);
+                                        : withShade(
+                                                name,
+                                                EditorThemes.editorBackgroundFor(name)
+                                                                .getBrightness()
+                                                        < 0.5));
             }
         };
     }
@@ -8849,36 +8897,9 @@ public class SettingsWindow {
 
     // --- monospace font discovery ----------------------------------------------------------------
 
-    private static List<String> monospaceFamilies() {
-        Text narrow = new Text("iiiiiiiiii");
-        Text wide = new Text("WWWWWWWWWW");
-        List<String> families = new ArrayList<>();
-        for (String family : Font.getFamilies()) {
-            Font font = Font.font(family, 14);
-            if (font == null) {
-                continue;
-            }
-            narrow.setFont(font);
-            wide.setFont(font);
-            if (Math.abs(narrow.getLayoutBounds().getWidth()
-                            - wide.getLayoutBounds().getWidth())
-                    < 0.5) {
-                families.add(family);
-            }
-        }
-        return families;
-    }
-
     /** The editor-font picker choices (bundled monospace families first, then system monospace). */
     public static List<String> fontFamilyChoices() {
-        Fonts.ensureAllLoaded(); // the deferred families must be registered before the picker lists them
-        List<String> choices = new ArrayList<>(Fonts.BUNDLED);
-        for (String family : monospaceFamilies()) {
-            if (!choices.contains(family)) {
-                choices.add(family);
-            }
-        }
-        return choices;
+        return FontChoices.forThisMachine();
     }
 
     private void apply() {
