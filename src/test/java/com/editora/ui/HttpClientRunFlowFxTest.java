@@ -388,9 +388,18 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(cancel::fire); // the panel's own Cancel
         assertEquals(tr("status.http.cancelled"), host.last);
         assertFalse(coordinator.isRunningForTest(b));
-        assertEquals(tr("httppanel.cancelled"), panelStatus(b));
+        assertTrue(
+                panelStatus(b)
+                        .startsWith(tr("httppanel.cancelledAfter", "")
+                                .replace(" s", "")
+                                .strip()),
+                panelStatus(b));
         assertEquals(tr("httppanel.run"), FxTestSupport.callOnFx(cancel::getText));
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()), "the cancelled run shows nothing");
+        assertEquals(
+                HttpClientPanel.BodyView.EMPTY,
+                FxTestSupport.callOnFx(() -> panel(b).bodyViewForTest()),
+                "with nothing shown before it, the empty state comes back");
 
         FxTestSupport.runOnFx(() -> coordinator.cancelRun(null));
         assertEquals(tr("status.http.nothingRunning"), host.last);
@@ -488,7 +497,8 @@ class HttpClientRunFlowFxTest {
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
         assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
         assertTrue(FxTestSupport.callOnFx(copyCurl::isDisabled));
-        assertEquals(tr("httppanel.idle"), panelStatus(b));
+        assertEquals("", panelStatus(b), "the empty state says what Run sends; the status line says nothing");
+        assertEquals(HttpClientPanel.BodyView.EMPTY, FxTestSupport.callOnFx(() -> panel(b).bodyViewForTest()));
     }
 
     @Test

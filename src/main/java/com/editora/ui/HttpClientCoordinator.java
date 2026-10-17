@@ -344,6 +344,8 @@ final class HttpClientCoordinator {
             history.cleared(buffer);
             refreshInlineResults(buffer); // a cleared History leaves no result on the request lines
         });
+        p.setOnRunLine(line -> runRequest(buffer, line)); // a row of the empty state
+        HttpEmptyStateFeed.attach(buffer, p);
         return p;
     }
 
@@ -520,42 +522,58 @@ final class HttpClientCoordinator {
             }
         }
         String label = HttpScratch.label(parsed, vars, baseDir, ZonedDateTime.now());
-        startRun(buffer, label);
+        startRun(buffer, label, HttpPanelStates.runLabel(lineOf(buffer, req.sectionStart()), req.name(), label));
         buffer.setHttpRunning(index);
-        long startedAt = System.currentTimeMillis();
+        long[] startedAt = {System.currentTimeMillis()};
         HttpClientService.Handle[] run = new HttpClientService.Handle[1];
+        // The trust prompts say so in the panel, and the request's time starts once they are answered.
+        HttpAskingOps asking = askingOps(buffer, run, () -> startedAt[0] = System.currentTimeMillis());
         // A request that reads $processEnv/$env/$dotenv asks first (off the FX thread, from what it resolves).
         run[0] = service.run(
                 parsed,
                 environmentFor(buffer, env),
                 baseDir,
                 session,
-                HttpSecretGate.forBuffer(buffer, ops),
-                HttpScriptGate.forBuffer(buffer, ops, host.settings(), debugger),
+                HttpSecretGate.forBuffer(buffer, asking),
+                HttpScriptGate.forBuffer(buffer, asking, host.settings(), debugger),
                 ex -> {
                     if (running.remove(buffer, run[0])) {
                         finishRun(
-                                buffer,
-                                List.of(parsed),
-                                List.of(index),
-                                List.of(ex),
-                                new long[] {startedAt},
-                                Set.of(),
-                                false,
-                                env);
+                                buffer, List.of(parsed), List.of(index), List.of(ex), startedAt, Set.of(), false, env);
                     } else if (cancelling.remove(buffer, run[0])) {
                         landCancelled(
-                                buffer,
-                                List.of(parsed),
-                                List.of(index),
-                                List.of(ex),
-                                new long[] {startedAt},
-                                Set.of(),
-                                1,
-                                env);
+                                buffer, List.of(parsed), List.of(index), List.of(ex), startedAt, Set.of(), 1, env);
                     }
                 });
         track(buffer, run[0]);
+    }
+
+    /**
+     * The window's ops for the trust gates of {@code run[0]}, a run of {@code buffer}: while a trust prompt waits the
+     * panel says "Waiting for your answer…" without a clock, and once it is answered the clock starts and {@code
+     * answered} runs. A run that is no longer the buffer's current one changes nothing.
+     */
+    private HttpAskingOps askingOps(EditorBuffer buffer, HttpClientService.Handle[] run, Runnable answered) {
+        return new HttpAskingOps(ops, asking -> {
+            HttpClientPanel p = panelFor(buffer);
+            if (run[0] == null || running.get(buffer) != run[0]) {
+                return;
+            }
+            if (p != null) {
+                p.awaitingAnswer(asking);
+            }
+            if (!asking) {
+                answered.run();
+            }
+        });
+    }
+
+    /** Line {@code line} of {@code buffer}'s text, or null. */
+    private static String lineOf(EditorBuffer buffer, int line) {
+        var area = buffer.getArea();
+        return line >= 0 && line < area.getParagraphs().size()
+                ? area.getParagraph(line).getText()
+                : null;
     }
 
     /** The folder a buffer's relative paths resolve against: its file's, or null for an untitled buffer. */
@@ -730,7 +748,7 @@ final class HttpClientCoordinator {
                 finishRun(b, reqs, indexes, new ArrayList<>(skipped.values()), startedAt, unsent, true, env);
                 return;
             }
-            startRun(b, label);
+            startRun(b, label, label);
             String[] startText = text.split("\n", -1); // each request's line as the run saw it, for the ■
             IntFunction<String> requestLine = i -> {
                 int line = blocks.get(i).startLine();
@@ -739,23 +757,28 @@ final class HttpClientCoordinator {
             b.setHttpRunning(sent.get(0), requestLine.apply(sent.get(0)));
             List<HttpFile.Parsed> toSend = sent.stream().map(reqs::get).toList();
             HttpClientService.Handle[] run = new HttpClientService.Handle[1];
+            HttpAskingOps asking = askingOps(b, run, () -> {}); // each request's time is taken as it starts
             run[0] = service.runAll(
                     toSend,
                     environmentFor(b, env),
                     baseDir,
                     session,
-                    HttpSecretGate.forBuffer(b, ops), // asked once, before the first request, if any reads a secret
-                    HttpScriptGate.forBuffer(b, ops, host.settings(), null), // so is the folder, if any has a script
+                    HttpSecretGate.forBuffer(b, asking), // asked once, before the first request, if any reads a secret
+                    HttpScriptGate.forBuffer(b, asking, host.settings(), null), // so is the folder, if any has a script
                     i -> {
                         HttpClientPanel p = running.get(b) == run[0] ? panelFor(b) : null;
                         if (p != null && i < toSend.size()) {
                             int index = sent.get(i);
                             startedAt[index] = System.currentTimeMillis();
                             b.setHttpRunning(index, requestLine.apply(index)); // the ■ follows the request in flight
+                            int section = blocks.get(index).sectionStart();
                             p.progress(
                                     index,
                                     reqs.size(),
-                                    HttpScratch.label(reqs.get(index), vars, baseDir, ZonedDateTime.now()));
+                                    HttpPanelStates.runLabel(
+                                            section >= 0 && section < startText.length ? startText[section] : null,
+                                            reqs.get(index).name(),
+                                            HttpScratch.label(reqs.get(index), vars, baseDir, ZonedDateTime.now())));
                         }
                     },
                     exchanges -> {
@@ -1196,11 +1219,11 @@ final class HttpClientCoordinator {
      * Split) so the result is visible without the user having to open it — the in-editor equivalent of the
      * tool window this feature used to auto-open.
      */
-    private void startRun(EditorBuffer buffer, String label) {
+    private void startRun(EditorBuffer buffer, String label, String shown) {
         HttpClientPanel p = panelFor(buffer);
         if (p != null) {
             buffer.revealHttpPreview();
-            p.started(label);
+            p.started(shown, label); // "Sending Get one user…", the request as resolved in its tooltip
         }
         host.setStatus(tr("status.http.running", label));
     }
