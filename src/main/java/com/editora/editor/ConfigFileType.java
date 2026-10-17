@@ -148,6 +148,22 @@ public final class ConfigFileType {
             default:
                 break;
         }
+        // Python packaging files: pip requirements/constraints, Pipenv's Pipfile (TOML) and lock (JSON), and the
+        // TOML lock files of Poetry, uv and PDM.
+        if (isPipRequirements(lower, norm)) {
+            return "pip-requirements";
+        }
+        switch (lower) {
+            case "pipfile":
+            case "poetry.lock":
+            case "uv.lock":
+            case "pdm.lock":
+                return "toml";
+            case "pipfile.lock":
+                return "json";
+            default:
+                break;
+        }
         // Jenkins pipeline — Groovy (literal "Jenkinsfile" or a "Jenkinsfile.<env>" suffix).
         if (lower.equals("jenkinsfile") || lower.startsWith("jenkinsfile.")) {
             return "groovy";
@@ -224,5 +240,18 @@ public final class ConfigFileType {
             }
         }
         return false;
+    }
+
+    /**
+     * A pip requirements file: {@code requirements.txt} and its variants ({@code requirements-dev.txt},
+     * {@code dev-requirements.txt}, {@code requirements.in} for pip-tools), {@code constraints*.txt},
+     * {@code *.pip}, and any {@code .txt}/{@code .in} inside a {@code requirements/} folder.
+     */
+    static boolean isPipRequirements(String lower, String norm) {
+        boolean txtOrIn = lower.endsWith(".txt") || lower.endsWith(".in");
+        if (txtOrIn && (lower.contains("requirements") || lower.startsWith("constraints"))) {
+            return true;
+        }
+        return lower.endsWith(".pip") || (txtOrIn && hasAncestor(norm, "requirements"));
     }
 }

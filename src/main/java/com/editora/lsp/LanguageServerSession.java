@@ -572,7 +572,12 @@ final class LanguageServerSession implements LanguageClient {
     static ClientCapabilities clientCapabilities() {
         TextDocumentClientCapabilities td = new TextDocumentClientCapabilities();
         td.setSynchronization(new SynchronizationCapabilities(false, false, true));
-        td.setPublishDiagnostics(new PublishDiagnosticsCapabilities(true));
+        // tagSupport: Pyright (and others) send "x is not accessed" / "f is deprecated" only to a client that
+        // can show them — faded or struck through. Without it unused imports never looked unused (review B3).
+        td.setPublishDiagnostics(new PublishDiagnosticsCapabilities(
+                true,
+                new org.eclipse.lsp4j.DiagnosticsTagSupport(List.of(
+                        org.eclipse.lsp4j.DiagnosticTag.Unnecessary, org.eclipse.lsp4j.DiagnosticTag.Deprecated))));
         CompletionItemCapabilities completionItem = new CompletionItemCapabilities(true); // snippetSupport
         // Advertise that we can resolve additionalTextEdits — Pyright (and others) only emit an
         // auto-import's `import` edit when the client says it can resolve it. We resolve on accept
@@ -773,6 +778,27 @@ final class LanguageServerSession implements LanguageClient {
         return RootResolver.isBroadRoot(root) ? base.withBackgroundAnalysisMaxFiles(0) : base;
     }
 
+    /** The Python interpreter this session's Pyright analyses with (null = the server's own choice). */
+    private volatile String pythonPath;
+
+    /**
+     * Sets the interpreter a Python server is told about ({@code python.pythonPath}); a running server gets the
+     * change pushed, re-reads its configuration and re-resolves every import against the new environment.
+     */
+    void setPythonPath(String path) {
+        String next = path == null || path.isBlank() ? null : path;
+        boolean changed = !java.util.Objects.equals(pythonPath, next);
+        pythonPath = next;
+        if (changed && "python".equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /** The interpreter last given to this session (null = none). */
+    String pythonPath() {
+        return pythonPath;
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -788,7 +814,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     private void pushConfiguration() {
         java.util.Map<String, Object> settings =
-                LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde());
+                LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
         if (settings == null) {
             return;
         }
@@ -1317,11 +1343,18 @@ final class LanguageServerSession implements LanguageClient {
         return message == null || message.isBlank() || message.strip().matches("\\d+%") ? null : message.strip();
     }
 
-    /** Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage. */
+    /**
+     * Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage — or null when
+     * there is nothing to say: Pyright begins every analysis with an empty title, and "…" then sat in the status
+     * bar long after the work had ended (Python review B11). The loading bar still spins either way.
+     */
     static String progressText(String title, String message, Integer percentage) {
-        StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "…" : title.strip());
+        StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "" : title.strip());
         if (message != null && !message.isBlank()) {
-            sb.append(" — ").append(message.strip());
+            sb.append(sb.isEmpty() ? "" : " — ").append(message.strip());
+        }
+        if (sb.isEmpty()) {
+            return null;
         }
         if (percentage != null) {
             sb.append(" (").append(percentage).append("%)");
@@ -2208,7 +2241,7 @@ final class LanguageServerSession implements LanguageClient {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde()));
+                out.add(LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath));
             }
         }
         return CompletableFuture.completedFuture(out);

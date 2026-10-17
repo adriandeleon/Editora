@@ -102,4 +102,24 @@ class LspServerSettingsTest {
         assertEquals(java.util.Arrays.asList((Object) null), ask(session("json"), "css"));
         assertTrue(ask(session("python"), "python").get(0) instanceof Map);
     }
+
+    /**
+     * The interpreter goes in the {@code python} object of both channels and as the leaf key (Python review
+     * B1); with none resolved the key is absent, so Pyright's own lookup stays in charge.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theInterpreterIsSentAsPythonPath() {
+        String exe = "/proj/.venv/bin/python";
+        var pushed = (Map<String, Object>)
+                LspServerSettings.push("python", false, null, exe).get("python");
+        assertEquals(exe, pushed.get("pythonPath"));
+        assertEquals(Boolean.TRUE, ((Map<String, Object>) pushed.get("analysis")).get("autoSearchPaths"));
+        assertEquals(
+                exe, ((Map<String, Object>) LspServerSettings.answer("python", "python", null, exe)).get("pythonPath"));
+        assertEquals(exe, LspServerSettings.answer("python", "python.pythonPath", null, exe));
+        assertTrue(!((Map<String, Object>) LspServerSettings.answer("python", "python")).containsKey("pythonPath"));
+        assertNull(LspServerSettings.answer("python", "python.pythonPath"));
+        assertNull(LspServerSettings.answer("bash", "python.pythonPath", null, exe), "only the Python server");
+    }
 }

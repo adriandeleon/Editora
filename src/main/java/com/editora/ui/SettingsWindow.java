@@ -6258,7 +6258,7 @@ public class SettingsWindow {
                         () -> config.getSettings().getPythonDebugCommand(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectPython(cb);
+                                dapManager.detectPythonInstalled(cb); // installed, whether or not switched on
                             } else {
                                 cb.accept(false);
                             }

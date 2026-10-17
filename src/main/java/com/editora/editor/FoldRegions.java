@@ -28,7 +28,9 @@ import com.editora.typst.TypstOutline;
  *   <li><b>Shell</b>: its blocks as {@link com.editora.editops.ShellScan} reads them — functions and
  *       {@code { }} groups, {@code if … fi}, loops, {@code case … esac} and each multi-line item, multi-line
  *       {@code ( )} / {@code $( )}, and here-documents.</li>
- *   <li><b>Line/indentation-based languages</b> (python, ruby, yaml, ini, sql, powershell, batch) and
+ *   <li><b>Python</b>: blocks by indentation, plus statements that span lines (wrapped calls, multi-line
+ *       literals, docstrings).</li>
+ *   <li><b>Other line/indentation-based languages</b> (ruby, yaml, ini, sql, powershell, batch) and
  *       plaintext: no delimiter folding.</li>
  * </ul>
  *
@@ -82,9 +84,57 @@ public final class FoldRegions {
             case "typst" -> typst(text);
             case "http" -> http(text);
             case "shell" -> shell(text);
-            // plaintext and line/indentation-based languages have no delimiter folding.
+            case "python" -> python(text);
+            // plaintext and the other line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };
+    }
+
+    /**
+     * Python's blocks, by indentation as Python reads it ({@link com.editora.editops.PythonScan}): a statement
+     * ending in {@code :} folds over its body — every following line until a statement at its own indent or
+     * shallower — and a statement that spans lines without opening a block (a wrapped call, a multi-line
+     * list or dict, a docstring) folds over its own lines. A comment at the header's level or shallower does
+     * not end a block, and trailing blank lines are left outside it.
+     */
+    static List<Region> python(String text) {
+        List<com.editora.editops.PythonScan.Line> lines = com.editora.editops.PythonScan.scan(text);
+        List<Region> out = new ArrayList<>();
+        int n = lines.size();
+        for (int i = 0; i < n; i++) {
+            com.editora.editops.PythonScan.Line l = lines.get(i);
+            if (!l.statement()) {
+                continue;
+            }
+            int end = com.editora.editops.PythonScan.statementEnd(lines, i);
+            com.editora.editops.PythonScan.Line last = lines.get(end);
+            if (last.lastCode() == ':' && last.depthAtEnd() == 0 && !last.stringAtEnd()) {
+                int w = pythonIndentWidth(text, l);
+                for (int j = end + 1; j < n; j++) {
+                    com.editora.editops.PythonScan.Line m = lines.get(j);
+                    if (m.blank() || (m.commentOnly() && pythonIndentWidth(text, m) <= w)) {
+                        continue;
+                    }
+                    if (m.statement() && pythonIndentWidth(text, m) <= w) {
+                        break;
+                    }
+                    end = j;
+                }
+            }
+            if (end > i) {
+                out.add(new Region(i, end));
+            }
+        }
+        return canonicalOrder(out);
+    }
+
+    /** A line's indent width as Python measures it (a tab advances to the next multiple of 8). */
+    private static int pythonIndentWidth(String text, com.editora.editops.PythonScan.Line line) {
+        int w = 0;
+        for (int k = line.start(); k < line.indentEnd(); k++) {
+            w = text.charAt(k) == '\t' ? (w / 8 + 1) * 8 : w + 1;
+        }
+        return w;
     }
 
     /** Shell blocks that span lines, from the function/statement header to the closing line. */

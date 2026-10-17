@@ -170,6 +170,16 @@ public final class StringCase {
      * ({@code dot.case} re-enters the cycle at {@code camelCase} — it is reachable only directly).
      */
     public static String cycle(String token) {
+        return cycle(token, null);
+    }
+
+    /**
+     * As {@link #cycle(String)}, for an identifier in {@code language}: where {@code -} is an operator
+     * ({@link #dashIsOperator}) kebab-case is not a name, so the cycle skips it ({@code MAX_SIZE} goes on to
+     * {@code MaxSize}, not {@code max-size}).
+     */
+    public static String cycle(String token, String language) {
+        boolean noKebab = dashIsOperator(language);
         // A one-word token looks the same in several styles (foo is camel, snake and kebab at once), so
         // step on until the text actually changes — otherwise the gesture is stuck on it.
         Style style = detect(token);
@@ -181,6 +191,9 @@ public final class StringCase {
                 case KEBAB -> Style.PASCAL;
                 case PASCAL, DOT -> Style.CAMEL;
             };
+            if (noKebab && style == Style.KEBAB) {
+                continue;
+            }
             String out = to(style, token);
             if (!out.equals(token)) {
                 return out;
