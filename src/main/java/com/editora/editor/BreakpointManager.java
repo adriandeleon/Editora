@@ -142,10 +142,11 @@ public final class BreakpointManager implements LineMarks.Carrier {
         return kind == null ? unverified : kind + " " + unverified;
     }
 
-    /** The hover text of the breakpoint on {@code line}: what the debug session says about it, else null. */
+    /** The hover text of the breakpoint on {@code line}: its condition / log message / hit count / disabled state
+     *  and what the debug session says about it; null for a plain breakpoint the session has nothing to say on. */
     public String tooltip(int line) {
         Live state = live(line);
-        return state == null || state.tooltip() == null || state.tooltip().isBlank() ? null : state.tooltip();
+        return BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
     }
 
     /**

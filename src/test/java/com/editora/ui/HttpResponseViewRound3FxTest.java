@@ -389,6 +389,11 @@ class HttpResponseViewRound3FxTest {
         String w = "{{token}} was sent as empty text: not defined in the file or the selected environment.";
         show(p, 450, 820);
         showIn(p, exchange("h", ok("{}", headers, List.of(w, w.replace("token", "user")))));
+        FxTestSupport.runOnFx(
+                () -> { // the body view, hidden before this response, is laid out on the next pass
+                    p.applyCss();
+                    p.layout();
+                });
         double body =
                 FxTestSupport.callOnFx(() -> p.controlsForTest().bodyArea().getHeight());
         // Six headers and two warnings used to leave the body a few lines: now only the header row and the tabs
@@ -398,6 +403,11 @@ class HttpResponseViewRound3FxTest {
         FxTestSupport.runOnFx(
                 () -> p.tabsForTest().button(HttpResponseTab.NOTES).fire());
         FxTestSupport.drainFx();
+        // A hidden tab takes no part in layout: the one just shown is laid out on the next pass.
+        FxTestSupport.runOnFx(() -> {
+            p.applyCss();
+            p.layout();
+        });
         double row = rowHeight();
         double notes =
                 FxTestSupport.callOnFx(() -> p.controlsForTest().notesArea().getHeight());
@@ -506,8 +516,21 @@ class HttpResponseViewRound3FxTest {
         HttpClientPanel p = c.panelForTest(b);
         FxTestSupport.runOnFx(() -> p.controlsForTest().runButton().fire()); // Cancel
         releaseSlow.countDown();
-        await(() -> p.runSummaryForTest() != null);
-        assertEquals(tr("httppanel.runAllCancelled", 2, 4, 0L), FxTestSupport.callOnFx(p::runSummaryForTest));
+        HttpRunList list = p.runListForTest();
+        await(list::isShown);
+        assertTrue(
+                FxTestSupport.callOnFx(list::titleForTest)
+                        .startsWith(tr("httppanel.runList.title") + " · " + tr("httppanel.runList.cancelled", 2, 4)),
+                FxTestSupport.callOnFx(list::titleForTest));
+        assertTrue(
+                FxTestSupport.callOnFx(list::getAccessibleText).startsWith(tr("httppanel.runAllCancelled", 2, 4, 0L)),
+                "not \"all 2 succeeded\"");
+        assertEquals(
+                List.of("A", "B"),
+                FxTestSupport.callOnFx(() -> list.listForTest().getItems().stream()
+                        .map(HttpRunRows.Row::name)
+                        .toList()),
+                "the two that finished are listed");
     }
 
     // --- X7, X12, X13, Z10: an untitled buffer's "save first" result ---------------------------------------------
@@ -570,7 +593,7 @@ class HttpResponseViewRound3FxTest {
         host.awaitStatus(s -> s.startsWith("GET " + url("/kept"))); // the result replaced the status-bar note
         assertEquals(
                 tr("status.http.rerunAtCaret", "GET " + url("/gone")),
-                FxTestSupport.callOnFx(p::runSummaryForTest),
+                FxTestSupport.callOnFx(p::runNoticeForTest),
                 "the panel still says which request ran");
     }
 
@@ -591,15 +614,28 @@ class HttpResponseViewRound3FxTest {
                 .setValue(p.controlsForTest().historyPicker().getItems().get(0)));
         assertTrue(
                 FxTestSupport.callOnFx(p::headersForTest).startsWith("HTTP"), "an older response shows during the run");
-        assertTrue(FxTestSupport.callOnFx(p::statusForTest).contains(url("/slow")), "…under the running status");
+        assertTrue(
+                FxTestSupport.callOnFx(p::statusForTest).startsWith(HttpPanelStatesFxTest.runningPrefix("Slow")),
+                "…under the running status (named by its ### title; the URL is in its tooltip)");
 
         FxTestSupport.runOnFx(() -> {
             p.controlsForTest().historyPicker().setValue(null);
             c.cancelRun(b);
         });
-        assertEquals(tr("httppanel.cancelled"), FxTestSupport.callOnFx(p::statusForTest));
+        String status = FxTestSupport.callOnFx(p::statusForTest);
+        assertTrue(
+                status.startsWith(
+                        tr("httppanel.cancelledAfter", "").replace(" s", "").strip()),
+                status);
         assertEquals("", FxTestSupport.callOnFx(p::headersForTest), "no old response under \"Cancelled\"");
         assertNull(FxTestSupport.callOnFx(p::getSelectedExchange));
+        // U7: the response shown before the run is its "Previous" row again, selected in History; a click shows it.
+        assertNotNull(FxTestSupport.callOnFx(p::previousRowForTest));
+        assertNotNull(
+                FxTestSupport.callOnFx(() -> p.controlsForTest().historyPicker().getValue()));
+        FxTestSupport.runOnFx(p::clickPreviousForTest);
+        assertTrue(FxTestSupport.callOnFx(p::headersForTest).startsWith("HTTP"), "the row shows its response");
+        assertTrue(FxTestSupport.callOnFx(p::statusForTest).startsWith("200 OK"));
     }
 
     // --- X5: the ■ stays on its own request -----------------------------------------------------------------------

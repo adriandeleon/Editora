@@ -27,6 +27,8 @@ final class HttpVariableMarks {
     private boolean enabled;
     /** Bumped on every request and on/off switch: a result for an older one is dropped. */
     private int generation;
+    /** The marks last handed to the overlay (null when none are), so switching off can take back only its own. */
+    private List<MarkdownLint.Diagnostic> shown;
 
     /**
      * @param overlay  the buffer's (lazily attached) squiggle overlay
@@ -58,7 +60,14 @@ final class HttpVariableMarks {
             enabled = on;
             generation++;
             if (!on) {
-                overlay.get().setActive(sharedUse.getAsBoolean());
+                MarkdownLintOverlay o = overlay.get();
+                if (shown != null && o.diagnostics() == shown) {
+                    // A .http file saved as Markdown: its {{variable}} marks would stay until Markdown lint's
+                    // first result replaced them, and with lint off they would stay for good.
+                    o.setDiagnostics(List.of());
+                }
+                shown = null;
+                o.setActive(sharedUse.getAsBoolean());
             }
         }
         if (on) {
@@ -81,9 +90,15 @@ final class HttpVariableMarks {
         int asked = ++generation;
         validator.accept(text.get(), diags -> {
             if (enabled && asked == generation) {
+                shown = diags;
                 overlay.get().setDiagnostics(diags);
             }
         });
+    }
+
+    /** The marks at 0-based {@code paragraph} and {@code column} (empty while off). */
+    List<MarkdownLint.Diagnostic> at(int paragraph, int column) {
+        return enabled ? overlay.get().at(paragraph, column) : List.of();
     }
 
     /** The marks currently shown (empty while off). */

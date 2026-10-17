@@ -35,6 +35,12 @@ public final class StackTraceLinks {
     // Line numbers are {@code \d{1,9}}: a longer digit run is not a line number, and would overflow parseInt.
     private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d{1,9})\\)");
     /**
+     * javac's (and a Java build's) error location at a word start: {@code /src/demo/Main.java:12: error: …}.
+     * Not a stack frame — those are {@link #JAVA}, which is tried first.
+     */
+    private static final Pattern JAVA_LOCATION =
+            Pattern.compile("(?<![^\\s(])((?:[A-Za-z]:)?[^\\s:()]+\\.java):(\\d{1,9}):");
+    /**
      * A traceback frame: {@code File "<path>", line N}. Any path — an extensionless script run through its
      * shebang is still Python, and a path may hold a {@code "} (Python prints it unescaped) — but not the
      * pseudo-files {@code <stdin>}, {@code <string>}, {@code <frozen runpy>}.
@@ -113,6 +119,10 @@ public final class StackTraceLinks {
             return null;
         }
         Matcher m = JAVA.matcher(line);
+        if (m.find()) {
+            return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
+        }
+        m = JAVA_LOCATION.matcher(line);
         if (m.find()) {
             return new Link(m.group(1), Integer.parseInt(m.group(2)), line);
         }

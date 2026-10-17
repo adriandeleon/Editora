@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 127;
+    public static final int SCHEMA_VERSION = 129;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -518,6 +518,11 @@ public class Settings {
     private String httpNodePath = "";
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
+    /**
+     * Show each {@code .http} request's last result after its method/URL line, and colour its ▶ by the outcome: on
+     * by default.
+     */
+    private boolean httpInlineResults = true;
     /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
     private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
@@ -654,6 +659,24 @@ public class Settings {
      * typed to. Only a launch is affected, not an attach, and not the Python/JavaScript adapters.
      */
     private boolean debugProgramConsole = true;
+    /**
+     * Java debugging: when a saved change reaches the running program (hot code replace) — {@code auto} on
+     * every save during a session, {@code manual} only on Debug: Apply Code Changes, {@code off} never on its
+     * own (the command still applies). Read by {@code DapManager.CodeReplaceMode.of}.
+     */
+    private String debugHotCodeReplace = "auto";
+    /**
+     * Java debugging: Step Into skips JDK classes and synthetic methods (java-debug's step filters) — what
+     * IntelliJ and VS Code do by default. Off steps into everything, JDK internals included.
+     */
+    private boolean debugStepFilters = true;
+    /** Java debugging: a class's static fields are shown among the variables (java-debug hides them otherwise). */
+    private boolean debugShowStatics = true;
+    /**
+     * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
+     * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
+     */
+    private String debugExceptionTypes = "";
     /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
      *  auto-detect common install locations (VS Code java extension, mason, …). */
     private String javaDebugPluginPath = "";
@@ -942,6 +965,14 @@ public class Settings {
 
     public void setHttpScriptsEnabled(boolean httpScriptsEnabled) {
         this.httpScriptsEnabled = httpScriptsEnabled;
+    }
+
+    public boolean isHttpInlineResults() {
+        return httpInlineResults;
+    }
+
+    public void setHttpInlineResults(boolean httpInlineResults) {
+        this.httpInlineResults = httpInlineResults;
     }
 
     public String getHttpNodePath() {
@@ -2836,12 +2867,44 @@ public class Settings {
         this.debugSupport = debugSupport;
     }
 
+    public boolean isDebugStepFilters() {
+        return debugStepFilters;
+    }
+
+    public void setDebugStepFilters(boolean debugStepFilters) {
+        this.debugStepFilters = debugStepFilters;
+    }
+
+    public boolean isDebugShowStatics() {
+        return debugShowStatics;
+    }
+
+    public void setDebugShowStatics(boolean debugShowStatics) {
+        this.debugShowStatics = debugShowStatics;
+    }
+
+    public String getDebugExceptionTypes() {
+        return debugExceptionTypes == null ? "" : debugExceptionTypes;
+    }
+
+    public void setDebugExceptionTypes(String debugExceptionTypes) {
+        this.debugExceptionTypes = debugExceptionTypes == null ? "" : debugExceptionTypes.strip();
+    }
+
     public boolean isDebugProgramConsole() {
         return debugProgramConsole;
     }
 
     public void setDebugProgramConsole(boolean debugProgramConsole) {
         this.debugProgramConsole = debugProgramConsole;
+    }
+
+    public String getDebugHotCodeReplace() {
+        return debugHotCodeReplace == null || debugHotCodeReplace.isBlank() ? "auto" : debugHotCodeReplace;
+    }
+
+    public void setDebugHotCodeReplace(String debugHotCodeReplace) {
+        this.debugHotCodeReplace = debugHotCodeReplace;
     }
 
     public String getJavaDebugPluginPath() {

@@ -23,7 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Where the indent guides are drawn, read off the overlay's pixels and compared with where the text's columns
  * are: they follow the text when the gutter changes width with nothing scrolled or edited, take the column
  * width from the laid-out text rather than a digit of the font, stay off the gutter when the view is scrolled
- * sideways, and fall on the tab stops of a tab-indented file.
+ * sideways, and fall on the tab stops of a tab-indented file. And what they rely on: every line's text starts
+ * at the same x, whatever the line number beside it, in the app's stylesheet.
  */
 @Tag("fx")
 class IndentGuideOverlayFxTest {
@@ -57,6 +58,14 @@ class IndentGuideOverlayFxTest {
             buffer[0].getArea().moveTo(0);
             buffer[0].setFont("Monospaced", 14); // as the app always does: the font's digit is a column here
             stage[0] = EditorFx.show(buffer[0], 900, 400);
+            // The app's stylesheet keeps the line numbers monospaced. Without it they take the editor font,
+            // and in a proportional one each row's number is as wide as its digits: on macOS, whose system
+            // font has proportional digits, line 1's text started 2 px left of line 6's.
+            stage[0].getScene()
+                    .getStylesheets()
+                    .add(IndentGuideOverlayFxTest.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
             buffer[0].setIndentGuidesVisible(true);
             buffer[0].getArea().showParagraphAtTop(0);
         });
@@ -203,6 +212,33 @@ class IndentGuideOverlayFxTest {
             assertGuides(buffer, 5, () -> charX(buffer, 5, 0, 4, 8, 12, 16, 20), "in a proportional font");
             List<Double> x = charX(buffer, 5, 0, 20);
             assertTrue(x.get(1) - x.get(0) > 20, "the fixture lays out an indentation");
+        } finally {
+            close(buffer, stage[0]);
+        }
+    }
+
+    @Test
+    void everyLineStartsAtTheSameXInAProportionalFont() throws Exception {
+        Stage[] stage = new Stage[1];
+        EditorBuffer buffer = open(nested(40), stage);
+        try {
+            EditorFx.onFx(() -> buffer.setFont("System", 14));
+            // Lines 1, 6 and 9 are a space and a digit in the gutter, 20 two digits: in a proportional font a
+            // space is narrower than a digit, and on macOS a 1 is narrower than a 6, so a gutter in the editor
+            // font would be ragged however long one waits. Polled: the new font is laid out a pulse or two later.
+            List<Double> starts = charX(buffer, 0, 0);
+            for (int attempt = 0; attempt < 60; attempt++) {
+                EditorFx.drain();
+                starts = new ArrayList<>();
+                for (int line : new int[] {0, 5, 8, 19}) {
+                    starts.add(charX(buffer, line, 0).get(0));
+                }
+                if (starts.stream().distinct().count() == 1) {
+                    break;
+                }
+                Thread.sleep(50);
+            }
+            assertEquals(1, starts.stream().distinct().count(), "where each line's text starts: " + starts);
         } finally {
             close(buffer, stage[0]);
         }

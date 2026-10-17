@@ -137,17 +137,26 @@ final class MacroSettingsPane extends HBox {
         });
         stepList.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> showStepDetail());
 
-        Button up = new Button("▲");
-        Button down = new Button("▼");
-        up.setAccessibleText(tr("bookmarks.moveUp"));
-        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
-        down.setAccessibleText(tr("bookmarks.moveDown"));
-        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
-        up.getStyleClass().addAll("flat", "reorder-button");
-        down.getStyleClass().addAll("flat", "reorder-button");
+        // Ordinary labelled buttons, like the others in this row: the flat ▲/▼ glyphs were 10 px targets that
+        // a screen reader announced as the glyphs. Each is greyed where it cannot act.
+        Button up = new Button(tr("settings.macro.moveUp"));
+        Button down = new Button(tr("settings.macro.moveDown"));
+        up.setTooltip(new Tooltip(tr("settings.macro.moveUp.help")));
+        up.setAccessibleHelp(tr("settings.macro.moveUp.help"));
+        down.setTooltip(new Tooltip(tr("settings.macro.moveDown.help")));
+        down.setAccessibleHelp(tr("settings.macro.moveDown.help"));
         up.setOnAction(e -> moveStep(-1));
         down.setOnAction(e -> moveStep(1));
         Button remove = new Button(tr("settings.macro.removeStep"));
+        Runnable stepButtonsState = () -> {
+            int i = stepList.getSelectionModel().getSelectedIndex();
+            up.setDisable(i <= 0);
+            down.setDisable(i < 0 || i >= steps.size() - 1);
+            remove.setDisable(i < 0);
+        };
+        stepList.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> stepButtonsState.run());
+        steps.addListener((javafx.collections.ListChangeListener<MacroStep>) c -> stepButtonsState.run());
+        stepButtonsState.run();
         remove.setOnAction(e -> {
             int i = stepList.getSelectionModel().getSelectedIndex();
             if (i >= 0) {

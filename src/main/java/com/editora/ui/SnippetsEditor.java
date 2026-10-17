@@ -111,7 +111,12 @@ final class SnippetsEditor {
 
     /** The first trigger of {@code entry} with whitespace in it — one Tab can never expand — or null. Pure. */
     static String spacedTrigger(Entry entry) {
-        for (String t : entry.prefixes()) {
+        return spacedTrigger(entry.prefixes());
+    }
+
+    /** The first of {@code triggers} with whitespace in it, or null. Pure. */
+    static String spacedTrigger(List<String> triggers) {
+        for (String t : triggers) {
             if (t.chars().anyMatch(Character::isWhitespace)) {
                 return t;
             }
@@ -276,6 +281,16 @@ final class SnippetsEditor {
                     }
                 }
             }
+            String spaced = spacedTrigger(parseTriggers(prefix.getText()));
+            flag(prefix, spaced == null ? null : tr("settings.snippet.triggerSpace", spaced));
+            if (spaced != null) {
+                // Refused, not saved: Tab could never expand it. The typed text stays for the user to fix, and
+                // the form stays "edited", so the next commit tries again.
+                clash.setText(tr("settings.snippet.triggerSpace", spaced));
+                clash.setVisible(true);
+                clash.setManaged(true);
+                return;
+            }
             boolean descriptionEdited =
                     !description.getText().equals(loaded.get(0).get(2));
             Entry updated = cur.withFields(
@@ -331,6 +346,7 @@ final class SnippetsEditor {
             }
             loading = true;
             try {
+                flag(prefix, null); // a refused trigger belongs to the row being left
                 form.setDisable(s == null || fileProblem != null);
                 name.setText(s == null ? "" : s.name());
                 prefix.setText(s == null ? "" : s.prefixText());
@@ -417,7 +433,9 @@ final class SnippetsEditor {
                                         .isNull()));
             }
         }
-        HBox buttons = new HBox(6, add, remove, toggle);
+        // The buttons wrap onto a second line rather than hold the list column wider than a narrow window
+        // allows (German at the 900 px minimum scrolled the whole page sideways).
+        WrapRow buttons = new WrapRow(6, 6, add, remove, toggle);
         // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
         Label languageLabel = new Label(tr("settings.snippet.language"));
         languageLabel.setLabelFor(languageBox);
@@ -426,7 +444,7 @@ final class SnippetsEditor {
         HBox languageRow = new HBox(10, languageLabel, languageBox);
         languageRow.setAlignment(Pos.CENTER_LEFT);
         VBox left = new VBox(6, languageRow, filter, list, buttons);
-        for (Region r : List.of(languageLabel, add, remove, toggle, left)) {
+        for (Region r : List.of(languageLabel, add, remove, toggle)) {
             r.setMinWidth(Region.USE_PREF_SIZE);
         }
         VBox.setVgrow(left, Priority.ALWAYS);
@@ -482,6 +500,13 @@ final class SnippetsEditor {
         }
     }
 
+    /** Marks {@code field} red with {@code why} as its tooltip and accessible help, or clears that when null. */
+    private static void flag(TextField field, String why) {
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
+        field.setTooltip(why == null ? null : new javafx.scene.control.Tooltip(why));
+        field.setAccessibleHelp(why);
+    }
+
     private static Label wrapped(String styleClass) {
         Label l = new Label("");
         l.getStyleClass().add(styleClass);
@@ -499,7 +524,7 @@ final class SnippetsEditor {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         }
         if (field instanceof CodeArea) { // a tall body would otherwise centre its label
             GridPane.setValignment(l, javafx.geometry.VPos.TOP);

@@ -17,6 +17,8 @@ com.editora.lsp.JdtlsResolveMainClassProbeTest
 com.editora.lsp.JdtlsSnippetProbeTest
 com.editora.lsp.JdtlsTypingProbeTest
 com.editora.ui.CompactSourceDebugProbeFxTest
+com.editora.ui.JavaCodeChangesProbeFxTest
+com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
@@ -46,6 +48,8 @@ com.editora.ui.DebugPanelFocusRetentionFxTest#steppingFromThePanelKeepsFocusInTh
 
 # Opt-in: runs only against a real SSH server named with -Dremote.probe=user@host:port (see its Javadoc).
 com.editora.ui.RealSshdProbeFxTest
+# Opt-in: runs only against a real SSH agent named with -Dremote.probe.agent (see its Javadoc).
+com.editora.vfs.RealSshAgentProbeFxTest
 # Opt-in: runs only against a real container engine and an image already present, named with
 # -Dcontainer.probe=<docker|podman> and -Dcontainer.probe.image (see its Javadoc).
 com.editora.container.ContainerProbeFxTest

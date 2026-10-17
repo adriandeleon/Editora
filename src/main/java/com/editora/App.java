@@ -69,6 +69,7 @@ public class App extends Application {
         Settings settings = boot.settings();
         SharedConfig shared = bootstrap.shared();
         sharedConfig = shared;
+        com.editora.dap.DebugAdapterLocator.setEditoraConfigDir(shared.getConfigDir()); // its installed java-debug
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
         // Register the bundled fonts the first frame can show (the UI chrome's, app.css's monospace default
         // and the configured editor family) before any UI/CSS uses them; the other families load after the

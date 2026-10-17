@@ -48,6 +48,7 @@ class PythonDebugLaunchFxTest {
 
     @BeforeAll
     static void bootToolkit() throws Exception {
+        com.editora.i18n.Messages.init("en"); // the adapter's errors are shown in the UI's language
         FxToolkit.registerPrimaryStage();
     }
 
@@ -64,6 +65,9 @@ class PythonDebugLaunchFxTest {
     @BeforeEach
     void setUp() throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/usr/bin/python3")), "needs python3");
+        // macOS's temp folder is under /var, a link to /private/var, and Python reports sys.executable by the
+        // real path: the venv's interpreter the adapter runs under is named as the test names it only from here.
+        base = base.toRealPath();
         site = base.resolve("site");
         Path adapterDir = Files.createDirectories(site.resolve("debugpy/adapter"));
         Files.writeString(site.resolve("debugpy/__init__.py"), "");
@@ -153,6 +157,11 @@ class PythonDebugLaunchFxTest {
         throw new AssertionError("the adapter was never sent " + command + ": " + Files.readString(log));
     }
 
+    /** {@code file} with its folder's symlinks resolved but not the file itself (a venv's python links out). */
+    private static Path realFolder(Path file) throws Exception {
+        return file.getParent().toRealPath().resolve(file.getFileName());
+    }
+
     private static List<String> strings(JsonArray array) {
         List<String> out = new ArrayList<>();
         array.forEach(e -> out.add(e.getAsString()));
@@ -206,7 +215,12 @@ class PythonDebugLaunchFxTest {
                 "the project root and src/ come first: " + pythonPath);
         assertFalse(
                 pythonPath.contains(site.toString()), "Editora's debugpy folder stays the adapter's: " + pythonPath);
-        assertEquals(venvPython, logged("__adapter__").get("exe").getAsString(), "venv imports debugpy: adapter too");
+        // What the adapter reports is Python's own sys.executable, which macOS gives with the temp folder's real
+        // path (/private/var for /var); the path Editora sends — above, and in the console line — stays as given.
+        assertEquals(
+                realFolder(Path.of(venvPython)),
+                realFolder(Path.of(logged("__adapter__").get("exe").getAsString())),
+                "venv imports debugpy: adapter too");
         assertEquals(
                 List.of("\"" + venvPython + "\" \"" + file + "\" one \"two words\"\n"), // "my project"
                 commandLines,

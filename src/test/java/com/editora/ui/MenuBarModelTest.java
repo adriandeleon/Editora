@@ -249,4 +249,33 @@ class MenuBarModelTest {
             assertFalse(simple.allEntries().contains("tool.fileHistory"));
         }
     }
+
+    /** Review C10: Pause, Restart, Run to Cursor, Evaluate and the breakpoint list were only in the palette. */
+    @Test
+    void theRunMenuReachesEveryDebuggerAction() {
+        MenuBarModel.MenuSpec run = MenuBarModel.menus().stream()
+                .filter(m -> m.titleKey().equals("menubar.run"))
+                .findFirst()
+                .orElseThrow();
+        List<String> all = run.allEntries();
+        for (String id : List.of(
+                "debug.start",
+                "debug.pause",
+                "debug.restart",
+                "debug.stop",
+                "debug.runToCursor",
+                "debug.evaluate",
+                "debug.showValue",
+                "debug.addWatch",
+                "debug.attach",
+                "debug.mainClass",
+                "debug.toggleBreakpoint",
+                "debug.toggleBreakpointEnabled",
+                "debug.editBreakpoint",
+                "debug.breakpoints",
+                "debug.muteBreakpoints",
+                "debug.toggleExceptionBreakpoints")) {
+            assertTrue(all.contains(id), id + " is not in the Run menu");
+        }
+    }
 }

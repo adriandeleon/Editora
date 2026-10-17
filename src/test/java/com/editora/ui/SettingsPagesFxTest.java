@@ -239,6 +239,34 @@ class SettingsPagesFxTest {
         });
     }
 
+    /**
+     * Java debugging runs through the Java language server: with LSP off the Debugging page said nothing about
+     * it (every adapter "found"), and it had no Install button (review C6).
+     */
+    @Test
+    void theDebuggingPageSaysJavaNeedsLspAndInstallsJavaSupport() throws Exception {
+        settings.setDebugSupport(true); // the cards under the Debugging switch are greyed while it is off
+        settings.setLspSupport(false);
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            javafx.scene.control.Label note = rig.control("javaDebugLspNote");
+            assertEquals(tr("status.debug.javaNeedsLsp"), note.getText());
+            assertTrue(note.isManaged());
+            Map<String, Button> buttons = rig.control("installButtons");
+            List<String> languages = new ArrayList<>();
+            rig.window.setInstallActions(languages::add);
+            buttons.get("debug:java").fire();
+            assertEquals(List.of("java"), languages, "jdtls and java-debug, as the LSP page's Java row installs");
+            assertTrue(buttons.containsKey("java"), "the LSP page's own button is still tracked");
+        });
+        settings.setLspSupport(true);
+        FxTestSupport.runOnFx(() -> {
+            rig.window.refreshDetectionStatus();
+            javafx.scene.control.Label note = rig.control("javaDebugLspNote");
+            assertFalse(note.isManaged(), "nothing to say while LSP is on");
+        });
+    }
+
     @Test
     void anInstallButtonAsksForItsOwnToolAndDoesNothingUntilAnInstallerIsWired() throws Exception {
         FxTestSupport.runOnFx(() -> {
@@ -312,7 +340,12 @@ class SettingsPagesFxTest {
                 assertTrue(SettingsRig.all(detecting.page("LSP"), Button.class).contains(buttons[1]));
             });
             SettingsRig.awaitFx("the typst program to be found", () -> buttons[0].isDisable());
-            SettingsRig.awaitFx("the server probe", () -> lspStatus(detecting).contains(tr("settings.lsp.notFound")));
+            SettingsRig.awaitFx(
+                    "the server probe",
+                    () -> lspStatus(detecting)
+                            .equals(tr(
+                                    "settings.tool.notFound",
+                                    missing.getFileName().toString())));
             FxTestSupport.runOnFx(() -> {
                 assertEquals(installed, buttons[0].getText());
                 assertFalse(buttons[1].isDisable(), "the server is still to be installed");
@@ -335,8 +368,8 @@ class SettingsPagesFxTest {
     }
 
     private static String lspStatus(SettingsRig rig) {
-        Map<String, Label> labels = rig.control("lspStatusLabels");
-        return labels.get("typst").getText();
+        Map<String, ToolStatusRow> labels = rig.control("lspStatusLabels");
+        return labels.get("typst").pill().getText();
     }
 
     /** What the Typst service last found, without running the program to find out. */

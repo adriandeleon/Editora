@@ -3529,7 +3529,13 @@ final class LspCoordinator {
      * so a repeat click re-selects the existing tab rather than opening another.
      */
     void openLibraryFrame(Path anchorPath, String jdtUri, int line0) {
-        openLibraryDefinition(anchorPath, new LspManager.Target(null, Math.max(0, line0), 0, jdtUri));
+        openLibraryFrame(anchorPath, jdtUri, line0, b -> {});
+    }
+
+    /** As above, handing the library-source tab to {@code opened} once it shows (a debugger frame paints it). */
+    void openLibraryFrame(Path anchorPath, String jdtUri, int line0, java.util.function.Consumer<EditorBuffer> opened) {
+        openLibraryDefinition(
+                anchorPath, new LspManager.Target(null, Math.max(0, line0), 0, jdtUri), () -> true, opened);
     }
 
     private void openLibraryDefinition(Path anchorPath, LspManager.Target t) {
@@ -3538,6 +3544,14 @@ final class LspCoordinator {
 
     private void openLibraryDefinition(
             Path anchorPath, LspManager.Target t, java.util.function.BooleanSupplier stillCurrent) {
+        openLibraryDefinition(anchorPath, t, stillCurrent, b -> {});
+    }
+
+    private void openLibraryDefinition(
+            Path anchorPath,
+            LspManager.Target t,
+            java.util.function.BooleanSupplier stillCurrent,
+            java.util.function.Consumer<EditorBuffer> onOpened) {
         if (!stillCurrent.getAsBoolean()) {
             return;
         }
@@ -3546,6 +3560,7 @@ final class LspCoordinator {
         EditorBuffer existing = ref == null ? null : ref.get();
         if (existing != null && ops.selectBufferTab(existing)) {
             gotoInBuffer(existing, t.line(), t.character());
+            onOpened.accept(existing);
             return;
         }
         host.setStatus(tr("status.lsp.libraryLoading"));
@@ -3562,6 +3577,7 @@ final class LspCoordinator {
                 libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
                 librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
                 gotoInBuffer(opened, t.line(), t.character());
+                onOpened.accept(opened);
             }
         });
     }

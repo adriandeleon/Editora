@@ -32,13 +32,50 @@ engine that owns the session (`SshClients.engineOf`), so a window's login asks i
 - **Key passphrase**: asked only when a key turns out to be encrypted (`RemoteFileSystems.Passphrases`, the
   key provider's `FilePasswordProvider`), three tries; cancelling skips that key and the login goes on.
 - What each method may use: `PASSWORD` no keys (MINA's default keys were tried first before); `KEY` that file;
-  `DEFAULT_KEYS` the default `~/.ssh` keys. Each may still answer the server's questions, so a key + 2FA
-  server works. After the login the session's key provider is emptied, so no passphrase outlives it.
+  `DEFAULT_KEYS` (shown as "Automatic") the SSH agent's keys, then what MINA puts together for the session —
+  `~/.ssh/config`'s `IdentityFile` keys, then the default keys, unless `IdentitiesOnly yes`. Each may still answer the server's
+  questions, so a key + 2FA server works. After the login the session's key provider is emptied, so no
+  passphrase outlives it.
+
+**`~/.ssh/config`.** `vfs/SshEnvironment` is where the engine's SSH setup lives (`~/.ssh`'s `config`,
+`known_hosts` and default keys, and the environment); the app's is `SshEnvironment.standard()`, a test's a
+folder of its own (the package-private test constructors use the folder of their `known_hosts`, so no test reads
+the config or keys of whoever runs it). The shared client's host-config resolver, default-key provider and
+`FilePasswordProvider` (`vfs/Passphrases`) all delegate to the owning engine, the resolver through the connect's
+context. The resolver is `vfs/SshConfigFile`: MINA's own entry parser and matching (HostName, Port, User,
+IdentityFile, CertificateFile, IdentitiesOnly, ProxyJump) over the config with `Include`s read in place
+(relative to `~/.ssh`, `~`, globs sorted, 16 deep) and `Match` sections left out — MINA's resolver refuses the
+whole file over a `Match` ("Currently not able to process Match sections"), for every host, so such a config
+had stopped every connect. It re-reads when the config or an included file changes; the jump session carries the same context, so its host-key question and login
+are the same window's. The connection id stays what the form says (`user@alias:port`), so saved sites, exec
+consent and `sftp://` URIs don't depend on the config. The connect form offers the config's single-name `Host`
+entries (`RemoteFileSystems.configuredHosts`, the editor's `sshconfig.SshConfig` parser), and for the host
+typed shows HostName, ProxyJump and IdentityFile and fills User and Port from `RemoteFileSystems.configured` —
+MINA's resolver, the connect's own reading; User from the editor parser of the same text, since MINA fills in
+this machine's user when the config has none — until you type in those fields. Not supported: `ProxyCommand`,
+and what a `Match` section says.
 - Time spent answering is left out of the login deadline (`PromptClock`, the #486 rule for host-key prompts,
   now for every question); MINA's own `AUTH_TIMEOUT` is raised to 15 minutes so it never ends a login first.
 - Cancelling a password or server question sets `LoginQuestions.CANCELLED` (and the engine's per-connect flag,
   since a closed session's attributes are cleared): nothing more is asked and the connect fails as
   `CANCELLED`, which the status bar reports without a dialog.
+
+**SSH agent.** The shared client's `SshAgentFactory` is `vfs/AgentFactory`; for an Automatic login only (the
+session's `RemoteFileSystems.AUTH` attribute) it opens `vfs/AgentConnection`, MINA's `AbstractAgentProxy`
+(the whole agent protocol) over a transport of our own: a Unix-domain socket (`SocketChannel` +
+`UnixDomainSocketAddress`) or, on Windows, a named pipe opened as a file (`RandomAccessFile`, `CreateFile`
+underneath) — `java.base` only. MINA's `agent.unix` needs Tomcat's APR natives and is not used. MINA offers the
+agent's keys before any key file. Where the agent is, `vfs/AgentLocation`: the host's `IdentityAgent`
+(`none`, `SSH_AUTH_SOCK`, `$VAR`, a path with `~`, `%d`, `%u`), else `$SSH_AUTH_SOCK` from the engine's
+`SshEnvironment`, else on Windows `\\.\pipe\openssh-ssh-agent` (the OpenSSH service's, also 1Password's). An
+agent that is not there is passed over (a FINE log). A signature is timed as answering time, so a security
+key's touch or a password manager's approval does not run out the login deadline. No agent forwarding: the
+factory registers no forwarding channel. A GUI launch inherits `SSH_AUTH_SOCK` from launchd (macOS) or the
+desktop session (Linux); an agent started only in a shell profile is not seen — name it with `IdentityAgent`.
+Tests: `SshAgentLoginFxTest` (an agent of the test's own: MINA's `AbstractAgentClient` over `AgentImpl` on a
+socket), `AgentLocationTest`, and the opt-in `RealSshAgentProbeFxTest` against a real agent, which
+`remote-probe.yml` runs with `ssh-agent` on macOS and Linux and with the OpenSSH agent service on Windows (the
+only test of the named pipe).
 
 **Why a connect failed** is `vfs/ConnectFailure`: unreachable, timed out, host key declined, host key changed
 (`KnownHostsServerKeyVerifier`'s modified-key acceptor records it), login refused, cancelled, other.

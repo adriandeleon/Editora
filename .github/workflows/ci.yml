@@ -452,5 +452,7 @@ jobs:
           test -x "$HOME/.editora/plugins/lsp/java/bin/jdtls"
           compgen -G "$HOME/.editora/plugins/dap/java/com.microsoft.java.debug.plugin-*.jar"
 
+      # JavaDebugRealAdapterProbeFxTest: a Maven project launch, a program Editora starts itself (runInTerminal),
+      # and Stop / window close leaving no debuggee or compile folder — against the real java-debug.
       - name: Test compact Java language service and debugging
-        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest -Dgroups=probe -Dlsp.probe=true test
+        run: ./mvnw -B --no-transfer-progress -Dtest=JdtlsCompactSourceProbeTest,CompactSourceDebugProbeFxTest,JavaDebugRealAdapterProbeFxTest,JavaCodeChangesProbeFxTest -Dgroups=probe -Dlsp.probe=true test

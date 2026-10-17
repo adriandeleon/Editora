@@ -24,7 +24,8 @@ import com.editora.http.HttpTests;
  * <p>{@code landedAt} is when the response arrived (a Clear is compared with it, not with {@code at}, so a run in
  * flight during a Clear is kept as it is shown); {@code urlTemplate} and {@code fingerprint} are the request's URL as
  * written and a digest of its text, by which Run finds the request again ({@link HttpRerunTarget}); null when
- * unknown (an entry saved before they were kept).
+ * unknown (an entry saved before they were kept). {@code environment} is the environment the run resolved against
+ * ({@code ""}: none), or null when unknown (an entry saved before it was kept, or built without a run).
  */
 record HttpHistoryEntry(
         HttpExchange exchange,
@@ -37,7 +38,8 @@ record HttpHistoryEntry(
         boolean bodyCut,
         long landedAt,
         String urlTemplate,
-        String fingerprint) {
+        String fingerprint,
+        String environment) {
 
     /** At most this many characters of bodies are kept across one panel's history (about 100 MB). */
     static final long MAX_BODY_BYTES = 100L * 1024 * 1024;
@@ -46,6 +48,34 @@ record HttpHistoryEntry(
 
     HttpHistoryEntry {
         name = name == null || name.isBlank() ? null : name.strip();
+    }
+
+    /** An entry whose environment is not known. */
+    HttpHistoryEntry(
+            HttpExchange exchange,
+            String name,
+            int requestIndex,
+            long at,
+            boolean bodyDropped,
+            boolean binaryNotKept,
+            boolean noLog,
+            boolean bodyCut,
+            long landedAt,
+            String urlTemplate,
+            String fingerprint) {
+        this(
+                exchange,
+                name,
+                requestIndex,
+                at,
+                bodyDropped,
+                binaryNotKept,
+                noLog,
+                bodyCut,
+                landedAt,
+                urlTemplate,
+                fingerprint,
+                null);
     }
 
     /** An entry that lands now, of a request not known by its text. */
@@ -90,6 +120,17 @@ record HttpHistoryEntry(
      */
     static HttpHistoryEntry ran(
             HttpExchange exchange, HttpFile.Parsed request, int requestIndex, long at, boolean noLog) {
+        return ran(exchange, request, requestIndex, at, noLog, null);
+    }
+
+    /** {@link #ran(HttpExchange, HttpFile.Parsed, int, long, boolean)}, run in {@code environment} ({@code ""}: none). */
+    static HttpHistoryEntry ran(
+            HttpExchange exchange,
+            HttpFile.Parsed request,
+            int requestIndex,
+            long at,
+            boolean noLog,
+            String environment) {
         return new HttpHistoryEntry(
                 exchange,
                 request == null ? null : request.name(),
@@ -101,7 +142,8 @@ record HttpHistoryEntry(
                 false,
                 System.currentTimeMillis(),
                 request == null ? null : request.url(),
-                request == null ? null : HttpRerunTarget.fingerprint(request));
+                request == null ? null : HttpRerunTarget.fingerprint(request),
+                environment);
     }
 
     /**
@@ -175,7 +217,18 @@ record HttpHistoryEntry(
                 light,
                 exchange.details()); // how it was sent: Copy as cURL still reproduces it
         return new HttpHistoryEntry(
-                ex, name, requestIndex, at, true, binaryNotKept, noLog, bodyCut, landedAt, urlTemplate, fingerprint);
+                ex,
+                name,
+                requestIndex,
+                at,
+                true,
+                binaryNotKept,
+                noLog,
+                bodyCut,
+                landedAt,
+                urlTemplate,
+                fingerprint,
+                environment);
     }
 
     /**
@@ -264,7 +317,8 @@ record HttpHistoryEntry(
                 landedAt,
                 urlTemplate,
                 fingerprint,
-                storedTests(r.tests(), secrets));
+                storedTests(r.tests(), secrets),
+                environment);
     }
 
     /** {@code tests} as saved, with {@code secrets} masked in every text; null when nothing ran. */
@@ -354,7 +408,8 @@ record HttpHistoryEntry(
                 s.bodyCut(),
                 s.landed(),
                 s.urlTemplate(),
-                s.fingerprint());
+                s.fingerprint(),
+                s.environment());
     }
 
     private static java.nio.charset.Charset charset(String name) {

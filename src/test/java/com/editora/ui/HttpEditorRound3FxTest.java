@@ -101,8 +101,7 @@ class HttpEditorRound3FxTest {
     }
 
     private void select(EditorBuffer b, String env) throws Exception {
-        HttpClientPanel p = panel(b);
-        FxTestSupport.runOnFx(() -> p.controlsForTest().environmentPicker().setValue(env));
+        FxTestSupport.runOnFx(() -> c().httpClient.chooseEnvironment(b, env));
         FxTestSupport.drainFx();
     }
 
@@ -179,9 +178,8 @@ class HttpEditorRound3FxTest {
             c().onWindowFocusGained();
         });
         await("the mark is gone", () -> marks(b).isEmpty());
-        HttpClientPanel p = panel(b);
         assertTrue(FxTestSupport.callOnFx(
-                () -> p.controlsForTest().environmentPicker().getItems().contains("staging")));
+                () -> c().httpClient.environmentNamesForTest(b).contains("staging")));
     }
 
     @Test
@@ -192,15 +190,22 @@ class HttpEditorRound3FxTest {
         EditorBuffer b = open(file);
         await("the HTTP mark", () -> marks(b).stream().anyMatch(s -> s.startsWith("{{nope}}")));
         Path md = dir.resolve("notes.md");
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                FxTestSupport.field(c(), "fileWorkflows"),
-                "applySaveAsTarget",
-                new Class<?>[] {EditorBuffer.class, Path.class},
-                b,
-                md));
+        List<MarkdownLint.Diagnostic> atSwap = FxTestSupport.callOnFx(() -> {
+            FxTestSupport.call(
+                    FxTestSupport.field(c(), "fileWorkflows"),
+                    "applySaveAsTarget",
+                    new Class<?>[] {EditorBuffer.class, Path.class},
+                    b,
+                    md);
+            return b.markdownLintDiagnostics(); // same FX turn: Markdown lint's async result cannot be in yet
+        });
+        assertFalse(
+                atSwap.stream().anyMatch(d -> d.code().startsWith("{{")),
+                "the HTTP marks go with the HTTP file, not when Markdown lint replaces them: " + atSwap);
         await(
                 "Markdown lint runs on the Markdown file",
-                () -> !b.markdownLintDiagnostics().isEmpty());
+                () -> b.markdownLintDiagnostics().stream()
+                        .anyMatch(d -> !d.code().startsWith("{{")));
         await("no HTTP marks are left", () -> marks(b).isEmpty());
         List<MarkdownLint.Diagnostic> shown = FxTestSupport.callOnFx(b::markdownLintDiagnostics);
         assertFalse(shown.stream().anyMatch(d -> d.code().startsWith("{{")), shown.toString());

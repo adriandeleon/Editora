@@ -202,14 +202,12 @@ class HttpResponseViewFixesFxTest {
         HttpClientCoordinator c = coordinator(new Ops(config));
         String text = "GET {{host}}/one\n\n###\nGET {{host}}/items/{{id}}\n";
         EditorBuffer b = open(c, work.resolve("t.http"), text);
-        javafx.scene.control.ComboBox<String> env =
-                c.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("a"));
+        FxTestSupport.runOnFx(() -> c.chooseEnvironment(b, "a"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         finished();
         FxTestSupport.runOnFx(() -> {
             b.getArea().insertText(0, "POST {{host}}/other\n\n###\n"); // position 1 is now /one
-            env.setValue("b"); // the URL it sent no longer equals what the template gives now
+            c.chooseEnvironment(b, "b"); // the URL it sent no longer equals what the template gives now
         });
         hits.clear();
         Button run = c.panelForTest(b).controlsForTest().runButton();
@@ -297,7 +295,14 @@ class HttpResponseViewFixesFxTest {
         String saved = awaitSaved(ops, file, s -> s.split("\"requestIndex\"", -1).length - 1 == 10);
         assertTrue(saved.contains("/lonely"), "the only response of Lonely is still saved: " + saved);
         HttpClientPanel p = c.panelForTest(b);
-        assertEquals(tr("httppanel.runAllOk", 6), FxTestSupport.callOnFx(p::runSummaryForTest));
+        HttpRunList list = p.runListForTest();
+        assertTrue(FxTestSupport.callOnFx(list::isShown), "the last Run All is listed");
+        assertEquals(
+                6, FxTestSupport.callOnFx(() -> list.listForTest().getItems().size()));
+        assertTrue(
+                FxTestSupport.callOnFx(list::titleForTest)
+                        .startsWith(tr("httppanel.runList.title") + " · " + tr("httppanel.runList.ok", 6)),
+                FxTestSupport.callOnFx(list::titleForTest));
     }
 
     // --- U13: an untitled buffer's "not sent — save first" results are never written ---------------------------

@@ -186,7 +186,13 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
             g.setTextAlign(TextAlignment.LEFT);
+            // The frame's function header: a lambda opened on another line declares its own parameters there.
+            int frameHeader =
+                    frameLine < 0 ? InlineValueScope.UNKNOWN : InlineValueScope.headerOf(this::codeLine, frameLine);
             for (int p = first; p <= last; p++) {
+                if (frameLine >= 0 && p > frameLine) {
+                    break; // a line below the stop has not run yet: a value there reads as that line's (review C3)
+                }
                 if (area.isFolded(p)) {
                     continue;
                 }
@@ -195,11 +201,15 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
                     continue;
                 }
                 int par = p;
-                List<String> names = DebugIdentifiers.matchesIn(
-                        line, vals.keySet(), col -> !isCode(area.getStyleAtPosition(par, col + 1)));
-                if (names.isEmpty()
-                        || (lineFilter != null && !lineFilter.test(p))
-                        || !InlineValueScope.sameScope(this::codeLine, frameLine, p)) {
+                List<String> names = namesOn(
+                        line,
+                        p,
+                        frameLine,
+                        frameHeader,
+                        vals.keySet(),
+                        col -> !isCode(area.getStyleAtPosition(par, col + 1)),
+                        this::codeLine);
+                if (names.isEmpty() || (lineFilter != null && !lineFilter.test(p))) {
                     continue;
                 }
                 int lastChar = line.length() - 1;
@@ -219,6 +229,29 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event redraws.
         }
+    }
+
+    /**
+     * Pure: the frame's variables to annotate on line {@code p} ({@code text}) — none below the stop line (it has
+     * not run yet) or outside the frame's function, and not a lambda's own parameter on the line that declares it
+     * (review C3: {@code names.forEach(n -> …)} showed the loop variable {@code n}'s value).
+     */
+    static List<String> namesOn(
+            String text,
+            int p,
+            int frameLine,
+            int frameHeader,
+            java.util.Set<String> names,
+            java.util.function.IntPredicate notCode,
+            java.util.function.IntFunction<String> lineAt) {
+        if (frameLine >= 0 && p > frameLine) {
+            return List.of();
+        }
+        List<String> found = DebugIdentifiers.matchesIn(text, names, notCode);
+        if (p != frameHeader && !found.isEmpty()) {
+            found.removeAll(DebugIdentifiers.lambdaParameters(text));
+        }
+        return found.isEmpty() || !InlineValueScope.sameScope(lineAt, frameLine, p) ? List.of() : found;
     }
 
     private static boolean isCode(java.util.Collection<String> style) {

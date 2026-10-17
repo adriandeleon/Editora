@@ -352,6 +352,7 @@ class MessagesTest {
      */
     private static final Map<String, int[]> IDENTIFIER_ARGUMENTS = Map.ofEntries(
             Map.entry("status.gotoResult", new int[] {0, 1}),
+            Map.entry("httppanel.imageCaption", new int[] {1, 2}),
             Map.entry("structure.line", new int[] {0}),
             Map.entry("status.testrunner.debugAttaching", new int[] {0}),
             Map.entry("status.debug.breakpointMoved", new int[] {0, 1}),

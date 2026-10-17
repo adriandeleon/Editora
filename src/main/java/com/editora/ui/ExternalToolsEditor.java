@@ -289,7 +289,7 @@ final class ExternalToolsEditor {
         form.add(l, 0, row);
         form.add(field, 1, row);
         if (field instanceof Region r && !(field instanceof SettingSwitch)) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
             GridPane.setHgrow(r, Priority.ALWAYS);
         }
     }

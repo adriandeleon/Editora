@@ -115,6 +115,10 @@ final class SettingsKeys {
             return;
         }
         if (sidebar.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            // The rows as the list will next draw them: an earlier reveal in this pulse (a command picks a page,
+            // then a search picks another) has only asked to scroll, and the rows last drawn are not where the
+            // list is going — this one would find its row "in view" there and leave the list at the other.
+            sidebar.layout();
             javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
             javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
             if (first != null && last != null && index > first.getIndex() && index < last.getIndex()) {

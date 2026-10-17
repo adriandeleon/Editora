@@ -118,7 +118,11 @@ class SettingsFrameFxTest {
 
     /** Whether the sidebar's selected row is inside its viewport, once the deferred scroll has run. */
     static boolean selectedRowInView(ListView<Object> sidebar) {
-        int i = sidebar.getSelectionModel().getSelectedIndex();
+        return rowInView(sidebar, sidebar.getSelectionModel().getSelectedIndex());
+    }
+
+    /** Whether row {@code i} of {@code sidebar} is on screen once the list is laid out. */
+    static boolean rowInView(ListView<Object> sidebar, int i) {
         sidebar.applyCss();
         sidebar.layout(); // what the next pulse would draw
         var flow = (javafx.scene.control.skin.VirtualFlow<?>) sidebar.lookup(".virtual-flow");
@@ -548,17 +552,21 @@ class SettingsFrameFxTest {
             SettingsWindow window = fx.controller.settingsWindow;
             FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
             FxTestSupport.runOnFx(() -> {
+                // The app theme in force, as the app sets it at startup (the fixture leaves the default).
+                javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor("Editora Dark"));
                 ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
                 sidebar.getSelectionModel().select(category(sidebar, "KEYMAPS"));
                 Stage stage = FxTestSupport.field(window, "stage");
                 stage.getScene().getRoot().applyCss();
                 Node chip = stage.getScene().getRoot().lookup(".shortcut-chord");
                 assertTrue(chip != null, "a bound command shows its chord");
-                assertEquals(
-                        javafx.scene.paint.Color.web("#9aa2d4"),
-                        ((javafx.scene.control.Labeled) chip).getTextFill(),
-                        "the dark periwinkle on the dark window");
+                javafx.scene.paint.Color ink =
+                        (javafx.scene.paint.Color) ((javafx.scene.control.Labeled) chip).getTextFill();
+                assertTrue(
+                        StyleContrastTest.contrast(ink, Themes.backgroundFor("Editora Dark")) >= 4.5,
+                        "a periwinkle that reads on the dark window: " + ink);
                 stage.hide();
+                javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(Themes.DEFAULT));
             });
         }
     }

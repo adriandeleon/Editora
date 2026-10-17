@@ -58,6 +58,13 @@ class DoctorCatalogFxTest {
         final com.editora.typst.TypstService typst = new com.editora.typst.TypstService();
         boolean git = true;
         boolean lsp = true;
+        boolean javaDebugFromServer;
+
+        @Override
+        public boolean javaDebugFromServer() {
+            return javaDebugFromServer;
+        }
+
         boolean debug;
         List<String> servers = List.of();
         Set<String> serversOff = Set.of();
@@ -370,6 +377,18 @@ class DoctorCatalogFxTest {
         DoctorCheck missing = spec(specs(host, ops), "debug.java").probe().get();
         assertEquals(DoctorStatus.MISSING, missing.status());
         assertEquals(List.of("java-debug"), missing.tipArgs());
+
+        // A jdtls that ships java-debug has no jar to find; with LSP off nothing else matters (review A7).
+        ops.javaDebugFromServer = true;
+        assertEquals(
+                DoctorStatus.OK,
+                spec(specs(host, ops), "debug.java").probe().get().status());
+        ops.lsp = false;
+        DoctorCheck needsLsp = spec(specs(host, ops), "debug.java").probe().get();
+        assertEquals(DoctorStatus.MISSING, needsLsp.status());
+        assertEquals("status.debug.javaNeedsLsp", needsLsp.tipKey());
+        ops.lsp = true;
+        ops.javaDebugFromServer = false;
 
         // The other adapters appear with their own installers once they are switched on.
         host.settings.setPythonDebugEnabled(true);

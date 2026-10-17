@@ -38,6 +38,13 @@ class HttpResponseTabTest {
     }
 
     @Test
+    void aRequestThatGotNoResponseOpensOnBodyWhereItsCardIs() {
+        assertEquals(BODY, HttpResponseTab.choose(HEADERS, false, true, ALL), "decision 4: a send failure → the card");
+        assertEquals(BODY, HttpResponseTab.choose(TESTS, true, true, ALL), "a pre-request script failure too");
+        assertEquals(HEADERS, HttpResponseTab.choose(HEADERS, false, false, ALL), "a response keeps the picked tab");
+    }
+
+    @Test
     void theArrowsSkipHiddenTabsAndWrap() {
         Set<HttpResponseTab> shown = EnumSet.of(BODY, HEADERS, REQUEST);
         assertEquals(HEADERS, HttpResponseTab.step(BODY, 1, shown));

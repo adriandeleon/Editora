@@ -78,7 +78,7 @@ class HttpRequestParseTest {
         assertTrue(out.contains("200"));
         assertTrue(out.contains("12 ms"));
         // The viewer is what pretty-prints.
-        assertTrue(HttpResponseFormat.view(r, 1000).text().contains("\"a\" : 1.50"));
+        assertTrue(HttpResponseFormat.view(r, 1000).text().contains("\"a\": 1.50"));
     }
 
     @Test

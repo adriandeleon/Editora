@@ -1,27 +1,24 @@
 package com.editora.ui;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Classifies a debugger value string for IntelliJ-style type coloring in the Debug variables tree
- * (strings green, numbers blue, booleans orange, null-likes muted). Adapters render values
- * language-specifically (Java {@code "text"}, Python {@code 'text'}/{@code None}, JS
- * {@code undefined}), so the classification is a cross-language heuristic. Pure — unit-tested.
+ * Debug variables-tree helpers: {@link #runs} splits a debugger value string into runs coloured with the
+ * editor's syntax token classes, so values read like code in the active editor theme. Adapters render
+ * values language-specifically (Java {@code "text"}, Python {@code 'text'}/{@code None}, JS
+ * {@code undefined}), so the lexer is a cross-language heuristic. Pure — unit-tested.
  */
 final class DebugValues {
 
-    /** Value categories, each mapped to a CSS class via {@link #cssClass}. */
-    enum ValueKind {
-        STRING,
-        NUMBER,
-        BOOLEAN,
-        NULL,
-        OTHER
-    }
-
-    /** Integers, decimals, scientific notation, and hex — with an optional sign. */
+    /** Hex, integers, decimals, and scientific notation — with an optional sign. Hex first: {@code 0x7f} is not
+     *  a {@code 0} followed by a word. */
     private static final Pattern NUMBER =
-            Pattern.compile("[+-]?(\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?|0[xX][0-9a-fA-F]+)[LlFfDd]?");
+            Pattern.compile("[+-]?(0[xX][0-9a-fA-F]+|\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?)[LlFfDd]?");
 
     /**
      * How many children of a variable the tree shows at a time. A {@code byte[65536]} or a 60,000-element list
@@ -80,34 +77,124 @@ final class DebugValues {
         return slash >= 0 && slash < text.length() - 1 ? text.substring(slash + 1) : text;
     }
 
-    static ValueKind kind(String value) {
+    /** One piece of a rendered value: its text and the editor token class it is drawn in, or null for plain. */
+    record Run(String text, String token) {}
+
+    /** At most this many runs per value: the rest of a long {@code [1, 2, 3, …]} is one plain run. */
+    static final int MAX_RUNS = 64;
+
+    /**
+     * {@code value} split into runs coloured like code: the editor's own token classes ({@code .text.string},
+     * {@code .text.number}, {@code .text.constant}, {@code .text.type}), so the Debug tree follows the editor
+     * theme. A cross-language lexer, not a grammar — adapters render values their own way (Java
+     * {@code ArrayList@12 size=3}, Python {@code [1, 'a', None]}, JS {@code {a: 1}}) — and adjacent runs of one
+     * class are merged. Strings, numbers, {@code true}/{@code None}/{@code undefined} and capitalised names are
+     * coloured; an object id after {@code @} is not a number.
+     */
+    static List<Run> runs(String value) {
+        List<Run> out = new ArrayList<>();
         if (value == null || value.isEmpty()) {
-            return ValueKind.OTHER;
+            return out;
         }
-        char c = value.charAt(0);
-        if (c == '"' || c == '\'') {
-            return ValueKind.STRING;
+        int n = value.length();
+        int i = 0;
+        int plainStart = 0;
+        while (i < n) {
+            if (out.size() >= MAX_RUNS - 2) {
+                break; // room for the plain run before this point and the plain remainder
+            }
+            char c = value.charAt(i);
+            int end = -1;
+            String token = null;
+            if (c == '"' || c == '\'') {
+                end = stringEnd(value, i);
+                token = "string";
+            } else if (c == '@') {
+                end = i + 1; // an object id ("App@8", "Foo@1f2a") is neither a number nor a word
+                while (end < n && Character.isLetterOrDigit(value.charAt(end))) {
+                    end++;
+                }
+            } else if (isWordStart(c) && (i == 0 || !isWordPart(value.charAt(i - 1)))) {
+                end = i + 1;
+                while (end < n && (isWordPart(value.charAt(end)) || qualifiedDot(value, end))) {
+                    end++;
+                }
+                token = wordToken(value.substring(i, end));
+            } else if ((Character.isDigit(c)
+                            || ((c == '-' || c == '+') && i + 1 < n && Character.isDigit(value.charAt(i + 1))))
+                    && (i == 0 || !isWordPart(value.charAt(i - 1)))) {
+                Matcher m = NUMBER.matcher(value).region(i, n);
+                if (m.lookingAt() && (m.end() == n || !isWordPart(value.charAt(m.end())))) {
+                    end = m.end();
+                    token = "number";
+                }
+            }
+            if (end < 0) {
+                i++;
+                continue;
+            }
+            if (token != null) {
+                add(out, value.substring(plainStart, i), null);
+                add(out, value.substring(i, end), token);
+                plainStart = end;
+            }
+            i = end;
         }
-        if (value.equals("true") || value.equals("false") || value.equals("True") || value.equals("False")) {
-            return ValueKind.BOOLEAN;
-        }
-        if (value.equals("null") || value.equals("None") || value.equals("undefined") || value.equals("nil")) {
-            return ValueKind.NULL;
-        }
-        if (NUMBER.matcher(value).matches()) {
-            return ValueKind.NUMBER;
-        }
-        return ValueKind.OTHER;
+        add(out, value.substring(plainStart), null);
+        return out;
     }
 
-    /** The Text style class for a kind ({@code .debug-val-*} rules in app.css). */
-    static String cssClass(ValueKind kind) {
-        return switch (kind) {
-            case STRING -> "debug-val-string";
-            case NUMBER -> "debug-val-number";
-            case BOOLEAN -> "debug-val-bool";
-            case NULL -> "debug-val-null";
-            case OTHER -> "debug-val-other";
-        };
+    /** Words drawn as constants: the literal values of Java, Python, JavaScript, Lua/Ruby. */
+    private static final java.util.Set<String> CONSTANTS =
+            java.util.Set.of("true", "false", "True", "False", "null", "None", "undefined", "nil", "NaN", "Infinity");
+
+    private static String wordToken(String word) {
+        if (CONSTANTS.contains(word)) {
+            return "constant";
+        }
+        String last = word.substring(word.lastIndexOf('.') + 1);
+        if (!last.isEmpty() && Character.isUpperCase(last.charAt(0)) && !last.equals(last.toUpperCase(Locale.ROOT))) {
+            return "type"; // ArrayList, java.util.HashMap, Foo — not an ALL_CAPS constant name
+        }
+        return null;
+    }
+
+    private static boolean isWordStart(char c) {
+        return Character.isLetter(c) || c == '_' || c == '$';
+    }
+
+    private static boolean isWordPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '$';
+    }
+
+    /** A dot inside a qualified name ({@code java.util.List}), not a sentence's full stop or a decimal point. */
+    private static boolean qualifiedDot(String s, int i) {
+        return s.charAt(i) == '.' && i + 1 < s.length() && isWordStart(s.charAt(i + 1));
+    }
+
+    /** The end (exclusive) of the quoted string starting at {@code start}: past its closing quote, or the end. */
+    private static int stringEnd(String s, int start) {
+        char quote = s.charAt(start);
+        for (int i = start + 1; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == quote) {
+                return i + 1;
+            }
+        }
+        return s.length();
+    }
+
+    private static void add(List<Run> out, String text, String token) {
+        if (text.isEmpty()) {
+            return;
+        }
+        int last = out.size() - 1;
+        if (last >= 0 && Objects.equals(out.get(last).token(), token)) {
+            out.set(last, new Run(out.get(last).text() + text, token));
+        } else {
+            out.add(new Run(text, token));
+        }
     }
 }

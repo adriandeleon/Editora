@@ -13,10 +13,13 @@ import java.util.concurrent.Executors;
 
 import javafx.application.Platform;
 
+import com.editora.editor.CodeAction;
 import com.editora.editor.EditorBuffer;
 import com.editora.http.HttpEnv;
 import com.editora.http.HttpVariableIndex;
 import com.editora.markdown.MarkdownLint;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Feeds a {@code .http} buffer's unresolved-variable squiggles and its {@code {{} completion from
@@ -34,6 +37,9 @@ final class HttpVariableHints {
 
         /** The folder whose env files apply to the buffer as last read, or null; FX thread, no file access. */
         Path envDir(EditorBuffer buffer);
+
+        /** Selects {@code environment} for the buffer's file (the "Use environment dev" quick fix). */
+        default void choose(EditorBuffer buffer, String environment) {}
     }
 
     private final Source source;
@@ -50,6 +56,9 @@ final class HttpVariableHints {
     /** What each buffer was last checked against, so a refresh that changes nothing does not check again. */
     private final Map<EditorBuffer, String> fingerprints = new WeakHashMap<>();
 
+    /** Which environments define each variable name, as the buffer's last check read them (FX thread only). */
+    private final Map<EditorBuffer, Map<String, List<String>>> definers = new WeakHashMap<>();
+
     HttpVariableHints(Source source) {
         this.source = source;
     }
@@ -59,7 +68,30 @@ final class HttpVariableHints {
         buffer.setHttpHooks(buffer.httpHooks()
                 .withVariables(
                         (text, done) -> check(buffer, text, done),
-                        () -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY)));
+                        () -> contexts.getOrDefault(buffer, HttpVariableIndex.Context.EMPTY))
+                .withVariableFixes(marks -> fixes(buffer, marks)));
+    }
+
+    /**
+     * The quick fixes for {@code marks} of {@code buffer}: "Use environment dev" for each environment that defines a
+     * marked variable while none, or another, is selected (U3). Each action's token applies it. FX thread.
+     */
+    List<CodeAction> fixes(EditorBuffer buffer, List<MarkdownLint.Diagnostic> marks) {
+        Map<String, List<String>> defined = definers.get(buffer);
+        if (defined == null || defined.isEmpty() || marks == null || marks.isEmpty()) {
+            return List.of();
+        }
+        String selected = source.environment(buffer);
+        java.util.Set<String> envs = new java.util.LinkedHashSet<>();
+        for (MarkdownLint.Diagnostic d : marks) {
+            envs.addAll(HttpEnvChoice.fixesFor(d.code(), selected, defined));
+        }
+        List<CodeAction> out = new ArrayList<>(envs.size());
+        for (String env : envs) {
+            Runnable apply = () -> source.choose(buffer, env);
+            out.add(new CodeAction(tr("http.fix.useEnvironment", env), "quickfix", out.isEmpty(), apply));
+        }
+        return out;
     }
 
     /**
@@ -86,6 +118,7 @@ final class HttpVariableHints {
     void forget(EditorBuffer buffer) {
         contexts.remove(buffer);
         fingerprints.remove(buffer);
+        definers.remove(buffer);
     }
 
     void shutdown() {
@@ -100,10 +133,13 @@ final class HttpVariableHints {
         worker.execute(() -> {
             String checkedAgainst = fingerprint(env, envDir, dir); // what this check reads, before it reads it
             HttpVariableIndex.Context ctx = HttpVariableIndex.Context.EMPTY;
+            Map<String, List<String>> defined = Map.of();
             List<MarkdownLint.Diagnostic> marks;
             try {
-                ctx = context(env, envDir, dir, text);
-                marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()));
+                HttpEnvironments.EnvFiles files = HttpEnvironments.read(envDir);
+                defined = HttpEnvChoice.definedIn(files);
+                ctx = context(env, files, dir, text);
+                marks = diagnostics(HttpVariableIndex.unresolved(text, ctx, ZonedDateTime.now()), env, defined);
             } catch (Throwable unexpected) { // also an Error (a StackOverflowError on a pathological file)
                 // Never leave the previous marks standing as if they were current: clear them instead (the
                 // completion keeps the context, if that much was read).
@@ -112,10 +148,12 @@ final class HttpVariableHints {
                 marks = List.of();
             }
             HttpVariableIndex.Context checked = ctx;
+            Map<String, List<String>> definedNow = defined;
             List<MarkdownLint.Diagnostic> result = marks;
             Platform.runLater(() -> {
                 fingerprints.put(buffer, checkedAgainst);
                 contexts.put(buffer, checked);
+                definers.put(buffer, definedNow);
                 done.accept(result);
             });
         });
@@ -126,34 +164,37 @@ final class HttpVariableHints {
      * and the names the script files {@code text} runs set (resolved in {@code dir}). Reads files: the worker's.
      */
     static HttpVariableIndex.Context context(String env, Path envDir, Path dir, String text) {
-        HttpEnvironments.EnvFiles files = HttpEnvironments.read(envDir);
+        return context(env, HttpEnvironments.read(envDir), dir, text);
+    }
+
+    /** {@link #context(String, Path, Path, String)} with the env files already read. */
+    static HttpVariableIndex.Context context(String env, HttpEnvironments.EnvFiles files, Path dir, String text) {
         boolean selected = env != null && !env.isEmpty();
         return new HttpVariableIndex.Context(
                 selected ? files.variables(env) : Map.of(),
                 dir,
                 HttpVariableIndex.Context.readDotenvKeys(dir),
-                selected ? Map.of() : definedIn(files),
+                selected ? Map.of() : HttpEnvChoice.definedIn(files),
                 files.problems(),
                 HttpVariableIndex.scriptFileNames(text, dir));
     }
 
-    /** Which environments of {@code files} define each variable name (for "no environment selected" marks). */
-    static Map<String, List<String>> definedIn(HttpEnvironments.EnvFiles files) {
-        Map<String, List<String>> out = new java.util.HashMap<>();
-        for (String name : files.names()) {
-            for (String key : files.variables(name).keySet()) {
-                out.computeIfAbsent(key, k -> new ArrayList<>()).add(name);
-            }
-        }
-        return out;
-    }
-
     /** One amber squiggle per problem (lint diagnostics are 1-based); the tooltip reads {@code {{name}}: reason}. */
     static List<MarkdownLint.Diagnostic> diagnostics(List<HttpVariableIndex.Problem> problems) {
+        return diagnostics(problems, "", Map.of());
+    }
+
+    /**
+     * {@link #diagnostics(List)}, a plain "not defined" reason naming the environments that define the variable when
+     * another one, {@code env}, is selected ({@link HttpEnvChoice#reason}).
+     */
+    static List<MarkdownLint.Diagnostic> diagnostics(
+            List<HttpVariableIndex.Problem> problems, String env, Map<String, List<String>> defined) {
         List<MarkdownLint.Diagnostic> out = new ArrayList<>(problems.size());
         for (HttpVariableIndex.Problem p : problems) {
+            String reason = HttpEnvChoice.reason(p.reference(), p.reason(), env, defined);
             out.add(new MarkdownLint.Diagnostic(
-                    p.line() + 1, p.column() + 1, p.length(), "warning", p.reference(), p.reason()));
+                    p.line() + 1, p.column() + 1, p.length(), "warning", p.reference(), reason));
         }
         return out;
     }
