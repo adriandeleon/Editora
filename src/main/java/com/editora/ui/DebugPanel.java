@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -34,8 +33,6 @@ import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.model.StyleSpans;
-import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -192,6 +189,30 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** A before-launch build is in flight — see {@link #setPreparing}. */
     private boolean preparing;
 
+    /** The keymap chord bound to a command id ("" when none), for the toolbar tooltips (review C18). */
+    private java.util.function.Function<String, String> chordFor = id -> "";
+
+    /** Whether a frame's source can be shown; frames without are drawn muted (review C16). */
+    private java.util.function.Predicate<DapModels.StackFrameInfo> hasSource = f -> f.file() != null;
+
+    /** The evaluate field's history (Up / Down, review C20). */
+    private final DebugPanelText.History history = new DebugPanelText.History();
+
+    /** The exception of the current exception stop (shown at the top of Variables, review C13), or null. */
+    private DapModels.ExceptionInfo exception;
+
+    /** The exit code of the program of the session that just ended, or null (review C19). */
+    private Integer exitCode;
+
+    /** Mute Breakpoints is on: the state line says so, or a session that never stops would puzzle. */
+    private boolean breakpointsMuted;
+
+    /** The thread the program stopped on (named first and marked in the selector), or -1. */
+    private int stoppedThreadId = -1;
+
+    /** Said in the call-stack list while there is no session: how to start one (review C22). */
+    private final Label stackHint = new Label();
+
     /** Row kinds in the variables tree (watches are merged into it, IntelliJ-style). */
     enum Kind {
         SCOPE,
@@ -199,7 +220,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         WATCH,
         ADD_WATCH,
         /** "Show N more…" under a container with more children than one page. */
-        MORE
+        MORE,
+        /** The exception of an exception stop and its message (review C13). */
+        EXCEPTION
     }
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
@@ -244,19 +267,21 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(4));
 
         status.getStyleClass().add("debug-status");
-        restartHolder.getChildren().add(btn(restart, "debug.restart", "R", actions::restart, Icons.refresh()));
+        restartHolder
+                .getChildren()
+                .add(btn(restart, DebugPanelText.Control.RESTART, actions::restart, Icons.refresh()));
         // IntelliJ-style grouped, icon-only toolbar; the session state + file sit at the right edge.
         HBox toolbar = new HBox(
                 2,
-                btn(start, "debug.start", "C", actions::start, Icons.run()),
-                btn(pause, "debug.pause", "P", actions::pause, Icons.debugPause()),
-                btn(stop, "debug.stop", "K", actions::stop, Icons.debugStop()),
+                btn(start, DebugPanelText.Control.START, actions::start, Icons.run()),
+                btn(pause, DebugPanelText.Control.PAUSE, actions::pause, Icons.debugPause()),
+                btn(stop, DebugPanelText.Control.STOP, actions::stop, Icons.debugStop()),
                 restartHolder,
                 groupSeparator(),
-                btn(stepOver, "debug.stepOver", "N", actions::stepOver, Icons.debugStepOver()),
-                btn(stepInto, "debug.stepInto", "S", actions::stepInto, Icons.debugStepInto()),
-                btn(stepOut, "debug.stepOut", "F", actions::stepOut, Icons.debugStepOut()),
-                btn(runToCursor, "debug.runToCursor", "U", actions::runToCursor, Icons.debugRunToCursor()),
+                btn(stepOver, DebugPanelText.Control.STEP_OVER, actions::stepOver, Icons.debugStepOver()),
+                btn(stepInto, DebugPanelText.Control.STEP_INTO, actions::stepInto, Icons.debugStepInto()),
+                btn(stepOut, DebugPanelText.Control.STEP_OUT, actions::stepOut, Icons.debugStepOut()),
+                btn(runToCursor, DebugPanelText.Control.RUN_TO_CURSOR, actions::runToCursor, Icons.debugRunToCursor()),
                 spacer(),
                 busy,
                 status);
@@ -275,7 +300,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         threads.setConverter(new StringConverter<>() {
             @Override
             public String toString(DapModels.ThreadInfo t) {
-                return t == null ? "" : t.name();
+                if (t == null) {
+                    return "";
+                }
+                String name = DebugPanelText.threadName(t.name());
+                return t.id() == stoppedThreadId ? tr("debugpanel.threadPaused", name) : name;
             }
 
             @Override
@@ -300,9 +329,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     setGraphic(null);
                     return;
                 }
-                Text name = new Text(f.name());
+                Text name = new Text(DebugPanelText.frameName(f.name()));
                 name.getStyleClass().add("debug-frame-name");
                 TextFlow flow = new TextFlow(name);
+                if (!hasSource.test(f)) {
+                    name.getStyleClass().add("debug-frame-nosource"); // the JDK, a library, a lambda proxy
+                }
                 if (f.file() != null) {
                     // A native frame has no line (-1): show where it is without inventing a ":0".
                     Text loc = new Text(
@@ -313,6 +345,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 setGraphic(flow);
             }
         });
+        stackHint.getStyleClass().add("debug-empty-hint");
+        stackHint.setWrapText(true);
+        stack.setPlaceholder(stackHint);
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
             if (f != null && !settingStack) {
                 reportFrame(f);
@@ -386,6 +421,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     setValuePrompt();
                     e.consume();
                 }
+            } else if (e.getCode() == javafx.scene.input.KeyCode.C && e.isShortcutDown() && selectedRow() != null) {
+                copyToClipboard(DebugPanelText.copyValue(selectedRow().value())); // review C7
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
+                    && selectedRow() != null
+                    && selectedRow().kind() == Kind.WATCH) {
+                removeWatch(selectedRow().name());
+                e.consume();
             }
         });
         javafx.scene.control.ContextMenu varsMenu = new javafx.scene.control.ContextMenu();
@@ -395,11 +438,30 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         console.setEditable(false);
         console.setWrapText(false);
         console.getStyleClass().addAll("editor-area", "debug-console");
-        RunPanel.installLinkClicks(console, () -> onLink); // double-click a stack-trace line → jump
+        installLinkClicks(); // click a stack-trace line → jump (review C21)
+        // Tab leaves the read-only console for the evaluate field, Shift+Tab for Variables: the console's own Tab
+        // handling kept keyboard focus in it for good (review C9).
+        console.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.TAB && !e.isControlDown() && !e.isAltDown()) {
+                (e.isShiftDown() || evalInput.isDisabled() ? variables : evalInput).requestFocus();
+                e.consume();
+            }
+        });
         ConsoleNav.installShared(console); // configured-keymap scrolling while the console has focus
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
+        evalInput.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            boolean up = e.getCode() == javafx.scene.input.KeyCode.UP;
+            if ((up || e.getCode() == javafx.scene.input.KeyCode.DOWN) && !e.isControlDown() && !e.isAltDown()) {
+                String text = up ? history.up(evalInput.getText()) : history.down();
+                if (text != null) {
+                    evalInput.setText(text);
+                    evalInput.end();
+                }
+                e.consume();
+            }
+        });
         // Ctrl+D ends the program's input, as in a terminal — only while the field is the program's input.
         evalInput.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == javafx.scene.input.KeyCode.D
@@ -414,7 +476,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
 
         // The thread selector shares the header's row: on its own row it took a third of the default strip.
-        HBox stackHeader = new HBox(6, sectionLabel("debugpanel.callStack"), threads);
+        Label stackLabel = sectionLabel("debugpanel.callStack");
+        stackLabel.setMinWidth(Region.USE_PREF_SIZE); // the thread selector shrinks first ("Call St…", review C16)
+        HBox stackHeader = new HBox(6, stackLabel, threads);
         stackHeader.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(threads, Priority.ALWAYS);
         VBox stackBox = new VBox(2, stackHeader, stack);
@@ -464,7 +528,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         arranged = wanted;
         areas.setOrientation(wanted);
-        areas.setDividerPositions(sideBySide ? new double[] {0.26, 0.58} : new double[] {0.3, 0.62});
+        // Variables gets the widest column: it is what a stop is read from (review C4).
+        areas.setDividerPositions(sideBySide ? new double[] {0.24, 0.64} : new double[] {0.25, 0.65});
     }
 
     private void reportFrame(DapModels.StackFrameInfo frame) {
@@ -484,6 +549,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 name.getStyleClass().add("debug-scope-row");
                 flow.getChildren().add(name);
             }
+            case EXCEPTION -> {
+                Text text = new Text(row.name());
+                text.getStyleClass().add("debug-val-error");
+                flow.getChildren().add(text);
+            }
             case ADD_WATCH, MORE -> {
                 Text add = new Text(row.name());
                 add.getStyleClass().add("debug-add-watch");
@@ -499,9 +569,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     flow.getChildren().add(name); // a group (debugpy's "special variables"), not "name = "
                     return flow;
                 }
+                if (row.kind() == Kind.WATCH && row.value().isEmpty()) {
+                    flow.getChildren().add(name); // not paused: no value, and no dangling " = " (review C19)
+                    return flow;
+                }
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
-                Text value = new Text(row.value());
+                // A failed watch's message on one line: wrapped, it drew over the rows below (review C17).
+                Text value = new Text(row.failed() ? DebugPanelText.oneLine(row.value(), 160) : row.value());
                 // A watch that did not evaluate shows the adapter's message where its value would be: it
                 // must not be coloured as one ("Cannot evaluate…" is not a string or a number).
                 value.getStyleClass()
@@ -514,6 +589,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
             }
         }
+        flow.setMinWidth(Region.USE_PREF_SIZE); // one line per row; a long value scrolls rather than wraps
         return flow;
     }
 
@@ -523,15 +599,52 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return l;
     }
 
-    /** An icon-only toolbar button: the full command title + its single-key shortcut live in the tooltip
-     *  (IntelliJ-style), so the shortcut is discoverable on hover. */
-    private Button btn(Button b, String key, String shortcut, Runnable action, Node icon) {
+    /** An icon-only toolbar button: the command title, its keymap chord and its panel letter live in the
+     *  tooltip (IntelliJ-style); the title is also its accessible name, for a screen reader (review C9). */
+    private Button btn(Button b, DebugPanelText.Control control, Runnable action, Node icon) {
         b.setGraphic(icon);
-        b.setTooltip(new Tooltip(tr("command." + key) + "  (" + shortcut + ")"));
+        b.setTooltip(new Tooltip());
+        b.getProperties().put(DebugPanelText.Control.class, control);
         b.getStyleClass().addAll("flat", "debug-toolbar-button");
+        // Not a Tab stop: a click would then put focus in the panel, where the letters are commands.
         b.setFocusTraversable(false);
         b.setOnAction(e -> action.run());
         return b;
+    }
+
+    /** The toolbar tooltips and accessible names, from the keymap (and Start / Continue as the state says). */
+    private void refreshTooltips() {
+        for (Button b : List.of(start, pause, stop, restart, stepOver, stepInto, stepOut, runToCursor)) {
+            DebugPanelText.Control c =
+                    (DebugPanelText.Control) b.getProperties().get(DebugPanelText.Control.class);
+            String id = c == DebugPanelText.Control.START && lastState == DapManager.State.SUSPENDED
+                    ? "debug.continue"
+                    : c.commandId;
+            String title = DebugPanelText.bareTitle(tr("command." + id));
+            b.getTooltip()
+                    .setText(DebugPanelText.tooltip(
+                            title, chordFor.apply(c.commandId), c.keyLabel(), tr("debugpanel.inPanel")));
+            b.setAccessibleText(title);
+        }
+        stackHint.setText(lastState == DapManager.State.INACTIVE ? emptyHint() : "");
+    }
+
+    /** What the empty call stack says while there is no session: how to start one (review C22). */
+    private String emptyHint() {
+        String chord = chordFor.apply("debug.start");
+        return chord == null || chord.isBlank() ? tr("debugpanel.emptyHint") : tr("debugpanel.emptyHintChord", chord);
+    }
+
+    /** The keymap chord of a command id ("" when unbound): the toolbar tooltips name it (review C18). */
+    public void setChordLookup(java.util.function.Function<String, String> chordFor) {
+        this.chordFor = chordFor == null ? id -> "" : chordFor;
+        refreshTooltips();
+    }
+
+    /** Whether a frame's source can be shown; frames without are drawn muted. */
+    public void setSourceCheck(java.util.function.Predicate<DapModels.StackFrameInfo> hasSource) {
+        this.hasSource = hasSource == null ? f -> f.file() != null : hasSource;
+        stack.refresh();
     }
 
     /**
@@ -542,27 +655,28 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * global chords (e.g. C-x o to leave the panel) still work.
      */
     private void handleDebugKey(KeyEvent e) {
-        if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
-            return; // leave modified chords (incl. C-x o focus cycling) to the global dispatcher
-        }
         if (evalInput.isFocused() || e.getTarget() == evalInput) {
             return; // typing an expression in the REPL
         }
-        Button target =
-                switch (e.getCode()) {
-                    case C -> start;
-                    case P -> pause;
-                    case K -> stop;
-                    case R -> restart;
-                    case N -> stepOver;
-                    case S -> stepInto;
-                    case F -> stepOut;
-                    case U -> runToCursor;
-                    default -> null;
-                };
-        if (target == null) {
+        // Modified chords (incl. C-x o focus cycling) go to the global dispatcher; Stop and Restart need Shift.
+        DebugPanelText.Control control = DebugPanelText.controlFor(
+                e.getCode(),
+                e.isShiftDown(),
+                e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown());
+        if (control == null) {
             return;
         }
+        Button target =
+                switch (control) {
+                    case START -> start;
+                    case PAUSE -> pause;
+                    case STOP -> stop;
+                    case RESTART -> restart;
+                    case STEP_OVER -> stepOver;
+                    case STEP_INTO -> stepInto;
+                    case STEP_OUT -> stepOut;
+                    case RUN_TO_CURSOR -> runToCursor;
+                };
         if (!target.isDisabled()) {
             target.fire();
         } else if (target == restart && restartBlocked != null && lastState != DapManager.State.INACTIVE) {
@@ -588,6 +702,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Updates the toolbar/status to reflect the session state and enables the right controls. */
     public void setState(DapManager.State state) {
         lastState = state;
+        if (state == DapManager.State.STARTING) {
+            exitCode = null; // a new session: the last one's outcome is no longer what the status says
+        }
+        if (state != DapManager.State.SUSPENDED) {
+            exception = null;
+        }
         boolean suspended = state == DapManager.State.SUSPENDED;
         if (suspended || state == DapManager.State.INACTIVE) {
             evalHintShown = false;
@@ -620,6 +740,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             selectedFrameId = -1;
         }
         refreshStatus();
+        refreshTooltips();
     }
 
     /**
@@ -645,7 +766,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 ? (stoppedException.isEmpty()
                         ? tr("debugpanel.state.exception")
                         : tr("debugpanel.state.exceptionNamed", stoppedException))
-                : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+                : lastState == DapManager.State.INACTIVE && exitCode != null
+                        ? tr("debugpanel.state.exited", exitCode)
+                        : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+        if (breakpointsMuted) {
+            state = state + " · " + tr("debugpanel.muted");
+        }
         status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
         RunPanel.showSpinner(
                 busy, preparing || lastState == DapManager.State.STARTING || lastState == DapManager.State.RUNNING);
@@ -679,10 +805,54 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /**
+     * The exception of the current exception stop, shown as the first row of Variables with its message under it
+     * (review C13): the state line alone was all an exception stop said.
+     */
+    public void setExceptionInfo(DapModels.ExceptionInfo info) {
+        exception = info == null || info.isEmpty() ? null : info;
+        TreeItem<VarRow> root = variables.getRoot();
+        if (root == null) {
+            return;
+        }
+        root.getChildren().removeIf(i -> i.getValue() != null && i.getValue().kind() == Kind.EXCEPTION);
+        if (exception != null) {
+            root.getChildren().addFirst(exceptionNode(exception));
+        }
+    }
+
+    private static TreeItem<VarRow> exceptionNode(DapModels.ExceptionInfo info) {
+        String type = info.type().isEmpty() ? tr("debugpanel.exception") : info.type();
+        TreeItem<VarRow> node =
+                new TreeItem<>(new VarRow(tr("debugpanel.exceptionRow", type), "", "", 0, 0, Kind.EXCEPTION));
+        for (String line : info.message().split("\\R")) {
+            if (!line.isBlank()) {
+                node.getChildren().add(new TreeItem<>(new VarRow(line.strip(), "", "", 0, 0, Kind.EXCEPTION)));
+            }
+        }
+        node.setExpanded(true);
+        return node;
+    }
+
+    /** Mute Breakpoints turned on or off (the state line says "breakpoints muted" while it is on). */
+    public void setBreakpointsMuted(boolean muted) {
+        breakpointsMuted = muted;
+        refreshStatus();
+    }
+
+    /** The program of the session that is ending exited with {@code code}: the state line keeps saying so. */
+    public void setExitCode(int code) {
+        exitCode = code;
+        refreshStatus();
+    }
+
     /** Fills the thread dropdown and selects {@code currentThreadId} without re-fetching its stack. */
     public void setThreads(List<DapModels.ThreadInfo> list, int currentThreadId) {
         settingThreads = true;
         try {
+            stoppedThreadId = currentThreadId;
+            // The JVM's own housekeeping threads left out, the stopped one first and marked (review C15).
+            list = DebugPanelText.visibleThreads(list, currentThreadId);
             threads.getItems().setAll(list);
             for (DapModels.ThreadInfo t : list) {
                 if (t.id() == currentThreadId) {
@@ -736,6 +906,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void setStopReason(String reason) {
         boolean exception = "exception".equals(reason);
         boolean named = !stoppedException.isEmpty();
+        if (!exception) {
+            this.exception = null; // the exception row belongs to the exception stop only
+        }
         stoppedException = ""; // a new stop (or none): the exception of the previous one is not this one's
         if (exception != stoppedOnException || named) {
             stoppedOnException = exception;
@@ -751,7 +924,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Shows {@code threadId} in the dropdown without reporting a selection (the caller loads its stack). */
     void showThread(int threadId) {
+        int stopped = stoppedThreadId;
         setThreads(List.copyOf(threads.getItems()), threadId);
+        stoppedThreadId = stopped;
     }
 
     /** Replaces the variables tree with the Watches node + the selected frame's scopes (each lazily
@@ -761,6 +936,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         TreeItem<VarRow> old = variables.getRoot();
         TreeItem<VarRow> root = new TreeItem<>();
         root.getChildren().add(buildWatchesNode());
+        int offset = 1;
+        if (exception != null) {
+            root.getChildren().addFirst(exceptionNode(exception));
+            offset = 2;
+        }
         for (DapModels.ScopeInfo s : scopes) {
             TreeItem<VarRow> item = lazyItem(new VarRow(s.name(), "", "", s.variablesReference(), 0, Kind.SCOPE));
             root.getChildren().add(item);
@@ -769,7 +949,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // Expanded only once the scope is in the tree: its children load on expansion and restore the
         // remembered rows by their path from the root.
         for (int i = 0; i < scopes.size(); i++) {
-            TreeItem<VarRow> item = root.getChildren().get(i + 1);
+            TreeItem<VarRow> item = root.getChildren().get(i + offset);
             Boolean was = scopeExpanded(old, scopes.get(i).name());
             item.setExpanded(was != null ? was : !scopes.get(i).expensive());
             restoreSelection(item);
@@ -779,9 +959,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Whether the scope called {@code name} was expanded in the tree being replaced, or null if not there. */
     private static Boolean scopeExpanded(TreeItem<VarRow> oldRoot, String name) {
         if (oldRoot != null) {
-            for (int i = 1; i < oldRoot.getChildren().size(); i++) { // 0 is the Watches node
+            for (int i = 0; i < oldRoot.getChildren().size(); i++) {
                 TreeItem<VarRow> scope = oldRoot.getChildren().get(i);
-                if (scope.getValue() != null && scope.getValue().name().equals(name)) {
+                if (scope.getValue() != null
+                        && scope.getValue().kind() == Kind.SCOPE
+                        && scope.getValue().name().equals(name)) {
                     return scope.isExpanded();
                 }
             }
@@ -920,7 +1102,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             variables.setRoot(idleRoot());
             return;
         }
-        root.getChildren().set(0, buildWatchesNode());
+        int watchesAt = 0;
+        while (watchesAt < root.getChildren().size() - 1
+                && root.getChildren().get(watchesAt).getValue() != null
+                && root.getChildren().get(watchesAt).getValue().kind() == Kind.EXCEPTION) {
+            watchesAt++;
+        }
+        root.getChildren().set(watchesAt, buildWatchesNode());
     }
 
     private VarRow selectedRow() {
@@ -947,6 +1135,27 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             set.setOnAction(e -> setValuePrompt());
             menu.getItems().add(set);
         }
+        if (row != null && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH || row.kind() == Kind.EXCEPTION)) {
+            // Review C7: a value could not be copied at all, and Add Watch started from an empty prompt.
+            javafx.scene.control.MenuItem copyValue = new javafx.scene.control.MenuItem(tr("debugpanel.copyValue"));
+            copyValue.setOnAction(e ->
+                    copyToClipboard(row.kind() == Kind.EXCEPTION ? row.name() : DebugPanelText.copyValue(row.value())));
+            menu.getItems().add(copyValue);
+            if (row.kind() != Kind.EXCEPTION) {
+                javafx.scene.control.MenuItem copyName = new javafx.scene.control.MenuItem(tr("debugpanel.copyName"));
+                copyName.setOnAction(e -> copyToClipboard(row.name()));
+                menu.getItems().add(copyName);
+            }
+            if (row.kind() == Kind.VARIABLE) {
+                String expression = pathExpression(variables.getSelectionModel().getSelectedItem());
+                javafx.scene.control.MenuItem toWatches =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
+                toWatches.setGraphic(Icons.newFile());
+                toWatches.setOnAction(e -> addWatchPrompt(expression));
+                menu.getItems().add(toWatches);
+            }
+            menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+        }
         javafx.scene.control.MenuItem add = new javafx.scene.control.MenuItem(tr("debugpanel.addWatch"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> addWatchPrompt());
@@ -954,10 +1163,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     private void addWatchPrompt() {
+        addWatchPrompt("");
+    }
+
+    /** Add Watch, its prompt pre-filled with {@code initial} (a variable's expression). */
+    void addWatchPrompt(String initial) {
         if (prompt == null) {
             return;
         }
-        prompt.show(tr("debugpanel.addWatchTitle"), tr("debugpanel.watchExpr"), "", expr -> {
+        prompt.show(tr("debugpanel.addWatchTitle"), tr("debugpanel.watchExpr"), initial, expr -> {
             if (expr != null && !expr.isBlank()) {
                 watches.add(expr.strip());
                 onWatchesChanged.run();
@@ -1014,6 +1228,47 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * Pure-ish: an expression naming a variables-tree row from its scope down — {@code names} for a local,
+     * {@code obj.field} for a field, {@code arr[3]} for an element (the prompt it pre-fills is editable).
+     */
+    static String pathExpression(TreeItem<VarRow> item) {
+        java.util.LinkedList<String> parts = new java.util.LinkedList<>();
+        for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {
+            VarRow r = i.getValue();
+            if (r.kind() != Kind.VARIABLE && r.kind() != Kind.WATCH) {
+                break;
+            }
+            parts.addFirst(r.name());
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (sb.isEmpty()) {
+                sb.append(part);
+            } else if (part.chars().allMatch(Character::isDigit)) {
+                sb.append('[').append(part).append(']');
+            } else {
+                sb.append('.').append(part);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Puts {@code text} on the system clipboard. */
+    static void copyToClipboard(String text) {
+        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+        content.putString(text == null ? "" : text);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /** The Variables tree's selected row, its value copied (the {@code debug.copyValue} command). */
+    public void copySelectedValue() {
+        VarRow row = selectedRow();
+        if (row != null) {
+            copyToClipboard(DebugPanelText.copyValue(row.value()));
+        }
+    }
+
     /** Palette-command entry points mirroring the panel's own controls. */
     public void addWatch() {
         addWatchPrompt();
@@ -1042,15 +1297,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             return;
         }
         text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
-        StyleSpans<Collection<String>> spans = null;
-        if (("stderr".equals(category) || DapManager.COMMAND_CATEGORY.equals(category)) && !text.isEmpty()) {
-            // The program's stderr in red; the command line Editora ran, muted (as a Run trace line).
-            String style = "stderr".equals(category) ? "run-stderr" : "run-command"; // as RunPanel.showCommandLine
-            spans = new StyleSpansBuilder<Collection<String>>()
-                    .add(List.of(style), text.length())
-                    .create();
-        }
-        appender.append(text, spans);
+        String style = "stderr".equals(category)
+                ? "run-stderr" // the program's stderr in red
+                : DapManager.COMMAND_CATEGORY.equals(category) ? "run-command" : null; // Editora's own lines, muted
+        appender.append(text, DebugConsoleStyle.spans(text, style));
     }
 
     /**
@@ -1113,10 +1363,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
             return;
         }
-        appendOutput("> " + expr + "\n", "console");
+        history.add(expr);
+        // The echo muted, a failure in red: the evaluate lines looked exactly like the program's output (C20).
+        appendOutput("> " + expr + "\n", DapManager.COMMAND_CATEGORY);
         evalInput.clear();
-        actions.evaluate(
-                expr, selectedFrameId, result -> appendOutput((result == null ? "" : result) + "\n", "console"));
+        actions.evaluate(expr, selectedFrameId, result -> {
+            String text = result == null ? "" : result;
+            appendOutput(text + "\n", text.startsWith("error: ") ? "stderr" : "console");
+        });
     }
 
     /** A tree item whose children are loaded on first expand (when {@code ref > 0}). */
@@ -1237,6 +1491,31 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             more.requested = true;
             more.load.run();
         }
+    }
+
+    /**
+     * A click on a stack-trace line ({@code at Main.main(Main.java:22)}, drawn as a link) opens that line; one
+     * click, as IntelliJ and VS Code do — it took a double-click before (review C21). A drag that selects text is
+     * not a click on a link.
+     */
+    private void installLinkClicks() {
+        console.setOnMouseClicked(e -> {
+            if (onLink == null
+                    || e.getButton() != javafx.scene.input.MouseButton.PRIMARY
+                    || !e.isStillSincePress()
+                    || console.getSelection().getLength() > 0) {
+                return;
+            }
+            var hit = console.hit(e.getX(), e.getY());
+            int par = console.offsetToPosition(
+                            hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+            com.editora.run.StackTraceLinks.Link link = com.editora.run.StackTraceLinks.parse(
+                    console.getParagraph(par).getText());
+            if (link != null) {
+                onLink.accept(link);
+            }
+        });
     }
 
     /** Empties the console (its context menu, and each new launch — see {@code DebugCoordinator}). */

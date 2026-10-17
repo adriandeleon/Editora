@@ -56,7 +56,13 @@ final class DebugCoordinator {
 
     /** Window hooks beyond {@link CoordinatorHost} that the debug flows need. */
     interface Ops {
+        /** Shows the Debug window without moving keyboard focus into it (review C2). */
         void openToolWindow();
+
+        /** The active keymap's chord for {@code commandId}, formatted, or null when it is unbound. */
+        default String chordFor(String commandId) {
+            return null;
+        }
 
         /** Debug Request on the active {@code .http} file: its scripts under the debugger (HTTP Client). */
         default void debugHttpRequest() {}
@@ -247,6 +253,8 @@ final class DebugCoordinator {
             built.setPrompt(host::promptText);
             built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
             built.setWatches(ops.debugWatches());
+            built.setChordLookup(ops::chordFor);
+            built.setSourceCheck(this::hasSource);
             built.setOnWatchesChanged(() -> ops.persistDebugWatches(new ArrayList<>(built.getWatches())));
             if (consoleFontFamily != null) {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
@@ -869,7 +877,7 @@ final class DebugCoordinator {
     private DapModels.FileBreakpoints fileBreakpoints(EditorBuffer buffer) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
-            if (bp.enabled()) {
+            if (bp.enabled() && !breakpointsMuted) { // Mute Breakpoints: the adapter is told none
                 lines.add(new DapModels.LineBreakpoint(bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
             }
         }
@@ -896,7 +904,7 @@ final class DebugCoordinator {
             }
         });
         for (DapModels.FileBreakpoints fb : closedBreakpoints) {
-            if (fb.file() != null && !open.contains(key(fb.file()))) {
+            if (fb.file() != null && !open.contains(key(fb.file())) && !breakpointsMuted) {
                 out.add(fb);
             }
         }
@@ -1053,7 +1061,9 @@ final class DebugCoordinator {
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
                 updateDebugAvailability(); // keep the window available during a session; hide it once it ends
-                if (starting) {
+                if (starting || state == DapManager.State.SUSPENDED) {
+                    // A stop shows the window again if it was closed meanwhile (review C5) — without focus: the
+                    // editor keeps it, and in the panel plain letters are debugger commands (review C2).
                     ops.openToolWindow();
                 }
             }
@@ -1061,6 +1071,11 @@ final class DebugCoordinator {
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {
                 panel().setStopReason(reason);
+                // The frame that threw: its line is drawn red while it is the one shown (review C13).
+                exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
+                        ? frames.get(firstFrameWithSource(frames, DebugCoordinator.this::hasSource))
+                                .id()
+                        : -1;
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars.
                 int shown = firstFrameWithSource(frames, DebugCoordinator.this::hasSource);
                 panel().setCallStack(frames, shown);
@@ -1084,6 +1099,9 @@ final class DebugCoordinator {
             @Override
             public void onProgramExit(int code) {
                 panel().appendNotice(tr("run.exited", code));
+                panel().setExitCode(code);
+                // What the status bar says now: an earlier "Stopped on <exception>" no longer holds (review C19).
+                host.setStatus(tr("run.exited", code));
             }
 
             @Override
@@ -1105,6 +1123,7 @@ final class DebugCoordinator {
             public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
                 // Which exception: the one thing an exception stop has to say, and the stop event does not.
                 panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
+                panel().setExceptionInfo(info);
                 host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
         };
@@ -1353,6 +1372,9 @@ final class DebugCoordinator {
         }
     }
 
+    /** The id of the frame an exception stop threw in (its line is drawn red), or -1. */
+    private int exceptionFrameId = -1;
+
     private void paintExecutionLine(EditorBuffer b, DapModels.StackFrameInfo frame) {
         execHighlightBuffer = b;
         ops.afterBufferLoad(b, () -> {
@@ -1362,6 +1384,7 @@ final class DebugCoordinator {
                 // A narrowed buffer shows only its region: the frame's file line is region-relative
                 // there (a stop outside the region has no line to show and paints nothing).
                 b.setExecutionLine(frame.line() - b.getBreakpointManager().regionFirstLine());
+                b.setExecutionLineException(frame.id() == exceptionFrameId);
             }
         });
     }
@@ -2378,12 +2401,15 @@ final class DebugCoordinator {
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
         buffer.setDebugFileHandler(
                 () -> launchBuffer(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
+        buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
+        buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }
 
     /** Focuses the Debug console's evaluate field ({@code debug.evaluate} command). */
     void focusEvaluate() {
         ops.openToolWindow();
         panel().focusEvaluate();
+        Platform.runLater(panel()::focusEvaluate); // a window opened just now is laid out on the next pulse
     }
 
     /**
@@ -2635,5 +2661,169 @@ final class DebugCoordinator {
                 picker.show(host.window());
             }
         });
+    }
+
+    // --- review C: breakpoints list, mute, gutter and editor menus, Show Value -----------------------------
+
+    /** Mute Breakpoints: the adapter is told no breakpoints until it is turned off again (this window only). */
+    private boolean breakpointsMuted;
+
+    boolean breakpointsMuted() {
+        return breakpointsMuted;
+    }
+
+    /** Debug: Breakpoints — the palette-style list of every breakpoint (see {@link BreakpointsPicker}). */
+    void showBreakpoints() {
+        new BreakpointsPicker(host, ops, dapManager, this::toggleMuteBreakpoints, () -> breakpointsMuted).show();
+    }
+
+    /**
+     * Debug: Mute Breakpoints — none of them stops the program until muted again; a live session is told at once
+     * (every file it knows is sent again: empty while muted, its enabled breakpoints after).
+     */
+    void toggleMuteBreakpoints() {
+        breakpointsMuted = !breakpointsMuted;
+        if (dapManager.isActive()) {
+            Set<String> open = new HashSet<>();
+            host.forEachBuffer(b -> {
+                if (b.getPath() != null && open.add(key(b.getPath()))) {
+                    DapModels.FileBreakpoints fb = fileBreakpoints(b);
+                    sentBreakpoints.put(b.getPath(), fb);
+                    dapManager.updateBreakpoints(fb);
+                }
+            });
+            for (DapModels.FileBreakpoints fb : closedBreakpoints) {
+                if (fb.file() != null && !open.contains(key(fb.file()))) {
+                    dapManager.updateBreakpoints(
+                            breakpointsMuted ? new DapModels.FileBreakpoints(fb.file(), List.of()) : fb);
+                }
+            }
+        }
+        panel().setBreakpointsMuted(breakpointsMuted);
+        host.setStatus(tr(breakpointsMuted ? "status.debug.breakpointsMuted" : "status.debug.breakpointsUnmuted"));
+    }
+
+    /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
+    void toggleBreakpointEnabledAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b == null) {
+            return;
+        }
+        int line = b.getFocusedArea().getCurrentParagraph();
+        var mgr = b.getBreakpointManager();
+        if (!mgr.isBreakpoint(line)) {
+            host.setStatus(tr("status.debug.noBreakpointHere"));
+            return;
+        }
+        mgr.setEnabled(line, !mgr.get(line).enabled());
+        b.refreshGutterLine(line);
+    }
+
+    /** Debug: Show Value at Caret — the value popup for the name at the caret, from the keyboard. */
+    void showValueAtCaret() {
+        EditorBuffer b = host.activeBuffer();
+        if (dapManager.state() != DapManager.State.SUSPENDED) {
+            host.setStatus(tr("palette.disabled.needsSuspended"));
+        } else if (b == null || !b.showDebugValueAtCaret()) {
+            host.setStatus(tr("status.debug.noValueAtCaret"));
+        }
+    }
+
+    /**
+     * F11 in the CUA and Sublime keymaps: Step Into while the program is paused, Full Screen otherwise — what F11
+     * does in VS Code, whose debugging keys those keymaps now carry (review C8).
+     */
+    void stepIntoOrElse(Runnable otherwise) {
+        if (debugSupportEnabled() && dapManager.state() == DapManager.State.SUSPENDED) {
+            dapManager.stepInto();
+        } else {
+            otherwise.run();
+        }
+    }
+
+    /** A right-click on a breakpoint glyph: Edit…, Enable / Disable, Remove (review C11). */
+    private void showGutterMenu(EditorBuffer b, int line, javafx.scene.input.ContextMenuEvent e) {
+        var mgr = b.getBreakpointManager();
+        if (!mgr.isBreakpoint(line)) {
+            return;
+        }
+        javafx.scene.control.MenuItem edit = new javafx.scene.control.MenuItem(tr("command.debug.editBreakpoint"));
+        edit.setOnAction(ev -> {
+            b.getFocusedArea().moveTo(line, 0);
+            editBreakpointAtCaret();
+        });
+        boolean enabled = mgr.get(line).enabled();
+        javafx.scene.control.MenuItem flip =
+                new javafx.scene.control.MenuItem(tr(enabled ? "debug.gutter.disable" : "debug.gutter.enable"));
+        flip.setOnAction(ev -> {
+            mgr.setEnabled(line, !enabled);
+            b.refreshGutterLine(line);
+        });
+        javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
+        remove.setOnAction(ev -> {
+            if (mgr.isBreakpoint(line)) {
+                b.toggleBreakpoint(line);
+            }
+        });
+        javafx.scene.control.MenuItem list = new javafx.scene.control.MenuItem(tr("command.debug.breakpoints"));
+        list.setOnAction(ev -> showBreakpoints());
+        gutterMenu.getItems().setAll(edit, flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);
+        Node source = e.getSource() instanceof Node n ? n : null;
+        if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
+            gutterMenu.show(source, e.getScreenX(), e.getScreenY());
+        } else if (host.window() != null) {
+            gutterMenu.show(host.window(), e.getScreenX(), e.getScreenY());
+        }
+    }
+
+    private final javafx.scene.control.ContextMenu gutterMenu = new javafx.scene.control.ContextMenu();
+
+    /**
+     * The editor's right-click debugger items (review C10): Toggle / Edit Breakpoint on a debuggable file, and while
+     * paused Run to Cursor, Show Value and Add to Watches for the name at the click. Empty when debugging is off.
+     */
+    List<javafx.scene.control.MenuItem> editorMenuItems(EditorBuffer b) {
+        List<javafx.scene.control.MenuItem> items = new ArrayList<>();
+        if (!debugSupportEnabled() || !isDebuggableBuffer(b)) {
+            return items;
+        }
+        if (!b.isRunnable()
+                && b.getPath() != null
+                && "java".equals(b.getLanguage())
+                && JavaProjectRoot.find(b.getPath()) == null) {
+            // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
+            // for runnable files); Debug was then only in the Run menu and the palette.
+            javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
+            debugFile.setOnAction(e -> launchBuffer(b));
+            items.add(debugFile);
+        }
+        items.add(menuItem("debug.toggleBreakpoint", this::toggleBreakpointAtCaret));
+        items.add(menuItem("debug.editBreakpoint", this::editBreakpointAtCaret));
+        if (dapManager.state() == DapManager.State.SUSPENDED) {
+            items.add(menuItem("debug.runToCursor", this::debugRunToCursor));
+            items.add(menuItem("debug.showValue", this::showValueAtCaret));
+            var area = b.getFocusedArea();
+            String selected = area.getSelectedText();
+            String expression = selected != null && !selected.isBlank() && !selected.contains("\n")
+                    ? selected.strip()
+                    : com.editora.editor.DebugExpressions.atCaret(area);
+            if (expression != null) {
+                javafx.scene.control.MenuItem watch =
+                        new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
+                watch.setOnAction(ev -> {
+                    ops.openToolWindow();
+                    panel().addWatchPrompt(expression);
+                });
+                items.add(watch);
+            }
+        }
+        return items;
+    }
+
+    private static javafx.scene.control.MenuItem menuItem(String commandId, Runnable action) {
+        javafx.scene.control.MenuItem item =
+                new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
+        item.setOnAction(e -> action.run());
+        return item;
     }
 }

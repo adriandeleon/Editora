@@ -722,7 +722,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.palette = new CommandPalette(registry, keymap, () -> {
             Chrome.PaletteGates gates = paletteGates();
             Chrome.PaletteContext context = paletteContext();
-            return c -> Chrome.paletteEnabled(c.id(), gates, context);
+            return c -> Chrome.paletteEnabled(c.id(), gates, context) && jumpPossible(c.id());
         });
         // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
         this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
@@ -1052,7 +1052,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String disabledCommandReason(String commandId) {
         Chrome.DisabledReason reason = Chrome.disabledReason(commandId, paletteGates(), paletteContext());
         if (reason == null) {
-            return null;
+            return jumpPossible(commandId) ? null : tr("status.debug.jumpUnsupported");
         }
         if (reason.commandArg() == null) {
             return tr(reason.messageKey());
@@ -1074,6 +1074,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (menuBar != null) {
             menuBar.refreshEnablement();
         }
+    }
+
+    /** Jump to Line is greyed while paused in a debugger that cannot do it (java-debug has no goto). */
+    private boolean jumpPossible(String commandId) {
+        return !"debug.jumpToLine".equals(commandId)
+                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED
+                || dapManager.supportsJumpToLine();
     }
 
     private Chrome.PaletteContext paletteContext() {
@@ -2466,7 +2473,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
                     public void openToolWindow() {
-                        toolWindows.open(debugToolWindow);
+                        toolWindows.open(debugToolWindow, false); // never takes focus (review C2)
+                    }
+
+                    @Override
+                    public String chordFor(String commandId) {
+                        return keymap.displayChord(commandId);
                     }
 
                     @Override
@@ -2574,6 +2586,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
         debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(
                 "externalTool",
                 "toolwindow.externalTools",
