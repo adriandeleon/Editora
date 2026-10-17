@@ -156,4 +156,13 @@ class AppInfoTest {
         String branch = AppInfo.gitBranchAsync().get(60, java.util.concurrent.TimeUnit.SECONDS);
         assertEquals(branch, AppInfo.gitBranch());
     }
+
+    @Test
+    void releaseNotesPointAtTheBuildsOwnTagOrTheLatestRelease() {
+        assertEquals("https://github.com/adriandeleon/Editora/releases/tag/v0.22.0", AppInfo.releaseNotesUrl("0.22.0"));
+        // A development build has no tag of its own, and neither does the unfiltered IDE fallback.
+        assertEquals(AppInfo.RELEASES_PAGE, AppInfo.releaseNotesUrl("0.22.1-SNAPSHOT"));
+        assertEquals(AppInfo.RELEASES_PAGE, AppInfo.releaseNotesUrl("0.0.0"));
+        assertEquals(AppInfo.RELEASES_PAGE, AppInfo.releaseNotesUrl(""));
+    }
 }

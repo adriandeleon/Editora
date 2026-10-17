@@ -3650,21 +3650,51 @@
     -fx-spacing: 8;
 }
 /* Start actions + recent files are Hyperlinks in the accent color. No box at rest; keyboard focus
-   draws the shared ring (see "Keyboard focus" at the end of this file). */
+   draws the shared ring (see "Keyboard focus" at the end of this file). Underlined only on hover or
+   keyboard focus (the page focuses its first entry on open, which should not look hovered): a page of always-underlined links reads like a web form and the lines fight the icons. */
 .welcome-action, .welcome-link {
     -fx-text-fill: -color-accent-fg;
     -fx-border-color: transparent;
     -fx-padding: 4 0 4 0;
+    -fx-underline: false;
+}
+.welcome-action:hover, .welcome-link:hover,
+.welcome-action:focus-visible, .welcome-link:focus-visible {
+    -fx-underline: true;
+}
+/* Visited stays the accent: the page is rebuilt on every show, and "visited" means nothing here. */
+.welcome-action:visited, .welcome-link:visited {
+    -fx-text-fill: -color-accent-fg;
 }
 .welcome-action {
     -fx-graphic-text-gap: 12;
+}
+/* The whole action row is clickable, so the whole row answers the pointer. The insets reach past the
+   row so the label text does not touch the fill. */
+.welcome-action-row:hover {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-insets: 0 -8 0 -8;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
 }
 .welcome-recent-dir {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.9em;
 }
+/* The digit that opens a recent entry (1–9), in the chord colour so it reads as a key. */
+.welcome-entry-number {
+    -fx-text-fill: -state-key;
+    -fx-font-size: 0.8em;
+    -fx-min-width: 1.2em;
+}
 .welcome-recent-disclosure {
-    -fx-padding: 3 6 3 6;
+    -fx-padding: 3 0 3 0;
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+    -fx-graphic-text-gap: 6;
+}
+.welcome-recent-disclosure:hover {
+    -fx-text-fill: -color-fg-default;
 }
 .recent-project-name {
     -fx-text-fill: -color-fg-muted;
@@ -3672,6 +3702,10 @@
     -fx-background-color: -color-bg-subtle;
     -fx-background-radius: 3;
     -fx-padding: 1 5 1 5;
+    -fx-graphic-text-gap: 4;
+}
+.welcome-customize-label {
+    -fx-text-fill: -color-fg-muted;
 }
 /* Keybinding chord shown right-aligned next to a Start action (periwinkle, as everywhere). */
 .welcome-key {
@@ -3690,6 +3724,41 @@
 }
 .welcome-footer {
     -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 0.9em;
+}
+/* The home-page link sits in the footer line, so it takes the footer's size and no extra padding. */
+.welcome-footer-link {
+    -fx-font-size: 0.9em;
+    -fx-padding: 0;
+}
+
+/* The Welcome and Doctor pages paint the UI surface (-color-bg-default), not the editor surface, so their
+   selected tab takes the same fill; with a dark UI and a light editor theme it was a white block. */
+.tab-pane > .tab-header-area > .headers-region > .tab.ui-surface-tab:top:selected,
+.tab-pane > .tab-header-area > .headers-region > .tab.ui-surface-tab:bottom:selected {
+    -fx-background-color: -color-border-default, -color-bg-default;
+}
+
+/* The editor area once its last tab is closed: a quiet list of the ways back in, each with its chord. */
+.editor-empty-rows {
+    -fx-hgap: 28;
+    -fx-vgap: 6;
+}
+.editor-empty-action {
+    -fx-text-fill: -color-fg-muted;
+    -fx-border-color: transparent;
+    -fx-underline: false;
+    -fx-padding: 2 0 2 0;
+}
+.editor-empty-action:hover, .editor-empty-action:focus-visible {
+    -fx-text-fill: -color-fg-default;
+    -fx-underline: true;
+}
+.editor-empty-action:visited {
+    -fx-text-fill: -color-fg-muted;
+}
+.editor-empty-key {
+    -fx-text-fill: -state-key;
     -fx-font-size: 0.9em;
 }
 

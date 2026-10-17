@@ -159,6 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Welcome page was reworked** after a UI review:
+  - **Recent Projects** are listed above Recent Files, newest first, each opening (or focusing) its project's window. A project
+    whose folder is gone is not offered.
+  - A recent row keeps the **file name** whole and shortens the folder from its start; a long path no longer
+    widens the page or pushes it off-centre. Folders are relative to the project (whose chip already names it)
+    or start with `~`; a remote file names its host. Right-click a row to copy its path or remove it.
+  - **1–9 open the numbered entries**, and the page focuses the first one when it opens, so Enter opens it.
+  - A **Customize** block names the keymap and theme and changes them; with the Emacs keymap it explains the
+    `C-`/`M-` notation. On a first run it sits right under Start.
+  - **Open File shows its own chord** (Ctrl+O in the VS Code keymap, not Quick Open's Ctrl+P; C-x C-f in Emacs).
+  - Text zoom scales the whole layout, so labels and chords no longer clip at 150 %. Links underline on hover and
+    keyboard focus only, action rows highlight on hover, "Show 7 more" says what it does, the footer link
+    matches the footer, and saved sites no longer repeat their name or print port 22.
+  - Doctor moved to a **Help** row with Documentation and What's New (this build's release notes).
+- **Closing the last tab leaves a hint in the editor area** (Open File, Open Folder, Command Palette, Welcome
+  Page, with their chords) instead of a blank panel, and keeps focus there rather than on the toolbar.
+
 - **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
   words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
   glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,
@@ -237,6 +254,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workspace schema 19 keeps the exception toggles per project.
 
 ### Fixed
+
+- **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with
+  near-invisible titles; their selected tab now takes the page's own background.
 
 - **Spell check accepts the possessive of any dictionary word**, such as "someone else's" and "another's". Only
   words the dictionary lists with a possessive were accepted.
