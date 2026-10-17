@@ -218,6 +218,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Settings scrolled sideways at its 900 px minimum width** in German, French, Spanish and Portuguese (Snippets,
   Templates, Remote), and controls sat a scrollbar's width apart on short and long pages.
+- **A `.http` file saved as Markdown kept its `{{variable}}` squiggles** until Markdown lint's first result
+  replaced them, and for good with Markdown lint off.
 - **A snippet trigger with a space in it was saved and never expanded.** It is now refused with the reason shown.
 - **Python:**
   - Run used `python3` from PATH whatever the project or the Debug setting said.
