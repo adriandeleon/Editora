@@ -134,4 +134,31 @@ class PythonIndentTest {
         assertTrue(lines.get(7).blank());
         assertTrue(lines.get(8).statement());
     }
+
+    @Test
+    void hangingIndentsDoNotMakeAPythonFileEightSpaceIndented() {
+        // PEP 8's hanging indent adds 8 for a def's arguments; three of those outvoted two real 4-space blocks.
+        String src = String.join(
+                "\n",
+                "def long_function_name(",
+                "        var_one, var_two,",
+                "        var_three):",
+                "    print(var_one)",
+                "",
+                "def other(",
+                "        a, b):",
+                "    if a:",
+                "        return b",
+                "",
+                "x = some_call(",
+                "        argument)",
+                "");
+        assertEquals("    ", Indenter.unitFor(src, 4, null, null, "python"));
+        assertEquals("    ", Indenter.detectUnit(src, 4, "python"));
+        // Enter after a block header in that file opens one 4-space level.
+        String text = src + "class A:";
+        assertEquals(
+                "\n    ",
+                Indenter.enterEdit(text, text.length(), "python", 4, null, null).insert());
+    }
 }

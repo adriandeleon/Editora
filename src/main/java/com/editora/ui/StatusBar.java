@@ -1085,11 +1085,11 @@ public final class StatusBar extends HBox {
         return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
-    /** Capitalizes a language name for display (e.g. {@code "java"} -> {@code "Java"}). */
+    /** A language id as it reads in the status bar ({@code "java"} → {@code "Java"}; see {@code LanguageNames}). */
     private static String displayLanguage(String name) {
         if (name == null || name.isEmpty()) {
             return tr("statusbar.plainText");
         }
-        return name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
+        return com.editora.editor.LanguageNames.display(name);
     }
 }

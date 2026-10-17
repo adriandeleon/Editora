@@ -233,7 +233,7 @@ public class EditorBuffer implements TabContent {
             this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
 
     private final CodeArea area = tagRename.newArea(null);
-    private final IndentKeys indentKeys = new IndentKeys(area);
+    private final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
