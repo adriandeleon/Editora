@@ -159,6 +159,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Installing the Java language server gets Eclipse JDT LS 1.62.0** (was 1.60.0): Java 27 support,
+  per-parameter signature help, a quick fix to change a field's access modifier, and Javadoc rendering fixes. An
+  existing install keeps its version until it is installed again.
 - **Doctor tells the truth about a healthy machine and puts problems first.** A missing tool is red only when
   something in the window needs it: a file of that language is open, the project has its marker file
   (`pom.xml`, `go.mod`, `Cargo.toml`, `package.json`…), or you set its command. Everything else is a neutral
@@ -279,6 +282,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
+  `` `c` `` literally): commonmark-java 0.30.1 fixes the regression 0.30.0 brought in.
 - **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with
   near-invisible titles; their selected tab now takes the page's own background.
 

@@ -2088,6 +2088,7 @@ public final class LspManager {
      * silently never appeared because the padded window always reached past the end of the file, and the
      * empty response is indistinguishable from "this file has no hints". Measured on jdtls 1.60 with a
      * 27-line file (last line index 26): end {@code Position(27,0)} → 0 hints, {@code Position(26,0)} → 6.
+     * Unchanged in 1.62 ({@code JdtlsUpgradeProbeTest}: 0 hints past the end, 5 clamped).
      *
      * <p>So when {@code endLine + 1} would leave the document, the end becomes the true document end —
      * {@code Position(lastLine, lastLineLength)} — which still covers the last line in full.
@@ -3728,7 +3729,8 @@ public final class LspManager {
      * <p><b>Measured, not assumed</b> (driving jdtls 1.60 against the same file and position): declaring these
      * takes the code actions at a field from <b>9 to 16</b>. Without them, Generate toString / hashCode+equals
      * / Constructors / Delegate Methods, Override-Implement Methods and Extract Interface are not returned at
-     * all — the server simply doesn't offer what it thinks the client cannot drive.
+     * all — the server simply doesn't offer what it thinks the client cannot drive. Re-measured on 1.62 by
+     * {@code JdtlsUpgradeProbeTest}: 11 to 17 at its fixture's field, with the same nine titles depending on them.
      *
      * <p><b>Each prompt flag is a contract, not a hint.</b> Turning one on changes that action's reply from a
      * directly-appliable edit into a {@code java.action.*Prompt} command the client must handle. Enabling one
