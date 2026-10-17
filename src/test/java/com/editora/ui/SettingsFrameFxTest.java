@@ -515,4 +515,28 @@ class SettingsFrameFxTest {
         return new javafx.scene.control.ButtonType(
                 com.editora.i18n.Messages.tr(key), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
     }
+
+    @Test
+    void aReopenComesBackWhereTheUserLeftTheWindow() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            Stage owner = FxTestSupport.field(fx.controller, "stage");
+            FxTestSupport.runOnFx(() -> window.show(owner));
+            Stage stage = FxTestSupport.field(window, "stage");
+            FxTestSupport.runOnFx(() -> {
+                stage.setX(12);
+                stage.setY(34);
+                stage.setWidth(910);
+                stage.setHeight(500);
+                stage.close();
+                window.show(owner);
+            });
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(12, stage.getX(), 0.5, "not re-centred with the preferred size");
+                assertEquals(34, stage.getY(), 0.5);
+                assertEquals(910, stage.getWidth(), 0.5);
+                stage.hide();
+            });
+        }
+    }
 }

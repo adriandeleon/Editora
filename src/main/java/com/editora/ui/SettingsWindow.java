@@ -901,7 +901,10 @@ public class SettingsWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            centerOnOwner(owner);
+            if (!placed) { // later opens come back where the user left the window
+                centerOnOwner(owner);
+                placed = true;
+            }
             stage.show();
         }
         // A search left in the box is kept, but selected: typing replaces it rather than appending to it.
@@ -921,10 +924,16 @@ public class SettingsWindow {
         }
     }
 
+    private boolean placed; // centred once; afterwards the window keeps the place the user gave it
+
     /** Centres on the owner using the size the window actually has, kept on the owner's screen. */
     private void centerOnOwner(Window owner) {
         javafx.geometry.Dimension2D size = preferredSize(owner);
-        WindowPlacement.centerOnOwner(stage, owner, size.getWidth(), size.getHeight());
+        WindowPlacement.centerOnOwner(
+                stage,
+                owner,
+                Double.isNaN(stage.getWidth()) ? size.getWidth() : stage.getWidth(),
+                Double.isNaN(stage.getHeight()) ? size.getHeight() : stage.getHeight());
     }
 
     private void build(Window owner) {
