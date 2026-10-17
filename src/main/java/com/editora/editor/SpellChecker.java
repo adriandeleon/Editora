@@ -506,11 +506,32 @@ public final class SpellChecker {
                 nameFollows = NAME_TAGS.contains(line.substring(from, i));
                 continue; // a tag is structural either way
             }
+            ts = afterStringPrefix(line, ts, i); // f"Recieved / rb'…: the prefix is not part of the word
             if (!structured(line, ts, i, syntax)) {
                 wordRuns(line, ts, i, spans);
             }
         }
         return spans;
+    }
+
+    /**
+     * Where a token's text starts once a string-literal prefix and its opening quote are skipped — Python's
+     * {@code f"…}, {@code rb'…}, {@code t'''…} — so the first word of a prefixed string is checked like any
+     * other (it used to be skipped, or checked with the {@code f'} glued on). {@code ts} when there is none.
+     */
+    static int afterStringPrefix(String line, int ts, int te) {
+        int k = ts;
+        while (k < te && k - ts < 2 && "rRbBuUfFtT".indexOf(line.charAt(k)) >= 0) {
+            k++;
+        }
+        if (k == ts || k >= te || (line.charAt(k) != '"' && line.charAt(k) != '\'')) {
+            return ts;
+        }
+        char quote = line.charAt(k);
+        while (k < te && line.charAt(k) == quote) {
+            k++;
+        }
+        return k < te && Character.isLetter(line.charAt(k)) ? k : ts;
     }
 
     /**

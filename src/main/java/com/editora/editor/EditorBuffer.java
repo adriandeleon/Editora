@@ -8472,7 +8472,8 @@ public class EditorBuffer implements TabContent {
                 e.consume();
                 return;
             }
-            int del = Indenter.smartBackspaceCount(line.substring(0, col), line.substring(col), par > 0);
+            int del = Indenter.smartBackspaceCount(
+                    line.substring(0, col), line.substring(col), par > 0, language, indentUnit(), tabSize);
             if (del > 1) {
                 a.deleteText(caret - del, caret);
                 e.consume();
@@ -8688,13 +8689,18 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         int len = a.getLength();
-        char prev = caret > 0 ? a.getText(caret - 1, caret).charAt(0) : 0;
         char next = caret < len ? a.getText(caret, caret + 1).charAt(0) : 0;
         boolean hasSel = a.getSelection().getLength() > 0;
-        AutoClose.Decision d = AutoClose.decide(c, prev, next, hasSel);
+        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+        AutoClose.Decision d = AutoClose.decide(c, a.getText(lineStart, caret), next, hasSel, language);
         switch (d.action()) {
             case INSERT_PAIR -> {
                 a.replaceText(caret, caret, "" + c + d.closer());
+                a.moveTo(caret + 1);
+                return true;
+            }
+            case INSERT_TRIPLE -> { // the third quote of a Python triple quote: close it too
+                a.replaceText(caret, caret, String.valueOf(c).repeat(4));
                 a.moveTo(caret + 1);
                 return true;
             }
@@ -8727,7 +8733,7 @@ public class EditorBuffer implements TabContent {
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
         String beforeCaret = a.getText(lineStart, caret);
         boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c);
+        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c, language);
         if (!bracket && !keyword) {
             return;
         }

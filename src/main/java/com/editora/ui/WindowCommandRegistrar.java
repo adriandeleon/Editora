@@ -2702,9 +2702,11 @@ final class WindowCommandRegistrar {
         // String manipulation (the String-Manipulation-plugin family): case-style conversions on the
         // selection/token at the caret + whole-line sorts/filters, all also reachable via one picker.
         host.registry().register(Command.of("edit.stringOps", host.editing()::stringOpsPicker));
-        host.registry()
-                .register(Command.of(
-                        "edit.case.cycle", () -> host.editing().caseOp(com.editora.editops.StringCase::cycle)));
+        host.registry().register(Command.of("edit.case.cycle", () -> {
+            var b = host.activeBuffer();
+            String language = b == null ? null : b.getLanguage();
+            host.editing().caseOp(s -> com.editora.editops.StringCase.cycle(s, language));
+        }));
         host.registry()
                 .register(Command.of(
                         "edit.case.camel",

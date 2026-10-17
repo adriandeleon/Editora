@@ -108,6 +108,10 @@ public final class Shebang {
             interpreter = basename(tokens[++idx]);
         }
         String canonical = stripVersion(interpreter);
+        // python3.14t (free-threaded), python3.12-dbg, pypy3.10, and `uv run --script` / `poetry run python`.
+        if (isPython(interpreter) || runsPython(interpreter, tokens, idx + 1)) {
+            canonical = "python";
+        }
         // Java only counts as a launchable compact source file when a `--source N` follows.
         if (canonical.equals("java")) {
             Integer version = javaSourceVersion(tokens, idx + 1);
@@ -121,6 +125,37 @@ public final class Shebang {
     public static String extension(String firstLine) {
         Result r = parse(firstLine);
         return r == null ? null : r.extension();
+    }
+
+    /** A CPython or PyPy executable name, any version and build suffix ({@code python3.14t}, {@code pypy3}). */
+    private static final java.util.regex.Pattern PYTHON_NAME =
+            java.util.regex.Pattern.compile("(?:python|pypy)(?:\\d+(?:\\.\\d+)*)?(?:t|d|-dbg)?(?:\\.exe)?");
+
+    private static boolean isPython(String name) {
+        return PYTHON_NAME.matcher(name).matches();
+    }
+
+    /**
+     * Whether a project/script runner runs Python here: {@code uv run} and {@code pipx run} run a Python script
+     * (PEP 723 inline metadata); {@code poetry}/{@code pdm}/{@code hatch}/{@code rye}/{@code pipenv run} do when
+     * the command they run is a Python interpreter.
+     */
+    private static boolean runsPython(String runner, String[] tokens, int from) {
+        if (from >= tokens.length || !tokens[from].equals("run")) {
+            return false;
+        }
+        if (runner.equals("uv") || runner.equals("pipx")) {
+            return true;
+        }
+        if (!java.util.Set.of("poetry", "pdm", "hatch", "rye", "pipenv").contains(runner)) {
+            return false;
+        }
+        for (int i = from + 1; i < tokens.length; i++) {
+            if (!tokens[i].startsWith("-")) {
+                return isPython(basename(tokens[i]));
+            }
+        }
+        return false;
     }
 
     /** The last path segment of {@code token} (an interpreter path), lower-cased. */

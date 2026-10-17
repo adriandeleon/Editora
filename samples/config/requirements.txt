@@ -1,0 +1,14 @@
+# pip requirements: package names, extras, version specifiers, markers, options.
+# Package names are not spell-checked; comments are.
+-r requirements-dev.in
+-c constraints.txt
+--extra-index-url https://example.invalid/simple
+
+numpy>=1.26
+pandas==2.2.2
+pydantic[email]>=2.7,<3
+fastapi
+uvicorn[standard]~=0.30  # ASGI server
+requests ; python_version < "3.13" and sys_platform != "win32"
+mypkg @ https://example.invalid/mypkg-1.0.tar.gz
+-e ./local-package

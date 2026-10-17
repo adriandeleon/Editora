@@ -303,7 +303,9 @@ public final class Indenter {
         }
         String newIndent = style == Style.SHELL
                 ? ShellIndent.afterEnter(text, caret, unit)
-                : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
+                : "python".equals(language)
+                        ? PythonIndent.afterEnter(text, caret, unit, unit.startsWith("\t") ? 4 : unit.length())
+                        : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
         return new EnterEdit("\n" + newIndent, 1 + newIndent.length());
     }
 
@@ -406,6 +408,12 @@ public final class Indenter {
             String shell = ShellIndent.closer(text, caret, typed, currentIndent, unit, tabSize);
             if (shell != null) {
                 return shell;
+            }
+        }
+        if (style == Style.PY && (typed == ':' || typed == '\n')) {
+            String clause = PythonIndent.clauseIndent(text, caret, tabSize, currentIndent);
+            if (clause != null) {
+                return clause; // Python's `else:` / `except:` … lines up with its `if` / `try`
             }
         }
         if (isBracketCloser(typed) && text.substring(ls, caret).isBlank()) {
@@ -560,6 +568,14 @@ public final class Indenter {
      * Enter — is what makes it a whole word. The symbolic {@code ;;} (shell) cannot be continued into a
      * longer word, so it is finished the moment it is typed.
      */
+    public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar, String language) {
+        if (style == Style.PY && "python".equals(language)) {
+            return PythonIndent.completesClause(lineUpToCaretPlusChar); // `else:` / `except …:` — on its `:`
+        }
+        return completesCloserKeyword(style, lineUpToCaretPlusChar);
+    }
+
+    /** As {@link #completesCloserKeyword(Style, String, String)} for the keyword-closer styles (shell, Ruby, Lua). */
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar) {
         Set<String> closers = style == Style.SHELL
                 ? SHELL_CLOSERS
@@ -621,6 +637,21 @@ public final class Indenter {
      * {@code beforeCaret}/{@code afterCaret} are the line text on each side of the caret;
      * {@code hasPreviousLine} is whether a line exists above the current one.
      */
+    /**
+     * How many characters Backspace deletes with the caret in a line's leading whitespace, for
+     * {@code language}: in Python and YAML, whose indentation is syntax, back to the previous indent stop (one
+     * level, never joining the line above); elsewhere as {@link #smartBackspaceCount(String, String, boolean)}.
+     */
+    public static int smartBackspaceCount(
+            String beforeCaret, String afterCaret, boolean hasPreviousLine, String language, String unit, int tabSize) {
+        if ("python".equals(language) || "yaml".equals(language)) {
+            // Indentation is syntax there: one press steps back one level, and never joins the line above.
+            return PythonIndent.backspaceCount(beforeCaret, unit, tabSize);
+        }
+        return smartBackspaceCount(beforeCaret, afterCaret, hasPreviousLine);
+    }
+
+    /** As {@link #smartBackspaceCount(String, String, boolean, String, String, int)} for the other languages. */
     public static int smartBackspaceCount(String beforeCaret, String afterCaret, boolean hasPreviousLine) {
         if (beforeCaret.isEmpty() || !beforeCaret.isBlank()) {
             return 0;
@@ -935,7 +966,7 @@ public final class Indenter {
         return false;
     }
 
-    private static int width(String indent, int tabSize) {
+    static int width(String indent, int tabSize) {
         int w = 0;
         for (int i = 0; i < indent.length(); i++) {
             w += indent.charAt(i) == '\t' ? Math.max(1, tabSize) : 1;
@@ -943,7 +974,7 @@ public final class Indenter {
         return w;
     }
 
-    private static String leadingWhitespace(String line) {
+    static String leadingWhitespace(String line) {
         int i = 0;
         while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
             i++;
