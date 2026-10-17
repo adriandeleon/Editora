@@ -79,12 +79,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A failed connect says why: the host could not be reached, did not answer, its host key has changed (with
     the `ssh-keygen -R` line to remove the old entry), or the login was refused. Cancelling only says so in the
     status bar.
+- **Remote: SSH agent.** An Automatic login uses the keys your SSH agent holds — `ssh-agent`, 1Password,
+  Secretive, gpg-agent, or Windows' OpenSSH agent — before any key file, so a key on a security key (FIDO) or a
+  smartcard, or one kept in a password manager, logs in. `IdentityAgent` in your SSH config chooses the agent
+  (`none` turns it off). Waiting for a security key's touch does not time the login out. The agent is never
+  forwarded to the server.
 - **Remote: `~/.ssh/config`.** The connect form offers the hosts your SSH config names, and for the host you
   type shows where it really goes (HostName, ProxyJump, IdentityFile) and fills in its User and Port. Logging
   in follows the config as `ssh` does: its `IdentityFile` keys, `IdentitiesOnly`, and `ProxyJump` through a
-  jump host. "Default SSH keys" is now **Automatic (like ssh)**: the config's keys first, then your default
-  ones. `Include` lines are followed, globs too (`Include conf.d/*`, on Windows as well). `ProxyCommand` is not
-  supported.
+  jump host. "Default SSH keys" is now **Automatic (like ssh)**: the agent's keys, then the config's, then
+  your default ones. `Include` lines are followed, globs too (`Include conf.d/*`, on Windows as well).
+  `ProxyCommand` is not supported.
 - **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
   activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
   Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store

@@ -254,6 +254,33 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         return defaultKeys;
     }
 
+    /** Where this engine's SSH setup is (the agent is found through its environment). */
+    SshEnvironment sshEnvironment() {
+        return ssh;
+    }
+
+    /** This engine's answering clock (an agent's signature may wait for a person too). */
+    PromptClock promptClock() {
+        return promptClock;
+    }
+
+    /**
+     * How a session logs in: only an Automatic login ({@code DEFAULT_KEYS}) asks the SSH agent. On the session,
+     * and on the connect's context, which a ProxyJump hop shares: the hop of an Automatic login uses the agent too.
+     */
+    static final AttributeRepository.AttributeKey<RemoteConnection.AuthMethod> AUTH =
+            new AttributeRepository.AttributeKey<>();
+
+    /** {@link #AUTH} for {@code session}: its own, else its connect's (a jump hop has only that). */
+    static RemoteConnection.AuthMethod authOf(Session session) {
+        RemoteConnection.AuthMethod own = session.getAttribute(AUTH);
+        if (own != null) {
+            return own;
+        }
+        AttributeRepository context = session instanceof ClientSession cs ? cs.getConnectionContext() : null;
+        return context == null ? null : context.getAttribute(AUTH);
+    }
+
     /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
     boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
         return serverKeyVerifier.verifyServerKey(session, address, key);
@@ -462,7 +489,8 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                         conn.user(),
                         conn.host(),
                         conn.port(),
-                        AttributeRepository.ofKeyValuePair(SshClients.ENGINE, this),
+                        // Also on the context, so a ProxyJump hop (its own session, the same context) knows them too.
+                        AttributeRepository.ofAttributesMap(Map.of(SshClients.ENGINE, this, AUTH, conn.auth())),
                         null)
                 .verify(connectTimeout)
                 .getSession();
@@ -559,6 +587,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             java.util.function.LongSupplier promptElapsedNanos)
             throws IOException {
         session.setAttribute(LoginQuestions.SUBJECT, conn.id());
+        session.setAttribute(AUTH, conn.auth());
         String passwordIdentity = null;
         try {
             switch (conn.auth()) {
@@ -576,8 +605,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                     key.setPasswordFinder(Passphrases.INSTANCE);
                     session.setKeyIdentityProvider(key);
                 }
-                // What MINA put together for the session stays: ~/.ssh/config's IdentityFile keys, then the
-                // default keys (the shared client's, from this engine's ~/.ssh) unless IdentitiesOnly says no.
+                // The SSH agent's keys first (AgentFactory), then what MINA put together for the session:
+                // ~/.ssh/config's IdentityFile keys, then the default keys (the shared client's, from this
+                // engine's ~/.ssh) unless IdentitiesOnly says no — ssh's order.
                 case DEFAULT_KEYS -> givePassphrase(session, secret);
             }
             awaitAuthExcludingPrompt(session, session.auth(), timeout, promptElapsedNanos);

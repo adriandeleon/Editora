@@ -6,6 +6,9 @@
 #   - dropbear on Linux, which leaves a command in its per-connection process's group (PosixShell's group
 #     guard re-runs it under setsid).
 #
+# The ssh-agent probe (RealSshAgentProbeFxTest) runs in the same jobs against a real ssh-agent, and on Windows
+# against the OpenSSH agent service's named pipe.
+#
 # Not part of CI: it downloads the language servers and debuggers the probe needs and takes a while. Run it by
 # hand (Actions → Remote probe → Run workflow), or push a `probe/**` branch.
 name: Remote probe
@@ -203,6 +206,23 @@ jobs:
           { echo "### Probe report ($PROBE_NAME)"; echo '```'; sed -n '/PROBE REPORT/,/^\[/p' probe.log | sed '$d'; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+      # Logging in with a key a real ssh-agent holds (RealSshAgentProbeFxTest): the agent's own socket, a key
+      # only the agent has, and an in-process server that accepts only that key.
+      - name: SSH agent probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/agent-key" -C agent-probe
+          eval "$(ssh-agent -a "$RUNNER_TEMP/agent.sock")"
+          ssh-add -q "$RUNNER_TEMP/agent-key"
+          rm -f "$RUNNER_TEMP/agent-key" # only the agent has it now
+          status=0
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshAgentProbeFxTest -Dremote.probe.agent="$RUNNER_TEMP/agent.sock" \
+            -Dremote.probe.agentKey="$RUNNER_TEMP/agent-key.pub" test || status=$?
+          kill "$SSH_AGENT_PID" || true
+          exit "$status"
+
       - name: Server log
         if: always()
         shell: bash
@@ -307,3 +327,44 @@ jobs:
           wsl.exe -l -v || true
           ./mvnw -B --no-transfer-progress -Djacoco.skip=true -DexcludedGroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
             -Dtest='WslProbeTest,WslWatchProbeTest' -Dwsl.probe=Ubuntu-24.04 test
+
+  # Windows' OpenSSH agent service, reached through its named pipe (\\.\pipe\openssh-ssh-agent): the only real
+  # test of AgentConnection's pipe transport.
+  agent-windows:
+    name: Probe (windows, the OpenSSH agent)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      - name: OpenSSH agent
+        shell: pwsh
+        run: |
+          Set-Service ssh-agent -StartupType Manual
+          Start-Service ssh-agent
+          $openssh = "$env:WINDIR\System32\OpenSSH"
+          & "$openssh\ssh-keygen.exe" -q -t ed25519 -N '' -f "$env:RUNNER_TEMP\agent-key" -C agent-probe
+          & "$openssh\ssh-add.exe" "$env:RUNNER_TEMP\agent-key"
+          Remove-Item "$env:RUNNER_TEMP\agent-key"
+
+      - name: Probe
+        shell: bash
+        run: |
+          unset SSH_AUTH_SOCK # Git Bash's own agent is not the one: the service's pipe is
+          ./mvnw -B --no-transfer-progress -Djacoco.skip=true -Dgroups=fx -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest=RealSshAgentProbeFxTest -Dremote.probe.agent=default \
+            -Dremote.probe.agentKey="$RUNNER_TEMP/agent-key.pub" test
