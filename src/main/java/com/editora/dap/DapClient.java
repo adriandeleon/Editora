@@ -464,7 +464,7 @@ public final class DapClient implements IDebugProtocolClient {
             }
             Thread.sleep(40);
         }
-        throw new IllegalStateException("could not connect to the debug adapter on port " + port);
+        throw new IllegalStateException(com.editora.i18n.Messages.tr("debug.error.noConnection", String.valueOf(port)));
     }
 
     /**
@@ -780,7 +780,8 @@ public final class DapClient implements IDebugProtocolClient {
                     LOG.log(Level.FINE, "child debug session did not answer launch/attach", launchError);
                     return;
                 }
-                host.onError("Could not start the debug target: " + launchError.getMessage());
+                host.onError(com.editora.i18n.Messages.tr(
+                        "debug.error.targetFailed", DapErrors.userText(launchError.getMessage())));
                 childEnded(child);
             });
             started.complete(null);

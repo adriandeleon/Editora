@@ -2,11 +2,8 @@ package com.editora.dap;
 
 import java.io.File;
 import java.net.ServerSocket;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,10 +22,6 @@ import javafx.application.Platform;
 import com.editora.lsp.LspManager;
 import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
-import com.editora.run.JdkToolchain;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -581,7 +574,7 @@ public final class DapManager {
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
-            listener.onError("Debugging is not supported for this file type.");
+            listener.onError(tr("debug.error.notSupported"));
         }
     }
 
@@ -747,10 +740,10 @@ public final class DapManager {
                 return;
             }
             if (err != null) {
-                fail(epoch, "resolveMainClass failed: " + msg(err));
+                fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
                 return;
             }
-            List<MainClassOption> options = parseMainClasses(res);
+            List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
             DapPaths paths = pathsFor(file);
             // A project's main class runs in the project root — what Run, the gutter and a saved
             // configuration use — and a loose file in the window's project folder, else its own folder.
@@ -761,9 +754,9 @@ public final class DapManager {
                 // jdtls enumerated no project main class (a standalone file, or the project is still
                 // importing). Derive the fully-qualified class name from the file (package + type name)
                 // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
-                String fqn = own != null ? own : mainClassFromFile(file);
+                String fqn = own != null ? own : JavaCompilation.mainClassFromFile(file);
                 if (fqn == null) {
-                    fail(epoch, "No main class could be determined for this file.");
+                    fail(epoch, tr("debug.error.noMainClass"));
                     return;
                 }
                 compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
@@ -931,7 +924,7 @@ public final class DapManager {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        compileAndLaunch(file, compactMainClassFromFile(file), javaExecOverride, epoch, null);
+        compileAndLaunch(file, JavaCompilation.compactMainClassFromFile(file), javaExecOverride, epoch, null);
     }
 
     /** Debug an extensionless Java script via a line-preserving temporary {@code .java} copy. */
@@ -1000,11 +993,11 @@ public final class DapManager {
                 && enabled
                 && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
         if (!javaDebugUsable() && !hostPlugin) {
-            listener.onError("Java debugging is not available (enable it and install the java-debug plugin).");
+            listener.onError(tr("debug.error.javaUnavailable"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a Java file to debug first.");
+            listener.onError(tr("debug.error.openJavaFile"));
             return false;
         }
         if (client != null) {
@@ -1098,18 +1091,18 @@ public final class DapManager {
         // NPE from its search engine instead of anything actionable. Callers check first and say something
         // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
         if (opt.mainClass() == null || opt.mainClass().isBlank()) {
-            cb.accept(ResolvedLaunch.failed("No main class to run — set one on the run configuration."));
+            cb.accept(ResolvedLaunch.failed(tr("debug.error.configNeedsMainClass")));
             return;
         }
         String proj = opt.projectName() == null ? "" : opt.projectName();
         lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath: " + msg(err)));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
                 return;
             }
             List<String> modulepaths = new ArrayList<>();
             List<String> classpaths = new ArrayList<>();
-            parseClasspath(res, modulepaths, classpaths);
+            JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
             if (classpaths.isEmpty() && modulepaths.isEmpty()) {
                 // Log what the server ACTUALLY said. An empty classpath has two very different causes —
                 // the project genuinely isn't importable, or we failed to read a perfectly good reply — and
@@ -1121,10 +1114,8 @@ public final class DapManager {
                         () -> "resolveClasspath returned no entries for " + opt.mainClass() + " (project='"
                                 + proj + "'); raw result type="
                                 + (res == null ? "null" : res.getClass().getName())
-                                + " value=" + abbreviate(String.valueOf(res)));
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath for " + opt.mainClass()
-                        + " — make sure the Java project has finished importing (watch the LSP status), "
-                        + "then try again."));
+                                + " value=" + JdtlsReplies.abbreviate(String.valueOf(res)));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", opt.mainClass())));
                 return;
             }
             lsp.executeCommand(
@@ -1138,7 +1129,7 @@ public final class DapManager {
                             // A project compiled with --enable-preview needs the flag to load its classes;
                             // a failed check (an older java-debug) leaves the launch as it was.
                             (preview, e3) -> cb.accept(new ResolvedLaunch(
-                                    asString(jx),
+                                    JdtlsReplies.asString(jx),
                                     modulepaths,
                                     classpaths,
                                     null,
@@ -1165,7 +1156,7 @@ public final class DapManager {
                 cb.accept(List.of());
                 return;
             }
-            cb.accept(parseMainClasses(res));
+            cb.accept(JdtlsReplies.parseMainClasses(res));
         });
     }
 
@@ -1252,8 +1243,9 @@ public final class DapManager {
             try {
                 Path compileFile = file;
                 if (remote) {
-                    HostCompilation host = hostCompilation(
-                            file, sourceVersion == null ? null : withoutShebang(Files.readString(file)));
+                    JavaCompilation.HostCompilation host = JavaCompilation.hostCompilation(
+                            file,
+                            sourceVersion == null ? null : JavaCompilation.withoutShebang(Files.readString(file)));
                     out = host.directory();
                     removal = host.removal();
                     if (host.source() != null) {
@@ -1263,11 +1255,11 @@ public final class DapManager {
                     out = Files.createTempDirectory("editora-dap-");
                     if (sourceVersion != null) {
                         compileFile = out.resolve(file.getFileName() + ".java");
-                        Files.writeString(compileFile, withoutShebang(Files.readString(file)));
+                        Files.writeString(compileFile, JavaCompilation.withoutShebang(Files.readString(file)));
                     }
                 }
                 String javaExec = remote
-                        ? hostJava(file)
+                        ? JavaCompilation.hostJava(file)
                         : javaExecOverride == null || javaExecOverride.isBlank()
                                 ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
                                 : javaExecOverride;
@@ -1278,8 +1270,9 @@ public final class DapManager {
                         ? null
                         : JavaLaunchSupport.sourceRoot(file, JavaLaunchSupport.declaredPackage(file));
                 ProcessRunner.Result r = remote
-                        ? compileOnHost(file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot)
-                        : compileStandalone(
+                        ? JavaCompilation.compileOnHost(
+                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot)
+                        : JavaCompilation.compileStandalone(
                                 file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot);
                 if (!r.ok()) {
                     // javac's own report — file, line, the caret under the mistake — belongs in the Debug
@@ -1326,118 +1319,13 @@ public final class DapManager {
                                 false,
                                 epoch)));
             } catch (Exception e) {
-                fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
+                fail(epoch, tr("debug.error.compileLaunchFailed", fqn, msg(e)));
             } finally {
                 if (!retained && out != null) {
-                    removeCompilation(out, removal);
+                    JavaCompilation.removeCompilation(out, removal);
                 }
             }
         });
-    }
-
-    /** Compiles with the JDK that will run the debuggee, retaining local variables for the debugger. */
-    static ProcessRunner.Result compileStandalone(
-            Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
-        return compileStandalone(file, file, outputDir, javaExecOverride, environment, null, null);
-    }
-
-    private static ProcessRunner.Result compileStandalone(
-            Path original,
-            Path source,
-            Path outputDir,
-            String javaExecOverride,
-            Map<String, String> environment,
-            Integer sourceVersion,
-            Path sourceRoot) {
-        List<String> command = new ArrayList<>(List.of(JdkToolchain.compilerForJavaExecutable(javaExecOverride), "-g"));
-        if (sourceVersion != null) {
-            command.add("--release");
-            command.add(sourceVersion.toString());
-        }
-        if (sourceRoot != null) {
-            // Without it javac looks for the package's other classes in the file's own folder, where a
-            // packaged class's siblings are not (src/demo/Helper.java would be src/demo/demo/Helper.java).
-            command.addAll(List.of("-sourcepath", sourceRoot.toString()));
-        }
-        command.addAll(List.of("-d", outputDir.toString(), source.toString()));
-        return ProcessRunner.runInUserLocale(
-                original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
-    }
-
-    /**
-     * A remote file's compilation on its target: the folder for its classes, the copy of its source when one
-     * is compiled instead of the file ({@code null} otherwise), both named as Editora names the target's files
-     * ({@link com.editora.process.ExecTarget#toPath}), and how the folder is removed.
-     */
-    private record HostCompilation(Path directory, Path source, Runnable removal) {}
-
-    /**
-     * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its target's cache, with
-     * {@code source} (when not {@code null}) written into it. Removed when the session ends, like a local one's
-     * temporary folder — on the target, which for a container is the only place it is.
-     */
-    private static HostCompilation hostCompilation(Path file, String source) throws java.io.IOException {
-        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(file);
-        com.editora.process.TargetCache cache = target.cache();
-        if (cache == null) {
-            throw new java.io.IOException("the host has no folder for Editora's files");
-        }
-        String folder = "debug-classes/" + java.util.UUID.randomUUID();
-        Path directory = target.toPath(cache.makeDirectories(folder));
-        Runnable removal = () -> {
-            try {
-                cache.delete(folder);
-            } catch (java.io.IOException | RuntimeException e) {
-                LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
-            }
-        };
-        Path copy = source == null
-                ? null
-                : target.toPath(cache.putText(folder + "/" + file.getFileName() + ".java", source));
-        return new HostCompilation(directory, copy, removal);
-    }
-
-    /** {@code java} on a remote file's host: under its configured JDK ({@code jdk.home}), else its PATH's. */
-    static String hostJava(Path file) {
-        String home = com.editora.process.ExecTargets.remoteTool(file, "jdk.home");
-        return home == null || home.isBlank() ? "java" : home.strip().replaceAll("/+$", "") + "/bin/java";
-    }
-
-    /** {@code javac} beside a host's {@code java} ({@link #hostJava}). Pure. */
-    static String hostJavac(String java) {
-        return java.endsWith("/bin/java") ? java.substring(0, java.length() - "java".length()) + "javac" : "javac";
-    }
-
-    /** {@link #compileStandalone} on a remote file's host: its javac, its paths. */
-    private static ProcessRunner.Result compileOnHost(
-            Path original,
-            Path source,
-            Path outputDir,
-            String hostJava,
-            Map<String, String> environment,
-            Integer sourceVersion,
-            Path sourceRoot) {
-        DapPaths paths = pathsFor(original);
-        List<String> command = new ArrayList<>(List.of(hostJavac(hostJava), "-g"));
-        if (sourceVersion != null) {
-            command.add("--release");
-            command.add(sourceVersion.toString());
-        }
-        if (sourceRoot != null) {
-            command.addAll(List.of("-sourcepath", paths.toAdapter(sourceRoot)));
-        }
-        command.addAll(List.of("-d", paths.toAdapter(outputDir), paths.toAdapter(source)));
-        return ProcessRunner.runInUserLocale(
-                original.getParent(), java.time.Duration.ofSeconds(120), command, environment);
-    }
-
-    /** Blank the first line without changing later line numbers for breakpoints and stack frames. */
-    static String withoutShebang(String source) {
-        if (source == null || !source.startsWith("#!")) {
-            return source;
-        }
-        int newline = source.indexOf('\n');
-        return newline < 0 ? "" : " ".repeat(newline) + source.substring(newline);
     }
 
     private SourceAlias activeSourceAlias() {
@@ -1457,38 +1345,8 @@ public final class DapManager {
             sourceAlias = null;
         }
         if (directory != null) {
-            java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilation(directory, removal));
-        }
-    }
-
-    /** {@code removal} when the folder is a target's, else this machine's folder walked and deleted. */
-    private static void removeCompilation(Path directory, Runnable removal) {
-        if (removal != null) {
-            removal.run();
-        } else {
-            removeCompilationDirectory(directory);
-        }
-    }
-
-    static void removeCompilationDirectory(Path directory) {
-        try {
-            Files.walkFileTree(directory, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws java.io.IOException {
-                    Files.deleteIfExists(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, java.io.IOException error)
-                        throws java.io.IOException {
-                    if (error != null) throw error;
-                    Files.deleteIfExists(dir);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (java.io.IOException e) {
-            LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
+            java.util.concurrent.CompletableFuture.runAsync(
+                    () -> JavaCompilation.removeCompilation(directory, removal));
         }
     }
 
@@ -1544,69 +1402,46 @@ public final class DapManager {
                 && (frame.name().startsWith(className + ".") || frame.name().startsWith(className + "$"));
     }
 
-    /** A compact source's implicit class is named for its file, even when it declares nested types. */
+    // Moved to JavaCompilation; kept here for the callers that name them on DapManager.
+
+    /** See {@link JavaCompilation#compileStandalone(Path, Path, String, Map)}. */
+    static ProcessRunner.Result compileStandalone(
+            Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
+        return JavaCompilation.compileStandalone(file, outputDir, javaExecOverride, environment);
+    }
+
+    /** See {@link JavaCompilation#hostJava}. */
+    static String hostJava(Path file) {
+        return JavaCompilation.hostJava(file);
+    }
+
+    /** See {@link JavaCompilation#hostJavac}. */
+    static String hostJavac(String java) {
+        return JavaCompilation.hostJavac(java);
+    }
+
+    /** See {@link JavaCompilation#withoutShebang}. */
+    static String withoutShebang(String source) {
+        return JavaCompilation.withoutShebang(source);
+    }
+
+    /** See {@link JavaCompilation#removeCompilationDirectory}. */
+    static void removeCompilationDirectory(Path directory) {
+        JavaCompilation.removeCompilationDirectory(directory);
+    }
+
+    /** See {@link JavaCompilation#compactMainClassFromFile}. */
     static String compactMainClassFromFile(Path file) {
-        String fileName = file.getFileName().toString();
-        return fileName.substring(0, fileName.length() - ".java".length());
+        return JavaCompilation.compactMainClassFromFile(file);
+    }
+
+    /** See {@link JavaCompilation#mainClassFromFile}. */
+    static String mainClassFromFile(Path file) {
+        return JavaCompilation.mainClassFromFile(file);
     }
 
     private static String firstOrNull(List<String> l) {
         return l == null || l.isEmpty() ? null : l.get(0);
-    }
-
-    /** Matches a top-level type declaration, capturing its name (e.g. {@code public final class Foo}). */
-    private static final java.util.regex.Pattern TYPE_DECL =
-            java.util.regex.Pattern.compile("\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
-                    + "(?:class|record|enum|interface)\\s+([\\p{L}_$][\\p{L}\\p{N}_$]*)"); // not \\w: ASCII-only, cut
-    // Café to Caf
-
-    /**
-     * Derives the fully-qualified main-class name from a {@code .java} file: its {@code package}
-     * declaration plus the <em>declared</em> type name (the first top-level {@code class}/{@code record}/
-     * {@code enum}), falling back to the file's base name. Reads the source (not the filename) so a
-     * class whose name differs from the file resolves correctly. Pure-ish (one bounded file read).
-     */
-    static String mainClassFromFile(Path file) {
-        if (file == null || file.getFileName() == null) {
-            return null;
-        }
-        String base = file.getFileName().toString();
-        if (base.endsWith(".java")) {
-            base = base.substring(0, base.length() - ".java".length());
-        }
-        if (base.isEmpty()) {
-            return null;
-        }
-        String pkg = "";
-        String cls = null;
-        java.util.List<String> lines;
-        try (java.util.stream.Stream<String> s = java.nio.file.Files.lines(file)) {
-            lines = s.limit(500).toList();
-        } catch (java.io.IOException | RuntimeException ignored) {
-            lines = java.util.List.of();
-        }
-        for (String raw : lines) {
-            String t = raw.strip();
-            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) {
-                continue; // skip comment lines (crude, but enough to avoid most false matches)
-            }
-            if (pkg.isEmpty() && t.startsWith("package ") && t.endsWith(";")) {
-                pkg = t.substring("package ".length(), t.length() - 1).strip();
-            }
-            if (cls == null) {
-                java.util.regex.Matcher m = TYPE_DECL.matcher(t);
-                if (m.find()) {
-                    cls = m.group(1);
-                }
-            }
-            if (!pkg.isEmpty() && cls != null) {
-                break;
-            }
-        }
-        if (cls == null) {
-            cls = base; // no type declaration found — best-effort (e.g. a JEP 512 compact source)
-        }
-        return pkg.isEmpty() ? cls : pkg + "." + cls;
     }
 
     /** What java-debug is told before each Java session (step filters, statics, exception types). */
@@ -1642,12 +1477,12 @@ public final class DapManager {
                 return;
             }
             if (err != null) {
-                fail(epoch, "Could not start the debug session: " + msg(err));
+                fail(epoch, tr("debug.error.sessionFailed", msg(err)));
                 return;
             }
-            int port = asInt(res);
+            int port = JdtlsReplies.asInt(res);
             if (port <= 0) {
-                fail(epoch, "The debug adapter did not return a port.");
+                fail(epoch, tr("debug.error.noPort"));
                 return;
             }
             // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
@@ -1670,7 +1505,7 @@ public final class DapManager {
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
             io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
                 if (e != null) {
-                    fail(epoch, "Could not connect to the debug adapter: " + msg(e));
+                    fail(epoch, tr("debug.error.connectFailed", msg(e)));
                     return;
                 }
                 if (!isCurrent(epoch, c)) {
@@ -1679,7 +1514,7 @@ public final class DapManager {
                 }
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
-                        fail(epoch, (attach ? "attach" : "launch") + " failed: " + msg(le));
+                        fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                         return;
                     }
                     // Running once the adapter has the program, not when the request left: until then
@@ -1740,7 +1575,7 @@ public final class DapManager {
         }
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
         if (spec == null) {
-            listener.onError("No debug adapter is configured for this file type.");
+            listener.onError(tr("debug.error.noAdapter"));
             return;
         }
         restartAction = () -> startProgram(file, language, module);
@@ -1766,10 +1601,10 @@ public final class DapManager {
                         startSocket(file, spec, bps, filters, epoch);
                     }
                 } else {
-                    fail(epoch, "Unsupported debug transport for " + language + ".");
+                    fail(epoch, tr("debug.error.transport", language));
                 }
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -1810,11 +1645,11 @@ public final class DapManager {
             return false;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a file to debug first.");
+            listener.onError(tr("debug.error.openFile"));
             return false;
         }
         if (!com.editora.process.ExecTargets.runsHere(file)) {
@@ -1825,9 +1660,7 @@ public final class DapManager {
             }
         } else if (!isLanguageAvailable(language)) {
             listener.onError(
-                    "python".equals(language)
-                            ? "Python debugging is not available (enable it and install debugpy)."
-                            : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
+                    "python".equals(language) ? tr("debug.error.pythonUnavailable") : tr("debug.error.jsUnavailable"));
             return false;
         }
         if (client != null) {
@@ -1896,10 +1729,7 @@ public final class DapManager {
         if (pytest.fallback() != null) {
             return pytest.fallback();
         }
-        fail(
-                epoch,
-                "pytest is not installed for " + program.executable()
-                        + " — install it in that environment (python -m pip install pytest).");
+        fail(epoch, tr("debug.error.pytestMissing", program.executable()));
         return null;
     }
 
@@ -1999,7 +1829,7 @@ public final class DapManager {
         }
         c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to debugpy: " + msg(e) + AdapterStderr.suffix(stderr));
+                fail(epoch, tr("debug.error.debugpyConnect", msg(e)) + AdapterStderr.suffix(stderr));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -2029,10 +1859,12 @@ public final class DapManager {
             t = t.getCause();
         }
         if (t instanceof java.util.concurrent.TimeoutException) {
-            return "debugpy did not start the program within " + DapClient.requestTimeoutSeconds()
-                    + " s — check that the Python interpreter runs: " + launch.get("python");
+            return tr(
+                    "debug.error.debugpyNoStart",
+                    String.valueOf(DapClient.requestTimeoutSeconds()),
+                    String.valueOf(launch.get("python")));
         }
-        return "launch failed: " + msg(error);
+        return tr("debug.error.launchFailed", msg(error));
     }
 
     /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
@@ -2044,7 +1876,7 @@ public final class DapManager {
             long epoch)
             throws Exception {
         if (jsServer == null) {
-            fail(epoch, "The vscode-js-debug adapter was not found.");
+            fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
         int port = freePort();
@@ -2083,11 +1915,11 @@ public final class DapManager {
             return;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return;
         }
         if (!isLanguageAvailable("javascript")) {
-            listener.onError("JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            listener.onError(tr("debug.error.jsUnavailable"));
             return;
         }
         if (client != null) {
@@ -2104,7 +1936,7 @@ public final class DapManager {
         startupTask = io.submit(() -> {
             try {
                 if (jsServer == null) {
-                    fail(epoch, "The vscode-js-debug adapter was not found.");
+                    fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
                 int serverPort = freePort();
@@ -2129,7 +1961,7 @@ public final class DapManager {
                         null,
                         attach);
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -2173,7 +2005,7 @@ public final class DapManager {
         }
         c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to vscode-js-debug: " + msg(e));
+                fail(epoch, tr("debug.error.jsConnect", msg(e)));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -2186,7 +2018,13 @@ public final class DapManager {
                                     LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false)))
                     .whenComplete((v, le) -> {
                         if (le != null) {
-                            fail(epoch, (attachArgs != null ? "attach failed: " : "launch failed: ") + msg(le));
+                            fail(
+                                    epoch,
+                                    tr(
+                                            attachArgs != null
+                                                    ? "debug.error.attachFailed"
+                                                    : "debug.error.launchFailed",
+                                            msg(le)));
                         }
                     });
             Platform.runLater(() -> {
@@ -2207,15 +2045,13 @@ public final class DapManager {
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
     private String remoteProblem(Path file, String language) {
         if (!debuggableOnHost(language)) {
-            return "Debugging this language on a remote host is not available yet.";
+            return tr("debug.error.remoteLanguage");
         }
         if ("python".equals(language) ? !pythonEnabled : !jsEnabled) {
-            return "python".equals(language)
-                    ? "Python debugging is turned off (Settings → Debugging)."
-                    : "JavaScript debugging is turned off (Settings → Debugging).";
+            return "python".equals(language) ? tr("debug.error.remotePythonOff") : tr("debug.error.remoteJsOff");
         }
         if (!com.editora.process.ExecTargets.forPath(file).isAvailable()) {
-            return "Commands cannot run on this file's host (connect, and allow running commands there).";
+            return tr("debug.error.remoteNoCommands");
         }
         return null;
     }
@@ -2287,10 +2123,7 @@ public final class DapManager {
         List<String> probe = python.argv(List.of("-c", "import debugpy"));
         if (!ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), probe, python.env())
                 .ok()) {
-            fail(
-                    epoch,
-                    "debugpy is not installed for " + python.executable() + " on " + target.id()
-                            + " (install it there with pip, or set the host's Python for debugging).");
+            fail(epoch, tr("debug.error.remoteDebugpyMissing", python.executable(), target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2372,9 +2205,8 @@ public final class DapManager {
             fail(
                     epoch,
                     found.exit() == 2
-                            ? "node is not installed on " + target.id() + "."
-                            : "vscode-js-debug (dapDebugServer.js) was not found on " + target.id()
-                                    + " (install it there, or set its path for the host).");
+                            ? tr("debug.error.remoteNodeMissing", target.id())
+                            : tr("debug.error.remoteJsMissing", target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2391,7 +2223,7 @@ public final class DapManager {
         int remotePort = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
         if (remotePort < 0) {
             com.editora.process.ProcessRegistry.killTree(proc);
-            fail(epoch, "vscode-js-debug did not start on " + target.id() + ".");
+            fail(epoch, tr("debug.error.remoteJsNoStart", target.id()));
             return;
         }
         com.editora.process.PortForward forward;
@@ -3406,181 +3238,23 @@ public final class DapManager {
             // "java.util.concurrent.TimeoutException" told the user nothing
             return tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds());
         }
-        return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
+        // java-debug words a refusal as the Java exception behind it: "org.eclipse.debug.core.DebugException:
+        // com.sun.jdi.…: what happened". Only what happened is for the user.
+        return t == null ? "" : DapErrors.userText(t.getMessage() == null ? t.toString() : t.getMessage());
     }
 
-    // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------
+    // --- jdtls replies: read by JdtlsReplies (these three names are what tests reach by reflection) ----------
 
-    /**
-     * Reads {@code vscode.java.resolveMainClass}'s reply — {@code [{mainClass, projectName, filePath}, …]}.
-     *
-     * <p>Handles a raw {@link java.util.List} of {@link Map}s as well as a gson {@link JsonElement}, for the
-     * same reason {@link #parseClasspath} does — and here it was not merely a hazard but the whole feature:
-     * lsp4j hands this particular result back as an {@code ArrayList<LinkedTreeMap>}, so {@link #asJson}'s
-     * {@code String.valueOf} fallback fed gson Java's {@code toString()} form,
-     * {@code [{mainClass=com.example.App, filePath=/home/…}]}. Gson's lenient parser reads unquoted keys and
-     * {@code =} separators, but not an unquoted value beginning {@code /} (it scans as a comment) — so every
-     * absolute file path threw {@code MalformedJsonException}, {@code asJson} logged it at {@code FINE} and
-     * returned null, and Editora reported "no main class was found" for a project whose main class jdtls had
-     * just named. Confirmed against a real jdtls in {@code JdtlsResolveMainClassProbeTest}. Reading the list
-     * directly removes the round trip entirely.
-     */
     private static List<MainClassOption> parseMainClasses(Object res) {
-        List<MainClassOption> out = new ArrayList<>();
-        if (res instanceof List<?> list) {
-            for (Object e : list) {
-                if (e instanceof Map<?, ?> m) {
-                    out.add(new MainClassOption(str(m, "mainClass"), str(m, "projectName"), str(m, "filePath")));
-                } else if (e instanceof JsonObject o) {
-                    out.add(new MainClassOption(str(o, "mainClass"), str(o, "projectName"), str(o, "filePath")));
-                }
-            }
-            return out;
-        }
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (e.isJsonObject()) {
-                    JsonObject o = e.getAsJsonObject();
-                    out.add(new MainClassOption(str(o, "mainClass"), str(o, "projectName"), str(o, "filePath")));
-                }
-            }
-        }
-        return out;
+        return JdtlsReplies.parseMainClasses(res);
     }
 
-    /**
-     * resolveClasspath returns {@code [modulepaths, classpaths]} (a 2-element array of string arrays).
-     *
-     * <p>Handles a raw {@link java.util.List} as well as a gson {@link JsonElement}. lsp4j deserializes an
-     * untyped {@code executeCommand} result to whichever the payload maps to, and the {@link #asJson}
-     * fallback — {@code JsonParser.parseString(String.valueOf(res))} — round-trips a {@code List} through
-     * Java's {@code toString()}, which emits <em>unquoted</em> elements. Gson's lenient parser accepts that
-     * for a plain path but not for one containing a comma, bracket or space, so a classpath entry could be
-     * silently dropped or mangled depending on where the project happens to live. Reading the list directly
-     * removes the round trip entirely.
-     */
     private static void parseClasspath(Object res, List<String> modulepaths, List<String> classpaths) {
-        if (res instanceof List<?> list) {
-            if (!list.isEmpty()) {
-                collectStrings(list.get(0), modulepaths);
-            }
-            if (list.size() >= 2) {
-                collectStrings(list.get(1), classpaths);
-            }
-            return;
-        }
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonArray()) {
-            JsonArray arr = el.getAsJsonArray();
-            if (arr.size() >= 1) {
-                collectStrings(arr.get(0), modulepaths);
-            }
-            if (arr.size() >= 2) {
-                collectStrings(arr.get(1), classpaths);
-            }
-        }
+        JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
     }
 
-    /** Collects strings from either a gson array or a plain {@link java.util.List}. */
-    private static void collectStrings(Object maybeList, List<String> out) {
-        if (maybeList instanceof JsonElement el) {
-            collectStrings(el, out);
-            return;
-        }
-        if (maybeList instanceof List<?> list) {
-            for (Object o : list) {
-                if (o instanceof String s) {
-                    out.add(s);
-                } else if (o != null) {
-                    out.add(String.valueOf(o));
-                }
-            }
-        }
-    }
-
-    private static void collectStrings(JsonElement el, List<String> out) {
-        if (el != null && el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (e.isJsonPrimitive()) {
-                    out.add(e.getAsString());
-                }
-            }
-        }
-    }
-
-    private static int asInt(Object res) {
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonPrimitive()) {
-            try {
-                return el.getAsInt();
-            } catch (RuntimeException ignored) {
-                // not a number
-            }
-        }
-        if (res instanceof Number n) {
-            return n.intValue();
-        }
-        return -1;
-    }
-
-    /**
-     * A server reply that is meant to be a single string — a path, a name.
-     *
-     * <p>A {@link String} is taken <b>as the value</b> rather than as JSON text. lsp4j only hands back a
-     * gson {@link JsonElement} for a reply it could not type; {@code vscode.java.resolveJavaExecutable}
-     * answers a bare path, which arrives as a plain String and is not JSON — so routing it through
-     * {@link #asJson} threw on every debug launch, logged a WARNING with a stack trace, and then fell back
-     * to exactly this value anyway. The result was always right; the noise said otherwise.
-     */
     private static String asString(Object res) {
-        if (res instanceof String s) {
-            return s;
-        }
-        JsonElement el = asJson(res);
-        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
-    }
-
-    private static String str(JsonObject o, String key) {
-        JsonElement e = o.get(key);
-        return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
-    }
-
-    /** The {@link Map} twin of the above, for a reply lsp4j deserialized to plain collections. */
-    private static String str(Map<?, ?> m, String key) {
-        Object v = m.get(key);
-        return v == null ? null : String.valueOf(v);
-    }
-
-    /** Bounded rendering of a server reply for a log line — a classpath can be very long. */
-    private static String abbreviate(String s) {
-        if (s == null) {
-            return "null";
-        }
-        return s.length() <= 600 ? s : s.substring(0, 600) + "… (" + s.length() + " chars)";
-    }
-
-    /** lsp4j hands untyped executeCommand results back as gson {@link JsonElement}s; pass others through. */
-    private static JsonElement asJson(Object res) {
-        if (res instanceof JsonElement el) {
-            return el;
-        }
-        if (res == null) {
-            return null;
-        }
-        try {
-            return com.google.gson.JsonParser.parseString(String.valueOf(res));
-        } catch (RuntimeException e) {
-            // WARNING, not FINE: every caller turns null into an empty result, which reaches the user as a
-            // statement about their project ("no main class was found"). A swallowed parse failure reported
-            // as a fact about the workspace is how the resolveMainClass bug survived — say so in the log.
-            LOG.log(
-                    Level.WARNING,
-                    e,
-                    () -> "could not parse an executeCommand result of type "
-                            + res.getClass().getName() + ": " + abbreviate(String.valueOf(res)));
-            return null;
-        }
+        return JdtlsReplies.asString(res);
     }
 
     // --- Java code changes and frame control (hot code replace, restart frame, smart step into) ------------

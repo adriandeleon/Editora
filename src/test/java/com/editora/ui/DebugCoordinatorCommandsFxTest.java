@@ -1220,6 +1220,24 @@ class DebugCoordinatorCommandsFxTest {
         awaitState(null);
     }
 
+    @Test
+    void aReportOfSeveralLinesGoesToTheConsoleAndItsFirstLineToTheStatusBar() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+        adapter.launchFailure = "Could not launch the program:\nError: no main method in class demo.Args";
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        awaitStatus(tr(
+                "status.debug.error",
+                tr("debug.error.detailsInConsole", "launch failed: Could not launch the program:")));
+        String text = FxTestSupport.callOnFx(console::getText);
+        assertTrue(text.contains("Error: no main method in class demo.Args"), text);
+        assertFalse(
+                statuses().stream().anyMatch(s -> s.contains("no main method")), "the detail stays off the status bar");
+    }
+
     // --- pickers ----------------------------------------------------------------------------------------
 
     /** The rows of the picker on screen, as shown. */

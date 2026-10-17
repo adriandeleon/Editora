@@ -27,8 +27,16 @@ final class DapOutputPump {
     static final int MAX_EVENT_CHARS = 64 * 1024;
     static final int MAX_EVENTS_PER_PULSE = 256;
     static final int MAX_CHARS_PER_PULSE = 64 * 1024;
-    static final String DROPPED = "[output truncated while the UI was busy]\n";
-    static final String EVENT_TRUNCATED = " … [output truncated]\n";
+
+    /** The console notice that the oldest waiting output was dropped (in the UI's language). */
+    static String dropped() {
+        return com.editora.i18n.Messages.tr("debug.console.outputDropped") + "\n";
+    }
+
+    /** What ends an output event cut at {@link #MAX_EVENT_CHARS}. */
+    static String eventTruncated() {
+        return " " + com.editora.i18n.Messages.tr("debug.console.eventTruncated") + "\n";
+    }
 
     /** Receives a batch of output for one session and category. */
     interface Sink {
@@ -57,7 +65,7 @@ final class DapOutputPump {
         if (text == null || text.isEmpty()) {
             return;
         }
-        String bounded = text.length() > MAX_EVENT_CHARS ? text.substring(0, MAX_EVENT_CHARS) + EVENT_TRUNCATED : text;
+        String bounded = text.length() > MAX_EVENT_CHARS ? text.substring(0, MAX_EVENT_CHARS) + eventTruncated() : text;
         boolean scheduleDrain = false;
         synchronized (lock) {
             pending.addLast(new Chunk(epoch, bounded, category));
@@ -119,7 +127,7 @@ final class DapOutputPump {
             drainScheduled = more && maxEvents != Integer.MAX_VALUE;
         }
         if (notice) {
-            sink.accept(noticeEpoch, DROPPED, "console");
+            sink.accept(noticeEpoch, dropped(), "console");
         }
         // Join neighbours that belong to the same session and category: one append for the whole run.
         int i = 0;

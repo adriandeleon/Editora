@@ -156,17 +156,8 @@ final class DebugCoordinator {
         default void breakpointsStored(Map<String, ?> bucket, String fileKey) {}
     }
 
-    /** Debug adapters whose enable can be toggled ("java" has no enable — gated by the Java LSP server). */
-    private static final String[] DEBUG_TOGGLEABLE_ADAPTERS = {"python", "javascript"};
-
-    /** Debug adapters with a configurable command/path. */
-    private static final String[] DEBUG_PATH_ADAPTERS = {"java", "python", "javascript"};
-
     /** Inline-value fetch cap — frames can hold hundreds of locals; the overlay needs a name→value map. */
     private static final int MAX_INLINE_VALUES = 100;
-
-    /** Don't slurp a huge file just to re-anchor its breakpoints (fall back to the stored line indices). */
-    private static final long MAX_BREAKPOINT_FILE_BYTES = 20L * 1024 * 1024;
 
     private final CoordinatorHost host;
     private final DapManager dapManager;
@@ -361,7 +352,6 @@ final class DebugCoordinator {
         return enabled && RemoteExec.runsFor(file);
     }
 
-    /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
         if (beforeLaunch.isActive()) {
@@ -489,6 +479,7 @@ final class DebugCoordinator {
         };
     }
 
+    /** Runs {@code action} only when the Debug feature is enabled; otherwise reports it. */
     void ifDebug(Runnable action) {
         if (debugSupportEnabled()) {
             action.run();
@@ -991,7 +982,7 @@ final class DebugCoordinator {
             launchedLines.snapshotIfAbsent(file, b.getContent());
             return;
         }
-        List<String> disk = readLinesOrNull(file);
+        List<String> disk = ClosedFileBreakpoints.readLinesOrNull(file);
         if (disk != null) {
             launchedLines.snapshotIfAbsent(file, String.join("\n", disk));
         }
@@ -1089,7 +1080,7 @@ final class DebugCoordinator {
         Thread t = new Thread(
                 () -> {
                     List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
-                            map, openPaths, RemoteExec::runsFor, DebugCoordinator::readLinesOrNull);
+                            map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull);
                     Platform.runLater(() -> {
                         closedBreakpoints = computed;
                         then.run();
@@ -1100,82 +1091,13 @@ final class DebugCoordinator {
         t.start();
     }
 
-    /** Reads a file's lines (over SFTP for a remote one; this runs off the FX thread) for re-anchoring, or {@code null} when it can't be used as-is (unreadable,
-     *  too large, or non-UTF-8) — the caller then falls back to the stored line indices. */
-    private static List<String> readLinesOrNull(Path p) {
-        try {
-            if (!Files.isReadable(p) || Files.size(p) > MAX_BREAKPOINT_FILE_BYTES) {
-                return null;
-            }
-            return Files.readAllLines(p);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * The DAP breakpoints for files that have no open tab, each re-anchored against the file's current text.
-     * Pure/unit-testable: {@code isLocal} skips files whose machine cannot debug (a remote host that may not
-     * run commands), {@code readLines} returns a file's lines (or
-     * {@code null} to keep the stored indices). Open-tab files are excluded — their live buffer supplies them.
-     * A file whose lines are read is re-anchored via {@link BreakpointManager#reanchor} (so an external edit
-     * that shifted lines still hits the right code); an unreadable one keeps its persisted indices rather than
-     * being dropped. Only enabled breakpoints are emitted.
-     */
+    /** See {@link ClosedFileBreakpoints#of}. */
     static List<DapModels.FileBreakpoints> closedFileBreakpoints(
             Map<String, List<Breakpoint>> map,
             Set<String> openPaths,
             Predicate<Path> isLocal,
             Function<Path, List<String>> readLines) {
-        List<DapModels.FileBreakpoints> out = new ArrayList<>();
-        if (map == null) {
-            return out;
-        }
-        for (Map.Entry<String, List<Breakpoint>> e : map.entrySet()) {
-            String key = e.getKey();
-            if (key == null || (openPaths != null && openPaths.contains(key))) {
-                continue;
-            }
-            List<Breakpoint> bps = e.getValue();
-            if (bps == null || bps.isEmpty()) {
-                continue;
-            }
-            Path p;
-            try {
-                p = Vfs.parseStorable(key); // a remote file's key is its URI: null while its host is not connected
-            } catch (RuntimeException ex) {
-                continue;
-            }
-            if (p == null || !isLocal.test(p)) {
-                continue; // a file whose host cannot run its debugger has nothing to send
-            }
-            List<String> lines = readLines.apply(p);
-            List<DapModels.LineBreakpoint> out2 = new ArrayList<>();
-            if (lines != null && !lines.isEmpty()) {
-                var anchored = BreakpointManager.reanchor(
-                        bps,
-                        lines.size(),
-                        i -> i >= 0 && i < lines.size() ? lines.get(i) : "",
-                        BreakpointManager.MAX_REANCHOR_SCAN);
-                for (Breakpoint bp : anchored.values()) {
-                    if (bp.enabled()) {
-                        out2.add(new DapModels.LineBreakpoint(
-                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
-                    }
-                }
-            } else {
-                for (Breakpoint bp : bps) {
-                    if (bp.enabled()) {
-                        out2.add(new DapModels.LineBreakpoint(
-                                bp.line(), bp.condition(), bp.logMessage(), bp.hitCondition()));
-                    }
-                }
-            }
-            if (!out2.isEmpty()) {
-                out.add(new DapModels.FileBreakpoints(p, out2));
-            }
-        }
-        return out;
+        return ClosedFileBreakpoints.of(map, openPaths, isLocal, readLines);
     }
 
     // --- DAP event sink + panel actions ------------------------------------------------------------
@@ -1278,6 +1200,15 @@ final class DebugCoordinator {
 
             @Override
             public void onError(String message) {
+                if (com.editora.dap.DapErrors.multiLine(message)) {
+                    // A compiler's or adapter's report does not fit the one-line status bar: the whole of it
+                    // goes to the Debug console, the status bar names its first line and says where the rest is.
+                    panel().appendOutput(message.endsWith("\n") ? message : message + "\n", "stderr");
+                    host.setStatus(tr(
+                            "status.debug.error",
+                            tr("debug.error.detailsInConsole", com.editora.dap.DapErrors.firstLine(message))));
+                    return;
+                }
                 host.setStatus(tr("status.debug.error", message));
             }
 
@@ -1627,7 +1558,6 @@ final class DebugCoordinator {
 
     // --- debug commands ----------------------------------------------------------------------------
 
-    /** Starts a launch debug session for the active file (saving first, like Run). */
     /** Program arguments read as Run reads them; null after saying why when a quote is never closed. */
     private List<String> debugArgs(String text) {
         try {
@@ -1638,6 +1568,10 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Debug ▸ Start for the active file (saving first, like Run) — or Continue, when the session there is
+     * paused or stepping.
+     */
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
         if (dapManager.isActive()) {
@@ -1962,7 +1896,7 @@ final class DebugCoordinator {
      * Debugs {@code target} of pytest file {@code b} ({@code null}: the whole file): {@code python -m pytest
      * <node id>} under debugpy, from the project root (the file's folder with no project), under the file's
      * interpreter. Without pytest, a {@code unittest.TestCase} test runs under {@code python -m unittest}
-     * instead. Public for the per-test gutter ▶'s Debug entry (LEAD-WIRE: Fixer C's gutter calls this).
+     * instead. Public for the per-test gutter ▶'s Debug entry ({@code TestNavigationCoordinator}).
      */
     public void debugPythonTest(EditorBuffer b, com.editora.test.PytestScanner.TestTarget target) {
         Path file = b == null ? null : b.getPath();
@@ -2734,7 +2668,8 @@ final class DebugCoordinator {
 
     /** A picker row: the filter's label, marked when it is on for {@code language}. */
     String exceptionRow(String language, DapModels.ExceptionFilterOption o) {
-        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ") + o.label();
+        return (dapManager.exceptionFiltersFor(language).contains(o.filter()) ? "✓ " : "    ")
+                + com.editora.dap.ExceptionFilterCatalog.displayLabel(o);
     }
 
     /** Turns {@code language}'s exception filter {@code filter} on or off (the picker's choice), and says so. */
@@ -2847,92 +2782,17 @@ final class DebugCoordinator {
     // --- adapter pickers ---------------------------------------------------------------------------
 
     private static String debugAdapterLabel(String id) {
-        return switch (id) {
-            case "python" -> "Python";
-            case "javascript" -> "JavaScript";
-            default -> "Java";
-        };
-    }
-
-    private boolean debugAdapterEnabled(String id) {
-        var s = host.settings();
-        return switch (id) {
-            case "python" -> s.isPythonDebugEnabled();
-            case "javascript" -> s.isJsDebugEnabled();
-            default -> true;
-        };
-    }
-
-    private String debugAdapterPath(String id) {
-        var s = host.settings();
-        return switch (id) {
-            case "python" -> s.getPythonDebugCommand();
-            case "javascript" -> s.getJsDebugPath();
-            default -> s.getJavaDebugPluginPath();
-        };
+        return DebugAdapterPickers.label(id);
     }
 
     /** Picker over the python/javascript debug adapters: toggles the chosen one's enable. */
     void chooseAdapterToggle() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.debug.toggleAdapter"),
-                tr("palette.setting.pick"),
-                () -> List.of(DEBUG_TOGGLEABLE_ADAPTERS),
-                id -> debugAdapterLabel(id) + "  —  " + tr(debugAdapterEnabled(id) ? "common.on" : "common.off"),
-                id -> "",
-                id -> {
-                    if (id == null) {
-                        return;
-                    }
-                    var s = host.settings();
-                    boolean next = !debugAdapterEnabled(id);
-                    if ("python".equals(id)) {
-                        s.setPythonDebugEnabled(next);
-                    } else {
-                        s.setJsDebugEnabled(next);
-                    }
-                    host.requestSave();
-                    applySupport();
-                    host.syncSettingsWindow();
-                    host.setStatus(
-                            tr("status.settingToggled", debugAdapterLabel(id), tr(next ? "common.on" : "common.off")));
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
+        new DebugAdapterPickers(host, this::applySupport).chooseToggle();
     }
 
     /** Picker over the java/python/javascript debug adapters, then prompts for that adapter's path. */
     void chooseAdapterPath() {
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("command.debug.setAdapterPath"),
-                tr("palette.setting.pick"),
-                () -> List.of(DEBUG_PATH_ADAPTERS),
-                DebugCoordinator::debugAdapterLabel,
-                this::debugAdapterPath,
-                id -> {
-                    if (id == null) {
-                        return;
-                    }
-                    // Python's "path" is the interpreter that runs debugpy (and, when the project has none of
-                    // its own, the program): say so rather than ask for a debugpy path it is not.
-                    String label =
-                            "python".equals(id) ? tr("settings.debug.pythonCommand") : tr("palette.setting.value");
-                    host.promptText(debugAdapterLabel(id), label, debugAdapterPath(id), v -> {
-                        String value = v.trim();
-                        var s = host.settings();
-                        switch (id) {
-                            case "python" -> s.setPythonDebugCommand(value);
-                            case "javascript" -> s.setJsDebugPath(value);
-                            default -> s.setJavaDebugPluginPath(value);
-                        }
-                        host.requestSave();
-                        applySupport();
-                        host.syncSettingsWindow();
-                        host.setStatus(tr("status.settingChanged", debugAdapterLabel(id), value));
-                    });
-                });
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
+        new DebugAdapterPickers(host, this::applySupport).choosePath();
     }
 
     // --- buffer wiring + panel-action delegates ----------------------------------------------------

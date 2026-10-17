@@ -31,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DapClientRoutingTest {
 
+    @org.junit.jupiter.api.BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en"); // the client's own errors are catalog text
+    }
+
     private static final Path FILE = Path.of("app.js").toAbsolutePath();
 
     /** Records what the session reports, in arrival order. */

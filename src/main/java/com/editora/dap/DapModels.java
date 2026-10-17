@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Toolkit- and lsp4j.debug-free value types exposed by {@link DapManager} to the {@code ui}/{@code editor}
  * layers, so they never depend on the DAP wire types. {@link DapClient} maps the raw lsp4j.debug objects
- * into these (see {@code DapMappers}).
+ * into these.
  */
 public final class DapModels {
 

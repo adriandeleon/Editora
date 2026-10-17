@@ -70,7 +70,8 @@ final class Debuggee {
             }
         });
         if (failure[0] != null || !service.isRunning()) {
-            throw new java.io.IOException(failure[0] == null ? "the program could not be started" : failure[0]);
+            throw new java.io.IOException(
+                    failure[0] == null ? com.editora.i18n.Messages.tr("debug.error.programNotStarted") : failure[0]);
         }
         return service.pid();
     }
