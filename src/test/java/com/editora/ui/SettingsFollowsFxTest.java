@@ -295,6 +295,7 @@ class SettingsFollowsFxTest {
         List<Boolean> fresh = new ArrayList<>();
         FxTestSupport.runOnFx(() -> {
             settings.setAiEnabled(true);
+            settings.setAiSupport(true); // with AI Actions off a failed check is neutral, not red
             rig.window.setAiConnectionProbe((isFresh, onResult) -> {
                 fresh.add(isFresh);
                 probes.add(onResult);

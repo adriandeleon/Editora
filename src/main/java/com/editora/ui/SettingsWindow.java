@@ -6164,7 +6164,9 @@ public class SettingsWindow {
         if (aiStatusLabel == null) {
             return;
         }
-        aiStatusLabel.getStyleClass().setAll("settings-git-status", ok ? "settings-git-found" : "settings-git-missing");
+        aiStatusLabel
+                .getStyleClass()
+                .setAll("settings-git-status", pillClass(ok, aiMasterCheck.isSelected() && aiCheck.isSelected()));
         aiStatusLabel.setText(ok ? tr("settings.ai.connected") : tr("settings.ai.connectFailed", message));
     }
 
