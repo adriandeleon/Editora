@@ -37,9 +37,10 @@ import com.google.gson.JsonObject;
  * class / classpath / java executable, start the debug session (which returns a socket port via
  * {@code workspace/executeCommand}), connect the DAP socket, then {@code launch}/{@code attach}. All public
  * methods are safe to call from the FX thread; socket I/O and event callbacks run off it and results are
- * marshaled back via {@link Platform#runLater}. Implements {@link DapClient.Host} to receive DAP events.
+ * marshaled back via {@link Platform#runLater}. Each session's DAP events arrive through its own
+ * host ({@code sessionHost(epoch)}), bound to the session epoch, so an event of an ended session never reaches the next.
  */
-public final class DapManager implements DapClient.Host {
+public final class DapManager {
 
     private static final Logger LOG = Logger.getLogger(DapManager.class.getName());
 
@@ -2370,7 +2371,8 @@ public final class DapManager implements DapClient.Host {
         }
         killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
-            c.dispose();
+            // Ended for us now; the wait for the adapter's answer and the close happen off the FX thread.
+            c.disposeInBackground();
         }
         releaseCompilationDirectory();
         setState(State.INACTIVE);
@@ -2523,17 +2525,7 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
-    // --- DapClient.Host (launcher reader thread → FX) -------------------------------------------
-
-    @Override
-    public void onStopped(int threadId, String reason) {
-        onStopped(sessionEpoch, threadId, reason, false);
-    }
-
-    @Override
-    public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
-        onStopped(sessionEpoch, threadId, reason, allThreadsStopped);
-    }
+    // --- DAP events (launcher reader thread → FX), reached only through sessionHost(epoch) -------
 
     private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
         DapClient c = client;
@@ -2615,16 +2607,6 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
-    @Override
-    public void onContinued() {
-        onContinued(sessionEpoch, 0, true);
-    }
-
-    @Override
-    public void onContinued(int threadId, boolean allThreadsContinued) {
-        onContinued(sessionEpoch, threadId, allThreadsContinued);
-    }
-
     private void onContinued(long epoch, int threadId, boolean allThreads) {
         Platform.runLater(() -> {
             if (!isCurrent(epoch)) {
@@ -2642,11 +2624,6 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
-    @Override
-    public void onOutput(String text, String category) {
-        onOutput(sessionEpoch, text, category);
-    }
-
     /** Batches adapter output onto the FX thread (see {@link DapOutputPump}); the sink runs on FX. */
     private final DapOutputPump outputPump = new DapOutputPump(Platform::runLater, (epoch, text, category) -> {
         if (isCurrent(epoch)) {
@@ -2656,11 +2633,6 @@ public final class DapManager implements DapClient.Host {
 
     private void onOutput(long epoch, String text, String category) {
         outputPump.offer(epoch, text, category);
-    }
-
-    @Override
-    public void onTerminated() {
-        onTerminated(sessionEpoch);
     }
 
     private void onTerminated(long epoch) {
@@ -2700,7 +2672,7 @@ public final class DapManager implements DapClient.Host {
         }
         killDebuggee();
         if (c != null) {
-            c.dispose();
+            c.disposeInBackground(); // as in stop(): never hold the FX thread on the adapter
         }
         releaseCompilationDirectory();
         setState(State.INACTIVE);
@@ -2788,11 +2760,6 @@ public final class DapManager implements DapClient.Host {
         if (program != null) {
             program.kill();
         }
-    }
-
-    @Override
-    public void onError(String message) {
-        onError(sessionEpoch, message);
     }
 
     private void onError(long epoch, String message) {

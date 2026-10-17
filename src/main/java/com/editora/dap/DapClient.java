@@ -329,7 +329,11 @@ public final class DapClient implements IDebugProtocolClient {
             this.port = port;
             this.adapterId = adapterId;
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
-                    this, socket.getInputStream(), orderedWriter(socket.getOutputStream()), executor, c -> c);
+                    this,
+                    quietOnClose(socket.getInputStream()),
+                    orderedWriter(socket.getOutputStream()),
+                    executor,
+                    c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
             // A socket adapter can be joined by a second connection, so child sessions are possible here.
@@ -365,7 +369,11 @@ public final class DapClient implements IDebugProtocolClient {
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             watchProcess(process);
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
-                    this, process.getInputStream(), orderedWriter(process.getOutputStream()), executor, c -> c);
+                    this,
+                    quietOnClose(process.getInputStream()),
+                    orderedWriter(process.getOutputStream()),
+                    executor,
+                    c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
             return timed(server.initialize(initArgs(adapterId, false, runsDebuggee)))
@@ -1276,18 +1284,52 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.stepOut(a));
     }
 
-    /** Disconnects (terminates the debuggee), closes the socket, and kills the adapter subprocess tree. */
+    /**
+     * Disconnects (terminates the debuggee), closes the socket, and kills the adapter subprocess tree — all of
+     * it before returning, which can take a while (see {@link #disposeInBackground}).
+     */
     public void dispose() {
+        CompletableFuture<Void> disconnect = beginDispose(false);
+        if (disconnect != null) {
+            finishDispose(disconnect);
+        }
+    }
+
+    /**
+     * {@link #dispose}, returning at once: the session is ended for every caller (no event of it is delivered
+     * from here on, and its {@code disconnect} is queued) before this returns, while waiting for the adapter's
+     * answer and closing the transport happen on a daemon thread. That wait is bounded but real — up to
+     * {@link #DISCONNECT_FLUSH_MILLIS} for the answer, and {@link #CLOSE_WAIT_MILLIS} for a close, which on an
+     * adapter that has died elapses in full — and the caller is the FX thread, behind Stop, Restart and every
+     * session end.
+     */
+    public void disposeInBackground() {
+        CompletableFuture<Void> disconnect = beginDispose(true);
+        if (disconnect != null) {
+            Thread.ofPlatform().daemon().name("dap-dispose").start(() -> finishDispose(disconnect));
+        }
+    }
+
+    /**
+     * Marks the session ended and queues the {@code disconnect}; null when it already was. The returned
+     * future is the {@code disconnect}'s answer (an already-completed one when there was none to send).
+     */
+    private CompletableFuture<Void> beginDispose(boolean background) {
         if (disposed) {
-            return;
+            return null;
         }
         disposed = true;
         focus = null;
         for (DapClient child : children) {
-            child.dispose(); // children live and die with the session that started them
+            // children live and die with the session that started them
+            if (background) {
+                child.disposeInBackground();
+            } else {
+                child.dispose();
+            }
         }
         children.clear();
-        CompletableFuture<Void> disconnect = null;
+        CompletableFuture<Void> disconnect = CompletableFuture.completedFuture(null);
         try {
             if (server != null) {
                 DisconnectArguments a = new DisconnectArguments();
@@ -1298,8 +1340,13 @@ public final class DapClient implements IDebugProtocolClient {
         } catch (RuntimeException ignored) {
             // best effort
         }
+        return disconnect;
+    }
+
+    /** The slow half of {@link #dispose}: waits (bounded) for the disconnect, then closes and kills. */
+    private void finishDispose(CompletableFuture<Void> disconnect) {
         com.editora.lsp.AsyncPipeWriter out = writer;
-        if (out != null && disconnect != null) {
+        if (out != null && !disconnect.isDone()) {
             // The disconnect was only queued. Give the adapter a moment to answer it before the transport is
             // closed under it — normally a millisecond or two; bounded, so an adapter that is not reading
             // cannot hold the caller the way the direct write used to. Waiting for the answer rather than for
@@ -1367,6 +1414,41 @@ public final class DapClient implements IDebugProtocolClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * The adapter's stream as the DAP reader reads it: once this session is disposed, a read that fails
+     * because the transport was closed under it ends the stream instead. lsp4j logs a stream closed by an
+     * exception — at INFO, with a stack trace — and Editora's Debug Log records INFO, so every Stop and every
+     * closed window added a {@code SocketException: Socket closed} trace there. Ending the read quietly is what
+     * the session wanted anyway; a failure of a session still in use is passed on as before.
+     */
+    private java.io.InputStream quietOnClose(java.io.InputStream in) {
+        return new java.io.FilterInputStream(in) {
+            @Override
+            public int read() throws java.io.IOException {
+                try {
+                    return super.read();
+                } catch (java.io.IOException e) {
+                    if (disposed) {
+                        return -1;
+                    }
+                    throw e;
+                }
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws java.io.IOException {
+                try {
+                    return super.read(b, off, len);
+                } catch (java.io.IOException e) {
+                    if (disposed) {
+                        return -1;
+                    }
+                    throw e;
+                }
+            }
+        };
     }
 
     /** What else this session holds open until it ends: the tunnel to a remote adapter's port. */
