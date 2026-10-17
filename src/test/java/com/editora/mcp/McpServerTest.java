@@ -185,6 +185,23 @@ class McpServerTest {
         }
     }
 
+    @Test
+    void aNewTokenLocksOutTheOldOneAndKeepsThePort(@TempDir Path dir) throws Exception {
+        McpServer s = new McpServer(new FakeBridge(), dir);
+        int port = s.start();
+        String list = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}";
+        try {
+            String old = s.token();
+            s.newToken();
+            assertEquals(port, s.port());
+            assertEquals(401, post(port, old, list).statusCode(), "the old token no longer gets in");
+            assertEquals(200, post(port, s.token(), list).statusCode());
+            assertTrue(Files.readString(dir.resolve("mcp-endpoint.json")).contains(s.token()));
+        } finally {
+            s.stop();
+        }
+    }
+
     private static HttpResponse<String> post(int port, String token, String body) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/mcp"))
                 .timeout(Duration.ofSeconds(5))

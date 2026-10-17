@@ -252,7 +252,10 @@ public enum ConfigSchema {
                     Map.entry(124, (Migration) ConfigMigrations::identity),
                     // v125→126: + containerEngine / containerBindings (additive: docker, no folder bound to a
                     // container by hand; a dev container is still found by its label).
-                    Map.entry(125, (Migration) ConfigMigrations::identity)),
+                    Map.entry(125, (Migration) ConfigMigrations::identity),
+                    // v126→127: the OpenAI-compatible provider gets its own endpoint/model/inline model (it shared
+                    // the Anthropic ones, so a provider switch sent one provider's key to the other's server).
+                    Map.entry(126, (Migration) ConfigMigrations::splitOpenaiEndpoint)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -264,7 +267,8 @@ public enum ConfigSchema {
                     "bracketColors", 90,
                     "astroLspEnabled", 102,
                     "mavenJdkHome", 103,
-                    "aiApiKeyLmstudio", 104)),
+                    "aiApiKeyLmstudio", 104,
+                    "aiEndpointOpenai", 127)),
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive

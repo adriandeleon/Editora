@@ -205,7 +205,7 @@ class SettingsApplyFxTest {
                 assertEquals(!before, check.isSelected(), command + " moves its switch");
             });
             ComboBox<String> language = control("spellLanguageCombo");
-            assertEquals(!settings.isSpellCheck(), language.isDisable());
+            assertEquals(!settings.isSpellCheck(), language.isDisabled(), "its row follows spell check");
         });
     }
 
@@ -337,7 +337,7 @@ class SettingsApplyFxTest {
             assertNotNull(side, "the Structure row's side combo");
             assertFalse(show.isSelected(), "hidden outside Settings");
             assertEquals(moved, side.getValue(), "moved outside Settings");
-            assertTrue(side.isDisable());
+            assertFalse(side.isDisable(), "a hidden window's side can still be chosen");
             assertFalse(toolWindows.isVisible(structure), "re-reading the row changes nothing");
             assertEquals(moved, toolWindows.currentSide(structure));
         });

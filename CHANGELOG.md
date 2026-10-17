@@ -7,8 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Switching the AI provider no longer sends one provider's API key to another provider's server.** Anthropic
+  and the OpenAI-compatible provider shared one endpoint and model, so after a switch to Anthropic the Anthropic
+  key went to the OpenAI-compatible server set up before (and the other way round), within seconds and again on
+  every Settings open. The OpenAI-compatible provider now has its own endpoint, model and inline-completion model.
+  Settings schema 127 moves an existing OpenAI-compatible endpoint and models to the new fields.
+- **Export Configuration leaves the AI API keys out** by default. The export dialog has an "Include AI API keys"
+  checkbox, and the Advanced page and the status line say when they were left out.
+- **The Settings Sync repository field refuses a URL with a password or token in it** (`https://user:TOKEN@…`)
+  and suggests a credential helper (`gh auth setup-git`) or SSH, so the token is not stored in settings.json, the
+  export or the clone.
+
 ### Added
 
+- **Settings search ranks its results.** A hit in a setting's title beats one in its description, a whole word
+  beats part of a word, and the page with the best row opens; matching rows are tinted. Synonyms find settings
+  known by another name (zoom, line endings, encoding, hotkey, colour scheme, soft wrap, gutter), and the search
+  also finds commands in the Keymaps list. Ctrl+F (⌘F) focuses the search, typing on the sidebar starts one, and the
+  sidebar scrolls to the page that opens.
+- **Saving `settings.json` in an Editora tab applies it** in every window, and the Advanced page lists anything in
+  the file that was ignored or changed on load (unknown keys, wrong types, out-of-range values).
+- **Restore from Backup…** on the Advanced page brings back settings from a backup that Reset to Defaults wrote.
+- **AI Actions: Test connection.** Opening Settings no longer sends a request to the AI provider. The connection
+  is checked while the AI Actions page is shown, a result is reused for three minutes, and Test connection checks
+  again.
+- **Keymaps:** **Remove** (and the Delete key) unbinds a command. The filter finds words in any order, and a query
+  that reads as a chord (Ctrl+Shift+S, C-S-s, ⇧⌘S, Ctrl+K Ctrl+W) lists the commands on that chord.
+- **Tool Windows page:** rows are grouped Left / Right / Bottom in stripe order, and **Restore Default Layout** puts
+  the tool windows back where they start.
+- **Editor theme "Automatic"** follows the app theme again after you picked an editor theme.
+- **Remote page:** **Connect…** opens the Connect form for the selected site; host, port and user are checked as
+  you type; a missing key file is flagged.
+- **MCP page:** shows whether the server runs and where, with **Copy Endpoint Command** and **New Token**.
+- **Debugging page:** an **Install…** button on each adapter card.
+- **Web page:** choose the browser HTML preview opens in; a Found / Not found row for Node.js.
+- **LSP page:** a card says when the project's `.editora/settings.json` overrides its server command.
+- **Appearance:** while text zoom is not 100% a row says so, with Reset zoom, and the live preview uses the zoomed
+  size. A "Your own themes" row opens the themes folder and reloads themes.
+- **Settings Sync:** Cancel while Connect looks at the repository; the page says what is not synced.
 - **23 more bundled file templates** (New File From Template), 32 in all:
   - **Code:** JUnit 5 Test (in the folder's package), Java Shebang Script (an extensionless file the `java`
     launcher runs directly), pytest Test Module, and a Node.js TypeScript Project (module, `node:test` test,
@@ -48,6 +86,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second time for the project's own window: that window takes over the session you just logged in with. A
   password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
   them. Closing the window you connected from leaves the project's window connected.
+- **Settings switches that only change the editor view** (line numbers, minimap, rulers, wrapping, tab size…)
+  no longer rebuild the rest of every window; with many files open they apply about five times faster.
+- **Reset to Defaults keeps your AI API keys and the Settings Sync connection.** Its question lists what is reset
+  and what is kept and names the backup it writes, and Cancel is the default button.
+- **Number fields refuse a value out of range** (shown in red with the range) instead of quietly clamping it.
+- **Off switches are visible** in every theme, and a disabled switch is grey.
+- **Changing the language** shows "Restart Editora to apply" on its row instead of a dialog at every step.
+- **The Settings window stays where you put it** for the rest of the session, and says once that changes apply as
+  you make them.
+- **Beta pages** carry one Beta pill beside the page title; Settings text grows with the app's font size.
+- **List editors apply as you type.** Snippets, Templates, Abbreviations, External Tools and Remote sites no longer
+  have a Save button; every change is saved as you make it, as on every other page. Macros keeps Save / Revert.
+- **Deleting asks first** on every list editor ("Delete “x”?", Cancel is the default). Removing a Remote site also
+  offers to forget that commands may run on its host.
+- **Settings that depend on a switch grey out while it is off**, with a note naming the switch, on every page (AI,
+  AI Agent, LSP, Debugging, Mermaid, Diagrams, Typst, Git, Remote, Spell Check, rulers, plugins).
+- **Bad input is shown, not thrown away.** A ruler list, a TODO pattern, a Remote port or host, a plugin registry
+  URL or a sync branch that cannot be used turns its field red with the reason and keeps what you typed.
+- **The Editor page is regrouped** into Display, Editing and Clipboard, with Saving right after Indentation; the LSP
+  switches on Code Completion are titled "Language server features". Updates and Trusted folders moved to Advanced.
+- **Every page has a one-line subtitle**, and help text names the pages that really exist.
+- **Shortcuts recorded in Settings show in the active keymap's notation**, in the recorder, the conflict question and
+  the status line. A bare letter is refused as the first key of a shortcut.
+- **Macro, external-tool and run-configuration shortcuts follow a keymap switch.** Other custom shortcuts are kept
+  per keymap, and the Keymap row and "Reset all shortcuts" say so.
+- **Snippets can be added for every language**, and snippet and template bodies use Emacs keys only under the Emacs
+  keymap.
+- **The font list** drops weight variants and math/symbol fonts and marks the bundled fonts; themes are tagged
+  (light) or (dark).
+- **Simple UI mode trims the right-click menus too**, as it already trimmed the menu bar.
+  - **Tab menu:** keeps Save, Save As, Print, Export to PDF, Close, Close Others, Close All, Reveal in File
+    Manager, Copy Path and Rename. Unpin stays on a tab that was pinned before.
+  - **Editor menu:** keeps Comment / Uncomment, the spelling suggestions, Cut, Copy, Paste, Undo, Redo, Select
+    All, Print and Export to PDF. Run, Debug, the LSP, build, AI, Markdown and Typst submenus, Add Bookmark and
+    Add Personal Note are hidden.
+  - **Project tree menu:** keeps New (a file or a folder), Rename, Undo Move, Delete and Reveal in File
+    Manager.
+  - **Preview menu** (Markdown, Typst, Markwhen, diagrams): keeps the copy actions, Go to Source, Enlarge,
+    Export to PDF and Print. Copy HTML and the Word, OpenDocument, PNG, SVG and Markwhen JSON exports are
+    hidden.
+  - Git, Local History, the compare actions, Open Terminal, Pin and the bookmark and note entries are hidden
+    on the tab, editor and Project tree menus. Turning Simple mode off brings every entry back.
+
+### Fixed
+
+- **"Snippets: Manage", "Sync setup" and the Doctor links opened an empty page** when a search was left in the
+  Settings search box.
+- **What Settings search found depended on which pages you had opened** before searching.
+- **A change in another window wiped text you were typing** in an open Settings window, and every reopen ran
+  `git --version`.
+- **Shortcut chips in Settings used the editor theme's colours** instead of the app theme's.
+- **A multi-line abbreviation was saved flattened** when you clicked into it and out again. The expansion is now a
+  multi-line field, and nothing is saved unless you change it.
+- **With one saved Remote site, the first edit emptied and greyed out the form.**
+- **Escape in a macro's Key step closed Settings** instead of recording Escape.
+- **Reset on a shortcut whose default chord another command took did nothing.** It now offers to take the chord back.
+- **A blank template Id discarded every other edit in the form.**
+- **Two macros could share a name**, and a duplicate abbreviation key (ignoring case) overrode the other silently.
+- **"Add pattern" on the TODO page matched every TODO a second time.**
+- **The TODO part-colour pickers showed old colours** after Reset or a change made elsewhere.
+- **Tool Windows ▲ / ▼ sometimes did nothing visible.**
+- **"Rulers by language" accepted names that never matched**, and a mistyped ruler list was silently replaced.
+- **"Enable plugins" left every plugin's checkbox greyed** until Reload.
+- **A wrong git or gh path said "install git"** and locked the Enable Git switch on.
+- **Browse… beside the API key and model fields opened a file chooser.**
+- **A server, agent or debugger path with a space in it never started.**
+- **The AI status pill stayed "Connected"** after turning AI off.
+- **The Markdown page** split the pasted-image rows, had a scroller inside the page, and a blank gap.
+- **A broken plugin.json showed the parser's internals**; Browse plugins… hid Settings before the picker opened.
+- **Java debug-adapter detection ran on the UI thread.**
 
 ### Fixed
 
