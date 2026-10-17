@@ -5997,6 +5997,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String pythonInterpreterChoice() {
+            return config.getWorkspaceState().getPythonInterpreter();
+        }
+
+        @Override
+        public boolean runPythonTestFile(java.nio.file.Path file, String text) {
+            return testNavigation.runPythonTestFile(file, text);
+        }
+
+        @Override
         public java.nio.file.Path projectRoot() {
             return windowProjectRoot();
         }
@@ -6636,6 +6646,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public String bashTool(String toolId) {
                     return lspCoordinator.bashToolCommand(toolId);
+                }
+
+                @Override
+                public java.nio.file.Path projectRoot() {
+                    return windowProjectRoot();
+                }
+
+                @Override
+                public String pythonInterpreterChoice() {
+                    return config.getWorkspaceState().getPythonInterpreter();
                 }
 
                 @Override
@@ -7788,7 +7808,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
-        buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        buffer.setTestRunHandler(t -> testNavigation.runSingleTest(buffer, t)); // JUnit → build tool; Python → pytest
         buffer.setTestDebugHandler(testNavigation::debugSingleTest); // editor menu → suspended test + debugger attach
         testNavigation.applyTestGutter(
                 buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project

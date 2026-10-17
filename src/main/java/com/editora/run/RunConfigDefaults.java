@@ -38,6 +38,10 @@ public final class RunConfigDefaults {
      * a script is the active file, instead of an empty Java configuration. Named after the file; the target is
      * its path relative to {@code projectRoot} when the script is inside it (a configuration's run resolves it
      * against the project), else absolute. Null when {@code type} is not a script type or there is no script.
+     *
+     * <p>The working directory is written out too — the script's own folder, the one its gutter ▶ runs it in —
+     * so the saved configuration behaves exactly like ▶, and the field shows where it runs instead of a blank
+     * that means something else. Blank when that folder is the project root (blank means the root).
      */
     public static com.editora.config.RunConfiguration forScript(
             String type, java.nio.file.Path script, java.nio.file.Path projectRoot) {
@@ -47,13 +51,19 @@ public final class RunConfigDefaults {
             return null;
         }
         String target = script.toString();
+        java.nio.file.Path folder = script.normalize().getParent();
+        String workingDir = folder == null ? "" : folder.toString();
         if (projectRoot != null
                 && script.getFileSystem() == projectRoot.getFileSystem()
                 && script.normalize().startsWith(projectRoot.normalize())) {
-            target = projectRoot.normalize().relativize(script.normalize()).toString();
+            java.nio.file.Path root = projectRoot.normalize();
+            target = root.relativize(script.normalize()).toString();
+            workingDir = folder == null || folder.equals(root)
+                    ? ""
+                    : root.relativize(folder).toString();
         }
         return new com.editora.config.RunConfiguration(
-                script.getFileName().toString(), type, target, "", "", "", "", "", "", "", "");
+                script.getFileName().toString(), type, target, "", "", "", "", workingDir, "", "", "");
     }
 
     /** {@code cfg} renamed with a {@link #uniqueName} among {@code existingNames}. */

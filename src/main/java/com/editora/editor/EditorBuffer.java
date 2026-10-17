@@ -3776,7 +3776,11 @@ public class EditorBuffer implements TabContent {
             return null; // the plain script/Makefile ▶ keeps its untooltipped look
         }
         return t.methodName() == null
-                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))
+                ? t.className().isEmpty() // a Python test file's whole-file ▶
+                        ? tr("testrunner.gutter.runFile")
+                        : tr(
+                                "testrunner.gutter.runClass",
+                                com.editora.test.TestSourceLocator.displayName(t.className()))
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 

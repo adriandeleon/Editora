@@ -25,9 +25,12 @@ public final class RunConfigFields {
         return ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type);
     }
 
-    /** Whether {@code type} has an interpreter to override (a shell script's, normally from its shebang). */
+    /**
+     * Whether {@code type} has an interpreter to override: a shell script's (normally from its shebang), or a
+     * Python script's or module's (normally the project's venv, else the system Python).
+     */
     public static boolean usesInterpreter(String type) {
-        return ScriptRunCommand.SHELL.equals(type);
+        return ScriptRunCommand.SHELL.equals(type) || ScriptRunCommand.isPython(type);
     }
 
     /** Whether {@code type} launches with the main class, module, VM arguments and JDK. */

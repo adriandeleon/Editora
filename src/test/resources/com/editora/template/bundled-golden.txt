@@ -667,9 +667,16 @@ description = "Desc"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+pkg = "pkg.main:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 --- end
 --- src/pkg/__init__.py
 """Desc."""
@@ -688,26 +695,45 @@ if __name__ == "__main__":
     main()
 --- end
 --- tests/test_main.py
+import unittest
+
 from pkg import __version__
 
 
-def test_version() -> None:
-    assert __version__ == "0.1.0"
+class TestVersion(unittest.TestCase):
+    def test_version(self) -> None:
+        self.assertEqual(__version__, "0.1.0")
+
+
+if __name__ == "__main__":
+    unittest.main()
 --- end
 --- README.md
 # pkg
 
 Desc
 
+## Set up
+
+The package lives in `src/`, so install it (editable) into a virtual environment once:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e .
+```
+
 ## Run
 
 ```bash
-python -m pkg.main
+python -m pkg.main     # or the installed command: pkg
 ```
 
 ## Test
 
 ```bash
+python -m unittest discover -s tests
+# or, with pytest installed (pip install pytest):
 pytest
 ```
 
