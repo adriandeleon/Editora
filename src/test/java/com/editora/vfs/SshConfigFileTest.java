@@ -84,6 +84,29 @@ class SshConfigFileTest {
     }
 
     @Test
+    void aGlobInAnAbsoluteIncludeAndInAHomeFolderIsMatchedToo() throws Exception {
+        Path conf = Files.createDirectories(home.resolve("hosts"));
+        Files.writeString(conf.resolve("a.conf"), "Host a\n  HostName 10.4.0.1\n");
+        Files.writeString(conf.resolve("b.conf"), "Host b\n  HostName 10.4.0.2\n");
+        Path config = Files.writeString(
+                ssh().resolve("config"), "Include " + conf.toAbsolutePath() + "/a.*\nInclude ~/hosts/b.co?f\n");
+
+        SshConfigFile file = new SshConfigFile(config);
+
+        assertEquals("10.4.0.1", hostName(file, "a"));
+        assertEquals("10.4.0.2", hostName(file, "b"));
+    }
+
+    @Test
+    void anIncludeThatNamesNoPathIsSkippedAndTheRestStillApplies() throws Exception {
+        // NUL is no path on any system, so this shows on Linux what a glob in a folder name does on Windows.
+        Path config = Files.writeString(
+                ssh().resolve("config"), "Include bad\u0000name\nInclude bad*/x\nHost x\n  HostName 1.1.1.1\n");
+
+        assertEquals("1.1.1.1", hostName(new SshConfigFile(config), "x"));
+    }
+
+    @Test
     void anIncludedFileThatChangesIsReadAgain() throws Exception {
         Path part = Files.writeString(ssh().resolve("part"), "Host box\n  HostName 10.0.0.1\n");
         Path config = Files.writeString(ssh().resolve("config"), "Include part\n");
