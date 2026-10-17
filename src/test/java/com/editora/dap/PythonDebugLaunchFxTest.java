@@ -64,6 +64,9 @@ class PythonDebugLaunchFxTest {
     @BeforeEach
     void setUp() throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/usr/bin/python3")), "needs python3");
+        // macOS's temp folder is under /var, a link to /private/var, and Python reports sys.executable by the
+        // real path: the venv's interpreter the adapter runs under is named as the test names it only from here.
+        base = base.toRealPath();
         site = base.resolve("site");
         Path adapterDir = Files.createDirectories(site.resolve("debugpy/adapter"));
         Files.writeString(site.resolve("debugpy/__init__.py"), "");
