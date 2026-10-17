@@ -141,6 +141,33 @@ class ConfigExporterTest {
         }
     }
 
+    /** A sync URL stored with a token before the Sync page refused them is exported without it, keys or not. */
+    @Test
+    void aTokenInTheStoredSyncUrlNeverReachesTheZip(@TempDir Path cfg, @TempDir Path home) throws Exception {
+        Files.writeString(
+                cfg.resolve("settings.json"),
+                "{\n  \"syncRepoUrl\" : \"https://me:ghp_FAKEFAKE@github.com/me/sync.git\",\n  \"fontSize\" : 14\n}\n");
+        Files.writeString(
+                cfg.resolve("settings.toml.migrated"),
+                "syncRepoUrl = \"https://ghp_FAKEOLD000@github.com/me/s.git\"\n");
+        for (boolean keys : new boolean[] {false, true}) {
+            Path zip = ConfigExporter.export(cfg, home, "1.0.0", "someone", WHEN, false, keys);
+            try (ZipFile zf = new ZipFile(zip.toFile())) {
+                String json = new String(
+                        zf.getInputStream(zf.getEntry("settings.json")).readAllBytes());
+                assertTrue(json.contains("\"syncRepoUrl\" : \"https://me@github.com/me/sync.git\""), json);
+                assertTrue(json.contains("\"fontSize\" : 14"), json);
+                String toml = new String(
+                        zf.getInputStream(zf.getEntry("settings.toml.migrated")).readAllBytes());
+                assertEquals("syncRepoUrl = \"https://github.com/me/s.git\"\n", toml);
+            }
+            Files.delete(zip);
+        }
+        assertTrue(
+                Files.readString(cfg.resolve("settings.json")).contains("ghp_FAKEFAKE"),
+                "the file itself is untouched");
+    }
+
     private static List<String> entryNames(Path zip) throws Exception {
         List<String> names = new ArrayList<>();
         try (ZipFile zf = new ZipFile(zip.toFile())) {

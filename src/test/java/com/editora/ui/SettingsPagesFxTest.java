@@ -312,7 +312,12 @@ class SettingsPagesFxTest {
                 assertTrue(SettingsRig.all(detecting.page("LSP"), Button.class).contains(buttons[1]));
             });
             SettingsRig.awaitFx("the typst program to be found", () -> buttons[0].isDisable());
-            SettingsRig.awaitFx("the server probe", () -> lspStatus(detecting).contains(tr("settings.lsp.notFound")));
+            SettingsRig.awaitFx(
+                    "the server probe",
+                    () -> lspStatus(detecting)
+                            .equals(tr(
+                                    "settings.tool.notFound",
+                                    missing.getFileName().toString())));
             FxTestSupport.runOnFx(() -> {
                 assertEquals(installed, buttons[0].getText());
                 assertFalse(buttons[1].isDisable(), "the server is still to be installed");
@@ -335,8 +340,8 @@ class SettingsPagesFxTest {
     }
 
     private static String lspStatus(SettingsRig rig) {
-        Map<String, Label> labels = rig.control("lspStatusLabels");
-        return labels.get("typst").getText();
+        Map<String, ToolStatusRow> labels = rig.control("lspStatusLabels");
+        return labels.get("typst").pill().getText();
     }
 
     /** What the Typst service last found, without running the program to find out. */
