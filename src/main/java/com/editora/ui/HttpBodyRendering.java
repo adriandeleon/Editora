@@ -55,7 +55,12 @@ final class HttpBodyRendering {
         }
         HttpResponseFormat.BodyView view = HttpResponseFormat.view(r, maxChars);
         String ext = extFor(r.contentType());
-        String text = "xml".equals(ext) ? HttpXmlIndent.indent(view.text()) : view.text();
+        String text =
+                switch (ext == null ? "" : ext) {
+                    case "xml" -> HttpXmlIndent.indent(view.text());
+                    case "html" -> HttpHtmlIndent.indent(view.text());
+                    default -> view.text();
+                };
         StyleSpans<Collection<String>> spans = null;
         IGrammar grammar = text.isEmpty() ? null : grammarFor(ext);
         if (grammar != null) {
@@ -66,6 +71,19 @@ final class HttpBodyRendering {
             }
         }
         return new Rendered(view, text, spans, null);
+    }
+
+    /** {@code text}'s highlight spans in the grammar for files ending in {@code .ext}, or null. Worker thread. */
+    static StyleSpans<Collection<String>> highlight(String text, String ext) {
+        IGrammar grammar = text == null || text.isEmpty() ? null : grammarFor(ext);
+        if (grammar == null) {
+            return null;
+        }
+        try {
+            return TextMateHighlighter.compute(text, grammar);
+        } catch (RuntimeException e) {
+            return null; // unknown/oversized — leave it unstyled
+        }
     }
 
     /** The decoded picture of an {@code image/*} response (not SVG, which is text), or null. */

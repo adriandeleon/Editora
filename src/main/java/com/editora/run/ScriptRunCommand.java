@@ -21,6 +21,9 @@ public final class ScriptRunCommand {
     /** Configuration types this builder handles. Java is deliberately absent — it takes the jdtls path. */
     public static final String PYTHON = "python";
 
+    /** A Python module run as {@code python -m <target>} (packages, {@code __main__.py}, relative imports). */
+    public static final String PYTHON_MODULE = "python-module";
+
     public static final String SHELL = "shell";
     public static final String MAKE = "make";
     public static final String NPM = "npm";
@@ -30,7 +33,12 @@ public final class ScriptRunCommand {
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return PYTHON.equals(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type);
+    }
+
+    /** Whether {@code type} is a Python script or module (launched through {@code PythonRunPlan}). */
+    public static boolean isPython(String type) {
+        return PYTHON.equals(type) || PYTHON_MODULE.equals(type);
     }
 
     /**
@@ -40,7 +48,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return PYTHON.equals(type) || SHELL.equals(type) || NPM.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type);
     }
 
     /**
@@ -65,11 +73,16 @@ public final class ScriptRunCommand {
         String t = target == null ? "" : target.strip();
         List<String> argv = new ArrayList<>();
         switch (type == null ? "" : type) {
-            case PYTHON -> {
+            case PYTHON, PYTHON_MODULE -> {
                 if (t.isEmpty()) {
                     return List.of();
                 }
+                // The shape only — whether the configuration is complete. The real interpreter, flags and
+                // environment come from PythonRunPlan (the project's venv, the configuration's Interpreter …).
                 argv.add("python3");
+                if (PYTHON_MODULE.equals(type)) {
+                    argv.add("-m");
+                }
                 argv.add(t);
             }
             case SHELL -> {

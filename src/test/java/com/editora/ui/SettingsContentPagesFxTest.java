@@ -556,10 +556,7 @@ class SettingsContentPagesFxTest {
             javafx.scene.control.ListCell<String> themeCell =
                     theme.getCellFactory().call(null);
             FxTestSupport.call(themeCell, "updateItem", new Class<?>[] {Object.class, boolean.class}, "Dracula", false);
-            assertEquals(tr("settings.theme.dark", "Dracula"), themeCell.getText());
-            FxTestSupport.call(
-                    themeCell, "updateItem", new Class<?>[] {Object.class, boolean.class}, "Nord Light", false);
-            assertEquals("Nord Light", themeCell.getText(), "the name already says it");
+            assertEquals("Dracula", themeCell.getText(), "the Dark heading says it, not a tag");
             assertTrue(family.getItems().stream().noneMatch(f -> f.startsWith("MathJax_")));
             assertTrue(SettingsRig.texts(page).contains(tr("settings.userThemes.reload")));
         });
@@ -591,6 +588,54 @@ class SettingsContentPagesFxTest {
             assertTrue(advanced.contains(tr("settings.checkForUpdates")));
             assertTrue(advanced.contains(tr("settings.section.trustedFolders")));
             assertTrue(SettingsRig.texts(categoryPage("SEARCH")).contains(tr("settings.search.gitignore.desc")));
+        });
+    }
+
+    private static javafx.scene.control.ListCell<String> cellFor(ComboBox<String> combo, String item) {
+        javafx.scene.control.ListCell<String> cell = combo.getCellFactory().call(null);
+        FxTestSupport.call(cell, "updateItem", new Class<?>[] {Object.class, boolean.class}, item, false);
+        return cell;
+    }
+
+    @Test
+    void bothThemePickersGroupThemesUnderLightAndDarkHeadingsThatCannotBeChosen() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            rig.page("APPEARANCE");
+            for (String field : List.of("themeCombo", "editorThemeCombo")) {
+                ComboBox<String> combo = rig.control(field);
+                List<String> items = combo.getItems();
+                int light = items.indexOf(ThemeGroups.LIGHT);
+                int dark = items.indexOf(ThemeGroups.DARK);
+                assertTrue(light >= 0 && dark > light, field + " has Light then Dark");
+                for (String name : List.of("Editora Light", "Primer Light", "Nord Light", "Yacht")) {
+                    int at = items.indexOf(name);
+                    assertTrue(at > light && at < dark, field + ": " + name + " is light");
+                }
+                for (String name : List.of("Editora Dark", "Primer Dark", "Nord Dark", "Dracula")) {
+                    assertTrue(items.indexOf(name) > dark, field + ": " + name + " is dark");
+                }
+                assertTrue(
+                        items.indexOf("Primer Light") + 1 == items.indexOf("Nord Light"),
+                        "a family's members keep their catalogue order inside a group");
+
+                javafx.scene.control.ListCell<String> heading = cellFor(combo, ThemeGroups.DARK);
+                assertEquals(tr("settings.theme.group.dark"), heading.getText());
+                assertTrue(heading.isDisable(), "the mouse cannot choose a heading");
+                assertFalse(cellFor(combo, "Dracula").isDisable());
+
+                // The keyboard steps over a heading in the direction it is going.
+                combo.getSelectionModel().select(dark - 1);
+                combo.getSelectionModel().selectNext();
+                assertEquals(dark + 1, combo.getSelectionModel().getSelectedIndex(), field + ": down skips it");
+                combo.getSelectionModel().selectPrevious();
+                assertEquals(dark - 1, combo.getSelectionModel().getSelectedIndex(), field + ": up skips it");
+                combo.getSelectionModel().select(light); // a jump onto a heading lands on a theme beside it
+                assertFalse(ThemeGroups.isHeading(combo.getSelectionModel().getSelectedItem()), field);
+                assertFalse(ThemeGroups.isHeading(combo.getValue()), field);
+            }
+            assertFalse(ThemeGroups.isHeading(settings.getTheme()));
+            assertFalse(ThemeGroups.isHeading(settings.getEditorTheme()));
         });
     }
 }

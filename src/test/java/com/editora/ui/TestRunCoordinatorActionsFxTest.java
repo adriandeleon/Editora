@@ -27,6 +27,7 @@ import com.editora.config.Settings;
 import com.editora.run.StackTraceLinks;
 import com.editora.test.JavaTestScanner;
 import com.editora.test.TestNode;
+import com.editora.test.TestNodeKind;
 import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
 import org.fxmisc.richtext.CodeArea;
@@ -270,6 +271,53 @@ class TestRunCoordinatorActionsFxTest {
 
     // --- the run as shown -------------------------------------------------------------------------------
 
+    /** Debug on a row of an external (pytest / unittest) run said "not supported"; the run now debugs it. */
+    @Test
+    void debugOnAnExternalRunsRowGoesToThatRun() throws Exception {
+        List<String> debugged = new ArrayList<>();
+        TestRunCoordinator.ExternalRun pytest = new TestRunCoordinator.ExternalRun() {
+            @Override
+            public void rerun() {}
+
+            @Override
+            public void rerunFailed(List<TestNode> failed) {}
+
+            @Override
+            public void runOne(TestNode node) {}
+
+            @Override
+            public void stop() {}
+
+            @Override
+            public void jump(TestNode node) {}
+
+            @Override
+            public boolean debug(TestNode node) {
+                debugged.add(node.className() + "#" + node.methodName());
+                return true;
+            }
+
+            @Override
+            public boolean canDebug() {
+                return true;
+            }
+        };
+        TestNode row = new TestNode(TestNodeKind.TEST, "tests.test_cart.TestCart#test_add", "test_add");
+        row.setClassName("tests.test_cart.TestCart");
+        row.setMethodName("test_add");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(coordinator.startExternalRun("tests", dir, pytest));
+            FxTestSupport.call(coordinator, "debugOne", new Class<?>[] {TestNode.class}, row);
+        });
+        assertEquals(List.of("tests.test_cart.TestCart#test_add"), debugged);
+        assertEquals(List.of(), statuses);
+        // The row menu offers Debug for this run although Java debugging is not set up (debugAvailable false):
+        // it was the Java debugger's availability that decided, so a Python user never saw the item.
+        assertTrue(FxTestSupport.callOnFx(
+                () -> FxTestSupport.<java.util.function.BooleanSupplier>field(coordinator.panel(), "debugAvailable")
+                        .getAsBoolean()));
+    }
+
     @Test
     void theReportOfARunBecomesRowsWithTheirOutcomeAndTheSuiteASummary() throws Exception {
         finishedGradleRun();
@@ -405,10 +453,12 @@ class TestRunCoordinatorActionsFxTest {
         FxTestSupport.runOnFx(() -> {
             coordinator.onTestOutput("> Task :test", false);
             coordinator.onTestOutput(JDWP_BANNER, false);
-            coordinator.onTestOutput(JDWP_BANNER, false); // printed again by a second fork: already attached
+            coordinator.onTestOutput(JDWP_BANNER, false); // printed again for the same port: already attached
+            // Another fork on a port of its own waits suspended too: it is attached as well (review D11).
+            coordinator.onTestOutput("Listening for transport dt_socket at address: 43117", false);
         });
         assertEquals(
-                List.of("attach com.x.FooTest localhost:5005"),
+                List.of("attach com.x.FooTest localhost:5005", "attach com.x.FooTest localhost:43117"),
                 calls.stream().filter(c -> c.startsWith("attach")).toList());
     }
 
@@ -559,8 +609,8 @@ class TestRunCoordinatorActionsFxTest {
         assertEquals(List.of(tr("status.testrunner.debugWaiting")), statuses);
         assertEquals("test", launched.get(0).get(0));
         assertEquals("-Dtest=CalcTest#adds", launched.get(0).get(1));
-        assertEquals(
-                "-Dmaven.surefire.debug", launched.get(0).get(launched.get(0).size() - 1));
+        assertTrue(
+                launched.get(0).get(launched.get(0).size() - 1).startsWith("-Dmaven.surefire.debug=-agentlib:jdwp="));
 
         FxTestSupport.runOnFx(() -> coordinator.onTestOutput(JDWP_BANNER, false));
         assertEquals(

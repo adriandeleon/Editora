@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Toolkit- and lsp4j.debug-free value types exposed by {@link DapManager} to the {@code ui}/{@code editor}
  * layers, so they never depend on the DAP wire types. {@link DapClient} maps the raw lsp4j.debug objects
- * into these (see {@code DapMappers}).
+ * into these.
  */
 public final class DapModels {
 
@@ -16,7 +16,21 @@ public final class DapModels {
     public record ThreadInfo(int id, String name) {}
 
     /** One frame of a thread's call stack. {@code file} may be null for frames with no source. */
-    public record StackFrameInfo(int id, String name, Path file, int line, int column) {}
+    /**
+     * One frame of a call stack. {@code sourceUri} is the adapter's own name for a source that is not a file on
+     * this machine — java-debug's {@code jdt://contents/…} for a JDK or library class, whose text jdtls can
+     * supply ({@code java/classFileContents}) — and null for an ordinary file ({@code file}).
+     */
+    public record StackFrameInfo(int id, String name, Path file, int line, int column, String sourceUri) {
+        public StackFrameInfo(int id, String name, Path file, int line, int column) {
+            this(id, name, file, line, column, null);
+        }
+
+        /** This frame at another (0-based) line — the line it is shown on in an edited document. */
+        public StackFrameInfo atLine(int newLine) {
+            return new StackFrameInfo(id, name, file, newLine, column, sourceUri);
+        }
+    }
 
     /** A variable scope of a stack frame (e.g. "Local", "Static"); {@code variablesReference} fetches its
      *  variables. */
@@ -68,7 +82,11 @@ public final class DapModels {
     }
 
     /** A breakpoint to send to the adapter for one file: 0-based {@code line} + optional condition/log. */
-    public record LineBreakpoint(int line, String condition, String logMessage) {}
+    public record LineBreakpoint(int line, String condition, String logMessage, String hitCondition) {
+        public LineBreakpoint(int line, String condition, String logMessage) {
+            this(line, condition, logMessage, null);
+        }
+    }
 
     /** All breakpoints for one source file. */
     public record FileBreakpoints(Path file, List<LineBreakpoint> breakpoints) {}
@@ -106,6 +124,33 @@ public final class DapModels {
 
         public boolean isEmpty() {
             return type.isEmpty() && message.isEmpty();
+        }
+    }
+
+    /** An exception filter an adapter offers ({@code exceptionBreakpointFilters}): its id, label and default. */
+    public record ExceptionFilterOption(String filter, String label, boolean byDefault) {}
+
+    /**
+     * What java-debug's {@code redefineClasses} did: the classes it replaced in the running program, or the
+     * reason it could not ({@code error}, empty when it worked). No classes and no error: nothing had changed.
+     */
+    public record CodeReplace(List<String> changedClasses, String error) {
+
+        public CodeReplace {
+            changedClasses = changedClasses == null ? List.of() : List.copyOf(changedClasses);
+            error = error == null ? "" : error.strip();
+        }
+
+        public boolean failed() {
+            return !error.isEmpty();
+        }
+    }
+
+    /** One call the debugger can step into on the current line ({@code stepInTargets}): its id and label. */
+    public record StepTarget(int id, String label, int line) {
+
+        public StepTarget {
+            label = label == null ? "" : label.strip();
         }
     }
 }

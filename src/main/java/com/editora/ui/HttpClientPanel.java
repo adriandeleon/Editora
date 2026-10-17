@@ -1,45 +1,60 @@
 package com.editora.ui;
 
+import java.time.Instant;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
+import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.geometry.Insets;
-import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
-import javafx.scene.AccessibleRole;
 import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.SplitPane;
+import javafx.scene.control.SelectionMode;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
-import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
 import javafx.scene.text.Text;
+import javafx.stage.Window;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
@@ -52,6 +67,7 @@ import com.editora.http.HttpResult;
 import com.editora.http.HttpTests;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -59,12 +75,22 @@ import static com.editora.i18n.Messages.tr;
  * The HTTP Client response viewer, shown as the {@code .http} buffer's <b>preview</b> (one instance per open
  * {@code .http} buffer, embedded in the editor's Editor/Split/Preview view by {@link HttpClientCoordinator}).
  *
- * <p>From the top: a <b>Run/Cancel</b> button and the status line ({@code 200 OK · 32 ms · 44 B}, coloured by
- * outcome; "Running … 1.2 s" with an elapsed time while a request is in flight); the actions and the History
- * and Environment pickers, in rows that wrap rather than squeeze their labels into "…" in a narrow window; a
- * collapsible <b>Request</b> section with the request as it was actually sent (variables resolved); the
- * response headers; and the body — syntax-highlighted by content type (JSON/XML/HTML, reusing the editor's
+ * <p>One header row: the <b>Run/Cancel</b> button with its chord from the keymap, the status as a pill coloured by
+ * outcome ({@code 200 OK}; "Running … 1.2 s" while a request is in flight), the timing and size, then the History
+ * picker ({@link HttpHeaderRow}). Under it a tab strip ({@link HttpTabStrip}): <b>Body</b> (the
+ * default) · <b>Headers</b> (a name/value list) · <b>Tests</b> · <b>Request</b> (as it was actually sent, variables
+ * resolved) · <b>Notes</b> (warnings and files written), with counts, and the actions as icons at its right end. A
+ * run switches to Tests on its own only when a test or a script failed ({@link HttpResponseTab#choose}); otherwise
+ * the tab the user picked stays. After a Run All a results list sits between the header and the tabs ({@link
+ * HttpRunList}): one row per request, the one selected shown in the tabs. The body is syntax-highlighted by content type (JSON/XML/HTML, reusing the editor's
  * TextMate grammars; JSON and one-line XML pretty-printed), or the picture for an {@code image/*} response.
+ *
+ * <p>Between responses the Body tab shows a state instead of an empty form: before any response, which request Run
+ * will send and the file's requests to run ({@link HttpEmptyState}); while a request is sent, a progress line under
+ * the header and the response shown before it collapsed to one "Previous: 200 OK · 16:42:31" row (its body never
+ * shows under the new run, where it read as the new response); "Waiting for your answer…", without a clock, while a
+ * trust prompt is open; after Cancel, how long it ran and that row again; and for a request that got no response, a
+ * card naming the failure with what to do next ({@link HttpErrorCard}).
  *
  * <p>Formatting and tokenizing a response are proportional to its size, so they run on a background worker
  * and land under a generation guard: only the newest selection's body is applied. The body pane shows a
@@ -81,93 +107,138 @@ public final class HttpClientPanel extends VBox {
     static final int MAX_HISTORY = 20;
     static final int MAX_BODY_CHARS = 400_000;
 
-    /** The History picker's width when there is room, and the least it narrows to in a tight Split. */
+    /** The History picker's usual width (it narrows first in a tight Split, and grows in a wide Preview). */
     static final double HISTORY_WIDTH = HttpPanelLayout.HISTORY_WIDTH;
 
-    static final double HISTORY_MIN_WIDTH = 160;
-
-    /** The least width the panel asks of a Split (its controls wrap or narrow below their preferred width). */
+    /** The least width the panel asks of a Split (its rows give way or wrap below their preferred width). */
     static final double MIN_WIDTH = 260;
 
-    /** Up to this many notes (warnings + files written) show expanded; more start collapsed behind the badge. */
-    static final int NOTES_SHOWN_EXPANDED = 2;
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final Button runButton = new Button();
-    /** Holds the Run button, so a tooltip can say why it is disabled (a disabled control shows none of its own). */
-    private final StackPane runHost = new StackPane(runButton);
+    /** The Run (or, while running, Cancel) chord from the live keymap; hidden when the command is unbound. */
+    private final Label runChord = new Label();
+    /** Holds Run and its chord, so a tooltip can say why Run is disabled (a disabled control shows none of its own). */
+    private final HBox runHost = new HBox(6, runButton, runChord);
     /** Why Run is unavailable for this file (a remote file), or null. */
     private String runBlockedWhy;
 
     private Tooltip runBlockedTip;
+    /** The status pill: "200 OK" coloured by outcome; plain text while running, idle or cancelled. */
     private final Label status = new Label();
-    /** "⚠ 11 warnings" beside the status line: a response can be 200 OK and still have been sent wrong. */
-    private final Label warnBadge = new Label();
-    /**
-     * "✓ 3 passed · ✗ 1 failed" beside the status line: what the request's @assert checks and handlers found, the
-     * passing part green and the failing part red (one label per part).
-     */
-    private final HBox testsBadge = new HBox();
-    /** The tests badge's whole text, as shown (and read by a screen reader). */
-    private String testsBadgeText = "";
-    /** The tests shown, so the badge can be shortened with the warnings badge. */
-    private HttpTests shownTests = HttpTests.NONE;
-    /** Whether {@link #shownTests}' error is a pre-request script's ({@link HttpStatusText#preRequestFailed}). */
-    private boolean shownPreRequest;
-    /** "Run All: 3 of 13 failed" under the status line after a Run All, until the next run. */
+    /** "83 ms · 177 B" beside the pill. */
+    private final Label meta = new Label();
+    /** The whole status line ("200 OK · 83 ms · 177 B"), as read by a screen reader and tests. */
+    private String statusLine = "";
+
+    private final Tooltip statusTip = new Tooltip();
+    /** A note about the last run under the header (Run sent the caret's request instead), until the next run. */
     private final Label runSummary = new Label();
-    /** The Run All summary, and a note about the last run (Run sent the caret's request instead), until the next run. */
-    private String summaryText;
 
     private String runNotice;
-    /** The number of warnings the badge counts, and whether it is shortened to "⚠ 11" to leave the status whole. */
-    private int warnCount;
-
-    private boolean compactBadge;
+    /** After a Run All: one row per request, until the next run or Clear. */
+    private final HttpRunList runList;
+    /** How long the last run took from Run to its end (or to Cancel), for the Run All title; -1 unknown. */
+    private long runTookNanos = -1;
     /** A note above the body when the view or the saved history holds only part of it (it used to sit at the end). */
     private final Label bodyNote = new Label();
 
-    private final ComboBox<String> envCombo = new ComboBox<>();
     private final ComboBox<HttpHistoryEntry> historyCombo = new ComboBox<>();
-    private final TextArea requestArea = new TextArea();
-    private final TitledPane requestPane = new TitledPane();
-    /** The response's warnings and the files a {@code >>} wrote, apart from the headers they used to bury. */
+    private final HttpHeaderRow header;
+    private final HttpTabStrip tabs;
+    /** The tab the user last picked by hand: it stays across runs while a response has it. */
+    private HttpResponseTab pickedTab = HttpResponseTab.BODY;
+
+    /** The request as it was sent, highlighted with the {@code .http} grammar. */
+    private final CodeArea requestArea = AreaUndo.none(new CodeArea());
+
+    private final VirtualizedScrollPane<CodeArea> requestScroll = new VirtualizedScrollPane<>(requestArea);
+    /** The response's warnings and the files a {@code >>} wrote. */
     private final TextArea notesArea = new TextArea();
-    /** The Tests block: one row per test (✓/✗, name, why it failed), then the handlers' log and error. */
+    /** The Tests tab: its title, one row per test (✓/✗, name, why it failed), then the handlers' log and error. */
+    private final Label testsTitle = new Label();
+
     private final VBox testRows = new VBox(2);
-
     private final TextArea testsLog = new TextArea();
-    private final TitledPane testsPane = new TitledPane();
+    private final ScrollPane testsScroll;
+    /** The Headers tab: the status line, then one row per header. */
+    private final Label headersStatus = new Label();
 
-    private final TitledPane notesPane = new TitledPane();
-    private final TextArea headersArea = new TextArea();
+    private final TableView<String[]> headersTable = new TableView<>();
+    private final TableColumn<String[], String> headerNameColumn = new TableColumn<>(tr("httppanel.headerName"));
+    /** Measures the header names, to size their column. */
+    private final Text probe = new Text();
+
+    private final VBox headersBox;
     private final CodeArea bodyArea = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> bodyScroll = new VirtualizedScrollPane<>(bodyArea);
-    private final ImageView imageView = new ImageView();
-    private final ScrollPane imageScroll = new ScrollPane(imageView);
-    private final Button copyCurlButton = new Button();
-    private final Button openTabButton = new Button();
-    private final Button saveButton = new Button();
-    private final Button clearButton = new Button();
-    private final ToggleButton wrapToggle = new ToggleButton();
-    private final VBox head;
-    private final SplitPane split;
-    private String fontFamily;
-    private int fontSize;
+    private final HttpImageView imageView = new HttpImageView();
+    private final VBox bodyBox;
+    private final Map<HttpResponseTab, Node> tabContent = new EnumMap<>(HttpResponseTab.class);
 
+    /** What the Body tab shows: a response, the empty state, the error card, the Previous row, or nothing yet. */
+    enum BodyView {
+        RESPONSE,
+        EMPTY,
+        ERROR,
+        PREVIOUS,
+        BLANK
+    }
+
+    private BodyView bodyView = BodyView.BLANK;
+    private final HttpEmptyState emptyState;
+    private final HttpErrorCard errorCard;
+    /** "Previous: 200 OK · 16:42:31 · getUser": the response shown before the run, which a click shows again. */
+    private final Button previousRow = new Button();
+
+    private final VBox previousPane = new VBox(previousRow);
+    /** The thin indeterminate line under the header row while a request is being sent. */
+    private final ProgressBar progress = new ProgressBar(0);
+
+    private final ReadOnlyBooleanWrapper emptyShowing = new ReadOnlyBooleanWrapper(false);
+    /** The entry the tabs show, or null (empty state, running, cancelled). */
+    private HttpHistoryEntry shown;
+    /** The entry shown when the current (or cancelled) run started, collapsed to {@link #previousRow}; or null. */
+    private HttpHistoryEntry previous;
+    /**
+     * After Cancel: History shows {@link #previous} selected, but only its row is on show — so Run sends the caret's
+     * request (as it did after a cancel before), and the actions wait for the response to be shown.
+     */
+    private boolean collapsed;
+    /** The run waits for the answer to a trust prompt: nothing is sent yet, so no clock runs. */
+    private boolean waiting;
+    /** The request as resolved ("GET http://…/users/42"), the running status's tooltip; or null. */
+    private String runningDetail;
+
+    private IntConsumer onRunLine = line -> {};
+    private Runnable onDisposed = () -> {};
+
+    private final ToggleButton wrapToggle = new ToggleButton();
+    private final Button copyCurlButton;
+    private final Button openTabButton;
+    private final Button saveButton;
+    private final MenuButton moreButton = new MenuButton();
+    private final MenuItem clearItem = new MenuItem(tr("httppanel.clear"), Icons.trash());
+    /** The icon actions' places in the "⋯" menu, shown when a narrow strip folds the icons away. */
+    private final CheckMenuItem wrapItem = new CheckMenuItem(tr("httppanel.wrap"));
+
+    private final MenuItem copyCurlItem = new MenuItem(tr("httppanel.copyAsCurl"), Icons.copy());
+    private final MenuItem openTabItem = new MenuItem(tr("httppanel.openInTab"), Icons.openInTab());
+    private final MenuItem saveItem = new MenuItem(tr("httppanel.save"), Icons.saveAs());
+    private final SeparatorMenuItem foldedSeparator = new SeparatorMenuItem();
     private final List<HttpHistoryEntry> history = new ArrayList<>();
     private final ZoneId zone = ZoneId.systemDefault();
 
-    /** Receives the chosen environment name ({@code ""} = none) so the controller can persist it. */
-    private Consumer<String> onEnvironmentChanged;
-
     /** Run again: the selected entry (to re-send that request), or null (run the request at the caret). */
     private Consumer<HttpHistoryEntry> onRun = e -> {};
+
+    /** A Run All row's Enter or double-click: go to that entry's request in the editor. */
+    private Consumer<HttpHistoryEntry> onJump = e -> {};
 
     private Runnable onCancel;
     private Runnable onEscape = () -> {};
     private Runnable onCleared = () -> {};
 
-    private boolean updatingEnv;
     private boolean updatingHistory;
     private boolean running;
     private String fontStyle;
@@ -201,6 +272,9 @@ public final class HttpClientPanel extends VBox {
 
         runButton.getStyleClass().add("http-run");
         runButton.setMinWidth(Region.USE_PREF_SIZE);
+        runChord.getStyleClass().addAll("chord-chip", "http-run-chord");
+        runChord.setMinWidth(Region.USE_PREF_SIZE);
+        runHost.setAlignment(Pos.CENTER_LEFT);
         runHost.setMinWidth(Region.USE_PREF_SIZE);
         runButton.setOnAction(e -> {
             if (running) {
@@ -208,73 +282,25 @@ public final class HttpClientPanel extends VBox {
                     onCancel.run();
                 }
             } else {
-                onRun.accept(historyCombo.getValue());
+                onRun.accept(selectedShown()); // after a Cancel, the caret's request, as before
             }
         });
-        setRunning(false);
 
         status.getStyleClass().add("http-status");
         status.setMinWidth(0);
-        status.setMaxWidth(Region.USE_PREF_SIZE); // the badges sit right after it, not at the far edge
         status.setTextOverrun(OverrunStyle.CENTER_ELLIPSIS); // a long URL keeps its start and its end
-        HBox.setHgrow(status, Priority.ALWAYS);
-        warnBadge.getStyleClass().add("http-warn-badge");
-        warnBadge.setMinWidth(Region.USE_PREF_SIZE);
-        warnBadge.setOnMouseClicked(e -> toggleNotes());
-        // Reachable by keyboard: a collapsed warnings block (more than two) could only be opened by mouse.
-        warnBadge.setFocusTraversable(true);
-        warnBadge.setAccessibleRole(AccessibleRole.BUTTON);
-        warnBadge.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
-                toggleNotes();
-                e.consume();
-            }
-        });
-        testsBadge.getStyleClass().add("http-tests-badge");
-        testsBadge.setAlignment(Pos.CENTER_LEFT);
-        testsBadge.setMinWidth(Region.USE_PREF_SIZE);
-        testsBadge.setOnMouseClicked(e -> toggleTests());
-        testsBadge.setFocusTraversable(true);
-        testsBadge.setAccessibleRole(AccessibleRole.BUTTON);
-        testsBadge.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
-                toggleTests();
-                e.consume();
-            }
-        });
-        setTestsBadge(List.of(), false);
+        meta.getStyleClass().add("http-meta");
+        meta.setMinWidth(Region.USE_PREF_SIZE);
         runSummary.getStyleClass().add("http-run-summary");
         runSummary.setMinWidth(0);
         runSummary.setTextOverrun(OverrunStyle.ELLIPSIS);
         runSummary.setWrapText(true);
-        showBadge(warnBadge, null);
         showBadge(runSummary, null);
-        HBox top = new HBox(8, runHost, status, testsBadge, warnBadge);
-        top.setAlignment(Pos.CENTER_LEFT);
-
-        envCombo.getStyleClass().add("http-env");
-        envCombo.setPrefWidth(150);
-        envCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String s) {
-                return s == null || s.isEmpty() ? tr("httppanel.noEnv") : s;
-            }
-
-            @Override
-            public String fromString(String s) {
-                return s;
-            }
-        });
-        envCombo.valueProperty().addListener((o, a, b) -> {
-            if (!updatingEnv && onEnvironmentChanged != null) {
-                onEnvironmentChanged.accept(b == null ? "" : b);
-            }
-        });
 
         historyCombo.getStyleClass().add("http-history");
-        historyCombo.setPrefWidth(HISTORY_WIDTH); // a steady width: the row no longer jumps with each URL…
-        historyCombo.setMaxWidth(HttpPanelLayout.HISTORY_MAX_WIDTH); // wider in Preview, where there is room
-        historyCombo.setMinWidth(HISTORY_MIN_WIDTH); // …but it gives way in a narrow Split, not the editor
+        historyCombo.setMinWidth(0); // the header row sizes it: it narrows first in a tight Split
+        historyCombo.setMaxWidth(HttpPanelLayout.HISTORY_MAX_WIDTH);
+        Icons.name(historyCombo, tr("httppanel.historyName"));
         historyCombo.setCellFactory(list -> new HttpHistoryCell(zone));
         historyCombo.setButtonCell(new HttpHistoryCell(zone));
         historyCombo.setConverter(new StringConverter<>() {
@@ -291,132 +317,340 @@ public final class HttpClientPanel extends VBox {
         historyCombo.valueProperty().addListener((o, a, b) -> {
             if (!updatingHistory && b != null) {
                 showEntry(b); // also during a long run: an older response can be looked at meanwhile
+                selectRunRow(b); // its Run All row, or none: an entry from another run keeps the list unselected
                 if (running) {
                     showRunning(); // …while the status line still says what is running
                 }
             }
         });
+        header = new HttpHeaderRow(runHost, status, meta, historyCombo);
+        runList = new HttpRunList(this::showRunRow, e -> onJump.accept(e), e -> onRun.accept(e), e -> {
+            if (onCopyAsCurl != null) {
+                onCopyAsCurl.accept(e.exchange());
+            }
+        });
+        // At most about 40% of the panel, scrolling on its own: the tabs below keep their room.
+        runList.maxHeightProperty().bind(heightProperty().multiply(0.4));
+        progress.getStyleClass().add("http-progress");
+        progress.setMaxWidth(Double.MAX_VALUE);
+        progress.setFocusTraversable(false);
+        showProgress(false);
 
-        copyCurlButton.setText(tr("httppanel.copyAsCurl"));
-        copyCurlButton.setTooltip(new javafx.scene.control.Tooltip(tr("httppanel.copyAsCurl.tip"))); // POSIX quoting
-        copyCurlButton.setOnAction(e -> withSelected(onCopyAsCurl));
-        openTabButton.setText(tr("httppanel.openInTab"));
-        openTabButton.setOnAction(e -> withSelected(onOpenInTab));
-        saveButton.setText(tr("httppanel.save"));
-        saveButton.setOnAction(e -> {
+        // --- the actions: icons at the strip's end, Clear (and the icons, when folded) in the "⋯" menu ---
+        wrapToggle.setGraphic(Icons.wrap());
+        wrapToggle.getStyleClass().addAll("flat", "http-action");
+        wrapToggle.selectedProperty().addListener((o, a, b) -> bodyArea.setWrapText(b || isNoteOnly()));
+        wrapItem.selectedProperty().bindBidirectional(wrapToggle.selectedProperty());
+        copyCurlButton = Icons.button(Icons.copy(), tr("httppanel.copyAsCurl"), () -> withSelected(onCopyAsCurl));
+        openTabButton = Icons.button(Icons.openInTab(), tr("httppanel.openInTab"), () -> withSelected(onOpenInTab));
+        saveButton = Icons.button(Icons.saveAs(), tr("httppanel.save"), () -> {
             if (onSaveResponse != null) {
                 onSaveResponse.run();
             }
         });
-        clearButton.setText(tr("httppanel.clear"));
-        clearButton.setOnAction(e -> clear());
-        wrapToggle.setText(tr("httppanel.wrap"));
-        wrapToggle.selectedProperty().addListener((o, a, b) -> bodyArea.setWrapText(b || isNoteOnly()));
-        for (Region r : List.of(copyCurlButton, openTabButton, saveButton, clearButton, wrapToggle)) {
-            r.setMinWidth(Region.USE_PREF_SIZE);
+        actionTip(wrapToggle, tr("httppanel.wrap"), null, null);
+        actionTip(copyCurlButton, tr("httppanel.copyAsCurl"), "http.copyAsCurl", tr("httppanel.copyAsCurl.tip"));
+        actionTip(openTabButton, tr("httppanel.openInTab"), "http.openResponseInTab", null);
+        actionTip(saveButton, tr("httppanel.save"), null, null);
+        for (Region r : List.of(copyCurlButton, openTabButton, saveButton)) {
+            r.getStyleClass().addAll("flat", "http-action");
         }
-        FlowPane actions = new FlowPane(6, 4, copyCurlButton, openTabButton, saveButton, clearButton, wrapToggle);
+        copyCurlItem.setOnAction(e -> copyCurlButton.fire());
+        openTabItem.setOnAction(e -> openTabButton.fire());
+        saveItem.setOnAction(e -> saveButton.fire());
+        copyCurlItem.disableProperty().bind(copyCurlButton.disableProperty());
+        openTabItem.disableProperty().bind(openTabButton.disableProperty());
+        saveItem.disableProperty().bind(saveButton.disableProperty());
+        clearItem.setOnAction(e -> clear());
+        moreButton.setGraphic(Icons.more());
+        moreButton.getStyleClass().addAll("flat", "http-action", "http-more");
+        moreButton.setMinWidth(Region.USE_PREF_SIZE);
+        Icons.name(moreButton, tr("httppanel.more"));
+        moreButton.getItems().addAll(wrapItem, copyCurlItem, openTabItem, saveItem, foldedSeparator, clearItem);
+        foldIcons(false);
 
-        FlowPane controls = new FlowPane(
-                16,
-                4,
-                pickerRow(tr("httppanel.history"), historyCombo),
-                pickerRow(tr("httppanel.environment"), envCombo));
+        Map<HttpResponseTab, String> tabNames = new EnumMap<>(HttpResponseTab.class);
+        tabNames.put(HttpResponseTab.BODY, tr("httppanel.tab.body"));
+        tabNames.put(HttpResponseTab.HEADERS, tr("httppanel.tab.headers"));
+        tabNames.put(HttpResponseTab.TESTS, tr("httppanel.tab.tests"));
+        tabNames.put(HttpResponseTab.REQUEST, tr("httppanel.request"));
+        tabNames.put(HttpResponseTab.NOTES, tr("httppanel.tab.notes"));
+        tabs = new HttpTabStrip(
+                tabNames,
+                this::showTab,
+                t -> pickedTab = t,
+                List.of(wrapToggle, copyCurlButton, openTabButton, saveButton),
+                moreButton,
+                this::foldIcons);
 
-        requestArea.setEditable(false);
-        requestArea.setWrapText(true);
-        requestArea.setPrefRowCount(4);
-        requestArea.getStyleClass().add("http-request");
-        requestPane.setText(tr("httppanel.request"));
-        requestPane.setContent(requestArea);
-        requestPane.setExpanded(false);
-        requestPane.setAnimated(false);
-        requestPane.getStyleClass().add("http-request-pane");
-        requestPane.expandedProperty().addListener((o, a, b) -> fitHead());
-
-        notesArea.setEditable(false);
-        notesArea.setWrapText(true);
-        notesArea.getStyleClass().add("http-notes");
-        notesPane.setContent(notesArea);
-        notesPane.setAnimated(false);
-        notesPane.getStyleClass().add("http-notes-pane");
-        notesPane.expandedProperty().addListener((o, a, b) -> fitHead());
-        notesArea.widthProperty().addListener((o, a, w) -> {
-            fitNotesRows(); // the rows its wrapped lines need at the width it actually got
-            fitHead();
-        });
-        showNotes(List.of(), List.of());
-
-        testRows.getStyleClass().add("http-test-rows");
-        testsLog.setEditable(false);
-        testsLog.setWrapText(true);
-        testsLog.getStyleClass().add("http-tests-log");
-        VBox testsBox = new VBox(4, testRows, testsLog);
-        testsPane.setContent(testsBox);
-        testsPane.setAnimated(false);
-        testsPane.getStyleClass().add("http-tests-pane");
-        testsPane.expandedProperty().addListener((o, a, b) -> fitHead());
-        showTests(HttpTests.NONE, false);
-
-        headersArea.setEditable(false);
-        headersArea.setWrapText(true);
-        headersArea.getStyleClass().add("http-headers");
-        headersArea.setPrefRowCount(5);
-        VBox.setVgrow(headersArea, Priority.ALWAYS);
-        head = new VBox(4, requestPane, testsPane, notesPane, headersArea);
-
+        // --- Body ---
         bodyArea.getStyleClass().addAll("editor-area", "http-body");
         bodyArea.setEditable(false);
         bodyArea.setFocusTraversable(true);
         // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
         // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
-        installBodyContextMenu(); // RichTextFX has no default menu — add Copy / Select All for the response
-        imageView.setPreserveRatio(true);
-        imageScroll.setVisible(false);
-        imageScroll.getStyleClass().add("http-image");
-        StackPane bodyHost = new StackPane(bodyScroll, imageScroll);
+        installCopyMenu(bodyArea); // RichTextFX has no default menu — add Copy / Select All for the response
+        imageView.setVisible(false);
+        StackPane bodyHost = new StackPane(bodyScroll, imageView);
         bodyNote.getStyleClass().add("http-body-note");
         bodyNote.setWrapText(true);
         bodyNote.setMaxWidth(Double.MAX_VALUE);
         showBodyNote(null);
-        VBox bodyBox = new VBox(2, bodyNote, bodyHost);
+        bodyBox = new VBox(2, bodyNote, bodyHost);
         VBox.setVgrow(bodyHost, Priority.ALWAYS);
+        // The Body tab's states: before any response, while running or after Cancel, and when nothing came back.
+        emptyState = new HttpEmptyState(line -> onRunLine.accept(line));
+        errorCard = new HttpErrorCard(
+                () -> onRun.accept(selectedShown()),
+                () -> copyCurlButton.fire(),
+                copyCurlButton.disableProperty(),
+                () -> {
+                    if (tabs != null) {
+                        tabs.show(HttpResponseTab.TESTS);
+                    }
+                });
+        previousRow.getStyleClass().addAll("flat", "http-previous");
+        previousRow.setMnemonicParsing(false);
+        previousRow.setMaxWidth(Double.MAX_VALUE);
+        previousRow.setAlignment(Pos.CENTER_LEFT);
+        previousRow.setTextOverrun(OverrunStyle.ELLIPSIS);
+        previousRow.setTooltip(new Tooltip(tr("httppanel.previous.tip")));
+        previousRow.setOnAction(e -> showPrevious());
+        previousPane.getStyleClass().add("http-previous-pane");
+        previousPane.setPadding(new Insets(6, 2, 2, 2));
+        StackPane.setAlignment(errorCard, Pos.TOP_LEFT);
+        StackPane bodyStack = new StackPane(bodyBox, emptyState, errorCard, previousPane);
+        bodyStack.getStyleClass().add("http-body-stack");
+        unmanagedWhenHidden(bodyStack);
+
+        // --- Headers ---
+        headersStatus.getStyleClass().add("http-headers-status");
+        headersStatus.setMaxWidth(Double.MAX_VALUE);
+        buildHeadersTable();
+        headersBox = new VBox(4, headersStatus, headersTable);
+        VBox.setVgrow(headersTable, Priority.ALWAYS);
+
+        // --- Tests ---
+        testsTitle.getStyleClass().add("http-tests-title");
+        testRows.getStyleClass().add("http-test-rows");
+        testsLog.setEditable(false);
+        testsLog.setWrapText(true);
+        testsLog.getStyleClass().add("http-tests-log");
+        VBox testsBox = new VBox(4, testsTitle, testRows, testsLog);
+        testsBox.setPadding(new Insets(4, 2, 4, 2));
+        testsScroll = new ScrollPane(testsBox);
+        testsScroll.setFitToWidth(true);
+        testsScroll.getStyleClass().add("http-tests-pane");
+
+        // --- Request ---
+        requestArea.getStyleClass().addAll("editor-area", "http-request");
+        requestArea.setEditable(false);
+        requestArea.setWrapText(true);
+        installCopyMenu(requestArea);
+
+        // --- Notes ---
+        notesArea.setEditable(false);
+        notesArea.setWrapText(true);
+        notesArea.getStyleClass().add("http-notes");
+
+        tabContent.put(HttpResponseTab.BODY, bodyStack);
+        tabContent.put(HttpResponseTab.HEADERS, headersBox);
+        tabContent.put(HttpResponseTab.TESTS, testsScroll);
+        tabContent.put(HttpResponseTab.REQUEST, requestScroll);
+        tabContent.put(HttpResponseTab.NOTES, notesArea);
+        StackPane content = new StackPane();
+        content.getStyleClass().add("http-tab-content");
+        for (HttpResponseTab t : HttpResponseTab.values()) {
+            content.getChildren().add(tabContent.get(t));
+        }
+        unmanagedWhenHidden(content);
+        showTab(HttpResponseTab.BODY);
+        showNotes(List.of(), List.of());
+        showTests(HttpTests.NONE, false);
         setEditorFont(fontFamily, fontSize);
 
-        split = new SplitPane(head, bodyBox);
-        split.setOrientation(Orientation.VERTICAL);
-        split.setDividerPositions(0.3);
-        SplitPane.setResizableWithParent(head, false);
-
         installKeys();
-        VBox.setVgrow(split, Priority.ALWAYS);
-        getChildren().addAll(top, runSummary, actions, controls, split); // the summary row shows after a Run All
-        // A narrow Split gives the editor its share: the panel can shrink below its controls' preferred width,
-        // and the History picker narrows to fit (it is the one wide control).
+        VBox.setVgrow(content, Priority.ALWAYS);
+        VBox headerBox = new VBox(3, header, progress);
+        getChildren().addAll(headerBox, runSummary, runList, tabs, content); // the run notice; the Run All list
+        // A narrow Split gives the editor its share: the panel can shrink below its rows' preferred width.
         setMinWidth(MIN_WIDTH);
-        widthProperty().addListener((o, a, w) -> {
-            fitHistoryPicker(w.doubleValue());
-            fitBadge();
-            fitNotesRows();
-        });
-        // The top section sizes to what it holds (warnings, the Request, five rows of headers) instead of a fixed 30%.
-        split.heightProperty().addListener((o, a, h) -> fitHead());
+        setRunning(false);
+        // The chords follow the keymap: re-read when the window comes back (after a keymap change in Settings).
+        sceneProperty()
+                .flatMap(Scene::windowProperty)
+                .flatMap(Window::focusedProperty)
+                .addListener((o, a, focused) -> {
+                    if (Boolean.TRUE.equals(focused)) {
+                        refreshRunChord();
+                    }
+                });
         updateActions();
+        showBodyView(BodyView.EMPTY);
         idle();
     }
 
-    private static HBox pickerRow(String label, Node picker) {
-        Label l = new Label(label);
-        l.setMinWidth(Region.USE_PREF_SIZE); // a label never shrinks to "…"
-        HBox row = new HBox(6, l, picker);
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
+    /**
+     * Names an icon action ({@code name} is its accessible text) and gives it a tooltip that adds the keymap's chord
+     * for {@code commandId} when it is bound, read when the tooltip shows (so a keymap change is reflected), and
+     * {@code extra} on a line of its own.
+     */
+    private static void actionTip(Control control, String name, String commandId, String extra) {
+        control.setAccessibleText(name);
+        Tooltip tip = new Tooltip(name);
+        tip.setOnShowing(e -> tip.setText(withChord(name, commandId) + (extra == null ? "" : "\n" + extra)));
+        tip.setWrapText(extra != null);
+        tip.setMaxWidth(420);
+        control.setTooltip(tip);
+    }
+
+    /** {@code name}, then the live keymap's chord for {@code commandId} in brackets when it is bound. */
+    private static String withChord(String name, String commandId) {
+        String chord = chordFor(commandId);
+        return chord == null ? name : tr("httppanel.actionChord", name, chord);
+    }
+
+    /** The live keymap's chord for {@code commandId}, or null when unbound (or no keymap is set yet). */
+    private static String chordFor(String commandId) {
+        KeymapManager keymap = TextInputKeymap.sharedKeymap();
+        String chord = keymap == null || commandId == null ? null : keymap.displayChord(commandId);
+        return chord == null || chord.isEmpty() ? null : chord;
+    }
+
+    /** Shows Run's (or, while running, Cancel's) chord beside the button; hidden when the command is unbound. */
+    private void refreshRunChord() {
+        String chord = chordFor(running ? "http.cancelRequest" : "http.runRequest");
+        runChord.setText(chord == null ? "" : chord);
+        runChord.setVisible(chord != null);
+        runChord.setManaged(chord != null);
+        runButton.setAccessibleText(
+                chord == null ? runButton.getText() : tr("httppanel.actionChord", runButton.getText(), chord));
+        emptyState.setChord(chordFor("http.runRequest"));
+    }
+
+    /** Folded (a narrow strip): the icons' actions show in the "⋯" menu above Clear. */
+    private void foldIcons(boolean folded) {
+        for (MenuItem item : List.of(wrapItem, copyCurlItem, openTabItem, saveItem, foldedSeparator)) {
+            item.setVisible(folded);
+        }
+    }
+
+    private void buildHeadersTable() {
+        headersTable.getStyleClass().add("http-headers");
+        headersTable.setPlaceholder(new Label(""));
+        headersTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        TableColumn<String[], String> name = headerNameColumn;
+        name.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue()[0]));
+        name.getStyleClass().add("http-header-name");
+        name.setCellFactory(col -> new WrappingCell(col));
+        TableColumn<String[], String> value = new TableColumn<>(tr("httppanel.headerValue"));
+        value.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue()[1]));
+        value.getStyleClass().add("http-header-value");
+        value.setCellFactory(col -> new WrappingCell(col)); // a long cookie or policy wraps instead of ending in "…"
+        // The value column takes what the name column leaves (less the scroll bar's room).
+        value.prefWidthProperty()
+                .bind(headersTable
+                        .widthProperty()
+                        .subtract(name.widthProperty())
+                        .subtract(18));
+        for (TableColumn<String[], String> col : List.of(name, value)) {
+            col.setSortable(false);
+            col.setReorderable(false);
+        }
+        headersTable.getColumns().setAll(List.of(name, value));
+        MenuItem copyValue = new MenuItem(tr("httppanel.copyValue"), Icons.copy());
+        copyValue.setOnAction(e -> copyHeaders(false));
+        MenuItem copyLine = new MenuItem(tr("httppanel.copyHeader"));
+        copyLine.setOnAction(e -> copyHeaders(true));
+        MenuItem copyAll = new MenuItem(tr("httppanel.copyAllHeaders"));
+        copyAll.setOnAction(e -> putOnClipboard(headersText()));
+        ContextMenu menu = new ContextMenu(copyValue, copyLine, copyAll);
+        menu.setOnShowing(e -> {
+            boolean any = !headersTable.getSelectionModel().getSelectedItems().isEmpty();
+            copyValue.setDisable(!any);
+            copyLine.setDisable(!any);
+        });
+        headersTable.setContextMenu(menu);
+        // Copy by keyboard: the platform's copy chord, or the keymap's (Emacs M-w), copies the selected rows.
+        headersTable.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            KeymapManager keymap = TextInputKeymap.sharedKeymap();
+            String token = keymap == null ? null : KeyDispatcher.chord(e);
+            String command = token == null ? null : keymap.commandFor(token);
+            boolean copy = "edit.copy".equals(command) || (e.getCode() == KeyCode.C && e.isShortcutDown());
+            if (copy) {
+                copyHeaders(true);
+                e.consume();
+            } else if ("edit.selectAll".equals(command)) {
+                headersTable.getSelectionModel().selectAll();
+                e.consume();
+            }
+        });
+    }
+
+    /** Sizes the name column to the longest name, within a third of the table (a long name wraps). */
+    private void fitHeaderNames(List<String[]> headers) {
+        probe.setFont(headersStatus.getFont());
+        double widest = 60;
+        for (String[] h : headers) {
+            probe.setText(h[0]);
+            widest = Math.max(widest, probe.getLayoutBounds().getWidth());
+        }
+        double cap = Math.max(120, headersTable.getWidth() / 3);
+        headerNameColumn.setPrefWidth(Math.min(cap, Math.ceil(widest) + 24));
+    }
+
+    /** A header cell whose text wraps at the column's width. */
+    private static final class WrappingCell extends TableCell<String[], String> {
+        private final Text text = new Text();
+
+        WrappingCell(TableColumn<String[], String> column) {
+            text.getStyleClass().add("http-header-text");
+            text.wrappingWidthProperty().bind(column.widthProperty().subtract(14));
+        }
+
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            setText(null);
+            text.setText(empty || item == null ? "" : item);
+            setGraphic(empty || item == null ? null : text);
+        }
+    }
+
+    /** Copies the selected headers: their values, or "name: value" lines. */
+    private void copyHeaders(boolean withNames) {
+        List<String> lines = new ArrayList<>();
+        for (String[] h : headersTable.getSelectionModel().getSelectedItems()) {
+            lines.add(withNames ? h[0] + ": " + h[1] : h[1]);
+        }
+        if (!lines.isEmpty()) {
+            putOnClipboard(String.join("\n", lines));
+        }
+    }
+
+    private static void putOnClipboard(String text) {
+        ClipboardContent cc = new ClipboardContent();
+        cc.putString(text);
+        Clipboard.getSystemClipboard().setContent(cc);
+    }
+
+    /** The Headers tab as text: the status line, then one "name: value" line per header; "" when none shows. */
+    private String headersText() {
+        if (headersStatus.getText() == null || headersStatus.getText().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(headersStatus.getText()).append('\n');
+        for (String[] h : headersTable.getItems()) {
+            sb.append(h[0]).append(": ").append(h[1]).append('\n');
+        }
+        return sb.toString();
     }
 
     /**
      * Keyboard: Escape returns to the editor; Tab and Shift+Tab move out of the read-only text areas (a text
-     * area keeps Tab for itself, so focus used to stay in the response body for good).
+     * area keeps Tab for itself, so focus used to stay in the response body for good): Tab from a tab's content
+     * goes round to Run, Shift+Tab back to the strip's last action.
      */
     private void installKeys() {
         addEventHandler(KeyEvent.KEY_PRESSED, e -> {
@@ -438,24 +672,15 @@ public final class HttpClientPanel extends VBox {
         // The configured keymap in the read-only response areas: the panel owns its keys, so the editor-context
         // chords (Emacs M-w copy, C-n/C-p, C-v/M-v, M-</M->) are left to the focused area, which had none of them.
         ConsoleNav.installShared(bodyArea);
-        for (TextArea area : List.of(requestArea, testsLog, notesArea, headersArea)) {
+        ConsoleNav.installShared(requestArea);
+        for (TextArea area : List.of(testsLog, notesArea)) {
             TextInputKeymap.installSharedReadOnly(area);
         }
-        traverse(
-                requestArea,
-                () -> requestPane,
-                () -> testsPane.isVisible() ? testsPane : notesPane.isVisible() ? notesPane : headersArea);
-        traverse(testsLog, () -> testsPane, () -> notesPane.isVisible() ? notesPane : headersArea);
-        traverse(notesArea, () -> notesPane, () -> headersArea);
-        traverse(
-                headersArea,
-                () -> notesPane.isVisible()
-                        ? notesPane.isExpanded() ? notesArea : notesPane
-                        : testsPane.isVisible()
-                                ? testsPane.isExpanded() && testsLog.isVisible() ? testsLog : testsPane
-                                : requestPane.isExpanded() ? requestArea : requestPane,
-                () -> bodyArea);
-        traverse(bodyArea, () -> headersArea, () -> runButton);
+        Supplier<Node> first = () -> runButton.isDisabled() ? historyCombo : runButton;
+        Supplier<Node> last = () -> moreButton;
+        for (Node area : List.of(bodyArea, requestArea, testsLog, notesArea, headersTable)) {
+            traverse(area, last, first);
+        }
     }
 
     private static void traverse(Node from, Supplier<Node> back, Supplier<Node> forward) {
@@ -467,68 +692,90 @@ public final class HttpClientPanel extends VBox {
         });
     }
 
-    /** Updates the body editor font (called on a settings/font change). */
+    /** Updates the response view's text font (called on a settings/font change). */
     public void setEditorFont(String fontFamily, int fontSize) {
-        this.fontFamily = fontFamily;
-        this.fontSize = fontSize;
         fontStyle = "-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;";
-        bodyArea.setStyle(fontStyle);
-        headersArea.setStyle(fontStyle);
-        requestArea.setStyle(fontStyle);
-        notesArea.setStyle(fontStyle);
-        testsLog.setStyle(fontStyle);
+        for (Node n : List.<Node>of(bodyArea, requestArea, notesArea, testsLog, headersTable, headersStatus)) {
+            n.setStyle(fontStyle);
+        }
     }
 
     /**
-     * Right-click menu for the response body. The body is a read-only RichTextFX {@link CodeArea}, which —
-     * unlike a {@code TextArea} — has no built-in context menu, so without this there's no way to copy the
-     * response by mouse. Copy puts the selection (or the whole body when nothing is selected) on the
-     * clipboard without disturbing the selection.
+     * Right-click menu for a read-only RichTextFX {@link CodeArea} (the body, the request), which — unlike a {@code
+     * TextArea} — has no built-in context menu, so without this there's no way to copy by mouse. Copy puts the
+     * selection (or the whole text when nothing is selected) on the clipboard without disturbing the selection.
      */
-    private void installBodyContextMenu() {
+    private static void installCopyMenu(CodeArea area) {
         MenuItem copy = new MenuItem(tr("editmenu.copy"), Icons.copy());
-        copy.setOnAction(e -> {
-            String text = bodyArea.getSelection().getLength() > 0 ? bodyArea.getSelectedText() : bodyArea.getText();
-            ClipboardContent cc = new ClipboardContent();
-            cc.putString(text);
-            Clipboard.getSystemClipboard().setContent(cc);
-        });
+        copy.setOnAction(
+                e -> putOnClipboard(area.getSelection().getLength() > 0 ? area.getSelectedText() : area.getText()));
         MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"), Icons.selectAll());
-        selectAll.setOnAction(e -> bodyArea.selectAll());
+        selectAll.setOnAction(e -> area.selectAll());
         ContextMenu menu = new ContextMenu(copy, selectAll);
-        // Use the UI font (not the body's inherited monospace), matching the editor right-click menu.
+        // Use the UI font (not the area's inherited monospace), matching the editor right-click menu.
         menu.getStyleClass().add("editor-context-menu");
-        bodyArea.setOnContextMenuRequested(e -> {
-            menu.show(bodyArea, e.getScreenX(), e.getScreenY());
+        area.setOnContextMenuRequested(e -> {
+            menu.show(area, e.getScreenX(), e.getScreenY());
             e.consume();
         });
     }
 
     // --- run state -------------------------------------------------------------------------------------
 
-    /** No request run yet / cleared. */
+    /** No request run yet / cleared: the empty state says what Run will send, so the status line says nothing. */
     public void idle() {
-        setStatus(tr("httppanel.idle"), null);
+        setStatus("", null, "", null);
+    }
+
+    /** As {@link #started(String, String)} without a resolved request to show in the tooltip. */
+    public void started(String label) {
+        started(label, null);
     }
 
     /**
-     * A request started: the previous response is cleared from view (it is still in History), the button
-     * turns into Cancel, and the status line shows {@code label} with the time it has been running.
+     * A request started: the response on show is collapsed to the "Previous" row (still in History; its body is not
+     * left under the new run, where it read as the new response), the button turns into Cancel, a progress line runs
+     * under the header, and the status says "Sending {@code label}…" with the time it has been running; {@code
+     * detail} (the request as resolved, null for none) is its tooltip.
      */
-    public void started(String label) {
+    public void started(String label, String detail) {
         runningLabel = label == null ? "" : label;
+        runningDetail = detail == null || detail.equals(runningLabel) ? null : detail;
         runningSince = System.nanoTime();
+        waiting = false;
+        // A run that replaces one in flight keeps the response that was on show before the first.
+        previous = shown != null ? shown : collapsed || running ? previous : null;
+        collapsed = false;
         setRunning(true);
         updatingHistory = true;
         historyCombo.setValue(null);
         updatingHistory = false;
         clearView();
-        summaryText = null;
         runNotice = null;
         showSummaryRow();
+        runList.hide(); // a Run All's results stay until the next run, whichever it is
+        runTookNanos = -1;
+        showPreviousRow();
         updateActions();
+        showProgress(true);
         showRunning();
         elapsed.playFromStart();
+    }
+
+    /**
+     * The run waits for the answer to a trust prompt ({@code true}) or got it ({@code false}): "Waiting for your
+     * answer…" without a clock while nothing is sent, and the clock starts from zero once the request goes out.
+     */
+    public void awaitingAnswer(boolean on) {
+        if (!running || waiting == on) {
+            return;
+        }
+        waiting = on;
+        if (!on) {
+            runningSince = System.nanoTime();
+        }
+        showProgress(!on);
+        showRunning();
     }
 
     /** Run All progress: request {@code done + 1} of {@code total}, {@code label}, is now in flight. */
@@ -543,28 +790,117 @@ public final class HttpClientPanel extends VBox {
         if (!running) {
             return;
         }
-        double seconds = (System.nanoTime() - runningSince) / 1_000_000_000.0;
-        setStatus(tr("httppanel.running", runningLabel, HttpStatusText.seconds(seconds)), null);
-    }
-
-    /** The running request was cancelled by the user: back to Run, showing the selected response again. */
-    public void cancelled() {
-        stopRunning();
-        HttpHistoryEntry selected = historyCombo.getValue();
-        if (selected != null) {
-            showEntry(selected); // one the user picked during the run: its own status, not "Cancelled" over it
+        if (waiting) {
+            setStatus(tr("httppanel.waiting"), null, "", runningDetail);
             return;
         }
-        // Nothing is shown under "Cancelled": it used to show the previous response, which read as this one's. Any
-        // History entry can be picked from here.
+        String seconds = HttpPanelStates.secondsSince(runningSince, System.nanoTime());
+        setStatus(tr("httppanel.running", runningLabel, seconds), null, "", runningDetail);
+    }
+
+    /**
+     * The running request was cancelled by the user: back to Run. The status says how long it ran, and the response
+     * shown before it comes back as its "Previous" row, selected in History; with none, the empty state. A response
+     * the user picked from History during the run stays, with its own status (the cancel is said above the tabs).
+     */
+    public void cancelled() {
+        String ran = tr("httppanel.cancelledAfter", HttpPanelStates.secondsSince(runningSince, System.nanoTime()));
+        boolean sending = running && !waiting;
+        stopRunning();
+        String said = sending ? ran : "";
+        HttpHistoryEntry picked = historyCombo.getValue();
+        if (picked != null && picked == shown) {
+            showEntry(picked);
+            showRunNotice(said.isEmpty() ? null : said);
+            return;
+        }
+        rest(said);
+    }
+
+    /**
+     * Back to what was on show before the run, with nothing new to show: the "Previous" row (selected in History) when
+     * there was a response, else the empty state; {@code statusText} on the status line.
+     */
+    private void rest(String statusText) {
         clearView();
+        if (previous != null && history.contains(previous)) {
+            collapsed = true;
+            updatingHistory = true;
+            historyCombo.setValue(previous);
+            updatingHistory = false;
+            showPreviousRow();
+        } else {
+            previous = null;
+            collapsed = false;
+            showBodyView(BodyView.EMPTY);
+        }
         updateActions();
-        setStatus(tr("httppanel.cancelled"), null);
+        setStatus(statusText, null, "", null);
     }
 
     private void stopRunning() {
+        if (running) {
+            runTookNanos = System.nanoTime() - runningSince;
+        }
         elapsed.stop();
+        waiting = false;
+        showProgress(false);
         setRunning(false);
+    }
+
+    /** Shows or hides the progress line (an indeterminate bar animates only while it is shown). */
+    private void showProgress(boolean on) {
+        progress.setProgress(on ? ProgressBar.INDETERMINATE_PROGRESS : 0);
+        progress.setVisible(on);
+        progress.setManaged(on);
+    }
+
+    /** The Body tab shows {@link #previous}'s row, or nothing when there was none. */
+    private void showPreviousRow() {
+        if (previous == null) {
+            showBodyView(BodyView.BLANK);
+            return;
+        }
+        String line = HttpPanelStates.previousLine(previous, zone);
+        previousRow.setText(line);
+        previousRow.setAccessibleText(line + ". " + tr("httppanel.previous.tip"));
+        showBodyView(BodyView.PREVIOUS);
+    }
+
+    /** The "Previous" row was clicked: its response is shown (during a run, the status still says what runs). */
+    private void showPrevious() {
+        HttpHistoryEntry p = previous;
+        if (p == null || !history.contains(p)) {
+            return;
+        }
+        updatingHistory = true;
+        historyCombo.setValue(p);
+        updatingHistory = false;
+        showEntry(p);
+        if (running) {
+            showRunning();
+        }
+    }
+
+    /**
+     * Switches what the Body tab shows. The tab strip shows with a response, or while the "Previous" row stands for
+     * one; in the empty state and a first run it has nothing to offer (only Body, every action disabled) and goes.
+     */
+    private void showBodyView(BodyView view) {
+        bodyView = view;
+        bodyBox.setVisible(view == BodyView.RESPONSE);
+        emptyState.setVisible(view == BodyView.EMPTY);
+        errorCard.setVisible(view == BodyView.ERROR);
+        previousPane.setVisible(view == BodyView.PREVIOUS);
+        boolean strip = view == BodyView.RESPONSE || view == BodyView.ERROR || view == BodyView.PREVIOUS;
+        tabs.setVisible(strip);
+        tabs.setManaged(strip);
+        if (!strip) {
+            tabs.show(HttpResponseTab.BODY);
+        }
+        boolean anyHistory = !history.isEmpty();
+        historyCombo.setVisible(anyHistory);
+        emptyShowing.set(view == BodyView.EMPTY);
     }
 
     private void setRunning(boolean on) {
@@ -573,6 +909,8 @@ public final class HttpClientPanel extends VBox {
         runButton.getStyleClass().removeAll("danger", "accent");
         runButton.getStyleClass().add(on ? "danger" : "accent");
         runButton.setDisable(!on && runBlockedWhy != null);
+        header.setStatusShrinks(on || waiting);
+        refreshRunChord();
     }
 
     /**
@@ -582,6 +920,8 @@ public final class HttpClientPanel extends VBox {
     public void setRunBlocked(String why) {
         runBlockedWhy = why;
         runButton.setDisable(!running && why != null);
+        emptyState.setRunBlocked(why != null);
+        errorCard.setRunBlocked(why != null);
         if (runBlockedTip != null) {
             Tooltip.uninstall(runHost, runBlockedTip);
             runBlockedTip = null;
@@ -617,6 +957,26 @@ public final class HttpClientPanel extends VBox {
         this.onCleared = onCleared == null ? () -> {} : onCleared;
     }
 
+    /** Wires the empty state's rows: called with the line of the request a row stands for (run it). */
+    public void setOnRunLine(IntConsumer onRunLine) {
+        this.onRunLine = onRunLine == null ? line -> {} : onRunLine;
+    }
+
+    /** Told once when the panel is disposed (who feeds its empty state lets go of the buffer). */
+    void setOnDisposed(Runnable onDisposed) {
+        this.onDisposed = onDisposed == null ? () -> {} : onDisposed;
+    }
+
+    /** Whether the Body tab shows the empty state (its feed follows the buffer only then). */
+    ReadOnlyBooleanProperty emptyStateShowingProperty() {
+        return emptyShowing.getReadOnlyProperty();
+    }
+
+    /** Fills the empty state: the file's requests, and which of them ({@code caret}, -1 for none) Run sends. */
+    void showEmptyRequests(List<HttpEmptyState.Row> rows, int caret) {
+        emptyState.setRequests(rows, caret);
+    }
+
     // --- showing responses -----------------------------------------------------------------------------
 
     /**
@@ -624,10 +984,38 @@ public final class HttpClientPanel extends VBox {
      * not succeed — for a Run All, the failure the user needs to see — else the first.
      */
     public void showEntries(List<HttpHistoryEntry> entries) {
+        runList.hide();
+        addAndShow(entries);
+        runTookNanos = -1; // a later Run All that sends nothing (never "started") has no time to show
+    }
+
+    /**
+     * The finished {@code entries} of a Run All (in run order), shown as {@link #showEntries} does and listed one row
+     * per request above the tabs, the one shown selected. {@code cancelledOf} is the number of requests of a Run All
+     * the user cancelled (0: it finished). Fewer than two requests in a run that finished show no list.
+     */
+    public void showRunAll(List<HttpHistoryEntry> entries, int cancelledOf) {
+        if (entries == null || (entries.size() < 2 && cancelledOf < 2)) {
+            showEntries(entries);
+            return;
+        }
+        stopRunning(); // from Run to here (or to Cancel, which stopped it already)
+        long tookMs = runTookNanos < 0 ? -1 : runTookNanos / 1_000_000;
+        runTookNanos = -1;
+        HttpHistoryEntry shown = addAndShow(entries);
+        runList.show(entries, cancelledOf, tookMs, shown);
+    }
+
+    /** Adds {@code entries} to History and shows the one to land on; returns it (null when there are none). */
+    private HttpHistoryEntry addAndShow(List<HttpHistoryEntry> entries) {
+        boolean wasRunning = running;
         stopRunning();
         if (entries == null || entries.isEmpty()) {
+            if (wasRunning && shown == null) {
+                rest(""); // nothing came back: what was on show before
+            }
             updateActions();
-            return;
+            return null;
         }
         int pick = Math.max(
                 0,
@@ -642,7 +1030,32 @@ public final class HttpClientPanel extends VBox {
         historyCombo.getItems().setAll(history);
         historyCombo.setValue(first);
         updatingHistory = false;
+        previous = null;
         showEntry(first);
+        return first;
+    }
+
+    /** {@code entry} was picked in History: its Run All row is selected, or no row when it has none. */
+    private void selectRunRow(HttpHistoryEntry entry) {
+        runList.select(entry);
+    }
+
+    /** A Run All row was selected: shows its response (the History's copy of it, when History still has it). */
+    private void showRunRow(HttpHistoryEntry entry) {
+        HttpHistoryEntry shown = entry;
+        for (HttpHistoryEntry h : history) {
+            if (HttpRunRows.sameRun(h, entry)) {
+                shown = h;
+                break;
+            }
+        }
+        updatingHistory = true;
+        historyCombo.setValue(shown);
+        updatingHistory = false;
+        showEntry(shown);
+        if (running) {
+            showRunning();
+        }
     }
 
     /** Puts a saved history back (newest first) without running anything, showing the newest. */
@@ -678,6 +1091,7 @@ public final class HttpClientPanel extends VBox {
         historyCombo.getItems().setAll(history);
         historyCombo.setValue(selected != null && history.contains(selected) ? selected : null);
         updatingHistory = false;
+        historyCombo.setVisible(!history.isEmpty());
         updateActions();
     }
 
@@ -697,29 +1111,53 @@ public final class HttpClientPanel extends VBox {
     private void showEntry(HttpHistoryEntry entry) {
         HttpExchange ex = entry.exchange();
         HttpResult r = ex.result();
-        setStatus(HttpStatusText.summary(r), HttpStatusText.styleClass(r));
-        requestArea.setText(requestText(ex));
-        requestArea.positionCaret(0);
+        shown = entry;
+        collapsed = false;
+        String sent = TIME.format(Instant.ofEpochMilli(entry.at()).atZone(zone));
+        String tip = HttpStatusText.summary(r) + "\n" + tr("httppanel.sentAt", sent);
+        String timing = HttpStatusText.timing(r);
+        // Which environment this response was sent in: the pill beside the editor says what the next run uses.
+        String env = entry.environment();
+        if (env != null && !env.isEmpty()) {
+            String note = tr("httppanel.envNote", env);
+            timing = timing.isEmpty() ? note : tr("httppanel.statusLine", timing, note);
+            tip += "\n" + tr("httppanel.sentIn", env);
+        }
+        setStatus(HttpStatusText.pill(r), HttpStatusText.styleClass(r), timing, tip);
+        // A request that got no response shows its card; the strip comes back with the response.
+        showBodyView(r.failed() ? BodyView.ERROR : BodyView.RESPONSE);
         showNotes(r.warnings(), r.written()); // an unsent header, a truncated body…; the files a ">>" wrote
-        showTests(r.tests(), HttpStatusText.preRequestFailed(r));
-        StringBuilder head = new StringBuilder();
+        boolean preRequest = HttpStatusText.preRequestFailed(r);
+        showTests(r.tests(), preRequest);
         if (r.failed()) {
-            head.append("⚠  ").append(r.shownError());
+            headersStatus.setText("");
+            headersTable.getItems().clear();
         } else {
             String protocol = r.protocol() == null || r.protocol().isBlank() ? "HTTP" : r.protocol();
-            head.append(protocol)
-                    .append(' ')
-                    .append(HttpStatusText.statusWithReason(r.status()))
-                    .append('\n');
-            for (String[] h : r.headers()) {
-                head.append(h[0]).append(": ").append(h[1]).append('\n');
-            }
+            headersStatus.setText(protocol + ' ' + HttpStatusText.statusWithReason(r.status()));
+            headersTable.getItems().setAll(r.headers());
+            fitHeaderNames(r.headers());
         }
-        headersArea.setText(head.toString());
-        headersArea.positionCaret(0);
+        tabs.setCount(
+                HttpResponseTab.HEADERS,
+                r.failed() ? null : String.valueOf(r.headers().size()),
+                HttpTabStrip.CountStyle.NEUTRAL,
+                tr("httppanel.headersCount", r.headers().size()));
+        Set<HttpResponseTab> available = EnumSet.of(HttpResponseTab.BODY, HttpResponseTab.REQUEST);
+        if (!r.failed()) {
+            available.add(HttpResponseTab.HEADERS);
+        }
+        if (!r.tests().isEmpty()) {
+            available.add(HttpResponseTab.TESTS);
+        }
+        if (!notesArea.getText().isEmpty()) {
+            available.add(HttpResponseTab.NOTES);
+        }
+        tabs.setAvailable(available);
+        // A send failure opens on its card in Body, a failed test on Tests; otherwise the tab picked by hand stays.
+        tabs.show(HttpResponseTab.choose(pickedTab, r.tests().hasFailures(), r.failed(), available));
         updateActions();
-        renderBody(entry);
-        fitHead();
+        render(entry, requestText(ex));
     }
 
     /** The request as it was sent: request line, headers, then the body after a blank line. Pure. */
@@ -741,19 +1179,32 @@ public final class HttpClientPanel extends VBox {
         return sb.toString();
     }
 
-    private void setStatus(String text, String styleClass) {
+    /**
+     * Sets the status: {@code text} as a pill coloured by {@code outcome} (an {@link HttpStatusText} style class), or
+     * as plain text when {@code outcome} is null (running, idle, cancelled); {@code timing} beside it; {@code tip}
+     * (null for none) as its tooltip.
+     */
+    private void setStatus(String text, String outcome, String timing, String tip) {
         status.setText(text);
-        // A running URL keeps its start and end; a response keeps its status code ("200 O…117 B" lost it).
-        status.setTextOverrun(running ? OverrunStyle.CENTER_ELLIPSIS : OverrunStyle.ELLIPSIS);
+        meta.setText(timing == null ? "" : timing);
+        statusLine = meta.getText().isEmpty() ? text : tr("httppanel.statusLine", text, meta.getText());
+        status.setAccessibleText(statusLine);
         status.getStyleClass().removeAll(HttpStatusText.ALL);
-        if (styleClass != null) {
-            status.getStyleClass().add(styleClass);
+        status.getStyleClass().remove("state-pill");
+        if (outcome != null) {
+            status.getStyleClass().addAll("state-pill", outcome);
+        }
+        if (tip == null) {
+            status.setTooltip(null);
+        } else {
+            statusTip.setText(tip);
+            status.setTooltip(statusTip);
         }
     }
 
     /** Enables the actions that make sense for the selected response. */
     private void updateActions() {
-        HttpHistoryEntry e = running ? null : historyCombo.getValue();
+        HttpHistoryEntry e = running ? null : selectedShown();
         HttpResult r = e == null ? null : e.result();
         boolean has = r != null && !r.failed();
         boolean bodyKept = e != null && !e.bodyDropped() && !e.binaryNotKept();
@@ -761,42 +1212,57 @@ public final class HttpClientPanel extends VBox {
         copyCurlButton.setDisable(e == null || HttpStatusText.notSent(r));
         openTabButton.setDisable(!has || !bodyKept || r.binary());
         saveButton.setDisable(!has || !bodyKept);
-        clearButton.setDisable(running || history.isEmpty());
+        clearItem.setDisable(running || history.isEmpty());
     }
 
     private void clearView() {
         bodyGeneration++; // a body still being formatted must not reappear
-        headersArea.clear();
+        shown = null;
+        headersStatus.setText("");
+        headersTable.getItems().clear();
         requestArea.clear();
         showNotes(List.of(), List.of());
         showTests(HttpTests.NONE, false);
+        tabs.setCount(HttpResponseTab.HEADERS, null, null, null);
+        tabs.setAvailable(EnumSet.of(HttpResponseTab.BODY));
         showBodyNote(null);
         bodyArea.clear();
-        imageView.setImage(null);
-        imageScroll.setVisible(false);
+        imageView.clear();
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
     }
 
     /**
-     * Formats + tokenizes {@code entry}'s body off the FX thread, then applies it — unless another exchange was
-     * selected (or the panel cleared) meanwhile. A multi-megabyte JSON response used to freeze the window here
-     * for as long as the pretty-printer and the TextMate tokenizer took.
+     * Shows {@code entry}'s request now and formats + tokenizes its body and the request's highlighting off the FX
+     * thread, then applies them — unless another exchange was selected (or the panel cleared) meanwhile. A
+     * multi-megabyte JSON response used to freeze the window here for as long as the pretty-printer and the
+     * TextMate tokenizer took. A request that failed shows its error in the body's place.
      */
-    private void renderBody(HttpHistoryEntry entry) {
+    private void render(HttpHistoryEntry entry, String request) {
         HttpResult r = entry.result();
         long generation = ++bodyGeneration;
         CompletableFuture<Void> done = new CompletableFuture<>();
         bodyRender = done;
         bodyArea.replaceText(""); // never leave the previous response under the new status + headers
-        imageView.setImage(null);
+        imageView.clear();
+        String shownRequest =
+                request.length() > MAX_BODY_CHARS ? request.substring(0, MAX_BODY_CHARS) + "\n…" : request;
+        requestArea.replaceText(shownRequest);
+        requestArea.moveTo(0);
+        requestArea.requestFollowCaret();
+        if (r.failed()) {
+            showError(r);
+        }
         HttpBodyRendering.FORMAT.execute(() -> {
             if (generation != bodyGeneration) {
                 done.complete(null); // superseded while queued: stepping through History no longer queues renders
                 return;
             }
             HttpBodyRendering.Rendered rendered;
+            StyleSpans<Collection<String>> requestSpans;
             try {
-                rendered = HttpBodyRendering.format(r, MAX_BODY_CHARS);
+                rendered = r.failed() ? null : HttpBodyRendering.format(r, MAX_BODY_CHARS);
+                requestSpans = HttpBodyRendering.highlight(shownRequest, "http");
             } catch (RuntimeException | Error e) {
                 done.completeExceptionally(e);
                 return;
@@ -804,7 +1270,10 @@ public final class HttpClientPanel extends VBox {
             Platform.runLater(() -> {
                 try {
                     if (generation == bodyGeneration) {
-                        applyBody(entry, rendered);
+                        if (rendered != null) {
+                            applyBody(entry, rendered);
+                        }
+                        applySpans(requestArea, requestSpans);
                     }
                     done.complete(null);
                 } catch (RuntimeException e) {
@@ -814,17 +1283,35 @@ public final class HttpClientPanel extends VBox {
         });
     }
 
+    /** A request that got no response: the card naming the failure, with its explanation and what to do next. */
+    private void showError(HttpResult r) {
+        imageView.setVisible(false);
+        bodyScroll.setVisible(true);
+        showBodyNote(null);
+        errorCard.show(HttpFailureKind.of(r), r.shownError());
+    }
+
+    private static void applySpans(CodeArea area, StyleSpans<Collection<String>> spans) {
+        if (spans != null && spans.length() > 0 && spans.length() <= area.getLength()) {
+            try {
+                area.setStyleSpans(0, spans);
+            } catch (RuntimeException ignored) {
+                // leave it unstyled
+            }
+        }
+    }
+
     /** FX-thread half: shows the view, with a visible line wherever something was left out. */
     private void applyBody(HttpHistoryEntry entry, HttpBodyRendering.Rendered rendered) {
         HttpResult r = entry.result();
         if (rendered.image() != null) {
-            imageView.setImage(rendered.image());
-            imageScroll.setVisible(true);
+            imageView.show(rendered.image(), r.contentType(), r.sizeBytes());
+            imageView.setVisible(true);
             bodyScroll.setVisible(false);
             bodyArea.replaceText("");
             return;
         }
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         HttpResponseFormat.BodyView view = rendered.view();
         StringBuilder text = new StringBuilder(rendered.text());
@@ -855,62 +1342,125 @@ public final class HttpClientPanel extends VBox {
         // A note in place of a body (binary, dropped, not kept) wraps whatever the Wrap toggle says.
         bodyArea.setWrapText(wrapToggle.isSelected() || rendered.text().isEmpty());
         bodyArea.setStyle(fontStyle);
-        if (rendered.spans() != null && rendered.spans().length() > 0) {
-            try {
-                bodyArea.setStyleSpans(0, rendered.spans()); // covers the body; an appended note stays plain
-            } catch (RuntimeException ignored) {
-                // leave it unstyled
-            }
-        }
+        applySpans(bodyArea, rendered.spans()); // covers the body; an appended note stays plain
         bodyArea.moveTo(0);
         bodyArea.scrollToPixel(0, 0);
+    }
+
+    /** Shows {@code tab}'s content (the strip's selection changed, by the user or by a run). */
+    /**
+     * Only the shown child of {@code stack} counts in its size. A hidden empty state (a row per request) or tab used to
+     * ask for its full height, and the panel took that room from the Run All list above the tabs.
+     */
+    private static void unmanagedWhenHidden(StackPane stack) {
+        for (Node child : stack.getChildren()) {
+            child.managedProperty().bind(child.visibleProperty());
+        }
+    }
+
+    private void showTab(HttpResponseTab tab) {
+        tabContent.forEach((t, node) -> node.setVisible(t == tab));
     }
 
     // --- test accessors (compile-checked, instead of reading private fields by name) ---
 
     /** The panel's controls, for tests that drive or read them (compile-checked, instead of private fields by name). */
     record Controls(
-            ComboBox<String> environmentPicker,
             ComboBox<HttpHistoryEntry> historyPicker,
             Button runButton,
+            Label runChord,
+            ProgressBar progress,
             Button copyCurlButton,
             Button openTabButton,
             Button saveButton,
-            Button clearButton,
+            ToggleButton wrapToggle,
+            MenuButton moreButton,
+            MenuItem clearItem,
             Label statusLabel,
-            TextArea headersArea,
+            Label metaLabel,
+            TableView<String[]> headersTable,
             TextArea notesArea,
             CodeArea bodyArea,
+            CodeArea requestArea,
+            TextArea testsLog,
             Timeline elapsed,
-            TitledPane notesPane,
-            TitledPane requestPane,
-            TextArea requestArea,
-            Label warnBadgeLabel,
             Tooltip runBlockedTooltip) {}
 
     /** The panel's controls as they are now. Test accessor. */
     Controls controlsForTest() {
         return new Controls(
-                envCombo,
                 historyCombo,
                 runButton,
+                runChord,
+                progress,
                 copyCurlButton,
                 openTabButton,
                 saveButton,
-                clearButton,
+                wrapToggle,
+                moreButton,
+                clearItem,
                 status,
-                headersArea,
+                meta,
+                headersTable,
                 notesArea,
                 bodyArea,
-                elapsed,
-                notesPane,
-                requestPane,
                 requestArea,
-                warnBadge,
+                testsLog,
+                elapsed,
                 runBlockedTip);
     }
 
-    /** The Clear button's action. */
+    /** The tab strip. Test accessor. */
+    HttpTabStrip tabsForTest() {
+        return tabs;
+    }
+
+    /** What the Body tab shows. Test accessor. */
+    BodyView bodyViewForTest() {
+        return bodyView;
+    }
+
+    /** The empty state. Test accessor. */
+    HttpEmptyState emptyStateForTest() {
+        return emptyState;
+    }
+
+    /** The error card. Test accessor. */
+    HttpErrorCard errorCardForTest() {
+        return errorCard;
+    }
+
+    /** The "Previous" row's text, or null when it is not on show. Test accessor. */
+    String previousRowForTest() {
+        return bodyView == BodyView.PREVIOUS ? previousRow.getText() : null;
+    }
+
+    /** Clicks the "Previous" row. Test accessor. */
+    void clickPreviousForTest() {
+        previousRow.fire();
+    }
+
+    /** The header row. Test accessor. */
+    HttpHeaderRow headerForTest() {
+        return header;
+    }
+
+    /** {@code tab}'s content pane. Test accessor. */
+    Node tabContentForTest(HttpResponseTab tab) {
+        return tabContent.get(tab);
+    }
+
+    /** The selected tab. Test accessor. */
+    HttpResponseTab selectedTabForTest() {
+        return tabs.selected();
+    }
+
+    /** What {@code tab} shows ("Tests 2/3", only "2/3" when narrow), or null when it is hidden. Test accessor. */
+    String tabTextForTest(HttpResponseTab tab) {
+        return tabs.shownTextForTest(tab);
+    }
+
+    /** The Clear action. */
     void clearForTest() {
         clear();
     }
@@ -922,12 +1472,11 @@ public final class HttpClientPanel extends VBox {
 
     /** Whether the body pane currently shows a picture. Test accessor. */
     boolean showsImageForTest() {
-        return imageScroll.isVisible() && imageView.getImage() != null;
+        return imageView.isVisible() && imageView.hasImage();
     }
 
-    /** Whether the warnings block is open. Test accessor. */
-    boolean notesExpandedForTest() {
-        return notesPane.isExpanded();
+    HttpImageView imageViewForTest() {
+        return imageView;
     }
 
     /** The note above the body (a cut view or history), or null when none shows. Test accessor. */
@@ -935,9 +1484,9 @@ public final class HttpClientPanel extends VBox {
         return bodyNote.isVisible() ? bodyNote.getText() : null;
     }
 
-    /** The status line's text. Test accessor. */
+    /** The status line's text: the pill and the timing beside it ("200 OK  ·  3 ms  ·  44 B"). Test accessor. */
     String statusForTest() {
-        return status.getText();
+        return statusLine;
     }
 
     /** Completes when the latest body render has landed (or been superseded). Test accessor. */
@@ -949,77 +1498,48 @@ public final class HttpClientPanel extends VBox {
         return HttpStatusText.size(bytes);
     }
 
+    /** The selected History entry when it is on show — not while only its "Previous" row stands for it. */
+    private HttpHistoryEntry selectedShown() {
+        return collapsed ? null : historyCombo.getValue();
+    }
+
     private void withSelected(Consumer<HttpExchange> action) {
-        HttpHistoryEntry e = historyCombo.getValue();
+        HttpHistoryEntry e = selectedShown();
         if (e != null && action != null) {
             action.accept(e.exchange());
         }
     }
 
     private void clear() {
+        runList.hide();
         history.clear();
         updatingHistory = true;
         historyCombo.getItems().clear();
         historyCombo.setValue(null);
         updatingHistory = false;
+        previous = null;
+        collapsed = false;
         clearView();
+        showBodyView(BodyView.EMPTY);
         updateActions();
         idle();
         onCleared.run();
     }
 
-    /** Populates the environment picker; {@code active} ({@code ""} = none) is selected when this file has it. */
-    public void setEnvironments(List<String> names, String active) {
-        updatingEnv = true;
-        List<String> items = new ArrayList<>();
-        items.add(""); // the "no environment" option
-        if (names != null) {
-            items.addAll(names);
-        }
-        if (!items.equals(envCombo.getItems())) {
-            envCombo.getItems().setAll(items);
-        }
-        envCombo.setValue(HttpEnvironments.choose(active, items)); // a name this file does not define → none
-        envCombo.setDisable(items.size() <= 1);
-        updatingEnv = false;
-    }
-
-    /** The selected environment name, or {@code ""} for none. */
-    public String getSelectedEnvironment() {
-        String v = envCombo.getValue();
-        return v == null ? "" : v;
-    }
-
-    public void setOnEnvironmentChanged(Consumer<String> onEnvironmentChanged) {
-        this.onEnvironmentChanged = onEnvironmentChanged;
-    }
-
     /** The selected exchange (for Copy as cURL / Open in tab), or {@code null}. */
     public HttpExchange getSelectedExchange() {
-        HttpHistoryEntry e = historyCombo.getValue();
+        HttpHistoryEntry e = selectedShown();
         return e == null ? null : e.exchange();
     }
 
     /** The selected history entry, or {@code null}. */
     HttpHistoryEntry getSelectedEntry() {
-        return historyCombo.getValue();
-    }
-
-    /** Focuses the environment picker (the {@code http.selectEnvironment} command's target). */
-    public void focusEnvironment() {
-        envCombo.requestFocus();
-    }
-
-    /** After a Run All: "Run All: 3 of 13 failed" beside the status line (null hides it). */
-    public void showRunSummary(String summary) {
-        summaryText = summary;
-        showSummaryRow();
+        return selectedShown();
     }
 
     /**
-     * A note about the run just started, shown under the status line until the next run — Run on a History entry
-     * whose request is gone sends the caret's request instead, which a status-bar message alone hid within
-     * milliseconds.
+     * A note about the run just started, shown under the header until the next run — Run on a History entry whose
+     * request is gone sends the caret's request instead, which a status-bar message alone hid within milliseconds.
      */
     public void showRunNotice(String notice) {
         runNotice = notice;
@@ -1027,9 +1547,31 @@ public final class HttpClientPanel extends VBox {
     }
 
     private void showSummaryRow() {
-        String text =
-                summaryText == null ? runNotice : runNotice == null ? summaryText : summaryText + "\n" + runNotice;
-        showBadge(runSummary, text);
+        showBadge(runSummary, runNotice);
+    }
+
+    /** Where a Run All row's Enter or double-click goes: that entry's request in the editor. */
+    public void setOnJumpToRequest(Consumer<HttpHistoryEntry> onJump) {
+        this.onJump = onJump == null ? e -> {} : onJump;
+    }
+
+    /**
+     * Selects {@code entry} in History and shows it — a click on a request's result in the editor. The entry is
+     * found by its saved key, since trimming may have replaced it with a copy without its body. False when History
+     * no longer holds it.
+     */
+    public boolean showHistoryEntry(HttpHistoryEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        String key = entry.storedKey();
+        for (HttpHistoryEntry e : history) {
+            if (e == entry || e.storedKey().equals(key)) {
+                historyCombo.setValue(e); // its listener shows it (also during a run, as a pick from History does)
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1038,61 +1580,47 @@ public final class HttpClientPanel extends VBox {
      */
     public void dispose() {
         elapsed.stop();
+        showProgress(false);
         running = false;
+        waiting = false;
+        previous = null;
         clearView();
+        runList.hide();
+        Runnable disposed = onDisposed;
+        onDisposed = () -> {};
+        disposed.run();
+        onRunLine = line -> {};
         history.clear();
         updatingHistory = true;
         historyCombo.getItems().clear();
         historyCombo.setValue(null);
         updatingHistory = false;
         onRun = e -> {};
+        onJump = e -> {};
         onCancel = null;
         onEscape = () -> {};
         onCleared = () -> {};
-        onEnvironmentChanged = null;
     }
 
-    /** The warning badge's text, or null when hidden. Test accessor. */
-    String warnBadgeForTest() {
-        return warnBadge.isVisible() ? warnBadge.getText() : null;
-    }
-
-    /** The notes (warnings, files written) shown, or "" when the notes block is hidden. Test accessor. */
+    /** The notes (warnings, files written) shown, or "" when there are none. Test accessor. */
     String notesForTest() {
-        return notesPane.isVisible() ? notesArea.getText() : "";
+        return notesArea.getText();
     }
 
-    /** The headers text shown. Test accessor. */
+    /** The Headers tab as text: the status line, then "name: value" lines; "" when none shows. Test accessor. */
     String headersForTest() {
-        return headersArea.getText();
-    }
-
-    /** The tests badge's text, or null when hidden. Test accessor. */
-    String testsBadgeForTest() {
-        return testsBadge.isVisible() ? testsBadgeText : null;
-    }
-
-    /** Each part of the tests badge as "text = style" (passed or failed), separators left out. Test accessor. */
-    List<String> testsBadgePartsForTest() {
-        List<String> out = new ArrayList<>();
-        for (Node part : testsBadge.getChildren()) {
-            if (part instanceof Label l && !l.getStyleClass().contains("http-tests-sep")) {
-                String style = l.getStyleClass().contains("http-tests-failed") ? "failed" : "passed";
-                out.add(l.getText() + " = " + style);
-            }
-        }
-        return out;
+        return headersText();
     }
 
     /**
-     * The Tests block as text — its title, one "✓ name" / "✗ name — why" line per test, then the log and error —
-     * or "" when it is hidden. Test accessor.
+     * The Tests tab as text — its title, one "✓ name" / "✗ name — why" line per test, then the log and error — or ""
+     * when the response ran none. Test accessor.
      */
     String testsForTest() {
-        if (!testsPane.isVisible()) {
+        if (testsTitle.getText().isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder(testsPane.getText());
+        StringBuilder sb = new StringBuilder(testsTitle.getText());
         for (Node row : testRows.getChildren()) {
             if (row instanceof Label l) {
                 sb.append('\n').append(l.getText());
@@ -1104,19 +1632,23 @@ public final class HttpClientPanel extends VBox {
         return sb.toString();
     }
 
-    /** Whether the Tests block is expanded. Test accessor. */
-    boolean testsExpandedForTest() {
-        return testsPane.isExpanded();
-    }
-
-    /** The Run All summary, or null when hidden. Test accessor. */
-    String runSummaryForTest() {
+    /** The note about the last run under the header, or null when hidden. Test accessor. */
+    String runNoticeForTest() {
         return runSummary.isVisible() ? runSummary.getText() : null;
     }
 
+    /** The Run All results list. Test accessor. */
+    HttpRunList runListForTest() {
+        return runList;
+    }
+
     private boolean isNoteOnly() {
-        HttpHistoryEntry e = historyCombo.getValue();
-        return e != null && (e.bodyDropped() || e.binaryNotKept() || e.result().binary());
+        HttpHistoryEntry e = selectedShown();
+        return e != null
+                && (e.bodyDropped()
+                        || e.binaryNotKept()
+                        || e.result().binary()
+                        || e.result().failed());
     }
 
     private static void showBadge(Label badge, String text) {
@@ -1127,9 +1659,10 @@ public final class HttpClientPanel extends VBox {
     }
 
     /**
-     * Shows the response's warnings and the files it wrote in their own block — they used to sit above the
-     * status line in the five-row headers box, so eleven unresolved variables pushed every header out of view
-     * while the status line said a plain green "200 OK". Repeated lines are shown once with a count.
+     * Fills the Notes tab with the response's warnings and the files it wrote — they used to sit above the status
+     * line in the five-row headers box, so eleven unresolved variables pushed every header out of view while the
+     * status line said a plain green "200 OK". Repeated lines are shown once with a count. The tab's count is amber
+     * when there is a warning; a run does not switch to it.
      */
     private void showNotes(List<String> warnings, List<String> written) {
         List<String> lines = new ArrayList<>();
@@ -1140,36 +1673,26 @@ public final class HttpClientPanel extends VBox {
             lines.add("→  " + w);
         }
         int warned = warnings == null ? 0 : warnings.size();
-        boolean any = !lines.isEmpty();
+        int wrote = written == null ? 0 : written.size();
         notesArea.setText(String.join("\n", lines));
         notesArea.positionCaret(0);
-        fitNotesRows();
-        notesPane.setText(
-                warned > 0
-                        ? tr("httppanel.warnings", warned)
-                        : tr("httppanel.filesWritten", written == null ? 0 : written.size()));
-        notesPane.setExpanded(lines.size() <= NOTES_SHOWN_EXPANDED);
-        notesPane.setVisible(any);
-        notesPane.setManaged(any);
-        warnCount = warned;
-        showBadge(warnBadge, warned > 0 ? HttpStatusText.warningBadge(warned, compactBadge) : null);
-        fitBadge();
-    }
-
-    private void toggleNotes() {
-        notesPane.setExpanded(!notesPane.isExpanded());
+        String detail = warned > 0 && wrote > 0
+                ? HttpStatusText.warningBadge(warned, false) + ", " + tr("httppanel.filesWritten", wrote)
+                : warned > 0 ? HttpStatusText.warningBadge(warned, false) : tr("httppanel.filesWritten", wrote);
+        tabs.setCount(
+                HttpResponseTab.NOTES,
+                lines.isEmpty() ? null : String.valueOf(warned + wrote),
+                warned > 0 ? HttpTabStrip.CountStyle.WARN : HttpTabStrip.CountStyle.NEUTRAL,
+                detail);
     }
 
     /**
-     * Shows what the request's {@code @assert} checks and scripts found in the Tests block: a ✓ or ✗ row per test
-     * with why it failed, then the scripts' {@code client.log} lines and the error a script stopped with, named as a
-     * pre-request script's when {@code preRequest}. Open when something failed (or there is little to show), closed
-     * when a long list all passed.
+     * Shows what the request's {@code @assert} checks and scripts found in the Tests tab: a ✓ or ✗ row per test with
+     * why it failed, then the scripts' {@code client.log} lines and the error a script stopped with, named as a
+     * pre-request script's when {@code preRequest}. The tab's count is passed of total, red when something failed.
      */
     private void showTests(HttpTests tests, boolean preRequest) {
         HttpTests t = tests == null ? HttpTests.NONE : tests;
-        shownTests = t;
-        shownPreRequest = preRequest;
         testRows.getChildren().clear();
         for (HttpTests.Test test : t.tests()) {
             String text = (test.passed() ? "✓  " : "✗  ")
@@ -1193,42 +1716,15 @@ public final class HttpClientPanel extends VBox {
         boolean logged = !lines.isEmpty();
         testsLog.setText(String.join("\n", lines));
         testsLog.positionCaret(0);
-        testsLog.setPrefRowCount(Math.max(1, Math.min(8, lines.size() + countWraps(lines))));
+        testsLog.setPrefRowCount(Math.max(2, Math.min(20, lines.size() + countWraps(lines))));
         testsLog.setVisible(logged);
         testsLog.setManaged(logged);
-        boolean any = !t.isEmpty();
-        testsPane.setText(any ? HttpStatusText.testsTitle(t, preRequest) : "");
-        testsPane.setExpanded(t.hasFailures() || t.tests().size() + lines.size() <= 4);
-        testsPane.setVisible(any);
-        testsPane.setManaged(any);
-        setTestsBadge(HttpStatusText.testsBadgeParts(t, compactBadge, preRequest), compactBadge);
-        fitBadge();
-    }
-
-    /**
-     * Fills the tests badge with {@code parts}, each its own label coloured passed or failed, joined by " · " (by a
-     * space when {@code compact}); hides it when there are none.
-     */
-    private void setTestsBadge(List<HttpStatusText.BadgePart> parts, boolean compact) {
-        testsBadge.getChildren().clear();
-        List<String> texts = new ArrayList<>();
-        for (HttpStatusText.BadgePart part : parts) {
-            if (!testsBadge.getChildren().isEmpty()) {
-                Label sep = new Label(compact ? " " : HttpStatusText.BADGE_SEPARATOR);
-                sep.getStyleClass().addAll("http-tests-part", "http-tests-sep");
-                testsBadge.getChildren().add(sep);
-            }
-            Label l = new Label(part.text());
-            l.setMinWidth(Region.USE_PREF_SIZE);
-            l.getStyleClass().addAll("http-tests-part", part.failed() ? "http-tests-failed" : "http-tests-passed");
-            testsBadge.getChildren().add(l);
-            texts.add(part.text());
-        }
-        testsBadgeText = String.join(compact ? " " : HttpStatusText.BADGE_SEPARATOR, texts);
-        testsBadge.setAccessibleText(testsBadgeText);
-        boolean on = !parts.isEmpty();
-        testsBadge.setVisible(on);
-        testsBadge.setManaged(on);
+        testsTitle.setText(t.isEmpty() ? "" : HttpStatusText.testsTitle(t, preRequest));
+        tabs.setCount(
+                HttpResponseTab.TESTS,
+                HttpStatusText.testsCount(t),
+                t.hasFailures() ? HttpTabStrip.CountStyle.FAILED : HttpTabStrip.CountStyle.PASSED,
+                HttpStatusText.testsBadge(t, false, preRequest));
     }
 
     /** A rough count of the extra rows long log lines wrap to, so a stack trace is not shown one line high. */
@@ -1240,87 +1736,10 @@ public final class HttpClientPanel extends VBox {
         return extra;
     }
 
-    private void toggleTests() {
-        testsPane.setExpanded(!testsPane.isExpanded());
-    }
-
     private void showBodyNote(String text) {
         boolean on = text != null && !text.isBlank();
         bodyNote.setText(on ? text : "");
         bodyNote.setVisible(on);
         bodyNote.setManaged(on);
-    }
-
-    /** Sizes the notes box to its wrapped lines (it counted entries, so two long warnings showed one and a half). */
-    private void fitNotesRows() {
-        double width = notesArea.getWidth() > 0 ? notesArea.getWidth() : getWidth() - 24;
-        int columns = HttpPanelLayout.columns(width - 28, charWidth()); // the area's padding and scroll bar
-        List<String> lines = List.of(notesArea.getText().split("\n", -1));
-        notesArea.setPrefRowCount(HttpPanelLayout.notesRows(lines, columns));
-    }
-
-    private double charWidth() {
-        Text probe = new Text("0000000000");
-        probe.setFont(fontFamily == null ? Font.font("monospace", 13) : Font.font(fontFamily, Math.max(1, fontSize)));
-        return probe.getLayoutBounds().getWidth() / 10;
-    }
-
-    /**
-     * Shortens the badges to "⚠ 11" and "✓3 ✗1" when the full ones would squeeze the status line itself.
-     */
-    private void fitBadge() {
-        String testsFull = HttpStatusText.testsBadge(shownTests, false, shownPreRequest);
-        if ((warnCount <= 0 && testsFull == null) || getWidth() <= 0) {
-            return;
-        }
-        double badges = 0;
-        if (warnCount > 0) {
-            Text full = new Text(HttpStatusText.warningBadge(warnCount, false));
-            full.setFont(warnBadge.getFont());
-            badges += full.getLayoutBounds().getWidth() + 8;
-        }
-        if (testsFull != null) {
-            Text full = new Text(testsFull);
-            full.setFont(warnBadge.getFont()); // the parts are bold, like the warnings badge
-            badges += full.getLayoutBounds().getWidth() + 8;
-        }
-        double needed = runHost.prefWidth(-1) + status.prefWidth(-1) + badges + 8 + 12;
-        boolean compact =
-                needed > getWidth() - getInsets().getLeft() - getInsets().getRight();
-        if (warnCount > 0
-                && (compact != compactBadge
-                        || !warnBadge.getText().equals(HttpStatusText.warningBadge(warnCount, compact)))) {
-            warnBadge.setText(HttpStatusText.warningBadge(warnCount, compact));
-        }
-        if (testsFull != null) {
-            String t = HttpStatusText.testsBadge(shownTests, compact, shownPreRequest);
-            if (!testsBadgeText.equals(t)) {
-                setTestsBadge(HttpStatusText.testsBadgeParts(shownTests, compact, shownPreRequest), compact);
-            }
-        }
-        compactBadge = compact;
-    }
-
-    /**
-     * Gives the top section (Request, warnings, headers) the height it asks for, within bounds, instead of a fixed
-     * 30%: with two warnings shown the headers were left two lines. Runs after layout, on each response and when
-     * Request or the warnings are opened or closed; a divider the user dragged holds until then.
-     */
-    private void fitHead() {
-        Platform.runLater(() -> {
-            double h = split.getHeight();
-            if (h <= 0 || getScene() == null) {
-                return;
-            }
-            double want = head.prefHeight(split.getWidth()) + 8;
-            split.setDividerPositions(HttpPanelLayout.headShare(want, h));
-        });
-    }
-
-    /** Narrows the History picker to what the panel's width leaves, between its minimum and its usual width. */
-    private void fitHistoryPicker(double panelWidth) {
-        Insets in = getInsets();
-        double room = panelWidth - in.getLeft() - in.getRight() - 90; // the "History:" label and the gap
-        historyCombo.setPrefWidth(HttpPanelLayout.historyWidth(room));
     }
 }

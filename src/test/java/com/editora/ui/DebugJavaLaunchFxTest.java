@@ -146,7 +146,7 @@ class DebugJavaLaunchFxTest {
     @BeforeEach
     void setUp() throws Exception {
         Files.writeString(project.resolve("pom.xml"), "<project/>\n");
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         replies.put("vscode.java.startDebugSession", adapter.port());
         lspManager = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lspManager);
@@ -347,7 +347,7 @@ class DebugJavaLaunchFxTest {
                 "",
                 "",
                 javafx.scene.input.KeyCode.R,
-                false,
+                true, // Restart is Shift+R in the panel (a bare r restarted the program by accident, review C2)
                 false,
                 false,
                 false)));

@@ -142,10 +142,11 @@ public final class BreakpointManager implements LineMarks.Carrier {
         return kind == null ? unverified : kind + " " + unverified;
     }
 
-    /** The hover text of the breakpoint on {@code line}: what the debug session says about it, else null. */
+    /** The hover text of the breakpoint on {@code line}: its condition / log message / hit count / disabled state
+     *  and what the debug session says about it; null for a plain breakpoint the session has nothing to say on. */
     public String tooltip(int line) {
         Live state = live(line);
-        return state == null || state.tooltip() == null || state.tooltip().isBlank() ? null : state.tooltip();
+        return BreakpointDescription.tooltip(byLine.get(line), state == null ? null : state.tooltip());
     }
 
     /**
@@ -163,6 +164,26 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
         byLine.remove(viewFrom);
         byLine.put(viewTo, bp.withLine(viewTo).withLineText(captureLineText(viewTo)));
+        onLinesRepaint.accept(List.of(viewFrom, viewTo));
+        fireChanged();
+        return true;
+    }
+
+    /**
+     * The adapter bound the breakpoint on document line {@code from} to {@code to}, which has a breakpoint of
+     * its own: the two are one breakpoint in the program, so the moved one is removed and the one already there
+     * (its condition, log message, enabled state) is what stays. Left in place, the moved one was drawn on a
+     * line where nothing can stop, while the adapter held it on {@code to} without the condition shown there —
+     * a conditional breakpoint then stopped on every pass. Returns whether it was removed.
+     */
+    public boolean mergeDocumentLine(int from, int to) {
+        int first = regionFirstLine();
+        int viewFrom = from - first;
+        int viewTo = to - first;
+        if (from == to || !byLine.containsKey(viewFrom) || !byLine.containsKey(viewTo)) {
+            return false;
+        }
+        byLine.remove(viewFrom);
         onLinesRepaint.accept(List.of(viewFrom, viewTo));
         fireChanged();
         return true;
@@ -216,6 +237,16 @@ public final class BreakpointManager implements LineMarks.Carrier {
         Breakpoint bp = byLine.get(line);
         if (bp != null) {
             byLine.put(line, bp.withLogMessage(log == null ? "" : log));
+            fireChanged();
+        }
+    }
+
+    /** Sets the hit condition of the breakpoint on {@code line} (blank: stop on every hit). */
+    public void setHitCondition(int line, String hitCondition) {
+        Breakpoint bp = byLine.get(line);
+        String value = hitCondition == null ? "" : hitCondition;
+        if (bp != null && !bp.hitCondition().equals(value)) {
+            byLine.put(line, bp.withHitCondition(value));
             fireChanged();
         }
     }

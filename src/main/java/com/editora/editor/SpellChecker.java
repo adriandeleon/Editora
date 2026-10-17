@@ -146,6 +146,11 @@ public final class SpellChecker {
         if (h.spell(normalized)) {
             return false;
         }
+        // "someone else's", "another's": the dictionary spells the word but lists no possessive for it.
+        int n = normalized.length();
+        if (n > 2 && normalized.endsWith("'s") && h.spell(normalized.substring(0, n - 2))) {
+            return false;
+        }
         // English borrows accented words whole ("café", "résumé", "naïve") and its dictionaries list only
         // the plain spelling; the accented one is not a mistake.
         if (langId != null && langId.startsWith("en")) {
@@ -506,11 +511,32 @@ public final class SpellChecker {
                 nameFollows = NAME_TAGS.contains(line.substring(from, i));
                 continue; // a tag is structural either way
             }
+            ts = afterStringPrefix(line, ts, i); // f"Recieved / rb'…: the prefix is not part of the word
             if (!structured(line, ts, i, syntax)) {
                 wordRuns(line, ts, i, spans);
             }
         }
         return spans;
+    }
+
+    /**
+     * Where a token's text starts once a string-literal prefix and its opening quote are skipped — Python's
+     * {@code f"…}, {@code rb'…}, {@code t'''…} — so the first word of a prefixed string is checked like any
+     * other (it used to be skipped, or checked with the {@code f'} glued on). {@code ts} when there is none.
+     */
+    static int afterStringPrefix(String line, int ts, int te) {
+        int k = ts;
+        while (k < te && k - ts < 2 && "rRbBuUfFtT".indexOf(line.charAt(k)) >= 0) {
+            k++;
+        }
+        if (k == ts || k >= te || (line.charAt(k) != '"' && line.charAt(k) != '\'')) {
+            return ts;
+        }
+        char quote = line.charAt(k);
+        while (k < te && line.charAt(k) == quote) {
+            k++;
+        }
+        return k < te && Character.isLetter(line.charAt(k)) ? k : ts;
     }
 
     /**

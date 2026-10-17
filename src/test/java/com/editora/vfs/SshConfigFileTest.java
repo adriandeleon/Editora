@@ -8,7 +8,10 @@ import org.apache.sshd.client.config.hosts.HostConfigEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** {@code ~/.ssh/config} with what MINA alone gets wrong: {@code Match} sections and {@code Include} lines. */
 class SshConfigFileTest {
@@ -55,6 +58,29 @@ class SshConfigFileTest {
         assertEquals("10.2.0.1", hostName(file, "play"));
         assertEquals("10.3.0.1", hostName(file, "extra"));
         assertEquals("1.1.1.1", hostName(file, "x"));
+    }
+
+    @Test
+    void aGlobStaysOutOfTheDirectoryPartSoWindowsNeverParsesIt() {
+        // Path.of("conf.d/*") throws InvalidPathException on Windows; only the directory part becomes a path.
+        assertArrayEquals(new String[] {"conf.d/", "*"}, SshConfigFile.splitLeaf("conf.d/*", false));
+        assertArrayEquals(
+                new String[] {"C:\\Users\\me\\.ssh\\conf.d\\", "*.conf"},
+                SshConfigFile.splitLeaf("C:\\Users\\me\\.ssh\\conf.d\\*.conf", true));
+        assertArrayEquals(
+                new String[] {"/etc/ssh/", "ssh_config.d"}, SshConfigFile.splitLeaf("/etc/ssh/ssh_config.d", true));
+        assertArrayEquals(new String[] {"", "*"}, SshConfigFile.splitLeaf("*", false));
+        assertTrue(SshConfigFile.isGlob("*.conf"));
+        assertTrue(SshConfigFile.isGlob("host-?"));
+        assertFalse(SshConfigFile.isGlob("conf.d"));
+    }
+
+    @Test
+    void aGlobInADirectorySegmentDoesNotBreakTheRestOfTheConfig() throws Exception {
+        // On Windows "*/conf.d" is not a path at all; the Include adds nothing and the file still reads.
+        Path config = Files.writeString(ssh().resolve("config"), "Include */conf.d/x\nHost box\n  HostName 1.1.1.1\n");
+
+        assertEquals("1.1.1.1", hostName(new SshConfigFile(config), "box"));
     }
 
     @Test

@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -185,23 +186,29 @@ class HttpResponseHandlersFxTest {
         assertTrue(block.contains("✗  user is 8  —  id was 7"), block);
         assertTrue(block.contains("token stored"), block);
         assertTrue(block.contains("✗  ReferenceError: x is not defined\n    at /p/api.http:9:3"), block);
-        assertTrue(FxTestSupport.callOnFx(p::testsExpandedForTest), "a failure opens the block");
-        assertEquals("✓ 1 passed · ✗ 1 failed · ✗ handler error", FxTestSupport.callOnFx(p::testsBadgeForTest));
+        assertEquals(HttpResponseTab.TESTS, FxTestSupport.callOnFx(p::selectedTabForTest), "a failure shows Tests");
+        assertEquals("Tests 1/2", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
         assertEquals(
-                List.of("✓ 1 passed = passed", "✗ 1 failed = failed", "✗ handler error = failed"),
-                FxTestSupport.callOnFx(p::testsBadgePartsForTest),
-                "the passing part is green, the failing parts red");
+                HttpTabStrip.CountStyle.FAILED,
+                FxTestSupport.callOnFx(() -> p.tabsForTest().countStyleForTest(HttpResponseTab.TESTS)),
+                "the count is red when something failed");
+        assertEquals(
+                tr("httppanel.tab.tests") + " — ✓ 1 passed · ✗ 1 failed · ✗ handler error",
+                FxTestSupport.callOnFx(
+                        () -> p.tabsForTest().button(HttpResponseTab.TESTS).getAccessibleText()),
+                "the tab's tooltip and accessible text say what passed and what failed");
 
-        // A response that ran no tests has no badge and no block.
+        // A response that ran no tests has no Tests tab, and the panel goes back to Body.
         HttpResult plain = HttpFixtures.text(200, List.of(), "{}", "application/json", 3, 2, null);
         FxTestSupport.runOnFx(() -> p.showEntries(List.of(HttpHistoryEntry.of(
                 HttpFixtures.exchange("GET http://h/2", "GET", "http://h/2", List.of(), "", plain)))));
-        assertNull(FxTestSupport.callOnFx(p::testsBadgeForTest));
+        assertNull(FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
         assertEquals("", FxTestSupport.callOnFx(p::testsForTest));
+        assertEquals(HttpResponseTab.BODY, FxTestSupport.callOnFx(p::selectedTabForTest));
     }
 
     @Test
-    void aNarrowPanelShortensTheTestsBadge() throws Exception {
+    void aNarrowPanelShortensTheTestsTabToItsCount() throws Exception {
         HttpTests tests = new HttpTests(
                 List.of(new HttpTests.Test("a", true, ""), new HttpTests.Test("b", true, "")), List.of(), null);
         HttpResult r = HttpFixtures.text(200, List.of(), "{}", "application/json", 3, 2, null)
@@ -219,16 +226,18 @@ class HttpResponseHandlersFxTest {
             try {
                 FxTestSupport.drainFx();
                 FxTestSupport.runOnFx(() -> p.showEntries(List.of(HttpHistoryEntry.of(ex))));
-                String want = width > 500 ? "✓ 2 passed" : "✓2";
+                String want = width > 500 ? tr("httppanel.tab.tests") + " 2/2" : "2/2";
                 long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
-                while (!want.equals(FxTestSupport.callOnFx(p::testsBadgeForTest))) {
+                while (!want.equals(FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)))) {
                     assertTrue(
                             System.nanoTime() < deadline,
-                            width + " px: " + FxTestSupport.callOnFx(p::testsBadgeForTest));
+                            width + " px: " + FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
                     Thread.sleep(20);
                 }
                 assertEquals(
-                        List.of(want + " = passed"), FxTestSupport.callOnFx(p::testsBadgePartsForTest), width + " px");
+                        HttpTabStrip.CountStyle.PASSED,
+                        FxTestSupport.callOnFx(() -> p.tabsForTest().countStyleForTest(HttpResponseTab.TESTS)),
+                        width + " px");
             } finally {
                 FxTestSupport.runOnFx(stage::close);
             }
@@ -254,8 +263,19 @@ class HttpResponseHandlersFxTest {
         assertEquals(1, ops.scriptAsks.get(), "asked once for the run");
 
         HttpClientPanel p = panel(b);
-        String summary = FxTestSupport.callOnFx(p::runSummaryForTest);
-        assertTrue(summary.endsWith(" · tests failed in 1 request"), summary);
+        HttpRunList list = p.runListForTest();
+        String title = FxTestSupport.callOnFx(list::titleForTest);
+        assertTrue(title.startsWith("Run All · All 2 succeeded · tests failed in 1 request"), title);
+        assertEquals("http-run-ok", FxTestSupport.callOnFx(list::pillStyleForTest), "both answered 200");
+        assertTrue(
+                FxTestSupport.callOnFx(list::getAccessibleText)
+                        .startsWith("Run All: all 2 succeeded · tests failed in 1 request"),
+                "read out as one sentence");
+        assertEquals(
+                "login",
+                FxTestSupport.callOnFx(() ->
+                        list.listForTest().getSelectionModel().getSelectedItem().name()),
+                "its row is selected");
         // Both answered 200: the run lands on the request whose tests failed.
         assertEquals(
                 "login",
@@ -266,15 +286,13 @@ class HttpResponseHandlersFxTest {
         assertTrue(block.contains("✗  $.id == 8  —  expected == 8, got 7"), block);
         assertTrue(block.contains("✓  token present"), block);
         assertTrue(block.contains("stored"), block);
-        assertEquals("✓ 2 passed · ✗ 1 failed", FxTestSupport.callOnFx(p::testsBadgeForTest));
-        assertEquals(
-                List.of("✓ 2 passed = passed", "✗ 1 failed = failed"),
-                FxTestSupport.callOnFx(p::testsBadgePartsForTest));
+        assertEquals("Tests 2/3", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
+        assertEquals(HttpResponseTab.TESTS, FxTestSupport.callOnFx(p::selectedTabForTest));
 
         // On disk: the test results are kept with the response.
         HttpHistorySync.awaitIdleForTest();
         String onDisk = Files.readString(ops.store.fileFor(file));
-        assertTrue(onDisk.contains("\"schemaVersion\" : 4") || onDisk.contains("\"schemaVersion\":4"), onDisk);
+        assertTrue(onDisk.contains("\"schemaVersion\" : 5") || onDisk.contains("\"schemaVersion\":5"), onDisk);
         assertTrue(onDisk.contains("token present"), onDisk);
         assertTrue(onDisk.contains("expected == 8, got 7"), onDisk);
         HttpResponseHistory.Stored stored = ops.store.load(file);
@@ -310,7 +328,7 @@ class HttpResponseHandlersFxTest {
                     .findFirst()
                     .orElseThrow());
         });
-        assertEquals("✓ 1 passed", FxTestSupport.callOnFx(p::testsBadgeForTest));
+        assertEquals("Tests 1/1", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS)));
         String notes = FxTestSupport.callOnFx(p::notesForTest);
         assertTrue(notes.contains("not trusted to run scripts"), notes);
     }
@@ -346,15 +364,32 @@ class HttpResponseHandlersFxTest {
             FxTestSupport.runOnFx(() -> p.controlsForTest().historyPicker().setValue(e));
             FxTestSupport.drainFx();
             String block = FxTestSupport.callOnFx(p::testsForTest);
-            String badge = FxTestSupport.callOnFx(p::testsBadgeForTest);
+            String badge = FxTestSupport.callOnFx(
+                    () -> p.tabsForTest().button(HttpResponseTab.TESTS).getAccessibleText());
+            // A response handler that stopped shows Tests; a pre-request script that stopped kept its request unsent,
+            // a send failure, which opens on its card in Body (decision 4) — the card offers the script's output.
+            boolean pre = "pre".equals(e.name());
+            assertEquals(
+                    pre ? HttpResponseTab.BODY : HttpResponseTab.TESTS,
+                    FxTestSupport.callOnFx(p::selectedTabForTest),
+                    "a script that stopped shows Tests, or the card when nothing was sent");
+            if (pre) {
+                assertEquals(
+                        HttpFailureKind.SCRIPT,
+                        FxTestSupport.callOnFx(() -> p.errorCardForTest().kindForTest()));
+            }
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.TESTS))
+                            .endsWith("✗"),
+                    "no test ran: the count is a ✗");
             if ("pre".equals(e.name())) {
                 assertTrue(block.startsWith("Pre-request script error"), block);
                 assertTrue(block.contains("no key"), block);
-                assertEquals("✗ pre-request error", badge);
+                assertEquals(tr("httppanel.tab.tests") + " — ✗ pre-request error", badge);
             } else {
                 assertTrue(block.startsWith("Response handler error"), block);
                 assertTrue(block.contains("bad body"), block);
-                assertEquals("✗ handler error", badge);
+                assertEquals(tr("httppanel.tab.tests") + " — ✗ handler error", badge);
             }
         }
     }

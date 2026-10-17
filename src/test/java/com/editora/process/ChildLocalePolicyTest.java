@@ -58,6 +58,7 @@ class ChildLocalePolicyTest {
             "lsp/RemoteJavaRuntimes.java", // a host's JDK folders and their release versions
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
+            "run/RuntimeProbe.java", // the Run/Debug runtime chip: `java -XshowSettings`, `--version`
             "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
@@ -65,6 +66,8 @@ class ChildLocalePolicyTest {
             "io/Trash.java", // `gio trash` (exit code)
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
             "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
+            "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)
+            "process/ProcessRegistry.java", // `kill -INT` before Stop escalates (exit code)
             "container/ContainerEngine.java"); // the engine's inspect / ps output
 
     /**
@@ -76,9 +79,11 @@ class ChildLocalePolicyTest {
             Map.entry("agent/AcpClient.java", 1), // the agent CLI
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
-            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter, javac of the user's file
+            Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter
+            Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
+            Map.entry("format/PythonFormatter.java", 1), // Ruff/Black on the user's file names (decision 4)
             Map.entry("git/GitService.java", 1), // user-initiated commands: they run the user's hooks
             Map.entry("github/GitHubService.java", 1), // a failed CI log, streamed to keep its tail: shown, not parsed
             Map.entry("http/NodeResponseScripts.java", 1), // an HTTP response handler: its log is shown (minimal env)
@@ -105,6 +110,7 @@ class ChildLocalePolicyTest {
             "lsp/LanguageServerSession.java",
             "process/DesktopActions.java",
             "process/LocalExecTarget.java", // what run() starts for a local working directory
+            "process/ProcessRegistry.java", // `kill -INT` for Stop on a Python program, standard environment
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
             "web/HtmlPreviewService.java");
@@ -142,10 +148,11 @@ class ChildLocalePolicyTest {
 
     @Test
     void theOneParseStableChildOfTheDebuggerIsItsProbe() throws IOException {
-        // DapManager starts both kinds. Its adapters and the javac of the user's file are counted above; what
-        // may still use the C locale is the local availability probe and, for a remote file, the host's two
-        // (whether debugpy imports there: an exit code; where its vscode-js-debug is: a path).
-        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 3);
+        // DapManager starts both kinds. Its adapters (and JavaCompilation's javac) are counted above; what
+        // may still use the C locale is the local availability probe and, for a remote file, the host's three
+        // (whether debugpy imports there, and pytest for a test: exit codes; where its vscode-js-debug is: a
+        // path).
+        assertTrue(count(PARSE_STABLE).getOrDefault("dap/DapManager.java", 0) <= 4);
         // The language server session has none at all.
         assertEquals(0, count(PARSE_STABLE).getOrDefault("lsp/LanguageServerSession.java", 0));
     }

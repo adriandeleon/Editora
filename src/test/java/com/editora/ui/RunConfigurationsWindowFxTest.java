@@ -214,8 +214,11 @@ class RunConfigurationsWindowFxTest {
         assertEquals("-eu", persisted(config, "Deploy").interpreterOptions());
 
         FxTestSupport.runOnFx(() -> list.getSelectionModel().select(1));
-        assertTrue(FxTestSupport.callOnFx(interpreter::isDisabled), "a Python script has no shell interpreter");
-        assertTrue(FxTestSupport.callOnFx(options::isDisabled));
+        // A Python script names its interpreter too (C1) — its own, kept apart from the shell one.
+        assertFalse(FxTestSupport.callOnFx(interpreter::isDisabled), "a Python script's interpreter can be set");
+        assertEquals("", FxTestSupport.callOnFx(interpreter::getText));
+        assertEquals(
+                tr("settings.runConfig.interpreterPromptPython"), FxTestSupport.callOnFx(interpreter::getPromptText));
         FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
         assertEquals("/opt/homebrew/bin/bash", FxTestSupport.callOnFx(interpreter::getText));
         FxTestSupport.runOnFx(stage::close);

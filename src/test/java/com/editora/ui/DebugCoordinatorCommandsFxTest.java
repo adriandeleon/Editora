@@ -82,6 +82,12 @@ class DebugCoordinatorCommandsFxTest {
     private OverlayHost overlay;
     private javafx.scene.layout.StackPane sceneRoot;
     private int saves;
+    /** The files Debug saved, in order. */
+    private final List<Path> savedFiles = new ArrayList<>();
+    /** This window's saved run configurations, as the Ops hands them to Debug. */
+    private final List<RunConfiguration> configs = new ArrayList<>();
+    /** This window's project folder (null: the project root of the pom-backed fixture is not a window's). */
+    private Path windowProject;
 
     private final class Host extends CoordinatorHostStub {
         final Settings settings = new Settings();
@@ -154,7 +160,18 @@ class DebugCoordinatorCommandsFxTest {
         @Override
         public boolean saveBuffer(EditorBuffer buffer) {
             saves++;
+            savedFiles.add(buffer.getPath());
             return saveOk;
+        }
+
+        @Override
+        public List<RunConfiguration> runConfigurations() {
+            return List.copyOf(configs);
+        }
+
+        @Override
+        public Path projectRoot() {
+            return windowProject;
         }
 
         @Override
@@ -203,10 +220,10 @@ class DebugCoordinatorCommandsFxTest {
     @BeforeEach
     void setUp() throws Exception {
         Files.writeString(project.resolve("pom.xml"), "<project/>\n");
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         replies.put("vscode.java.startDebugSession", adapter.port());
         lspManager = new LspManager((f, d) -> {}, (t, m) -> {});
-        fakes = LspTestHooks.useFakeSessions(lspManager);
+        fakes = LspTestHooks.useFakeSessionsWithRawRequests(lspManager, LspTestHooks.caps());
         lspManager.configure(true, Map.of("java", "jdtls"));
         dap = new DapManager(lspManager);
         FxTestSupport.runOnFx(() -> {
@@ -353,6 +370,9 @@ class DebugCoordinatorCommandsFxTest {
     private FakeDebugAdapter.Session launch() throws Exception {
         FxTestSupport.runOnFx(() -> debug.debugStart());
         FakeDebugAdapter.Session session = session("launch");
+        // java-debug configures a session only once its launch has created it (initialized, then the
+        // breakpoints and configurationDone): a test that changes breakpoints on a "live" session starts there.
+        assertTrue(session.configured.await(10, TimeUnit.SECONDS), "the adapter was configured");
         awaitState("debug.state.running");
         return session;
     }
@@ -391,7 +411,299 @@ class DebugCoordinatorCommandsFxTest {
                 "");
     }
 
+    // --- the launch fix pass (review A2, A12, A14, A16, B3, D1) -------------------------------------------
+
+    /** jdtls's answers to {@code java/buildWorkspace}: publishes {@code errors} for {@code file}, then {@code status}. */
+    private void buildAnswers(Path file, int status, String... errors) {
+        for (FakeLanguageServer fake : fakes) {
+            fake.rawHandler = raw -> {
+                commands.add(raw.method());
+                if (!"java/buildWorkspace".equals(raw.method())) {
+                    return null;
+                }
+                List<org.eclipse.lsp4j.Diagnostic> list = new ArrayList<>();
+                for (String message : errors) {
+                    var d = new org.eclipse.lsp4j.Diagnostic(
+                            new org.eclipse.lsp4j.Range(
+                                    new org.eclipse.lsp4j.Position(2, 4), new org.eclipse.lsp4j.Position(2, 9)),
+                            message);
+                    d.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Error);
+                    list.add(d);
+                }
+                LspTestHooks.publishDiagnostics(
+                        lspManager,
+                        project.resolve("src/main/java/demo/Args.java"),
+                        new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                                file.toUri().toString(), list));
+                return status;
+            };
+        }
+    }
+
+    /**
+     * Editora runs jdtls with autobuild off, so a project launch ran whatever was in its class folder: nothing
+     * on a fresh project, the old code after an edit. Debug now builds first; compile errors are listed in the
+     * console (as links to their lines) and nothing is launched.
+     */
+    @Test
+    void aProjectIsBuiltBeforeItIsDebuggedAndCompileErrorsStopTheLaunch() throws Exception {
+        Path args = open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        Path other = project.resolve("src/main/java/demo/Other.java"); // not open: its errors still count
+        Path outside = loose.resolve("Elsewhere.java");
+        buildAnswers(other, 2, "Type mismatch: cannot convert from String to int");
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        awaitStatus(tr("status.debug.buildErrors", 1));
+        String shown = FxTestSupport.callOnFx(console::getText);
+        String line = other + ":3: error: Type mismatch: cannot convert from String to int";
+        assertTrue(shown.contains(line + "\n"), shown);
+        assertTrue(StackTraceLinks.parse(line) != null, "a link to the line");
+        assertTrue(shown.contains(tr("debug.console.buildFailed")), shown);
+        FxTestSupport.drainFx();
+        assertEquals(0, adapter.sessionCount(), "nothing was launched on the old class files");
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+
+        // A build that reports errors it published nowhere still stops the launch, and says where to look.
+        clearLog();
+        buildAnswers(outside, 2);
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        awaitStatus(tr("status.debug.buildErrorsUnlisted"));
+        assertEquals(0, adapter.sessionCount());
+
+        // A clean build launches.
+        buildAnswers(outside, 1);
+        FakeDebugAdapter.Session session = launch();
+        assertEquals("demo.Args", session.launchArgs.get("mainClass"));
+        assertTrue(commands.indexOf("java/buildWorkspace") < commands.lastIndexOf("vscode.java.resolveMainClass"));
+        assertEquals(args, FxTestSupport.callOnFx(dap::debugFile));
+    }
+
+    /** Stop while the build before a launch runs: nothing is launched once it finishes. */
+    @Test
+    void stopDuringTheBuildBeforeALaunchLaunchesNothing() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        java.util.concurrent.CountDownLatch built = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Runnable> stopNow =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        for (FakeLanguageServer fake : fakes) {
+            fake.rawHandler = raw -> {
+                stopNow.get().run(); // the user presses Stop while jdtls is still building
+                built.countDown();
+                return 1;
+            };
+        }
+        stopNow.set(() -> debug.stop());
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        assertTrue(built.await(10, TimeUnit.SECONDS));
+        FxTestSupport.drainFx();
+        assertEquals(0, adapter.sessionCount());
+        assertTrue(
+                statuses().contains(tr("status.debug.launchCancelled")),
+                statuses().toString());
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+    }
+
+    /** Debug ▶ on a class with a saved configuration debugs that configuration, as Run ▶ runs it (review D1). */
+    @Test
+    void debugOnAFileUsesTheRunConfigurationOfItsClass() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        Files.writeString(
+                project.resolve("src/main/java/demo/Args.java"),
+                "package demo;\npublic class Args {\n    public static void main(String[] a) {}\n}\n");
+        FxTestSupport.runOnFx(() -> active.setContent(
+                "package demo;\npublic class Args {\n    public static void main(String[] a) {}\n}\n"));
+        configs.add(config("FromConfig", "java", "demo.Args", ""));
+        configs.add(config("Unrelated", "java", "demo.Other", ""));
+
+        FakeDebugAdapter.Session session = launch();
+
+        assertEquals("one \"two three\"", session.launchArgs.get("args"), "the configuration's arguments");
+        assertEquals("-Dmode=test", session.launchArgs.get("vmArgs"));
+        assertEquals(
+                Map.of("GREETING", "hi"),
+                ((Map<?, ?>) session.launchArgs.get("env"))
+                        .entrySet().stream()
+                                .filter(e -> e.getKey().equals("GREETING"))
+                                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+    }
+
+    /** Restart reads the configuration again: an edit made since the first launch applies (review A14). */
+    @Test
+    void restartUsesTheConfigurationAsItIsNow() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        RunConfiguration first = config("App", "java", "demo.Args", "");
+        configs.add(first);
+        FxTestSupport.runOnFx(() -> debug.debugConfig(first));
+        FakeDebugAdapter.Session one = session("launch");
+        assertEquals("one \"two three\"", one.launchArgs.get("args"));
+
+        configs.set(
+                0,
+                new RunConfiguration(
+                        "App", "java", "", "demo.Args", "proj", "edited", "-Dmode=test", "", "GREETING=hi", "", ""));
+        FxTestSupport.runOnFx(() -> debug.restart());
+
+        assertTrue(one.disconnected.await(10, TimeUnit.SECONDS));
+        FakeDebugAdapter.Session two = session("launch");
+        assertEquals("edited", two.launchArgs.get("args"));
+    }
+
+    /** The other unsaved Java files of the project are saved before a launch; other files are not (review B3). */
+    @Test
+    void unsavedJavaFilesOfTheProjectAreSavedBeforeDebug() throws Exception {
+        EditorBuffer helper =
+                buffer(project.resolve("src/main/java/demo/Helper.java"), "package demo;\nclass Helper {}\n");
+        EditorBuffer notes = buffer(project.resolve("notes.txt"), "notes\n");
+        EditorBuffer elsewhere = buffer(loose.resolve("Other.java"), "class Other {}\n");
+        FxTestSupport.runOnFx(() -> {
+            helper.getFocusedArea().insertText(0, "// edited\n");
+            notes.getFocusedArea().insertText(0, "more ");
+            elsewhere.getFocusedArea().insertText(0, "// edited\n");
+        });
+        Path args = open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+
+        launch();
+
+        assertTrue(savedFiles.contains(helper.getPath()), "the project's unsaved Java file: " + savedFiles);
+        assertFalse(savedFiles.contains(notes.getPath()), "not a text file: " + savedFiles);
+        assertFalse(savedFiles.contains(elsewhere.getPath()), "not another project's file: " + savedFiles);
+        assertFalse(savedFiles.contains(args), "the launched file was not dirty");
+    }
+
+    /** A configuration's before-launch build runs in the project root, whatever folder the program runs in. */
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void aBeforeLaunchStepRunsInTheProjectRoot() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        Files.createDirectories(project.resolve("sub"));
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+        RunConfiguration cfg = new RunConfiguration(
+                "Sub", "java", "", "demo.Args", "proj", "", "", "sub", "", "sh -c 'echo at:$PWD'", "");
+
+        FxTestSupport.runOnFx(() -> debug.debugConfig(cfg));
+
+        FakeDebugAdapter.Session session = session("launch");
+        String shown = FxTestSupport.callOnFx(console::getText);
+        assertTrue(shown.contains("at:" + project.toRealPath()) || shown.contains("at:" + project), shown);
+        assertEquals(project.resolve("sub").toString(), session.launchArgs.get("cwd"), "the program runs in sub");
+    }
+
+    /**
+     * A plain-folder project window: a file's program runs in the project root, and Debug Main Class works
+     * there too — both used to be Maven/Gradle only (review A16).
+     */
+    @Test
+    void aPlainFolderProjectRunsInItsRootAndHasMainClasses() throws Exception {
+        windowProject = loose;
+        Path main = loose.resolve("app/Main.java");
+        String source = "public class Main {\n    public static void main(String[] a) {}\n}\n";
+        buffer(main, source);
+        lspManager.openDocument(main, loose, "java", source);
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> {
+                commands.add(params.getCommand());
+                return replies.get(params.getCommand());
+            };
+        }
+        Path bin = Files.createDirectories(loose.resolve("ws/bin"));
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "Main", "projectName", "loose_1", "filePath", main.toString())));
+        replies.put("vscode.java.resolveClasspath", List.of(List.of(), List.of(bin.toString())));
+        replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
+
+        FakeDebugAdapter.Session first = launch();
+        assertEquals(loose.toString(), first.launchArgs.get("cwd"), "the project root, not app/");
+
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertTrue(first.disconnected.await(10, TimeUnit.SECONDS));
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+        FakeDebugAdapter.Session second = session("launch");
+        assertEquals("Main", second.launchArgs.get("mainClass"));
+        List<?> cp = (List<?>) second.launchArgs.get("classPaths");
+        assertTrue(Files.isRegularFile(Path.of(String.valueOf(cp.get(0))).resolve("Main.class")), "compiled: " + cp);
+        assertFalse(
+                statuses().contains(tr("status.debug.noProject")), statuses().toString());
+    }
+
+    /**
+     * Debug Test / Debug via Build attach to a JVM their run started: Stop used to detach only, and the test or
+     * app ran on (review A4). Every JVM of the run is attached in turn — several surefire forks each wait
+     * suspended on a port of their own (review D11).
+     */
+    @Test
+    void anAttachedTestRunIsStoppedWithItsSessionAndItsOtherJvmsAreAttachedInTurn() throws Exception {
+        Path test = open("src/main/java/demo/Args.java");
+        List<String> owner = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
+        FakeDebugAdapter.Session first = session("attach");
+        awaitState("debug.state.running");
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
+        assertEquals(List.of(tr("status.debug.attachQueued", 41002)), statuses(), "the second fork waits its turn");
+        assertEquals(1, adapter.sessionCount());
+
+        first.terminate(); // the first fork's test finished
+        FakeDebugAdapter.Session second = session("attach");
+        assertEquals(41002.0, ((Number) second.launchArgs.get("port")).doubleValue());
+        awaitState("debug.state.running");
+
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertTrue(second.disconnected.await(10, TimeUnit.SECONDS));
+        assertEquals(List.of("stopped"), owner, "Stop ends the run that owns the JVM, once");
+    }
+
+    /** Each missing piece of Java debugging says what to do about it (review A7). */
+    @Test
+    void unavailableJavaDebuggingSaysWhichPieceIsMissing() throws Exception {
+        open("src/main/java/demo/Args.java");
+        FxTestSupport.runOnFx(() -> host.settings.setLspSupport(false));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        FxTestSupport.runOnFx(() -> host.settings.setLspSupport(true));
+        FxTestSupport.runOnFx(
+                () -> dap.configure(true, project.resolve("no-plugin-here").toString()));
+        FxTestSupport.runOnFx(() -> dap.setServerProvidesJavaDebug(false));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("status.debug.javaNeedsLsp"), tr("status.debug.javaDebugMissing")), statuses());
+        assertEquals(0, adapter.sessionCount());
+    }
+
+    private static String javaExecutable() {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        return Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
+                .toString();
+    }
+
     // --- Debug (the active file) ------------------------------------------------------------------------
+
+    /** One "unavailable" message covered Python debugging switched off and debugpy missing alike. */
+    @Test
+    void aPythonFileThatCannotBeDebuggedSaysWhy() throws Exception {
+        buffer(loose.resolve("app.py"), "print(1)\n");
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("status.debug.debugpyMissing", "python3")), statuses());
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> {
+            host.settings.setPythonDebugEnabled(false);
+            debug.debugStart();
+            host.settings.setPythonDebugEnabled(true);
+        });
+        assertEquals(List.of(tr("status.debug.pythonOff")), statuses());
+        assertEquals(0, adapter.sessionCount());
+    }
 
     @Test
     void debugOnNothingDebuggableSaysWhyAndStartsNothing() throws Exception {
@@ -428,8 +740,20 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals("demo.Args", first.launchArgs.get("mainClass"));
         assertEquals("--from-file-store", first.launchArgs.get("args"), "the file's remembered program arguments");
 
+        awaitState("debug.state.running");
+        clearLog();
         FxTestSupport.runOnFx(() -> debug.debugStart()); // same file, running: nothing to continue or replace
+        assertEquals(List.of(tr("status.debug.alreadyRunning", "Args.java")), statuses(), "and it says so");
         Path other = open("src/main/java/demo/Other.java");
+        List<String> asked = new java.util.ArrayList<>();
+        debug.confirmRetarget = question -> {
+            asked.add(question);
+            return false; // "Cancel": a running program is not ended by a key pressed in another tab
+        };
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("dialog.debug.retargetContent", "Args.java", "Other.java")), asked);
+        assertEquals(1, first.disconnected.getCount(), "declined: the running session goes on");
+        debug.confirmRetarget = question -> true;
         FxTestSupport.runOnFx(() -> debug.debugStart());
 
         assertTrue(first.disconnected.await(10, TimeUnit.SECONDS), "the running session is replaced");
@@ -524,7 +848,7 @@ class DebugCoordinatorCommandsFxTest {
         });
         FxTestSupport.drainFx();
 
-        String unavailable = tr("status.debug.unavailable");
+        String unavailable = tr("status.debug.javaDebugMissing"); // the missing piece, from every entry (A7)
         assertEquals(List.of(unavailable, unavailable, unavailable, unavailable, unavailable), statuses());
         assertEquals(0, adapter.sessionCount());
 
@@ -640,7 +964,7 @@ class DebugCoordinatorCommandsFxTest {
         open("src/main/java/demo/Args.java");
         mainClasses("demo.Other");
         FxTestSupport.runOnFx(() -> debug.debugConfig(config("Gone", "java", "demo.Args", "")));
-        awaitStatus(tr("status.debug.noMainClass"));
+        awaitStatus(tr("status.debug.configClassNotFound", "Gone", "demo.Args")); // names what is missing
         assertEquals(0, adapter.sessionCount());
     }
 
@@ -836,21 +1160,38 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     @Test
-    void uncaughtExceptionBreakpointsAreToggledForTheLiveSessionToo() throws Exception {
+    void exceptionBreakpointsArePickedPerFilterAndReachTheLiveSession() throws Exception {
         open("src/main/java/demo/Args.java");
         mainClasses("demo.Args");
         FakeDebugAdapter.Session session = launch();
-        assertEquals(0, session.exceptionBreakpoints.size(), "none by default");
+        assertEquals(0, session.exceptionBreakpoints.size(), "java-debug has none on by default");
+        var uncaught = new com.editora.dap.DapModels.ExceptionFilterOption("uncaught", "Uncaught Exceptions", false);
+        assertEquals("    Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
 
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequest("setExceptionBreakpoints");
         assertEquals(
                 List.of("uncaught"), List.of(session.exceptionBreakpoints.get(0).getFilters()));
-        FxTestSupport.runOnFx(() -> debug.toggleExceptionBreakpoints());
+        assertEquals("✓ Uncaught Exceptions", FxTestSupport.callOnFx(() -> debug.exceptionRow("java", uncaught)));
+        FxTestSupport.runOnFx(() -> debug.toggleExceptionFilter("java", "uncaught"));
         session.awaitRequests("setExceptionBreakpoints", 2);
         assertEquals(List.of(), List.of(session.exceptionBreakpoints.get(1).getFilters()));
 
-        assertEquals(List.of(tr("status.debug.exceptionsOn"), tr("status.debug.exceptionsOff")), statuses());
+        assertEquals(
+                List.of(
+                        tr("status.debug.exceptionFilters", "Java", "Uncaught Exceptions"),
+                        tr("status.debug.exceptionFiltersNone", "Java")),
+                statuses());
+    }
+
+    @Test
+    void theExceptionFilterOrderIsTheAdapters() {
+        var options = com.editora.dap.ExceptionFilterCatalog.known("python");
+        assertEquals(List.of("uncaught"), DebugCoordinator.toggledFilter(List.of(), "uncaught", options));
+        assertEquals(
+                List.of("raised", "uncaught"), DebugCoordinator.toggledFilter(List.of("uncaught"), "raised", options));
+        assertEquals(
+                List.of("raised"), DebugCoordinator.toggledFilter(List.of("raised", "uncaught"), "uncaught", options));
     }
 
     @Test
@@ -877,6 +1218,24 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.restart());
         awaitStatus(tr("status.debug.error", "launch failed: The class is not on the classpath"));
         awaitState(null);
+    }
+
+    @Test
+    void aReportOfSeveralLinesGoesToTheConsoleAndItsFirstLineToTheStatusBar() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+        adapter.launchFailure = "Could not launch the program:\nError: no main method in class demo.Args";
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        awaitStatus(tr(
+                "status.debug.error",
+                tr("debug.error.detailsInConsole", "launch failed: Could not launch the program:")));
+        String text = FxTestSupport.callOnFx(console::getText);
+        assertTrue(text.contains("Error: no main method in class demo.Args"), text);
+        assertFalse(
+                statuses().stream().anyMatch(s -> s.contains("no main method")), "the detail stays off the status bar");
     }
 
     // --- pickers ----------------------------------------------------------------------------------------

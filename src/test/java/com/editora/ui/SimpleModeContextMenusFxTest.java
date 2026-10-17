@@ -20,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -64,6 +65,28 @@ class SimpleModeContextMenusFxTest {
 
                 c.chrome.toggleSimpleMode();
                 assertEquals(full, editorMenu(buffer), "turning Simple mode off restores the menu");
+            });
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    @Test
+    void editorMenuDropsTheDebuggerItemsInSimpleMode(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("notes.txt"), "Hello world\n");
+        FxWindowFixture fx = open(dir, file);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                EditorBuffer buffer = (EditorBuffer) FxTestSupport.call(c, "activeBuffer", new Class<?>[] {});
+                buffer.setDebugMenuContributor(() -> List.of(new MenuItem("Toggle Breakpoint (test)")));
+                assertTrue(editorMenu(buffer).contains("Toggle Breakpoint (test)"), "shown in the full menu");
+
+                c.chrome.toggleSimpleMode();
+                assertFalse(
+                        editorMenu(buffer).contains("Toggle Breakpoint (test)"),
+                        "Simple mode keeps the editing actions only");
+                c.chrome.toggleSimpleMode();
             });
         } finally {
             fx.dispose();

@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
@@ -156,8 +155,7 @@ class HttpClientRunFlowFxTest {
     }
 
     private String panelStatus(EditorBuffer b) throws Exception {
-        Label status = panel(b).controlsForTest().statusLabel();
-        return FxTestSupport.callOnFx(status::getText);
+        return FxTestSupport.callOnFx(() -> panel(b).statusForTest());
     }
 
     @Test
@@ -291,9 +289,8 @@ class HttpClientRunFlowFxTest {
                 dir.resolve("all.http"),
                 "### one\nGET {{base}}/json\nX-Token: {{token}}\n\n### two\nGET {{base}}/missing\n");
 
-        ComboBox<String> env = panel(b).controlsForTest().environmentPicker();
-        assertEquals(List.of("", "dev", "prod"), FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())));
-        assertEquals("dev", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
+        assertEquals(List.of("dev", "prod"), FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)));
+        assertEquals("dev", FxTestSupport.callOnFx(() -> coordinator.selectedEnvironment(b)));
         assertFalse(
                 Files.exists(ops.store.fileFor(dir.resolve("all.http"))),
                 "restoring the saved environment is not a change to save");
@@ -310,23 +307,30 @@ class HttpClientRunFlowFxTest {
                         () -> panel(b).getSelectedExchange().result().status()),
                 "a Run All lands on the request that failed");
 
-        // Choosing another environment in the picker is remembered for this file.
-        FxTestSupport.runOnFx(() -> env.setValue("prod"));
+        // Choosing another environment (the pill's menu) is remembered for this file.
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "prod"));
         HttpHistorySync.awaitIdleForTest(); // saved off the FX thread
         assertEquals("prod", ops.store.load(dir.resolve("all.http")).environment);
-        FxTestSupport.runOnFx(() -> env.setValue(null));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, null));
         HttpHistorySync.awaitIdleForTest();
         assertEquals("", ops.store.load(dir.resolve("all.http")).environment);
-        assertEquals("", FxTestSupport.callOnFx(() -> panel(b).getSelectedEnvironment()));
+        assertEquals("", FxTestSupport.callOnFx(() -> coordinator.selectedEnvironment(b)));
 
-        // The command reveals the response panel and refreshes the list from disk.
+        // The command opens the environment menu once the list is read again from disk.
         Files.writeString(dir.resolve("http-client.env.json"), "{\"only\":{}}");
         FxTestSupport.runOnFx(coordinator::selectEnvironment);
         HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
         assertEquals(
-                List.of("", "only", "dev"),
-                FxTestSupport.callOnFx(() -> List.copyOf(env.getItems())),
+                List.of("only", "dev"),
+                FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)),
                 "the public file's names, then those only the private file defines");
+        assertEquals(
+                List.of("only", "dev", tr("httpenv.none")),
+                FxTestSupport.callOnFx(() -> coordinator.environmentMenuForTest().getItems().stream()
+                        .filter(i -> i instanceof javafx.scene.control.RadioMenuItem)
+                        .map(javafx.scene.control.MenuItem::getText)
+                        .toList()),
+                "the menu offers them, and No environment");
     }
 
     /**
@@ -341,9 +345,8 @@ class HttpClientRunFlowFxTest {
         String text = "GET " + url("/json") + "\nX-Token: {{token}}\n";
         EditorBuffer b = httpBuffer(sub.resolve("api.http"), text);
         assertEquals(
-                List.of(""),
-                FxTestSupport.callOnFx(() -> List.copyOf(
-                        panel(b).controlsForTest().environmentPicker().getItems())),
+                List.of(),
+                FxTestSupport.callOnFx(() -> coordinator.environmentNamesForTest(b)),
                 "no environments offered");
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(1);
@@ -353,8 +356,7 @@ class HttpClientRunFlowFxTest {
         Files.createDirectories(dir.resolve(".git"));
         FxTestSupport.runOnFx(() -> coordinator.refreshEnvironments(b));
         HttpEnvCache.awaitIdleForTest(); // the env files are read off the FX thread
-        FxTestSupport.runOnFx(
-                () -> panel(b).controlsForTest().environmentPicker().setValue("dev"));
+        FxTestSupport.runOnFx(() -> coordinator.chooseEnvironment(b, "dev"));
         FxTestSupport.runOnFx(() -> coordinator.runRequest(b, 0));
         awaitHits(2);
         assertEquals("json parent-value", hits.get(1), "the repository root's env file is used");
@@ -386,9 +388,18 @@ class HttpClientRunFlowFxTest {
         FxTestSupport.runOnFx(cancel::fire); // the panel's own Cancel
         assertEquals(tr("status.http.cancelled"), host.last);
         assertFalse(coordinator.isRunningForTest(b));
-        assertEquals(tr("httppanel.cancelled"), panelStatus(b));
+        assertTrue(
+                panelStatus(b)
+                        .startsWith(tr("httppanel.cancelledAfter", "")
+                                .replace(" s", "")
+                                .strip()),
+                panelStatus(b));
         assertEquals(tr("httppanel.run"), FxTestSupport.callOnFx(cancel::getText));
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()), "the cancelled run shows nothing");
+        assertEquals(
+                HttpClientPanel.BodyView.EMPTY,
+                FxTestSupport.callOnFx(() -> panel(b).bodyViewForTest()),
+                "with nothing shown before it, the empty state comes back");
 
         FxTestSupport.runOnFx(() -> coordinator.cancelRun(null));
         assertEquals(tr("status.http.nothingRunning"), host.last);
@@ -481,12 +492,13 @@ class HttpClientRunFlowFxTest {
         assertEquals(2, ops.opened.size());
 
         // Clear empties the viewer and its actions.
-        Button clear = panel(b).controlsForTest().clearButton();
+        javafx.scene.control.MenuItem clear = panel(b).controlsForTest().clearItem();
         FxTestSupport.runOnFx(clear::fire);
         assertNull(FxTestSupport.callOnFx(() -> panel(b).getSelectedExchange()));
         assertEquals("", FxTestSupport.callOnFx(() -> responseText(panel(b))));
         assertTrue(FxTestSupport.callOnFx(copyCurl::isDisabled));
-        assertEquals(tr("httppanel.idle"), panelStatus(b));
+        assertEquals("", panelStatus(b), "the empty state says what Run sends; the status line says nothing");
+        assertEquals(HttpClientPanel.BodyView.EMPTY, FxTestSupport.callOnFx(() -> panel(b).bodyViewForTest()));
     }
 
     @Test

@@ -59,6 +59,11 @@ final class DoctorCoordinator {
         /** The effective Debug feature state ({@code debugSupportEnabled()}). */
         boolean debugFeatureEnabled();
 
+        /** Whether the running jdtls provides java-debug itself (a distribution that ships it: no jar to find). */
+        default boolean javaDebugFromServer() {
+            return false;
+        }
+
         /** Known LSP server ids, in Settings-page order. */
         List<String> lspServerIds();
 
@@ -89,6 +94,29 @@ final class DoctorCoordinator {
 
         /** Opens Settings focused on the page for a Doctor settings key ({@code git}/{@code lsp}/…). */
         void openSettingsFor(String settingsKey);
+
+        /** This window's project root (where Python's venv is looked for), or null. */
+        default java.nio.file.Path projectRoot() {
+            return null;
+        }
+
+        /** The Python interpreter picked for this window's project ("" = detect it). */
+        default String pythonInterpreterChoice() {
+            return "";
+        }
+
+        /**
+         * Resolves the window's Python interpreter — what Pyright is told and the formatter is looked for beside
+         * — or null when the window cannot say. Called on the FX thread; the returned supplier runs off it.
+         */
+        default java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter> pythonInterpreter() {
+            return null;
+        }
+
+        /** Whether that interpreter runs on another machine (a remote host, WSL, a container): not run here. */
+        default boolean pythonInterpreterElsewhere() {
+            return false;
+        }
     }
 
     private final CoordinatorHost host;
@@ -151,6 +179,28 @@ final class DoctorCoordinator {
         return probe(row, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(argv);
             return p.present() ? base.ok(p.version()) : base.missing("doctor.tip.bashTool", command);
+        });
+    }
+
+    /** Ruff or Black for Format Document on Python files (adl's decision 4). */
+    private DoctorService.CheckSpec pythonFormatterRow() {
+        var resolver = ops.pythonInterpreter();
+        DoctorCheck row =
+                DoctorCheck.checking("python.formatter", "lsp", tr("doctor.label.pythonFormatter"), "ruff / black");
+        return probe(row, base -> {
+            Path venv = resolver == null ? null : resolver.get().venv();
+            if (venv != null && venv.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+                venv = null; // Ruff/Black run on this machine: a remote environment's tools cannot
+            }
+            var found = com.editora.format.PythonFormatter.findLocal(venv);
+            if (found.isEmpty()) {
+                return base.warn("", "doctor.tip.pythonFormatter");
+            }
+            DoctorProbes.Presence p = DoctorProbes.version(List.of(found.get().executable()));
+            String version = p.present() && !p.version().isBlank()
+                    ? p.version()
+                    : found.get().name();
+            return base.ok(version + " — " + found.get().executable());
         });
     }
 
@@ -262,11 +312,15 @@ final class DoctorCoordinator {
                 if (install != DoctorCheck.Install.NONE) {
                     row = row.withInstall(install, installArgFor(serverId));
                 }
+                boolean python = "python".equals(serverId);
                 specs.add(probe(row, base -> {
                     String path = DoctorProbes.resolvedPath(argv);
-                    return path.isEmpty()
-                            ? base.missing("doctor.tip.missing", argv.isEmpty() ? base.label() : argv.get(0))
-                            : base.ok(path);
+                    if (path.isEmpty()) {
+                        return base.missing("doctor.tip.missing", argv.isEmpty() ? base.label() : argv.get(0));
+                    }
+                    // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
+                    String version = python ? com.editora.doctor.DoctorRules.npmPackageVersion(Path.of(path)) : "";
+                    return base.ok(version.isEmpty() ? path : version + " — " + path);
                 }));
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
@@ -281,6 +335,7 @@ final class DoctorCoordinator {
                     .withSettings("lsp")
                     .disabled()));
         }
+        specs.add(pythonFormatterRow()); // Format Document on .py works with the language server off too
 
         // Debugging -------------------------------------------------------------------------------
         if (ops.debugFeatureEnabled()) {
@@ -289,11 +344,19 @@ final class DoctorCoordinator {
             DoctorCheck javaDebug = DoctorCheck.checking("debug.java", "debug", tr("doctor.label.javaDebug"), "")
                     .withSettings("debug")
                     .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVA.name());
+            // Java debugging runs through the Java language server: with LSP off nothing else here matters, and a
+            // jdtls that ships java-debug has no jar to find (review A7).
+            boolean lspOn = ops.lspFeatureEnabled();
+            boolean fromServer = ops.javaDebugFromServer();
             specs.add(probe(
                     javaDebug,
-                    base -> DebugAdapterLocator.locate(javaPluginPath, home)
-                            .map(p -> base.ok(p.toString()))
-                            .orElseGet(() -> base.missing("doctor.tip.missing", "java-debug"))));
+                    base -> !lspOn
+                            ? base.missing("status.debug.javaNeedsLsp")
+                            : DebugAdapterLocator.locate(javaPluginPath, home)
+                                    .map(p -> base.ok(p.toString()))
+                                    .orElseGet(() -> fromServer
+                                            ? base.ok("jdtls")
+                                            : base.missing("doctor.tip.missing", "java-debug"))));
             if (s.isPythonDebugEnabled()) {
                 List<String> py = DapServerRegistry.interpreterArgv("python", s.getPythonDebugCommand());
                 DoctorCheck debugpy = DoctorCheck.checking(
@@ -380,7 +443,7 @@ final class DoctorCoordinator {
                 default -> base.missing("doctor.tip.missing", javaExecutable);
             };
         }));
-        specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
+        specs.add(pythonRun(s));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         // Shell Run no longer depends on LSP, so neither does the row that says whether it can work.
         specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
@@ -476,6 +539,39 @@ final class DoctorCoordinator {
         return probe(placeholder, base -> {
             DoctorProbes.Presence p = DoctorProbes.version(cmd);
             return p.present() ? base.ok(p.version()) : base.warn("", tipKey);
+        });
+    }
+
+    /**
+     * The Python that Run, Debug and the tests use for this window's project — the same resolver they use (its
+     * venv, the picked or global interpreter, else {@code python3}/{@code python}, {@code py -3} on Windows) —
+     * and its version, rather than whether a {@code python3} happens to be on PATH.
+     */
+    private DoctorService.CheckSpec pythonRun(Settings s) {
+        java.nio.file.Path root = ops.projectRoot();
+        String choice = ops.pythonInterpreterChoice();
+        String setting = s.getPythonDebugCommand();
+        // The window's resolver when it has one: the active Python file's interpreter (its venv, the picked one,
+        // a remote host's) — what the status bar shows and Pyright is told, so Doctor has one Python row.
+        var resolver = ops.pythonInterpreter();
+        boolean elsewhere = resolver != null && ops.pythonInterpreterElsewhere();
+        DoctorCheck row = DoctorCheck.checking("run.python", "run", tr("doctor.label.pythonInterpreter"), "python")
+                .withSettings("debug");
+        return probe(row, base -> {
+            com.editora.run.PythonInterpreters.PythonInterpreter py = resolver != null
+                    ? resolver.get()
+                    : com.editora.run.PythonInterpreters.resolveLocal(null, root, "", choice, setting);
+            String what = String.join(" ", py.command()) + " (" + PythonInterpreterView.reason(py) + ")";
+            if (elsewhere) {
+                return base.ok(what); // it runs on that machine, not here: named, not probed
+            }
+            List<String> argv = new ArrayList<>(com.editora.run.PythonLaunch.withoutEnvPrefix(py.command()));
+            argv.add("--version");
+            String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
+            if (!version.startsWith("Python")) {
+                return base.warn(what, "doctor.tip.pythonInterpreter", String.join(" ", py.command()));
+            }
+            return base.ok(version + " — " + what);
         });
     }
 

@@ -18,7 +18,6 @@ import javafx.animation.Animation;
 import javafx.animation.Timeline;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.TextArea;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
@@ -203,14 +202,12 @@ class HttpResponseViewFixesFxTest {
         HttpClientCoordinator c = coordinator(new Ops(config));
         String text = "GET {{host}}/one\n\n###\nGET {{host}}/items/{{id}}\n";
         EditorBuffer b = open(c, work.resolve("t.http"), text);
-        javafx.scene.control.ComboBox<String> env =
-                c.panelForTest(b).controlsForTest().environmentPicker();
-        FxTestSupport.runOnFx(() -> env.setValue("a"));
+        FxTestSupport.runOnFx(() -> c.chooseEnvironment(b, "a"));
         FxTestSupport.runOnFx(() -> c.runRequest(b, 3));
         finished();
         FxTestSupport.runOnFx(() -> {
             b.getArea().insertText(0, "POST {{host}}/other\n\n###\n"); // position 1 is now /one
-            env.setValue("b"); // the URL it sent no longer equals what the template gives now
+            c.chooseEnvironment(b, "b"); // the URL it sent no longer equals what the template gives now
         });
         hits.clear();
         Button run = c.panelForTest(b).controlsForTest().runButton();
@@ -256,11 +253,14 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.runOnFx(() -> c.runRequest(b, 0));
         finished();
         HttpClientPanel p = c.panelForTest(b);
-        TextArea headers = p.controlsForTest().headersArea();
-        String shown = FxTestSupport.callOnFx(headers::getText);
-        assertTrue(shown.startsWith("HTTP"), "the headers box starts with the status line: " + shown);
+        String shown = FxTestSupport.callOnFx(p::headersForTest);
+        assertTrue(shown.startsWith("HTTP"), "the Headers tab starts with the status line: " + shown);
         assertFalse(shown.contains("⚠"), "no warning sits among the headers");
-        assertEquals(tr("httppanel.warnings", 8), FxTestSupport.callOnFx(p::warnBadgeForTest));
+        assertEquals("Notes 8", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.NOTES)));
+        assertEquals(
+                tr("httppanel.tab.notes") + " — " + tr("httppanel.warnings", 8),
+                FxTestSupport.callOnFx(
+                        () -> p.tabsForTest().button(HttpResponseTab.NOTES).getAccessibleText()));
         String notes = FxTestSupport.callOnFx(p::notesForTest);
         assertTrue(
                 notes.contains("{{u1}}") && notes.contains("{{u8}}"), "every warning is in the notes block: " + notes);
@@ -295,7 +295,14 @@ class HttpResponseViewFixesFxTest {
         String saved = awaitSaved(ops, file, s -> s.split("\"requestIndex\"", -1).length - 1 == 10);
         assertTrue(saved.contains("/lonely"), "the only response of Lonely is still saved: " + saved);
         HttpClientPanel p = c.panelForTest(b);
-        assertEquals(tr("httppanel.runAllOk", 6), FxTestSupport.callOnFx(p::runSummaryForTest));
+        HttpRunList list = p.runListForTest();
+        assertTrue(FxTestSupport.callOnFx(list::isShown), "the last Run All is listed");
+        assertEquals(
+                6, FxTestSupport.callOnFx(() -> list.listForTest().getItems().size()));
+        assertTrue(
+                FxTestSupport.callOnFx(list::titleForTest)
+                        .startsWith(tr("httppanel.runList.title") + " · " + tr("httppanel.runList.ok", 6)),
+                FxTestSupport.callOnFx(list::titleForTest));
     }
 
     // --- U13: an untitled buffer's "not sent — save first" results are never written ---------------------------
@@ -380,7 +387,8 @@ class HttpResponseViewFixesFxTest {
         FxTestSupport.drainFx();
         javafx.scene.control.ComboBox<?> history = p.controlsForTest().historyPicker();
         double w = FxTestSupport.callOnFx(history::getWidth);
-        assertTrue(w <= 280 - 60, "the History picker narrowed to the panel: " + w);
+        // The picker has no "History:" label any more: on a row of its own it may take the panel's inner width.
+        assertTrue(w <= 280 - 12, "the History picker narrowed to the panel: " + w);
     }
 
     // --- support ------------------------------------------------------------------------------------------------

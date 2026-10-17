@@ -58,6 +58,13 @@ class DoctorCatalogFxTest {
         final com.editora.typst.TypstService typst = new com.editora.typst.TypstService();
         boolean git = true;
         boolean lsp = true;
+        boolean javaDebugFromServer;
+
+        @Override
+        public boolean javaDebugFromServer() {
+            return javaDebugFromServer;
+        }
+
         boolean debug;
         List<String> servers = List.of();
         Set<String> serversOff = Set.of();
@@ -166,6 +173,69 @@ class DoctorCatalogFxTest {
 
         ops.serversOff = Set.of("bash");
         assertFalse(has(specs(host, ops), "lsp.bash.shellcheck"), "not while the Bash server is off");
+    }
+
+    /**
+     * The Python rows (Python review B16, decision 4): the interpreter Pyright analyses with, by version and
+     * reason, beside the Pyright row; and the Ruff/Black formatter, shown with the language server off too.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // runs a sh script
+    void thePythonInterpreterAndFormatterAreChecked(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Path venv = Files.createDirectories(dir.resolve(".venv"));
+        Files.writeString(venv.resolve("pyvenv.cfg"), "home = /usr\n");
+        Path python = executable(venv.resolve("bin/python"), "#!/bin/sh\necho Python 3.99.1\n");
+        executable(venv.resolve("bin/ruff"), "#!/bin/sh\necho ruff 0.99.0\n");
+        var interp = new com.editora.run.PythonInterpreters.PythonInterpreter(
+                List.of(python.toString()), com.editora.run.PythonInterpreters.Source.PROJECT_VENV, venv);
+        Ops ops = new Ops() {
+            @Override
+            public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                    pythonInterpreter() {
+                return () -> interp;
+            }
+        };
+        ops.servers = List.of("python");
+
+        List<DoctorService.CheckSpec> specs = specs(host, ops);
+
+        // One interpreter row (in Run: Run, Debug, the tests and Pyright all use it), with version and reason.
+        assertFalse(has(specs, "lsp.python.interpreter"), "no second interpreter row under Language Servers");
+        DoctorCheck interpreter = spec(specs, "run.python").probe().get();
+        assertEquals(DoctorStatus.OK, interpreter.status());
+        assertEquals("Python 3.99.1 — " + python + " (.venv)", interpreter.detail());
+        DoctorCheck formatter = spec(specs, "python.formatter").probe().get();
+        assertEquals(DoctorStatus.OK, formatter.status());
+        assertTrue(formatter.detail().equals("ruff 0.99.0 — " + venv.resolve("bin/ruff")), formatter.detail());
+
+        ops.lsp = false;
+        assertTrue(has(specs(host, ops), "python.formatter"), "Format Document on .py works without LSP");
+    }
+
+    /** A remote file's interpreter is named as its host names it, and not run on this machine for a version. */
+    @Test
+    void aRemoteInterpreterIsNamedNotProbed() throws Exception {
+        Host host = new Host();
+        var remote = new com.editora.run.PythonInterpreters.PythonInterpreter(
+                List.of("/home/u/proj/.venv/bin/python"),
+                com.editora.run.PythonInterpreters.Source.PROJECT_VENV,
+                java.nio.file.Path.of("/home/u/proj/.venv"));
+        Ops ops = new Ops() {
+            @Override
+            public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                    pythonInterpreter() {
+                return () -> remote;
+            }
+
+            @Override
+            public boolean pythonInterpreterElsewhere() {
+                return true;
+            }
+        };
+        DoctorCheck row = spec(specs(host, ops), "run.python").probe().get();
+        assertEquals(DoctorStatus.OK, row.status());
+        assertEquals("/home/u/proj/.venv/bin/python (.venv)", row.detail());
     }
 
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {
@@ -307,6 +377,18 @@ class DoctorCatalogFxTest {
         DoctorCheck missing = spec(specs(host, ops), "debug.java").probe().get();
         assertEquals(DoctorStatus.MISSING, missing.status());
         assertEquals(List.of("java-debug"), missing.tipArgs());
+
+        // A jdtls that ships java-debug has no jar to find; with LSP off nothing else matters (review A7).
+        ops.javaDebugFromServer = true;
+        assertEquals(
+                DoctorStatus.OK,
+                spec(specs(host, ops), "debug.java").probe().get().status());
+        ops.lsp = false;
+        DoctorCheck needsLsp = spec(specs(host, ops), "debug.java").probe().get();
+        assertEquals(DoctorStatus.MISSING, needsLsp.status());
+        assertEquals("status.debug.javaNeedsLsp", needsLsp.tipKey());
+        ops.lsp = true;
+        ops.javaDebugFromServer = false;
 
         // The other adapters appear with their own installers once they are switched on.
         host.settings.setPythonDebugEnabled(true);

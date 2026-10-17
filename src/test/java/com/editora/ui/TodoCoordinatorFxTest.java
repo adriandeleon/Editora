@@ -298,10 +298,16 @@ class TodoCoordinatorFxTest {
         assertEquals(tr("todo.scopeCurrentFile"), FxTestSupport.callOnFx(scope::getText));
 
         active = buffer(dir.resolve("open.txt"), "nothing\n");
+        synchronized (host) {
+            events.clear();
+        }
         fx(coordinator::refreshPanelIfOpen);
         assertEquals("~open.txt", FxTestSupport.callOnFx(scope::getText));
+        host.await(("status: " + tr("todo.none"))::equals); // that scan is done: its status can't land below
 
-        events.clear();
+        synchronized (host) {
+            events.clear();
+        }
         toolWindowOpen = false;
         fx(coordinator::refreshPanelIfOpen);
         assertEquals(List.of(), events, "a closed tool window is not refreshed");

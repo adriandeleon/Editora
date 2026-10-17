@@ -107,4 +107,20 @@ class DiagnosticMapperTest {
         org.junit.jupiter.api.Assertions.assertNull(mapped.get(1).href(), "only a web page is a link");
         org.junit.jupiter.api.Assertions.assertFalse(mapped.get(1).unnecessary());
     }
+
+    /** A call to a {@code @deprecated} function is tagged Deprecated, drawn struck through (Python review B3). */
+    @org.junit.jupiter.api.Test
+    void theDeprecatedTagIsKept() {
+        var range = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(3, 4), new org.eclipse.lsp4j.Position(3, 12));
+        var old = new org.eclipse.lsp4j.Diagnostic(
+                range, "The function \"old_func\" is deprecated", org.eclipse.lsp4j.DiagnosticSeverity.Hint, "Pyright");
+        old.setTags(java.util.List.of(org.eclipse.lsp4j.DiagnosticTag.Deprecated));
+
+        var mapped = DiagnosticMapper.map(java.util.List.of(old)).get(0);
+
+        org.junit.jupiter.api.Assertions.assertTrue(mapped.deprecated());
+        org.junit.jupiter.api.Assertions.assertFalse(mapped.unnecessary());
+        org.junit.jupiter.api.Assertions.assertTrue(mapped.tagOnlyHint(), "a tag carried as a hint is not a problem");
+    }
 }

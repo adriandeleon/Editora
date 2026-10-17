@@ -93,7 +93,7 @@ class DapOutputPumpTest {
             pulse();
         }
 
-        assertEquals("1|console|" + DapOutputPump.DROPPED, delivered.get(0));
+        assertEquals("1|console|" + DapOutputPump.dropped(), delivered.get(0));
         int shown = delivered.stream()
                 .skip(1)
                 .mapToInt(s -> s.length() - "1|stdout|".length())
@@ -109,8 +109,9 @@ class DapOutputPumpTest {
         pulse();
 
         String text = delivered.get(0).substring("1|stdout|".length());
-        assertEquals(DapOutputPump.MAX_EVENT_CHARS + DapOutputPump.EVENT_TRUNCATED.length(), text.length());
-        assertTrue(text.endsWith(DapOutputPump.EVENT_TRUNCATED));
+        assertEquals(
+                DapOutputPump.MAX_EVENT_CHARS + DapOutputPump.eventTruncated().length(), text.length());
+        assertTrue(text.endsWith(DapOutputPump.eventTruncated()));
     }
 
     /** A session's last lines must be shown before the session ends, however much is waiting. */

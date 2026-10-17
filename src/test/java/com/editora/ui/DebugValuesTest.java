@@ -1,48 +1,84 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DebugValuesTest {
 
+    /** The runs of {@code value} as "text|token" strings (plain runs have no "|"). */
+    private static List<String> runs(String value) {
+        return DebugValues.runs(value).stream()
+                .map(r -> r.token() == null ? r.text() : r.text() + "|" + r.token())
+                .toList();
+    }
+
     @Test
     void stringsByQuoteStyle() {
-        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("\"hello\"")); // Java / JS
-        assertEquals(DebugValues.ValueKind.STRING, DebugValues.kind("'hello'")); // Python
+        assertEquals(List.of("\"hello\"|string"), runs("\"hello\"")); // Java / JS
+        assertEquals(List.of("'hello'|string"), runs("'hello'")); // Python
+        assertEquals(List.of("\"say \\\"hi\\\"\"|string"), runs("\"say \\\"hi\\\"\""), "escaped quotes stay inside");
+        assertEquals(List.of("\"unterminated|string"), runs("\"unterminated"));
     }
 
     @Test
     void numbersAcrossNotations() {
-        assertEquals(DebugValues.ValueKind.NUMBER, DebugValues.kind("42"));
-        assertEquals(DebugValues.ValueKind.NUMBER, DebugValues.kind("-3.14"));
-        assertEquals(DebugValues.ValueKind.NUMBER, DebugValues.kind("1.5e10"));
-        assertEquals(DebugValues.ValueKind.NUMBER, DebugValues.kind("0xFF"));
-        assertEquals(DebugValues.ValueKind.NUMBER, DebugValues.kind("100L"));
+        for (String n : List.of("42", "-3.14", "1.5e10", "0xFF", "100L", "1_000")) {
+            assertEquals(List.of(n + "|number"), runs(n), n);
+        }
     }
 
     @Test
-    void booleansAcrossLanguages() {
-        assertEquals(DebugValues.ValueKind.BOOLEAN, DebugValues.kind("true"));
-        assertEquals(DebugValues.ValueKind.BOOLEAN, DebugValues.kind("False")); // Python
+    void literalWordsAreConstantsAcrossLanguages() {
+        for (String c : List.of("true", "False", "null", "None", "undefined", "nil", "NaN")) {
+            assertEquals(List.of(c + "|constant"), runs(c), c);
+        }
     }
 
     @Test
-    void nullLikesAcrossLanguages() {
-        assertEquals(DebugValues.ValueKind.NULL, DebugValues.kind("null"));
-        assertEquals(DebugValues.ValueKind.NULL, DebugValues.kind("None"));
-        assertEquals(DebugValues.ValueKind.NULL, DebugValues.kind("undefined"));
+    void objectReferencesColourTheTypeButNotTheId() {
+        assertEquals(List.of("String|type", "[", "0|number", "]@8"), runs("String[0]@8"));
+        assertEquals(List.of("ArrayList|type", "@12 size=", "3|number"), runs("ArrayList@12 size=3"));
+        assertEquals(List.of("java.util.HashMap|type", "@1f2a"), runs("java.util.HashMap@1f2a"));
+        assertEquals(List.of("DebugDemo|type", "@1f2a"), runs("DebugDemo@1f2a"));
     }
 
     @Test
-    void structuredValuesAreOther() {
-        assertEquals(DebugValues.ValueKind.OTHER, DebugValues.kind("DebugDemo@1f2a"));
-        assertEquals(DebugValues.ValueKind.OTHER, DebugValues.kind("[1, 2, 3]"));
-        assertEquals(DebugValues.ValueKind.OTHER, DebugValues.kind(""));
-        assertEquals(DebugValues.ValueKind.OTHER, DebugValues.kind(null));
-        assertEquals(DebugValues.ValueKind.OTHER, DebugValues.kind("size = 3")); // not a bare number
+    void structuredValuesAreColouredPerElement() {
+        assertEquals(List.of("[", "1|number", ", ", "'a'|string", ", ", "None|constant", "]"), runs("[1, 'a', None]"));
+        assertEquals(List.of("{a: ", "1|number", ", b: ", "true|constant", "}"), runs("{a: 1, b: true}"));
+        assertEquals(List.of("<", "Foo|type", " object at ", "0x7f3a|number", ">"), runs("<Foo object at 0x7f3a>"));
+    }
+
+    @Test
+    void digitsInsideWordsAndAllCapsNamesStayPlain() {
+        assertEquals(List.of("abc123 x2"), runs("abc123 x2"));
+        assertEquals(List.of("MAX_VALUE"), runs("MAX_VALUE"));
+        assertEquals(List.of("a-", "1|number"), runs("a-1"));
+    }
+
+    @Test
+    void emptyAndNullHaveNoRuns() {
+        assertEquals(List.of(), runs(""));
+        assertEquals(List.of(), runs(null));
+    }
+
+    /** A 1,000-element list must not become 2,000 Text nodes in one tree cell. */
+    @Test
+    void longValuesAreCappedToAFewRuns() {
+        String big = java.util.stream.IntStream.range(0, 1000)
+                .mapToObj(Integer::toString)
+                .collect(java.util.stream.Collectors.joining(", ", "[", "]"));
+        List<DebugValues.Run> runs = DebugValues.runs(big);
+        assertTrue(runs.size() <= DebugValues.MAX_RUNS, "runs: " + runs.size());
+        assertEquals(big, runs.stream().map(DebugValues.Run::text).collect(java.util.stream.Collectors.joining()));
+        assertNull(runs.get(runs.size() - 1).token(), "the remainder is plain");
     }
 
     /** D2-1: a container's children are shown — and, when the adapter reports the count, fetched — by page. */
@@ -54,6 +90,8 @@ class DebugValuesTest {
         assertEquals(DebugValues.PAGE_SIZE, DebugValues.nextPage(0, 65_536));
         assertEquals(36, DebugValues.nextPage(65_500, 65_536));
         assertEquals(0, DebugValues.nextPage(65_536, 65_536));
+        assertEquals(104, DebugValues.nextPage(0, 104), "a short tail is not a page of its own");
+        assertEquals(DebugValues.PAGE_SIZE, DebugValues.nextPage(0, 126));
     }
 
     /** D2-2: a frame source that is not a file still gets a readable name. */

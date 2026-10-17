@@ -203,6 +203,240 @@ final class JavaLaunchSupport {
         return args.isBlank() ? ENABLE_PREVIEW : ENABLE_PREVIEW + " " + args;
     }
 
+    /**
+     * javac's report of a failed compile, as the Debug console shows it: its output with the temporary copy a
+     * script was compiled from ({@code compiled}) named as the user's file ({@code original}), so a
+     * {@code File.java:3: error:} line opens the file the user edits. Pure.
+     */
+    static String compilerReport(String out, String err, Path compiled, Path original) {
+        String text = ((out == null ? "" : out) + "\n" + (err == null ? "" : err)).strip();
+        if (compiled != null && original != null && !compiled.equals(original)) {
+            text = text.replace(compiled.toString(), original.toString());
+        }
+        return text;
+    }
+
+    /** A {@code package} declaration at the start of a line; group 1 is the name. */
+    private static final Pattern PACKAGE = Pattern.compile(
+            "^\\s*package\\s+([\\p{L}_$][\\p{L}\\p{N}_$]*(?:\\s*\\.\\s*[\\p{L}_$][\\p{L}\\p{N}_$]*)*)\\s*;");
+
+    /**
+     * The package {@code lines} declare ({@code ""} for none), skipping comments the way
+     * {@link #typeNamePosition(List)} does. Pure.
+     */
+    static String declaredPackage(List<String> lines) {
+        boolean inBlockComment = false;
+        for (String raw : lines) {
+            String t = raw.strip();
+            if (inBlockComment) {
+                inBlockComment = !t.contains("*/");
+                continue;
+            }
+            if (t.startsWith("/*")) {
+                inBlockComment = !t.contains("*/");
+                continue;
+            }
+            if (t.isEmpty() || t.startsWith("//") || t.startsWith("*") || t.startsWith("@")) {
+                continue;
+            }
+            Matcher m = PACKAGE.matcher(raw);
+            return m.find() ? m.group(1).replaceAll("\\s+", "") : "";
+        }
+        return "";
+    }
+
+    /** {@link #declaredPackage(List)} for a file on disk (one bounded read); {@code ""} when unreadable. */
+    static String declaredPackage(Path file) {
+        try (java.util.stream.Stream<String> s = Files.lines(file)) {
+            return declaredPackage(s.limit(500).toList());
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * The source root {@code file} belongs under given the package it declares: its folder with one level
+     * removed per package segment ({@code src/demo/Main.java} in {@code demo} → {@code src}). The file's own
+     * folder for the default package; null when the folders do not spell the package (the file is misplaced,
+     * and no root makes it right). Pure.
+     */
+    static Path sourceRoot(Path file, String declaredPackage) {
+        Path dir = file == null ? null : file.toAbsolutePath().normalize().getParent();
+        if (dir == null) {
+            return null;
+        }
+        if (declaredPackage == null || declaredPackage.isBlank()) {
+            return dir;
+        }
+        String[] segments = declaredPackage.split("\\.");
+        for (int i = segments.length - 1; i >= 0; i--) {
+            if (dir == null
+                    || dir.getFileName() == null
+                    || !dir.getFileName().toString().equals(segments[i])) {
+                return null;
+            }
+            dir = dir.getParent();
+        }
+        return dir;
+    }
+
+    /**
+     * Which of jdtls's source folders ({@code current}) are wrong for a file whose package puts it under
+     * {@code root}: those holding the file below that root, where jdtls would name its class without (part
+     * of) its package. A folder above the root is left alone — other files may be in its default package.
+     * Pure.
+     */
+    static List<Path> wrongSourceRoots(List<Path> current, Path file, Path root) {
+        if (current == null || file == null || root == null) {
+            return List.of();
+        }
+        Path f = file.toAbsolutePath().normalize();
+        Path r = root.toAbsolutePath().normalize();
+        return current.stream()
+                .map(p -> p.toAbsolutePath().normalize())
+                .filter(p -> !p.equals(r) && p.startsWith(r) && f.startsWith(p))
+                .toList();
+    }
+
+    /**
+     * {@code className}'s simple name in {@code declaredPackage}: the class a file declaring that package
+     * compiles to, whatever package jdtls's guess put it in. Pure.
+     */
+    static String qualified(String className, String declaredPackage) {
+        String cls = className(className);
+        if (cls == null) {
+            return null;
+        }
+        String simple = cls.substring(cls.lastIndexOf('.') + 1);
+        return declaredPackage == null || declaredPackage.isBlank() ? simple : declaredPackage + "." + simple;
+    }
+
+    /** The folders of a {@code java.project.listSourcePaths} reply ({@code {data: [{path, …}], status}}). */
+    static List<Path> sourcePaths(Object reply) {
+        JsonElement el = toJson(reply);
+        if (el == null || !el.isJsonObject() || !el.getAsJsonObject().has("data")) {
+            return List.of();
+        }
+        JsonElement data = el.getAsJsonObject().get("data");
+        if (!data.isJsonArray()) {
+            return List.of();
+        }
+        List<Path> out = new java.util.ArrayList<>();
+        for (JsonElement entry : data.getAsJsonArray()) {
+            if (entry.isJsonObject() && entry.getAsJsonObject().has("path")) {
+                try {
+                    out.add(Path.of(entry.getAsJsonObject().get("path").getAsString()));
+                } catch (RuntimeException ignored) {
+                    // not a path of this machine
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** Whether a jdtls project command answered {@code {status: true, …}}. */
+    static boolean statusOk(Object reply) {
+        JsonElement el = toJson(reply);
+        if (el == null || !el.isJsonObject()) {
+            return false;
+        }
+        JsonElement status = el.getAsJsonObject().get("status");
+        return status != null
+                        && status.isJsonPrimitive()
+                        && status.getAsJsonPrimitive().isBoolean()
+                ? status.getAsBoolean()
+                : status != null && "true".equals(status.getAsString());
+    }
+
+    private static JsonElement toJson(Object reply) {
+        if (reply == null) {
+            return null;
+        }
+        if (reply instanceof JsonElement el) {
+            return el;
+        }
+        try {
+            return new com.google.gson.Gson().toJsonTree(reply);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Whether a launch's class files are there and current for its main class's source. */
+    enum ClassState {
+        /** The main class's class file is in a class folder and not older than its source. */
+        CURRENT,
+        /** The class file is older than the source file: the program would run code the user has changed. */
+        STALE,
+        /** No class folder on the path holds the class: the launch can only end in ClassNotFoundException. */
+        MISSING,
+        /** Nothing to judge by (the class may be in a jar, or the source is unknown). */
+        UNKNOWN
+    }
+
+    /**
+     * Judges the class file of {@code mainClass} on {@code paths} against {@code source} (its {@code .java}),
+     * by modification time. A path of jars only says nothing (the class may come from one). Bounded file reads.
+     */
+    static ClassState classState(List<String> paths, String mainClass, Path source) {
+        String cls = className(mainClass);
+        if (cls == null || cls.isBlank() || paths == null) {
+            return ClassState.UNKNOWN;
+        }
+        String relative = cls.replace('.', '/') + ".class";
+        boolean anyFolder = false;
+        for (String entry : paths) {
+            try {
+                Path dir = entry == null ? null : Path.of(entry);
+                if (dir == null || !Files.isDirectory(dir)) {
+                    continue;
+                }
+                anyFolder = true;
+                Path classFile = dir.resolve(relative);
+                if (Files.isRegularFile(classFile)) {
+                    if (source == null || !Files.isRegularFile(source)) {
+                        return ClassState.CURRENT;
+                    }
+                    return Files.getLastModifiedTime(source).compareTo(Files.getLastModifiedTime(classFile)) > 0
+                            ? ClassState.STALE
+                            : ClassState.CURRENT;
+                }
+            } catch (IOException | RuntimeException ignored) {
+                // an entry that is not a readable path on this machine says nothing
+            }
+        }
+        // A class compiled from a source file of the project goes to one of its class folders, never a jar.
+        boolean fromSource = source != null && Files.isRegularFile(source);
+        boolean onlyFolders = paths.stream().allMatch(p -> p != null && !p.endsWith(".jar"));
+        return anyFolder && (fromSource || onlyFolders) ? ClassState.MISSING : ClassState.UNKNOWN;
+    }
+
+    /**
+     * {@code text} without java-debug's three-line notice that jdtls's JVM and the program's differ ("[Warn] The
+     * debugger and the debuggee are running in different versions of JVMs…", then both versions): printed at the
+     * top of every attach and Debug Test, where the two are different JDKs as a matter of course, and alarming
+     * for nothing (review A17). The same object when there is nothing to drop. Pure.
+     */
+    static String withoutJvmVersionWarning(String text) {
+        if (text == null
+                || !(text.contains("running in different versions of JVMs")
+                        || text.contains("Debugger JVM version:")
+                        || text.contains("Debuggee JVM version:"))) {
+            return text;
+        }
+        StringBuilder kept = new StringBuilder();
+        for (String line : text.split("(?<=\n)")) {
+            String t = line.strip();
+            boolean notice = t.startsWith("[Warn] The debugger and the debuggee are running in different versions")
+                    || t.startsWith("Debugger JVM version:")
+                    || t.startsWith("Debuggee JVM version:");
+            if (!notice) {
+                kept.append(line);
+            }
+        }
+        return kept.toString();
+    }
+
     /** Windows refuses a command line longer than 32,767 characters ({@code CreateProcess}, error 206). */
     static final int WINDOWS_COMMAND_LIMIT = 32_767;
 

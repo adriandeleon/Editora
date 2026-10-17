@@ -45,6 +45,7 @@ class DapManagerSessionFxTest {
 
     @BeforeAll
     static void bootToolkit() throws Exception {
+        com.editora.i18n.Messages.init("en"); // the adapter's errors are shown in the UI's language
         FxToolkit.registerPrimaryStage();
     }
 
@@ -56,6 +57,7 @@ class DapManagerSessionFxTest {
     private FakeDebugAdapter adapter;
     private List<FakeLanguageServer> fakes;
     private final List<String> errors = new CopyOnWriteArrayList<>();
+    private final List<String> output = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** States, stops, notices and breakpoint answers, in the order the listener saw them. */
     private final List<String> events = new ArrayList<>();
 
@@ -70,7 +72,7 @@ class DapManagerSessionFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lsp);
         lsp.configure(true, Map.of("java", "jdtls"));
@@ -92,7 +94,9 @@ class DapManagerSessionFxTest {
                 }
 
                 @Override
-                public void onOutput(String text, String category) {}
+                public void onOutput(String text, String category) {
+                    output.add(category + ":" + text);
+                }
 
                 @Override
                 public void onError(String message) {
@@ -660,6 +664,34 @@ class DapManagerSessionFxTest {
     }
 
     @Test
+    void aRefusalIsSaidWithoutTheJavaExceptionNamesTheAdapterPutsBeforeIt() throws Exception {
+        project();
+        adapter.launchFailure =
+                "org.eclipse.debug.core.DebugException: com.sun.jdi.connect.VMStartException: the JVM did not start";
+
+        onFx(() -> dap.startLaunch(file, "java", noPicker, "", root));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals("launch failed: the JVM did not start", errors.get(0));
+    }
+
+    @Test
+    void theManagersOwnMessagesAreInTheUiLanguage() throws Exception {
+        com.editora.i18n.Messages.init("de");
+        try {
+            onFx(() -> dap.startLaunch(dir.resolve("notes.txt"), "plaintext", noPicker));
+            onFx(() -> dap.startLaunch(null, "java", noPicker));
+        } finally {
+            com.editora.i18n.Messages.init("en");
+        }
+        assertEquals(
+                List.of(
+                        "Dieser Dateityp lässt sich nicht debuggen.",
+                        "Öffnen Sie zuerst eine Java-Datei zum Debuggen."),
+                errors);
+    }
+
+    @Test
     void aLaunchTheAdapterRefusesIsReportedWithTheAdaptersWords() throws Exception {
         project();
         adapter.launchFailure = "Main class 'App' not found";
@@ -1012,7 +1044,7 @@ class DapManagerSessionFxTest {
                 List.of(new DapModels.FileBreakpoints(script, List.of(new DapModels.LineBreakpoint(0, null, null))));
         onFx(() -> {
             dap.setProgramArgs(List.of("--verbose", "in put"));
-            dap.setExceptionFilters(List.of("uncaught"));
+            dap.setExceptionFilters("python", List.of("uncaught"));
             dap.startLaunch(script, "python", noPicker);
         });
 
@@ -1152,10 +1184,13 @@ class DapManagerSessionFxTest {
         onFx(() -> dap.startCompactSource(loose, jdkJava));
 
         await("the failure", () -> !errors.isEmpty());
-        assertEquals("Compilation failed:\nStart.java:3: error: ; expected", errors.get(0));
+        // javac's report is in the console, where its file:line is a link; the status line only says where.
+        await("the report", () -> output.contains("stderr:Start.java:3: error: ; expected\n"));
+        assertFalse(errors.get(0).contains("expected"), errors.get(0));
         await("the session to end", () -> "INACTIVE".equals(lastState()));
         assertEquals(0, adapter.sessionCount());
-        Path classes = Path.of(Files.readAllLines(dir.resolve("jdk-args.txt")).get(2));
+        List<String> javacArgs = Files.readAllLines(dir.resolve("jdk-args.txt"));
+        Path classes = Path.of(javacArgs.get(javacArgs.indexOf("-d") + 1));
         await("the temp folder to be removed: nothing is left behind", () -> Files.notExists(classes));
     }
 
@@ -1245,5 +1280,62 @@ class DapManagerSessionFxTest {
         onFx(dap::stop);
         await("the copy and its classes to be removed", () -> Files.notExists(classes));
         assertEquals("INACTIVE", lastState());
+    }
+
+    // --- ending a session never holds the FX thread on the adapter (D5) ---------------------------------
+
+    /**
+     * Runs {@code trigger}, then watches the FX thread until the session has ended (one more INACTIVE), with
+     * the adapter holding its {@code disconnect} answer, and fails if the FX thread is ever seen inside the
+     * client's dispose wait — the bounded wait for that answer and the socket close, which froze the window on
+     * every Stop and session end.
+     */
+    private void assertTheFxThreadNeverWaitsOnTheAdapter(FakeDebugAdapter.Session session, Runnable trigger)
+            throws Exception {
+        Thread[] fx = new Thread[1];
+        onFx(() -> fx[0] = Thread.currentThread()); // before the trigger: this round trip must not wait on it
+        int inactiveBefore = count("INACTIVE");
+        trigger.run();
+        List<String> seen = new ArrayList<>();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (count("INACTIVE") <= inactiveBefore) {
+            assertTrue(System.nanoTime() < deadline, () -> "the session never ended; events=" + events());
+            for (StackTraceElement frame : fx[0].getStackTrace()) {
+                if (frame.getClassName().equals(DapClient.class.getName())
+                        && List.of("dispose", "finishDispose", "closeSocket").contains(frame.getMethodName())) {
+                    seen.add(frame.getMethodName());
+                }
+            }
+            Thread.onSpinWait();
+        }
+        assertTrue(
+                seen.isEmpty(),
+                () -> "the FX thread was seen " + seen.size() + " times waiting on the adapter in DapClient."
+                        + new java.util.LinkedHashSet<>(seen));
+        assertTrue(session.disconnected.await(10, TimeUnit.SECONDS), "the adapter was still told to disconnect");
+    }
+
+    @Test
+    void stopReturnsAtOnceAndStillDisconnectsAndClosesTheConnection() throws Exception {
+        project();
+        CountDownLatch hold = new CountDownLatch(1);
+        adapter.holdDisconnect = hold;
+        FakeDebugAdapter.Session session = launch();
+
+        assertTheFxThreadNeverWaitsOnTheAdapter(session, () -> Platform.runLater(dap::stop));
+
+        hold.countDown();
+        assertTrue(session.clientClosed.await(10, TimeUnit.SECONDS), "the connection is still closed afterwards");
+    }
+
+    @Test
+    void aSessionTheAdapterEndsIsClosedOffTheFxThreadToo() throws Exception {
+        project();
+        CountDownLatch hold = new CountDownLatch(1); // an adapter that does not answer again in time
+        adapter.holdDisconnect = hold;
+        FakeDebugAdapter.Session session = launch();
+
+        assertTheFxThreadNeverWaitsOnTheAdapter(session, session::terminate);
+        hold.countDown();
     }
 }

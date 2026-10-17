@@ -862,7 +862,10 @@ class LspCoordinatorCommandsFxTest {
         var events = fx.server().watchedFiles.get(0).getChanges();
         assertEquals(2, events.size());
         assertEquals(changed.toUri().toString(), events.get(0).getUri());
-        assertEquals(org.eclipse.lsp4j.FileChangeType.Changed, events.get(0).getType(), "the latest kind wins");
+        // Created then modified inside one burst is still a creation: a server told only "changed" about a file
+        // it never knew ignores it, and a new Python module stayed unresolved (Python review B6).
+        assertEquals(
+                org.eclipse.lsp4j.FileChangeType.Created, events.get(0).getType(), "a create is not lost to a modify");
         assertEquals(org.eclipse.lsp4j.FileChangeType.Deleted, events.get(1).getType());
 
         watchedFlushElapsed();

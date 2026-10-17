@@ -73,6 +73,16 @@ final class RunCoordinator {
         /** This window's open project root, or {@code null} when it has no project. */
         Path projectRoot();
 
+        /** Runs the tests of a Python test file instead of the file as a script; false when it has none. */
+        default boolean runPythonTestFile(Path file, String text) {
+            return false;
+        }
+
+        /** The Python interpreter picked for this window's project ("" = detect it). */
+        default String pythonInterpreterChoice() {
+            return "";
+        }
+
         /** Whether a project main class can be resolved+run (jdtls + the java-debug bundle available today). */
         boolean javaLaunchAvailable();
 
@@ -147,6 +157,20 @@ final class RunCoordinator {
     /** Stop was pressed for the running program, so its exit is reported as stopped, not as an exit code. */
     private boolean stopRequested;
 
+    /** What a test run streamed in this console reports to: its output lines, then its exit. */
+    interface TestStream {
+        void line(String text, boolean stderr);
+
+        /** The run ended: its exit code, or {@code -1} when it was stopped or could not start. */
+        void exit(int code);
+    }
+
+    /** The hooks the next {@link #streamRun} hands its output to (set by {@link #runTests}). */
+    private TestStream pendingTestStream;
+
+    /** How Rerun repeats the last run when it was a test run (which feeds Test Results too); else null. */
+    private Runnable lastTestRerun;
+
     RunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
@@ -219,7 +243,33 @@ final class RunCoordinator {
         if (!beginRunRequest() || !saveScriptAndActive(lastRunScript)) {
             return;
         }
+        if (lastTestRerun != null) {
+            lastTestRerun.run();
+            return;
+        }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
+    }
+
+    /**
+     * Runs a test command (pytest, unittest) in this console: its lines and exit also go to {@code hooks}, and
+     * Rerun repeats it through {@code rerun}. False, having said why, when another program is running or a
+     * save was refused.
+     */
+    boolean runTests(
+            String label,
+            Path dir,
+            List<String> argv,
+            java.util.Map<String, String> env,
+            Path script,
+            TestStream hooks,
+            Runnable rerun) {
+        if (!beginRunRequest() || !saveScriptAndActive(script)) {
+            return false;
+        }
+        pendingTestStream = hooks;
+        streamRun(label, dir, argv, env, script);
+        lastTestRerun = rerun;
+        return true;
     }
 
     /**
@@ -293,7 +343,7 @@ final class RunCoordinator {
         // executables mean nothing.
         boolean remote = com.editora.vfs.Vfs.isRemote(cwd);
         boolean elsewhere = !com.editora.process.ExecTargets.runsHere(cwd);
-        Path script = RunConfigWorkingDirectory.script(cfg, cwd);
+        Path script = RunConfigWorkingDirectory.script(cfg, ops.projectRoot(), cwd);
         if (!remote) {
             // Checked here, so the message names what is missing: a missing directory used to surface as
             // "Cannot run program /usr/bin/bash … No such file or directory", blaming bash.
@@ -314,6 +364,10 @@ final class RunCoordinator {
         } catch (ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
             ops.editConfiguration(cfg.name());
+            return;
+        }
+        if (ScriptRunCommand.isPython(cfg.type())) {
+            runPythonConfig(cfg, cwd, script, args, env, remote);
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
@@ -341,7 +395,12 @@ final class RunCoordinator {
                     dir,
                     ScriptRunCommand.build(
                             cfg.type(),
+                            // As written when it names the script from where the interpreter starts; else the
+                            // script as its machine names it (a target is relative to the project root, C9).
                             cwd.equals(dir)
+                                            && cwd.resolve(cfg.target().strip())
+                                                    .normalize()
+                                                    .equals(script)
                                     ? cfg.target()
                                     : com.editora.process.ExecTargets.forPath(script)
                                             .toTargetPath(script),
@@ -358,6 +417,44 @@ final class RunCoordinator {
             String line = firstLine(script);
             javafx.application.Platform.runLater(() -> launch.accept(line));
         });
+    }
+
+    /**
+     * A Python script or module configuration: the interpreter is planned like Run File's (its Interpreter and
+     * Interpreter options, else the project's), with the configuration's variables on top.
+     */
+    private void runPythonConfig(
+            RunConfiguration cfg,
+            Path cwd,
+            Path script,
+            List<String> args,
+            java.util.Map<String, String> env,
+            boolean remote) {
+        List<String> options;
+        try {
+            options = ProgramArgs.parse(cfg.interpreterOptions());
+        } catch (ProgramArgs.UnclosedQuoteException e) {
+            host.setStatus(tr("status.run.optionsUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        }
+        boolean module = ScriptRunCommand.PYTHON_MODULE.equals(cfg.type());
+        String target = module
+                ? cfg.target().strip()
+                : com.editora.process.ExecTargets.forPath(script).toTargetPath(script);
+        com.editora.run.PythonRunPlan.Request request = new com.editora.run.PythonRunPlan.Request(
+                module ? null : script,
+                ops.projectRoot(),
+                target,
+                module,
+                args,
+                module || remote ? null : firstLine(script),
+                cfg.interpreter(),
+                options,
+                ops.pythonInterpreterChoice(),
+                PythonRunLauncher.setting(cwd, host.settings()),
+                env);
+        PythonRunLauncher.plan(request, cwd, plan -> streamPython(cfg.name(), cwd, plan, script));
     }
 
     /** The first line of {@code script} (at most 512 bytes), or null when it cannot be read. */
@@ -385,11 +482,7 @@ final class RunCoordinator {
      * reference is left as written.
      */
     static java.util.function.Function<String, String> inheritedVariables(boolean remote) {
-        if (remote) {
-            return name -> "$" + name;
-        }
-        return name ->
-                "PATH".equalsIgnoreCase(name) ? com.editora.process.ProcessRunner.augmentedPath() : System.getenv(name);
+        return com.editora.run.JavaLaunchPlan.inherited(remote);
     }
 
     /**
@@ -433,6 +526,9 @@ final class RunCoordinator {
     /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
     private boolean consoleUsed;
 
+    /** Bumped by each run, so a slow runtime probe cannot label a newer run's console (see showRuntime). */
+    private long runtimeGeneration;
+
     /**
      * Whether the Run console has something to show: a live process, or the output of one that ran in this
      * window. Availability must not fall back to "the active tab is runnable" when a run exits — that closed
@@ -468,7 +564,7 @@ final class RunCoordinator {
     /** A script configuration's script file, resolved as its run will resolve it; null when it has none. */
     private Path configScript(RunConfiguration cfg) {
         Path cwd = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
-        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, cwd);
+        return cwd == null ? null : RunConfigWorkingDirectory.script(cfg, ops.projectRoot(), cwd);
     }
 
     /**
@@ -569,6 +665,8 @@ final class RunCoordinator {
                         consoleDir = cwd; // so a compiler error's file link in the build output resolves
                         consoleUsed = true;
                         panel().started(commandLine);
+                        runtimeGeneration++; // the build step is not the program: no runtime chip for it
+                        panel().setRuntime(null);
                     }
 
                     @Override
@@ -591,7 +689,22 @@ final class RunCoordinator {
     }
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
-    private Path beforeLaunchDir(RunConfiguration cfg) {
+    Path beforeLaunchDir(RunConfiguration cfg) {
+        if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && ops.projectRoot() != null) {
+            return ops.projectRoot(); // the script runs in its own folder; a build/setup step stays at the root
+        }
+        // A Java configuration's step is a build (mvn compile, gradle classes): it belongs in the project root
+        // whatever folder the program runs in — in a working directory of "sub" Maven found no pom (review A12).
+        if (cfg.isJava()) {
+            Path routing = routingFor(host, cfg);
+            Path project = routing == null ? null : ops.javaProjectRoot(routing);
+            if (project == null) {
+                project = ops.projectRoot();
+            }
+            if (project != null) {
+                return project;
+            }
+        }
         Path configured = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
         if (configured != null) {
             return configured;
@@ -634,27 +747,21 @@ final class RunCoordinator {
         if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
             return; // save whatever the user was editing before launching, as before
         }
-        Path configuredDir = RunConfigWorkingDirectory.resolve(cfg, root);
-        Path cwd = configuredDir != null ? configuredDir : root;
-        List<String> vm = programArgs(cfg.vmArgs(), cfg);
-        List<String> args = vm == null ? null : programArgs(cfg.args(), cfg);
-        if (args == null) {
+        // One plan for Run and Debug (review D9): working directory, JDK, environment and arguments.
+        com.editora.run.JavaLaunchPlan.Result planned =
+                com.editora.run.JavaLaunchPlan.forConfiguration(cfg, javaLaunchInputs(root));
+        if (!planned.ok()) {
+            reportPlanProblem(cfg, planned.problem());
             return;
         }
-        java.util.Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(
-                    cfg.env(), inheritedVariables(!com.editora.process.ExecTargets.runsHere(root)));
-        } catch (ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        String jdkHome = jdkHomeFor(root, cfg);
-        java.util.Map<String, String> launchEnv = javaEnvironment(root, jdkHome, env);
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
+        Path cwd = plan.cwd();
+        List<String> vm = plan.vmArgs();
+        List<String> args = plan.args();
+        String jdkHome = plan.jdkHome();
+        java.util.Map<String, String> launchEnv = plan.environment();
         boolean onHost = !com.editora.process.ExecTargets.runsHere(root);
-        String javaOverride =
-                onHost ? (jdkHome.isBlank() ? "" : hostJava(jdkHome, null)) : JdkToolchain.javaExecutable(jdkHome);
+        String javaOverride = plan.javaExecutable();
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
             // Ask jdtls to enumerate its own main classes first and use the entry it returns, exactly as the
@@ -714,6 +821,22 @@ final class RunCoordinator {
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
+    }
+
+    /** What a {@link com.editora.run.JavaLaunchPlan} of a configuration in {@code root}'s project needs to know. */
+    com.editora.run.JavaLaunchPlan.Inputs javaLaunchInputs(Path root) {
+        return com.editora.run.JavaLaunchPlan.Inputs.of(
+                root, host.settings().getMavenJdkHome(), ops.mavenProjectAt(root));
+    }
+
+    /** Says which field of {@code cfg} a plan could not read, and opens its form there. */
+    void reportPlanProblem(RunConfiguration cfg, com.editora.run.JavaLaunchPlan.Problem problem) {
+        String quote = String.valueOf(problem.quote());
+        host.setStatus(
+                problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                        ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                        : tr("status.run.argsUnclosedQuote", quote));
+        ops.editConfiguration(cfg.name());
     }
 
     private void startMainClassRun(String targetFqn) {
@@ -1186,6 +1309,25 @@ final class RunCoordinator {
         if (args == null) {
             return;
         }
+        if (buffer.isPython() && ops.runPythonTestFile(path, buffer.getContent())) {
+            return; // test_*.py: pytest runs its tests (a plain `python test_x.py` ran none and exited 0)
+        }
+        if (buffer.isPython()) {
+            Path dir = path.getParent();
+            String target = com.editora.process.ExecTargets.forPath(path).toTargetPath(path);
+            PythonRunLauncher.plan(
+                    com.editora.run.PythonRunPlan.Request.file(
+                            path,
+                            ops.projectRoot(),
+                            target,
+                            args,
+                            firstLine(buffer),
+                            ops.pythonInterpreterChoice(),
+                            PythonRunLauncher.setting(path, host.settings())),
+                    dir,
+                    plan -> streamPython(path.getFileName().toString(), dir, plan, path));
+            return;
+        }
         java.util.Map<String, String> env = launchEnv;
         ShellCommand.Launch shell = null;
         if (buffer.isShell()) {
@@ -1227,17 +1369,13 @@ final class RunCoordinator {
                     shell, com.editora.process.ExecTargets.forPath(path).toTargetPath(path), args);
         }
         List<String> command = new ArrayList<>();
-        if (buffer.isPython()) {
-            command.add("python3");
-        } else {
-            command.add(javaExecutable);
-            Integer javaSource = buffer.getShebangJavaSource();
-            if (javaSource != null) {
-                // An extensionless `java --source N` shebang file: the source launcher needs the flag
-                // (a plain `java <file>` only works when the name ends in .java).
-                command.add("--source");
-                command.add(String.valueOf(javaSource));
-            }
+        command.add(javaExecutable); // (Python is planned by PythonRunLauncher)
+        Integer javaSource = buffer.getShebangJavaSource();
+        if (javaSource != null) {
+            // An extensionless `java --source N` shebang file: the source launcher needs the flag
+            // (a plain `java <file>` only works when the name ends in .java).
+            command.add("--source");
+            command.add(String.valueOf(javaSource));
         }
         command.add(com.editora.process.ExecTargets.forPath(path).toTargetPath(path)); // its name where it runs
         command.addAll(args);
@@ -1253,6 +1391,22 @@ final class RunCoordinator {
     /** {@code JAVA_HOME} for a host's configured JDK; nothing else, and nothing at all for its own java. */
     static java.util.Map<String, String> remoteJdkEnvironment(String jdkHome) {
         return jdkHome == null || jdkHome.isBlank() ? java.util.Map.of() : java.util.Map.of("JAVA_HOME", jdkHome);
+    }
+
+    /**
+     * Streams a planned Python launch; says so when the file's shebang asked for an interpreter that is not
+     * installed here and the project's ran instead.
+     */
+    private void streamPython(String label, Path dir, com.editora.run.PythonRunPlan plan, Path script) {
+        streamRun(label, dir, plan.argv(), plan.env(), script);
+        if (plan.missingShebang() != null) {
+            String note = tr(
+                    "status.run.pythonShebangMissing",
+                    plan.missingShebang(),
+                    com.editora.run.PythonLaunch.shortName(plan.interpreter().executable()));
+            host.setStatus(note);
+            panel().showCommandLine(note); // under the command line: the status line is gone once the run ends
+        }
     }
 
     private void launchRun(Path path, List<String> command, java.util.Map<String, String> env) {
@@ -1292,6 +1446,9 @@ final class RunCoordinator {
     private void streamRun(
             String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
         lastRunScript = script;
+        TestStream tests = pendingTestStream;
+        pendingTestStream = null;
+        lastTestRerun = null;
         stopRequested = false;
         lastRunDir = workingDir;
         consoleDir = workingDir;
@@ -1301,16 +1458,24 @@ final class RunCoordinator {
         consoleUsed = true;
         ops.openToolWindow();
         panel().started(label);
+        showRuntime(command, workingDir, env);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
                 panel().started(commandLine);
+                if (script != null || tests != null) {
+                    // Which interpreter ran, and how: the first thing to check when a script behaves oddly.
+                    panel().showCommandLine(commandLine);
+                }
             }
 
             @Override
             public void onOutput(String line, boolean stderr) {
                 panel().appendOutput(line, stderr);
+                if (tests != null) {
+                    tests.line(line, stderr);
+                }
             }
 
             @Override
@@ -1320,6 +1485,9 @@ final class RunCoordinator {
 
             @Override
             public void onExit(int code) {
+                if (tests != null) {
+                    tests.exit(stopRequested ? -1 : code);
+                }
                 if (stopRequested) {
                     // A stopped run's exit code is the signal's (143 for TERM): report the Stop, not a "finish".
                     stopRequested = false;
@@ -1334,6 +1502,9 @@ final class RunCoordinator {
 
             @Override
             public void onError(String message) {
+                if (tests != null) {
+                    tests.exit(-1);
+                }
                 panel().failed(message);
                 host.setStatus(tr("status.run.failed", message));
                 ops.onRunStateChanged();
@@ -1342,6 +1513,21 @@ final class RunCoordinator {
         // After the call, not inside onStart: RunService publishes the process before it notifies, so by here
         // isRunning() is true whether the launch succeeded or failed back through onError above.
         ops.onRunStateChanged();
+    }
+
+    /**
+     * Clears the Run window's runtime chip, then fills it in with what {@code command}'s runtime reports, run
+     * the way the launch runs it (its folder, so its host, and its environment). An answer that arrives after
+     * a newer run started is dropped.
+     */
+    private void showRuntime(List<String> command, Path workingDir, java.util.Map<String, String> env) {
+        long generation = ++runtimeGeneration;
+        panel().setRuntime(null);
+        com.editora.run.RuntimeProbe.probe(command, workingDir, env, version -> {
+            if (generation == runtimeGeneration) {
+                panel().setRuntime(version);
+            }
+        });
     }
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */

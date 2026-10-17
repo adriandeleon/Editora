@@ -367,4 +367,33 @@ class KeymapsTest {
             }
         }
     }
+
+    /**
+     * Review C8: the CUA and Sublime keymaps had no debugging key at all. They now carry VS Code's F-keys (F11 is
+     * Step Into while paused and Full Screen otherwise, as in VS Code), and every GUI keymap has the core set.
+     */
+    @Test
+    void everyGuiKeymapCanStartStepAndToggleABreakpoint() {
+        for (String id : List.of("cua", "sublime", "vscode")) {
+            for (String variant : List.of(".json", ".mac.json")) {
+                Map<String, String> km = load("/com/editora/keymaps/" + id + variant);
+                assertEquals("debug.start", km.get("f5"), id + variant);
+                assertEquals("debug.stop", km.get("S-f5"), id + variant);
+                assertEquals("debug.toggleBreakpoint", km.get("f9"), id + variant);
+                assertEquals("debug.stepOver", km.get("f10"), id + variant);
+                assertEquals("debug.stepOut", km.get("S-f11"), id + variant);
+                assertTrue(km.get("f11").startsWith("debug.stepInto"), id + variant);
+            }
+        }
+        assertEquals(
+                "debug.stepIntoOrFullScreen",
+                load("/com/editora/keymaps/cua.json").get("f11"));
+        assertEquals(
+                "window.fullScreen", load("/com/editora/keymaps/cua.json").get("C-M-f"), "full screen keeps a key");
+        assertEquals("debug.pause", load("/com/editora/keymaps/vscode.json").get("f6"));
+        assertEquals("debug.restart", load("/com/editora/keymaps/intellij.json").get("C-f5"));
+        assertEquals(
+                "debug.evaluate", load("/com/editora/keymaps/intellij.json").get("M-f8"));
+        assertEquals("debug.restart", load("/com/editora/keymaps/emacs.json").get("C-c C-d r"));
+    }
 }

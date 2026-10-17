@@ -37,12 +37,15 @@
     -state-accent-hover: -color-accent-muted;
     -state-olive: #6e7b25;
     -state-violet: #8250df;
-    /* The kit's periwinkle is a pair (#5c66ae light / #9aa2d4 dark), but this default has to serve
-       every theme, light and dark, from one value — so it is a mid tone that keeps usable contrast
-       on both a white and a near-black ground. The flagship themes override it with the exact pair
-       (editor-themes/editora-{light,dark}.css); any theme can do the same. */
-    -state-key: #7078c0;
-    -state-key-bg: rgba(112, 120, 192, 0.15);
+    /* The keyboard's periwinkle follows the app theme's ground, not the editor theme: chord chips sit on the
+       window's cards, panels and popups, and an editor theme's pair (light ink under a dark app) read at
+       2.8:1 there. ladder() picks by the brightness of -color-bg-default: a darker ground gets a lighter
+       periwinkle, a mid-dark one (Autumn, Nord Dark, Dracula) a near-white one, a light ground a deep ink.
+       Every bundled app theme reads at 4.5:1 or more on its default and subtle surfaces, chip tint
+       included (StyleContrastTest). Editor themes no longer set these. */
+    -state-key: ladder(-color-bg-default, #b0b6e0 0%, #b8bee5 10%, #cdd1f1 20%, #e3e6f9 30%, #ecedfb 49%, #3c4380 50%);
+    -state-key-bg: ladder(-color-bg-default, rgba(176, 182, 224, 0.15) 0%, rgba(205, 209, 241, 0.15) 20%,
+            rgba(236, 237, 251, 0.15) 49%, rgba(60, 67, 128, 0.15) 50%);
     /* Selection wash for overlay rows (kit --sel, a ~13% accent tint). The default chains to the
        theme's accent-subtle; the flagship editor themes override it with the kit's exact rgba. */
     -state-sel: -color-accent-subtle;
@@ -1213,6 +1216,25 @@
 .html-preview-toggle .toolbar-icon { -fx-fill: -color-fg-muted; }
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
+
+/* .http: the environment pill beside the view toggle ("● Env: dev ▾"), in every view mode and before any run — the
+   environment a run will use. Muted ("No environment", hollow dot) when none is selected. */
+.http-env-pill {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 4 10 4 9;
+    -fx-opacity: 0.92;
+    -fx-cursor: hand;
+}
+.http-env-pill:hover { -fx-opacity: 1; -fx-border-color: -color-border-default; }
+.http-env-pill .http-env-pill-text { -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: -state-accent; }
+.http-env-pill .http-env-pill-chevron { -fx-font-size: 10px; -fx-text-fill: -color-fg-muted; }
+.http-env-pill .http-env-dot { -fx-fill: -state-green; }
+.http-env-pill:none .http-env-pill-text { -fx-text-fill: -color-fg-muted; }
+.http-env-pill:none .http-env-dot { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 1; }
+.status-bar .status-http-env:none { -fx-text-fill: -color-fg-muted; }
 
 /* The log viewer's control bar (Follow / level / pattern / what is showing), docked above a log's text.
    A bar of its own, not a control floating over the corner: log lines are the longest the editor shows. */
@@ -3481,6 +3503,46 @@
     -fx-underline: true;
 }
 
+/* A .http request's last result after its line (U11): "200 OK · 83 ms · ✗ 1 of 3 tests". One inlay per coloured
+   part, all at the end of the line: the status first (set apart from the request, in its outcome's colour, upright),
+   then the muted rest (italic, like an inlay hint) and the failed tests in red. Clickable: EditorBuffer's
+   HttpResultMarks sets the hover state and the hand cursor, the labels being mouse-transparent. */
+.inlay.http-result-ok,
+.inlay.http-result-redirect,
+.inlay.http-result-client-error,
+.inlay.http-result-server-error,
+.inlay.http-result-failed,
+.inlay.http-result-cancelled {
+    -fx-font-style: normal;
+    -fx-font-size: 0.9em;
+    -fx-opacity: 1;
+    -fx-padding: 0 0 0 1.5em;
+}
+.inlay.http-result,
+.inlay.http-result-tests-failed {
+    -fx-font-size: 0.9em;
+    -fx-padding: 0;
+}
+.inlay.http-result-tests-failed { -fx-font-style: normal; -fx-opacity: 1; }
+/* The label's own .text node: the editor themes fill every .text under .editor-area with the code colour, which
+   wins over a label's -fx-text-fill. */
+.inlay.http-result .text { -fx-fill: -color-fg-muted; }
+.inlay.http-result-ok .text { -fx-fill: -state-green; }
+.inlay.http-result-redirect .text { -fx-fill: -state-accent; }
+.inlay.http-result-client-error .text,
+.inlay.http-result-cancelled .text { -fx-fill: -state-amber; }
+.inlay.http-result-server-error .text,
+.inlay.http-result-failed .text,
+.inlay.http-result-tests-failed .text { -fx-fill: -state-red; }
+.inlay.http-result:result-hover,
+.inlay.http-result-ok:result-hover,
+.inlay.http-result-redirect:result-hover,
+.inlay.http-result-client-error:result-hover,
+.inlay.http-result-server-error:result-hover,
+.inlay.http-result-failed:result-hover,
+.inlay.http-result-cancelled:result-hover,
+.inlay.http-result-tests-failed:result-hover { -fx-underline: true; }
+
 /* ---- Markdown selection format bar (floating, anchored above the selection) ---- */
 .markdown-format-bar {
     -fx-background-color: -color-bg-default;
@@ -3714,27 +3776,199 @@
 .csv-grid .csv-grid-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
 .csv-grid-table { -fx-border-color: -color-border-muted; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4; }
 
-/* HTTP Client response view: the status line is coloured by outcome (2xx green, 3xx accent, 4xx amber,
-   5xx and failures red), so a glance says how the request went. */
+/* HTTP Client response view. The header row: Run with its chord (a keycap, periwinkle as everywhere), the status
+   as a pill coloured by outcome (2xx green, 3xx accent, 4xx amber, 5xx and failures red), the timing muted. */
 .http-panel .http-status { -fx-font-weight: bold; }
-.http-panel .http-status.http-status-ok { -fx-text-fill: -state-green; }
-.http-panel .http-status.http-status-redirect { -fx-text-fill: -state-accent; }
-.http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; }
+.http-panel .http-status.http-status-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-status.http-status-redirect { -fx-text-fill: -state-accent; -fx-background-color: -state-accent-bg; }
+.http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
 .http-panel .http-status.http-status-server-error,
-.http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; }
-.http-panel .http-warn-badge { -fx-text-fill: -state-amber; -fx-font-weight: bold; -fx-cursor: hand; }
+.http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-status.state-pill { -fx-padding: 2 9 2 9; }
+.http-panel .http-meta { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-chord {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: -state-key-bg;
+    -fx-background-radius: 5;
+    -fx-border-color: derive(-state-key, 55%);
+    -fx-border-width: 1 1 2 1;
+    -fx-border-radius: 5;
+    -fx-padding: 1 6 1 6;
+}
 .http-panel .http-run-summary { -fx-text-fill: -color-fg-muted; }
-.http-panel .http-warn-badge:focused { -fx-underline: true; }
-.http-panel .http-tests-badge { -fx-cursor: hand; }
-.http-panel .http-tests-part { -fx-font-weight: bold; }
-.http-panel .http-tests-part.http-tests-passed { -fx-text-fill: -state-green; }
-.http-panel .http-tests-part.http-tests-failed { -fx-text-fill: -state-red; }
-.http-panel .http-tests-part.http-tests-sep { -fx-text-fill: -color-fg-muted; }
-.http-panel .http-tests-badge:focused .http-tests-part { -fx-underline: true; }
+/* The Run All results list: a title line (the count as a pill), then one row per request — status pill, name with
+   the method and path muted, time, tests (red only when one failed). Its own scroll; the panel caps its height. */
+.http-panel .http-run-list {
+    -fx-padding: 2 0 4 0;
+    -fx-border-color: -color-border-muted;
+    -fx-border-width: 0 0 1 0;
+}
+.http-panel .http-run-title { -fx-font-weight: bold; }
+.http-panel .http-run-pill.http-run-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-run-pill.http-run-partial { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-run-pill.http-run-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-run-detail { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-tests-note { -fx-text-fill: -state-red; }
+.http-panel .http-run-rows {
+    -fx-fixed-cell-size: 2em;
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-run-rows .list-cell { -fx-padding: 0 6 0 4; -fx-background-color: transparent; }
+.http-panel .http-run-rows .list-cell:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-run-rows .list-cell:selected { -fx-background-color: -state-sel; }
+/* From the keyboard the focused row is outlined (the selection alone does not say the list has focus). */
+.http-panel .http-run-rows:focus-visible .list-cell:focused {
+    -fx-border-color: -focus-ring;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+}
+.http-panel .http-run-status { -fx-font-size: 0.9em; -fx-padding: 0 6 0 6; }
+.http-panel .http-run-status.http-status-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-run-status.http-status-redirect { -fx-text-fill: -state-accent; -fx-background-color: -state-accent-bg; }
+.http-panel .http-run-status.http-status-client-error { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-run-status.http-status-server-error,
+.http-panel .http-run-status.http-status-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-run-status.http-status-cancelled { -fx-text-fill: -color-fg-muted; -fx-background-color: -color-neutral-muted; }
+.http-panel .http-run-rows .list-cell .http-run-path,
+.http-panel .http-run-rows .list-cell .http-run-time,
+.http-panel .http-run-rows .list-cell .http-run-tests { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-rows .list-cell .http-run-tests.http-test-failed { -fx-text-fill: -state-red; }
+/* The tab strip: muted tabs, the selected one underlined in accent (a background layer, so the keyboard focus
+   ring below can use the border without moving anything); counts as small chips, red/amber/green by meaning. */
+.http-panel .http-tabs {
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 0 0 1 0;
+}
+.http-panel .http-tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+    -fx-padding: 5 9 6 9;
+    -fx-text-fill: -color-fg-muted;
+    -fx-graphic-text-gap: 5;
+    -fx-cursor: hand;
+}
+.http-panel .http-tab:hover { -fx-text-fill: -color-fg-default; }
+.http-panel .http-tabs:compact .http-tab { -fx-padding: 5 5 6 5; }
+.http-panel .http-tab:selected {
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-accent-emphasis, -color-bg-default;
+    -fx-background-insets: 0, 0 0 2 0;
+}
+.http-panel .http-tab-count {
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-neutral-muted;
+    -fx-background-radius: 999;
+    -fx-padding: 0 5 0 5;
+}
+.http-panel .http-tab-count.http-count-passed { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-tab-count.http-count-warn { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-tab-count.http-count-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+/* The icon actions at the strip's end, and the "⋯" menu without its arrow. */
+.http-panel .http-action { -fx-padding: 3 5 3 5; -fx-background-radius: 5; }
+.http-panel .http-action:hover,
+.http-panel .http-more:showing { -fx-background-color: -color-neutral-muted; }
+.http-panel .toggle-button.http-action:selected { -fx-background-color: -state-sel; }
+.http-panel .toggle-button.http-action:selected .icon-line { -fx-stroke: -color-accent-fg; }
+.http-panel .http-more > .label { -fx-padding: 0; }
+.http-panel .http-more > .arrow-button { -fx-padding: 0; }
+.http-panel .http-more > .arrow-button > .arrow { -fx-padding: 0; -fx-shape: null; }
+.http-panel .http-more:hover .icon-line,
+.http-panel .http-more:showing .icon-line { -fx-stroke: -color-fg-default; }
+/* The Headers tab: the status line, then a name/value list with no column header row. */
+.http-panel .http-headers-status { -fx-font-weight: bold; -fx-padding: 2 4 0 4; }
+.http-panel .http-headers { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 0; }
+.http-panel .http-headers .column-header-background { -fx-max-height: 0; -fx-pref-height: 0; -fx-min-height: 0; }
+.http-panel .http-headers .table-row-cell { -fx-cell-size: 1.9em; }
+.http-panel .http-headers .table-cell { -fx-padding: 3 6 3 6; -fx-alignment: top-left; }
+.http-panel .http-headers .http-header-text { -fx-fill: -color-fg-default; }
+.http-panel .http-headers .http-header-name .http-header-text { -fx-fill: -color-fg-muted; }
+.http-panel .http-tests-title { -fx-font-weight: bold; }
+.http-panel .http-tests-pane { -fx-background-color: transparent; }
+.http-panel .http-tests-pane > .viewport { -fx-background-color: transparent; }
 .http-panel .http-test { -fx-padding: 0 4 0 4; }
 .http-panel .http-test-passed { -fx-text-fill: -state-green; }
 .http-panel .http-test-failed { -fx-text-fill: -state-red; }
 .http-panel .http-body-note { -fx-text-fill: -state-amber; -fx-padding: 2 4 2 4; }
+/* An image response: a caption ("PNG · 160 × 160 · 858 B") and Fit / 100% segments over the picture, which sits on a
+   checkerboard (drawn in code, half-transparent grey, so it reads on any theme). The segments reuse the view toggle's. */
+.http-panel .http-image-bar { -fx-padding: 2 4 4 4; }
+.http-panel .http-image-caption { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-image-toggles {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 2;
+}
+.http-panel .http-image-scroll,
+.http-panel .http-image-scroll > .viewport { -fx-background-color: -color-bg-default; }
+.http-panel .http-image-frame { -fx-border-color: -color-border-muted; }
+
+/* The states between responses. While a request is sent: a thin indeterminate line under the header, and the response
+   shown before it as one muted "Previous: …" row. */
+.http-panel .http-progress { -fx-pref-height: 3; -fx-min-height: 3; -fx-max-height: 3; -fx-padding: 0; }
+.http-panel .http-progress > .track {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-progress > .bar {
+    -fx-background-color: -color-accent-emphasis;
+    -fx-background-insets: 0;
+    -fx-background-radius: 2;
+    -fx-padding: 1.5 0 1.5 0;
+}
+.http-panel .http-previous {
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 5 9 5 9;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.http-panel .http-previous:hover { -fx-text-fill: -color-fg-default; -fx-background-color: -color-neutral-muted; }
+/* Before any response: which request Run sends, the Run chord, the gutter's ▶, and the file's requests as rows. */
+.http-panel .http-empty-lead { -fx-fill: -color-fg-muted; -fx-font-size: 1.15em; }
+.http-panel .http-empty-name { -fx-fill: -color-fg-default; -fx-font-size: 1.15em; -fx-font-weight: bold; }
+.http-panel .http-empty-hint { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-empty-heading { -fx-text-fill: -color-fg-muted; -fx-font-weight: bold; -fx-font-size: 0.92em; }
+.http-panel .http-empty-scroll,
+.http-panel .http-empty-scroll > .viewport { -fx-background-color: transparent; -fx-padding: 0; }
+.http-panel .http-empty-row { -fx-padding: 4 8 4 8; -fx-background-radius: 5; -fx-cursor: hand; }
+.http-panel .http-empty-row:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-empty-row:caret { -fx-background-color: -state-sel; }
+.http-panel .http-empty-method {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-weight: bold;
+    -fx-text-fill: -state-accent;
+    -fx-min-width: 4.2em;
+}
+.http-panel .http-empty-name-cell { -fx-text-fill: -color-fg-default; }
+.http-panel .http-empty-url { -fx-text-fill: -color-fg-muted; }
+/* A request that got no response: a card naming the failure (red), its explanation (selectable), what to do next. */
+.http-panel .http-error-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+}
+.http-panel .http-error-title { -fx-text-fill: -state-red; -fx-font-weight: bold; -fx-font-size: 1.15em; }
+.http-panel .http-error-text,
+.http-panel .http-error-text .scroll-pane,
+.http-panel .http-error-text .scroll-pane .viewport,
+.http-panel .http-error-text .scroll-pane .content {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-error-text { -fx-text-fill: -color-fg-default; }
 .http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests.http-test-passed { -fx-text-fill: -state-green; }
@@ -3795,8 +4029,25 @@
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0.0, 0, 2);
 }
 
+/* A hover's code is a signature, not a document: no language tag sitting on top of its first line (B12). */
+.lsp-hover-popup .md-code-lang { visibility: hidden; }
+/* The card has its own padding: the preview's page margins (48px a side) only squeezed the signature. */
+.lsp-hover-popup .markdown-preview-wrap,
+.lsp-hover-popup .markdown-preview { -fx-padding: 0; -fx-background-color: transparent; }
+
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }
+/* The runtime a Run or Debug session's program runs under ("Java 25.0.3 (Temurin)"): a quiet neutral
+   chip beside the state — information, not a state worth noticing, so no .state-pill tint. */
+.runtime-chip {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 0 7 0 7;
+    -fx-font-size: 11px;
+}
 .run-panel .text.console-url {
     -fx-fill: -color-accent-fg;
     -fx-underline: true;
@@ -3853,17 +4104,13 @@
 /* Rich frame cells: frame name + muted ":line, File" location (IntelliJ-style). */
 .debug-panel .debug-frame-name { -fx-fill: -color-fg-default; }
 .debug-panel .debug-frame-loc { -fx-fill: -color-fg-muted; }
-/* Rich variable cells: name, muted " = ", type-colored value, muted type suffix. */
-.debug-panel .debug-var-name { -fx-fill: -color-fg-default; }
+/* Rich variable cells: name, value and type take the editor's syntax token colours (.text.variable,
+   .text.string/number/constant/type — DebugValues.runs), so values follow the editor theme; the " = "
+   stays muted. */
 .debug-panel .debug-var-eq { -fx-fill: -color-fg-muted; }
-.debug-panel .debug-var-type { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-scope-row { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 .debug-panel .debug-add-watch { -fx-fill: -color-accent-fg; }
-.debug-panel .debug-val-string { -fx-fill: -state-green; }  /* like the run/start accent */
-.debug-panel .debug-val-number { -fx-fill: -state-accent; }
-.debug-panel .debug-val-bool { -fx-fill: -state-amber; }
-.debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
-.debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+.debug-panel .debug-val-plain { -fx-fill: -color-fg-default; }
 /* A watch the adapter could not evaluate: its message, not a value. */
 .debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
@@ -3881,6 +4128,13 @@
 /* Green "Start / Continue" play button in the Debug toolbar (text + the play glyph). */
 .debug-panel .debug-start { -fx-text-fill: -state-green; -fx-font-weight: bold; }
 .debug-panel .debug-start .toolbar-icon { -fx-fill: -state-green; }
+/* The play glyph is a stroked line icon: colour its stroke (the fill rule above never reached it, review C18). */
+.debug-panel .debug-start .icon-line,
+.debug-panel .debug-start:hover .icon-line { -fx-stroke: -state-green; }
+/* A frame without source to show (the JDK, a library, a lambda proxy) — muted, like IntelliJ's library frames. */
+.debug-panel .debug-frame-name.debug-frame-nosource { -fx-fill: -color-fg-muted; }
+/* The empty call stack's "how to start" hint (review C22). */
+.debug-panel .debug-empty-hint { -fx-text-fill: -color-fg-muted; -fx-padding: 8; }
 .debug-panel .debug-start:disabled { -fx-opacity: 0.5; }
 /* The Run console's stdin field (compact, like the Debug evaluate field). */
 .run-panel .run-input {
@@ -3952,13 +4206,25 @@
 /* A .http request in flight: its ▶ turns into a red ■ that cancels it. */
 .run-marker.http-running-marker { -fx-fill: -state-red; }
 .fold-gutter .run-slot:hover .run-marker.http-running-marker { -fx-fill: derive(-state-red, 25%); }
+/* A .http request that ran: its ▶ takes the outcome's colour (green stays the plain ▶'s). */
+.run-marker.http-result-redirect { -fx-fill: -state-accent; }
+.run-marker.http-result-client-error,
+.run-marker.http-result-cancelled { -fx-fill: -state-amber; }
+.run-marker.http-result-server-error,
+.run-marker.http-result-failed { -fx-fill: -state-red; }
+.fold-gutter .run-slot:hover .run-marker.http-result-redirect { -fx-fill: derive(-state-accent, 25%); }
+.fold-gutter .run-slot:hover .run-marker.http-result-client-error,
+.fold-gutter .run-slot:hover .run-marker.http-result-cancelled { -fx-fill: derive(-state-amber, 25%); }
+.fold-gutter .run-slot:hover .run-marker.http-result-server-error,
+.fold-gutter .run-slot:hover .run-marker.http-result-failed { -fx-fill: derive(-state-red, 25%); }
 
-/* Gutter breakpoint dot (leftmost strip). Plain = solid red; conditional/logpoint tint it; disabled is
-   hollow/grey. A faint dot previews on hover over an empty strip so the click target is discoverable. */
+/* Gutter breakpoint dot (leftmost strip). Plain = solid red; a conditional one carries "=" marks, a logpoint
+   is a diamond (shape as well as colour, review C11); disabled is grey. */
 .breakpoint-marker { -fx-fill: #e51400; }
-.breakpoint-marker.breakpoint-conditional { -fx-fill: #d29922; }
+.breakpoint-marker.breakpoint-conditional { -fx-fill: #b8860b; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
-.breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.5; }
+.breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.85; }
+.breakpoint-condition-mark { -fx-fill: white; }
 /* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
    the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.
    The glyph is drawn at half scale, so the stroke is twice the width it shows. */
@@ -3967,8 +4233,12 @@
 .fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
 
 /* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent
-   amber wash so it reads over syntax colors; the caret-line highlight reinforces it. */
-.editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.22); }
+   amber wash so it reads over syntax colors; the caret-line highlight is see-through on this line
+   (ExecutionLine), and the gutter strip carries an arrow. */
+.editor-area .paragraph-text.exec-line { -fx-background-color: rgba(210, 153, 34, 0.32); }
+.exec-arrow { -fx-fill: #f0b429; -fx-stroke: #7a5200; -fx-stroke-width: 1.6; }
+/* Stopped on an exception: the execution line in red (review C13). */
+.editor-area .paragraph-text.exec-line.exec-exception { -fx-background-color: rgba(229, 20, 0, 0.22); }
 
 /* --- Diff viewer ---------------------------------------------------------------------------------
    Two read-only editor-areas (side-by-side) or one (unified). Per-line backgrounds are translucent
@@ -4914,7 +5184,8 @@
 .file-info-tab:focus-visible,
 .image-viewer-btn:focus-visible,
 .pdf-viewer-btn:focus-visible,
-.test-chip:focus-visible {
+.test-chip:focus-visible,
+.http-tab:focus-visible {
     -fx-border-color: -focus-ring;
     -fx-border-width: 2;
     -fx-border-insets: -3;

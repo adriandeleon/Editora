@@ -14,7 +14,7 @@ import javafx.application.Platform;
 /**
  * The env files of each {@code .http} file as last read, so the FX thread never reads them or walks folders for them
  * ({@link HttpEnvironments} does the finding and reading). The FX thread only takes what was last read
- * ({@link #last}) — for the environment picker, the "Running …" label, the {@code {{variable}}} marks — and asks for
+ * ({@link #last}) — for the environment pill and menu, the "Running …" label, the {@code {{variable}}} marks — and asks for
  * a fresh read when the files may have changed ({@link #refresh}: the panel was attached, the tab was switched to,
  * the window regained focus), which runs on a background thread and answers on the FX thread. A run reads them
  * itself, on its worker ({@link #readNow}), so what is sent always uses the files as they are when it starts.

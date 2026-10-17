@@ -168,6 +168,27 @@ class MarkupContextMenuFxTest {
         assertTrue(runAtTop, "Run should be a first-level entry; top level was " + labelsOf(top));
     }
 
+    /** A Python script offered Run File and nothing to debug it with but the Run menu and the palette. */
+    @Test
+    void aDebuggableScriptOffersDebugFileBesideRunFile(@TempDir Path dir) throws Exception {
+        Path py = dir.resolve("hello.py");
+        String src = "print('hi')\n";
+        Files.writeString(py, src);
+        java.util.concurrent.atomic.AtomicInteger debugged = new java.util.concurrent.atomic.AtomicInteger();
+        List<MenuItem> top =
+                openContextMenu(py, src, true, b -> b.setDebugFileHandler(debugged::incrementAndGet, () -> true));
+
+        List<String> labels = labelsOf(top);
+        int run = labels.indexOf(tr("command.file.run"));
+        assertTrue(run >= 0, "Run File is there: " + labels);
+        assertEquals(tr("editmenu.debugFile"), labels.get(run + 1), "Debug File follows it: " + labels);
+        FxTestSupport.runOnFx(() -> top.get(run + 1).fire());
+        assertEquals(1, debugged.get());
+
+        List<MenuItem> off = openContextMenu(py, src, true, b -> b.setDebugFileHandler(() -> {}, () -> false));
+        assertFalse(labelsOf(off).contains(tr("editmenu.debugFile")), "not offered while it cannot debug");
+    }
+
     /** Opens the real context menu for a buffer holding {@code text} and returns its top-level items. */
     private static List<MenuItem> openContextMenu(Path file, String text) throws Exception {
         return openContextMenu(file, text, false);
@@ -178,11 +199,18 @@ class MarkupContextMenuFxTest {
      *     runnable before the menu is opened
      */
     private static List<MenuItem> openContextMenu(Path file, String text, boolean runnable) throws Exception {
+        return openContextMenu(file, text, runnable, b -> {});
+    }
+
+    private static List<MenuItem> openContextMenu(
+            Path file, String text, boolean runnable, java.util.function.Consumer<EditorBuffer> setUp)
+            throws Exception {
         EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setPath(file);
             b.setContent(text);
             b.setRunHandler(() -> {});
+            setUp.accept(b);
             return b;
         });
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);

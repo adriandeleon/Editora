@@ -210,8 +210,9 @@ class LanguageServerSessionClientTest {
 
     @Test
     void progressTextKeepsOnlyThePartsItWasGiven() {
-        assertEquals("…", LanguageServerSession.progressText(null, null, null));
-        assertEquals("…", LanguageServerSession.progressText("  ", " ", null));
+        // Nothing to say is nothing echoed (Pyright's empty-title Begin left "…" in the bar — Python review B11).
+        assertNull(LanguageServerSession.progressText(null, null, null));
+        assertNull(LanguageServerSession.progressText("  ", " ", null));
         assertEquals("Build", LanguageServerSession.progressText("Build", "", null));
         assertEquals("Build (0%)", LanguageServerSession.progressText("Build", null, 0));
         assertEquals("Build — step", LanguageServerSession.progressText("Build", " step ", null));

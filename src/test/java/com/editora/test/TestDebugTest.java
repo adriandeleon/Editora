@@ -15,7 +15,9 @@ class TestDebugTest {
     void debugTaskArgsAddTheSuspendFlagPerTool() {
         List<String> maven = TestDebug.debugTaskArgs(BuildTool.MAVEN, "com.x.FooTest", "bar");
         assertTrue(maven.contains("-Dtest=FooTest#bar"));
-        assertTrue(maven.contains("-Dmaven.surefire.debug"));
+        // A port the system picks, read back from the banner: surefire's default is a fixed 5005 (review A15).
+        assertTrue(maven.contains(
+                "-Dmaven.surefire.debug=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0"));
 
         List<String> gradle = TestDebug.debugTaskArgs(BuildTool.GRADLE, "com.x.FooTest", "bar");
         assertEquals(List.of("test", "--tests", "com.x.FooTest.bar", "--debug-jvm"), gradle);

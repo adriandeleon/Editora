@@ -67,13 +67,18 @@
    later — so the theme won and stderr was drawn in the default ink. */
 .text.run-stderr,
 .editor-area .text.run-stderr { -fx-fill: -color-danger-fg; }
+/* A source location in the Debug console (a stack-trace frame): one click opens it (review C21). */
+.text.console-link,
+.editor-area .text.console-link { -fx-underline: true; -fx-cursor: hand; }
 
 /* Run console: the colours a program prints with SGR escape codes (com.editora.run.AnsiText). After the
    stderr rule and with the same `.editor-area` prefix, so a program's own colour wins over the stderr tint.
    Theme colours where a theme has one; mid-tones that read on light and dark backgrounds otherwise. */
 /* Run with Trace: bash's `+file:line: command` lines arrive on stderr but are not errors. */
 .text.run-trace,
-.editor-area .text.run-trace { -fx-fill: -color-fg-muted; }
+.editor-area .text.run-trace,
+.text.run-command,
+.editor-area .text.run-command { -fx-fill: -color-fg-muted; }
 .text.ansi-black,   .editor-area .text.ansi-black   { -fx-fill: -color-fg-muted; }
 .text.ansi-red,     .editor-area .text.ansi-red     { -fx-fill: -color-danger-fg; }
 .text.ansi-green,   .editor-area .text.ansi-green   { -fx-fill: -color-success-fg; }

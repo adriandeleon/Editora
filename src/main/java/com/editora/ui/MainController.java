@@ -722,7 +722,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.palette = new CommandPalette(registry, keymap, () -> {
             Chrome.PaletteGates gates = paletteGates();
             Chrome.PaletteContext context = paletteContext();
-            return c -> Chrome.paletteEnabled(c.id(), gates, context);
+            return c -> Chrome.paletteEnabled(c.id(), gates, context) && jumpPossible(c.id());
         });
         // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
         this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
@@ -731,6 +731,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Find/replace bar sits between the toolbar and the tabs.
         topBox.getChildren().add(findBar);
         this.statusBar = new StatusBar(this::activeBuffer, registry, config::getSettings);
+        statusBar.setOnHttpEnvironmentClicked(() -> httpClient.showEnvironmentMenu(
+                activeBuffer(), statusBar.httpEnvSegmentNode(), javafx.geometry.Side.TOP));
         this.breadcrumb = new FileBreadcrumb(fileWorkflows::openPath, this::windowProjectRoot);
         // The breadcrumb is NOT part of the bottom bar stack — see setupToolWindows, which hangs it under
         // the editor area itself.
@@ -790,6 +792,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
+        this.settingsWindow.setOpenUrl(this::openExternalUrl); // Diagrams' "How to install" docs link
         this.settingsWindow.setInstallToolActions(
                 id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
@@ -993,7 +996,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             containerCoordinator.windowFocused(); // a dev container may have been started or stopped meanwhile
         }
         diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
-        httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the pickers and {{variable}} marks
+        httpClient.refreshAllEnvironments(); // an env file edited elsewhere: the env pills and {{variable}} marks
     }
 
     // --- plugins ----------------------------------------------------------------------------------
@@ -1079,7 +1082,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String disabledCommandReason(String commandId) {
         Chrome.DisabledReason reason = Chrome.disabledReason(commandId, paletteGates(), paletteContext());
         if (reason == null) {
-            return null;
+            return jumpPossible(commandId) ? null : tr("status.debug.jumpUnsupported");
         }
         if (reason.commandArg() == null) {
             return tr(reason.messageKey());
@@ -1101,6 +1104,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (menuBar != null) {
             menuBar.refreshEnablement();
         }
+    }
+
+    /** Jump to Line is greyed while paused in a debugger that cannot do it (java-debug has no goto). */
+    private boolean jumpPossible(String commandId) {
+        return !"debug.jumpToLine".equals(commandId)
+                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED
+                || dapManager.supportsJumpToLine();
     }
 
     private Chrome.PaletteContext paletteContext() {
@@ -2262,6 +2272,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
             csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
             httpClient.refreshFor(activeBuffer()); // …and the .http response preview
+            refreshHttpEnvSegment(); // the status bar's "Env: dev" follows the active .http file
             historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
             installPrompts.maybeOfferInstall(
                     activeBuffer()); // offer to install this language's LSP/DAP if it's missing
@@ -2468,7 +2479,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
                     public void openToolWindow() {
-                        toolWindows.open(debugToolWindow);
+                        toolWindows.open(debugToolWindow, false); // never takes focus (review C2)
+                    }
+
+                    @Override
+                    public String chordFor(String commandId) {
+                        return keymap.displayChord(commandId);
                     }
 
                     @Override
@@ -2515,6 +2531,21 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public Path projectRoot() {
+                        return windowProjectRoot();
+                    }
+
+                    @Override
+                    public List<com.editora.config.RunConfiguration> runConfigurations() {
+                        return runConfigurations.savedConfigs();
+                    }
+
+                    @Override
+                    public String pythonInterpreterChoice() {
+                        return config.getWorkspaceState().getPythonInterpreter();
+                    }
+
+                    @Override
                     public void openLink(com.editora.run.StackTraceLinks.Link link) {
                         testNavigation.openRunLink(link);
                     }
@@ -2551,6 +2582,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public void openLibraryFrame(
+                            Path anchor, String uri, int line0, java.util.function.Consumer<EditorBuffer> opened) {
+                        lspCoordinator.openLibraryFrame(anchor, uri, line0, opened);
+                    }
+
+                    @Override
+                    public java.util.Map<String, List<String>> debugExceptionFilters() {
+                        return config.getWorkspaceState().getDebugExceptionFilters();
+                    }
+
+                    @Override
+                    public void persistDebugExceptionFilters(java.util.Map<String, List<String>> filters) {
+                        config.getWorkspaceState().setDebugExceptionFilters(filters);
+                        config.save();
+                    }
+
+                    @Override
                     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
                         return config.getBreakpoints();
                     }
@@ -2566,6 +2614,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
         debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(
                 "externalTool",
                 "toolwindow.externalTools",
@@ -2618,7 +2667,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public boolean dapAvailable(String language) {
-                return dapManager.isLanguageAvailable(language);
+                return "java".equals(language)
+                        ? dapManager.isJavaDebugInstalled()
+                        : dapManager.isLanguageAvailable(language);
             }
 
             @Override
@@ -4520,6 +4571,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void sourceSaved(EditorBuffer buffer) {
+            if (debugCoordinator != null) {
+                debugCoordinator.sourceSaved(buffer); // hot code replace into a running Java session
+            }
+        }
+
+        @Override
         public void editorConfigSaved() {
             if (windowManager == null) {
                 applyEditorConfigLocal();
@@ -4842,6 +4900,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
+                }
+
+                @Override
                 public TestRunCoordinator testRunCoordinator() {
                     return testRunCoordinator;
                 }
@@ -4936,6 +4999,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean lspEnabled() {
             return MainController.this.lspEnabled();
+        }
+
+        @Override
+        public void turnOnLsp() {
+            if (!config.getSettings().isLspSupport()) {
+                toggleLsp();
+            }
+        }
+
+        @Override
+        public void openLspSettings() {
+            settingsWindow.showDoctorTarget("lsp", stage);
         }
     });
 
@@ -5991,6 +6066,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String pythonInterpreterChoice() {
+            return config.getWorkspaceState().getPythonInterpreter();
+        }
+
+        @Override
+        public boolean runPythonTestFile(java.nio.file.Path file, String text) {
+            return testNavigation.runPythonTestFile(file, text);
+        }
+
+        @Override
         public java.nio.file.Path projectRoot() {
             return windowProjectRoot();
         }
@@ -6137,9 +6222,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String debugUnavailableMessage() {
+            return debugCoordinator.unavailableMessage(
+                    "java", activeBuffer() == null ? null : activeBuffer().getPath());
+        }
+
+        @Override
         public void attachDebugger(String className, String host, int port) {
             setStatus(tr("status.testrunner.debugAttaching", port));
-            testNavigation.resolveTestClassAnchor(className, a -> debugCoordinator.attachToPort(a, host, port));
+            testNavigation.resolveTestClassAnchor(
+                    className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
         }
     });
 
@@ -6257,6 +6349,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setStatusBarPython(String text, String tooltip) {
+            statusBar.setPythonInterpreter(text, tooltip);
+        }
+
+        @Override
         public void setProblemsAvailable(boolean available) {
             if (problemsToolWindow != null) {
                 toolWindows.setAvailable(problemsToolWindow, available);
@@ -6356,6 +6453,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void openFile(Path file) {
+                    fileWorkflows.openPath(file);
+                }
+
+                @Override
                 public Path projectRoot() {
                     return windowProjectRoot(); // this window's, not the ProjectManager's active (last-opened) one
                 }
@@ -6407,10 +6509,27 @@ public class MainController implements com.editora.mcp.McpBridge {
         public java.nio.file.Path envDir(EditorBuffer buffer) {
             return httpClient.envDirFor(buffer);
         }
+
+        @Override
+        public void choose(EditorBuffer buffer, String environment) {
+            httpClient.chooseEnvironment(buffer, environment); // the "Use environment dev" quick fix
+        }
     });
 
     {
         httpClient.setEnvironmentListener(httpVariableHints::refresh);
+        httpClient.setEnvironmentShownListener(this::refreshHttpEnvSegment);
+    }
+
+    /** Shows the active {@code .http} file's environment in the status bar ("Env: dev"), or hides the segment. */
+    private void refreshHttpEnvSegment() {
+        if (statusBar == null) {
+            return;
+        }
+        EditorBuffer b = activeBuffer();
+        String label = httpClient.environmentLabel(b);
+        statusBar.setHttpEnvironment(
+                label, label != null && httpClient.selectedEnvironment(b).isEmpty());
     }
 
     // --- AI Agent (an embedded ACP agent — Claude Code etc. — in the chat tool window) -------------
@@ -6592,6 +6711,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public boolean javaDebugFromServer() {
+                    return lspManager.javaDebugCommandsAvailable();
+                }
+
+                @Override
                 public java.util.List<String> lspServerIds() {
                     return LspCoordinator.serverIds();
                 }
@@ -6633,8 +6757,29 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public java.nio.file.Path projectRoot() {
+                    return windowProjectRoot();
+                }
+
+                @Override
+                public String pythonInterpreterChoice() {
+                    return config.getWorkspaceState().getPythonInterpreter();
+                }
+
+                @Override
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+
+                @Override
+                public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                        pythonInterpreter() {
+                    return lspCoordinator.pythonInterpreterForDoctor();
+                }
+
+                @Override
+                public boolean pythonInterpreterElsewhere() {
+                    return lspCoordinator.pythonInterpreterElsewhereForDoctor();
                 }
             });
 
@@ -7782,7 +7927,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
-        buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        buffer.setTestRunHandler(t -> testNavigation.runSingleTest(buffer, t)); // JUnit → build tool; Python → pytest
         buffer.setTestDebugHandler(testNavigation::debugSingleTest); // editor menu → suspended test + debugger attach
         testNavigation.applyTestGutter(
                 buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project
@@ -8793,7 +8938,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.consoleInUse());
         }
         if (http && httpClient.isEnabled()) {
-            httpClient.refreshEnvironments(buffer); // the response preview's environment picker
+            httpClient.refreshEnvironments(buffer); // the .http file's environment pill and menu
         }
     }
 

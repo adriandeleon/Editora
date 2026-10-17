@@ -339,6 +339,29 @@ final class MainMenuBar {
         Chrome.PaletteContext ctx = context.get();
         for (Map.Entry<String, Row> e : items.entrySet()) {
             e.getValue().item().setDisable(!Chrome.paletteEnabled(e.getKey(), g, ctx));
+            showCheck(e.getKey(), e.getValue());
+        }
+    }
+
+    /** The mark a {@link Command.Toggle} that is on carries in front of its title. */
+    static final String CHECK = "✓ ";
+
+    /**
+     * Marks an on/off command's item with {@link #CHECK} while it is on (and leaves its place blank while it is
+     * off, so the titles stay aligned). Re-read on every menu open, with the enablement.
+     */
+    private void showCheck(String id, Row row) {
+        Command command = registry.get(id).orElse(null);
+        if (!(command instanceof Command.Toggle toggle)) {
+            return;
+        }
+        String mark = toggle.isOn() ? CHECK : "\u2002\u2002"; // two en spaces ≈ the mark's width
+        if (row.title() != null) {
+            row.title().setText(mark + command.title());
+        } else {
+            String text = row.item().getText();
+            String bare = text.startsWith(CHECK) || text.startsWith("\u2002\u2002") ? text.substring(2) : text;
+            row.item().setText(mark + bare);
         }
     }
 

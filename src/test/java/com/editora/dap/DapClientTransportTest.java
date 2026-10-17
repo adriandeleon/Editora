@@ -10,13 +10,10 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.StackFrame;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -167,7 +164,9 @@ class DapClientTransportTest {
 
     /** Without the capability the arguments are not the adapter's to honour: ask as before. */
     @Test
-    void anAdapterThatDoesNotPageIsAskedAsBefore() throws Exception {
+    void anAdapterThatDoesNotAdvertisePagingIsStillAskedForAWindowAndCapped() throws Exception {
+        // java-debug pages without saying so: it must still be asked for a window (D4), and an adapter that
+        // sends everything anyway is cut to the innermost frames.
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             DapClient client = new DapClient(NO_HOST);
             client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
@@ -178,19 +177,103 @@ class DapClientTransportTest {
             var frames = client.stackTrace(1).get(10, TimeUnit.SECONDS);
 
             var request = session.stackTraceRequests.get(session.stackTraceRequests.size() - 1);
-            assertNull(request.getLevels());
-            assertNull(request.getStartFrame());
-            assertEquals(1_500, frames.size());
+            assertEquals(DapClient.STACK_FRAME_LIMIT, request.getLevels());
+            assertEquals(0, request.getStartFrame());
+            assertEquals(DapClient.STACK_FRAME_LIMIT, frames.size());
+            assertEquals(1, frames.get(0).id(), "the innermost frames are kept");
             client.dispose();
         }
     }
 
+    /**
+     * Ending a session closes its socket under the DAP reader, which lsp4j logged at INFO with a stack trace —
+     * and Editora's Debug Log records INFO, so every Stop and every closed window added a
+     * {@code SocketException: Socket closed} trace there. The reader of a disposed session now ends quietly.
+     */
     @Test
-    void pagingFollowsTheAdaptersCapability() {
-        assertFalse(DapClient.pagesStackTraces(null));
-        assertFalse(DapClient.pagesStackTraces(new Capabilities()));
-        Capabilities paging = new Capabilities();
-        paging.setSupportsDelayedStackTraceLoading(true);
-        assertTrue(DapClient.pagesStackTraces(paging));
+    void disposingASessionLogsNoStreamClosedTrace() throws Exception {
+        java.util.logging.Logger lsp4j =
+                java.util.logging.Logger.getLogger("org.eclipse.lsp4j.jsonrpc.json.StreamMessageProducer");
+        List<java.util.logging.LogRecord> records = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.logging.Handler handler = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        lsp4j.addHandler(handler);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            DapClient client = new DapClient(NO_HOST);
+            client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
+            client.launch(Map.of("type", "test", "request", "launch")).get(10, TimeUnit.SECONDS);
+            FakeDebugAdapter.Session session = adapter.awaitSession();
+            assertTrue(session.configured.await(10, TimeUnit.SECONDS));
+
+            client.dispose();
+
+            // The reader has ended once no client session thread is still reading.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (clientReaderAlive() && records.isEmpty()) {
+                assertTrue(System.nanoTime() < deadline, "the client's DAP reader never ended");
+                Thread.onSpinWait();
+            }
+            assertTrue(
+                    records.isEmpty(),
+                    () -> "lsp4j logged the stream close: "
+                            + records.stream()
+                                    .map(java.util.logging.LogRecord::getMessage)
+                                    .toList());
+        } finally {
+            lsp4j.removeHandler(handler);
+        }
+    }
+
+    /** Whether a {@code dap-session} thread is still in lsp4j's read loop. */
+    private static boolean clientReaderAlive() {
+        for (var entry : Thread.getAllStackTraces().entrySet()) {
+            if (!entry.getKey().getName().equals("dap-session")) {
+                continue;
+            }
+            for (StackTraceElement frame : entry.getValue()) {
+                if (frame.getClassName().endsWith("StreamMessageProducer")
+                        && frame.getMethodName().equals("listen")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Against java-debug's order — {@code initialized} only once the launch has created the session, and
+     * configuration refused before that — the handshake still installs the breakpoints and finishes.
+     */
+    @Test
+    void theHandshakeConfiguresAJavaDebugSessionOnceItsLaunchHasCreatedIt() throws Exception {
+        try (FakeDebugAdapter adapter = FakeDebugAdapter.javaDebug()) {
+            adapter.sessionBreakpointAnswer = args ->
+                    List.of(FakeDebugAdapter.Session.breakpoint(1, true, args.getBreakpoints()[0].getLine(), null));
+            DapClient client = new DapClient(NO_HOST);
+            client.setBreakpoints(List.of(new DapModels.FileBreakpoints(
+                    java.nio.file.Path.of("/work/App.java").toAbsolutePath(),
+                    List.of(new DapModels.LineBreakpoint(4, null, null)))));
+            client.setExceptionFilters(List.of("uncaught"));
+            client.connect(adapter.port(), "java").get(10, TimeUnit.SECONDS);
+            FakeDebugAdapter.Session session = adapter.awaitSession();
+
+            client.launch(Map.of("type", "java", "request", "launch")).get(10, TimeUnit.SECONDS);
+
+            assertTrue(session.configured.await(10, TimeUnit.SECONDS), "configurationDone was accepted");
+            assertEquals(
+                    List.of("initialize", "launch", "setBreakpoints", "setExceptionBreakpoints", "configurationDone"),
+                    session.requests.subList(0, 5));
+            client.dispose();
+        }
     }
 }

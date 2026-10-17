@@ -634,6 +634,15 @@ final class WindowCommandRegistrar {
                                         host.httpClient()::applySupport)));
         host.registry()
                 .register(Command.of(
+                        "http.toggleInlineResults",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "http.toggleInlineResults",
+                                        () -> host.config().getSettings().isHttpInlineResults(),
+                                        v -> host.config().getSettings().setHttpInlineResults(v),
+                                        host.httpClient()::applySupport)));
+        host.registry()
+                .register(Command.of(
                         "view.toggleDebug",
                         () -> host.editorSettings()
                                 .toggleSetting(
@@ -2048,6 +2057,19 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isDebugProgramConsole(),
                                         v -> host.config().getSettings().setDebugProgramConsole(v),
                                         host.debugCoordinator()::applySupport)));
+        // Fixer B: the Caught / Uncaught exception-breakpoint toggles (checked in the Run menu).
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.caught",
+                        () -> host.debugCoordinator().exceptionToggleOn(true),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(true))));
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.uncaught",
+                        () -> host.debugCoordinator().exceptionToggleOn(false),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(false))));
         host.registry()
                 .register(Command.of(
                         "debug.addWatch", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatch)));
@@ -2076,11 +2098,48 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "debug.toggleExceptionBreakpoints",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleExceptionBreakpoints)));
+        // Java code changes and frame control: hot code replace, restart frame, smart step into.
+        host.registry()
+                .register(Command.of(
+                        "debug.applyCodeChanges",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::applyCodeChanges)));
+        host.registry()
+                .register(Command.of(
+                        "debug.restartFrame",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restartFrame)));
+        host.registry()
+                .register(Command.of(
+                        "debug.smartStepInto",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::smartStepInto)));
         host.registry()
                 .register(Command.of(
                         "tool.debug",
                         () -> host.debugCoordinator()
                                 .ifDebug(() -> host.toolWindows().toggle(host.debugToolWindow()))));
+        // Review C: the breakpoints list, Mute, Enable/Disable at the caret, Show Value at Caret, and F11 of the
+        // CUA / Sublime keymaps (Step Into while paused, Full Screen otherwise — VS Code's F11).
+        host.registry()
+                .register(Command.of(
+                        "debug.breakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.muteBreakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMuteBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleBreakpointEnabled",
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator()::toggleBreakpointEnabledAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.showValue",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showValueAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.stepIntoOrFullScreen",
+                        () -> host.debugCoordinator()
+                                .stepIntoOrElse(() -> host.registry().run("window.fullScreen"))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         host.registry()
                 .register(Command.of(
@@ -2161,14 +2220,31 @@ final class WindowCommandRegistrar {
                 .register(Command.of("lsp.reloadProject", () -> host.ifLsp(host.lspCoordinator()::reloadProject)));
         // Not behind ifLsp: the caches stay on disk after LSP is turned off.
         host.registry().register(Command.of("lsp.clearJavaIndexCaches", host.lspCoordinator()::clearJavaIndexCaches));
+        // Not behind ifLsp either: Run and Debug follow the picked interpreter too.
+        host.registry()
+                .register(Command.of("python.selectInterpreter", host.lspCoordinator()::selectPythonInterpreter));
         host.registry()
                 .register(Command.of(
                         "lsp.toggleProjectProblems",
                         () -> host.ifLsp(() -> host.lspCoordinator()
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
-        host.registry()
-                .register(Command.of("lsp.formatDocument", () -> host.ifLsp(host.lspCoordinator()::formatDocument)));
-        host.registry().register(Command.of("lsp.codeActions", () -> host.ifLsp(host.lspCoordinator()::codeActions)));
+        host.registry().register(Command.of("lsp.formatDocument", () -> {
+            // Python: Ruff/Black unless a language server formats it — with the language server off too.
+            if (!host.lspCoordinator().formatPythonExternally()) {
+                host.ifLsp(host.lspCoordinator()::formatDocument);
+            }
+        }));
+        // In a .http file the code actions are the {{variable}} fixes ("Use environment dev"), which need no server.
+        host.registry().register(Command.of("lsp.codeActions", () -> {
+            EditorBuffer active = host.activeBuffer();
+            if (active != null && active.isHttpFile() && host.httpClient().isEnabled()) {
+                if (!active.showHttpVariableFixes()) {
+                    host.setStatus(tr("status.lsp.noCodeActions"));
+                }
+                return;
+            }
+            host.ifLsp(host.lspCoordinator()::codeActions);
+        }));
         host.registry()
                 .register(Command.of(
                         "lsp.signatureHelp",
@@ -2702,9 +2778,11 @@ final class WindowCommandRegistrar {
         // String manipulation (the String-Manipulation-plugin family): case-style conversions on the
         // selection/token at the caret + whole-line sorts/filters, all also reachable via one picker.
         host.registry().register(Command.of("edit.stringOps", host.editing()::stringOpsPicker));
-        host.registry()
-                .register(Command.of(
-                        "edit.case.cycle", () -> host.editing().caseOp(com.editora.editops.StringCase::cycle)));
+        host.registry().register(Command.of("edit.case.cycle", () -> {
+            var b = host.activeBuffer();
+            String language = b == null ? null : b.getLanguage();
+            host.editing().caseOp(s -> com.editora.editops.StringCase.cycle(s, language));
+        }));
         host.registry()
                 .register(Command.of(
                         "edit.case.camel",
