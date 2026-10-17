@@ -2548,6 +2548,16 @@ final class DebugCoordinator {
         if (!debugSupportEnabled() || !isDebuggableBuffer(b)) {
             return items;
         }
+        if (!b.isRunnable()
+                && b.getPath() != null
+                && "java".equals(b.getLanguage())
+                && JavaProjectRoot.find(b.getPath()) == null) {
+            // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
+            // for runnable files); Debug was then only in the Run menu and the palette.
+            javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
+            debugFile.setOnAction(e -> launchBuffer(b));
+            items.add(debugFile);
+        }
         items.add(menuItem("debug.toggleBreakpoint", this::toggleBreakpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", this::editBreakpointAtCaret));
         if (dapManager.state() == DapManager.State.SUSPENDED) {

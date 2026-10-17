@@ -363,6 +363,16 @@ class DebugReviewCWindowFxTest {
         }
     }
 
+    /** A classic Java main class in a plain folder had no Debug entry in the editor's menu (review C10). */
+    @Test
+    void aPlainFolderJavaClassOffersDebugFileInTheEditorMenu() throws Exception {
+        Path main = file("Main.java", "public class Main {\n    public static void main(String[] a) {\n    }\n}\n");
+        EditorBuffer b = open(main);
+        List<String> labels = FxTestSupport.callOnFx(
+                () -> debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+        assertEquals(tr("editmenu.debugFile"), labels.getFirst(), labels.toString());
+    }
+
     @Test
     void rightClickingABreakpointOffersEditDisableRemove() throws Exception {
         Path util = file("util.py", UTIL);
