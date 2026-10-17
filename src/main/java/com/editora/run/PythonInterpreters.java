@@ -73,6 +73,14 @@ public final class PythonInterpreters {
             return command.get(0);
         }
 
+        /**
+         * The interpreter program itself: the first token, or the one after an {@code env NAME=value …}
+         * prefix ({@code env FOO=1 /opt/py/bin/python3 -X dev} → {@code /opt/py/bin/python3}).
+         */
+        public String executablePath() {
+            return command.get(executableIndex(command));
+        }
+
         /** The arguments after the executable (empty for a plain interpreter). */
         public List<String> args() {
             return command.subList(1, command.size());
@@ -208,7 +216,7 @@ public final class PythonInterpreters {
     }
 
     /** {@code env NAME=value … python} → the index of {@code python}; otherwise 0. */
-    static int executableIndex(List<String> command) {
+    public static int executableIndex(List<String> command) {
         if (command.isEmpty() || !"env".equals(command.get(0))) {
             return 0;
         }

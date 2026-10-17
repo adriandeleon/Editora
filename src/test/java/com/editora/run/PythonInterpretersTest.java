@@ -131,6 +131,7 @@ class PythonInterpretersTest {
         var withEnv = PythonInterpreters.resolve(in(null, root, "env FOO=1 python3", "", "", Map.of()));
         assertEquals(List.of("env", "FOO=1", "python3"), withEnv.command());
         assertEquals(2, PythonInterpreters.executableIndex(withEnv.command()));
+        assertEquals("python3", withEnv.executablePath());
     }
 
     @Test
