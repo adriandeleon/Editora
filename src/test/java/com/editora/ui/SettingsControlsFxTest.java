@@ -245,13 +245,11 @@ class SettingsControlsFxTest {
             CheckBox console = rig.control("debugProgramConsoleCheck");
             debug.setSelected(false);
             assertFalse(settings.isDebugSupport());
-            assertTrue(fields.get("python").isDisable());
-            assertTrue(enables.get("python").isDisable());
-            assertTrue(console.isDisable());
+            assertTrue(fields.get("python").isDisabled());
+            assertTrue(fields.get("java").isDisabled(), "the Java card too (it holds the console switch)");
             debug.setSelected(true);
             assertTrue(settings.isDebugSupport());
-            assertFalse(fields.get("python").isDisable());
-            assertFalse(console.isDisable());
+            assertFalse(fields.get("python").isDisabled());
 
             console.setSelected(!console.isSelected());
             assertEquals(console.isSelected(), settings.isDebugProgramConsole());
@@ -314,17 +312,20 @@ class SettingsControlsFxTest {
             theme.setValue(others.get(0));
             assertEquals(others.get(0), settings.getTheme());
             assertEquals(EditorThemes.defaultFor(others.get(0)), settings.getEditorTheme());
-            assertEquals(settings.getEditorTheme(), editorTheme.getValue(), "the combo follows");
+            assertEquals("", editorTheme.getValue(), "the combo says Automatic: it follows");
             assertFalse(settings.isEditorThemeUserSet(), "following is not the user's choice");
             assertEquals(Themes.stylesheetFor(others.get(0)), javafx.application.Application.getUserAgentStylesheet());
             assertEquals(1, rig.applied.size());
             assertTrue(
-                    rig.stage().getScene().getStylesheets().contains(EditorThemes.stylesheetFor(editorTheme.getValue()))
-                            || EditorThemes.stylesheetFor(editorTheme.getValue()) == null,
+                    rig.stage()
+                                    .getScene()
+                                    .getStylesheets()
+                                    .contains(EditorThemes.stylesheetFor(settings.getEditorTheme()))
+                            || EditorThemes.stylesheetFor(settings.getEditorTheme()) == null,
                     "the preview is recoloured");
 
             String picked = editorTheme.getItems().stream()
-                    .filter(name -> !name.equals(editorTheme.getValue()))
+                    .filter(name -> !name.isEmpty() && !name.equals(settings.getEditorTheme()))
                     .findFirst()
                     .orElseThrow();
             editorTheme.setValue(picked);
@@ -353,8 +354,8 @@ class SettingsControlsFxTest {
             ComboBox<String> family = rig.control("fontFamily");
             assertEquals(Themes.normalize("A Theme That Was Removed"), theme.getValue());
             assertEquals(theme.getValue(), settings.getTheme());
-            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), editorTheme.getValue());
-            assertEquals(editorTheme.getValue(), settings.getEditorTheme());
+            assertEquals("", editorTheme.getValue(), "never picked: Automatic");
+            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), settings.getEditorTheme());
             assertEquals("A Font This Machine Lacks", family.getValue(), "the font in force stays selectable");
             assertEquals("A Font This Machine Lacks", family.getItems().get(0));
             assertEquals(List.of(), rig.applied);
@@ -433,17 +434,21 @@ class SettingsControlsFxTest {
             fill.getEditor().setText("wide");
             fill.getEditor().fireEvent(new javafx.event.ActionEvent());
             assertEquals(72, settings.getFillColumn(), "text that is not a number changes nothing");
-            assertEquals("72", fill.getEditor().getText(), "and the field shows the value in force again");
+            assertEquals("wide", fill.getEditor().getText(), "the text stays to be fixed");
+            assertTrue(fill.getEditor().getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
             assertEquals(applied, rig.applied.size());
 
             fill.getEditor().setText("999999");
             fill.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(Settings.MAX_FILL_COLUMN, settings.getFillColumn(), "past the range is the bound");
-            assertEquals(
-                    Integer.toString(Settings.MAX_FILL_COLUMN), fill.getEditor().getText());
+            assertEquals(72, settings.getFillColumn(), "past the range is not pulled to the bound in silence");
+            assertEquals("999999", fill.getEditor().getText());
 
             Spinner<Integer> large = rig.control("largeFileThresholdSpinner");
+            int threshold = settings.getLargeFileThreshold();
             large.getEditor().setText("-5");
+            large.getEditor().fireEvent(new javafx.event.ActionEvent());
+            assertEquals(threshold, settings.getLargeFileThreshold(), "below 0 (\"never\") is refused");
+            large.getEditor().setText("0");
             large.getEditor().fireEvent(new javafx.event.ActionEvent());
             assertEquals(0, settings.getLargeFileThreshold(), "0 is \"never\", and the lowest it goes");
             large.getValueFactory().setValue(25_000);
@@ -459,7 +464,7 @@ class SettingsControlsFxTest {
             assertEquals(45, settings.getGitAutoFetchMinutes());
             minutes.getEditor().setText("0");
             minutes.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(1, settings.getGitAutoFetchMinutes());
+            assertEquals(45, settings.getGitAutoFetchMinutes(), "0 minutes is refused, not turned into 1");
             autoFetch.setSelected(false);
             assertFalse(settings.isGitAutoFetch());
             assertTrue(minutes.isDisable());
@@ -581,9 +586,11 @@ class SettingsControlsFxTest {
                     SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> language.setValue("es"));
 
             assertEquals("es", settings.getUiLanguage());
-            assertEquals(1, dialogs.size());
-            assertEquals(tr("dialog.language.title"), dialogs.get(0).title());
-            assertEquals(tr("dialog.language.restart"), dialogs.get(0).content());
+            assertEquals(List.of(), dialogs, "no dialog: the arrow keys change a closed combo one step at a time");
+            javafx.scene.Node note =
+                    language.getParent().getChildrenUnmodifiable().get(1);
+            assertTrue(note.isVisible(), "the row says it");
+            assertEquals(tr("dialog.language.restart"), ((javafx.scene.control.Label) note).getText());
             assertEquals(List.of(), rig.applied, "the running windows keep their language until the restart");
 
             assertEquals(
@@ -633,6 +640,34 @@ class SettingsControlsFxTest {
             assertTrue(mcp.isSelected());
             assertEquals(2, asked[0]);
             assertEquals(2, rig.applied.size());
+        });
+    }
+
+    /** The MCP page used to be one switch: no way to see whether it runs, where, or to get the command. */
+    @Test
+    void theMcpPageShowsWhereTheServerRunsAndOffersItsActions() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setMcpSupport(false);
+            String[] endpoint = {""};
+            int[] copied = {0};
+            int[] rotated = {0};
+            rig.window.setMcpConfirm(() -> true);
+            rig.window.setMcpActions(
+                    new SettingsWindow.McpActions(() -> endpoint[0], () -> copied[0]++, () -> rotated[0]++));
+            rig.show();
+            javafx.scene.layout.Region page = rig.page("MCP");
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.off")));
+            assertTrue(SettingsRig.button(page, tr("settings.mcp.copy")).isDisabled(), "nothing to copy while off");
+
+            endpoint[0] = "http://127.0.0.1:4242/mcp"; // what the server reports once the switch starts it
+            CheckBox mcp = rig.control("mcpCheck");
+            mcp.setSelected(true);
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.running", "http://127.0.0.1:4242/mcp")));
+            SettingsRig.button(page, tr("settings.mcp.copy")).fire();
+            SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+            assertEquals(1, copied[0]);
+            assertEquals(1, rotated[0]);
+            assertFalse(SettingsRig.texts(page).stream().anyMatch(t -> t.contains("Off by default")));
         });
     }
 

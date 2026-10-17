@@ -164,6 +164,17 @@ public final class PluginManager {
         return live.size();
     }
 
+    /** A parse error without Jackson's internals ("Source: REDACTED (`StreamReadFeature…`)"), with its line. */
+    static String readableError(Exception e) {
+        if (e instanceof com.fasterxml.jackson.core.JsonProcessingException j) {
+            com.fasterxml.jackson.core.JsonLocation at = j.getLocation();
+            return at == null || at.getLineNr() < 1
+                    ? j.getOriginalMessage()
+                    : j.getOriginalMessage() + " (line " + at.getLineNr() + ", column " + at.getColumnNr() + ")";
+        }
+        return String.valueOf(e.getMessage());
+    }
+
     private PluginDescriptor loadDescriptor(Path dir, Path manifestFile) {
         PluginManifest manifest;
         try (InputStream in = Files.newInputStream(manifestFile)) {
@@ -172,7 +183,7 @@ public final class PluginManager {
             PluginManifest stub = new PluginManifest();
             stub.id = dir.getFileName().toString();
             stub.name = stub.id;
-            return new PluginDescriptor(stub, dir, false, null, "Invalid plugin.json: " + e.getMessage());
+            return new PluginDescriptor(stub, dir, false, null, "Invalid plugin.json: " + readableError(e));
         }
         if (manifest.id == null || manifest.id.isBlank()) {
             manifest.id = dir.getFileName().toString();

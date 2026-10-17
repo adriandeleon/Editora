@@ -3029,7 +3029,7 @@
 
 /* Muted explanatory line under a Settings heading. */
 .settings-hint {
-    -fx-font-size: 11px;
+    -fx-font-size: 0.786em; /* 11px at the 14px root */
     -fx-text-fill: -color-fg-muted;
 }
 
@@ -3048,7 +3048,7 @@
 
 /* ---- Settings window (sidebar + category pages) ---- */
 .settings-search {
-    -fx-font-size: 13px;
+    -fx-font-size: 0.929em; /* 13px at the 14px root */
     -fx-background-color: -color-border-muted, -color-bg-subtle;
 }
 /* The base rule above would otherwise erase the theme's focused border (author beats user-agent). */
@@ -3077,7 +3077,7 @@
    selected tint reads as a pill, while the cell itself still spans full width for hit-testing. */
 .settings-sidebar .list-cell {
     -fx-padding: 6 12 6 12;
-    -fx-font-size: 13px;
+    -fx-font-size: 0.929em; /* 13px at the 14px root */
     -fx-background-color: transparent;
     -fx-background-radius: 7;
     -fx-background-insets: 0 6 0 6;
@@ -3113,14 +3113,14 @@
 }
 /* Boxed page note — kit .set-note. */
 .settings-note-box {
-    -fx-font-size: 12px;
+    -fx-font-size: 0.857em; /* 12px at the 14px root */
     -fx-text-fill: -color-fg-muted;
     -fx-background-color: -color-bg-inset;
     -fx-background-radius: 9;
     -fx-padding: 11 14 11 14;
 }
 .settings-page-title {
-    -fx-font-size: 18px;
+    -fx-font-size: 1.286em; /* 18px at the 14px root */
     -fx-font-weight: bold;
     /* The heading is a Text node (see SettingsWindow.page) so the bold glyph ink isn't clipped. Text uses
        -fx-fill (not -fx-text-fill); track the theme foreground so it works on light + dark themes. */
@@ -3147,7 +3147,7 @@
    red = broken — the same two meanings the status bar and the trees use, so a Settings page reads in
    the same vocabulary. Tinted like a pill; the text wraps, so keep the padding modest. */
 .settings-git-status {
-    -fx-font-size: 12px;
+    -fx-font-size: 0.857em; /* 12px at the 14px root */
     -fx-background-radius: 999;
     -fx-padding: 2 10 2 10;
 }
@@ -3167,7 +3167,7 @@
 /* Settings search with no hits: said in words, in place of a blank page. */
 .settings-search-empty {
     -fx-text-fill: -color-fg-muted;
-    -fx-font-size: 13px;
+    -fx-font-size: 0.929em; /* 13px at the 14px root */
     -fx-padding: 32 24 24 24;
 }
 
@@ -3182,7 +3182,7 @@
     -fx-padding: 4 20 4 20;
 }
 .settings-card-title {
-    -fx-font-size: 11px;
+    -fx-font-size: 0.786em; /* 11px at the 14px root */
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 12 0 2 0;
@@ -3190,9 +3190,19 @@
 .settings-row {
     -fx-padding: 13 0 13 0;
 }
+/* "Restart Editora to apply": a setting chosen now that the running app is not using yet. */
+.settings-restart-note {
+    -fx-text-fill: -state-amber;
+}
+/* A row whose title or description shows what was searched for: a visible reason for the hit. */
+.settings-row:search-hit {
+    -fx-background-color: -color-accent-subtle;
+    -fx-background-insets: 3 -10 3 -10;
+    -fx-background-radius: 6;
+}
 /* The kit's one-line page subtitle under a Settings heading, saying what the page is for. */
 .settings-page-subtitle {
-    -fx-font-size: 12.5px;
+    -fx-font-size: 0.893em; /* 12.5px at the 14px root */
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 0 0 6 0;
 }
@@ -3200,7 +3210,7 @@
 /* The kit draws a chord as a keycap: periwinkle on its soft ground, 1px border with a 2px bottom
    edge so it reads as a physical key. */
 .settings-row .chord-chip {
-    -fx-font-size: 11px;
+    -fx-font-size: 0.786em; /* 11px at the 14px root */
     -fx-font-weight: bold;
     -fx-background-color: -state-key-bg;
     -fx-background-radius: 5;
@@ -3232,12 +3242,36 @@
     -fx-border-color: transparent;
 }
 .settings-row-title {
-    -fx-font-size: 13px;
+    -fx-font-size: 0.929em; /* 13px at the 14px root */
     -fx-font-weight: bold;
 }
 .settings-row-desc {
-    -fx-font-size: 11.5px;
+    -fx-font-size: 0.821em; /* 11.5px at the 14px root */
     -fx-text-fill: -color-fg-muted;
+}
+/* Switches. AtlantaFX draws an off switch as a -color-fg-emphasis knob on a -color-bg-subtle track — in
+   Editora Dark a near-black knob on a near-black track, about 1.1:1 against a card (WCAG asks 3:1 for a
+   control). The off knob and the track outline take -color-fg-muted (at least 4.5:1 on every surface,
+   StyleContrastTest). This is an author sheet, so the states the base rule would erase are restated. A
+   disabled switch is grey in both states: a teal knob reads "on" though the setting is not in force. */
+.toggle-switch > .thumb {
+    -fx-background-color: -color-fg-muted, -color-fg-muted;
+    -fx-opacity: 1;
+}
+.toggle-switch > .thumb-area {
+    -fx-background-color: -color-fg-muted, -color-bg-subtle;
+}
+.toggle-switch:selected > .thumb {
+    -fx-background-color: -color-accent-emphasis, -color-fg-emphasis;
+}
+.toggle-switch:selected > .thumb-area {
+    -fx-background-color: -color-accent-emphasis, -color-accent-emphasis;
+}
+.toggle-switch:disabled:selected > .thumb {
+    -fx-background-color: -color-fg-muted, -color-bg-default;
+}
+.toggle-switch:disabled:selected > .thumb-area {
+    -fx-background-color: -color-fg-muted, -color-fg-muted;
 }
 
 /* Title header at the top of the palette / Jump-to popups, naming the action. */
@@ -3846,7 +3880,9 @@
     -fx-text-fill: -color-fg-default;
 }
 /* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
-.settings-experimental { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
+/* A beta page says so with the one pill beside its title (and in the sidebar); its own "experimental"
+   line is plain page text, not a second, louder badge. */
+.settings-experimental { -fx-text-fill: -color-fg-muted; }
 
 /* Green "Start / Continue" play button in the Debug toolbar (text + the play glyph). */
 .debug-panel .debug-start { -fx-text-fill: -state-green; -fx-font-weight: bold; }
@@ -4125,7 +4161,7 @@
 
 /* Settings: grouped sidebar — non-selectable group headers + indented category items. */
 .settings-sidebar .list-cell.settings-group-header {
-    -fx-font-size: 10.5px;
+    -fx-font-size: 0.75em; /* 10.5px at the 14px root */
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 13 12 3 12;
@@ -4164,12 +4200,16 @@
 }
 
 /* Small "Beta" pill shown beside a still-beta feature's name in the Settings sidebar. */
+.settings-beta-pill.settings-title-pill {
+    -fx-font-size: 0.786em; /* 11px beside the page title */
+    -fx-padding: 1 7 1 7;
+}
 .settings-beta-pill {
     -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
     -fx-background-radius: 8;
     -fx-padding: 0 6 0 6;
-    -fx-font-size: 9px;
+    -fx-font-size: 0.692em; /* 9px in the 13px sidebar cell */
     -fx-font-weight: bold;
 }
 

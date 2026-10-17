@@ -220,4 +220,20 @@ class StyleContrastTest {
         assertTrue(rules(app, ".combo-box-base:danger").get(0).contains("-color-danger-emphasis"));
         assertTrue(rules(app, ".settings-search:focused").get(0).contains("-color-input-border-focused"));
     }
+
+    @Test
+    void anOffSwitchStandsOutFromItsCardInEveryEditoraTheme() throws Exception {
+        String app = read("app.css");
+        assertTrue(rules(app, ".toggle-switch > .thumb").get(0).contains("-color-fg-muted"), "the off knob");
+        assertTrue(rules(app, ".toggle-switch > .thumb-area").get(0).contains("-color-fg-muted"), "the track outline");
+        for (String state : List.of(".toggle-switch:selected > .thumb", ".toggle-switch:selected > .thumb-area")) {
+            assertTrue(rules(app, state).get(0).contains("-color-accent-emphasis"), state + " is restated");
+        }
+        for (String base : List.of("editora-light", "editora-dark")) {
+            Map<String, String> p = palette(base);
+            for (String card : List.of("-color-bg-default", "-color-bg-subtle")) {
+                assertTrue(contrast(color(p, "-color-fg-muted"), color(p, card)) >= 3, base + " " + card);
+            }
+        }
+    }
 }

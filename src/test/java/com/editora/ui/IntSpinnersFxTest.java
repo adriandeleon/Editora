@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The Settings number fields must survive what people type into them. A stock editable spinner threw on
@@ -37,31 +40,36 @@ class IntSpinnersFxTest {
     }
 
     @Test
-    void typingLettersOrNothingLeavesAWorkingSpinnerShowingItsValue() throws Exception {
+    void textThatIsNotAValueIsKeptMarkedAndNotCommittedAndTheSpinnerKeepsWorking() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Spinner<Integer> spinner = IntSpinners.editable(1, 16, 4, 1);
+            var danger = atlantafx.base.theme.Styles.STATE_DANGER;
 
-            spinner.getEditor().setText("abc");
-            spinner.getEditor().fireEvent(new ActionEvent()); // Enter
-            assertEquals(4, spinner.getValue());
-            assertEquals("4", spinner.getEditor().getText(), "the rejected text is replaced by the value in force");
+            for (String typed : java.util.List.of("abc", "-5", "400", "99999999999", "1.5")) {
+                spinner.getEditor().setText(typed);
+                spinner.getEditor().fireEvent(new ActionEvent()); // Enter
+                assertEquals(4, spinner.getValue(), typed + " is not committed");
+                assertEquals(typed, spinner.getEditor().getText(), typed + " stays to be fixed");
+                assertTrue(spinner.getEditor().getPseudoClassStates().contains(danger), typed + " is marked");
+                assertEquals(
+                        com.editora.i18n.Messages.tr("settings.number.range", 1, 16),
+                        spinner.getTooltip().getText(),
+                        "the mark says what is taken");
+            }
 
             spinner.getEditor().setText("");
             spinner.commitValue(); // what the spinner does itself when focus leaves it
             assertEquals(4, spinner.getValue(), "an empty field is not a null value");
             spinner.increment(1); // used to throw a NullPointerException
             assertEquals(5, spinner.getValue());
-            spinner.decrement(1);
-            assertEquals(4, spinner.getValue());
+            assertEquals("5", spinner.getEditor().getText(), "an arrow sets a value in force");
+            assertFalse(spinner.getEditor().getPseudoClassStates().contains(danger), "and the mark goes");
 
-            spinner.getEditor().setText("99999999999");
+            spinner.getEditor().setText(" 8 ");
             spinner.getEditor().fireEvent(new ActionEvent());
-            assertEquals(16, spinner.getValue());
-            assertEquals("16", spinner.getEditor().getText());
-
-            spinner.getEditor().setText("400"); // already at the maximum: no value change to redraw the text
-            spinner.getEditor().fireEvent(new ActionEvent());
-            assertEquals("16", spinner.getEditor().getText());
+            assertEquals(8, spinner.getValue());
+            assertEquals("8", spinner.getEditor().getText());
+            assertNull(spinner.getTooltip());
         });
     }
 }
