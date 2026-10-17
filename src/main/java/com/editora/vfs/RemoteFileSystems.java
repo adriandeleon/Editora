@@ -4,10 +4,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -30,7 +28,6 @@ import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.AttributeRepository;
-import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
 import org.apache.sshd.common.keyprovider.KeyIdentityProvider;
@@ -75,6 +72,12 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     /** How this window asks for passwords, passphrases and the server's questions during a login. */
     private final LoginQuestions loginQuestions;
 
+    /** Where this machine's SSH setup is: ~/.ssh's config, known_hosts and default keys. */
+    private final SshEnvironment ssh;
+
+    private final SshConfigFile hostConfig;
+    private final KeyIdentityProvider defaultKeys;
+
     private final java.util.concurrent.atomic.AtomicBoolean shutDown = new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sftp-connect");
@@ -112,11 +115,19 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      *     #connect} is tried).
      */
     public RemoteFileSystems(HostKeyPrompt prompt, LoginPrompt login) {
-        this(prompt, login, knownHostsFile(), CONNECT_TIMEOUT, AUTH_TIMEOUT);
+        this(prompt, login, SshEnvironment.standard());
     }
 
-    /** As {@link #RemoteFileSystems(HostKeyPrompt, LoginPrompt)} with no login questions, and an explicit
-     *  {@code known_hosts} (tests). */
+    /** As above, with the SSH setup read from {@code ssh} (a test's own folder, in a test). */
+    public RemoteFileSystems(HostKeyPrompt prompt, LoginPrompt login, SshEnvironment ssh) {
+        this(prompt, login, ssh, null, CONNECT_TIMEOUT, AUTH_TIMEOUT);
+    }
+
+    /**
+     * As {@link #RemoteFileSystems(HostKeyPrompt, LoginPrompt)} with no login questions, and an explicit {@code
+     * known_hosts} (tests). Its folder stands in for {@code ~/.ssh}, so a test's engine never reads the {@code
+     * config} or the keys of whoever runs the tests.
+     */
     RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts) {
         this(prompt, null, knownHosts, CONNECT_TIMEOUT, AUTH_TIMEOUT);
     }
@@ -126,12 +137,49 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         this(prompt, null, knownHosts, connectTimeout, authTimeout);
     }
 
-    /** Every part explicit (tests). */
+    /** As above, with login questions (tests). */
     RemoteFileSystems(
             HostKeyPrompt prompt, LoginPrompt login, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
+        this(
+                prompt,
+                login,
+                SshEnvironment.at(knownHosts.toAbsolutePath().getParent()),
+                knownHosts,
+                connectTimeout,
+                authTimeout);
+    }
+
+    /**
+     * Every part explicit (tests).
+     *
+     * @param knownHosts the {@code known_hosts} to check against; null for the one in {@code ssh}
+     */
+    RemoteFileSystems(
+            HostKeyPrompt prompt,
+            LoginPrompt login,
+            SshEnvironment ssh,
+            Path knownHosts,
+            Duration connectTimeout,
+            Duration authTimeout) {
         this.connectTimeout = connectTimeout;
         this.authTimeout = authTimeout;
+        this.ssh = ssh;
         this.loginQuestions = new LoginQuestions(login, promptClock);
+        // ~/.ssh/config, as ssh reads it: HostName, Port, User, IdentityFile, IdentitiesOnly, ProxyJump.
+        this.hostConfig = new SshConfigFile(ssh.config());
+        // The keys ssh tries when nothing names one, for a login that may use them (DEFAULT_KEYS).
+        this.defaultKeys = session -> {
+            List<Path> keys = this.ssh.defaultKeys();
+            if (keys.isEmpty()) {
+                return List.of();
+            }
+            FileKeyPairProvider provider = new FileKeyPairProvider(keys.toArray(Path[]::new));
+            provider.setPasswordFinder(Passphrases.INSTANCE);
+            return provider.loadKeys(session);
+        };
+        if (knownHosts == null) {
+            knownHosts = ssh.knownHosts();
+        }
         // Verify the server's host key against ~/.ssh/known_hosts — the same file ssh itself uses, so a host
         // already accepted at the terminal connects without a prompt, and an entry accepted here is honoured
         // by ssh afterwards. MINA's verifier gives the three outcomes SSH requires: a known host whose key
@@ -189,6 +237,23 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         return loginQuestions;
     }
 
+    /** The shared client's reading of {@code ~/.ssh/config}, for a connect this engine makes. */
+    org.apache.sshd.client.config.hosts.HostConfigEntry resolveHost(
+            String host,
+            int port,
+            java.net.SocketAddress local,
+            String user,
+            String proxyJump,
+            AttributeRepository context)
+            throws IOException {
+        return hostConfig.resolveEffectiveHost(host, port, local, user, proxyJump, context);
+    }
+
+    /** The shared client's default keys, for a session this engine owns. */
+    KeyIdentityProvider defaultKeys() {
+        return defaultKeys;
+    }
+
     /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
     boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
         return serverKeyVerifier.verifyServerKey(session, address, key);
@@ -206,11 +271,6 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
 
     private void notifyConnection(String authority, boolean up) {
         Platform.runLater(() -> connectionListeners.forEach(l -> l.accept(authority, up)));
-    }
-
-    /** {@code ~/.ssh/known_hosts} — shared with OpenSSH deliberately (see the constructor). */
-    static Path knownHostsFile() {
-        return Path.of(System.getProperty("user.home", "."), ".ssh", "known_hosts");
     }
 
     /**
@@ -510,108 +570,87 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
                         LoginQuestions.next(session, LoginQuestions.PASSWORDS); // so a prompt after it says "again"
                     }
                 }
-                case KEY ->
-                    session.setKeyIdentityProvider(keyProvider(session, List.of(Path.of(conn.keyPath())), secret));
-                case DEFAULT_KEYS -> {
-                    List<Path> keys = defaultKeyFiles();
-                    if (!keys.isEmpty()) {
-                        session.setKeyIdentityProvider(keyProvider(session, keys, secret));
-                    }
+                case KEY -> {
+                    givePassphrase(session, secret);
+                    FileKeyPairProvider key = new FileKeyPairProvider(Path.of(conn.keyPath()));
+                    key.setPasswordFinder(Passphrases.INSTANCE);
+                    session.setKeyIdentityProvider(key);
                 }
+                // What MINA put together for the session stays: ~/.ssh/config's IdentityFile keys, then the
+                // default keys (the shared client's, from this engine's ~/.ssh) unless IdentitiesOnly says no.
+                case DEFAULT_KEYS -> givePassphrase(session, secret);
             }
             awaitAuthExcludingPrompt(session, session.auth(), timeout, promptElapsedNanos);
         } finally {
             if (passwordIdentity != null) {
                 session.removePasswordIdentity(passwordIdentity); // don't retain it past the handshake
             }
-            if (conn.auth() != RemoteConnection.AuthMethod.PASSWORD) {
-                // Nor a passphrase: the key provider holds it, and keys are needed only to log in.
-                session.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
-            }
+            // Nor a passphrase, nor the keys: they are needed only to log in.
+            session.removeAttribute(Passphrases.GIVEN);
+            session.setKeyIdentityProvider(KeyIdentityProvider.EMPTY_KEYS_PROVIDER);
         }
     }
 
-    private static KeyIdentityProvider keyProvider(ClientSession session, List<Path> files, char[] passphrase) {
-        FileKeyPairProvider provider = new FileKeyPairProvider(files.toArray(Path[]::new));
-        provider.setPasswordFinder(new Passphrases(session, passphrase));
-        return provider;
+    private static void givePassphrase(ClientSession session, char[] secret) {
+        if (secret != null && secret.length > 0) {
+            session.setAttribute(Passphrases.GIVEN, new String(secret));
+        }
     }
 
     /**
-     * A key's passphrase, asked for when the key turns out to be encrypted, as {@code ssh} does: the one given
-     * before the login first (if any), then the person, up to {@link #PASSPHRASE_ATTEMPTS} tries. Cancelling skips
-     * that key and the login goes on with the next way in.
+     * What {@code ~/.ssh/config} makes of a host, as a connect to it would: the address it really goes to, its
+     * port and user, the jump host on the way, and the keys it names. For the connect form, which shows it.
      */
-    private static final class Passphrases implements FilePasswordProvider {
-        private final ClientSession session;
-        private final String given;
-        private final Set<String> skipped = ConcurrentHashMap.newKeySet();
-
-        Passphrases(ClientSession session, char[] given) {
-            this.session = session;
-            this.given = given == null || given.length == 0 ? null : new String(given);
-        }
-
-        @Override
-        public String getPassword(
-                org.apache.sshd.common.session.SessionContext context,
-                org.apache.sshd.common.NamedResource resource,
-                int retryIndex) {
-            if (retryIndex == 0 && given != null) {
-                return given;
-            }
-            int attempt = retryIndex + 1; // above 1: an earlier passphrase, given or typed, was wrong
-            char[][] answers = LoginQuestions.of(session)
-                    .ask(
-                            session,
-                            new LoginPrompt.Challenge(
-                                    LoginPrompt.Kind.PASSPHRASE,
-                                    resource == null ? "" : resource.getName(),
-                                    "",
-                                    "",
-                                    List.of(new LoginPrompt.Question("", false)),
-                                    attempt));
-            if (answers == null) {
-                skipped.add(resource == null ? "" : resource.getName());
-                return null;
-            }
-            String passphrase = new String(answers[0]);
-            LoginQuestions.wipe(answers);
-            return passphrase;
-        }
-
-        @Override
-        public ResourceDecodeResult handleDecodeAttemptResult(
-                org.apache.sshd.common.session.SessionContext context,
-                org.apache.sshd.common.NamedResource resource,
-                int retryIndex,
-                String password,
-                Exception err) {
-            if (err == null) {
-                return ResourceDecodeResult.TERMINATE; // decoded: nothing more to try
-            }
-            String name = resource == null ? "" : resource.getName();
-            boolean more = retryIndex + 1 < PASSPHRASE_ATTEMPTS + (given == null ? 0 : 1);
-            return skipped.contains(name) || password == null || !more
-                    ? ResourceDecodeResult.IGNORE // skip this key; the login goes on without it
-                    : ResourceDecodeResult.RETRY;
+    public record ConfiguredHost(String hostName, int port, String user, String proxyJump, List<String> identities) {
+        public ConfiguredHost {
+            identities = List.copyOf(identities);
         }
     }
 
-    /** Passphrases asked for per key before it is skipped, as {@code ssh}'s three. */
-    static final int PASSPHRASE_ATTEMPTS = 3;
-
-    /** The user's default private keys in {@code ~/.ssh}, most-modern-first, that actually exist. */
-    private static List<Path> defaultKeyFiles() {
-        Path ssh = Path.of(System.getProperty("user.home", "."), ".ssh");
-        List<Path> out = new ArrayList<>();
-        for (String name : List.of("id_ed25519", "id_ecdsa", "id_rsa")) {
-            Path key = ssh.resolve(name);
-            if (Files.isRegularFile(key)) {
-                out.add(key);
+    /** The single host names {@code ~/.ssh/config} has a {@code Host} block for, in file order (no patterns). */
+    public List<String> configuredHosts() {
+        String text = hostConfig.text(); // includes in place; empty with no config (the usual case)
+        Set<String> names = new java.util.LinkedHashSet<>();
+        for (com.editora.sshconfig.SshConfig.Block block : com.editora.sshconfig.SshConfig.parse(text)) {
+            if ("Host".equals(block.type())) {
+                for (String token : block.argument().strip().split("\\s+")) {
+                    if (com.editora.sshconfig.SshConfig.isConcreteHost(token)) {
+                        names.add(token);
+                    }
+                }
             }
         }
-        return out;
+        return List.copyOf(names);
+    }
+
+    /**
+     * What {@code ~/.ssh/config} says about {@code host}, read the way a connect reads it (MINA's resolver, the
+     * same path), or null when it says nothing beyond the host itself.
+     */
+    public ConfiguredHost configured(String host) {
+        if (host == null || host.isBlank()) {
+            return null;
+        }
+        org.apache.sshd.client.config.hosts.HostConfigEntry entry;
+        try {
+            entry = hostConfig.resolveEffectiveHost(host.strip(), 0, null, null, null, null);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+        if (entry == null) {
+            return null;
+        }
+        String hostName = entry.getHostName() == null ? host.strip() : entry.getHostName();
+        int port = entry.getPort() > 0 ? entry.getPort() : 22;
+        List<String> identities = entry.getIdentities() == null ? List.of() : List.copyOf(entry.getIdentities());
+        // MINA fills in this machine's user name when the config gives none: the config's own User, from the
+        // editor's parser of the same text (first value wins, as ssh), is what the form should fill in.
+        String user = com.editora.sshconfig.SshConfig.effective(
+                com.editora.sshconfig.SshConfig.parse(hostConfig.text()), host.strip(), "User");
+        String jump = entry.getProxyJump() == null || entry.getProxyJump().isBlank() ? null : entry.getProxyJump();
+        boolean says =
+                !hostName.equals(host.strip()) || port != 22 || user != null || jump != null || !identities.isEmpty();
+        return says ? new ConfiguredHost(hostName, port, user, jump, identities) : null;
     }
 
     /** A live {@link Path} for a remote URI, or {@code null} if its connection is not open. */

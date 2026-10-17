@@ -134,7 +134,7 @@ class DebugSessionFlowFxTest {
         Files.writeString(util, "def work():\n    x = 1\n    x += 1\n    return x\n");
         open(util);
         assertTrue(FxTestSupport.callOnFx(() -> debug.debugEffectiveFor("python")));
-        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+        try (FakeDebugAdapter adapter = FakeDebugAdapter.javaDebug()) {
             FakeDebugAdapter.Session session = connect(adapter, launch);
             session.framePath = util.toString();
             session.frameLine = 2;

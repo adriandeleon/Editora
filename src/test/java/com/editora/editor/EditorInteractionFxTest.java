@@ -714,12 +714,13 @@ class EditorInteractionFxTest {
                 sink.accept(values.get(word));
             });
             Stage stage = EditorFx.show(buffer, 600, 300);
+            DebugHover.setDebounceForTest(javafx.util.Duration.ZERO); // evaluate at once (debounce: its own test)
             buffer.getArea().fireEvent(mouseAt(buffer, source.indexOf("total") + 1, false, false));
             assertTrue(asked.isEmpty(), "not suspended: hovering evaluates nothing");
 
             buffer.setDebugHoverActive(true);
             buffer.getArea().fireEvent(mouseAt(buffer, source.indexOf("total") + 1, false, false));
-            Tooltip tip = EditorFx.field(buffer, "debugTooltip");
+            Tooltip tip = ((DebugHover) EditorFx.field(buffer, "debugHover")).tooltip();
             assertNotNull(tip);
             assertTrue(tip.isShowing());
             assertEquals("total = 42", tip.getText());
@@ -736,6 +737,7 @@ class EditorInteractionFxTest {
             assertTrue(tip.isShowing(), "back on the word: evaluated again");
             buffer.setDebugHoverActive(false);
             assertFalse(tip.isShowing(), "resuming hides the value");
+            DebugHover.setDebounceForTest(null);
             stage.close();
             buffer.dispose();
         });

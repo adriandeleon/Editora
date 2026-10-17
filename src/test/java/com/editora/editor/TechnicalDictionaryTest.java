@@ -28,9 +28,45 @@ class TechnicalDictionaryTest {
     void containsExpandedCategories() {
         // companies/products, languages, networking, cloud, and AI/ML terms.
         for (String w : new String[] {
-            "github", "kubernetes", "pytorch", "golang", "rust", "subnet", "grpc", "azure", "llm", "embeddings"
+            "github", "kubernetes", "pytorch", "golang", "rust", "subnet", "grpc", "azure", "llm", "embedding"
         }) {
             assertTrue(TechnicalDictionary.contains(w), "should contain '" + w + "'");
+        }
+    }
+
+    @Test
+    void containsVersionControlEditorAndToolTerms() {
+        for (String w : new String[] {
+            "worktree",
+            "unstaged",
+            "rebasing",
+            "submenu",
+            "breakpoint",
+            "strikethrough",
+            "ripgrep",
+            "jlink",
+            "deserialized"
+        }) {
+            assertTrue(TechnicalDictionary.contains(w), "should contain '" + w + "'");
+        }
+    }
+
+    @Test
+    void doesNotHideCommonTypos() {
+        // Short entries a slip of the finger produces ("nat" for "not", "elt" for "let") would hide that typo
+        // everywhere; their all-caps acronyms (NAT, ELT, OS, I/O) are never checked anyway.
+        for (String w : new String[] {"nat", "elt", "os", "io", "gan"}) {
+            assertFalse(TechnicalDictionary.contains(w), "should not contain '" + w + "'");
+        }
+    }
+
+    @Test
+    void noEntryIsAPluralTheCheckerDerives() {
+        // SpellChecker accepts the plural of a listed word itself, so listing both is dead weight.
+        Set<String> words = TechnicalDictionary.words();
+        for (String w : words) {
+            String stem = SpellChecker.stem(w);
+            assertFalse(stem != null && words.contains(stem), "'" + w + "' is derived from '" + stem + "'");
         }
     }
 

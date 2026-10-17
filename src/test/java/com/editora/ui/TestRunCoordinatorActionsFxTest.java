@@ -453,10 +453,12 @@ class TestRunCoordinatorActionsFxTest {
         FxTestSupport.runOnFx(() -> {
             coordinator.onTestOutput("> Task :test", false);
             coordinator.onTestOutput(JDWP_BANNER, false);
-            coordinator.onTestOutput(JDWP_BANNER, false); // printed again by a second fork: already attached
+            coordinator.onTestOutput(JDWP_BANNER, false); // printed again for the same port: already attached
+            // Another fork on a port of its own waits suspended too: it is attached as well (review D11).
+            coordinator.onTestOutput("Listening for transport dt_socket at address: 43117", false);
         });
         assertEquals(
-                List.of("attach com.x.FooTest localhost:5005"),
+                List.of("attach com.x.FooTest localhost:5005", "attach com.x.FooTest localhost:43117"),
                 calls.stream().filter(c -> c.startsWith("attach")).toList());
     }
 
@@ -607,8 +609,8 @@ class TestRunCoordinatorActionsFxTest {
         assertEquals(List.of(tr("status.testrunner.debugWaiting")), statuses);
         assertEquals("test", launched.get(0).get(0));
         assertEquals("-Dtest=CalcTest#adds", launched.get(0).get(1));
-        assertEquals(
-                "-Dmaven.surefire.debug", launched.get(0).get(launched.get(0).size() - 1));
+        assertTrue(
+                launched.get(0).get(launched.get(0).size() - 1).startsWith("-Dmaven.surefire.debug=-agentlib:jdwp="));
 
         FxTestSupport.runOnFx(() -> coordinator.onTestOutput(JDWP_BANNER, false));
         assertEquals(

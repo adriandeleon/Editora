@@ -64,5 +64,12 @@
   "C-S-k": "edit.deleteLine",
   "Cmd-l": "edit.selectLine",
   "Cmd-]": "edit.indentLines",
-  "Cmd-[": "edit.outdentLines"
+  "Cmd-[": "edit.outdentLines",
+  "f5": "debug.start",
+  "S-f5": "debug.stop",
+  "f9": "debug.toggleBreakpoint",
+  "f10": "debug.stepOver",
+  "f11": "debug.stepIntoOrFullScreen",
+  "S-f11": "debug.stepOut",
+  "Cmd-S-f5": "debug.restart"
 }

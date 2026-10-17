@@ -78,6 +78,11 @@ final class TestRunCoordinator implements TestRunHook {
         /** Whether "Debug Test" can work (Java debugging configured + adapter available). */
         boolean debugAvailable();
 
+        /** Why "Debug Test" cannot work — the missing piece, as Debug says it (review A7). */
+        default String debugUnavailableMessage() {
+            return tr("status.debug.unavailable");
+        }
+
         /** Attach the debugger to a test JVM suspended on {@code port} ({@code className} anchors the source). */
         void attachDebugger(String className, String host, int port);
     }
@@ -157,6 +162,9 @@ final class TestRunCoordinator implements TestRunHook {
     private boolean seeded; // this run pre-seeded pending nodes → prune the never-reported ones at finish
     private TestNode followTarget; // the newest result — kept scrolled into view while the run is live
     private String awaitingAttachFor; // class whose suspended test JVM we should attach to (Debug Test)
+    /** The JDWP ports of this run's JVMs already attached to (Debug Test). */
+    private final java.util.Set<Integer> attachedPorts = new java.util.HashSet<>();
+
     private Timeline elapsedTimer;
     private boolean refreshPending;
 
@@ -321,9 +329,11 @@ final class TestRunCoordinator implements TestRunHook {
         if (awaitingAttachFor != null) {
             int port = TestDebug.jdwpPort(line);
             if (port > 0) {
-                String cls = awaitingAttachFor;
-                awaitingAttachFor = null;
-                ops.attachDebugger(cls, "localhost", port);
+                // Kept for the whole run: every forked JVM prints its own banner and waits (review D11). A port
+                // already attached is the same JVM's banner printed again.
+                if (attachedPorts.add(port)) {
+                    ops.attachDebugger(awaitingAttachFor, "localhost", port);
+                }
             }
         }
         if (fileBased) {
@@ -735,7 +745,7 @@ final class TestRunCoordinator implements TestRunHook {
     void debugSingleTest(
             BuildTool tool, JavaTestScanner.TestTarget target, java.util.function.Consumer<List<String>> launch) {
         if (!ops.debugAvailable()) {
-            host.setStatus(tr("status.debug.unavailable"));
+            host.setStatus(ops.debugUnavailableMessage());
             return;
         }
         List<String> args = TestDebug.debugTaskArgs(tool, target.className(), target.methodName());
@@ -792,6 +802,7 @@ final class TestRunCoordinator implements TestRunHook {
         // printed its JDWP banner. Surefire/Gradle fork the test JVM suspended; onTestOutput sees the
         // banner and attaches.
         awaitingAttachFor = className;
+        attachedPorts.clear();
     }
 
     /** {@code test.showOnlyFailed}: open the window and narrow the tree to failures/errors. */

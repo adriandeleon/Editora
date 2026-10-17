@@ -101,8 +101,7 @@ class HttpEditorRound3FxTest {
     }
 
     private void select(EditorBuffer b, String env) throws Exception {
-        HttpClientPanel p = panel(b);
-        FxTestSupport.runOnFx(() -> p.controlsForTest().environmentPicker().setValue(env));
+        FxTestSupport.runOnFx(() -> c().httpClient.chooseEnvironment(b, env));
         FxTestSupport.drainFx();
     }
 
@@ -179,9 +178,8 @@ class HttpEditorRound3FxTest {
             c().onWindowFocusGained();
         });
         await("the mark is gone", () -> marks(b).isEmpty());
-        HttpClientPanel p = panel(b);
         assertTrue(FxTestSupport.callOnFx(
-                () -> p.controlsForTest().environmentPicker().getItems().contains("staging")));
+                () -> c().httpClient.environmentNamesForTest(b).contains("staging")));
     }
 
     @Test

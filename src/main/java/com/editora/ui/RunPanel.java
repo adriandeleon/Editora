@@ -49,6 +49,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
+    /** The runtime the program runs under ("Java 25.0.3 (Temurin)"); hidden until the probe answers. */
+    private final Label runtime = runtimeChip();
     /** Spins while a program (or a before-launch step) is running, so a quiet long run still looks alive. */
     private final ProgressIndicator busy = busySpinner();
     /** Whether a program (or before-launch step) is alive — the Run tool window's stripe button follows it. */
@@ -107,7 +109,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         endInputButton.setDisable(true);
         endInputButton.setOnAction(e -> endInput());
 
-        HBox header = new HBox(8, busy, status, spacer(), clearButton, endInputButton, stopButton);
+        HBox header = new HBox(8, busy, runtime, status, spacer(), clearButton, endInputButton, stopButton);
         header.setAlignment(Pos.CENTER_LEFT);
 
         output.setEditable(false);
@@ -256,6 +258,26 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         return busy;
     }
 
+    /** The Run and Debug tool windows' runtime chip; starts hidden (see {@link #showRuntime}). */
+    static Label runtimeChip() {
+        Label chip = new Label();
+        chip.getStyleClass().add("runtime-chip");
+        chip.setMinWidth(Region.USE_PREF_SIZE); // the command line beside it shortens first
+        showRuntime(chip, null);
+        return chip;
+    }
+
+    /** Shows {@code version} in a {@link #runtimeChip}, its banner on hover; {@code null} hides the chip. */
+    static void showRuntime(Label chip, com.editora.run.RuntimeVersion version) {
+        boolean shown = version != null;
+        chip.setText(shown ? version.label() : "");
+        chip.setTooltip(
+                shown && !version.detail().isBlank() ? new javafx.scene.control.Tooltip(version.detail()) : null);
+        chip.setAccessibleText(shown ? tr("run.runtime", version.label()) : null);
+        chip.setVisible(shown);
+        chip.setManaged(shown);
+    }
+
     /** Shows or hides a {@link #busySpinner}; a hidden indicator also stops animating. */
     static void showSpinner(ProgressIndicator busy, boolean running) {
         busy.setVisible(running);
@@ -279,6 +301,19 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         appender.discard();
         output.clear();
         overwriteLine = false;
+    }
+
+    /**
+     * The runtime this run's program runs under, once its probe answers; {@code null} hides the chip. Kept
+     * after the program exits — it still says what the output came from — and cleared by the next run.
+     */
+    public void setRuntime(com.editora.run.RuntimeVersion version) {
+        showRuntime(runtime, version);
+    }
+
+    /** The runtime chip's text, or "" while it is hidden. */
+    String runtimeText() {
+        return runtime.isVisible() ? runtime.getText() : "";
     }
 
     /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
