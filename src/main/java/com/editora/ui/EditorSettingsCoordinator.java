@@ -593,12 +593,13 @@ final class EditorSettingsCoordinator {
         // does not open a second window over the editor. (The list is ~100 grammars; a ChoiceDialog's
         // combo made that unsearchable.)
         String current = names.contains(buffer.getLanguage()) ? buffer.getLanguage() : names.get(0);
-        chooseSetting("buffer.setLanguage", () -> names, name -> name, () -> current, name -> {
-            buffer.setLanguageOverride(name);
-            host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
-            host.statusBar().refresh();
-            host.setStatus(tr("status.language", name));
-        });
+        chooseSetting(
+                "buffer.setLanguage", () -> names, com.editora.editor.LanguageNames::display, () -> current, name -> {
+                    buffer.setLanguageOverride(name);
+                    host.previews().applyDefaultViewMode(buffer); // an untitled buffer just made Markdown
+                    host.statusBar().refresh();
+                    host.setStatus(tr("status.language", name));
+                });
     }
 
     /** Changes the (persisted) tab width and applies it to every buffer. */

@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Untitled Python buffers get it too.
 - **Python highlighting:** generics (`def f[T]`, `class C[T]`), `type` aliases, t-strings, `match` used as a name, and
   `0x`/`j` numbers. `__init__` and other methods named like builtins are back in Structure.
+- **Python indentation:** a file's indent size is guessed from its statements only, so PEP 8 hanging indents no
+  longer make it 8 spaces.
+- **Language names:** the status bar and the language picker show readable names ("pip requirements").
 - **Quotes:** `f"`, `rb"` and the other string prefixes auto-close in Python, and `"""` closes itself.
 - **File types:**
   - `Pipfile`, `poetry.lock`, `uv.lock` and `pdm.lock` open as TOML; `Pipfile.lock` and `.ipynb` as JSON.
