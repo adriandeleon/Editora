@@ -429,7 +429,8 @@ class DebugUiFlowFxTest {
             await(
                     "the source-less frame's variables were not requested",
                     () -> java.util.Collections.frequency(session.requests, "scopes") > scopes);
-            assertEquals(tr("status.debug.noSource", "Thread.sleep"), status());
+            // B5: a jdt:// frame asks jdtls for the class's source; with none to give (no jdtls here) it says so
+            assertEquals(tr("status.lsp.libraryUnavailable"), status());
             assertEquals(List.of(), execLines(b), "the line of another frame is not where this one is");
             Thread.sleep(200);
             FxTestSupport.runOnFx(watch::stop);

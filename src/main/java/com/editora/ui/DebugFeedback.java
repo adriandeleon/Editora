@@ -52,9 +52,10 @@ final class DebugFeedback {
      * declared on one line — rather than waiting for its class (B17). It could still be in a nested class that
      * has not run, which the text says too.
      */
-    static String pendingKey(java.util.Collection<DapModels.BreakpointStatus> fileStatuses) {
-        boolean classLoaded =
-                fileStatuses != null && fileStatuses.stream().anyMatch(DapModels.BreakpointStatus::verified);
+    static String pendingKey(java.util.Collection<DapModels.BreakpointStatus> fileStatuses, String language) {
+        boolean classLoaded = "java".equals(language) // how java-debug binds; other adapters say why themselves
+                && fileStatuses != null
+                && fileStatuses.stream().anyMatch(DapModels.BreakpointStatus::verified);
         return classLoaded ? "debug.breakpoint.unplaceable" : "debug.breakpoint.pending";
     }
 
