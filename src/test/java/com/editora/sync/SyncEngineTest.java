@@ -418,4 +418,25 @@ class SyncEngineTest {
         assertFalse(SyncEngine.hasCredentials("/srv/git/sync.git"));
         assertFalse(SyncEngine.hasCredentials(null));
     }
+
+    @Test
+    void theSecretIsTakenOutOfAUrlAndTheRestKept() {
+        assertEquals(
+                "https://me@github.com/me/sync.git",
+                SyncEngine.withoutCredentials("https://me:FAKE-secret@github.com/me/sync.git"));
+        assertEquals(
+                "https://github.com/me/sync.git",
+                SyncEngine.withoutCredentials("https://ghp_FAKEFAKEFAKE0000@github.com/me/sync.git"));
+        assertEquals(
+                "https://github.com/me/sync.git",
+                SyncEngine.withoutCredentials("https://ghp_FAKEFAKEFAKE0000:x-oauth-basic@github.com/me/sync.git"));
+        assertEquals(
+                "https://oauth2@gitlab.com/me/sync.git",
+                SyncEngine.withoutCredentials("https://oauth2:glpat-FAKE-x@gitlab.com/me/sync.git"));
+        assertEquals("git@github.com:me/sync.git", SyncEngine.withoutCredentials("git@github.com:me/sync.git"));
+        assertEquals(
+                "https://me@bitbucket.org/me/sync.git",
+                SyncEngine.withoutCredentials("https://me@bitbucket.org/me/sync.git"));
+        assertEquals(null, SyncEngine.withoutCredentials(null));
+    }
 }
