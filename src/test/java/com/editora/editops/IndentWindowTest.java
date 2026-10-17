@@ -141,8 +141,9 @@ class IndentWindowTest {
         for (int tabSize : new int[] {4, 2}) {
             for (Boolean insertSpaces : new Boolean[] {null, Boolean.TRUE}) {
                 Integer indentSize = insertSpaces == null ? null : 3;
-                String unit = IndentWindow.unit(doc, tabSize, insertSpaces, indentSize);
-                assertEquals(Indenter.unitFor(text, tabSize, insertSpaces, indentSize), unit, s.name() + " unit");
+                String unit = IndentWindow.unit(doc, tabSize, insertSpaces, indentSize, language);
+                assertEquals(
+                        Indenter.unitFor(text, tabSize, insertSpaces, indentSize, language), unit, s.name() + " unit");
                 for (int caret : carets) {
                     String where = s.name() + " @" + caret + " tab " + tabSize + " spaces " + insertSpaces;
                     assertEquals(
