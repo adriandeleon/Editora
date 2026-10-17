@@ -2530,6 +2530,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public List<com.editora.config.RunConfiguration> runConfigurations() {
+                        return runConfigurations.savedConfigs();
+                    }
+
+                    @Override
                     public String pythonInterpreterChoice() {
                         return config.getWorkspaceState().getPythonInterpreter();
                     }
@@ -2656,7 +2661,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public boolean dapAvailable(String language) {
-                return dapManager.isLanguageAvailable(language);
+                return "java".equals(language)
+                        ? dapManager.isJavaDebugInstalled()
+                        : dapManager.isLanguageAvailable(language);
             }
 
             @Override
@@ -6202,9 +6209,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String debugUnavailableMessage() {
+            return debugCoordinator.unavailableMessage(
+                    "java", activeBuffer() == null ? null : activeBuffer().getPath());
+        }
+
+        @Override
         public void attachDebugger(String className, String host, int port) {
             setStatus(tr("status.testrunner.debugAttaching", port));
-            testNavigation.resolveTestClassAnchor(className, a -> debugCoordinator.attachToPort(a, host, port));
+            testNavigation.resolveTestClassAnchor(
+                    className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
         }
     });
 
@@ -6659,6 +6673,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public boolean debugFeatureEnabled() {
                     return debugCoordinator != null && debugCoordinator.debugSupportEnabled();
+                }
+
+                @Override
+                public boolean javaDebugFromServer() {
+                    return lspManager.javaDebugCommandsAvailable();
                 }
 
                 @Override

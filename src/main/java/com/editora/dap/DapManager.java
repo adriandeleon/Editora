@@ -369,6 +369,16 @@ public final class DapManager {
         this.serverProvidesJavaDebug = provided;
     }
 
+    /**
+     * Whether the java-debug plugin is installed — a jar is found, or the running jdtls provides it — whether
+     * or not debugging is switched on. What Install and Settings ask (review A6, A7): asked through
+     * {@link #isAdapterAvailable}, every Install re-downloaded a plugin that was there all along while
+     * debugging was off, and Settings said "not found" for a jdtls that ships it.
+     */
+    public boolean isJavaDebugInstalled() {
+        return serverProvidesJavaDebug || !locate().isEmpty();
+    }
+
     /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
     public boolean isAdapterAvailable() {
         return javaDebugUsable();
@@ -590,6 +600,55 @@ public final class DapManager {
     /** Sets the debuggee's JVM arguments; call before {@link #startLaunchMainClass}. "" clears them. */
     public void setVmArgs(String vmArgs) {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
+        this.vmArgList = null;
+    }
+
+    /**
+     * Sets the debuggee's JVM arguments as already split (a saved configuration's, split as Run splits them):
+     * they are encoded for the adapter's own tokenizer at launch, by the OS of the machine it runs on.
+     */
+    public void setVmArgs(List<String> vmArgs) {
+        this.vmArgList = vmArgs == null ? List.of() : List.copyOf(vmArgs);
+        this.vmArgs = "";
+    }
+
+    /** {@link #setVmArgs(List)}'s arguments; null when the raw {@link #vmArgs} text applies. */
+    private volatile List<String> vmArgList;
+
+    /** The JVM arguments of the next launch as java-debug's {@code vmArgs} string, for an adapter on {@code target}. */
+    private String vmArgsFor(LaunchConfig.Target target) {
+        List<String> list = vmArgList;
+        return list == null ? vmArgs : LaunchConfig.javaArgs(list, target.windows());
+    }
+
+    /**
+     * The {@code java} of a remote host's configured JDK for the next launch ({@code ""}: what jdtls resolves
+     * there) — a saved configuration's, as Run uses it (review D9). Set before {@link #startLaunchMainClass}.
+     */
+    private volatile String hostJavaExec = "";
+
+    /** See {@link #hostJavaExec}; {@code null} or blank clears it. */
+    public void setHostJavaExec(String java) {
+        this.hostJavaExec = java == null ? "" : java.strip();
+    }
+
+    /**
+     * The {@code java} a project launch for {@code file} runs: this machine's chosen JDK (an override is a JDK on
+     * this machine, never used for a remote file), else for a remote file the host's configured one, else the
+     * one jdtls resolved.
+     */
+    private String javaExecFor(Path file, String javaExecOverride, String resolved) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return hostJavaExec.isBlank() ? resolved : hostJavaExec;
+        }
+        return javaExecOverride == null || javaExecOverride.isBlank() ? resolved : javaExecOverride;
+    }
+
+    /** The machine the adapter of a session for {@code file} runs on (review D8). */
+    static LaunchConfig.Target targetFor(Path file) {
+        return file == null || com.editora.process.ExecTargets.runsHere(file)
+                ? LaunchConfig.Target.LOCAL
+                : LaunchConfig.Target.REMOTE_POSIX;
     }
 
     /** The output category of Editora's own line saying what a launch runs (drawn muted by the Debug panel). */
@@ -656,13 +715,33 @@ public final class DapManager {
 
     /** Java launch for a file of the build project at {@code projectRoot} ({@code null}: a loose file). */
     public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
+        startLaunch(file, picker, javaExecOverride, projectRoot, null);
+    }
+
+    /**
+     * As above, with the folder a loose file runs in ({@code looseCwd}, null: its own folder) — the project
+     * root of a plain-folder project window, where a program reads its files as it would from a terminal there.
+     */
+    public void startLaunch(
+            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd) {
         if (!ready(file)) {
             return;
         }
-        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot);
+        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot, looseCwd);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
+        Runnable resolve =
+                () -> resolveMainClassAndLaunch(file, picker, javaExecOverride, projectRoot, looseCwd, epoch);
+        if (projectRoot == null) {
+            correctSourceRoot(file, epoch, resolve);
+        } else {
+            resolve.run();
+        }
+    }
+
+    private void resolveMainClassAndLaunch(
+            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd, long epoch) {
         lsp.executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -672,41 +751,50 @@ public final class DapManager {
                 return;
             }
             List<MainClassOption> options = parseMainClasses(res);
+            DapPaths paths = pathsFor(file);
+            // A project's main class runs in the project root — what Run, the gutter and a saved
+            // configuration use — and a loose file in the window's project folder, else its own folder.
+            Path dir = projectRoot != null ? projectRoot : looseCwd != null ? looseCwd : file.getParent();
+            String cwd = dir == null ? null : paths.toAdapter(dir);
+            String own = ownMainClass(file);
             if (options.isEmpty()) {
                 // jdtls enumerated no project main class (a standalone file, or the project is still
                 // importing). Derive the fully-qualified class name from the file (package + type name)
                 // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
-                String fqn = mainClassFromFile(file);
+                String fqn = own != null ? own : mainClassFromFile(file);
                 if (fqn == null) {
                     fail(epoch, "No main class could be determined for this file.");
                     return;
                 }
-                compileAndLaunch(file, fqn, javaExecOverride, epoch, null);
+                compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
                 return;
             }
-            DapPaths paths = pathsFor(file);
             MainClassOption match = options.stream()
                     .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
                     .findFirst()
                     .orElse(null);
-            // A project's main class runs in the project root — what Run, the gutter and a saved
-            // configuration use — and only a loose file in its own folder.
-            Path dir = projectRoot != null ? projectRoot : file.getParent();
-            String cwd = dir == null ? null : paths.toAdapter(dir);
-            if (match != null && projectRoot == null) {
-                // The file's own main class, in no build project: jdtls lists it from an "invisible
-                // project" whose output folder nothing ever compiles into (autobuild is off), so the
-                // resolved classpath holds no class file to run. Compile the file ourselves then.
-                Runnable compile = () -> compileAndLaunch(file, match.className(), javaExecOverride, epoch, null);
-                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch, compile);
-            } else if (match != null) {
-                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch);
+            if (match == null && own != null) {
+                // The file declares a main that jdtls does not list: it is outside the project's source
+                // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
+                // the project's other main class, which is what used to run instead.
+                compileAndLaunch(file, own, javaExecOverride, epoch, null, dir);
+                return;
+            }
+            if (match != null) {
+                launchOption(file, match, cwd, javaExecOverride, projectRoot, epoch);
             } else if (options.size() == 1) {
-                resolveAndLaunch(file, options.get(0), cwd, javaExecOverride, epoch);
+                // No main here: the project's only one is what Debug means, as in VS Code — said so, because
+                // the program that runs is not the file in front of the user.
+                MainClassOption only = options.get(0);
+                notice(
+                        epoch,
+                        com.editora.i18n.Messages.tr(
+                                "debug.console.noMainInFile", file.getFileName(), only.className()));
+                launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
             } else {
                 picker.pick(options, chosen -> {
                     if (chosen != null) {
-                        resolveAndLaunch(file, chosen, cwd, javaExecOverride, epoch);
+                        launchOption(file, chosen, cwd, javaExecOverride, projectRoot, epoch);
                     } else {
                         if (isCurrent(epoch)) {
                             setState(State.INACTIVE);
@@ -715,6 +803,120 @@ public final class DapManager {
                 });
             }
         });
+    }
+
+    /**
+     * Launches {@code opt}. Outside a build project jdtls's "invisible project" never compiles anything into its
+     * output folder (autobuild is off), so a class missing there is compiled here, from its own source file.
+     */
+    private void launchOption(
+            Path file, MainClassOption opt, String cwd, String javaExecOverride, Path projectRoot, long epoch) {
+        if (projectRoot != null) {
+            resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch);
+            return;
+        }
+        Path source = optionSource(file, opt);
+        Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
+        Runnable compile = () -> compileAndLaunch(
+                source,
+                JavaLaunchSupport.qualified(opt.className(), JavaLaunchSupport.declaredPackage(source)),
+                javaExecOverride,
+                epoch,
+                null,
+                dir,
+                file);
+        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
+    }
+
+    /** The source file of {@code opt} as Editora reaches it ({@code file} when jdtls named none). */
+    private static Path optionSource(Path file, MainClassOption opt) {
+        if (opt.filePath() == null || opt.filePath().isBlank()) {
+            return file;
+        }
+        try {
+            Path named = pathsFor(file).fromAdapter(opt.filePath());
+            return named == null ? file : named;
+        } catch (RuntimeException e) {
+            return file;
+        }
+    }
+
+    /** The fully-qualified name of the first {@code main} {@code file} declares itself, or null (bounded read). */
+    static String ownMainClass(Path file) {
+        try {
+            if (file == null || Files.size(file) > 2_000_000) {
+                return null;
+            }
+            List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                    com.editora.run.MainMethodScanner.scan(Files.readString(file));
+            return mains.isEmpty() ? null : mains.get(0).fqn();
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** A line of Editora's own in the Debug console for the session of {@code epoch} (FX thread). */
+    private void notice(long epoch, String text) {
+        if (isCurrent(epoch)) {
+            listener.onOutput(text + "\n", "console");
+        }
+    }
+
+    /**
+     * In a folder with no build file jdtls keeps a Java file in an "invisible project" whose source folder it
+     * guesses — and it guesses the file's own folder, so {@code src/demo/Main.java} declaring {@code package
+     * demo} is class {@code Main} to it: the launch named a class that does not exist, its package line was
+     * flagged as wrong, and no stop could be shown in the file. When the declared package says the source
+     * folder is another one, this tells jdtls so (adding the right folder, then removing the wrong ones —
+     * Editora's jdtls workspace changes, never the user's files) and then runs {@code then}. Anything that
+     * cannot be corrected (no package, a misplaced file, a folder outside the server's workspace) runs
+     * {@code then} as it is: the compile below names the class from the file either way.
+     */
+    private void correctSourceRoot(Path file, long epoch, Runnable then) {
+        String pkg = JavaLaunchSupport.declaredPackage(file);
+        Path root = pkg.isEmpty() || !com.editora.process.ExecTargets.runsHere(file)
+                ? null
+                : JavaLaunchSupport.sourceRoot(file, pkg);
+        if (root == null) {
+            then.run();
+            return;
+        }
+        lsp.executeCommand(file, "java.project.listSourcePaths", List.of(), (res, err) -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            List<Path> current = err == null ? JavaLaunchSupport.sourcePaths(res) : List.of();
+            List<Path> wrong = JavaLaunchSupport.wrongSourceRoots(current, file, root);
+            if (wrong.isEmpty()) {
+                then.run();
+                return;
+            }
+            lsp.executeCommand(
+                    file, "java.project.addToSourcePath", List.of(root.toUri().toString()), (added, e2) -> {
+                        if (!isCurrent(epoch)) {
+                            return;
+                        }
+                        if (e2 != null || !JavaLaunchSupport.statusOk(added)) {
+                            then.run(); // the right folder is outside the server's workspace: leave it be
+                            return;
+                        }
+                        removeSourceRoots(file, new ArrayList<>(wrong), epoch, then);
+                    });
+        });
+    }
+
+    private void removeSourceRoots(Path file, List<Path> wrong, long epoch, Runnable then) {
+        if (wrong.isEmpty()) {
+            then.run();
+            return;
+        }
+        Path next = wrong.remove(0);
+        lsp.executeCommand(
+                file, "java.project.removeFromSourcePath", List.of(next.toUri().toString()), (r, e) -> {
+                    if (isCurrent(epoch)) {
+                        removeSourceRoots(file, wrong, epoch, then);
+                    }
+                });
     }
 
     /** Debug a compact {@code .java} file as the implicit class named after the file. */
@@ -839,6 +1041,9 @@ public final class DapManager {
                 fail(epoch, r.error());
                 return;
             }
+            if (ifNoClassFile == null) {
+                warnAboutClasses(file, opt, r, epoch);
+            }
             startDebugSessionAndConnect(
                     file,
                     LaunchConfig.launch(
@@ -846,21 +1051,39 @@ public final class DapManager {
                             proj,
                             r.classPaths(),
                             r.modulePaths(),
-                            // A remote file runs on its host's JDK, as jdtls there resolves it: the override is
-                            // a JDK on this machine.
-                            javaExecOverride == null
-                                            || javaExecOverride.isBlank()
-                                            || !com.editora.process.ExecTargets.runsHere(file)
-                                    ? r.javaExec()
-                                    : javaExecOverride,
+                            javaExecFor(file, javaExecOverride, r.javaExec()),
                             cwd,
                             programArgs,
-                            JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
+                            JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview()),
                             env,
-                            false),
+                            false,
+                            targetFor(file)),
                     false,
                     epoch);
         });
+    }
+
+    /**
+     * The last word on a project launch's class files, whatever built them (the jdtls build before the launch,
+     * a before-launch step — or nothing, when no build could run): a main class with no class file, or one
+     * older than its source, is launched with a warning in the console that says to build the project first —
+     * the ClassNotFoundException or the old code that follows then has its explanation (review A2). A remote
+     * project's files are the host's and are not read from here.
+     */
+    private void warnAboutClasses(Path file, MainClassOption opt, ResolvedLaunch r, long epoch) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return;
+        }
+        List<String> paths = new ArrayList<>(r.classPaths());
+        paths.addAll(r.modulePaths());
+        String cls = opt.className();
+        switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
+            case MISSING -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesMissing", cls));
+            case STALE -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesStale", cls));
+            default -> {
+                // current, or nothing to judge by
+            }
+        }
     }
 
     /**
@@ -958,15 +1181,31 @@ public final class DapManager {
 
     /** Main-class launch with an optional selected-JDK executable. */
     public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride) {
+        startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, false);
+    }
+
+    /**
+     * As above; {@code plainFolder} for a project with no build file, whose classes jdtls never compiles —
+     * the chosen class is then compiled from its own source when its class file is missing (review A16).
+     */
+    public void startLaunchMainClass(
+            Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride, boolean plainFolder) {
         if (!ready(routingFile)) {
             return;
         }
-        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride);
+        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, plainFolder);
         debugFile = routingFile;
         long epoch = beginSession();
         setState(State.STARTING);
-        resolveAndLaunch(
-                routingFile, opt, cwd == null ? null : pathsFor(routingFile).toAdapter(cwd), javaExecOverride, epoch);
+        String adapterCwd = cwd == null ? null : pathsFor(routingFile).toAdapter(cwd);
+        if (plainFolder) {
+            correctSourceRoot(
+                    routingFile,
+                    epoch,
+                    () -> launchOption(routingFile, opt, adapterCwd, javaExecOverride, null, epoch));
+        } else {
+            resolveAndLaunch(routingFile, opt, adapterCwd, javaExecOverride, epoch);
+        }
     }
 
     /**
@@ -977,6 +1216,31 @@ public final class DapManager {
      * Runs off the FX thread (javac is a subprocess).
      */
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
+        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, null);
+    }
+
+    /**
+     * As above, running the program in {@code workingDir} (null: the file's own folder). The file is compiled
+     * with its package's source folder as javac's source path, so the other classes of that package compile
+     * with it, and the class is launched by the package the file declares.
+     */
+    private void compileAndLaunch(
+            Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion, Path workingDir) {
+        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, workingDir, file);
+    }
+
+    /**
+     * As above, for a {@code file} that may not be open in the editor: {@code routing} — an open Java file of
+     * the same jdtls project — carries the jdtls commands that start the adapter.
+     */
+    private void compileAndLaunch(
+            Path file,
+            String fqn,
+            String javaExecOverride,
+            long epoch,
+            Integer sourceVersion,
+            Path workingDir,
+            Path routing) {
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
         boolean remote = !com.editora.process.ExecTargets.runsHere(file);
         DapPaths paths = pathsFor(file);
@@ -1010,11 +1274,20 @@ public final class DapManager {
                 // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
                 // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
                 // and both pipes are drained concurrently (no fill-the-buffer deadlock).
+                Path sourceRoot = sourceVersion != null
+                        ? null
+                        : JavaLaunchSupport.sourceRoot(file, JavaLaunchSupport.declaredPackage(file));
                 ProcessRunner.Result r = remote
-                        ? compileOnHost(file, compileFile, out, javaExec, launchEnvironment, sourceVersion)
-                        : compileStandalone(file, compileFile, out, javaExec, launchEnvironment, sourceVersion);
+                        ? compileOnHost(file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot)
+                        : compileStandalone(
+                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot);
                 if (!r.ok()) {
-                    fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
+                    // javac's own report — file, line, the caret under the mistake — belongs in the Debug
+                    // console, where its "File.java:3:" lines open the file; the status line only says so.
+                    failWithConsole(
+                            epoch,
+                            JavaLaunchSupport.compilerReport(r.out(), r.err(), compileFile, file),
+                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()));
                     return;
                 }
                 synchronized (sessionLock) {
@@ -1023,20 +1296,21 @@ public final class DapManager {
                     }
                     compilationDirectory = out;
                     compilationRemoval = removal;
-                    if (sourceVersion != null) {
-                        sourceAlias = new SourceAlias(epoch, file, compileFile);
-                    }
+                    // A script is compiled from a copy, and a loose file's class may come back with no source
+                    // path (jdtls cannot always place it): either way its frames are this file's.
+                    sourceAlias = new SourceAlias(epoch, file, compileFile);
                     retained = true;
                 }
-                String cwd = file.getParent() == null ? null : paths.toAdapter(file.getParent());
+                Path runIn = workingDir != null ? workingDir : file.getParent();
+                String cwd = runIn == null ? null : paths.toAdapter(runIn);
                 String classes = paths.toAdapter(out);
                 // The classes come from a temp dir, so java-debug cannot infer the project it compiles
                 // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
                 // source in (its invisible project for a loose file).
                 Platform.runLater(() -> projectNameOf(
-                        file,
+                        routing,
                         project -> startDebugSessionAndConnect(
-                                file,
+                                routing,
                                 LaunchConfig.launch(
                                         fqn,
                                         project,
@@ -1045,9 +1319,10 @@ public final class DapManager {
                                         javaExec,
                                         cwd,
                                         programArgs,
-                                        vmArgs,
+                                        vmArgsFor(targetFor(file)),
                                         launchEnvironment,
-                                        false),
+                                        false,
+                                        targetFor(file)),
                                 false,
                                 epoch)));
             } catch (Exception e) {
@@ -1063,7 +1338,7 @@ public final class DapManager {
     /** Compiles with the JDK that will run the debuggee, retaining local variables for the debugger. */
     static ProcessRunner.Result compileStandalone(
             Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
-        return compileStandalone(file, file, outputDir, javaExecOverride, environment, null);
+        return compileStandalone(file, file, outputDir, javaExecOverride, environment, null, null);
     }
 
     private static ProcessRunner.Result compileStandalone(
@@ -1072,11 +1347,17 @@ public final class DapManager {
             Path outputDir,
             String javaExecOverride,
             Map<String, String> environment,
-            Integer sourceVersion) {
+            Integer sourceVersion,
+            Path sourceRoot) {
         List<String> command = new ArrayList<>(List.of(JdkToolchain.compilerForJavaExecutable(javaExecOverride), "-g"));
         if (sourceVersion != null) {
             command.add("--release");
             command.add(sourceVersion.toString());
+        }
+        if (sourceRoot != null) {
+            // Without it javac looks for the package's other classes in the file's own folder, where a
+            // packaged class's siblings are not (src/demo/Helper.java would be src/demo/demo/Helper.java).
+            command.addAll(List.of("-sourcepath", sourceRoot.toString()));
         }
         command.addAll(List.of("-d", outputDir.toString(), source.toString()));
         return ProcessRunner.runInUserLocale(
@@ -1134,12 +1415,16 @@ public final class DapManager {
             Path outputDir,
             String hostJava,
             Map<String, String> environment,
-            Integer sourceVersion) {
+            Integer sourceVersion,
+            Path sourceRoot) {
         DapPaths paths = pathsFor(original);
         List<String> command = new ArrayList<>(List.of(hostJavac(hostJava), "-g"));
         if (sourceVersion != null) {
             command.add("--release");
             command.add(sourceVersion.toString());
+        }
+        if (sourceRoot != null) {
+            command.addAll(List.of("-sourcepath", paths.toAdapter(sourceRoot)));
         }
         command.addAll(List.of("-d", paths.toAdapter(outputDir), paths.toAdapter(source)));
         return ProcessRunner.runInUserLocale(
@@ -1162,11 +1447,15 @@ public final class DapManager {
 
     /** Remove both the temporary source and compiled classes after the adapter releases them. */
     private void releaseCompilationDirectory() {
-        Path directory = compilationDirectory;
-        Runnable removal = compilationRemoval;
-        compilationDirectory = null;
-        compilationRemoval = null;
-        sourceAlias = null;
+        Path directory;
+        Runnable removal;
+        synchronized (sessionLock) { // the compile thread retains a folder under this lock
+            directory = compilationDirectory;
+            removal = compilationRemoval;
+            compilationDirectory = null;
+            compilationRemoval = null;
+            sourceAlias = null;
+        }
         if (directory != null) {
             java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilation(directory, removal));
         }
@@ -1247,7 +1536,9 @@ public final class DapManager {
         }
         // java-debug can omit Source.path for a class compiled from a temporary source file. Its
         // frame name still identifies the implicit class; leave unrelated library frames untouched.
-        String className = alias.original().getFileName().toString();
+        String fileName = alias.original().getFileName().toString();
+        String className =
+                fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - ".java".length()) : fileName;
         return frame.file() == null
                 && frame.name() != null
                 && (frame.name().startsWith(className + ".") || frame.name().startsWith(className + "$"));
@@ -1345,6 +1636,7 @@ public final class DapManager {
         if (!isCurrent(epoch)) {
             return;
         }
+        javaAdapterEpoch = epoch;
         lsp.executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -2782,7 +3074,13 @@ public final class DapManager {
     });
 
     private void onOutput(long epoch, String text, String category) {
-        outputPump.offer(epoch, text, category);
+        String shown = JavaLaunchSupport.withoutJvmVersionWarning(text);
+        if (shown != text) {
+            LOG.fine(() -> "java-debug: " + text.strip());
+        }
+        if (!shown.isEmpty()) {
+            outputPump.offer(epoch, shown, category);
+        }
     }
 
     private void onTerminated(long epoch) {
@@ -2883,6 +3181,9 @@ public final class DapManager {
         }
     }
 
+    /** The session served by java-debug (whose {@code exited} event carries no real exit code). */
+    private long javaAdapterEpoch = -1;
+
     /** The session whose program Editora started itself (its exit is reported by its own process). */
     private long programStartedEpoch = -1;
 
@@ -2897,6 +3198,12 @@ public final class DapManager {
             }
             exitReportedEpoch = epoch;
             outputPump.flush();
+            if (javaAdapterEpoch == epoch) {
+                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live):
+                // the console says the program ended, not a code that is not its own (review A10).
+                listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                return;
+            }
             listener.onProgramExit(exitCode);
         });
     }
@@ -2949,6 +3256,9 @@ public final class DapManager {
             startup.cancel(true);
         }
         killDebuggee();
+        // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
+        // its compiled classes: the next launch would overwrite the only reference to them (review D6).
+        releaseCompilationDirectory();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }
@@ -3051,6 +3361,23 @@ public final class DapManager {
                 DapManager.this.onTransportClosed(epoch);
             }
         };
+    }
+
+    /**
+     * Ends the starting session of {@code epoch} because of a failure with a report: {@code console} goes to
+     * the Debug console (as error output, links and all) and {@code status} to the status line.
+     */
+    private void failWithConsole(long epoch, String console, String status) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            if (console != null && !console.isBlank()) {
+                listener.onOutput(console.endsWith("\n") ? console : console + "\n", "stderr");
+            }
+            listener.onError(status);
+            stop();
+        });
     }
 
     private void fail(long epoch, String message) {

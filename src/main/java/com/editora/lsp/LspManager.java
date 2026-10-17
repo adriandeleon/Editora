@@ -4109,6 +4109,9 @@ public final class LspManager {
                         || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
             return; // ranges from an older server snapshot must never replace current diagnostics
         }
+        if (!buildCaptures.isEmpty()) {
+            captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
+        }
         if (sourceUri == null && openDocumentDiagnosticsOnly) {
             // Nobody shows a file that is not open here, and a server publishes for its whole project
             // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
@@ -4561,6 +4564,67 @@ public final class LspManager {
             case "3", "CANCELLED" -> BuildOutcome.CANCELLED;
             default -> BuildOutcome.UNAVAILABLE;
         };
+    }
+
+    /**
+     * A build's outcome and the compile errors jdtls published while it ran, by file (only files with errors;
+     * every file, open or not — the Problems window's open-files filter does not apply).
+     */
+    public record BuildResult(BuildOutcome outcome, Map<Path, List<LspDiagnostic>> errors) {}
+
+    /** The error diagnostics each building session publishes, captured on the reader thread (see buildWorkspace). */
+    private final Map<LanguageServerSession, Map<Path, List<LspDiagnostic>>> buildCaptures =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Records {@code file}'s errors for a build of {@code source} in progress (reader thread). */
+    private void captureBuildErrors(LanguageServerSession source, Path file, List<LspDiagnostic> mapped) {
+        Map<Path, List<LspDiagnostic>> capture = buildCaptures.get(source);
+        if (capture == null) {
+            return;
+        }
+        List<LspDiagnostic> errors = mapped.stream()
+                .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
+                .toList();
+        if (errors.isEmpty()) {
+            capture.remove(file);
+        } else {
+            capture.put(file, errors);
+        }
+    }
+
+    /**
+     * Builds {@code file}'s Java project the way a debug launch needs it: Editora runs jdtls with autobuild off,
+     * so nothing else writes the class files the program is launched from. An incremental build first; when it
+     * reports errors without publishing any (the markers were already there), a full build, which republishes
+     * them all. The result is delivered on the FX thread.
+     */
+    public void buildJavaWorkspaceForLaunch(Path file, Consumer<BuildResult> cb) {
+        LanguageServerSession s = file == null ? null : sessionFor(file);
+        if (s == null || !LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId())) {
+            Platform.runLater(() -> cb.accept(new BuildResult(BuildOutcome.UNAVAILABLE, Map.of())));
+            return;
+        }
+        build(s, false, first -> {
+            if (first.outcome() == BuildOutcome.WITH_ERRORS && first.errors().isEmpty()) {
+                build(s, true, cb);
+            } else {
+                cb.accept(first);
+            }
+        });
+    }
+
+    private void build(LanguageServerSession s, boolean full, Consumer<BuildResult> cb) {
+        Map<Path, List<LspDiagnostic>> capture = new java.util.concurrent.ConcurrentHashMap<>();
+        buildCaptures.put(s, capture);
+        s.rawRequest("java/buildWorkspace", full, BUILD_WORKSPACE_TIMEOUT)
+                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
+                .whenComplete((r, e) -> {
+                    buildCaptures.remove(s, capture);
+                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
+                    Map<Path, List<LspDiagnostic>> errors = new java.util.TreeMap<>(capture);
+                    Platform.runLater(
+                            () -> cb.accept(new BuildResult(outcome, java.util.Collections.unmodifiableMap(errors))));
+                });
     }
 
     /**

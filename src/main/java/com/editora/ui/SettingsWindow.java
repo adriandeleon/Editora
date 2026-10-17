@@ -853,6 +853,22 @@ public class SettingsWindow {
         };
     }
 
+    /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
+    private Label javaDebugLspNote;
+
+    /** An "Install…" button for {@code langKey}, tracked under {@code trackKey} (a second button for it). */
+    private Button installButton(String langKey, String trackKey) {
+        Button b = new Button(tr("settings.install.button"));
+        b.getStyleClass().add("settings-install-button");
+        b.setOnAction(e -> {
+            if (onInstallSupport != null) {
+                onInstallSupport.accept(langKey);
+            }
+        });
+        installButtons.put(trackKey, b);
+        return b;
+    }
+
     /** A small "Install…" button for {@code langKey}, wired to the injected install action + tracked for
      *  enable/disable from the detection refresh. */
     private Button installButton(String langKey) {
@@ -6591,6 +6607,13 @@ public class SettingsWindow {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
             if ("java".equals(dbg.id())) {
+                // Java debugging runs through the Java language server: the card says when that is off, and
+                // installs jdtls and java-debug together, as the LSP page's Java row does (review C6).
+                javaDebugLspNote = note("");
+                javaDebugLspNote.setWrapText(true);
+                javaDebugLspNote.setMaxWidth(440);
+                cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
+                cardRow(c, Category.DEBUG, installButton("java", "debug:java"), "debug java install download jdtls");
                 checkRow(
                         c,
                         Category.DEBUG,
@@ -6669,10 +6692,12 @@ public class SettingsWindow {
                         null,
                         v -> config.getSettings().setJavaDebugPluginPath(v),
                         () -> config.getSettings().getJavaDebugPluginPath(),
+                        // A jdtls that ships java-debug has no jar to find (review A7).
                         cb -> cb.accept(com.editora.dap.DebugAdapterLocator.locate(
-                                        config.getSettings().getJavaDebugPluginPath(),
-                                        java.nio.file.Path.of(System.getProperty("user.home", "")))
-                                .isPresent())),
+                                                config.getSettings().getJavaDebugPluginPath(),
+                                                java.nio.file.Path.of(System.getProperty("user.home", "")))
+                                        .isPresent()
+                                || dapManager != null && dapManager.isJavaDebugInstalled())),
                 new DebugAdapterUi(
                         "python",
                         "settings.debug.python",
@@ -7491,7 +7516,22 @@ public class SettingsWindow {
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(
                         tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
+                if ("java".equals(dbg.id()) && lspManager != null) {
+                    lspManager.detectCommand(
+                            "java",
+                            config.getSettings().getJavaLspCommand(),
+                            jdtls -> updateInstallButton("debug:java", found && jdtls));
+                }
             });
+        }
+        if (javaDebugLspNote != null) {
+            var st = config.getSettings();
+            String why = !st.isLspSupport()
+                    ? tr("status.debug.javaNeedsLsp")
+                    : !st.isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
+            javaDebugLspNote.setText(why);
+            javaDebugLspNote.setVisible(!why.isEmpty());
+            javaDebugLspNote.setManaged(!why.isEmpty());
         }
     }
 

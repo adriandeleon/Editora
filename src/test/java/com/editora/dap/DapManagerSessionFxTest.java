@@ -56,6 +56,7 @@ class DapManagerSessionFxTest {
     private FakeDebugAdapter adapter;
     private List<FakeLanguageServer> fakes;
     private final List<String> errors = new CopyOnWriteArrayList<>();
+    private final List<String> output = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** States, stops, notices and breakpoint answers, in the order the listener saw them. */
     private final List<String> events = new ArrayList<>();
 
@@ -92,7 +93,9 @@ class DapManagerSessionFxTest {
                 }
 
                 @Override
-                public void onOutput(String text, String category) {}
+                public void onOutput(String text, String category) {
+                    output.add(category + ":" + text);
+                }
 
                 @Override
                 public void onError(String message) {
@@ -1152,10 +1155,13 @@ class DapManagerSessionFxTest {
         onFx(() -> dap.startCompactSource(loose, jdkJava));
 
         await("the failure", () -> !errors.isEmpty());
-        assertEquals("Compilation failed:\nStart.java:3: error: ; expected", errors.get(0));
+        // javac's report is in the console, where its file:line is a link; the status line only says where.
+        await("the report", () -> output.contains("stderr:Start.java:3: error: ; expected\n"));
+        assertFalse(errors.get(0).contains("expected"), errors.get(0));
         await("the session to end", () -> "INACTIVE".equals(lastState()));
         assertEquals(0, adapter.sessionCount());
-        Path classes = Path.of(Files.readAllLines(dir.resolve("jdk-args.txt")).get(2));
+        List<String> javacArgs = Files.readAllLines(dir.resolve("jdk-args.txt"));
+        Path classes = Path.of(javacArgs.get(javacArgs.indexOf("-d") + 1));
         await("the temp folder to be removed: nothing is left behind", () -> Files.notExists(classes));
     }
 

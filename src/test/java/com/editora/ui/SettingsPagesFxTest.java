@@ -239,6 +239,33 @@ class SettingsPagesFxTest {
         });
     }
 
+    /**
+     * Java debugging runs through the Java language server: with LSP off the Debugging page said nothing about
+     * it (every adapter "found"), and it had no Install button (review C6).
+     */
+    @Test
+    void theDebuggingPageSaysJavaNeedsLspAndInstallsJavaSupport() throws Exception {
+        settings.setLspSupport(false);
+        FxTestSupport.runOnFx(() -> {
+            rig.show();
+            javafx.scene.control.Label note = rig.control("javaDebugLspNote");
+            assertEquals(tr("status.debug.javaNeedsLsp"), note.getText());
+            assertTrue(note.isManaged());
+            Map<String, Button> buttons = rig.control("installButtons");
+            List<String> languages = new ArrayList<>();
+            rig.window.setInstallActions(languages::add);
+            buttons.get("debug:java").fire();
+            assertEquals(List.of("java"), languages, "jdtls and java-debug, as the LSP page's Java row installs");
+            assertTrue(buttons.containsKey("java"), "the LSP page's own button is still tracked");
+        });
+        settings.setLspSupport(true);
+        FxTestSupport.runOnFx(() -> {
+            rig.window.refreshDetectionStatus();
+            javafx.scene.control.Label note = rig.control("javaDebugLspNote");
+            assertFalse(note.isManaged(), "nothing to say while LSP is on");
+        });
+    }
+
     @Test
     void anInstallButtonAsksForItsOwnToolAndDoesNothingUntilAnInstallerIsWired() throws Exception {
         FxTestSupport.runOnFx(() -> {

@@ -402,6 +402,13 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
         }
 
+        /** Sends {@code exited} with {@code code} — java-debug's carries 0 whatever the program exited with. */
+        public void exited(int code) {
+            org.eclipse.lsp4j.debug.ExitedEventArguments args = new org.eclipse.lsp4j.debug.ExitedEventArguments();
+            args.setExitCode(code);
+            client.exited(args);
+        }
+
         public void terminate() {
             client.terminated(new TerminatedEventArguments());
         }

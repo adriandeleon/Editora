@@ -86,6 +86,11 @@ final class DebugCoordinator {
         /** The remembered program-arguments string for {@code path} (shared with the Run feature). */
         String programArgs(Path path);
 
+        /** This window's saved run configurations (none outside a project window). */
+        default List<RunConfiguration> runConfigurations() {
+            return List.of();
+        }
+
         /** This window's project root (null: none): a Python program's venv and {@code PYTHONPATH}. */
         default Path projectRoot() {
             return null;
@@ -361,8 +366,21 @@ final class DebugCoordinator {
     void stop() {
         if (beforeLaunch.isActive()) {
             beforeLaunch.stop();
+        } else if (pendingBuild != null) {
+            // The jdtls build before a launch: it finishes on its own, but nothing is launched after it.
+            pendingBuild = null;
+            panel().setPreparing(false);
+            ops.setStatusDebugLoading(false);
+            host.setStatus(tr("status.debug.launchCancelled"));
+            updateDebugAvailability();
         } else {
+            Runnable owner = relaunch == ONE_SHOT_ATTACH ? ownerStop : null;
+            ownerStop = null;
+            queuedAttaches.clear(); // Stop ends the whole run, its other JVMs included
             dapManager.stop();
+            if (owner != null) {
+                owner.run();
+            }
         }
     }
 
@@ -434,7 +452,7 @@ final class DebugCoordinator {
 
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
-        return dapManager.state() != DapManager.State.INACTIVE || beforeLaunch.isActive();
+        return dapManager.state() != DapManager.State.INACTIVE || beforeLaunch.isActive() || pendingBuild != null;
     }
 
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
@@ -1207,6 +1225,9 @@ final class DebugCoordinator {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                 }
+                if (state == DapManager.State.INACTIVE && relaunch == ONE_SHOT_ATTACH && !queuedAttaches.isEmpty()) {
+                    Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
                 updateDebugAvailability(); // keep the window available during a session; hide it once it ends
@@ -1620,20 +1641,51 @@ final class DebugCoordinator {
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
         if (dapManager.isActive()) {
-            // A session is live. If the user switched to a DIFFERENT debuggable file and the old session is
-            // merely running (not paused mid-step), retarget: stop it and launch the new file. While
-            // SUSPENDED the green button keeps its Continue semantics (never yank a paused session).
+            // A session is live. While SUSPENDED (or mid-step) the green button keeps its Continue semantics:
+            // never yank a paused session. While it runs, the same file is already being debugged (said so),
+            // and another debuggable file replaces it — after asking, since that ends the running program.
             boolean differentFile = b != null && b.getPath() != null && !samePath(b.getPath(), dapManager.debugFile());
-            if (dapManager.state() == DapManager.State.SUSPENDED
-                    || dapManager.isStepping() // a step in flight reads RUNNING, but it is the paused session
-                    || !differentFile
-                    || !debugEffectiveFor(b.getLanguage(), b.getPath())) {
-                dapManager.resume(); // F5-style continue (no-op unless suspended)
+            boolean paused = dapManager.state() == DapManager.State.SUSPENDED || dapManager.isStepping();
+            if (paused) {
+                dapManager.resume(); // F5-style continue
+                return;
+            }
+            if (!differentFile || !debugEffectiveFor(b.getLanguage(), b.getPath())) {
+                host.setStatus(tr("status.debug.alreadyRunning", sessionLabel));
+                return;
+            }
+            if (!confirmRetarget(
+                    tr("dialog.debug.retargetContent", sessionLabel, b.getPath().getFileName()))) {
                 return;
             }
             dapManager.stop(); // retarget to the newly active file below
         }
         launchBuffer(b);
+    }
+
+    /**
+     * Asks before F5 in another tab ends the running session (review A13); a test replaces it. The answer is
+     * the user's: a running server is not stopped by a key pressed in the wrong tab.
+     */
+    Predicate<String> confirmRetarget;
+
+    private boolean confirmRetarget(String question) {
+        if (confirmRetarget != null) {
+            return confirmRetarget.test(question);
+        }
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                question,
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL);
+        alert.setTitle(tr("dialog.debug.retargetTitle"));
+        alert.setHeaderText(null);
+        if (host.window() != null) {
+            alert.initOwner(host.window());
+        }
+        return alert.showAndWait()
+                .filter(r -> r == javafx.scene.control.ButtonType.OK)
+                .isPresent();
     }
 
     /** Saves {@code b} and launches a debug session for it; also what Restart repeats for such a session. */
@@ -1680,14 +1732,31 @@ final class DebugCoordinator {
         nameSession(b.getPath().getFileName().toString());
         dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
+        dapManager.setHostJavaExec("");
         if (b.isPython()) {
             planPython(b.getPath(), firstLine(b.getContent()));
         }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
-        Path projectRoot = "java".equals(language) ? JavaProjectRoot.find(b.getPath()) : null;
-        boolean compactSource = "java".equals(language) && b.isCompactSource();
+        boolean java = "java".equals(language);
+        Path projectRoot = java ? JavaProjectRoot.find(b.getPath()) : null;
+        boolean compactSource = java && b.isCompactSource();
+        // A plain-folder project window: its program runs in the project root, like Run's (review A16).
+        Path project = java ? JavaLaunchPrep.projectOf(b.getPath(), projectRoot, ops.projectRoot()) : null;
+        if (java && !saveJavaBuffers(b.getPath(), project, false)) { // the launched file was saved above
+            return;
+        }
+        if (projectRoot != null && !compactSource) {
+            // A saved configuration for this class is how the project runs it — its before-launch build,
+            // arguments, environment, working directory — exactly as Run ▶ uses it (review D1).
+            RunConfiguration configured = com.editora.run.JavaLaunchPlan.configurationFor(
+                    ownMainClass(b.getContent()), ops.runConfigurations());
+            if (configured != null) {
+                debugConfig(configured);
+                return;
+            }
+        }
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
-        String jdkHome = !"java".equals(language) || !com.editora.process.ExecTargets.runsHere(b.getPath())
+        String jdkHome = !java || !com.editora.process.ExecTargets.runsHere(b.getPath())
                 ? ""
                 : compactSource ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
         String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
@@ -1695,16 +1764,127 @@ final class DebugCoordinator {
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = b.getPath();
         relaunch = () -> relaunchFor(launched, this::launchBuffer);
-        withClosedBreakpoints(() -> {
+        Path looseCwd = projectRoot == null ? project : null;
+        Runnable start = () -> withClosedBreakpoints(() -> {
             if (compactSource && shebangSource != null) {
                 dapManager.startCompactShebang(b.getPath(), shebangSource, javaExec);
             } else if (compactSource && b.getPath().getFileName().toString().endsWith(".java")) {
                 dapManager.startCompactSource(b.getPath(), javaExec);
+            } else if (java) {
+                dapManager.startLaunch(b.getPath(), this::pickMainClass, javaExec, projectRoot, looseCwd);
             } else {
                 dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec, projectRoot);
             }
         });
+        if (projectRoot != null && !compactSource) {
+            buildThenLaunch(b.getPath(), start);
+        } else {
+            start.run();
+        }
     }
+
+    // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
+
+    /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
+    private Object pendingBuild;
+
+    /** The fully-qualified name of the first {@code main} in {@code source}, or null. */
+    private static String ownMainClass(String source) {
+        List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                com.editora.run.MainMethodScanner.scan(source == null ? "" : source);
+        return mains.isEmpty() ? null : mains.get(0).fqn();
+    }
+
+    /**
+     * Saves every unsaved Java file of {@code project} (the launched file's folder tree without one) before a
+     * Java launch: the program is compiled from what is on disk, and a breakpoint in an unsaved file would sit
+     * on lines the program does not have (review B3). False when a save failed or was cancelled.
+     */
+    private boolean saveJavaBuffers(Path launched, Path project, boolean includeLaunched) {
+        List<EditorBuffer> dirty = new ArrayList<>();
+        host.forEachBuffer(buf -> {
+            if (buf.isDirty()
+                    && (includeLaunched || !samePath(buf.getPath(), launched))
+                    && JavaLaunchPrep.saveBeforeLaunch(buf.getPath(), buf.getLanguage(), launched, project)) {
+                dirty.add(buf);
+            }
+        });
+        for (EditorBuffer buf : dirty) {
+            if (!ops.saveBuffer(buf)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Builds {@code project} with jdtls ({@code java/buildWorkspace}, what VS Code's build before launch does)
+     * and runs {@code launch} when it compiled. Editora runs jdtls with autobuild off, so nothing else writes
+     * the class files a project launch runs: a fresh project ended in ClassNotFoundException and an edited one
+     * ran its old code under breakpoints placed on the new lines (review A2). Compile errors in the project are
+     * listed in the Debug console (each a link to its line) and nothing is launched. A build that cannot run
+     * launches anyway; the launch then checks the class files itself (missing: refused; older: a warning).
+     */
+    private void buildThenLaunch(Path routing, Runnable launch) {
+        Object token = new Object();
+        pendingBuild = token;
+        lsp.ensureManaged(routing);
+        ops.openToolWindow();
+        panel().setPreparing(true);
+        ops.setStatusDebugLoading(true);
+        updateDebugAvailability();
+        lspManager.buildJavaWorkspaceForLaunch(routing, result -> {
+            if (pendingBuild != token) {
+                return; // stopped, or replaced by another launch
+            }
+            pendingBuild = null;
+            panel().setPreparing(false);
+            ops.setStatusDebugLoading(false);
+            if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
+                showBuildErrors(result.errors(), BUILD_ERROR_WAITS);
+                return;
+            }
+            launch.run();
+        });
+    }
+
+    /**
+     * Lists a failed build's compile errors in the Debug console and says so; nothing is launched. jdtls's
+     * workspace is this project. Its build reports the errors of files that are not open as it finds them; an
+     * open file's come from the editor's copy (the Problems view has them, and the copy on disk is the same:
+     * every Java file of the project was saved first) — and may still be on their way, so with none known yet
+     * this looks again a few times before saying only that there are errors.
+     */
+    private void showBuildErrors(Map<Path, List<com.editora.editor.LspDiagnostic>> published, int waits) {
+        Map<Path, List<com.editora.editor.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
+        found.putAll(published);
+        int errors = JavaLaunchPrep.errorCount(found, null);
+        if (errors == 0 && waits > 0) {
+            javafx.animation.PauseTransition later =
+                    new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
+            later.setOnFinished(e -> showBuildErrors(published, waits - 1));
+            later.play();
+            return;
+        }
+        panel().clearConsole();
+        consoleStarted = false;
+        List<String> lines = JavaLaunchPrep.errorLines(found, null, MAX_BUILD_ERROR_LINES);
+        for (String line : lines) {
+            panel().appendOutput(line + "\n", "stderr");
+        }
+        if (errors > lines.size()) {
+            panel().appendNotice(tr("debug.console.moreBuildErrors", errors - lines.size()));
+        }
+        panel().appendNotice(tr("debug.console.buildFailed"));
+        host.setStatus(errors > 0 ? tr("status.debug.buildErrors", errors) : tr("status.debug.buildErrorsUnlisted"));
+        updateDebugAvailability();
+    }
+
+    /** How many times a failed build's errors are looked for again before the console says only that there are some. */
+    private static final int BUILD_ERROR_WAITS = 8;
+
+    /** How many compile errors the Debug console lists before saying how many more there are. */
+    private static final int MAX_BUILD_ERROR_LINES = 50;
 
     /**
      * Why {@code language} cannot be debugged here, as the user can act on it: Python or JavaScript debugging
@@ -1727,8 +1907,31 @@ final class DebugCoordinator {
                                         ? com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER
                                         : s.getPythonDebugCommand());
             case "javascript" -> !s.isJsDebugEnabled() ? tr("status.debug.jsOff") : tr("status.debug.jsDebugMissing");
+            case "java" -> javaUnavailableMessage();
             default -> tr("status.debug.unavailable");
         };
+    }
+
+    /**
+     * Which piece of Java debugging is missing, as the user can act on it (review A7): it runs through the Java
+     * language server, so LSP being off, the Java server being off or not installed, and the java-debug plugin
+     * missing each have their own message. "Check Settings → Debugging" covered them all, and that page shows
+     * none of the first three.
+     */
+    private String javaUnavailableMessage() {
+        if (!lspEnabled()) {
+            return tr("status.debug.javaNeedsLsp");
+        }
+        if (!lsp.serverEnabled("java")) {
+            return tr("status.debug.javaServerOff");
+        }
+        if (!lsp.isServerAvailable("java")) {
+            return tr("status.debug.jdtlsMissing");
+        }
+        if (!dapManager.isAdapterAvailable()) {
+            return tr("status.debug.javaDebugMissing");
+        }
+        return tr("status.debug.unavailable");
     }
 
     /**
@@ -1945,49 +2148,40 @@ final class DebugCoordinator {
             ops.editConfiguration(cfg.name());
             return;
         }
-        if (!debugEffectiveFor("java")) {
-            host.setStatus(tr("status.debug.unavailable"));
-            return;
-        }
         // Same reasoning as RunCoordinator.runConfig: a named configuration must not depend on which tab is
         // in front, only on a Java file being open somewhere in its project.
         Path routing = RunCoordinator.routingFor(host, cfg);
+        if (!debugEffectiveFor("java", routing)) { // a remote project is debugged on its host (review A9)
+            host.setStatus(unavailableMessage("java", routing));
+            return;
+        }
         if (routing == null) {
             host.setStatus(tr("status.run.configNeedsJavaFile"));
             return;
         }
-        Path root = JavaProjectRoot.find(routing);
+        Path buildRoot = JavaProjectRoot.find(routing);
+        Path root = JavaLaunchPrep.projectOf(routing, buildRoot, ops.projectRoot());
         if (root == null) {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
-        EditorBuffer b = host.activeBuffer();
-        if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
-            return; // save whatever the user was editing before launching, as before
+        if (!saveJavaBuffers(routing, root, true)) {
+            return; // every unsaved Java file of the project is written first (review B3)
         }
-        Path configuredDir = com.editora.run.RunConfigWorkingDirectory.resolve(cfg, root);
-        Path cwd = configuredDir != null ? configuredDir : root;
-        // On a remote project the debuggee runs on its host: the JDK jdtls resolves there (DapManager ignores
-        // a java of this machine), and none of this machine's PATH or JAVA_HOME.
-        boolean onHost = !com.editora.process.ExecTargets.runsHere(root);
-        String jdkHome = onHost ? "" : configuredJdkHome(root, cfg);
-        String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
-        java.util.Map<String, String> jdkEnv = onHost
-                ? java.util.Map.of()
-                : com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath());
-        java.util.LinkedHashMap<String, String> launchEnv = new java.util.LinkedHashMap<>(jdkEnv);
-        try {
-            launchEnv.putAll(com.editora.run.EnvVars.resolve(cfg.env(), RunCoordinator.inheritedVariables(onHost)));
-        } catch (ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+        // One plan for Run and Debug (review D9): working directory, JDK, environment, arguments.
+        com.editora.run.JavaLaunchPlan.Result planned = com.editora.run.JavaLaunchPlan.forConfiguration(
+                cfg,
+                com.editora.run.JavaLaunchPlan.Inputs.of(root, host.settings().getMavenJdkHome()));
+        if (!planned.ok()) {
+            String quote = String.valueOf(planned.problem().quote());
+            host.setStatus(
+                    planned.problem().field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                            ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                            : tr("status.run.argsUnclosedQuote", quote));
             ops.editConfiguration(cfg.name());
             return;
         }
-        List<String> cfgArgs = debugArgs(cfg.args());
-        if (cfgArgs == null) {
-            ops.editConfiguration(cfg.name());
-            return;
-        }
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
         // The same gate the Run path has always had: a failed build aborts the launch rather than debugging
         // the previous class files, where every breakpoint would sit on a stale line number.
         //
@@ -1995,32 +2189,83 @@ final class DebugCoordinator {
         // dispatch — because those guards reject a configuration that cannot launch at all (a script type, a
         // blank main class), and spending a multi-minute build on one before saying so is worse than not
         // building.
-        if (beforeLaunch.isActive()) {
+        if (beforeLaunch.isActive() || pendingBuild != null) {
             host.setStatus(tr("status.run.busy"));
             return;
         }
-        relaunch = () -> debugConfig(cfg);
-        beforeLaunch.run(host, cfg, cwd, jdkEnv, beforeLaunchConsole(), () -> {
+        // Restart reads the configuration again: an edit made since the first launch applies (review A14).
+        String name = cfg.name();
+        relaunch = () -> debugConfig(currentConfiguration(name, cfg));
+        boolean plainFolder = buildRoot == null;
+        Runnable launch = () -> {
             // routing may be a background tab whose server start was deferred; open it on jdtls first, or the
             // resolve below comes back "no language server for file" while jdtls is running perfectly.
             lsp.ensureManaged(routing);
             dapManager.resolveMainClasses(routing, options -> {
-                DapManager.MainClassOption match = options.stream()
-                        .filter(o -> cfg.mainClass().equals(o.className()))
-                        .findFirst()
-                        .orElse(null);
+                DapManager.MainClassOption match = matchConfiguredClass(options, cfg.mainClass(), plainFolder);
                 if (match == null) {
-                    host.setStatus(tr("status.debug.noMainClass"));
+                    host.setStatus(
+                            options.isEmpty()
+                                    ? tr("status.debug.noMainClassYet")
+                                    : tr("status.debug.configClassNotFound", cfg.name(), cfg.mainClass()));
                     return;
                 }
                 ops.openToolWindow();
                 nameSession(shortName(match.mainClass()));
-                dapManager.setProgramArgs(cfgArgs);
-                dapManager.setVmArgs(cfg.vmArgs());
-                dapManager.setEnv(launchEnv);
-                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, match, cwd, javaExec));
+                dapManager.setProgramArgs(plan.args());
+                dapManager.setVmArgs(plan.vmArgs());
+                dapManager.setEnv(plan.environment());
+                // On a remote host the plan names the host's configured JDK, as Run uses it (review D9).
+                boolean onHost = !com.editora.process.ExecTargets.runsHere(routing);
+                dapManager.setHostJavaExec(onHost ? plan.javaExecutable() : "");
+                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(
+                        routing, match, plan.cwd(), onHost ? "" : plan.javaExecutable(), plainFolder));
             });
+        };
+        // A before-launch step builds the project the user's way, in the project root (review A12); without
+        // one, jdtls builds it (review A2). A plain folder has nothing to build: its class is compiled at launch.
+        boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
+        beforeLaunch.run(host, cfg, root, plan.jdkEnvironment(), beforeLaunchConsole(), () -> {
+            if (!hasStep && !plainFolder) {
+                buildThenLaunch(routing, launch);
+            } else {
+                launch.run();
+            }
         });
+    }
+
+    /** The saved configuration called {@code name} as it is now, else {@code fallback} (it was deleted). */
+    private RunConfiguration currentConfiguration(String name, RunConfiguration fallback) {
+        for (RunConfiguration c : ops.runConfigurations()) {
+            if (c.name().equals(name)) {
+                return c;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * jdtls's entry for a configuration's {@code mainClass}. In a plain folder jdtls may know a packaged class
+     * without its package (it guesses the source folder — see DapManager): the simple name then matches.
+     */
+    static DapManager.MainClassOption matchConfiguredClass(
+            List<DapManager.MainClassOption> options, String mainClass, boolean plainFolder) {
+        for (DapManager.MainClassOption o : options) {
+            if (mainClass.equals(o.className())) {
+                return o;
+            }
+        }
+        if (!plainFolder) {
+            return null;
+        }
+        String simple = mainClass.substring(mainClass.lastIndexOf('.') + 1);
+        for (DapManager.MainClassOption o : options) {
+            String cls = o.className();
+            if (cls != null && simple.equals(cls.substring(cls.lastIndexOf('.') + 1))) {
+                return o;
+            }
+        }
+        return null;
     }
 
     private void startMainClassDebug(String targetFqn) {
@@ -2029,7 +2274,7 @@ final class DebugCoordinator {
 
     private void startMainClassDebug(EditorBuffer b, String targetFqn) {
         if (!debugEffectiveFor("java", b == null ? null : b.getPath())) {
-            host.setStatus(tr("status.debug.unavailable"));
+            host.setStatus(unavailableMessage("java", b == null ? null : b.getPath()));
             return;
         }
         if (b == null || b.getPath() == null || !"java".equals(b.getLanguage())) {
@@ -2037,14 +2282,17 @@ final class DebugCoordinator {
             return;
         }
         Path routing = b.getPath();
-        Path root = JavaProjectRoot.find(routing);
+        Path buildRoot = JavaProjectRoot.find(routing);
+        // A plain-folder project window has main classes too (review A16).
+        Path root = JavaLaunchPrep.projectOf(routing, buildRoot, ops.projectRoot());
         if (root == null) {
             host.setStatus(tr("status.debug.noProject"));
             return;
         }
-        if (b.isDirty() && !ops.saveBuffer(b)) {
+        if (!saveJavaBuffers(routing, root, true)) {
             return;
         }
+        boolean plainFolder = buildRoot == null;
         dapManager.resolveMainClasses(routing, options -> {
             if (options.isEmpty()) {
                 host.setStatus(tr("status.debug.noMainClass"));
@@ -2052,6 +2300,14 @@ final class DebugCoordinator {
             }
             Consumer<DapManager.MainClassOption> launch = opt -> {
                 if (opt == null) {
+                    return;
+                }
+                // The configuration for this class is how the project runs it, as for Run ▶ (review D1).
+                RunConfiguration configured = plainFolder
+                        ? null
+                        : com.editora.run.JavaLaunchPlan.configurationFor(opt.className(), ops.runConfigurations());
+                if (configured != null) {
+                    debugConfig(configured);
                     return;
                 }
                 List<String> mainArgs = debugArgs(programArgsForMain(opt, routing));
@@ -2062,17 +2318,21 @@ final class DebugCoordinator {
                 nameSession(shortName(opt.mainClass()));
                 dapManager.setProgramArgs(mainArgs);
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
-                dapManager.setEnv(configuredJdkEnvironment(root, null));
+                dapManager.setHostJavaExec("");
+                dapManager.setEnv(configuredJdkEnvironment(buildRoot, null));
                 lsp.ensureManaged(routing); // see above
                 relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.className()));
-                String javaExec = configuredJavaExecutable(root, null);
-                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root, javaExec));
+                String javaExec = configuredJavaExecutable(buildRoot, null);
+                Runnable go = () -> withClosedBreakpoints(
+                        () -> dapManager.startLaunchMainClass(routing, opt, root, javaExec, plainFolder));
+                if (plainFolder) {
+                    go.run();
+                } else {
+                    buildThenLaunch(routing, go);
+                }
             };
             if (targetFqn != null) {
-                DapManager.MainClassOption match = options.stream()
-                        .filter(o -> targetFqn.equals(o.className()))
-                        .findFirst()
-                        .orElse(null);
+                DapManager.MainClassOption match = matchConfiguredClass(options, targetFqn, plainFolder);
                 if (match == null) {
                     host.setStatus(tr("status.debug.noMainClass"));
                     return;
@@ -2181,9 +2441,33 @@ final class DebugCoordinator {
      * {@code anchorFile} names the debug session and anchors breakpoint resolution.
      */
     void attachToPort(Path anchorFile, String attachHost, int port) {
+        attachToPort(anchorFile, attachHost, port, null);
+    }
+
+    /** The test or build run that started the JVM of the attached session; Stop ends it too (review A4). */
+    private Runnable ownerStop;
+
+    /**
+     * JVMs of the same run that printed their banner while one of them was being debugged (several surefire
+     * forks, a multi-module build), attached in turn as each session ends (review D11). Each waits suspended.
+     */
+    private final java.util.ArrayDeque<Runnable> queuedAttaches = new java.util.ArrayDeque<>();
+
+    /**
+     * As above; {@code stopOwner} ends the test or build run that started the JVM: Stop on this session runs
+     * it after detaching, so Stop ends the program as it does every other session's — detaching alone left
+     * the test or app running on (review A4).
+     */
+    void attachToPort(Path anchorFile, String attachHost, int port, Runnable stopOwner) {
+        if (relaunch == ONE_SHOT_ATTACH && dapManager.isActive()) {
+            queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
+            host.setStatus(tr("status.debug.attachQueued", port));
+            return;
+        }
+        ownerStop = stopOwner;
         // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
         if (!debugEffectiveFor("java", anchorFile)) {
-            host.setStatus(tr("status.debug.unavailable"));
+            host.setStatus(unavailableMessage("java", anchorFile));
             return;
         }
         ops.openToolWindow();
@@ -2249,8 +2533,8 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        if (!debugEffective()) {
-            host.setStatus(tr("status.debug.unavailable"));
+        if (!debugEffectiveFor("java", b.getPath())) { // a remote file attaches from its host (review A9)
+            host.setStatus(unavailableMessage("java", b.getPath()));
             return;
         }
         host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), "localhost:5005", input -> {

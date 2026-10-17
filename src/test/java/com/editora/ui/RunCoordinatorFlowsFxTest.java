@@ -1156,4 +1156,30 @@ class RunCoordinatorFlowsFxTest {
         assertFalse(FxTestSupport.callOnFx(run::isRunning));
         assertEquals(project, run.lastRunDir());
     }
+
+    /**
+     * A Java configuration's before-launch step is a build: it runs in the project root whatever folder the
+     * program runs in — with a working directory of "sub", "mvn compile" found no pom (review A12).
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void aJavaConfigurationsBeforeLaunchStepRunsInTheProjectRoot() throws Exception {
+        open("src/main/java/demo/App.java", "package demo;\npublic class App {}\n", false);
+        Path sub = Files.createDirectories(project.resolve("sub"));
+        RunConfiguration cfg = new RunConfiguration(
+                "Sub", "java", "", "demo.App", "", "", "", sub.toString(), "", "sh -c 'pwd; exit 3'", "");
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        String real = project.toRealPath().toString();
+        String plain = project.toString();
+        java.util.concurrent.atomic.AtomicReference<String> shown =
+                new java.util.concurrent.atomic.AtomicReference<>("");
+        long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (!(shown.get().contains(real + "\n") || shown.get().contains(plain + "\n")) && System.nanoTime() < end) {
+            shown.set(console());
+            Thread.onSpinWait();
+        }
+        assertTrue(shown.get().contains(real + "\n") || shown.get().contains(plain + "\n"), shown.get());
+        assertFalse(shown.get().contains(sub + "\n"), shown.get());
+    }
 }
