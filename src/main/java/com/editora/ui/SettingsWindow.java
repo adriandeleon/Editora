@@ -2155,7 +2155,7 @@ public class SettingsWindow {
         // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
         scroll.prefHeightProperty()
                 .bind(javafx.beans.binding.Bindings.max(
-                        320, stage.heightProperty().subtract(390)));
+                        320, stage.heightProperty().subtract(415)));
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
         note.setWrapText(true);

@@ -108,6 +108,7 @@ final class AbbreviationsEditor {
     Node node() {
         reload();
         list.setPrefSize(200, 380);
+        list.setMinWidth(200); // the form beside it grows; the list keeps its width
         Label none = new Label(tr("settings.abbrev.empty"));
         none.getStyleClass().add("settings-hint");
         none.setWrapText(true);
