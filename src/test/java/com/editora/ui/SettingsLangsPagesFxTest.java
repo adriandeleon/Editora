@@ -187,6 +187,47 @@ class SettingsLangsPagesFxTest {
         });
     }
 
+    /**
+     * The Web page chooses the preview browser (it was only ever remembered from the last preview) and says
+     * whether the HTTP scripts' node is there; a build tool override naming no program is marked.
+     */
+    @Test
+    void theWebAndBuildToolPagesSayWhatTheyWillRun() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setHttpClientSupport(true);
+            rig.settings.setHttpScriptsEnabled(true);
+            rig.show();
+            rig.page("WEB");
+        });
+        ComboBox<String> browser = rig.control("htmlBrowserCombo");
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (FxTestSupport.callOnFx(() -> browser.getItems().isEmpty())) { // detected off the FX thread
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("no browsers listed");
+            }
+            FxTestSupport.drainFx();
+        }
+        FxTestSupport.runOnFx(() -> {
+            org.junit.jupiter.api.Assertions.assertEquals(com.editora.web.Browsers.SYSTEM_DEFAULT, browser.getValue());
+            browser.setValue(com.editora.web.Browsers.SYSTEM_DEFAULT + "-other");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    com.editora.web.Browsers.SYSTEM_DEFAULT + "-other", rig.settings.getHtmlPreviewBrowser());
+
+            SettingsRig.typeAndEnter(rig.control("httpNodeField"), "/no/such/dir/node");
+            Label node = rig.control("httpNodeStatus");
+            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.httpClient.nodeMissing"), node.getText());
+            assertTrue(node.getStyleClass().contains("settings-git-missing"));
+
+            Map<com.editora.build.BuildTool, TextField> overrides = rig.control("buildToolCommandFields");
+            TextField maven = overrides.get(com.editora.build.BuildTool.MAVEN);
+            SettingsRig.typeAndEnter(maven, "/no/such/dir/mvnx");
+            assertTrue(maven.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertTrue(maven.getTooltip().getText().contains("/no/such/dir/mvnx"));
+            SettingsRig.typeAndEnter(maven, "");
+            assertFalse(maven.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+        });
+    }
+
     private static javafx.scene.Node cardOf(javafx.scene.Node n) {
         javafx.scene.Node c = n;
         while (c != null && !c.getStyleClass().contains("settings-card")) {

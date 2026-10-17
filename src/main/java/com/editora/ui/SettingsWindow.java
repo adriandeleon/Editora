@@ -400,6 +400,11 @@ public class SettingsWindow {
     private TextField httpNodeField;
     private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
+    /** The browser HTML Live Preview opens (ids from {@link com.editora.web.Browsers}); filled off the FX thread. */
+    private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
+
+    private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
+    private final Label httpNodeStatus = new Label();
     private CheckBox mcpCheck;
     private CheckBox aiMasterCheck;
     private CheckBox agentCheck;
@@ -1627,6 +1632,7 @@ public class SettingsWindow {
             commitOnEnterOrBlur(commandField, () -> bt.commandIn(config.getSettings()), now -> {
                 bt.setCommandIn(config.getSettings(), now);
                 apply();
+                markCommand(commandField, now);
             });
             buildToolCommandFields.put(bt, commandField);
             if (bt == BuildTool.MAVEN) {
@@ -1680,17 +1686,20 @@ public class SettingsWindow {
         httpCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setHttpClientSupport(now);
             apply();
+            refreshHttpNodeStatus();
         });
         httpScriptsCheck = new CheckBox(tr("settings.httpClient.scripts"));
         httpScriptsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setHttpScriptsEnabled(now);
             apply();
+            refreshHttpNodeStatus();
         });
         httpNodeField = new TextField();
         httpNodeField.setPromptText("node");
         commitOnEnterOrBlur(httpNodeField, () -> config.getSettings().getHttpNodePath(), now -> {
             config.getSettings().setHttpNodePath(now);
             apply();
+            refreshHttpNodeStatus();
         });
         httpScriptTimeoutSpinner = IntSpinners.editable(1, 600, 10, 1);
         httpScriptTimeoutSpinner.setPrefWidth(90);
@@ -3939,6 +3948,50 @@ public class SettingsWindow {
                 htmlPreviewCheck,
                 tr("settings.htmlPreview.hint"),
                 "html live preview browser serve enable safari chrome firefox edge server localhost");
+        htmlBrowserCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String id) {
+                return id == null ? "" : htmlBrowserNames.getOrDefault(id, id);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        htmlBrowserCombo.valueProperty().addListener((o, was, now) -> {
+            if (!loading && now != null) {
+                config.getSettings().setHtmlPreviewBrowser(now);
+                apply();
+            }
+        });
+        controlRow(
+                preview,
+                Category.WEB,
+                tr("settings.htmlPreview.browser"),
+                null,
+                dependent(htmlPreviewCheck, htmlBrowserCombo),
+                "html live preview browser default chrome firefox safari edge open");
+        Thread.ofVirtual().name("settings-browsers").start(() -> {
+            List<com.editora.web.Browsers.Browser> found = com.editora.web.Browsers.detect(); // file probes
+            javafx.application.Platform.runLater(() -> {
+                found.forEach(b -> htmlBrowserNames.put(
+                        b.id(),
+                        com.editora.web.Browsers.SYSTEM_DEFAULT.equals(b.id())
+                                ? tr("htmlPreview.systemDefault")
+                                : b.displayName()));
+                boolean prev = loading;
+                loading = true;
+                try {
+                    htmlBrowserCombo
+                            .getItems()
+                            .setAll(found.stream().map(b -> b.id()).toList());
+                    syncHtmlBrowser();
+                } finally {
+                    loading = prev;
+                }
+            });
+        });
         Card http = card(p, tr("settings.section.httpClient"));
         checkRow(
                 http,
@@ -3960,6 +4013,14 @@ public class SettingsWindow {
                 tr("settings.httpClient.nodePath"),
                 tr("settings.httpClient.nodePathHint"),
                 dependent(httpScriptsCheck, new HBox(6, httpNodeField, nodeBrowse)),
+                "http client response handler node nodejs path executable javascript");
+        httpNodeStatus.getStyleClass().add("settings-git-status");
+        controlRow(
+                http,
+                Category.WEB,
+                tr("settings.git.detected"),
+                null,
+                httpNodeStatus,
                 "http client response handler node nodejs path executable javascript");
         controlRow(
                 http,
@@ -4460,6 +4521,39 @@ public class SettingsWindow {
         return p;
     }
 
+    /** Shows the stored preview browser, or System Default when none was chosen yet. */
+    private void syncHtmlBrowser() {
+        String id = config.getSettings().getHtmlPreviewBrowser();
+        htmlBrowserCombo.setValue(id.isBlank() ? com.editora.web.Browsers.SYSTEM_DEFAULT : id);
+    }
+
+    /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
+    private void refreshHttpNodeStatus() {
+        String configured = config.getSettings().getHttpNodePath();
+        String found = com.editora.doctor.DoctorProbes.resolvedPath(
+                com.editora.run.ProgramArgs.commandLine(configured.isBlank() ? "node" : configured));
+        httpNodeStatus
+                .getStyleClass()
+                .setAll(
+                        "settings-git-status",
+                        pillClass(!found.isEmpty(), httpCheck.isSelected() && httpScriptsCheck.isSelected()));
+        httpNodeStatus.setText(
+                found.isEmpty() ? tr("settings.httpClient.nodeMissing") : tr("settings.httpClient.nodeFound", found));
+    }
+
+    /**
+     * Marks a build tool's command override whose program cannot be found (a typo used to give no sign: the
+     * Detected row is about the project, not the command). A warning only: the value is still saved.
+     */
+    private static void markCommand(TextField field, String command) {
+        String exe = command == null || command.isBlank()
+                ? ""
+                : com.editora.doctor.DoctorProbes.resolvedPath(com.editora.run.ProgramArgs.commandLine(command));
+        boolean missing = command != null && !command.isBlank() && exe.isEmpty();
+        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, missing);
+        field.setTooltip(missing ? new Tooltip(tr("settings.buildTools.commandMissing", command.strip())) : null);
+    }
+
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
         dependsOn(p, mermaidCheck);
@@ -4666,7 +4760,7 @@ public class SettingsWindow {
                     kw + " path executable wrapper");
             controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
             if (bt == BuildTool.MAVEN) {
-                mavenArchetypeCatalogField.setPrefWidth(320);
+                mavenArchetypeCatalogField.setPrefWidth(PATH_FIELD_WIDTH + 120); // the default URL in full
                 cardRow(
                         c,
                         Category.BUILD_TOOLS,
@@ -8572,6 +8666,7 @@ public class SettingsWindow {
             for (BuildTool bt : BuildTool.enabled()) {
                 buildToolChecks.get(bt).setSelected(bt.enabledIn(settings));
                 buildToolCommandFields.get(bt).setText(bt.commandIn(settings));
+                markCommand(buildToolCommandFields.get(bt), bt.commandIn(settings));
                 if (bt == BuildTool.MAVEN) {
                     JdkChoice.select(mavenJdkCombo, settings.getMavenJdkHome());
                     mavenArchetypeCatalogField.setText(settings.getMavenArchetypeCatalogUrl());
@@ -8585,6 +8680,8 @@ public class SettingsWindow {
             httpCheck.setSelected(settings.isHttpClientSupport());
             httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
             httpNodeField.setText(settings.getHttpNodePath());
+            refreshHttpNodeStatus();
+            syncHtmlBrowser();
             httpScriptTimeoutSpinner.getValueFactory().setValue(settings.getHttpScriptTimeoutSeconds());
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             mcpCheck.setSelected(settings.isMcpSupport());
