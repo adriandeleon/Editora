@@ -1407,6 +1407,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFileActions(new ProjectTreeFileActions(
                 git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
         if (projectGitStatus != null) {
