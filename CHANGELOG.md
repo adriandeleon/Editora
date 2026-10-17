@@ -112,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The technical dictionary knows over 500 more terms**: Git (worktree, unstaged, rebasing), editor and UI
+  words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), the Java toolchain
+  (jlink, jpackage, Temurin), language servers, web, security, devops and AI names, -ed and -ing forms of the
+  words it already had (deserialized, symlinking), and British spellings (tokenised, rasterising). It no longer
+  lists "nat", "elt", "os", "io" or "gan", which hid typos of "not", "let", "so", "to" and "can". The file is
+  sorted by section and explains what not to add; plurals it listed twice are gone, since spell check accepts
+  the plural of any listed word.
 - **Settings: every external tool row looks and reads the same** — language servers, debug adapters, Mermaid,
   Diagrams, Typst, build tools, Node.js and AI agents show "tool: found (path)" or "tool: not found", then
   Install… or a link. Diagrams links to its install help, and Build Tools says whether the command it would run
@@ -158,6 +165,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Spell check accepts the possessive of any dictionary word**, such as "someone else's" and "another's". Only
+  words the dictionary lists with a possessive were accepted.
 - **Settings scrolled sideways at its 900 px minimum width** in German, French, Spanish and Portuguese (Snippets,
   Templates, Remote), and controls sat a scrollbar's width apart on short and long pages.
 - **A snippet trigger with a space in it was saved and never expanded.** It is now refused with the reason shown.

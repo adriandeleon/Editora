@@ -146,6 +146,11 @@ public final class SpellChecker {
         if (h.spell(normalized)) {
             return false;
         }
+        // "someone else's", "another's": the dictionary spells the word but lists no possessive for it.
+        int n = normalized.length();
+        if (n > 2 && normalized.endsWith("'s") && h.spell(normalized.substring(0, n - 2))) {
+            return false;
+        }
         // English borrows accented words whole ("café", "résumé", "naïve") and its dictionaries list only
         // the plain spelling; the accented one is not a mistake.
         if (langId != null && langId.startsWith("en")) {
