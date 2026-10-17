@@ -203,7 +203,7 @@ class DebugCoordinatorCommandsFxTest {
     @BeforeEach
     void setUp() throws Exception {
         Files.writeString(project.resolve("pom.xml"), "<project/>\n");
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         replies.put("vscode.java.startDebugSession", adapter.port());
         lspManager = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lspManager);
@@ -353,6 +353,9 @@ class DebugCoordinatorCommandsFxTest {
     private FakeDebugAdapter.Session launch() throws Exception {
         FxTestSupport.runOnFx(() -> debug.debugStart());
         FakeDebugAdapter.Session session = session("launch");
+        // java-debug configures a session only once its launch has created it (initialized, then the
+        // breakpoints and configurationDone): a test that changes breakpoints on a "live" session starts there.
+        assertTrue(session.configured.await(10, TimeUnit.SECONDS), "the adapter was configured");
         awaitState("debug.state.running");
         return session;
     }
