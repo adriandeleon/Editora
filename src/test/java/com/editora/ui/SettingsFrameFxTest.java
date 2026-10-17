@@ -118,7 +118,11 @@ class SettingsFrameFxTest {
 
     /** Whether the sidebar's selected row is inside its viewport, once the deferred scroll has run. */
     static boolean selectedRowInView(ListView<Object> sidebar) {
-        int i = sidebar.getSelectionModel().getSelectedIndex();
+        return rowInView(sidebar, sidebar.getSelectionModel().getSelectedIndex());
+    }
+
+    /** Whether row {@code i} of {@code sidebar} is on screen once the list is laid out. */
+    static boolean rowInView(ListView<Object> sidebar, int i) {
         sidebar.applyCss();
         sidebar.layout(); // what the next pulse would draw
         var flow = (javafx.scene.control.skin.VirtualFlow<?>) sidebar.lookup(".virtual-flow");
