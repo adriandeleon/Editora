@@ -16,7 +16,21 @@ public final class DapModels {
     public record ThreadInfo(int id, String name) {}
 
     /** One frame of a thread's call stack. {@code file} may be null for frames with no source. */
-    public record StackFrameInfo(int id, String name, Path file, int line, int column) {}
+    /**
+     * One frame of a call stack. {@code sourceUri} is the adapter's own name for a source that is not a file on
+     * this machine — java-debug's {@code jdt://contents/…} for a JDK or library class, whose text jdtls can
+     * supply ({@code java/classFileContents}) — and null for an ordinary file ({@code file}).
+     */
+    public record StackFrameInfo(int id, String name, Path file, int line, int column, String sourceUri) {
+        public StackFrameInfo(int id, String name, Path file, int line, int column) {
+            this(id, name, file, line, column, null);
+        }
+
+        /** This frame at another (0-based) line — the line it is shown on in an edited document. */
+        public StackFrameInfo atLine(int newLine) {
+            return new StackFrameInfo(id, name, file, newLine, column, sourceUri);
+        }
+    }
 
     /** A variable scope of a stack frame (e.g. "Local", "Static"); {@code variablesReference} fetches its
      *  variables. */

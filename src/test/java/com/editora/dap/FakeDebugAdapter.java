@@ -79,6 +79,20 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set, the {@code launch} of every connection after the first (a child session) is refused with it. */
     public volatile String childLaunchFailure;
 
+    // --- Fixer B (engine): java-debug's start-up order, held answers, processid, a dropped connection ------
+
+    /**
+     * java-debug's order: the {@code initialized} event follows the {@code launch}/{@code attach} answer, not the
+     * {@code initialize} one — until then it refuses {@code setBreakpoints} ("Empty debug session.").
+     */
+    public volatile boolean initializedAfterLaunch;
+
+    /** When set, {@code launch} is answered only when this completes (the adapter still starting the JVM). */
+    public volatile CompletableFuture<Void> launchGate;
+
+    /** When set, every {@code evaluate} is answered only when this completes (a slow expression). */
+    public volatile CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> evaluateGate;
+
     /**
      * When set (before the client connects), what every new session's {@link Session#breakpointAnswer} starts
      * as — for the {@code setBreakpoints} a client sends as soon as it is connected, before a test can reach
@@ -341,6 +355,19 @@ public final class FakeDebugAdapter implements AutoCloseable {
             client.terminated(new TerminatedEventArguments());
         }
 
+        /** java-debug's non-standard {@code processid} event: the process it launched. */
+        public void processId(long pid) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("processId", pid);
+            body.put("shellProcessId", 0);
+            remote.notify("processid", body);
+        }
+
+        /** The adapter vanishes (jdtls killed): the connection drops with no {@code terminated} event. */
+        public void dropConnection() throws IOException {
+            socket.close();
+        }
+
         /**
          * The reverse request java-debug sends for a launch with {@code console: integratedTerminal}: the
          * client is to start {@code argv} itself. Completes with the client's answer (the process id).
@@ -374,8 +401,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 capabilities.setSupportsGotoTargetsRequest(true);
             }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
-            // The event follows the response, as the protocol orders them.
-            CompletableFuture.runAsync(() -> client.initialized());
+            if (!initializedAfterLaunch) {
+                // The event follows the response, as the protocol orders them.
+                CompletableFuture.runAsync(() -> client.initialized());
+            }
             return reply;
         }
 
@@ -392,7 +421,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (multiSession && first) {
                 CompletableFuture.runAsync(this::requestChildSession);
             }
-            return CompletableFuture.completedFuture(null);
+            CompletableFuture<Void> gate = launchGate;
+            CompletableFuture<Void> answer = gate == null ? CompletableFuture.completedFuture(null) : gate;
+            if (initializedAfterLaunch) {
+                return answer.thenApply(v -> {
+                    CompletableFuture.runAsync(() -> client.initialized());
+                    return v;
+                });
+            }
+            return answer;
         }
 
         @Override
@@ -658,6 +695,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
             record("evaluate");
             if (args.getExpression().startsWith("bad")) {
                 return refused("Cannot evaluate: " + args.getExpression());
+            }
+            var gate = evaluateGate;
+            if (gate != null) {
+                return gate;
             }
             org.eclipse.lsp4j.debug.EvaluateResponse response = new org.eclipse.lsp4j.debug.EvaluateResponse();
             response.setResult("val(" + args.getExpression() + ")");

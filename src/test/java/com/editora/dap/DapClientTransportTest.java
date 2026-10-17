@@ -10,15 +10,11 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.StackFrame;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link DapClient}'s transport: requests must not be written on the thread that issues them (Resume, Step,
@@ -167,7 +163,9 @@ class DapClientTransportTest {
 
     /** Without the capability the arguments are not the adapter's to honour: ask as before. */
     @Test
-    void anAdapterThatDoesNotPageIsAskedAsBefore() throws Exception {
+    void anAdapterThatDoesNotAdvertisePagingIsStillAskedForAWindowAndCapped() throws Exception {
+        // java-debug pages without saying so: it must still be asked for a window (D4), and an adapter that
+        // sends everything anyway is cut to the innermost frames.
         try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
             DapClient client = new DapClient(NO_HOST);
             client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
@@ -178,19 +176,11 @@ class DapClientTransportTest {
             var frames = client.stackTrace(1).get(10, TimeUnit.SECONDS);
 
             var request = session.stackTraceRequests.get(session.stackTraceRequests.size() - 1);
-            assertNull(request.getLevels());
-            assertNull(request.getStartFrame());
-            assertEquals(1_500, frames.size());
+            assertEquals(DapClient.STACK_FRAME_LIMIT, request.getLevels());
+            assertEquals(0, request.getStartFrame());
+            assertEquals(DapClient.STACK_FRAME_LIMIT, frames.size());
+            assertEquals(1, frames.get(0).id(), "the innermost frames are kept");
             client.dispose();
         }
-    }
-
-    @Test
-    void pagingFollowsTheAdaptersCapability() {
-        assertFalse(DapClient.pagesStackTraces(null));
-        assertFalse(DapClient.pagesStackTraces(new Capabilities()));
-        Capabilities paging = new Capabilities();
-        paging.setSupportsDelayedStackTraceLoading(true);
-        assertTrue(DapClient.pagesStackTraces(paging));
     }
 }

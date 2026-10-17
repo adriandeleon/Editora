@@ -1105,6 +1105,18 @@ final class DebugCoordinator {
                 panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
                 host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
+
+            @Override
+            public void onAdapterLost() {
+                String message = tr("status.debug.adapterLost");
+                panel().appendNotice(message);
+                host.setStatus(message);
+            }
+
+            @Override
+            public void onStatus(String message) {
+                host.setStatus(message);
+            }
         };
     }
 

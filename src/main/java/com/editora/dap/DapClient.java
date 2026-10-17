@@ -127,6 +127,9 @@ public final class DapClient implements IDebugProtocolClient {
         /** The debuggee exited with {@code exitCode} (the adapter's {@code exited} event). */
         default void onExited(int exitCode) {}
 
+        /** The process id of the program the adapter launched (java-debug's {@code processid} event). */
+        default void onProcessId(long pid) {}
+
         /**
          * The adapter asks the client to start the debuggee itself ({@code runInTerminal}): {@code argv} in
          * {@code cwd} with {@code env} on top of the client's environment (a null value unsets a variable).
@@ -531,17 +534,21 @@ public final class DapClient implements IDebugProtocolClient {
         // configurationDone; the adapter processes them in order. We don't need the responses for the
         // handshake.
         try {
-            for (DapModels.FileBreakpoints fb : initialBreakpoints) {
-                sendSetBreakpoints(fb);
-            }
-            List<String> filters = effectiveExceptionFilters();
-            if (!filters.isEmpty()) {
-                SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
-                ex.setFilters(filters.toArray(new String[0]));
-                ignore(timed(server.setExceptionBreakpoints(ex)));
+            synchronized (configurationLock) {
+                // Configured from here on: a breakpoint change made while this runs waits for the lock and then
+                // goes on the wire after the set sent here, never before it (which this set would overwrite).
+                configured = true;
+                for (DapModels.FileBreakpoints fb : initialBreakpoints) {
+                    setBreakpointsNow(fb);
+                }
+                List<String> filters = effectiveExceptionFilters();
+                if (!filters.isEmpty()) {
+                    SetExceptionBreakpointsArguments ex = new SetExceptionBreakpointsArguments();
+                    ex.setFilters(filters.toArray(new String[0]));
+                    ignore(timed(server.setExceptionBreakpoints(ex)));
+                }
             }
             ignore(timed(server.configurationDone(new ConfigurationDoneArguments())));
-            configured = true; // later filter/breakpoint changes must now go on the wire themselves
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "configuration phase failed", e);
         }
@@ -593,6 +600,24 @@ public final class DapClient implements IDebugProtocolClient {
     public void userNotification(UserNotification args) {
         if (args != null && args.message != null && !args.message.isBlank() && !disposed) {
             host.onNotice(args.message.strip(), "ERROR".equalsIgnoreCase(args.notificationType));
+        }
+    }
+
+    /** The body of java-debug's {@code processid} event (not part of the protocol). */
+    public static final class ProcessIdNotification {
+        long processId;
+        long shellProcessId;
+    }
+
+    /**
+     * java-debug's word on which process it launched: the debuggee it started inside jdtls. Without it a
+     * session whose adapter died (jdtls crashed) could not end that program, which then ran on with nothing
+     * left to stop it.
+     */
+    @JsonNotification("processid")
+    public void processId(ProcessIdNotification args) {
+        if (args != null && args.processId > 0 && !disposed) {
+            host.onProcessId(args.processId);
         }
     }
 
@@ -836,14 +861,34 @@ public final class DapClient implements IDebugProtocolClient {
 
     // --- Requests (raw futures; DapManager marshals to FX + maps to neutral records) -------------
 
-    /** (Re)sends the breakpoints for a single file (used live while running, and during configuration). */
+    /**
+     * (Re)sends the breakpoints for a single file while the session runs. Before the adapter's
+     * {@code initialized} event has installed the configuration the set is only remembered, because
+     * {@link #initialized} sends it: java-debug refuses a {@code setBreakpoints} that arrives while it is still
+     * starting the program ("Empty debug session."), and the breakpoint was then shown as rejected.
+     */
     public CompletableFuture<Void> sendSetBreakpoints(DapModels.FileBreakpoints fb) {
         if (fb != null && root == null) {
-            rememberBreakpoints(fb); // a child session started later must begin with the current set
             for (DapClient child : children) {
                 child.sendSetBreakpoints(fb); // each session holds its own breakpoints
             }
         }
+        synchronized (configurationLock) {
+            if (fb != null) {
+                rememberBreakpoints(fb); // a child session started later, and initialized(), begin with this set
+            }
+            if (!configured) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return setBreakpointsNow(fb); // only queues the request: holding the lock here never waits on I/O
+        }
+    }
+
+    /** Orders a live breakpoint change after the set {@link #initialized} installs (see there). */
+    private final Object configurationLock = new Object();
+
+    /** Sends {@code setBreakpoints} for {@code fb}'s file and reports the adapter's answer. */
+    private CompletableFuture<Void> setBreakpointsNow(DapModels.FileBreakpoints fb) {
         if (server == null || fb == null || fb.file() == null || !paths.owns(fb.file())) {
             // A file on another machine: its name means nothing to this adapter (or names a different file).
             return CompletableFuture.completedFuture(null);
@@ -1021,20 +1066,24 @@ public final class DapClient implements IDebugProtocolClient {
         }
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
-        if (pagesStackTraces(capabilities)) {
-            a.setStartFrame(0);
-            a.setLevels(STACK_FRAME_LIMIT);
-        }
+        // Always a window: java-debug reads startFrame/levels without advertising supportsDelayedStackTraceLoading
+        // (so the guard never applied to Java), and per the protocol an adapter that does not page ignores them.
+        a.setStartFrame(0);
+        a.setLevels(STACK_FRAME_LIMIT);
         return timed(server.stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
             if (r != null && r.getStackFrames() != null) {
                 for (StackFrame f : r.getStackFrames()) {
+                    if (out.size() == STACK_FRAME_LIMIT) {
+                        break; // an adapter that sent everything anyway: the innermost frames are the ones that matter
+                    }
                     out.add(new DapModels.StackFrameInfo(
                             f.getId(),
                             f.getName(),
                             sourcePath(f.getSource(), paths),
                             f.getLine() - 1, // back to 0-based line
-                            f.getColumn()));
+                            f.getColumn(),
+                            sourceUri(f.getSource())));
                 }
             }
             return out;
@@ -1048,11 +1097,6 @@ public final class DapClient implements IDebugProtocolClient {
      */
     static final int STACK_FRAME_LIMIT = 1000;
 
-    /** Pure: whether the adapter honours {@code startFrame}/{@code levels} (null-safe). */
-    static boolean pagesStackTraces(Capabilities capabilities) {
-        return capabilities != null && Boolean.TRUE.equals(capabilities.getSupportsDelayedStackTraceLoading());
-    }
-
     /**
      * A frame's source as a local path, or {@code null} when it has none. Adapters put strings that are not
      * file paths into {@code Source.path} — {@code <node_internals>/…}, {@code jdt://contents/…}, {@code
@@ -1061,6 +1105,16 @@ public final class DapClient implements IDebugProtocolClient {
      */
     static Path sourcePath(Source source) {
         return sourcePath(source, DapPaths.LOCAL);
+    }
+
+    /**
+     * The adapter's name for a frame's source when it is a URI rather than a file path — java-debug's
+     * {@code jdt://contents/java.base/java.lang/String.class?…} for a JDK or library class — else null. Kept as
+     * the adapter sent it: made into a {@link Path} it loses a slash and can no longer be asked for its text.
+     */
+    static String sourceUri(Source source) {
+        String path = source == null ? null : source.getPath();
+        return path != null && path.startsWith("jdt://") ? path : null;
     }
 
     /** As {@link #sourcePath(Source)}, for an adapter that names files by {@code paths}. */
