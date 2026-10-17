@@ -1509,7 +1509,9 @@ A backlog of planned features and improvements. Unordered within each section.
 - [x] Mermaid diagrams — `.mmd` files + ` ```mermaid ` blocks in the preview (mmdc), export to SVG/PNG/PDF,
       live `maid` linting (squiggles), keyword + snippet autocomplete (Settings → Mermaid, off by default)
 - [x] Welcome page — VSCode-style editor-area empty state (New File / Open File / recent) shown when no
-      files are open, replacing the empty Untitled buffer; `--new-file[=name]` bypass
+      files are open, replacing the empty Untitled buffer; `--new-file[=name]` bypass; reworked after the 2026-10-17 UI review
+      (Recent Projects, numbered entries, Customize keymap/theme, zoom-scaled layout, editor-area hint once
+      the last tab closes)
 - [x] UI localization (i18n) — interface translated to English, Italian, Spanish, French, Portuguese,
       German; language picker in Settings → Appearance (applies on restart); key-parity test
 - [x] Settings window redesign — sidebar categories, search, live preview, Reset to Defaults; Tool

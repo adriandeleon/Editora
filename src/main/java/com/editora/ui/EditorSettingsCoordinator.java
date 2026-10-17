@@ -601,6 +601,9 @@ final class EditorSettingsCoordinator {
         if (host.settingsWindow() != null) {
             host.settingsWindow().syncThemes();
         }
+        if (host.welcomeTab() != null) {
+            host.welcomePane().refresh(); // its Customize block names the theme
+        }
         host.setStatus(tr("status.appTheme", name));
     }
 
