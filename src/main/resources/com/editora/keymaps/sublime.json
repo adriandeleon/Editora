@@ -40,7 +40,7 @@
   "C-,": "view.settings",
   "M-S-h": "tool.fileHistory",
   "C-M-S-h": "git.fileHistory",
-  "f11": "window.fullScreen",
+  "f11": "debug.stepIntoOrFullScreen",
   "C-=": "view.textZoomIn",
   "C-S-=": "view.textZoomIn",
   "C--": "view.textZoomOut",
@@ -64,5 +64,12 @@
   "C-S-k": "edit.deleteLine",
   "C-l": "edit.selectLine",
   "C-]": "edit.indentLines",
-  "C-[": "edit.outdentLines"
+  "C-[": "edit.outdentLines",
+  "f5": "debug.start",
+  "S-f5": "debug.stop",
+  "C-S-f5": "debug.restart",
+  "f9": "debug.toggleBreakpoint",
+  "f10": "debug.stepOver",
+  "S-f11": "debug.stepOut",
+  "C-M-f": "window.fullScreen"
 }

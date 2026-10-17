@@ -69,5 +69,9 @@
   "M-S-j": "edit.undoLastCaret",
   "S-enter": "edit.insertLineBelow",
   "C-M-enter": "edit.insertLineAbove",
-  "C-y": "edit.deleteLine"
+  "C-y": "edit.deleteLine",
+  "C-f5": "debug.restart",
+  "M-f8": "debug.evaluate",
+  "C-M-f8": "debug.showValue",
+  "C-S-f9": "debug.breakpoints"
 }

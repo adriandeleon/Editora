@@ -2081,6 +2081,30 @@ final class WindowCommandRegistrar {
                         "tool.debug",
                         () -> host.debugCoordinator()
                                 .ifDebug(() -> host.toolWindows().toggle(host.debugToolWindow()))));
+        // Review C: the breakpoints list, Mute, Enable/Disable at the caret, Show Value at Caret, and F11 of the
+        // CUA / Sublime keymaps (Step Into while paused, Full Screen otherwise — VS Code's F11).
+        host.registry()
+                .register(Command.of(
+                        "debug.breakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.muteBreakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMuteBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleBreakpointEnabled",
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator()::toggleBreakpointEnabledAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.showValue",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showValueAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.stepIntoOrFullScreen",
+                        () -> host.debugCoordinator()
+                                .stepIntoOrElse(() -> host.registry().run("window.fullScreen"))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         host.registry()
                 .register(Command.of(

@@ -237,6 +237,8 @@ final class MenuBarModel {
                                 "edit.expandAbbrev")),
                 new MenuSpec(
                         "menubar.run",
+                        // Every debugger action has a place here (review C10): Pause, Restart, Run to Cursor,
+                        // Evaluate and the breakpoint list were reachable only from the palette.
                         List.of(
                                 "file.run",
                                 "file.runWithArgs",
@@ -245,16 +247,35 @@ final class MenuBarModel {
                                 "run.stop",
                                 SEPARATOR,
                                 "debug.start",
+                                "debug.mainClass",
+                                "debug.attach",
                                 "debug.stop",
-                                "debug.toggleBreakpoint",
+                                "debug.restart",
                                 SEPARATOR,
+                                "debug.continue",
+                                "debug.pause",
                                 "debug.stepOver",
                                 "debug.stepInto",
                                 "debug.stepOut",
-                                "debug.continue",
+                                "debug.runToCursor",
+                                SEPARATOR,
+                                "debug.evaluate",
+                                "debug.showValue",
+                                "debug.addWatch",
+                                "debug.toggleBreakpoint",
+                                submenu("menubar.run.breakpoints"),
                                 SEPARATOR,
                                 "test.run",
-                                "test.rerunFailed")),
+                                "test.rerunFailed"),
+                        List.of(new MenuSpec(
+                                "menubar.run.breakpoints",
+                                List.of(
+                                        "debug.toggleBreakpointEnabled",
+                                        "debug.editBreakpoint",
+                                        "debug.breakpoints",
+                                        "debug.muteBreakpoints",
+                                        SEPARATOR,
+                                        "debug.toggleExceptionBreakpoints")))),
                 new MenuSpec(
                         "menubar.vcs",
                         // What is used every day stays at the top level; the rest is grouped below.
