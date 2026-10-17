@@ -634,6 +634,15 @@ final class WindowCommandRegistrar {
                                         host.httpClient()::applySupport)));
         host.registry()
                 .register(Command.of(
+                        "http.toggleInlineResults",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "http.toggleInlineResults",
+                                        () -> host.config().getSettings().isHttpInlineResults(),
+                                        v -> host.config().getSettings().setHttpInlineResults(v),
+                                        host.httpClient()::applySupport)));
+        host.registry()
+                .register(Command.of(
                         "view.toggleDebug",
                         () -> host.editorSettings()
                                 .toggleSetting(
@@ -2048,6 +2057,19 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isDebugProgramConsole(),
                                         v -> host.config().getSettings().setDebugProgramConsole(v),
                                         host.debugCoordinator()::applySupport)));
+        // Fixer B: the Caught / Uncaught exception-breakpoint toggles (checked in the Run menu).
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.caught",
+                        () -> host.debugCoordinator().exceptionToggleOn(true),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(true))));
+        host.registry()
+                .register(Command.toggle(
+                        "debug.exceptions.uncaught",
+                        () -> host.debugCoordinator().exceptionToggleOn(false),
+                        () -> host.debugCoordinator()
+                                .ifDebug(() -> host.debugCoordinator().toggleExceptionKind(false))));
         host.registry()
                 .register(Command.of(
                         "debug.addWatch", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatch)));
@@ -2076,11 +2098,48 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "debug.toggleExceptionBreakpoints",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleExceptionBreakpoints)));
+        // Java code changes and frame control: hot code replace, restart frame, smart step into.
+        host.registry()
+                .register(Command.of(
+                        "debug.applyCodeChanges",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::applyCodeChanges)));
+        host.registry()
+                .register(Command.of(
+                        "debug.restartFrame",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restartFrame)));
+        host.registry()
+                .register(Command.of(
+                        "debug.smartStepInto",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::smartStepInto)));
         host.registry()
                 .register(Command.of(
                         "tool.debug",
                         () -> host.debugCoordinator()
                                 .ifDebug(() -> host.toolWindows().toggle(host.debugToolWindow()))));
+        // Review C: the breakpoints list, Mute, Enable/Disable at the caret, Show Value at Caret, and F11 of the
+        // CUA / Sublime keymaps (Step Into while paused, Full Screen otherwise — VS Code's F11).
+        host.registry()
+                .register(Command.of(
+                        "debug.breakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.muteBreakpoints",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMuteBreakpoints)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleBreakpointEnabled",
+                        () -> host.debugCoordinator()
+                                .ifDebug(host.debugCoordinator()::toggleBreakpointEnabledAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.showValue",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showValueAtCaret)));
+        host.registry()
+                .register(Command.of(
+                        "debug.stepIntoOrFullScreen",
+                        () -> host.debugCoordinator()
+                                .stepIntoOrElse(() -> host.registry().run("window.fullScreen"))));
         // LSP. Gated by the "Enable LSP" setting (default off); commands no-op with a status when off.
         host.registry()
                 .register(Command.of(

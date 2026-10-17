@@ -115,7 +115,10 @@ class LineMarkManagersFxTest {
             assertEquals("No executable code here", manager.tooltip(2));
             assertEquals("conditional unverified", manager.styleClasses(3), "the adapter has not answered yet");
             assertEquals(LiveState.PENDING, manager.live(3).state());
-            assertNull(manager.tooltip(3), "nothing to say about an unanswered one");
+            assertEquals(
+                    com.editora.i18n.Messages.tr("debug.breakpoint.condition", "ok"),
+                    manager.tooltip(3),
+                    "an unanswered one has no session text, but still names its condition");
             assertEquals("disabled", manager.styleClasses(4), "a disabled breakpoint is never sent");
             assertNull(manager.live(4));
             assertNull(manager.live(0));

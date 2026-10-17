@@ -102,8 +102,7 @@ class SettingsMinWidthFxTest {
                         }
                     }
                     stage.getScene().getRoot().applyCss();
-                    stage.getScene().getRoot().layout();
-                    stage.getScene().getRoot().layout(); // the scrollbar shows or hides after the first pass
+                    stage.getScene().getRoot().layout(); // one pass: the edge must not wait on the scrollbar
                     javafx.scene.Node card = stage.getScene().getRoot().lookup(".settings-page .settings-card");
                     rightEdge.put(
                             page, card.localToScene(card.getBoundsInLocal()).getMaxX());

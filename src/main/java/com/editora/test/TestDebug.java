@@ -19,8 +19,11 @@ public final class TestDebug {
 
     private TestDebug() {}
 
-    /** The Maven/Gradle flag that forks the test JVM suspended on a JDWP port. */
-    private static final String MAVEN_DEBUG = "-Dmaven.surefire.debug";
+    /**
+     * The Maven/Gradle flag that forks the test JVM suspended on a JDWP port: for Maven one the system picks
+     * (surefire's own default is a fixed 5005, review A15); Gradle's {@code --debug-jvm} has no such choice.
+     */
+    private static final String MAVEN_DEBUG = "-Dmaven.surefire.debug=" + com.editora.build.BuildDebug.JDWP_AGENT;
 
     private static final String GRADLE_DEBUG = "--debug-jvm";
 

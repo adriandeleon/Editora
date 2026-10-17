@@ -385,6 +385,7 @@ public class SettingsWindow {
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox httpScriptsCheck;
+    private CheckBox httpInlineResultsCheck;
     private TextField httpNodeField;
     private Spinner<Integer> httpScriptTimeoutSpinner;
     private CheckBox htmlPreviewCheck;
@@ -419,6 +420,12 @@ public class SettingsWindow {
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     private CheckBox debugProgramConsoleCheck;
+    /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
+    private ComboBox<String> debugHotCodeReplaceCombo;
+
+    private CheckBox debugStepFiltersCheck;
+    private CheckBox debugShowStaticsCheck;
+    private TextField debugExceptionTypesField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -800,6 +807,9 @@ public class SettingsWindow {
         };
     }
 
+    /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
+    private Label javaDebugLspNote;
+
     /**
      * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
      * button for the {@code typst} CLI is tracked as {@code typst} too, and sharing the key left one of the two
@@ -918,23 +928,33 @@ public class SettingsWindow {
         searchEmpty.setWrapText(true);
         searchEmpty.setVisible(false);
 
-        contentScroll = new ScrollPane();
+        contentScroll = new ScrollPane() {
+            // A page is never wider than the viewport beside a vertical scrollbar, so a short page keeps the
+            // room a long page's scrollbar takes and the cards' right edges (and the switches on them) sit at
+            // the same x on every page. The cap is set here, before the skin lays out, not from the bar's
+            // visibility: the skin flips that inside this same pass, and the relayout a padding change then
+            // asked for could be lost — the MCP page ended a scrollbar's width further right on macOS.
+            @Override
+            protected void layoutChildren() {
+                if (getContent() instanceof Region page) {
+                    page.setMaxWidth(Math.max(0, getWidth() - snappedLeftInset() - snappedRightInset() - barWidth()));
+                }
+                super.layoutChildren();
+            }
+
+            private double barWidth() {
+                for (Node n : getChildrenUnmodifiable()) {
+                    if (n instanceof javafx.scene.control.ScrollBar bar
+                            && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
+                        return snapSizeX(bar.prefWidth(-1));
+                    }
+                }
+                return 0; // no skin yet
+            }
+        };
         contentScroll.setFitToWidth(true);
         contentScroll.getStyleClass().add("settings-content");
         HBox.setHgrow(contentScroll, Priority.ALWAYS);
-        // A short page keeps the room a long page's scrollbar takes, so the cards' right edges (and the
-        // switches on them) sit at the same x on every page.
-        contentScroll.skinProperty().addListener((o, was, skin) -> {
-            for (Node n : contentScroll.lookupAll(".scroll-bar")) {
-                if (n instanceof javafx.scene.control.ScrollBar bar
-                        && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
-                    Runnable reserve = () ->
-                            contentScroll.setPadding(new Insets(0, bar.isVisible() ? 0 : bar.prefWidth(-1), 0, 0));
-                    bar.visibleProperty().addListener((ob, a, b) -> reserve.run());
-                    reserve.run();
-                }
-            }
-        });
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
@@ -1626,6 +1646,11 @@ public class SettingsWindow {
             apply();
             refreshHttpNodeStatus();
         });
+        httpInlineResultsCheck = new CheckBox(tr("settings.httpClient.inlineResults"));
+        httpInlineResultsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setHttpInlineResults(now);
+            apply();
+        });
         httpNodeField = new TextField();
         httpNodeField.setPromptText("node");
         commitOnEnterOrBlur(httpNodeField, () -> config.getSettings().getHttpNodePath(), now -> {
@@ -1821,6 +1846,43 @@ public class SettingsWindow {
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
         debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugProgramConsole(now);
+            apply();
+        });
+        debugHotCodeReplaceCombo = new ComboBox<>();
+        debugHotCodeReplaceCombo.getItems().setAll("auto", "manual", "off");
+        debugHotCodeReplaceCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return key == null ? "" : tr("settings.debug.hotCodeReplace." + key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        debugHotCodeReplaceCombo.setMinWidth(170);
+        debugHotCodeReplaceCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugHotCodeReplace(now);
+            apply();
+        });
+        debugStepFiltersCheck = new CheckBox(tr("settings.debug.stepFilters"));
+        debugStepFiltersCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugStepFilters(now);
+            apply();
+        });
+        debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
+        debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugShowStatics(now);
+            apply();
+        });
+        debugExceptionTypesField = new TextField();
+        debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
+        commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
+            config.getSettings().setDebugExceptionTypes(now);
             apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
@@ -3884,6 +3946,12 @@ public class SettingsWindow {
                 httpCheck,
                 tr("settings.httpClient.hint"),
                 "http client rest request enable run send response built-in");
+        checkRow(
+                http,
+                Category.WEB,
+                httpInlineResultsCheck,
+                tr("settings.httpClient.inlineResultsHint"),
+                "http client result status inline request line gutter run outcome editor ghost");
         checkRow(
                 http,
                 Category.WEB,
@@ -6136,12 +6204,40 @@ public class SettingsWindow {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
             if ("java".equals(dbg.id())) {
+                // Java debugging runs through the Java language server: the card says when that is off (review
+                // C6); its Install (below) fetches jdtls and java-debug together, as the LSP page's Java row does.
+                javaDebugLspNote = note("");
+                javaDebugLspNote.setWrapText(true);
+                javaDebugLspNote.setMaxWidth(440);
+                cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
                 checkRow(
                         c,
                         Category.DEBUG,
                         debugProgramConsoleCheck,
                         tr("settings.debug.programConsole.hint"),
                         "debug java console input stdin standard input program terminal type");
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.hotCodeReplace"),
+                        tr("settings.debug.hotCodeReplace.hint"),
+                        debugHotCodeReplaceCombo,
+                        "debug java hot code replace hotswap apply code changes reload save running");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugStepFiltersCheck,
+                        tr("settings.debug.stepFilters.hint"),
+                        "debug java step into filter skip jdk library synthetic");
+                checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
+                debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.exceptionTypes"),
+                        tr("settings.debug.exceptionTypes.hint"),
+                        debugExceptionTypesField,
+                        "debug java exception breakpoint class type filter caught uncaught");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(
@@ -6196,7 +6292,9 @@ public class SettingsWindow {
                                                 configured, java.nio.file.Path.of(System.getProperty("user.home", "")))
                                         .map(Object::toString)
                                         .orElse(null);
-                                javafx.application.Platform.runLater(() -> cb.accept(jar != null, jar));
+                                // A jdtls that ships java-debug has no jar to find (review A7).
+                                boolean served = jar == null && dapManager != null && dapManager.isJavaDebugInstalled();
+                                javafx.application.Platform.runLater(() -> cb.accept(jar != null || served, jar));
                             });
                         }),
                 new DebugAdapterUi(
@@ -6985,6 +7083,15 @@ public class SettingsWindow {
                 status.checking();
                 dbg.detect().accept((found, detail) -> status.show(found, detail, debugCheck.isSelected()));
             }
+        }
+        if (javaDebugLspNote != null) {
+            var st = config.getSettings();
+            String why = !st.isLspSupport()
+                    ? tr("status.debug.javaNeedsLsp")
+                    : !st.isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
+            javaDebugLspNote.setText(why);
+            javaDebugLspNote.setVisible(!why.isEmpty());
+            javaDebugLspNote.setManaged(!why.isEmpty());
         }
     }
 
@@ -7891,6 +7998,7 @@ public class SettingsWindow {
             refreshRipgrepStatus();
             httpCheck.setSelected(settings.isHttpClientSupport());
             httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
+            httpInlineResultsCheck.setSelected(settings.isHttpInlineResults());
             httpNodeField.setText(settings.getHttpNodePath());
             refreshHttpNodeStatus();
             syncHtmlBrowser();
@@ -7930,6 +8038,10 @@ public class SettingsWindow {
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
+            debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
+            debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
+            debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
+            debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

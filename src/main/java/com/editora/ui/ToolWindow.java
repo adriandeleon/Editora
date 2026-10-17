@@ -34,6 +34,21 @@ public final class ToolWindow {
     private Region content;
     private final String commandId;
 
+    /** The share of the window's height this bottom window takes on its first open (0: its side's default). */
+    private double firstOpenShare;
+
+    /**
+     * A bottom window that is unusable at the default strip height asks for more on its first open: the Debug
+     * window showed one variable row in a 1000×650 window (review C4). The user's own size wins afterwards.
+     */
+    public void setFirstOpenShare(double share) {
+        this.firstOpenShare = Math.max(0, Math.min(0.8, share));
+    }
+
+    public double firstOpenShare() {
+        return firstOpenShare;
+    }
+
     public ToolWindow(
             String id, String title, Side side, Supplier<Node> iconSupplier, Region content, String commandId) {
         this(id, title, side, iconSupplier, (Supplier<Region>) null, commandId);

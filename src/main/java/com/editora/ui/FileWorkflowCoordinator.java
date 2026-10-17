@@ -197,6 +197,10 @@ final class FileWorkflowCoordinator {
         /** {@code file} was just written by a save (a user snippet file's snippets go live at once). */
         void fileSaved(Path file);
 
+        /** A user save (not an autosave) of {@code buffer} has reached its language server: a Java debug session
+         *  may load the change into the running program (hot code replace). */
+        default void sourceSaved(EditorBuffer buffer) {}
+
         Path tabPath(Tab tab);
 
         void requestSave();
@@ -2800,6 +2804,7 @@ final class FileWorkflowCoordinator {
             if (!autoSave) {
                 host.refreshBuildTools();
                 host.indexCoordinator().onBufferSaved(request.buffer());
+                host.sourceSaved(request.buffer()); // after didSave: the build it may start reads the saved text
             }
         }
     }

@@ -77,5 +77,6 @@
   "Cmd-S-k": "edit.deleteLine",
   "Cmd-l": "edit.selectLine",
   "Cmd-]": "edit.indentLines",
-  "Cmd-[": "edit.outdentLines"
+  "Cmd-[": "edit.outdentLines",
+  "f6": "debug.pause"
 }

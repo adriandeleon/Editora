@@ -722,7 +722,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.palette = new CommandPalette(registry, keymap, () -> {
             Chrome.PaletteGates gates = paletteGates();
             Chrome.PaletteContext context = paletteContext();
-            return c -> Chrome.paletteEnabled(c.id(), gates, context);
+            return c -> Chrome.paletteEnabled(c.id(), gates, context) && jumpPossible(c.id());
         });
         // Tooltip on a grayed row explaining why, and naming the command that would re-enable it.
         this.palette.setDisabledReason(c -> disabledCommandReason(c.id()));
@@ -1082,7 +1082,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String disabledCommandReason(String commandId) {
         Chrome.DisabledReason reason = Chrome.disabledReason(commandId, paletteGates(), paletteContext());
         if (reason == null) {
-            return null;
+            return jumpPossible(commandId) ? null : tr("status.debug.jumpUnsupported");
         }
         if (reason.commandArg() == null) {
             return tr(reason.messageKey());
@@ -1104,6 +1104,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (menuBar != null) {
             menuBar.refreshEnablement();
         }
+    }
+
+    /** Jump to Line is greyed while paused in a debugger that cannot do it (java-debug has no goto). */
+    private boolean jumpPossible(String commandId) {
+        return !"debug.jumpToLine".equals(commandId)
+                || dapManager.state() != com.editora.dap.DapManager.State.SUSPENDED
+                || dapManager.supportsJumpToLine();
     }
 
     private Chrome.PaletteContext paletteContext() {
@@ -2472,7 +2479,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
                     public void openToolWindow() {
-                        toolWindows.open(debugToolWindow);
+                        toolWindows.open(debugToolWindow, false); // never takes focus (review C2)
+                    }
+
+                    @Override
+                    public String chordFor(String commandId) {
+                        return keymap.displayChord(commandId);
                     }
 
                     @Override
@@ -2524,6 +2536,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public List<com.editora.config.RunConfiguration> runConfigurations() {
+                        return runConfigurations.savedConfigs();
+                    }
+
+                    @Override
                     public String pythonInterpreterChoice() {
                         return config.getWorkspaceState().getPythonInterpreter();
                     }
@@ -2565,6 +2582,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public void openLibraryFrame(
+                            Path anchor, String uri, int line0, java.util.function.Consumer<EditorBuffer> opened) {
+                        lspCoordinator.openLibraryFrame(anchor, uri, line0, opened);
+                    }
+
+                    @Override
+                    public java.util.Map<String, List<String>> debugExceptionFilters() {
+                        return config.getWorkspaceState().getDebugExceptionFilters();
+                    }
+
+                    @Override
+                    public void persistDebugExceptionFilters(java.util.Map<String, List<String>> filters) {
+                        config.getWorkspaceState().setDebugExceptionFilters(filters);
+                        config.save();
+                    }
+
+                    @Override
                     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
                         return config.getBreakpoints();
                     }
@@ -2580,6 +2614,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
         debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(
                 "externalTool",
                 "toolwindow.externalTools",
@@ -2632,7 +2667,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public boolean dapAvailable(String language) {
-                return dapManager.isLanguageAvailable(language);
+                return "java".equals(language)
+                        ? dapManager.isJavaDebugInstalled()
+                        : dapManager.isLanguageAvailable(language);
             }
 
             @Override
@@ -4534,6 +4571,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void sourceSaved(EditorBuffer buffer) {
+            if (debugCoordinator != null) {
+                debugCoordinator.sourceSaved(buffer); // hot code replace into a running Java session
+            }
+        }
+
+        @Override
         public void editorConfigSaved() {
             if (windowManager == null) {
                 applyEditorConfigLocal();
@@ -6178,9 +6222,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String debugUnavailableMessage() {
+            return debugCoordinator.unavailableMessage(
+                    "java", activeBuffer() == null ? null : activeBuffer().getPath());
+        }
+
+        @Override
         public void attachDebugger(String className, String host, int port) {
             setStatus(tr("status.testrunner.debugAttaching", port));
-            testNavigation.resolveTestClassAnchor(className, a -> debugCoordinator.attachToPort(a, host, port));
+            testNavigation.resolveTestClassAnchor(
+                    className, a -> debugCoordinator.attachToPort(a, host, port, testRunCoordinator::stop));
         }
     });
 
@@ -6657,6 +6708,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public boolean debugFeatureEnabled() {
                     return debugCoordinator != null && debugCoordinator.debugSupportEnabled();
+                }
+
+                @Override
+                public boolean javaDebugFromServer() {
+                    return lspManager.javaDebugCommandsAvailable();
                 }
 
                 @Override

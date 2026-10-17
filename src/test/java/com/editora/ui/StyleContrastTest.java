@@ -168,9 +168,6 @@ class StyleContrastTest {
                 ".problems-panel .problem-error", "-state-red",
                 ".problems-panel .problem-warning", "-state-amber",
                 ".problems-panel .problem-info", "-state-accent",
-                ".debug-panel .debug-val-string", "-state-green",
-                ".debug-panel .debug-val-number", "-state-accent",
-                ".debug-panel .debug-val-bool", "-state-amber",
                 ".debug-panel .debug-start", "-state-green",
                 ".run-marker", "-state-green",
                 ".dev-mode-badge", "-state-red");

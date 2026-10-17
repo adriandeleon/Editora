@@ -39,4 +39,15 @@ final class FxlessAccess {
             throw new AssertionError("parseMainClasses is the contract under test", e);
         }
     }
+
+    /** The folder of compiled classes the current launch keeps ({@code null}: none). */
+    static java.nio.file.Path compilationDirectory(DapManager dap) {
+        try {
+            java.lang.reflect.Field f = DapManager.class.getDeclaredField("compilationDirectory");
+            f.setAccessible(true);
+            return (java.nio.file.Path) f.get(dap);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("compilationDirectory is the state under test", e);
+        }
+    }
 }

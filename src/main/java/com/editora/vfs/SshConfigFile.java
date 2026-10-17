@@ -1,6 +1,7 @@
 package com.editora.vfs;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.SocketAddress;
@@ -127,32 +128,53 @@ final class SshConfigFile implements HostConfigEntryResolver {
         }
     }
 
-    /** The files an {@code Include} names: {@code ~} is home, a relative name is under {@code ~/.ssh}; globs sorted. */
+    /**
+     * The files an {@code Include} names: {@code ~} is home, a relative name is under {@code ~/.ssh}; a glob in the
+     * last segment lists that directory, sorted. Glob characters never reach {@code Path.of} — Windows refuses
+     * {@code *} and {@code ?} in a path — so only the directory part is turned into a path.
+     */
     private List<Path> resolveInclude(String name) {
         Path sshDir = config.toAbsolutePath().getParent();
         Path home = sshDir.getParent();
-        Path path;
+        Path base = sshDir;
+        String rest = name;
         if (name.equals("~") || name.startsWith("~/")) {
-            path = home.resolve(name.length() <= 2 ? "" : name.substring(2));
-        } else {
-            path = Path.of(name).isAbsolute() ? Path.of(name) : sshDir.resolve(name);
+            base = home;
+            rest = name.length() <= 2 ? "" : name.substring(2);
         }
-        String leaf = path.getFileName() == null ? "" : path.getFileName().toString();
-        if (leaf.indexOf('*') < 0 && leaf.indexOf('?') < 0) {
-            return List.of(path);
-        }
-        List<Path> matches = new ArrayList<>();
-        try (DirectoryStream<Path> dir = Files.newDirectoryStream(path.getParent(), leaf)) {
-            dir.forEach(p -> {
-                if (Files.isRegularFile(p)) {
-                    matches.add(p);
-                }
-            });
+        String[] split = splitLeaf(rest, File.separatorChar == '\\');
+        String leaf = split[1];
+        try {
+            Path dir = split[0].isEmpty() ? base : base.resolve(split[0]); // an absolute directory replaces base
+            if (!isGlob(leaf)) {
+                return List.of(leaf.isEmpty() ? dir : dir.resolve(leaf));
+            }
+            List<Path> matches = new ArrayList<>();
+            try (DirectoryStream<Path> entries = Files.newDirectoryStream(dir, leaf)) {
+                entries.forEach(p -> {
+                    if (Files.isRegularFile(p)) {
+                        matches.add(p);
+                    }
+                });
+            }
+            matches.sort(null);
+            return matches;
         } catch (IOException | RuntimeException e) {
-            return List.of();
+            return List.of(); // a glob in a directory segment, a missing directory, a bad pattern: nothing from it
         }
-        matches.sort(null);
-        return matches;
+    }
+
+    /** {@code name} as {@code {directory part with its trailing separator, last segment}}. Pure. */
+    static String[] splitLeaf(String name, boolean backslashToo) {
+        int cut = name.lastIndexOf('/');
+        if (backslashToo) {
+            cut = Math.max(cut, name.lastIndexOf('\\'));
+        }
+        return new String[] {name.substring(0, cut + 1), name.substring(cut + 1)};
+    }
+
+    static boolean isGlob(String segment) {
+        return segment.indexOf('*') >= 0 || segment.indexOf('?') >= 0 || segment.indexOf('[') >= 0;
     }
 
     private static String unquote(String s) {

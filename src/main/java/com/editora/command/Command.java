@@ -59,6 +59,39 @@ public interface Command {
         };
     }
 
+    /**
+     * A command that turns something on or off. The menu bar shows it with a check mark while {@link #isOn()}
+     * holds; it is asked again each time a menu opens.
+     */
+    interface Toggle extends Command {
+        boolean isOn();
+    }
+
+    /** A {@link Toggle} titled from {@code "command." + id}, like {@link #of(String, Runnable)}. */
+    static Command toggle(String id, java.util.function.BooleanSupplier on, Runnable action) {
+        return new Toggle() {
+            @Override
+            public String id() {
+                return id;
+            }
+
+            @Override
+            public String title() {
+                return com.editora.i18n.Messages.tr("command." + id);
+            }
+
+            @Override
+            public void run() {
+                action.run();
+            }
+
+            @Override
+            public boolean isOn() {
+                return on.getAsBoolean();
+            }
+        };
+    }
+
     static Command of(String id, String title, Runnable action) {
         return new Command() {
             @Override

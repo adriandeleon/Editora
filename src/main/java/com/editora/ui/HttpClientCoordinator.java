@@ -193,6 +193,7 @@ final class HttpClientCoordinator {
                 this::persistedEnvironment,
                 environments::putIfAbsent, // a remembered environment never replaces this file's own choice
                 this::refreshEnvironments);
+        history.setOnRestored(this::refreshInlineResults); // a restored history shows on the request lines too
         this.actions = new HttpResponseActions(host, ops);
         service.setRedirectGuard(new HttpRedirectGuard(host, ops::history));
     }
@@ -237,6 +238,7 @@ final class HttpClientCoordinator {
             pills.remove(buffer);
             environmentNames.remove(buffer);
             buffer.setHttpPreviewNode(null); // resets the buffer to EDITOR
+            buffer.setHttpResults(List.of()); // no History behind them any more
             HttpClientPanel gone = panels.remove(buffer);
             history.detached(buffer);
             HttpClientService.Handle run = running.remove(buffer);
@@ -338,7 +340,10 @@ final class HttpClientCoordinator {
             }
             focusWhenShown(buffer.getArea());
         });
-        p.setOnCleared(() -> history.cleared(buffer));
+        p.setOnCleared(() -> {
+            history.cleared(buffer);
+            refreshInlineResults(buffer); // a cleared History leaves no result on the request lines
+        });
         return p;
     }
 
@@ -398,6 +403,7 @@ final class HttpClientCoordinator {
         host.forEachBuffer(b -> {
             b.setHttpEnabled(on && host.isLocalBuffer(b));
             ensureHttpPreview(b);
+            refreshInlineResults(b); // the setting may have changed
         });
         String family = host.settings().getFontFamily();
         int size = editorFontSize();
@@ -1126,6 +1132,56 @@ final class HttpClientCoordinator {
                 : envCache.last(buffer.getPath(), ops.projectRoot()).dir();
     }
 
+    // --- results on the request lines (U11) ---
+
+    /**
+     * Puts each request's last result after its method/URL line in {@code buffer}'s editor — the newest History entry
+     * whose request still reads that line ({@link HttpInlineResult#newestPerRequest}) — or removes them all when the
+     * setting is off, the buffer has no panel or runs nothing from here. Called when a run lands, a saved history is
+     * restored, History is cleared and the settings are applied; the editor keeps them on their lines in between.
+     */
+    void refreshInlineResults(EditorBuffer buffer) {
+        if (buffer == null) {
+            return;
+        }
+        HttpClientPanel p = panelFor(buffer);
+        List<HttpHistoryEntry> entries = p == null ? List.of() : p.history();
+        if (entries.isEmpty() || !host.settings().isHttpInlineResults() || !host.isLocalBuffer(buffer)) {
+            buffer.setHttpResults(List.of());
+            return;
+        }
+        String text = buffer.getContent();
+        List<HttpFile.Request> requests = HttpFile.parse(text);
+        String[] lines = text.split("\n", -1);
+        long now = System.currentTimeMillis();
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        List<com.editora.editor.HttpLineResult> results = new ArrayList<>();
+        HttpInlineResult.newestPerRequest(requests, entries).forEach((index, entry) -> {
+            int line = requests.get(index).startLine();
+            if (line < 0 || line >= lines.length) {
+                return;
+            }
+            HttpResult r = entry.result();
+            results.add(new com.editora.editor.HttpLineResult(
+                    line,
+                    lines[line],
+                    HttpInlineResult.segments(r),
+                    HttpInlineResult.glyphClass(r),
+                    tr("httpinline.tooltip", HttpInlineResult.ranAt(entry.at(), now, zone)),
+                    () -> showInlineResult(buffer, entry)));
+        });
+        buffer.setHttpResults(results);
+    }
+
+    /** A click on a request line's result: the response view shows that History entry. */
+    private void showInlineResult(EditorBuffer buffer, HttpHistoryEntry entry) {
+        HttpClientPanel p = panelFor(buffer);
+        if (p != null) {
+            buffer.revealHttpPreview(); // in Editor mode the response view is hidden, as before a run
+            p.showHistoryEntry(entry);
+        }
+    }
+
     // --- internals ---
 
     /** Shows {@code buffer}'s response view (Editor → Split), as a run that is sent does on start. */
@@ -1194,6 +1250,7 @@ final class HttpClientCoordinator {
             p.showEntries(entries);
             p.showRunSummary(all ? HttpStatusText.runAllSummary(exchanges) : null);
             history.persist(buffer);
+            refreshInlineResults(buffer);
         }
         if (!exchanges.isEmpty()) {
             host.setStatus(all ? HttpStatusText.finishedAll(exchanges) : HttpStatusText.finished(exchanges.get(0)));

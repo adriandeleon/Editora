@@ -13,12 +13,31 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DapManagerTest {
+
+    /**
+     * DAP events reach the manager only through a session's own host, bound to that session's epoch. The
+     * manager used to be a {@link DapClient.Host} itself, with public event methods that read the epoch at
+     * call time: any caller of those would have applied a late event of an ended session to the next one.
+     */
+    @Test
+    void theManagerTakesNoDapEventsExceptThroughASessionsHost() {
+        assertFalse(DapClient.Host.class.isAssignableFrom(DapManager.class), "DapManager is not itself a Host");
+        for (java.lang.reflect.Method m : DapManager.class.getMethods()) {
+            for (java.lang.reflect.Method event : DapClient.Host.class.getMethods()) {
+                assertFalse(
+                        m.getName().equals(event.getName())
+                                && java.util.Arrays.equals(m.getParameterTypes(), event.getParameterTypes()),
+                        () -> "a public DAP event entry point with no session guard: " + m);
+            }
+        }
+    }
 
     @Test
     void protocolRequestsHaveABoundedDeadline() {
@@ -125,13 +144,27 @@ class DapManagerTest {
     }
 
     @Test
-    void withTempLineDoesNotDuplicateAnExistingLine() {
+    void withTempLineMakesABreakpointAlreadyOnTheLinePlainForTheTrip() {
+        // B13: a false condition or a logpoint on the cursor line used to let Run to Cursor run past it
         Path f = Path.of("/x/A.java");
-        var existing = java.util.List.of(
-                new DapModels.FileBreakpoints(f, java.util.List.of(new DapModels.LineBreakpoint(10, "i > 3", null))));
-        DapModels.FileBreakpoints merged = DapManager.withTempLine(existing, f, 10);
-        assertEquals(1, merged.breakpoints().size());
-        assertEquals("i > 3", merged.breakpoints().get(0).condition()); // the real one survives
+        var existing = java.util.List.of(new DapModels.FileBreakpoints(
+                f,
+                java.util.List.of(
+                        new DapModels.LineBreakpoint(10, "i > 3", null),
+                        new DapModels.LineBreakpoint(12, null, "log {i}"))));
+        DapModels.FileBreakpoints toLine10 = DapManager.withTempLine(existing, f, 10);
+        assertEquals(2, toLine10.breakpoints().size(), "no duplicate line");
+        var at10 = toLine10.breakpoints().stream()
+                .filter(b -> b.line() == 10)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(null, at10.condition(), "plain: it stops whatever the condition says");
+        DapModels.FileBreakpoints toLog = DapManager.withTempLine(existing, f, 12);
+        var at12 = toLog.breakpoints().stream()
+                .filter(b -> b.line() == 12)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(null, at12.logMessage(), "a logpoint never suspends: it must stop this time");
     }
 
     @Test

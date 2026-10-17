@@ -636,6 +636,8 @@ public class EditorBuffer implements TabContent {
     private boolean httpFeatureEnabled;
     /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
     private final HttpGutter httpGutter = new HttpGutter();
+    /** A {@code .http} buffer's last results after its request lines, and the ▶ colours they give (U11). */
+    private final HttpResultMarks httpResults = new HttpResultMarks();
     /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
      *  make <target>}); empty for non-Makefile buffers. */
     private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
@@ -760,6 +762,8 @@ public class EditorBuffer implements TabContent {
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBreakpointClick =
             (buffer, line) -> buffer.toggleBreakpoint(line);
+    /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
+    private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
     private final NoteManager notes = new NoteManager(area);
 
@@ -1018,7 +1022,7 @@ public class EditorBuffer implements TabContent {
                         ? "test-run-marker"
                         : line == httpGutter.runningGlyphLine(this::isFoldedLine)
                                 ? FoldManager.HTTP_RUNNING_CLASS
-                                : null,
+                                : httpResults.glyphClass(line), // the ▶ of a request that ran: its outcome
                 this::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
@@ -1027,6 +1031,8 @@ public class EditorBuffer implements TabContent {
                 breakpoints::styleClasses,
                 line -> gutterBreakpointClick.accept(this, line));
         folds.setBreakpointTooltip(breakpoints::tooltip);
+        folds.setDebugGutterHooks(
+                i -> executionLine.isMarked(area, i), (l, e) -> gutterBreakpointMenu.show(this, l, e));
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -1095,6 +1101,9 @@ public class EditorBuffer implements TabContent {
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             shiftCodeLenses(changes);
+            if (httpResults.shift(changes, area)) {
+                refreshInlayAreas(); // a request's result follows it when lines are added above
+            }
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
@@ -1836,6 +1845,9 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
+    /** Debugger actions at the click (breakpoint, Run to Cursor, Show Value…); null = none (review C10). */
+    private java.util.function.Supplier<List<MenuItem>> debugMenuContributor;
+
     /** Simple UI mode: the right-click menu keeps the editing actions only — see {@link #setSimpleMenu}. */
     private boolean simpleMenu;
 
@@ -1887,11 +1899,7 @@ public class EditorBuffer implements TabContent {
                     debugRequest.setOnAction(ev -> httpDebugHandler.accept(at.line()));
                     items.add(debugRequest);
                 }
-                for (CodeAction fix : httpVariableFixesAt(a, at.offset())) { // "Use environment dev" on a mark
-                    MenuItem item = new MenuItem(fix.title(), MenuIcons.codeAction());
-                    item.setOnAction(ev -> ((Runnable) fix.token()).run());
-                    items.add(item);
-                }
+                items.addAll(HttpVariableFixes.menuItems(httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
                 items.add(new SeparatorMenuItem());
             } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
                 MenuItem run = new MenuItem(tr("command.file.run"));
@@ -1920,6 +1928,11 @@ public class EditorBuffer implements TabContent {
                     items.add(debugMain);
                     items.add(new SeparatorMenuItem());
                 }
+            }
+            List<MenuItem> debugItems = debugMenuContributor == null || simpleMenu ? null : debugMenuContributor.get();
+            if (debugItems != null && !debugItems.isEmpty()) {
+                items.addAll(debugItems);
+                items.add(new SeparatorMenuItem());
             }
             // LSP navigation (only when this buffer is served by a language server), for the symbol there.
             if (lspActive && !simpleMenu) {
@@ -1999,6 +2012,11 @@ public class EditorBuffer implements TabContent {
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.menuContributor = contributor;
+    }
+
+    /** The debugger's right-click items, placed above the LSP submenu (built per showing; null clears it). */
+    public void setDebugMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
+        this.debugMenuContributor = contributor;
     }
 
     /**
@@ -2525,8 +2543,16 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** The inlays of one line: its hints, then — after the last character — its code lens. */
+    /** The inlays of one line: its hints, its code lens, then a {@code .http} request's last result. */
     private java.util.List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> lsp = lspInlaysOn(line);
+        return httpResults.isEmpty() || line < 0 || line >= area.getParagraphs().size()
+                ? lsp
+                : httpResults.inlays(line, lsp, area.getParagraphLength(line));
+    }
+
+    /** The LSP inlays of one line: its hints, then — after the last character — its code lens. */
+    private java.util.List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
         java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
         java.util.List<CodeLens> lenses = codeLensByLine.get(line);
         if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
@@ -2607,6 +2633,7 @@ public class EditorBuffer implements TabContent {
      * look and hand cursor a pick would have given it are set here.
      */
     private void installCodeLensClick(CodeArea a) {
+        httpResults.install(a); // and on a .http request's result
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
             if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
                 return;
@@ -3621,57 +3648,19 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
-    /**
-     * The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"),
-     * each action's token a {@link Runnable}; empty when there are none.
-     */
+    /** The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"). */
     public java.util.List<CodeAction> httpVariableFixesAt(CodeArea view, int offset) {
-        if (!httpVariableMarks.enabled()) {
-            return java.util.List.of();
-        }
-        var pos = view.offsetToPosition(
-                Math.max(0, Math.min(offset, view.getLength())), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-        java.util.List<MarkdownLint.Diagnostic> marks = httpVariableMarks.at(pos.getMajor(), pos.getMinor());
-        return marks.isEmpty()
-                ? java.util.List.of()
-                : httpGutter.hooks().variableFixes().apply(marks);
+        return HttpVariableFixes.at(httpVariableMarks, httpGutter.hooks(), view, offset);
     }
 
-    /**
-     * The line the squiggle tooltip adds under unresolved-variable marks that have a quick fix — "Right-click: Use
-     * environment dev" — so the fix is found from the mark itself; null for other marks.
-     */
-    private String httpVariableFixHint(java.util.List<MarkdownLint.Diagnostic> hits) {
-        if (!httpVariableMarks.enabled()) {
-            return null;
-        }
-        java.util.List<CodeAction> fixes = httpGutter.hooks().variableFixes().apply(hits);
-        if (fixes.isEmpty()) {
-            return null;
-        }
-        java.util.List<String> titles = new java.util.ArrayList<>(fixes.size());
-        for (CodeAction fix : fixes) {
-            titles.add(fix.title());
-        }
-        return tr("http.fix.hint", String.join(" · ", titles));
-    }
-
-    /**
-     * Offers the quick fixes for the unresolved-variable mark at the caret in the code-action popup (the editor's
-     * Code Actions chord); false when there is none to offer.
-     */
+    /** Offers the variable fixes at the caret in the code-action popup (Code Actions); false when there are none. */
     public boolean showHttpVariableFixes() {
         CodeArea view = getFocusedArea();
         java.util.List<CodeAction> fixes = httpVariableFixesAt(view, view.getCaretPosition());
-        if (fixes.isEmpty()) {
-            return false;
+        if (!fixes.isEmpty()) {
+            showCodeActions(fixes, HttpVariableFixes::apply);
         }
-        showCodeActions(fixes, chosen -> {
-            if (chosen != null && chosen.token() instanceof Runnable apply) {
-                apply.run();
-            }
-        });
-        return true;
+        return !fixes.isEmpty();
     }
 
     /** The unresolved-variable marks shown in this {@code .http} buffer (empty while off). */
@@ -3701,6 +3690,31 @@ public class EditorBuffer implements TabContent {
      */
     public void setHttpRunning(int index, String requestLine) {
         setHttpRunning(httpGutter.follow(index, requestLine, this::paragraphTextOrNull));
+    }
+
+    /** Each request's last result after its line, and its ▶ coloured by it ({@link HttpResultMarks}); empty: none. */
+    public void setHttpResults(java.util.List<HttpLineResult> results) {
+        if (!httpResults.isEmpty() || (results != null && !results.isEmpty())) {
+            repaintHttpResults(httpResults.set(results, this::paragraphTextOrNull));
+        }
+    }
+
+    /** The results shown after the request lines, by line. */
+    public java.util.List<HttpLineResult> httpResults() {
+        return httpResults.all();
+    }
+
+    /** Runs the click action of the result after {@code line}, as a click on it does; false when it has none. */
+    public boolean activateHttpResult(int line) {
+        return httpResults.activate(line);
+    }
+
+    private void repaintHttpResults(java.util.Set<Integer> lines) {
+        if (lines != null) {
+            ensureInlayFactory();
+            refreshInlayAreas();
+            lines.forEach(this::refreshGutterLine);
+        }
     }
 
     /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
@@ -3962,6 +3976,7 @@ public class EditorBuffer implements TabContent {
         runnable = now.runnable();
         runLine = now.line();
         httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
+        repaintHttpResults(httpResults.reanchor(now.httpLines(), this::paragraphTextOrNull)); // edited: it goes
         makeTargets = now.makeTargets();
         testLines = now.testLines();
         mainLines = now.mainLines();
@@ -4441,75 +4456,23 @@ public class EditorBuffer implements TabContent {
         return blameHashAt(focusedArea.getCurrentParagraph());
     }
 
-    /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
-     *  given the hovered identifier, deliver its rendered value (null/blank = show nothing). */
-    private java.util.function.BiConsumer<String, java.util.function.Consumer<String>> debugHoverEvaluator;
+    /** The debugger's value popup (hover and Show Value at Caret) — see {@link DebugHover}. */
+    private final DebugHover debugHover = new DebugHover();
 
-    private boolean debugHoverActive;
-    private javafx.scene.control.Tooltip debugTooltip;
-    private String debugHoverWord;
-
+    /** The DAP {@code evaluate} (context "hover") the value popup asks: expression → value (null/blank: none). */
     public void setDebugHoverEvaluator(
             java.util.function.BiConsumer<String, java.util.function.Consumer<String>> evaluator) {
-        this.debugHoverEvaluator = evaluator;
+        debugHover.setEvaluator(evaluator);
     }
 
     /** Flipped by the controller on suspend/resume so hovering costs nothing outside a pause. */
     public void setDebugHoverActive(boolean on) {
-        this.debugHoverActive = on && !hugeFile;
-        if (!this.debugHoverActive) {
-            hideDebugTooltip();
-        }
+        debugHover.setActive(on && !hugeFile);
     }
 
-    /** IntelliJ's value popup: hovering an identifier while suspended evaluates it in the selected
-     *  frame and shows {@code name = value}. One evaluation per distinct hovered word. */
-    private void installDebugHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!debugHoverActive || debugHoverEvaluator == null) {
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                String line = a.getParagraph(pos.getMajor()).getText();
-                String word = DebugIdentifiers.expressionAt(line, pos.getMinor()); // self.x, not x
-                if (word == null) {
-                    hideDebugTooltip();
-                    return;
-                }
-                if (word.equals(debugHoverWord)) {
-                    return; // already showing (or evaluating) this word
-                }
-                debugHoverWord = word;
-                double sx = e.getScreenX();
-                double sy = e.getScreenY();
-                debugHoverEvaluator.accept(word, value -> {
-                    if (!debugHoverActive || value == null || value.isBlank() || !word.equals(debugHoverWord)) {
-                        return; // evaluation failed / mouse moved on — show nothing
-                    }
-                    if (debugTooltip == null) {
-                        debugTooltip = new javafx.scene.control.Tooltip();
-                        debugTooltip.getStyleClass().add("debug-value-tooltip");
-                        debugTooltip.setWrapText(true);
-                        debugTooltip.setMaxWidth(480);
-                    }
-                    debugTooltip.setText(word + " = " + value);
-                    debugTooltip.show(a, sx + 12, sy + 16);
-                });
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hideDebugTooltip());
-    }
-
-    private void hideDebugTooltip() {
-        if (debugTooltip != null) {
-            debugTooltip.hide();
-        }
-        debugHoverWord = null;
+    /** Show Value at Caret: the value of the name at the caret, in the value popup; false when there is none. */
+    public boolean showDebugValueAtCaret() {
+        return debugHover.showAtCaret(focusedArea);
     }
 
     public MarkdownViewMode getMarkdownViewMode() {
@@ -6558,6 +6521,9 @@ public class EditorBuffer implements TabContent {
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
+        if (inlayFactoryInstalled) {
+            area2.setInlayFactory(this::inlaysOn); // hints, lenses and results set before the split opened
+        }
         imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
@@ -7004,6 +6970,10 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    public void setGutterBreakpointMenu(BreakpointGutterMenu menu) {
+        gutterBreakpointMenu = menu == null ? (buffer, line, e) -> {} : menu;
+    }
+
     /** Callback fired after any breakpoint change (persist + re-send to a live DAP session). */
     public void setOnBreakpointsChanged(Runnable callback) {
         breakpoints.setOnChanged(callback);
@@ -7027,18 +6997,41 @@ public class EditorBuffer implements TabContent {
     private final ExecutionLine executionLine = new ExecutionLine();
 
     /**
-     * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
-     * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
+     * Marks {@code line} as the current execution point (a distinct background and a gutter arrow), puts the
+     * caret there and scrolls it into view clear of the sticky-scroll headers (review B6). Clears any previous mark.
      */
     public void setExecutionLine(int line) {
-        if (executionLine.set(area, folds, line)) {
-            jumpToLine(line);
+        if (executionLine.set(area, folds, line, () -> lineHighlightColor, this::refreshGutterLine)) {
+            area.moveTo(line, 0);
+            area.requestFocus();
+            int first;
+            int last;
+            try {
+                first = area.firstVisibleParToAllParIndex();
+                last = area.lastVisibleParToAllParIndex();
+            } catch (RuntimeException notLaidOut) {
+                first = last = -1;
+            }
+            int top = ExecutionLine.revealTop(
+                    line,
+                    first,
+                    last,
+                    stickyScrollEnabled ? stickyLines.size() : 0,
+                    t -> stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), t) : t);
+            if (top >= 0) {
+                area.showParagraphAtTop(top);
+            }
         }
+    }
+
+    /** Draws the execution line as an exception stop (red) or a plain stop. */
+    public void setExecutionLineException(boolean exception) {
+        executionLine.setException(area, exception);
     }
 
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
-        executionLine.clear(area);
+        executionLine.clear(area, this::refreshGutterLine);
     }
 
     // ---- Personal Notes ----
@@ -7157,9 +7150,9 @@ public class EditorBuffer implements TabContent {
         MarkdownLintHover.install(
                 a,
                 () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
-                this::httpVariableFixHint);
+                hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
-        installDebugHover(a);
+        debugHover.install(a);
         installNoteHover(a);
     }
 
