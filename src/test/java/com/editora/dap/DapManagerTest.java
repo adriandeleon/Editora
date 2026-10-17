@@ -13,12 +13,31 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class DapManagerTest {
+
+    /**
+     * DAP events reach the manager only through a session's own host, bound to that session's epoch. The
+     * manager used to be a {@link DapClient.Host} itself, with public event methods that read the epoch at
+     * call time: any caller of those would have applied a late event of an ended session to the next one.
+     */
+    @Test
+    void theManagerTakesNoDapEventsExceptThroughASessionsHost() {
+        assertFalse(DapClient.Host.class.isAssignableFrom(DapManager.class), "DapManager is not itself a Host");
+        for (java.lang.reflect.Method m : DapManager.class.getMethods()) {
+            for (java.lang.reflect.Method event : DapClient.Host.class.getMethods()) {
+                assertFalse(
+                        m.getName().equals(event.getName())
+                                && java.util.Arrays.equals(m.getParameterTypes(), event.getParameterTypes()),
+                        () -> "a public DAP event entry point with no session guard: " + m);
+            }
+        }
+    }
 
     @Test
     void protocolRequestsHaveABoundedDeadline() {
