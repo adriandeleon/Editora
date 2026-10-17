@@ -163,7 +163,9 @@ Markdown, PowerShell, Python, Ruby, Rust, shell, and SQL) are taken from the
     License: MIT
 
 The core language files are vendored unmodified (framework-specific extras are
-not included). The remaining snippet files (xml, batchfile, groovy, json, yaml,
+not included), except python.json: its shebang names python3, the class
+template uses no Python 2 super() call, and the try/except snippets re-raise
+with a bare raise. The remaining snippet files (xml, batchfile, groovy, json, yaml,
 ini, global) are original to Editora and covered by Editora's own MIT License.
 
 ================================================================================
