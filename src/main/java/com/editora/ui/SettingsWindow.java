@@ -2169,6 +2169,20 @@ public class SettingsWindow {
         pages.put(Category.AGENT, agentPage());
         pages.put(Category.AI, aiPage());
         pages.put(Category.ADVANCED, advancedPage());
+        // One beta treatment: the sidebar's pill, repeated beside the page's own title.
+        for (Category c : Category.values()) {
+            if (c.beta
+                    && pages.get(c) instanceof VBox page
+                    && !page.getChildren().isEmpty()
+                    && page.getChildren().get(0) instanceof Text title) {
+                Label pill = new Label(tr("settings.beta"));
+                pill.getStyleClass().addAll("settings-beta-pill", "settings-title-pill");
+                page.getChildren().remove(0);
+                HBox heading = new HBox(8, title, pill);
+                heading.setAlignment(Pos.CENTER_LEFT);
+                page.getChildren().add(0, heading);
+            }
+        }
     }
 
     private VBox appearancePage() {

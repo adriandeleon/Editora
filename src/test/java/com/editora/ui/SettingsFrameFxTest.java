@@ -562,4 +562,49 @@ class SettingsFrameFxTest {
             });
         }
     }
+
+    @Test
+    void betaPagesSayItOnceBesideTheirTitleAndTextGrowsWithTheRootFont() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
+            FxTestSupport.runOnFx(() -> {
+                java.util.Map<Object, javafx.scene.layout.Region> pages = FxTestSupport.field(window, "pages");
+                ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
+                String beta = com.editora.i18n.Messages.tr("settings.beta");
+                for (String name : List.of("LSP", "SYNC", "MCP", "AI_GENERAL")) {
+                    javafx.scene.layout.VBox page = (javafx.scene.layout.VBox) pages.get(category(sidebar, name));
+                    assertEquals(
+                            1,
+                            labels(page.getChildren().get(0), beta, new java.util.ArrayList<>())
+                                    .size(),
+                            name);
+                }
+                javafx.scene.layout.VBox appearance =
+                        (javafx.scene.layout.VBox) pages.get(category(sidebar, "APPEARANCE"));
+                assertTrue(labels(appearance.getChildren().get(0), beta, new java.util.ArrayList<>())
+                        .isEmpty());
+
+                // Sizes are relative: a larger root font (a user stylesheet, a zoom) reaches the rows' text too.
+                Stage stage = FxTestSupport.field(window, "stage");
+                javafx.scene.Parent root = stage.getScene().getRoot();
+                root.applyCss();
+                double before = ((javafx.scene.control.Labeled) root.lookup(".settings-row-title"))
+                        .getFont()
+                        .getSize();
+                root.setStyle("-fx-font-size: 18px;");
+                root.applyCss();
+                double after = ((javafx.scene.control.Labeled) root.lookup(".settings-row-title"))
+                        .getFont()
+                        .getSize();
+                assertTrue(after > before + 3, before + " -> " + after);
+                stage.hide();
+            });
+            // No chord baked into a description: they depend on the keymap.
+            for (String key : List.of("settings.toolWindows.stripeNote", "settings.abbrev.note")) {
+                String text = com.editora.i18n.Messages.tr(key);
+                assertTrue(!text.contains("M-1") && !text.contains("C-x"), key + ": " + text);
+            }
+        }
+    }
 }
