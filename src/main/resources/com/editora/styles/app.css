@@ -3680,23 +3680,82 @@
 .csv-grid .csv-grid-summary { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
 .csv-grid-table { -fx-border-color: -color-border-muted; -fx-border-width: 1; -fx-border-radius: 4; -fx-background-radius: 4; }
 
-/* HTTP Client response view: the status line is coloured by outcome (2xx green, 3xx accent, 4xx amber,
-   5xx and failures red), so a glance says how the request went. */
+/* HTTP Client response view. The header row: Run with its chord (a keycap, periwinkle as everywhere), the status
+   as a pill coloured by outcome (2xx green, 3xx accent, 4xx amber, 5xx and failures red), the timing muted. */
 .http-panel .http-status { -fx-font-weight: bold; }
-.http-panel .http-status.http-status-ok { -fx-text-fill: -state-green; }
-.http-panel .http-status.http-status-redirect { -fx-text-fill: -state-accent; }
-.http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; }
+.http-panel .http-status.http-status-ok { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-status.http-status-redirect { -fx-text-fill: -state-accent; -fx-background-color: -state-accent-bg; }
+.http-panel .http-status.http-status-client-error { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
 .http-panel .http-status.http-status-server-error,
-.http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; }
-.http-panel .http-warn-badge { -fx-text-fill: -state-amber; -fx-font-weight: bold; -fx-cursor: hand; }
+.http-panel .http-status.http-status-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+.http-panel .http-status.state-pill { -fx-padding: 2 9 2 9; }
+.http-panel .http-meta { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-run-chord {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-background-color: -state-key-bg;
+    -fx-background-radius: 5;
+    -fx-border-color: derive(-state-key, 55%);
+    -fx-border-width: 1 1 2 1;
+    -fx-border-radius: 5;
+    -fx-padding: 1 6 1 6;
+}
 .http-panel .http-run-summary { -fx-text-fill: -color-fg-muted; }
-.http-panel .http-warn-badge:focused { -fx-underline: true; }
-.http-panel .http-tests-badge { -fx-cursor: hand; }
-.http-panel .http-tests-part { -fx-font-weight: bold; }
-.http-panel .http-tests-part.http-tests-passed { -fx-text-fill: -state-green; }
-.http-panel .http-tests-part.http-tests-failed { -fx-text-fill: -state-red; }
-.http-panel .http-tests-part.http-tests-sep { -fx-text-fill: -color-fg-muted; }
-.http-panel .http-tests-badge:focused .http-tests-part { -fx-underline: true; }
+/* The tab strip: muted tabs, the selected one underlined in accent (a background layer, so the keyboard focus
+   ring below can use the border without moving anything); counts as small chips, red/amber/green by meaning. */
+.http-panel .http-tabs {
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 0 0 1 0;
+}
+.http-panel .http-tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-background-insets: 0;
+    -fx-padding: 5 9 6 9;
+    -fx-text-fill: -color-fg-muted;
+    -fx-graphic-text-gap: 5;
+    -fx-cursor: hand;
+}
+.http-panel .http-tab:hover { -fx-text-fill: -color-fg-default; }
+.http-panel .http-tabs:compact .http-tab { -fx-padding: 5 5 6 5; }
+.http-panel .http-tab:selected {
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -color-accent-emphasis, -color-bg-default;
+    -fx-background-insets: 0, 0 0 2 0;
+}
+.http-panel .http-tab-count {
+    -fx-font-size: 0.85em;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-neutral-muted;
+    -fx-background-radius: 999;
+    -fx-padding: 0 5 0 5;
+}
+.http-panel .http-tab-count.http-count-passed { -fx-text-fill: -state-green; -fx-background-color: -state-green-bg; }
+.http-panel .http-tab-count.http-count-warn { -fx-text-fill: -state-amber; -fx-background-color: -state-amber-bg; }
+.http-panel .http-tab-count.http-count-failed { -fx-text-fill: -state-red; -fx-background-color: -state-red-bg; }
+/* The icon actions at the strip's end, and the "⋯" menu without its arrow. */
+.http-panel .http-action { -fx-padding: 3 5 3 5; -fx-background-radius: 5; }
+.http-panel .http-action:hover,
+.http-panel .http-more:showing { -fx-background-color: -color-neutral-muted; }
+.http-panel .toggle-button.http-action:selected { -fx-background-color: -state-sel; }
+.http-panel .toggle-button.http-action:selected .icon-line { -fx-stroke: -color-accent-fg; }
+.http-panel .http-more > .label { -fx-padding: 0; }
+.http-panel .http-more > .arrow-button { -fx-padding: 0; }
+.http-panel .http-more > .arrow-button > .arrow { -fx-padding: 0; -fx-shape: null; }
+.http-panel .http-more:hover .icon-line,
+.http-panel .http-more:showing .icon-line { -fx-stroke: -color-fg-default; }
+/* The Headers tab: the status line, then a name/value list with no column header row. */
+.http-panel .http-headers-status { -fx-font-weight: bold; -fx-padding: 2 4 0 4; }
+.http-panel .http-headers { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 0; }
+.http-panel .http-headers .column-header-background { -fx-max-height: 0; -fx-pref-height: 0; -fx-min-height: 0; }
+.http-panel .http-headers .table-row-cell { -fx-cell-size: 1.9em; }
+.http-panel .http-headers .table-cell { -fx-padding: 3 6 3 6; -fx-alignment: top-left; }
+.http-panel .http-headers .http-header-text { -fx-fill: -color-fg-default; }
+.http-panel .http-headers .http-header-name .http-header-text { -fx-fill: -color-fg-muted; }
+.http-panel .http-tests-title { -fx-font-weight: bold; }
+.http-panel .http-tests-pane { -fx-background-color: transparent; }
+.http-panel .http-tests-pane > .viewport { -fx-background-color: transparent; }
 .http-panel .http-test { -fx-padding: 0 4 0 4; }
 .http-panel .http-test-passed { -fx-text-fill: -state-green; }
 .http-panel .http-test-failed { -fx-text-fill: -state-red; }
@@ -4874,7 +4933,8 @@
 .file-info-tab:focus-visible,
 .image-viewer-btn:focus-visible,
 .pdf-viewer-btn:focus-visible,
-.test-chip:focus-visible {
+.test-chip:focus-visible,
+.http-tab:focus-visible {
     -fx-border-color: -focus-ring;
     -fx-border-width: 2;
     -fx-border-insets: -3;

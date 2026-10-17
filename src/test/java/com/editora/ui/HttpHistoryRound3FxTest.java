@@ -243,7 +243,7 @@ class HttpHistoryRound3FxTest {
         FxTestSupport.runOnFx(() -> first.runRequest(b1, 4));
         awaitHit("GET /slow");
         FxTestSupport.runOnFx(
-                () -> second.panelForTest(b2).controlsForTest().clearButton().fire());
+                () -> second.panelForTest(b2).controlsForTest().clearItem().fire());
         HttpHistorySync.awaitIdleForTest();
         slow.countDown();
         await(() -> !first.isRunningForTest(b1));

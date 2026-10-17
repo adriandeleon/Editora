@@ -127,7 +127,15 @@ class HttpClientPanelFxTest {
                 note != null && note.contains("truncated"), "a size-capped response says so above the body: " + note);
         String notes = FxTestSupport.callOnFx(p::notesForTest); // warnings sit apart from the headers (U4)
         assertTrue(notes.startsWith("⚠  response truncated at 50 MB"), notes);
-        assertEquals(tr("httppanel.warnings", 1), FxTestSupport.callOnFx(p::warnBadgeForTest));
+        assertEquals("Notes 1", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.NOTES)));
+        assertEquals(
+                HttpTabStrip.CountStyle.WARN,
+                FxTestSupport.callOnFx(() -> p.tabsForTest().countStyleForTest(HttpResponseTab.NOTES)),
+                "a warning colours the Notes count");
+        assertEquals(
+                HttpResponseTab.BODY,
+                FxTestSupport.callOnFx(p::selectedTabForTest),
+                "a warning does not switch tabs (decision 4)");
         assertTrue(
                 FxTestSupport.callOnFx(() -> p.controlsForTest().bodyArea().isWrapText()),
                 "a note in place of the body wraps (U7)");
@@ -172,9 +180,19 @@ class HttpClientPanelFxTest {
         assertEquals("404 Not Found  ·  12 ms  ·  4 B", FxTestSupport.callOnFx(p::statusForTest));
         Label status = p.controlsForTest().statusLabel();
         assertTrue(FxTestSupport.callOnFx(() -> status.getStyleClass().contains(HttpStatusText.CLIENT_ERROR)));
-        String head =
-                FxTestSupport.callOnFx(() -> p.controlsForTest().headersArea().getText());
+        assertTrue(FxTestSupport.callOnFx(() -> status.getStyleClass().contains("state-pill")), "the status is a pill");
+        assertEquals("404 Not Found", FxTestSupport.callOnFx(status::getText), "the pill holds the status alone");
+        assertEquals(
+                "12 ms  ·  4 B",
+                FxTestSupport.callOnFx(() -> p.controlsForTest().metaLabel().getText()),
+                "the timing and size sit beside it");
+        String head = FxTestSupport.callOnFx(p::headersForTest);
         assertEquals("HTTP 404 Not Found\ncontent-type: text/plain\n", head, "no summary line under the headers");
+        assertEquals(
+                1,
+                FxTestSupport.callOnFx(
+                        () -> p.controlsForTest().headersTable().getItems().size()));
+        assertEquals("Headers 1", FxTestSupport.callOnFx(() -> p.tabTextForTest(HttpResponseTab.HEADERS)));
     }
 
     @Test
