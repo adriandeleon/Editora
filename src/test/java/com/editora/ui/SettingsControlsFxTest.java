@@ -433,17 +433,21 @@ class SettingsControlsFxTest {
             fill.getEditor().setText("wide");
             fill.getEditor().fireEvent(new javafx.event.ActionEvent());
             assertEquals(72, settings.getFillColumn(), "text that is not a number changes nothing");
-            assertEquals("72", fill.getEditor().getText(), "and the field shows the value in force again");
+            assertEquals("wide", fill.getEditor().getText(), "the text stays to be fixed");
+            assertTrue(fill.getEditor().getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
             assertEquals(applied, rig.applied.size());
 
             fill.getEditor().setText("999999");
             fill.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(Settings.MAX_FILL_COLUMN, settings.getFillColumn(), "past the range is the bound");
-            assertEquals(
-                    Integer.toString(Settings.MAX_FILL_COLUMN), fill.getEditor().getText());
+            assertEquals(72, settings.getFillColumn(), "past the range is not pulled to the bound in silence");
+            assertEquals("999999", fill.getEditor().getText());
 
             Spinner<Integer> large = rig.control("largeFileThresholdSpinner");
+            int threshold = settings.getLargeFileThreshold();
             large.getEditor().setText("-5");
+            large.getEditor().fireEvent(new javafx.event.ActionEvent());
+            assertEquals(threshold, settings.getLargeFileThreshold(), "below 0 (\"never\") is refused");
+            large.getEditor().setText("0");
             large.getEditor().fireEvent(new javafx.event.ActionEvent());
             assertEquals(0, settings.getLargeFileThreshold(), "0 is \"never\", and the lowest it goes");
             large.getValueFactory().setValue(25_000);
@@ -459,7 +463,7 @@ class SettingsControlsFxTest {
             assertEquals(45, settings.getGitAutoFetchMinutes());
             minutes.getEditor().setText("0");
             minutes.getEditor().fireEvent(new javafx.event.ActionEvent());
-            assertEquals(1, settings.getGitAutoFetchMinutes());
+            assertEquals(45, settings.getGitAutoFetchMinutes(), "0 minutes is refused, not turned into 1");
             autoFetch.setSelected(false);
             assertFalse(settings.isGitAutoFetch());
             assertTrue(minutes.isDisable());
