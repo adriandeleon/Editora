@@ -3630,4 +3630,30 @@ public final class DapManager {
             public void onError(String message) {}
         };
     }
+
+    // --- completions (follow-up 5) -------------------------------------------------------------------------
+
+    /** Whether the session's adapter completes expressions (DAP {@code completions}). */
+    public boolean supportsCompletions() {
+        DapClient c = client;
+        return c != null && c.supportsCompletions();
+    }
+
+    /**
+     * Completions of {@code text} at 0-based {@code column} in frame {@code frameId}, on the FX thread; an empty
+     * list when there is no session, the adapter cannot, or it failed (a completion is never worth an error).
+     */
+    public void completions(int frameId, String text, int column, Consumer<List<DapModels.CompletionTarget>> cb) {
+        DapClient c = client;
+        if (c == null || !c.supportsCompletions() || frameId < 0) {
+            cb.accept(List.of());
+            return;
+        }
+        c.completions(frameId, text, column)
+                .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(e != null || r == null ? List.of() : r);
+                    }
+                }));
+    }
 }

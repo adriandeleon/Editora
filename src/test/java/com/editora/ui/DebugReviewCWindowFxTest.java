@@ -477,4 +477,67 @@ class DebugReviewCWindowFxTest {
         assertTrue(at[1] - at[0] > at[0] && at[1] - at[0] > 1 - at[1], "Variables is the widest column");
         assertNotEquals(0, at.length);
     }
+
+    // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ---------------
+
+    /** The text fields showing in the window's overlay card that complete expressions. FX thread. */
+    private List<javafx.scene.control.TextField> completingFields() {
+        List<javafx.scene.control.TextField> out = new java.util.ArrayList<>();
+        for (Node n : FxTestSupport.<Stage>field(fx.controller, "stage")
+                .getScene()
+                .getRoot()
+                .lookupAll(".text-field")) {
+            OverlayHost overlay = FxTestSupport.field(fx.controller, "overlayHost");
+            if (n instanceof javafx.scene.control.TextField f
+                    && overlay.contains(f)
+                    && f.isVisible()
+                    && DebugCompletion.of(f) != null) {
+                out.add(f);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Follow-up 5: the watch prompt and a breakpoint's condition and log message complete in the stopped frame
+     * (a log message only inside its braces), and the editor's value popup is the expandable one (follow-up 6).
+     */
+    @Test
+    void theWatchPromptAndTheBreakpointFormCompleteAndTheHoverUnfolds() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        OverlayHost overlay = FxTestSupport.field(fx.controller, "overlayHost");
+        FxTestSupport.runOnFx(() -> panel.addWatchPrompt("na"));
+        FxTestSupport.drainFx();
+        assertEquals(1, FxTestSupport.callOnFx(this::completingFields).size(), "the watch prompt's field completes");
+        FxTestSupport.runOnFx(overlay::hide);
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(1, 0);
+            debug.editBreakpointAtCaret();
+        });
+        FxTestSupport.drainFx();
+        assertEquals(2, FxTestSupport.callOnFx(this::completingFields).size(), "the condition and the log message");
+        FxTestSupport.runOnFx(overlay::hide);
+        assertSame(
+                debug.valuePopup(),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "debugHover"), "presenter")));
+
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            org.eclipse.lsp4j.debug.CompletionItem names = new org.eclipse.lsp4j.debug.CompletionItem();
+            names.setLabel("names");
+            adapter.completions = List.of(names);
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            stopAt(session, util, 3, "breakpoint");
+            List<List<com.editora.dap.DapModels.CompletionTarget>> got = new java.util.ArrayList<>();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(debug.completionSource(false).paused());
+                debug.completionSource(true).complete("n={na", 5, got::add);
+            });
+            await("no completions came back", () -> !got.isEmpty());
+            var asked = session.completionRequests.getFirst();
+            assertEquals("na", asked.getText(), "only the braced expression of a log message is code");
+            assertEquals(3, asked.getColumn());
+            assertEquals("names", got.getFirst().getFirst().label());
+        }
+    }
 }
