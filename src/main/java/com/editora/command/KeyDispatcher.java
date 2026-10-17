@@ -701,7 +701,7 @@ public class KeyDispatcher {
         return sb.toString();
     }
 
-    private static String keyName(KeyCode code) {
+    static String keyName(KeyCode code) {
         if (code.isLetterKey()) {
             return code.getName().toLowerCase(Locale.ROOT);
         }

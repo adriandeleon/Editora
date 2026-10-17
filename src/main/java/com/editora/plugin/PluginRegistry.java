@@ -109,8 +109,16 @@ public final class PluginRegistry {
         if (url == null) {
             return false;
         }
-        String u = url.strip().toLowerCase(Locale.ROOT);
-        return u.startsWith("https://");
+        String u = url.strip();
+        if (!u.toLowerCase(Locale.ROOT).startsWith("https://")) {
+            return false;
+        }
+        try {
+            String host = URI.create(u).getHost(); // "https://not a url" and "https:///x" are not addresses
+            return host != null && !host.isBlank();
+        } catch (IllegalArgumentException notAUri) {
+            return false;
+        }
     }
 
     /**

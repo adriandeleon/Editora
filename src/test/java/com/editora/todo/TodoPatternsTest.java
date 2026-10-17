@@ -50,4 +50,16 @@ class TodoPatternsTest {
         String problem = TodoPatterns.syntaxProblem("[TODO");
         assertTrue(problem != null && !problem.isBlank(), "an unclosed class is reported");
     }
+
+    @Test
+    void aNamesOwnPatternMatchesTheNameAsAWholeWord() {
+        assertEquals("\\bBUG\\b", TodoPatterns.regexFor(" BUG "));
+        assertEquals("\\bTO\\.DO\\b", TodoPatterns.regexFor("TO.DO"));
+        assertEquals("@note\\b", TodoPatterns.regexFor("@note"));
+        assertEquals("\\?\\?\\?", TodoPatterns.regexFor("???"));
+        assertEquals("", TodoPatterns.regexFor("  "));
+        assertTrue(java.util.regex.Pattern.compile(TodoPatterns.regexFor("C++"))
+                .matcher("a C++ b")
+                .find());
+    }
 }

@@ -460,10 +460,19 @@ final class EditorSettingsCoordinator {
         }
     }
 
-    /** The active keymap's bindings <em>without</em> user overrides — the defaults to rebind/reset against. */
+    /**
+     * The active keymap's bindings <em>without</em> user overrides — the defaults to rebind/reset against.
+     * Enabled plugins' keymaps are part of those defaults: left out, a rebind did not suppress a plugin's
+     * chord (the command kept both) and Reset could not bring one back.
+     */
     java.util.Map<String, String> baseBindings() {
         com.editora.command.KeymapManager base = new com.editora.command.KeymapManager();
         base.loadNamed(host.config().getSettings().getKeymap());
+        if (host.windowManager() != null) {
+            KeymapLayers.pluginKeymaps(
+                            host.config().getSettings(), host.windowManager().pluginManager())
+                    .forEach(base::applyOverrides);
+        }
         return base.bindings();
     }
 
@@ -493,7 +502,35 @@ final class EditorSettingsCoordinator {
     void rebindShortcut(String commandId, String chordSeq) {
         applyKeybindingOverrides(
                 com.editora.command.KeybindingEdits.rebind(baseBindings(), currentKeybindings(), commandId, chordSeq));
-        host.setStatus(tr("status.shortcut.bound", chordSeq, commandTitle(commandId)));
+        host.setStatus(tr("status.shortcut.bound", host.keymap().display(chordSeq), commandTitle(commandId)));
+    }
+
+    /** Unbinds {@code commandId}: its own bindings go, and so do its keymap defaults. */
+    void clearShortcut(String commandId) {
+        applyKeybindingOverrides(
+                com.editora.command.KeybindingEdits.clear(baseBindings(), currentKeybindings(), commandId));
+        host.setStatus(tr("status.shortcut.removed", commandTitle(commandId)));
+    }
+
+    /** The default chords of {@code commandId} that another command's override holds now (Reset takes them back). */
+    java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
+        return com.editora.command.KeybindingEdits.taken(baseBindings(), currentKeybindings(), commandId);
+    }
+
+    /** Drops every binding of a command that no longer exists (a deleted macro), in every keymap and platform. */
+    void forgetShortcut(String commandId) {
+        Settings s = host.config().getSettings();
+        for (boolean mac : new boolean[] {false, true}) {
+            s.setKeybindingsFor(
+                    mac, com.editora.command.KeybindingEdits.withoutCommand(s.keybindingsFor(mac), commandId));
+        }
+        for (var parked : java.util.List.of(s.getKeymapKeybindings(), s.getKeymapKeybindingsMac())) {
+            if (parked != null) {
+                parked.values().forEach(m -> m.values().removeIf(commandId::equals));
+            }
+        }
+        host.config().save();
+        reloadKeymap();
     }
 
     void resetShortcut(String commandId) {
@@ -953,6 +990,7 @@ final class EditorSettingsCoordinator {
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
         buffer.wrap().setPreference(s.isWordWrap(), s.isWordWrapProse()); // applied by the buffer's language
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
+        buffer.setSimpleMenu(simple); // ... and trims the right-click menu to the editing actions
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
