@@ -379,6 +379,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab welcomeTab;
     /** The single open Doctor tab (external-tool health screen), or null — the {@code welcomeTab} pattern. */
     private Tab doctorTab;
+    /** The hint the editor area shows once its last tab is closed (Open File, Command Palette, …). */
+    private EditorEmptyState editorEmptyState;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
     private javafx.application.HostServices hostServices;
 
@@ -1169,6 +1171,15 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config::getConnections, // saved SFTP sites (most-recent first); empty hides the section
                 remoteCoordinator::connect, // pick a site → prefilled connect form
                 config.isDev() ? com.editora.AppInfo.gitCommitAsync() : null); // commit: --dev only, off-thread
+        welcomePane.setProjectOpener(this::switchToProject);
+        welcomePane.setRecentRemover(path -> Platform.runLater(() -> {
+            confirmRemoveRecent(path);
+            welcomePane.refresh();
+        }));
+        welcomePane.setCustomizeSource(
+                () -> com.editora.command.KeymapManager.displayName(
+                        config.getSettings().getKeymap()),
+                () -> config.getSettings().getTheme());
     }
 
     /**
@@ -1183,6 +1194,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         Tab tab = addContentTab(welcomePane, true);
+        tab.getStyleClass().add("ui-surface-tab"); // the page is on the UI surface, so is its selected tab
         welcomeTab = tab;
         // Welcome is not a document: only a Close action (no Save/Rename/Pin).
         MenuItem close = new MenuItem(tr("menu.close"));
@@ -1208,6 +1220,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         Tab tab = addContentTab(doctorCoordinator.pane(), true);
+        tab.getStyleClass().add("ui-surface-tab");
         doctorTab = tab;
         MenuItem close = new MenuItem(tr("menu.close"));
         close.setGraphic(Icons.closeTab());
@@ -2280,6 +2293,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             requestSave(); // the session's active file — captured by the coalesced save, not only on exit
         });
         editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
+            // After the change settles: moving a tab between groups empties one for a moment.
+            Platform.runLater(() -> {
+                if (editorEmptyState != null) {
+                    editorEmptyState.update(editorArea.isEmpty());
+                }
+            });
             boolean membershipChanged = false;
             while (c.next()) {
                 membershipChanged |= c.wasAdded() || c.wasRemoved();
@@ -2399,7 +2418,9 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the top edge it measures from is unchanged.
      */
     private javafx.scene.Node editorFooter() {
-        BorderPane withBreadcrumb = new BorderPane(editorArea.node());
+        editorEmptyState = new EditorEmptyState(registry, keymap, this::projectsEnabled);
+        BorderPane withBreadcrumb =
+                new BorderPane(new javafx.scene.layout.StackPane(editorArea.node(), editorEmptyState.node()));
         withBreadcrumb.setBottom(breadcrumb);
         return withBreadcrumb;
     }
