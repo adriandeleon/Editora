@@ -161,7 +161,7 @@ public final class PytestScanner {
      * Replaces the contents of strings (incl. triple-quoted, with any prefix) and comments with spaces,
      * keeping every newline, so line numbers and indentation survive. A string's own quotes stay.
      */
-    static String blank(String s) {
+    public static String blank(String s) {
         StringBuilder out = new StringBuilder(s.length());
         int i = 0;
         int n = s.length();

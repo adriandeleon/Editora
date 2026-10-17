@@ -89,6 +89,16 @@ final class DoctorCoordinator {
 
         /** Opens Settings focused on the page for a Doctor settings key ({@code git}/{@code lsp}/…). */
         void openSettingsFor(String settingsKey);
+
+        /** This window's project root (where Python's venv is looked for), or null. */
+        default java.nio.file.Path projectRoot() {
+            return null;
+        }
+
+        /** The Python interpreter picked for this window's project ("" = detect it). */
+        default String pythonInterpreterChoice() {
+            return "";
+        }
     }
 
     private final CoordinatorHost host;
@@ -380,7 +390,7 @@ final class DoctorCoordinator {
                 default -> base.missing("doctor.tip.missing", javaExecutable);
             };
         }));
-        specs.add(optionalRunTool("run.python", "Python", List.of("python3"), List.of("python"), "Python"));
+        specs.add(pythonRun(s));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         // Shell Run no longer depends on LSP, so neither does the row that says whether it can work.
         specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
@@ -480,6 +490,29 @@ final class DoctorCoordinator {
     }
 
     /** A Run-section interpreter row: absent is only a WARN (needed just for that file type). */
+    /**
+     * The Python that Run, Debug and the tests use for this window's project — the same resolver they use (its
+     * venv, the picked or global interpreter, else {@code python3}/{@code python}, {@code py -3} on Windows) —
+     * and its version, rather than whether a {@code python3} happens to be on PATH.
+     */
+    private DoctorService.CheckSpec pythonRun(Settings s) {
+        java.nio.file.Path root = ops.projectRoot();
+        String choice = ops.pythonInterpreterChoice();
+        String setting = s.getPythonDebugCommand();
+        DoctorCheck row = DoctorCheck.checking("run.python", "run", "Python", "python");
+        return probe(row, base -> {
+            com.editora.run.PythonInterpreters.PythonInterpreter py =
+                    com.editora.run.PythonInterpreters.resolveLocal(null, root, "", choice, setting);
+            List<String> argv = new ArrayList<>(com.editora.run.PythonLaunch.withoutEnvPrefix(py.command()));
+            argv.add("--version");
+            String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
+            if (!version.startsWith("Python")) {
+                return base.warn(String.join(" ", py.command()), "doctor.tip.runOptional", "Python");
+            }
+            return base.ok(version + " — " + String.join(" ", py.command()));
+        });
+    }
+
     private static DoctorService.CheckSpec optionalRunTool(
             String id, String label, List<String> cmd, List<String> fallback, String fileKind) {
         DoctorCheck row = DoctorCheck.checking(id, "run", label, cmd.get(0));

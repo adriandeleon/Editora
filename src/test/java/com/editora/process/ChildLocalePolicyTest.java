@@ -65,6 +65,8 @@ class ChildLocalePolicyTest {
             "io/Trash.java", // `gio trash` (exit code)
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
             "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
+            "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)
+            "process/ProcessRegistry.java", // `kill -INT` before Stop escalates (exit code)
             "container/ContainerEngine.java"); // the engine's inspect / ps output
 
     /**
@@ -105,6 +107,7 @@ class ChildLocalePolicyTest {
             "lsp/LanguageServerSession.java",
             "process/DesktopActions.java",
             "process/LocalExecTarget.java", // what run() starts for a local working directory
+            "process/ProcessRegistry.java", // `kill -INT` for Stop on a Python program, standard environment
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
             "web/HtmlPreviewService.java");
