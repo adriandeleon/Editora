@@ -573,6 +573,55 @@ public final class DapManager implements DapClient.Host {
     /** Sets the debuggee's JVM arguments; call before {@link #startLaunchMainClass}. "" clears them. */
     public void setVmArgs(String vmArgs) {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
+        this.vmArgList = null;
+    }
+
+    /**
+     * Sets the debuggee's JVM arguments as already split (a saved configuration's, split as Run splits them):
+     * they are encoded for the adapter's own tokenizer at launch, by the OS of the machine it runs on.
+     */
+    public void setVmArgs(List<String> vmArgs) {
+        this.vmArgList = vmArgs == null ? List.of() : List.copyOf(vmArgs);
+        this.vmArgs = "";
+    }
+
+    /** {@link #setVmArgs(List)}'s arguments; null when the raw {@link #vmArgs} text applies. */
+    private volatile List<String> vmArgList;
+
+    /** The JVM arguments of the next launch as java-debug's {@code vmArgs} string, for an adapter on {@code target}. */
+    private String vmArgsFor(LaunchConfig.Target target) {
+        List<String> list = vmArgList;
+        return list == null ? vmArgs : LaunchConfig.javaArgs(list, target.windows());
+    }
+
+    /**
+     * The {@code java} of a remote host's configured JDK for the next launch ({@code ""}: what jdtls resolves
+     * there) — a saved configuration's, as Run uses it (review D9). Set before {@link #startLaunchMainClass}.
+     */
+    private volatile String hostJavaExec = "";
+
+    /** See {@link #hostJavaExec}; {@code null} or blank clears it. */
+    public void setHostJavaExec(String java) {
+        this.hostJavaExec = java == null ? "" : java.strip();
+    }
+
+    /**
+     * The {@code java} a project launch for {@code file} runs: this machine's chosen JDK (an override is a JDK on
+     * this machine, never used for a remote file), else for a remote file the host's configured one, else the
+     * one jdtls resolved.
+     */
+    private String javaExecFor(Path file, String javaExecOverride, String resolved) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return hostJavaExec.isBlank() ? resolved : hostJavaExec;
+        }
+        return javaExecOverride == null || javaExecOverride.isBlank() ? resolved : javaExecOverride;
+    }
+
+    /** The machine the adapter of a session for {@code file} runs on (review D8). */
+    static LaunchConfig.Target targetFor(Path file) {
+        return file == null || com.editora.process.ExecTargets.runsHere(file)
+                ? LaunchConfig.Target.LOCAL
+                : LaunchConfig.Target.REMOTE_POSIX;
     }
 
     /** The output category of Editora's own line saying what a launch runs (drawn muted by the Debug panel). */
@@ -965,6 +1014,9 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, r.error());
                 return;
             }
+            if (ifNoClassFile == null) {
+                warnAboutClasses(file, opt, r, epoch);
+            }
             startDebugSessionAndConnect(
                     file,
                     LaunchConfig.launch(
@@ -972,21 +1024,39 @@ public final class DapManager implements DapClient.Host {
                             proj,
                             r.classPaths(),
                             r.modulePaths(),
-                            // A remote file runs on its host's JDK, as jdtls there resolves it: the override is
-                            // a JDK on this machine.
-                            javaExecOverride == null
-                                            || javaExecOverride.isBlank()
-                                            || !com.editora.process.ExecTargets.runsHere(file)
-                                    ? r.javaExec()
-                                    : javaExecOverride,
+                            javaExecFor(file, javaExecOverride, r.javaExec()),
                             cwd,
                             programArgs,
-                            JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
+                            JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview()),
                             env,
-                            false),
+                            false,
+                            targetFor(file)),
                     false,
                     epoch);
         });
+    }
+
+    /**
+     * The last word on a project launch's class files, whatever built them (the jdtls build before the launch,
+     * a before-launch step — or nothing, when no build could run): a main class with no class file, or one
+     * older than its source, is launched with a warning in the console that says to build the project first —
+     * the ClassNotFoundException or the old code that follows then has its explanation (review A2). A remote
+     * project's files are the host's and are not read from here.
+     */
+    private void warnAboutClasses(Path file, MainClassOption opt, ResolvedLaunch r, long epoch) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return;
+        }
+        List<String> paths = new ArrayList<>(r.classPaths());
+        paths.addAll(r.modulePaths());
+        String cls = opt.className();
+        switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
+            case MISSING -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesMissing", cls));
+            case STALE -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesStale", cls));
+            default -> {
+                // current, or nothing to judge by
+            }
+        }
     }
 
     /**
@@ -1084,15 +1154,31 @@ public final class DapManager implements DapClient.Host {
 
     /** Main-class launch with an optional selected-JDK executable. */
     public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride) {
+        startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, false);
+    }
+
+    /**
+     * As above; {@code plainFolder} for a project with no build file, whose classes jdtls never compiles —
+     * the chosen class is then compiled from its own source when its class file is missing (review A16).
+     */
+    public void startLaunchMainClass(
+            Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride, boolean plainFolder) {
         if (!ready(routingFile)) {
             return;
         }
-        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride);
+        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, plainFolder);
         debugFile = routingFile;
         long epoch = beginSession();
         setState(State.STARTING);
-        resolveAndLaunch(
-                routingFile, opt, cwd == null ? null : pathsFor(routingFile).toAdapter(cwd), javaExecOverride, epoch);
+        String adapterCwd = cwd == null ? null : pathsFor(routingFile).toAdapter(cwd);
+        if (plainFolder) {
+            correctSourceRoot(
+                    routingFile,
+                    epoch,
+                    () -> launchOption(routingFile, opt, adapterCwd, javaExecOverride, null, epoch));
+        } else {
+            resolveAndLaunch(routingFile, opt, adapterCwd, javaExecOverride, epoch);
+        }
     }
 
     /**
@@ -1206,9 +1292,10 @@ public final class DapManager implements DapClient.Host {
                                         javaExec,
                                         cwd,
                                         programArgs,
-                                        vmArgs,
+                                        vmArgsFor(targetFor(file)),
                                         launchEnvironment,
-                                        false),
+                                        false,
+                                        targetFor(file)),
                                 false,
                                 epoch)));
             } catch (Exception e) {

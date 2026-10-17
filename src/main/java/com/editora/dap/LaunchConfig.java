@@ -46,6 +46,50 @@ public final class LaunchConfig {
             String vmArgs,
             Map<String, String> env,
             boolean stopOnEntry) {
+        return launch(
+                mainClass,
+                projectName,
+                classPaths,
+                modulePaths,
+                javaExec,
+                cwd,
+                args,
+                vmArgs,
+                env,
+                stopOnEntry,
+                Target.LOCAL);
+    }
+
+    /**
+     * The machine a launch's adapter runs on, as far as the request body cares: java-debug splits {@code args}
+     * by <em>its</em> OS's rules, and a command-line limit and a JDK's {@code release} file are that machine's
+     * (review D8: a Windows client used to quote for Windows a program that a Linux host would run).
+     *
+     * @param windows whether the adapter's machine is Windows
+     * @param local whether it is this machine (so its JDKs can be read here)
+     */
+    public record Target(boolean windows, boolean local) {
+        /** This machine. */
+        public static final Target LOCAL = new Target(isWindows(), true);
+
+        /** A remote host, container or WSL distribution: POSIX, and its files are not this machine's. */
+        public static final Target REMOTE_POSIX = new Target(false, false);
+    }
+
+    /** As above, for an adapter on {@code target}. */
+    public static Map<String, Object> launch(
+            String mainClass,
+            String projectName,
+            List<String> classPaths,
+            List<String> modulePaths,
+            String javaExec,
+            String cwd,
+            List<String> args,
+            String vmArgs,
+            Map<String, String> env,
+            boolean stopOnEntry,
+            Target target) {
+        Target on = target == null ? Target.LOCAL : target;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Launch)");
@@ -79,9 +123,11 @@ public final class LaunchConfig {
             // hangs until the request timeout). So send ONE string — but not a bare space-join, which
             // would turn `"hello world" second` into three arguments: quote it so the adapter's own
             // tokenizer splits it back into the argv ProgramArgs.tokenize produced (what Run passes).
-            m.put("args", javaArgs(args, isWindows()));
+            m.put("args", javaArgs(args, on.windows()));
         }
-        String shorten = JavaLaunchSupport.shortenCommandLine(m, isWindows(), JavaLaunchSupport::supportsArgFiles);
+        // A JDK of another machine cannot be read here: one new enough for an argument file is assumed there.
+        String shorten = JavaLaunchSupport.shortenCommandLine(
+                m, on.windows(), on.local() ? JavaLaunchSupport::supportsArgFiles : java -> true);
         if (shorten != null) {
             m.put("shortenCommandLine", shorten);
         }
@@ -111,7 +157,7 @@ public final class LaunchConfig {
      * quote). An argument needing no quoting is passed through unchanged. Known limit: the adapter's Windows
      * tokenizer has no spelling for an empty argument (it keeps {@code ""} literally).
      */
-    static String javaArgs(List<String> argv, boolean windows) {
+    public static String javaArgs(List<String> argv, boolean windows) {
         StringBuilder sb = new StringBuilder();
         for (String arg : argv) {
             if (!sb.isEmpty()) {

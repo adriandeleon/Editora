@@ -482,11 +482,7 @@ final class RunCoordinator {
      * reference is left as written.
      */
     static java.util.function.Function<String, String> inheritedVariables(boolean remote) {
-        if (remote) {
-            return name -> "$" + name;
-        }
-        return name ->
-                "PATH".equalsIgnoreCase(name) ? com.editora.process.ProcessRunner.augmentedPath() : System.getenv(name);
+        return com.editora.run.JavaLaunchPlan.inherited(remote);
     }
 
     /**
@@ -688,9 +684,21 @@ final class RunCoordinator {
     }
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
-    private Path beforeLaunchDir(RunConfiguration cfg) {
+    Path beforeLaunchDir(RunConfiguration cfg) {
         if (cfg.workingDir().isBlank() && ScriptRunCommand.PYTHON.equals(cfg.type()) && ops.projectRoot() != null) {
             return ops.projectRoot(); // the script runs in its own folder; a build/setup step stays at the root
+        }
+        // A Java configuration's step is a build (mvn compile, gradle classes): it belongs in the project root
+        // whatever folder the program runs in — in a working directory of "sub" Maven found no pom (review A12).
+        if (cfg.isJava()) {
+            Path routing = routingFor(host, cfg);
+            Path project = routing == null ? null : ops.javaProjectRoot(routing);
+            if (project == null) {
+                project = ops.projectRoot();
+            }
+            if (project != null) {
+                return project;
+            }
         }
         Path configured = RunConfigWorkingDirectory.resolve(cfg, ops.projectRoot());
         if (configured != null) {
@@ -734,27 +742,21 @@ final class RunCoordinator {
         if (b != null && b.isDirty() && RemoteExec.runsFor(b.getPath()) && !ops.saveBuffer(b)) {
             return; // save whatever the user was editing before launching, as before
         }
-        Path configuredDir = RunConfigWorkingDirectory.resolve(cfg, root);
-        Path cwd = configuredDir != null ? configuredDir : root;
-        List<String> vm = programArgs(cfg.vmArgs(), cfg);
-        List<String> args = vm == null ? null : programArgs(cfg.args(), cfg);
-        if (args == null) {
+        // One plan for Run and Debug (review D9): working directory, JDK, environment and arguments.
+        com.editora.run.JavaLaunchPlan.Result planned =
+                com.editora.run.JavaLaunchPlan.forConfiguration(cfg, javaLaunchInputs(root));
+        if (!planned.ok()) {
+            reportPlanProblem(cfg, planned.problem());
             return;
         }
-        java.util.Map<String, String> env;
-        try {
-            env = com.editora.run.EnvVars.resolve(
-                    cfg.env(), inheritedVariables(!com.editora.process.ExecTargets.runsHere(root)));
-        } catch (ProgramArgs.UnclosedQuoteException e) {
-            host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
-            ops.editConfiguration(cfg.name());
-            return;
-        }
-        String jdkHome = jdkHomeFor(root, cfg);
-        java.util.Map<String, String> launchEnv = javaEnvironment(root, jdkHome, env);
+        com.editora.run.JavaLaunchPlan plan = planned.plan();
+        Path cwd = plan.cwd();
+        List<String> vm = plan.vmArgs();
+        List<String> args = plan.args();
+        String jdkHome = plan.jdkHome();
+        java.util.Map<String, String> launchEnv = plan.environment();
         boolean onHost = !com.editora.process.ExecTargets.runsHere(root);
-        String javaOverride =
-                onHost ? (jdkHome.isBlank() ? "" : hostJava(jdkHome, null)) : JdkToolchain.javaExecutable(jdkHome);
+        String javaOverride = plan.javaExecutable();
         String label = shortName(cfg.mainClass());
         if (ops.javaLaunchAvailable()) {
             // Ask jdtls to enumerate its own main classes first and use the entry it returns, exactly as the
@@ -814,6 +816,22 @@ final class RunCoordinator {
         } else {
             host.setStatus(tr("status.run.javaUnavailable"));
         }
+    }
+
+    /** What a {@link com.editora.run.JavaLaunchPlan} of a configuration in {@code root}'s project needs to know. */
+    com.editora.run.JavaLaunchPlan.Inputs javaLaunchInputs(Path root) {
+        return com.editora.run.JavaLaunchPlan.Inputs.of(
+                root, host.settings().getMavenJdkHome(), ops.mavenProjectAt(root));
+    }
+
+    /** Says which field of {@code cfg} a plan could not read, and opens its form there. */
+    void reportPlanProblem(RunConfiguration cfg, com.editora.run.JavaLaunchPlan.Problem problem) {
+        String quote = String.valueOf(problem.quote());
+        host.setStatus(
+                problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                        ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                        : tr("status.run.argsUnclosedQuote", quote));
+        ops.editConfiguration(cfg.name());
     }
 
     private void startMainClassRun(String targetFqn) {

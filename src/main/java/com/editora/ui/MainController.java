@@ -2518,6 +2518,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public List<com.editora.config.RunConfiguration> runConfigurations() {
+                        return runConfigurations.savedConfigs();
+                    }
+
+                    @Override
                     public String pythonInterpreterChoice() {
                         return config.getWorkspaceState().getPythonInterpreter();
                     }

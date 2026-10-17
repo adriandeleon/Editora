@@ -191,4 +191,49 @@ class LaunchConfigTest {
         rest.remove("console");
         assertEquals(rest, client);
     }
+
+    /**
+     * A remote host's java-debug splits {@code args} by POSIX rules and its JDK is not on this machine: a
+     * Windows client used to quote for Windows, and read a local {@code release} file for a host's java
+     * (review D8).
+     */
+    @Test
+    void aRemoteLaunchIsShapedForTheHostNotForThisMachine(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path jdk8 = dir.resolve("jdk8");
+        java.nio.file.Files.createDirectories(jdk8.resolve("bin"));
+        java.nio.file.Files.writeString(jdk8.resolve("release"), "JAVA_VERSION=\"1.8.0_402\"\n");
+        String java = jdk8.resolve("bin").resolve("java").toString();
+        List<String> manyJars = new java.util.ArrayList<>();
+        for (int i = 0; i < 3000; i++) {
+            manyJars.add("/home/u/.m2/repository/org/example/lib" + i + "/1.0/lib" + i + "-1.0.jar");
+        }
+        Map<String, Object> remote = LaunchConfig.launch(
+                "demo.App",
+                "",
+                manyJars,
+                List.of(),
+                java,
+                "/w",
+                List.of("C:\\dir with space\\x"),
+                "",
+                Map.of(),
+                false,
+                LaunchConfig.Target.REMOTE_POSIX);
+        assertEquals("\"C:\\\\dir with space\\\\x\"", remote.get("args"), "quoted for the host's POSIX tokenizer");
+        assertEquals("argfile", remote.get("shortenCommandLine"), "a host's java is not judged by a local file");
+        Map<String, Object> local = LaunchConfig.launch(
+                "demo.App",
+                "",
+                manyJars,
+                List.of(),
+                java,
+                "/w",
+                List.of(),
+                "",
+                Map.of(),
+                false,
+                new LaunchConfig.Target(false, true));
+        assertEquals("jarmanifest", local.get("shortenCommandLine"), "this machine's JDK 8 is read here");
+    }
 }

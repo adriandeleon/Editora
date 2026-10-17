@@ -47,6 +47,12 @@ public final class LspTestHooks {
         return created;
     }
 
+    /** Plays the server serving {@code serving} publishing {@code params} (for any file of its project). */
+    public static void publishDiagnostics(
+            LspManager manager, java.nio.file.Path serving, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
+        manager.sessionForTest(serving).publishDiagnostics(params);
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();
