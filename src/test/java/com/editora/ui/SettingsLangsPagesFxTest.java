@@ -175,8 +175,8 @@ class SettingsLangsPagesFxTest {
         FxTestSupport.runOnFx(() -> {
             rig.settings.setDebugSupport(false);
             rig.show();
-            Map<String, Label> pills = rig.control("debugStatusLabels");
-            Label python = pills.get("python"); // no adapter manager in the rig: not found
+            Map<String, ToolStatusRow> pills = rig.control("debugStatusLabels");
+            Label python = pills.get("python").pill(); // no adapter manager in the rig: not found
             assertTrue(
                     python.getStyleClass().contains("settings-git-neutral"),
                     python.getStyleClass().toString());
@@ -189,7 +189,7 @@ class SettingsLangsPagesFxTest {
 
     /**
      * The Web page chooses the preview browser (it was only ever remembered from the last preview) and says
-     * whether the HTTP scripts' node is there; a build tool override naming no program is marked.
+     * whether the HTTP scripts' node is there; a build tool override naming no program says so.
      */
     @Test
     void theWebAndBuildToolPagesSayWhatTheyWillRun() throws Exception {
@@ -214,17 +214,62 @@ class SettingsLangsPagesFxTest {
                     com.editora.web.Browsers.SYSTEM_DEFAULT + "-other", rig.settings.getHtmlPreviewBrowser());
 
             SettingsRig.typeAndEnter(rig.control("httpNodeField"), "/no/such/dir/node");
-            Label node = rig.control("httpNodeStatus");
-            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.httpClient.nodeMissing"), node.getText());
+            Label node = rig.<ToolStatusRow>control("httpNodeStatus").pill();
+            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.tool.notFound", "node"), node.getText());
             assertTrue(node.getStyleClass().contains("settings-git-missing"));
 
             Map<com.editora.build.BuildTool, TextField> overrides = rig.control("buildToolCommandFields");
             TextField maven = overrides.get(com.editora.build.BuildTool.MAVEN);
+            Map<com.editora.build.BuildTool, ToolStatusRow> commands = rig.control("buildToolCommandStatus");
+            Label mvn = commands.get(com.editora.build.BuildTool.MAVEN).pill();
             SettingsRig.typeAndEnter(maven, "/no/such/dir/mvnx");
-            assertTrue(maven.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
-            assertTrue(maven.getTooltip().getText().contains("/no/such/dir/mvnx"));
+            org.junit.jupiter.api.Assertions.assertEquals(tr("settings.tool.notFound", "mvnx"), mvn.getText());
             SettingsRig.typeAndEnter(maven, "");
-            assertFalse(maven.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
+            assertTrue(mvn.getText().startsWith("mvn"), "back to the default command: " + mvn.getText());
+        });
+    }
+
+    /**
+     * Every tool row on these pages is the one kit row (D13): path, then "Detected" with a pill worded
+     * "<tool>: found (<path>)" / "<tool>: not found". Diagrams has no installer, so it links to the docs.
+     */
+    @Test
+    void everyToolRowIsWordedAndBuiltTheSameWay() throws Exception {
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "dot: found (/usr/bin/dot)", ToolStatusRow.text("dot", true, "/usr/bin/dot"));
+        org.junit.jupiter.api.Assertions.assertEquals("dot: found", ToolStatusRow.text("dot", true, ""));
+        org.junit.jupiter.api.Assertions.assertEquals("dot: not found", ToolStatusRow.text("dot", false, "/x"));
+        java.util.List<String> opened = new java.util.ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            rig.window.setOpenUrl(opened::add);
+            rig.show();
+            for (String page :
+                    java.util.List.of("LSP", "DEBUG", "MERMAID", "DIAGRAMS", "TYPST", "BUILD_TOOLS", "WEB", "AGENT")) {
+                assertFalse(
+                        SettingsRig.all(rig.page(page), javafx.scene.layout.HBox.class).stream()
+                                .noneMatch(h -> h.getStyleClass().contains("settings-tool-status")),
+                        page + " has the kit's tool row");
+            }
+            java.util.Map<String, ToolStatusRow> debug = rig.control("debugStatusLabels");
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    tr("settings.tool.notFound", "debugpy"),
+                    debug.get("python").pill().getText());
+            Region diagrams = rig.page("DIAGRAMS");
+            assertTrue(
+                    SettingsRig.all(diagrams, javafx.scene.control.Button.class).stream()
+                            .noneMatch(b -> tr("settings.install.button").equals(b.getText())),
+                    "no installer to offer");
+            SettingsRig.button(diagrams, tr("settings.diagram.howToInstall")).fire();
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    java.util.List.of(com.editora.AppInfo.HOMEPAGE + "/features/diagrams/"), opened);
+            ToolStatusRow dot = rig.control("dotStatus");
+            dot.show(true, "/usr/bin/dot", true);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "dot: found (/usr/bin/dot)", dot.pill().getText());
+            assertTrue(
+                    SettingsRig.all(dot.node(), javafx.scene.control.Hyperlink.class).stream()
+                            .noneMatch(javafx.scene.Node::isVisible),
+                    "the docs link goes once dot is found");
         });
     }
 
