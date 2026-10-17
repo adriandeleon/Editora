@@ -223,6 +223,9 @@ public class SettingsWindow {
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
     private ComboBox<String> editorThemeCombo;
+    /** "Text zoom is 160% …  Reset zoom", in its own row under Font size; shown only while zoomed. */
+    private HBox zoomNote;
+
     private Spinner<Integer> tabSizeSpinner;
     private Spinner<Integer> fillColumnSpinner;
     private Spinner<Integer> largeFileThresholdSpinner;
@@ -2079,6 +2082,17 @@ public class SettingsWindow {
                 fontFamily,
                 "font family typeface monospace");
         controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
+        // Text zoom (status bar −/+, the zoom commands) scales the size above; without this the field and the
+        // preview showed 18 while the editor drew 29 px.
+        Hyperlink resetZoom = new Hyperlink(tr("settings.fontZoom.reset"));
+        resetZoom.setOnAction(e -> {
+            config.getSettings().setFontZoom(1.0);
+            apply();
+        });
+        zoomNote = new HBox(8, note(""), resetZoom);
+        zoomNote.setAlignment(Pos.CENTER_LEFT);
+        zoomNote.getStyleClass().add("settings-row");
+        mainCard.body().getChildren().add(zoomNote); // not a search row: it shows only while zoomed
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
@@ -7942,8 +7956,17 @@ public class SettingsWindow {
         if (preview == null || fontFamily.getValue() == null || fontSize.getValue() == null) {
             return;
         }
-        preview.setStyle(
-                "-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: " + fontSize.getValue() + "px;");
+        double zoom = config.getSettings().getFontZoom();
+        int shown = Math.max(1, (int) Math.round(fontSize.getValue() * zoom)); // as the editor computes it
+        preview.setStyle("-fx-font-family: \"" + fontFamily.getValue() + "\"; -fx-font-size: " + shown + "px;");
+        if (zoomNote != null) {
+            boolean zoomed = Math.abs(zoom - 1.0) > 1e-9;
+            zoomNote.setVisible(zoomed);
+            zoomNote.setManaged(zoomed);
+            ((Label) zoomNote.getChildren().getFirst())
+                    .setText(tr(
+                            "settings.fontZoom.note", String.valueOf(Math.round(zoom * 100)), String.valueOf(shown)));
+        }
     }
 
     // --- reset -----------------------------------------------------------------------------------

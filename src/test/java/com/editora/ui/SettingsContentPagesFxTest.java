@@ -522,4 +522,25 @@ class SettingsContentPagesFxTest {
             assertTrue(twRow("project").disabledNote().isVisible());
         });
     }
+
+    @Test
+    void theAppearancePageSaysWhenTextZoomScalesTheFontSizeAndCanResetIt() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setFontSize(18);
+            settings.setFontZoom(1.6);
+            rig.show();
+            Region page = rig.page("APPEARANCE");
+            javafx.scene.Node preview = rig.control("preview");
+            assertTrue(preview.getStyle().contains("-fx-font-size: 29px"), preview.getStyle());
+            assertTrue(noteShown(page, tr("settings.fontZoom.note", "160", "29")));
+
+            ((javafx.scene.control.Hyperlink) SettingsRig.button(page, tr("settings.fontZoom.reset"))).fire();
+            assertEquals(1.0, settings.getFontZoom());
+            assertEquals(18, settings.getFontSize());
+            assertTrue(preview.getStyle().contains("-fx-font-size: 18px"), preview.getStyle());
+            assertFalse(noteShown(page, tr("settings.fontZoom.note", "160", "29")));
+            HBox zoomRow = rig.control("zoomNote");
+            assertFalse(zoomRow.isVisible());
+        });
+    }
 }
