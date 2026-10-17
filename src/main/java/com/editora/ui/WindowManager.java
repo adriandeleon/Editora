@@ -1233,9 +1233,15 @@ public class WindowManager {
 
     /** Whether {@code file} is the shared {@code settings.json}. */
     public boolean isSettingsFile(Path file) {
+        Path settings = shared.getSettingsFile();
+        // A remote (SFTP) path is never the local settings file, and its equals() throws ProviderMismatchException
+        // when handed a path of another provider, so compare only paths of the same file system.
+        if (file.getFileSystem() != settings.getFileSystem()) {
+            return false;
+        }
         return file.toAbsolutePath()
                 .normalize()
-                .equals(shared.getSettingsFile().toAbsolutePath().normalize());
+                .equals(settings.toAbsolutePath().normalize());
     }
 
     /**
