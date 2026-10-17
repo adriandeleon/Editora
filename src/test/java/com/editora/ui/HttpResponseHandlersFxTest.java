@@ -263,8 +263,19 @@ class HttpResponseHandlersFxTest {
         assertEquals(1, ops.scriptAsks.get(), "asked once for the run");
 
         HttpClientPanel p = panel(b);
-        String summary = FxTestSupport.callOnFx(p::runSummaryForTest);
-        assertTrue(summary.endsWith(" · tests failed in 1 request"), summary);
+        HttpRunList list = p.runListForTest();
+        String title = FxTestSupport.callOnFx(list::titleForTest);
+        assertTrue(title.startsWith("Run All · All 2 succeeded · tests failed in 1 request"), title);
+        assertEquals("http-run-ok", FxTestSupport.callOnFx(list::pillStyleForTest), "both answered 200");
+        assertTrue(
+                FxTestSupport.callOnFx(list::getAccessibleText)
+                        .startsWith("Run All: all 2 succeeded · tests failed in 1 request"),
+                "read out as one sentence");
+        assertEquals(
+                "login",
+                FxTestSupport.callOnFx(() ->
+                        list.listForTest().getSelectionModel().getSelectedItem().name()),
+                "its row is selected");
         // Both answered 200: the run lands on the request whose tests failed.
         assertEquals(
                 "login",

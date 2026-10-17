@@ -44,7 +44,6 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
@@ -82,7 +81,8 @@ import static com.editora.i18n.Messages.tr;
  * default) · <b>Headers</b> (a name/value list) · <b>Tests</b> · <b>Request</b> (as it was actually sent, variables
  * resolved) · <b>Notes</b> (warnings and files written), with counts, and the actions as icons at its right end. A
  * run switches to Tests on its own only when a test or a script failed ({@link HttpResponseTab#choose}); otherwise
- * the tab the user picked stays. The body is syntax-highlighted by content type (JSON/XML/HTML, reusing the editor's
+ * the tab the user picked stays. After a Run All a results list sits between the header and the tabs ({@link
+ * HttpRunList}): one row per request, the one selected shown in the tabs. The body is syntax-highlighted by content type (JSON/XML/HTML, reusing the editor's
  * TextMate grammars; JSON and one-line XML pretty-printed), or the picture for an {@code image/*} response.
  *
  * <p>Between responses the Body tab shows a state instead of an empty form: before any response, which request Run
@@ -132,12 +132,14 @@ public final class HttpClientPanel extends VBox {
     private String statusLine = "";
 
     private final Tooltip statusTip = new Tooltip();
-    /** "Run All: 3 of 13 failed" under the header after a Run All, until the next run. */
+    /** A note about the last run under the header (Run sent the caret's request instead), until the next run. */
     private final Label runSummary = new Label();
-    /** The Run All summary, and a note about the last run (Run sent the caret's request instead), until the next run. */
-    private String summaryText;
 
     private String runNotice;
+    /** After a Run All: one row per request, until the next run or Clear. */
+    private final HttpRunList runList;
+    /** How long the last run took from Run to its end (or to Cancel), for the Run All title; -1 unknown. */
+    private long runTookNanos = -1;
     /** A note above the body when the view or the saved history holds only part of it (it used to sit at the end). */
     private final Label bodyNote = new Label();
 
@@ -170,8 +172,7 @@ public final class HttpClientPanel extends VBox {
     private final VBox headersBox;
     private final CodeArea bodyArea = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> bodyScroll = new VirtualizedScrollPane<>(bodyArea);
-    private final ImageView imageView = new ImageView();
-    private final ScrollPane imageScroll = new ScrollPane(imageView);
+    private final HttpImageView imageView = new HttpImageView();
     private final VBox bodyBox;
     private final Map<HttpResponseTab, Node> tabContent = new EnumMap<>(HttpResponseTab.class);
 
@@ -230,6 +231,9 @@ public final class HttpClientPanel extends VBox {
 
     /** Run again: the selected entry (to re-send that request), or null (run the request at the caret). */
     private Consumer<HttpHistoryEntry> onRun = e -> {};
+
+    /** A Run All row's Enter or double-click: go to that entry's request in the editor. */
+    private Consumer<HttpHistoryEntry> onJump = e -> {};
 
     private Runnable onCancel;
     private Runnable onEscape = () -> {};
@@ -313,12 +317,20 @@ public final class HttpClientPanel extends VBox {
         historyCombo.valueProperty().addListener((o, a, b) -> {
             if (!updatingHistory && b != null) {
                 showEntry(b); // also during a long run: an older response can be looked at meanwhile
+                selectRunRow(b); // its Run All row, or none: an entry from another run keeps the list unselected
                 if (running) {
                     showRunning(); // …while the status line still says what is running
                 }
             }
         });
         header = new HttpHeaderRow(runHost, status, meta, historyCombo);
+        runList = new HttpRunList(this::showRunRow, e -> onJump.accept(e), e -> onRun.accept(e), e -> {
+            if (onCopyAsCurl != null) {
+                onCopyAsCurl.accept(e.exchange());
+            }
+        });
+        // At most about 40% of the panel, scrolling on its own: the tabs below keep their room.
+        runList.maxHeightProperty().bind(heightProperty().multiply(0.4));
         progress.getStyleClass().add("http-progress");
         progress.setMaxWidth(Double.MAX_VALUE);
         progress.setFocusTraversable(false);
@@ -379,10 +391,8 @@ public final class HttpClientPanel extends VBox {
         // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         bodyArea.setWrapText(false);
         installCopyMenu(bodyArea); // RichTextFX has no default menu — add Copy / Select All for the response
-        imageView.setPreserveRatio(true);
-        imageScroll.setVisible(false);
-        imageScroll.getStyleClass().add("http-image");
-        StackPane bodyHost = new StackPane(bodyScroll, imageScroll);
+        imageView.setVisible(false);
+        StackPane bodyHost = new StackPane(bodyScroll, imageView);
         bodyNote.getStyleClass().add("http-body-note");
         bodyNote.setWrapText(true);
         bodyNote.setMaxWidth(Double.MAX_VALUE);
@@ -412,6 +422,7 @@ public final class HttpClientPanel extends VBox {
         StackPane.setAlignment(errorCard, Pos.TOP_LEFT);
         StackPane bodyStack = new StackPane(bodyBox, emptyState, errorCard, previousPane);
         bodyStack.getStyleClass().add("http-body-stack");
+        unmanagedWhenHidden(bodyStack);
 
         // --- Headers ---
         headersStatus.getStyleClass().add("http-headers-status");
@@ -453,6 +464,7 @@ public final class HttpClientPanel extends VBox {
         for (HttpResponseTab t : HttpResponseTab.values()) {
             content.getChildren().add(tabContent.get(t));
         }
+        unmanagedWhenHidden(content);
         showTab(HttpResponseTab.BODY);
         showNotes(List.of(), List.of());
         showTests(HttpTests.NONE, false);
@@ -461,7 +473,7 @@ public final class HttpClientPanel extends VBox {
         installKeys();
         VBox.setVgrow(content, Priority.ALWAYS);
         VBox headerBox = new VBox(3, header, progress);
-        getChildren().addAll(headerBox, runSummary, tabs, content); // the summary row shows after a Run All
+        getChildren().addAll(headerBox, runSummary, runList, tabs, content); // the run notice; the Run All list
         // A narrow Split gives the editor its share: the panel can shrink below its rows' preferred width.
         setMinWidth(MIN_WIDTH);
         setRunning(false);
@@ -739,9 +751,10 @@ public final class HttpClientPanel extends VBox {
         historyCombo.setValue(null);
         updatingHistory = false;
         clearView();
-        summaryText = null;
         runNotice = null;
         showSummaryRow();
+        runList.hide(); // a Run All's results stay until the next run, whichever it is
+        runTookNanos = -1;
         showPreviousRow();
         updateActions();
         showProgress(true);
@@ -826,6 +839,9 @@ public final class HttpClientPanel extends VBox {
     }
 
     private void stopRunning() {
+        if (running) {
+            runTookNanos = System.nanoTime() - runningSince;
+        }
         elapsed.stop();
         waiting = false;
         showProgress(false);
@@ -968,6 +984,30 @@ public final class HttpClientPanel extends VBox {
      * not succeed — for a Run All, the failure the user needs to see — else the first.
      */
     public void showEntries(List<HttpHistoryEntry> entries) {
+        runList.hide();
+        addAndShow(entries);
+        runTookNanos = -1; // a later Run All that sends nothing (never "started") has no time to show
+    }
+
+    /**
+     * The finished {@code entries} of a Run All (in run order), shown as {@link #showEntries} does and listed one row
+     * per request above the tabs, the one shown selected. {@code cancelledOf} is the number of requests of a Run All
+     * the user cancelled (0: it finished). Fewer than two requests in a run that finished show no list.
+     */
+    public void showRunAll(List<HttpHistoryEntry> entries, int cancelledOf) {
+        if (entries == null || (entries.size() < 2 && cancelledOf < 2)) {
+            showEntries(entries);
+            return;
+        }
+        stopRunning(); // from Run to here (or to Cancel, which stopped it already)
+        long tookMs = runTookNanos < 0 ? -1 : runTookNanos / 1_000_000;
+        runTookNanos = -1;
+        HttpHistoryEntry shown = addAndShow(entries);
+        runList.show(entries, cancelledOf, tookMs, shown);
+    }
+
+    /** Adds {@code entries} to History and shows the one to land on; returns it (null when there are none). */
+    private HttpHistoryEntry addAndShow(List<HttpHistoryEntry> entries) {
         boolean wasRunning = running;
         stopRunning();
         if (entries == null || entries.isEmpty()) {
@@ -975,7 +1015,7 @@ public final class HttpClientPanel extends VBox {
                 rest(""); // nothing came back: what was on show before
             }
             updateActions();
-            return;
+            return null;
         }
         int pick = Math.max(
                 0,
@@ -992,6 +1032,30 @@ public final class HttpClientPanel extends VBox {
         updatingHistory = false;
         previous = null;
         showEntry(first);
+        return first;
+    }
+
+    /** {@code entry} was picked in History: its Run All row is selected, or no row when it has none. */
+    private void selectRunRow(HttpHistoryEntry entry) {
+        runList.select(entry);
+    }
+
+    /** A Run All row was selected: shows its response (the History's copy of it, when History still has it). */
+    private void showRunRow(HttpHistoryEntry entry) {
+        HttpHistoryEntry shown = entry;
+        for (HttpHistoryEntry h : history) {
+            if (HttpRunRows.sameRun(h, entry)) {
+                shown = h;
+                break;
+            }
+        }
+        updatingHistory = true;
+        historyCombo.setValue(shown);
+        updatingHistory = false;
+        showEntry(shown);
+        if (running) {
+            showRunning();
+        }
     }
 
     /** Puts a saved history back (newest first) without running anything, showing the newest. */
@@ -1163,8 +1227,8 @@ public final class HttpClientPanel extends VBox {
         tabs.setAvailable(EnumSet.of(HttpResponseTab.BODY));
         showBodyNote(null);
         bodyArea.clear();
-        imageView.setImage(null);
-        imageScroll.setVisible(false);
+        imageView.clear();
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
     }
 
@@ -1180,7 +1244,7 @@ public final class HttpClientPanel extends VBox {
         CompletableFuture<Void> done = new CompletableFuture<>();
         bodyRender = done;
         bodyArea.replaceText(""); // never leave the previous response under the new status + headers
-        imageView.setImage(null);
+        imageView.clear();
         String shownRequest =
                 request.length() > MAX_BODY_CHARS ? request.substring(0, MAX_BODY_CHARS) + "\n…" : request;
         requestArea.replaceText(shownRequest);
@@ -1221,7 +1285,7 @@ public final class HttpClientPanel extends VBox {
 
     /** A request that got no response: the card naming the failure, with its explanation and what to do next. */
     private void showError(HttpResult r) {
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         showBodyNote(null);
         errorCard.show(HttpFailureKind.of(r), r.shownError());
@@ -1241,13 +1305,13 @@ public final class HttpClientPanel extends VBox {
     private void applyBody(HttpHistoryEntry entry, HttpBodyRendering.Rendered rendered) {
         HttpResult r = entry.result();
         if (rendered.image() != null) {
-            imageView.setImage(rendered.image());
-            imageScroll.setVisible(true);
+            imageView.show(rendered.image(), r.contentType(), r.sizeBytes());
+            imageView.setVisible(true);
             bodyScroll.setVisible(false);
             bodyArea.replaceText("");
             return;
         }
-        imageScroll.setVisible(false);
+        imageView.setVisible(false);
         bodyScroll.setVisible(true);
         HttpResponseFormat.BodyView view = rendered.view();
         StringBuilder text = new StringBuilder(rendered.text());
@@ -1284,6 +1348,16 @@ public final class HttpClientPanel extends VBox {
     }
 
     /** Shows {@code tab}'s content (the strip's selection changed, by the user or by a run). */
+    /**
+     * Only the shown child of {@code stack} counts in its size. A hidden empty state (a row per request) or tab used to
+     * ask for its full height, and the panel took that room from the Run All list above the tabs.
+     */
+    private static void unmanagedWhenHidden(StackPane stack) {
+        for (Node child : stack.getChildren()) {
+            child.managedProperty().bind(child.visibleProperty());
+        }
+    }
+
     private void showTab(HttpResponseTab tab) {
         tabContent.forEach((t, node) -> node.setVisible(t == tab));
     }
@@ -1398,7 +1472,11 @@ public final class HttpClientPanel extends VBox {
 
     /** Whether the body pane currently shows a picture. Test accessor. */
     boolean showsImageForTest() {
-        return imageScroll.isVisible() && imageView.getImage() != null;
+        return imageView.isVisible() && imageView.hasImage();
+    }
+
+    HttpImageView imageViewForTest() {
+        return imageView;
     }
 
     /** The note above the body (a cut view or history), or null when none shows. Test accessor. */
@@ -1433,6 +1511,7 @@ public final class HttpClientPanel extends VBox {
     }
 
     private void clear() {
+        runList.hide();
         history.clear();
         updatingHistory = true;
         historyCombo.getItems().clear();
@@ -1458,12 +1537,6 @@ public final class HttpClientPanel extends VBox {
         return selectedShown();
     }
 
-    /** After a Run All: "Run All: 3 of 13 failed" under the header (null hides it). */
-    public void showRunSummary(String summary) {
-        summaryText = summary;
-        showSummaryRow();
-    }
-
     /**
      * A note about the run just started, shown under the header until the next run — Run on a History entry whose
      * request is gone sends the caret's request instead, which a status-bar message alone hid within milliseconds.
@@ -1474,9 +1547,12 @@ public final class HttpClientPanel extends VBox {
     }
 
     private void showSummaryRow() {
-        String text =
-                summaryText == null ? runNotice : runNotice == null ? summaryText : summaryText + "\n" + runNotice;
-        showBadge(runSummary, text);
+        showBadge(runSummary, runNotice);
+    }
+
+    /** Where a Run All row's Enter or double-click goes: that entry's request in the editor. */
+    public void setOnJumpToRequest(Consumer<HttpHistoryEntry> onJump) {
+        this.onJump = onJump == null ? e -> {} : onJump;
     }
 
     /**
@@ -1509,6 +1585,7 @@ public final class HttpClientPanel extends VBox {
         waiting = false;
         previous = null;
         clearView();
+        runList.hide();
         Runnable disposed = onDisposed;
         onDisposed = () -> {};
         disposed.run();
@@ -1519,6 +1596,7 @@ public final class HttpClientPanel extends VBox {
         historyCombo.setValue(null);
         updatingHistory = false;
         onRun = e -> {};
+        onJump = e -> {};
         onCancel = null;
         onEscape = () -> {};
         onCleared = () -> {};
@@ -1554,9 +1632,14 @@ public final class HttpClientPanel extends VBox {
         return sb.toString();
     }
 
-    /** The Run All summary, or null when hidden. Test accessor. */
-    String runSummaryForTest() {
+    /** The note about the last run under the header, or null when hidden. Test accessor. */
+    String runNoticeForTest() {
         return runSummary.isVisible() ? runSummary.getText() : null;
+    }
+
+    /** The Run All results list. Test accessor. */
+    HttpRunList runListForTest() {
+        return runList;
     }
 
     private boolean isNoteOnly() {

@@ -132,6 +132,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Breakpoint, and while paused Run to Cursor, Show Value and Add to Watches.
 - **JDK and library frames show their source** (read-only) when you step into them or click them.
 
+- **HTTP Client: Run All lists every request.** After Run All the response view used to show one response and a
+  line like "Run All: 3 of 10 failed". Now a results list sits above the tabs: a title ("Run All · 3 of 10 failed ·
+  4.1 s"), then one row per request in run order with its status, name, method and path, time, and tests (`✗ 2/3`
+  in red when one failed). The first failure is selected and shown; selecting another row shows that response in
+  the tabs. **Only failures** hides the rest, the chevron collapses the list, and the list scrolls on its own so
+  the tabs keep their room. Enter or a double-click goes to the request in the editor; right-click a row to run it
+  again or copy it as cURL. A cancelled Run All lists the requests that finished. The list stays until the next run
+  or Clear.
+
 - **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
   how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
   status is in the outcome's colour, failed tests are red, and the request's ▶ takes the colour too (amber for a
@@ -418,6 +427,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **A request that got no response** shows a card in the Body tab naming what went wrong (Connection refused,
     Host not found, Timed out, Certificate problem, Not sent…) with the explanation and Run again and Copy as
     cURL buttons; a pre-request script that did not run also offers its output. The view opens on that card.
+
+- **HTTP Client: response bodies read like other tools show them.** JSON is laid out as `"id": 42`, two spaces
+  per level, every field and array element on its own line, and `[]`/`{}` for empty ones (it was Jackson's
+  `"id" : 42` with `[ {` on one line). HTML responses, such as a one-line 404 page, are indented one element per
+  line, with text and inline tags kept together and the contents of `<pre>`, `<script>`, `<style>`,
+  `<textarea>` and comments left as they are; a page the server already indented, or one too irregular to
+  format safely, is shown as received. Only the view changes: Save response and Open in tab still write the
+  body exactly as it arrived.
+
+- **HTTP Client: image responses say what they are.** A caption line gives the format, the size in pixels and
+  the size in bytes ("PNG · 160 × 160 · 858 B"), the picture sits on a checkerboard so transparent parts show,
+  and **Fit** (the default, which scales a large picture down to the panel's width but never enlarges a small
+  one) and **100%** switch between fitting and the actual size.
 
 ## [0.22.0] - 2026-10-16
 
