@@ -53,10 +53,12 @@ class AgentLocationTest {
         assertEquals("/run/op.sock", find("$OP_SOCK", env, false).where());
         assertEquals("/run/op.sock", find("${OP_SOCK}", env, false).where());
         assertNull(find("$UNSET", env, false));
+        // The home folder as this OS spells it (\home\ana on Windows), the rest as written: the same file.
         assertEquals(
-                "/home/ana/.1password/agent.sock",
-                find("~/.1password/agent.sock", env, false).where());
+                HOME.resolve(".1password/agent.sock"),
+                Path.of(find("~/.1password/agent.sock", env, false).where()));
         assertEquals(
-                "/home/ana/x/ana.sock", find("\"%d/x/%u.sock\"", env, false).where());
+                HOME.resolve("x/ana.sock"),
+                Path.of(find("\"%d/x/%u.sock\"", env, false).where()));
     }
 }
