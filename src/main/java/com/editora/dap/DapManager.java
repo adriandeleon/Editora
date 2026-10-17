@@ -125,6 +125,14 @@ public final class DapManager {
 
         /** A short message for the status bar about a control that cannot act now (not an error). */
         default void onStatus(String message) {}
+
+        /**
+         * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
+         * adapter starts it with, before the program's own arguments — in {@code where} (its folder, so its
+         * host) with {@code env} on top of the user's environment. Not reported for an attach: the program
+         * was already running, under whatever started it.
+         */
+        default void onDebuggeeRuntime(List<String> runtime, Path where, Map<String, String> env) {}
     }
 
     private final LspManager lsp;
@@ -1520,8 +1528,14 @@ public final class DapManager {
                     // Running once the adapter has the program, not when the request left: until then
                     // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
                     Platform.runLater(() -> {
-                        if (isCurrent(epoch, c) && state == State.STARTING) {
+                        if (!isCurrent(epoch, c)) {
+                            return;
+                        }
+                        if (state == State.STARTING) {
                             setState(State.RUNNING);
+                        }
+                        if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
+                            listener.onDebuggeeRuntime(List.of(javaExec), runtimeWhere(file), Map.of());
                         }
                     });
                 });
@@ -1844,6 +1858,13 @@ public final class DapManager {
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
+                    List<String> runtime = pythonRuntime(launch);
+                    if (!runtime.isEmpty()) {
+                        listener.onDebuggeeRuntime(
+                                runtime,
+                                runtimeWhere(paths, launch.get("cwd") instanceof String cwd ? cwd : null),
+                                stringMap(launch.get("env")));
+                    }
                 }
             });
         });
@@ -2030,6 +2051,12 @@ public final class DapManager {
             Platform.runLater(() -> {
                 if (isCurrent(epoch, c)) {
                     setState(State.RUNNING);
+                    if (attachArgs == null) {
+                        listener.onDebuggeeRuntime(
+                                List.of(nodeExe == null || nodeExe.isBlank() ? spec.defaultInterpreter() : nodeExe),
+                                runtimeWhere(paths, cwd),
+                                Map.of());
+                    }
                 }
             });
         });
@@ -2289,6 +2316,40 @@ public final class DapManager {
 
     private static String cwdOf(Path file) {
         return file.getParent() == null ? null : file.getParent().toString();
+    }
+
+    /** Where a debuggee's runtime is asked its version: {@code file}'s folder, so its host; null is here. */
+    private static Path runtimeWhere(Path file) {
+        return file == null ? null : file.getParent();
+    }
+
+    /** The interpreter argv a debugpy {@code launch} runs the program with ({@code python} + {@code pythonArgs});
+     *  empty when it names none and debugpy uses its own. */
+    static List<String> pythonRuntime(Map<String, Object> launch) {
+        if (!(launch.get("python") instanceof String python) || python.isBlank()) {
+            return List.of();
+        }
+        List<String> argv = new ArrayList<>(List.of(python));
+        if (launch.get("pythonArgs") instanceof List<?> args) {
+            args.forEach(a -> argv.add(String.valueOf(a)));
+        }
+        return argv;
+    }
+
+    /** A launch body's {@code env} as strings (a null value, which unsets, stays null); empty when absent. */
+    private static Map<String, String> stringMap(Object env) {
+        if (!(env instanceof Map<?, ?> m)) {
+            return Map.of();
+        }
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        m.forEach((k, v) -> out.put(String.valueOf(k), v == null ? null : String.valueOf(v)));
+        return out;
+    }
+
+    /** Where a debuggee's runtime is asked its version: its launch folder, named as the adapter's machine names
+     *  it (so its host); null is here. */
+    private static Path runtimeWhere(DapPaths paths, String cwd) {
+        return cwd == null || cwd.isBlank() ? null : paths.fromAdapter(cwd);
     }
 
     // --- Controls -------------------------------------------------------------------------------

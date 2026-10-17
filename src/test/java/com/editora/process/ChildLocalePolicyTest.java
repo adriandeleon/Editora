@@ -58,6 +58,7 @@ class ChildLocalePolicyTest {
             "lsp/RemoteJavaRuntimes.java", // a host's JDK folders and their release versions
             "mermaid/Mermaid.java", // detect() + maid's JSON report
             "run/RunService.java", // `java -version`
+            "run/RuntimeProbe.java", // the Run/Debug runtime chip: `java -XshowSettings`, `--version`
             "search/RemoteFiles.java", // rg --version and file lists on a remote host
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
