@@ -2,11 +2,8 @@ package com.editora.dap;
 
 import java.io.File;
 import java.net.ServerSocket;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,10 +22,8 @@ import javafx.application.Platform;
 import com.editora.lsp.LspManager;
 import com.editora.process.BusyExecutable;
 import com.editora.process.ProcessRunner;
-import com.editora.run.JdkToolchain;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * UI-facing facade for Java debugging over DAP (mirrors {@code LspManager} + {@code RunService}). Owns the
@@ -37,9 +32,10 @@ import com.google.gson.JsonObject;
  * class / classpath / java executable, start the debug session (which returns a socket port via
  * {@code workspace/executeCommand}), connect the DAP socket, then {@code launch}/{@code attach}. All public
  * methods are safe to call from the FX thread; socket I/O and event callbacks run off it and results are
- * marshaled back via {@link Platform#runLater}. Implements {@link DapClient.Host} to receive DAP events.
+ * marshaled back via {@link Platform#runLater}. Each session's DAP events arrive through its own
+ * host ({@code sessionHost(epoch)}), bound to the session epoch, so an event of an ended session never reaches the next.
  */
-public final class DapManager implements DapClient.Host {
+public final class DapManager {
 
     private static final Logger LOG = Logger.getLogger(DapManager.class.getName());
 
@@ -120,6 +116,15 @@ public final class DapManager implements DapClient.Host {
         /** The program Editora started for this session ended by itself with {@code code}; the session
          *  ends right after. Not reported for a program that was stopped. */
         default void onProgramExit(int code) {}
+
+        /**
+         * The connection to the debug adapter was lost while its program was still running (jdtls, which hosts
+         * java-debug, crashed or was ended): the program has been ended and the session ends right after.
+         */
+        default void onAdapterLost() {}
+
+        /** A short message for the status bar about a control that cannot act now (not an error). */
+        default void onStatus(String message) {}
 
         /**
          * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
@@ -258,6 +263,11 @@ public final class DapManager implements DapClient.Host {
         return ExceptionFilterCatalog.known(language);
     }
 
+    /** The exception filters chosen per language (a language not listed uses its adapter's defaults). */
+    public Map<String, List<String>> exceptionChoices() {
+        return new java.util.LinkedHashMap<>(exceptionChoices);
+    }
+
     /** The exception filters in force for {@code language}: the chosen ones, else the adapter's defaults. */
     public List<String> exceptionFiltersFor(String language) {
         List<String> chosen = exceptionChoices.get(language);
@@ -358,6 +368,16 @@ public final class DapManager implements DapClient.Host {
     /** Records whether the running Java server itself provides the debug commands (see the field doc). */
     public void setServerProvidesJavaDebug(boolean provided) {
         this.serverProvidesJavaDebug = provided;
+    }
+
+    /**
+     * Whether the java-debug plugin is installed — a jar is found, or the running jdtls provides it — whether
+     * or not debugging is switched on. What Install and Settings ask (review A6, A7): asked through
+     * {@link #isAdapterAvailable}, every Install re-downloaded a plugin that was there all along while
+     * debugging was off, and Settings said "not found" for a jdtls that ships it.
+     */
+    public boolean isJavaDebugInstalled() {
+        return serverProvidesJavaDebug || !locate().isEmpty();
     }
 
     /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
@@ -562,7 +582,7 @@ public final class DapManager implements DapClient.Host {
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
-            listener.onError("Debugging is not supported for this file type.");
+            listener.onError(tr("debug.error.notSupported"));
         }
     }
 
@@ -581,6 +601,55 @@ public final class DapManager implements DapClient.Host {
     /** Sets the debuggee's JVM arguments; call before {@link #startLaunchMainClass}. "" clears them. */
     public void setVmArgs(String vmArgs) {
         this.vmArgs = vmArgs == null ? "" : vmArgs;
+        this.vmArgList = null;
+    }
+
+    /**
+     * Sets the debuggee's JVM arguments as already split (a saved configuration's, split as Run splits them):
+     * they are encoded for the adapter's own tokenizer at launch, by the OS of the machine it runs on.
+     */
+    public void setVmArgs(List<String> vmArgs) {
+        this.vmArgList = vmArgs == null ? List.of() : List.copyOf(vmArgs);
+        this.vmArgs = "";
+    }
+
+    /** {@link #setVmArgs(List)}'s arguments; null when the raw {@link #vmArgs} text applies. */
+    private volatile List<String> vmArgList;
+
+    /** The JVM arguments of the next launch as java-debug's {@code vmArgs} string, for an adapter on {@code target}. */
+    private String vmArgsFor(LaunchConfig.Target target) {
+        List<String> list = vmArgList;
+        return list == null ? vmArgs : LaunchConfig.javaArgs(list, target.windows());
+    }
+
+    /**
+     * The {@code java} of a remote host's configured JDK for the next launch ({@code ""}: what jdtls resolves
+     * there) — a saved configuration's, as Run uses it (review D9). Set before {@link #startLaunchMainClass}.
+     */
+    private volatile String hostJavaExec = "";
+
+    /** See {@link #hostJavaExec}; {@code null} or blank clears it. */
+    public void setHostJavaExec(String java) {
+        this.hostJavaExec = java == null ? "" : java.strip();
+    }
+
+    /**
+     * The {@code java} a project launch for {@code file} runs: this machine's chosen JDK (an override is a JDK on
+     * this machine, never used for a remote file), else for a remote file the host's configured one, else the
+     * one jdtls resolved.
+     */
+    private String javaExecFor(Path file, String javaExecOverride, String resolved) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return hostJavaExec.isBlank() ? resolved : hostJavaExec;
+        }
+        return javaExecOverride == null || javaExecOverride.isBlank() ? resolved : javaExecOverride;
+    }
+
+    /** The machine the adapter of a session for {@code file} runs on (review D8). */
+    static LaunchConfig.Target targetFor(Path file) {
+        return file == null || com.editora.process.ExecTargets.runsHere(file)
+                ? LaunchConfig.Target.LOCAL
+                : LaunchConfig.Target.REMOTE_POSIX;
     }
 
     /** The output category of Editora's own line saying what a launch runs (drawn muted by the Debug panel). */
@@ -647,57 +716,86 @@ public final class DapManager implements DapClient.Host {
 
     /** Java launch for a file of the build project at {@code projectRoot} ({@code null}: a loose file). */
     public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
+        startLaunch(file, picker, javaExecOverride, projectRoot, null);
+    }
+
+    /**
+     * As above, with the folder a loose file runs in ({@code looseCwd}, null: its own folder) — the project
+     * root of a plain-folder project window, where a program reads its files as it would from a terminal there.
+     */
+    public void startLaunch(
+            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd) {
         if (!ready(file)) {
             return;
         }
-        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot);
+        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot, looseCwd);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
+        Runnable resolve =
+                () -> resolveMainClassAndLaunch(file, picker, javaExecOverride, projectRoot, looseCwd, epoch);
+        if (projectRoot == null) {
+            correctSourceRoot(file, epoch, resolve);
+        } else {
+            resolve.run();
+        }
+    }
+
+    private void resolveMainClassAndLaunch(
+            Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot, Path looseCwd, long epoch) {
         lsp.executeCommand(file, "vscode.java.resolveMainClass", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
             }
             if (err != null) {
-                fail(epoch, "resolveMainClass failed: " + msg(err));
+                fail(epoch, tr("debug.error.resolveMainClassFailed", msg(err)));
                 return;
             }
-            List<MainClassOption> options = parseMainClasses(res);
+            List<MainClassOption> options = JdtlsReplies.parseMainClasses(res);
+            DapPaths paths = pathsFor(file);
+            // A project's main class runs in the project root — what Run, the gutter and a saved
+            // configuration use — and a loose file in the window's project folder, else its own folder.
+            Path dir = projectRoot != null ? projectRoot : looseCwd != null ? looseCwd : file.getParent();
+            String cwd = dir == null ? null : paths.toAdapter(dir);
+            String own = ownMainClass(file);
             if (options.isEmpty()) {
                 // jdtls enumerated no project main class (a standalone file, or the project is still
                 // importing). Derive the fully-qualified class name from the file (package + type name)
                 // and resolve its classpath — the adapter needs a real class name + classPaths, not a path.
-                String fqn = mainClassFromFile(file);
+                String fqn = own != null ? own : JavaCompilation.mainClassFromFile(file);
                 if (fqn == null) {
-                    fail(epoch, "No main class could be determined for this file.");
+                    fail(epoch, tr("debug.error.noMainClass"));
                     return;
                 }
-                compileAndLaunch(file, fqn, javaExecOverride, epoch, null);
+                compileAndLaunch(file, fqn, javaExecOverride, epoch, null, dir);
                 return;
             }
-            DapPaths paths = pathsFor(file);
             MainClassOption match = options.stream()
                     .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file, paths))
                     .findFirst()
                     .orElse(null);
-            // A project's main class runs in the project root — what Run, the gutter and a saved
-            // configuration use — and only a loose file in its own folder.
-            Path dir = projectRoot != null ? projectRoot : file.getParent();
-            String cwd = dir == null ? null : paths.toAdapter(dir);
-            if (match != null && projectRoot == null) {
-                // The file's own main class, in no build project: jdtls lists it from an "invisible
-                // project" whose output folder nothing ever compiles into (autobuild is off), so the
-                // resolved classpath holds no class file to run. Compile the file ourselves then.
-                Runnable compile = () -> compileAndLaunch(file, match.className(), javaExecOverride, epoch, null);
-                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch, compile);
-            } else if (match != null) {
-                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch);
+            if (match == null && own != null) {
+                // The file declares a main that jdtls does not list: it is outside the project's source
+                // folders (a script beside the project), or jdtls has not seen it yet. Debug the file — never
+                // the project's other main class, which is what used to run instead.
+                compileAndLaunch(file, own, javaExecOverride, epoch, null, dir);
+                return;
+            }
+            if (match != null) {
+                launchOption(file, match, cwd, javaExecOverride, projectRoot, epoch);
             } else if (options.size() == 1) {
-                resolveAndLaunch(file, options.get(0), cwd, javaExecOverride, epoch);
+                // No main here: the project's only one is what Debug means, as in VS Code — said so, because
+                // the program that runs is not the file in front of the user.
+                MainClassOption only = options.get(0);
+                notice(
+                        epoch,
+                        com.editora.i18n.Messages.tr(
+                                "debug.console.noMainInFile", file.getFileName(), only.className()));
+                launchOption(file, only, cwd, javaExecOverride, projectRoot, epoch);
             } else {
                 picker.pick(options, chosen -> {
                     if (chosen != null) {
-                        resolveAndLaunch(file, chosen, cwd, javaExecOverride, epoch);
+                        launchOption(file, chosen, cwd, javaExecOverride, projectRoot, epoch);
                     } else {
                         if (isCurrent(epoch)) {
                             setState(State.INACTIVE);
@@ -706,6 +804,120 @@ public final class DapManager implements DapClient.Host {
                 });
             }
         });
+    }
+
+    /**
+     * Launches {@code opt}. Outside a build project jdtls's "invisible project" never compiles anything into its
+     * output folder (autobuild is off), so a class missing there is compiled here, from its own source file.
+     */
+    private void launchOption(
+            Path file, MainClassOption opt, String cwd, String javaExecOverride, Path projectRoot, long epoch) {
+        if (projectRoot != null) {
+            resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch);
+            return;
+        }
+        Path source = optionSource(file, opt);
+        Path dir = cwd == null ? null : pathsFor(file).fromAdapter(cwd);
+        Runnable compile = () -> compileAndLaunch(
+                source,
+                JavaLaunchSupport.qualified(opt.className(), JavaLaunchSupport.declaredPackage(source)),
+                javaExecOverride,
+                epoch,
+                null,
+                dir,
+                file);
+        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
+    }
+
+    /** The source file of {@code opt} as Editora reaches it ({@code file} when jdtls named none). */
+    private static Path optionSource(Path file, MainClassOption opt) {
+        if (opt.filePath() == null || opt.filePath().isBlank()) {
+            return file;
+        }
+        try {
+            Path named = pathsFor(file).fromAdapter(opt.filePath());
+            return named == null ? file : named;
+        } catch (RuntimeException e) {
+            return file;
+        }
+    }
+
+    /** The fully-qualified name of the first {@code main} {@code file} declares itself, or null (bounded read). */
+    static String ownMainClass(Path file) {
+        try {
+            if (file == null || Files.size(file) > 2_000_000) {
+                return null;
+            }
+            List<com.editora.run.MainMethodScanner.MainMethod> mains =
+                    com.editora.run.MainMethodScanner.scan(Files.readString(file));
+            return mains.isEmpty() ? null : mains.get(0).fqn();
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** A line of Editora's own in the Debug console for the session of {@code epoch} (FX thread). */
+    private void notice(long epoch, String text) {
+        if (isCurrent(epoch)) {
+            listener.onOutput(text + "\n", "console");
+        }
+    }
+
+    /**
+     * In a folder with no build file jdtls keeps a Java file in an "invisible project" whose source folder it
+     * guesses — and it guesses the file's own folder, so {@code src/demo/Main.java} declaring {@code package
+     * demo} is class {@code Main} to it: the launch named a class that does not exist, its package line was
+     * flagged as wrong, and no stop could be shown in the file. When the declared package says the source
+     * folder is another one, this tells jdtls so (adding the right folder, then removing the wrong ones —
+     * Editora's jdtls workspace changes, never the user's files) and then runs {@code then}. Anything that
+     * cannot be corrected (no package, a misplaced file, a folder outside the server's workspace) runs
+     * {@code then} as it is: the compile below names the class from the file either way.
+     */
+    private void correctSourceRoot(Path file, long epoch, Runnable then) {
+        String pkg = JavaLaunchSupport.declaredPackage(file);
+        Path root = pkg.isEmpty() || !com.editora.process.ExecTargets.runsHere(file)
+                ? null
+                : JavaLaunchSupport.sourceRoot(file, pkg);
+        if (root == null) {
+            then.run();
+            return;
+        }
+        lsp.executeCommand(file, "java.project.listSourcePaths", List.of(), (res, err) -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            List<Path> current = err == null ? JavaLaunchSupport.sourcePaths(res) : List.of();
+            List<Path> wrong = JavaLaunchSupport.wrongSourceRoots(current, file, root);
+            if (wrong.isEmpty()) {
+                then.run();
+                return;
+            }
+            lsp.executeCommand(
+                    file, "java.project.addToSourcePath", List.of(root.toUri().toString()), (added, e2) -> {
+                        if (!isCurrent(epoch)) {
+                            return;
+                        }
+                        if (e2 != null || !JavaLaunchSupport.statusOk(added)) {
+                            then.run(); // the right folder is outside the server's workspace: leave it be
+                            return;
+                        }
+                        removeSourceRoots(file, new ArrayList<>(wrong), epoch, then);
+                    });
+        });
+    }
+
+    private void removeSourceRoots(Path file, List<Path> wrong, long epoch, Runnable then) {
+        if (wrong.isEmpty()) {
+            then.run();
+            return;
+        }
+        Path next = wrong.remove(0);
+        lsp.executeCommand(
+                file, "java.project.removeFromSourcePath", List.of(next.toUri().toString()), (r, e) -> {
+                    if (isCurrent(epoch)) {
+                        removeSourceRoots(file, wrong, epoch, then);
+                    }
+                });
     }
 
     /** Debug a compact {@code .java} file as the implicit class named after the file. */
@@ -720,7 +932,7 @@ public final class DapManager implements DapClient.Host {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        compileAndLaunch(file, compactMainClassFromFile(file), javaExecOverride, epoch, null);
+        compileAndLaunch(file, JavaCompilation.compactMainClassFromFile(file), javaExecOverride, epoch, null);
     }
 
     /** Debug an extensionless Java script via a line-preserving temporary {@code .java} copy. */
@@ -789,11 +1001,11 @@ public final class DapManager implements DapClient.Host {
                 && enabled
                 && com.editora.process.ExecTargets.remoteTool(file, "dap.java") != null;
         if (!javaDebugUsable() && !hostPlugin) {
-            listener.onError("Java debugging is not available (enable it and install the java-debug plugin).");
+            listener.onError(tr("debug.error.javaUnavailable"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a Java file to debug first.");
+            listener.onError(tr("debug.error.openJavaFile"));
             return false;
         }
         if (client != null) {
@@ -830,6 +1042,9 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, r.error());
                 return;
             }
+            if (ifNoClassFile == null) {
+                warnAboutClasses(file, opt, r, epoch);
+            }
             startDebugSessionAndConnect(
                     file,
                     LaunchConfig.launch(
@@ -837,21 +1052,39 @@ public final class DapManager implements DapClient.Host {
                             proj,
                             r.classPaths(),
                             r.modulePaths(),
-                            // A remote file runs on its host's JDK, as jdtls there resolves it: the override is
-                            // a JDK on this machine.
-                            javaExecOverride == null
-                                            || javaExecOverride.isBlank()
-                                            || !com.editora.process.ExecTargets.runsHere(file)
-                                    ? r.javaExec()
-                                    : javaExecOverride,
+                            javaExecFor(file, javaExecOverride, r.javaExec()),
                             cwd,
                             programArgs,
-                            JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
+                            JavaLaunchSupport.withPreview(vmArgsFor(targetFor(file)), r.enablePreview()),
                             env,
-                            false),
+                            false,
+                            targetFor(file)),
                     false,
                     epoch);
         });
+    }
+
+    /**
+     * The last word on a project launch's class files, whatever built them (the jdtls build before the launch,
+     * a before-launch step — or nothing, when no build could run): a main class with no class file, or one
+     * older than its source, is launched with a warning in the console that says to build the project first —
+     * the ClassNotFoundException or the old code that follows then has its explanation (review A2). A remote
+     * project's files are the host's and are not read from here.
+     */
+    private void warnAboutClasses(Path file, MainClassOption opt, ResolvedLaunch r, long epoch) {
+        if (!com.editora.process.ExecTargets.runsHere(file)) {
+            return;
+        }
+        List<String> paths = new ArrayList<>(r.classPaths());
+        paths.addAll(r.modulePaths());
+        String cls = opt.className();
+        switch (JavaLaunchSupport.classState(paths, opt.mainClass(), optionSource(file, opt))) {
+            case MISSING -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesMissing", cls));
+            case STALE -> notice(epoch, com.editora.i18n.Messages.tr("debug.console.classesStale", cls));
+            default -> {
+                // current, or nothing to judge by
+            }
+        }
     }
 
     /**
@@ -866,18 +1099,18 @@ public final class DapManager implements DapClient.Host {
         // NPE from its search engine instead of anything actionable. Callers check first and say something
         // useful; this makes the unchecked path fail cleanly rather than incomprehensibly.
         if (opt.mainClass() == null || opt.mainClass().isBlank()) {
-            cb.accept(ResolvedLaunch.failed("No main class to run — set one on the run configuration."));
+            cb.accept(ResolvedLaunch.failed(tr("debug.error.configNeedsMainClass")));
             return;
         }
         String proj = opt.projectName() == null ? "" : opt.projectName();
         lsp.executeCommand(routingFile, "vscode.java.resolveClasspath", List.of(opt.mainClass(), proj), (res, err) -> {
             if (err != null) {
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath: " + msg(err)));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathFailed", msg(err))));
                 return;
             }
             List<String> modulepaths = new ArrayList<>();
             List<String> classpaths = new ArrayList<>();
-            parseClasspath(res, modulepaths, classpaths);
+            JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
             if (classpaths.isEmpty() && modulepaths.isEmpty()) {
                 // Log what the server ACTUALLY said. An empty classpath has two very different causes —
                 // the project genuinely isn't importable, or we failed to read a perfectly good reply — and
@@ -889,10 +1122,8 @@ public final class DapManager implements DapClient.Host {
                         () -> "resolveClasspath returned no entries for " + opt.mainClass() + " (project='"
                                 + proj + "'); raw result type="
                                 + (res == null ? "null" : res.getClass().getName())
-                                + " value=" + abbreviate(String.valueOf(res)));
-                cb.accept(ResolvedLaunch.failed("Could not resolve the classpath for " + opt.mainClass()
-                        + " — make sure the Java project has finished importing (watch the LSP status), "
-                        + "then try again."));
+                                + " value=" + JdtlsReplies.abbreviate(String.valueOf(res)));
+                cb.accept(ResolvedLaunch.failed(tr("debug.error.classpathEmpty", opt.mainClass())));
                 return;
             }
             lsp.executeCommand(
@@ -906,7 +1137,7 @@ public final class DapManager implements DapClient.Host {
                             // A project compiled with --enable-preview needs the flag to load its classes;
                             // a failed check (an older java-debug) leaves the launch as it was.
                             (preview, e3) -> cb.accept(new ResolvedLaunch(
-                                    asString(jx),
+                                    JdtlsReplies.asString(jx),
                                     modulepaths,
                                     classpaths,
                                     null,
@@ -933,7 +1164,7 @@ public final class DapManager implements DapClient.Host {
                 cb.accept(List.of());
                 return;
             }
-            cb.accept(parseMainClasses(res));
+            cb.accept(JdtlsReplies.parseMainClasses(res));
         });
     }
 
@@ -949,15 +1180,31 @@ public final class DapManager implements DapClient.Host {
 
     /** Main-class launch with an optional selected-JDK executable. */
     public void startLaunchMainClass(Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride) {
+        startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, false);
+    }
+
+    /**
+     * As above; {@code plainFolder} for a project with no build file, whose classes jdtls never compiles —
+     * the chosen class is then compiled from its own source when its class file is missing (review A16).
+     */
+    public void startLaunchMainClass(
+            Path routingFile, MainClassOption opt, Path cwd, String javaExecOverride, boolean plainFolder) {
         if (!ready(routingFile)) {
             return;
         }
-        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride);
+        restartAction = () -> startLaunchMainClass(routingFile, opt, cwd, javaExecOverride, plainFolder);
         debugFile = routingFile;
         long epoch = beginSession();
         setState(State.STARTING);
-        resolveAndLaunch(
-                routingFile, opt, cwd == null ? null : pathsFor(routingFile).toAdapter(cwd), javaExecOverride, epoch);
+        String adapterCwd = cwd == null ? null : pathsFor(routingFile).toAdapter(cwd);
+        if (plainFolder) {
+            correctSourceRoot(
+                    routingFile,
+                    epoch,
+                    () -> launchOption(routingFile, opt, adapterCwd, javaExecOverride, null, epoch));
+        } else {
+            resolveAndLaunch(routingFile, opt, adapterCwd, javaExecOverride, epoch);
+        }
     }
 
     /**
@@ -968,6 +1215,31 @@ public final class DapManager implements DapClient.Host {
      * Runs off the FX thread (javac is a subprocess).
      */
     private void compileAndLaunch(Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion) {
+        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, null);
+    }
+
+    /**
+     * As above, running the program in {@code workingDir} (null: the file's own folder). The file is compiled
+     * with its package's source folder as javac's source path, so the other classes of that package compile
+     * with it, and the class is launched by the package the file declares.
+     */
+    private void compileAndLaunch(
+            Path file, String fqn, String javaExecOverride, long epoch, Integer sourceVersion, Path workingDir) {
+        compileAndLaunch(file, fqn, javaExecOverride, epoch, sourceVersion, workingDir, file);
+    }
+
+    /**
+     * As above, for a {@code file} that may not be open in the editor: {@code routing} — an open Java file of
+     * the same jdtls project — carries the jdtls commands that start the adapter.
+     */
+    private void compileAndLaunch(
+            Path file,
+            String fqn,
+            String javaExecOverride,
+            long epoch,
+            Integer sourceVersion,
+            Path workingDir,
+            Path routing) {
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
         boolean remote = !com.editora.process.ExecTargets.runsHere(file);
         DapPaths paths = pathsFor(file);
@@ -979,8 +1251,9 @@ public final class DapManager implements DapClient.Host {
             try {
                 Path compileFile = file;
                 if (remote) {
-                    HostCompilation host = hostCompilation(
-                            file, sourceVersion == null ? null : withoutShebang(Files.readString(file)));
+                    JavaCompilation.HostCompilation host = JavaCompilation.hostCompilation(
+                            file,
+                            sourceVersion == null ? null : JavaCompilation.withoutShebang(Files.readString(file)));
                     out = host.directory();
                     removal = host.removal();
                     if (host.source() != null) {
@@ -990,22 +1263,32 @@ public final class DapManager implements DapClient.Host {
                     out = Files.createTempDirectory("editora-dap-");
                     if (sourceVersion != null) {
                         compileFile = out.resolve(file.getFileName() + ".java");
-                        Files.writeString(compileFile, withoutShebang(Files.readString(file)));
+                        Files.writeString(compileFile, JavaCompilation.withoutShebang(Files.readString(file)));
                     }
                 }
                 String javaExec = remote
-                        ? hostJava(file)
+                        ? JavaCompilation.hostJava(file)
                         : javaExecOverride == null || javaExecOverride.isBlank()
                                 ? firstOrNull(ProcessRunner.resolveExecutable(List.of("java")))
                                 : javaExecOverride;
                 // Route through ProcessRunner.run so the compile is bounded by a hard timeout (a hung javac
                 // would otherwise pin the single-threaded `io` executor and block every later DAP start/detect)
                 // and both pipes are drained concurrently (no fill-the-buffer deadlock).
+                Path sourceRoot = sourceVersion != null
+                        ? null
+                        : JavaLaunchSupport.sourceRoot(file, JavaLaunchSupport.declaredPackage(file));
                 ProcessRunner.Result r = remote
-                        ? compileOnHost(file, compileFile, out, javaExec, launchEnvironment, sourceVersion)
-                        : compileStandalone(file, compileFile, out, javaExec, launchEnvironment, sourceVersion);
+                        ? JavaCompilation.compileOnHost(
+                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot)
+                        : JavaCompilation.compileStandalone(
+                                file, compileFile, out, javaExec, launchEnvironment, sourceVersion, sourceRoot);
                 if (!r.ok()) {
-                    fail(epoch, "Compilation failed:\n" + (r.out() + "\n" + r.err()).strip());
+                    // javac's own report — file, line, the caret under the mistake — belongs in the Debug
+                    // console, where its "File.java:3:" lines open the file; the status line only says so.
+                    failWithConsole(
+                            epoch,
+                            JavaLaunchSupport.compilerReport(r.out(), r.err(), compileFile, file),
+                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()));
                     return;
                 }
                 synchronized (sessionLock) {
@@ -1014,20 +1297,21 @@ public final class DapManager implements DapClient.Host {
                     }
                     compilationDirectory = out;
                     compilationRemoval = removal;
-                    if (sourceVersion != null) {
-                        sourceAlias = new SourceAlias(epoch, file, compileFile);
-                    }
+                    // A script is compiled from a copy, and a loose file's class may come back with no source
+                    // path (jdtls cannot always place it): either way its frames are this file's.
+                    sourceAlias = new SourceAlias(epoch, file, compileFile);
                     retained = true;
                 }
-                String cwd = file.getParent() == null ? null : paths.toAdapter(file.getParent());
+                Path runIn = workingDir != null ? workingDir : file.getParent();
+                String cwd = runIn == null ? null : paths.toAdapter(runIn);
                 String classes = paths.toAdapter(out);
                 // The classes come from a temp dir, so java-debug cannot infer the project it compiles
                 // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
                 // source in (its invisible project for a loose file).
                 Platform.runLater(() -> projectNameOf(
-                        file,
+                        routing,
                         project -> startDebugSessionAndConnect(
-                                file,
+                                routing,
                                 LaunchConfig.launch(
                                         fqn,
                                         project,
@@ -1036,114 +1320,20 @@ public final class DapManager implements DapClient.Host {
                                         javaExec,
                                         cwd,
                                         programArgs,
-                                        vmArgs,
+                                        vmArgsFor(targetFor(file)),
                                         launchEnvironment,
-                                        false),
+                                        false,
+                                        targetFor(file)),
                                 false,
                                 epoch)));
             } catch (Exception e) {
-                fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
+                fail(epoch, tr("debug.error.compileLaunchFailed", fqn, msg(e)));
             } finally {
                 if (!retained && out != null) {
-                    removeCompilation(out, removal);
+                    JavaCompilation.removeCompilation(out, removal);
                 }
             }
         });
-    }
-
-    /** Compiles with the JDK that will run the debuggee, retaining local variables for the debugger. */
-    static ProcessRunner.Result compileStandalone(
-            Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
-        return compileStandalone(file, file, outputDir, javaExecOverride, environment, null);
-    }
-
-    private static ProcessRunner.Result compileStandalone(
-            Path original,
-            Path source,
-            Path outputDir,
-            String javaExecOverride,
-            Map<String, String> environment,
-            Integer sourceVersion) {
-        List<String> command = new ArrayList<>(List.of(JdkToolchain.compilerForJavaExecutable(javaExecOverride), "-g"));
-        if (sourceVersion != null) {
-            command.add("--release");
-            command.add(sourceVersion.toString());
-        }
-        command.addAll(List.of("-d", outputDir.toString(), source.toString()));
-        return ProcessRunner.runInUserLocale(
-                original.getParent(), java.time.Duration.ofSeconds(60), command, environment);
-    }
-
-    /**
-     * A remote file's compilation on its target: the folder for its classes, the copy of its source when one
-     * is compiled instead of the file ({@code null} otherwise), both named as Editora names the target's files
-     * ({@link com.editora.process.ExecTarget#toPath}), and how the folder is removed.
-     */
-    private record HostCompilation(Path directory, Path source, Runnable removal) {}
-
-    /**
-     * A new folder for a remote file's compiled classes: {@code debug-classes/<id>} in its target's cache, with
-     * {@code source} (when not {@code null}) written into it. Removed when the session ends, like a local one's
-     * temporary folder — on the target, which for a container is the only place it is.
-     */
-    private static HostCompilation hostCompilation(Path file, String source) throws java.io.IOException {
-        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(file);
-        com.editora.process.TargetCache cache = target.cache();
-        if (cache == null) {
-            throw new java.io.IOException("the host has no folder for Editora's files");
-        }
-        String folder = "debug-classes/" + java.util.UUID.randomUUID();
-        Path directory = target.toPath(cache.makeDirectories(folder));
-        Runnable removal = () -> {
-            try {
-                cache.delete(folder);
-            } catch (java.io.IOException | RuntimeException e) {
-                LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
-            }
-        };
-        Path copy = source == null
-                ? null
-                : target.toPath(cache.putText(folder + "/" + file.getFileName() + ".java", source));
-        return new HostCompilation(directory, copy, removal);
-    }
-
-    /** {@code java} on a remote file's host: under its configured JDK ({@code jdk.home}), else its PATH's. */
-    static String hostJava(Path file) {
-        String home = com.editora.process.ExecTargets.remoteTool(file, "jdk.home");
-        return home == null || home.isBlank() ? "java" : home.strip().replaceAll("/+$", "") + "/bin/java";
-    }
-
-    /** {@code javac} beside a host's {@code java} ({@link #hostJava}). Pure. */
-    static String hostJavac(String java) {
-        return java.endsWith("/bin/java") ? java.substring(0, java.length() - "java".length()) + "javac" : "javac";
-    }
-
-    /** {@link #compileStandalone} on a remote file's host: its javac, its paths. */
-    private static ProcessRunner.Result compileOnHost(
-            Path original,
-            Path source,
-            Path outputDir,
-            String hostJava,
-            Map<String, String> environment,
-            Integer sourceVersion) {
-        DapPaths paths = pathsFor(original);
-        List<String> command = new ArrayList<>(List.of(hostJavac(hostJava), "-g"));
-        if (sourceVersion != null) {
-            command.add("--release");
-            command.add(sourceVersion.toString());
-        }
-        command.addAll(List.of("-d", paths.toAdapter(outputDir), paths.toAdapter(source)));
-        return ProcessRunner.runInUserLocale(
-                original.getParent(), java.time.Duration.ofSeconds(120), command, environment);
-    }
-
-    /** Blank the first line without changing later line numbers for breakpoints and stack frames. */
-    static String withoutShebang(String source) {
-        if (source == null || !source.startsWith("#!")) {
-            return source;
-        }
-        int newline = source.indexOf('\n');
-        return newline < 0 ? "" : " ".repeat(newline) + source.substring(newline);
     }
 
     private SourceAlias activeSourceAlias() {
@@ -1153,44 +1343,18 @@ public final class DapManager implements DapClient.Host {
 
     /** Remove both the temporary source and compiled classes after the adapter releases them. */
     private void releaseCompilationDirectory() {
-        Path directory = compilationDirectory;
-        Runnable removal = compilationRemoval;
-        compilationDirectory = null;
-        compilationRemoval = null;
-        sourceAlias = null;
+        Path directory;
+        Runnable removal;
+        synchronized (sessionLock) { // the compile thread retains a folder under this lock
+            directory = compilationDirectory;
+            removal = compilationRemoval;
+            compilationDirectory = null;
+            compilationRemoval = null;
+            sourceAlias = null;
+        }
         if (directory != null) {
-            java.util.concurrent.CompletableFuture.runAsync(() -> removeCompilation(directory, removal));
-        }
-    }
-
-    /** {@code removal} when the folder is a target's, else this machine's folder walked and deleted. */
-    private static void removeCompilation(Path directory, Runnable removal) {
-        if (removal != null) {
-            removal.run();
-        } else {
-            removeCompilationDirectory(directory);
-        }
-    }
-
-    static void removeCompilationDirectory(Path directory) {
-        try {
-            Files.walkFileTree(directory, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws java.io.IOException {
-                    Files.deleteIfExists(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, java.io.IOException error)
-                        throws java.io.IOException {
-                    if (error != null) throw error;
-                    Files.deleteIfExists(dir);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (java.io.IOException e) {
-            LOG.log(Level.FINE, "Could not remove temporary debug classes", e);
+            java.util.concurrent.CompletableFuture.runAsync(
+                    () -> JavaCompilation.removeCompilation(directory, removal));
         }
     }
 
@@ -1238,75 +1402,62 @@ public final class DapManager implements DapClient.Host {
         }
         // java-debug can omit Source.path for a class compiled from a temporary source file. Its
         // frame name still identifies the implicit class; leave unrelated library frames untouched.
-        String className = alias.original().getFileName().toString();
+        String fileName = alias.original().getFileName().toString();
+        String className =
+                fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - ".java".length()) : fileName;
         return frame.file() == null
                 && frame.name() != null
                 && (frame.name().startsWith(className + ".") || frame.name().startsWith(className + "$"));
     }
 
-    /** A compact source's implicit class is named for its file, even when it declares nested types. */
+    // Moved to JavaCompilation; kept here for the callers that name them on DapManager.
+
+    /** See {@link JavaCompilation#compileStandalone(Path, Path, String, Map)}. */
+    static ProcessRunner.Result compileStandalone(
+            Path file, Path outputDir, String javaExecOverride, Map<String, String> environment) {
+        return JavaCompilation.compileStandalone(file, outputDir, javaExecOverride, environment);
+    }
+
+    /** See {@link JavaCompilation#hostJava}. */
+    static String hostJava(Path file) {
+        return JavaCompilation.hostJava(file);
+    }
+
+    /** See {@link JavaCompilation#hostJavac}. */
+    static String hostJavac(String java) {
+        return JavaCompilation.hostJavac(java);
+    }
+
+    /** See {@link JavaCompilation#withoutShebang}. */
+    static String withoutShebang(String source) {
+        return JavaCompilation.withoutShebang(source);
+    }
+
+    /** See {@link JavaCompilation#removeCompilationDirectory}. */
+    static void removeCompilationDirectory(Path directory) {
+        JavaCompilation.removeCompilationDirectory(directory);
+    }
+
+    /** See {@link JavaCompilation#compactMainClassFromFile}. */
     static String compactMainClassFromFile(Path file) {
-        String fileName = file.getFileName().toString();
-        return fileName.substring(0, fileName.length() - ".java".length());
+        return JavaCompilation.compactMainClassFromFile(file);
+    }
+
+    /** See {@link JavaCompilation#mainClassFromFile}. */
+    static String mainClassFromFile(Path file) {
+        return JavaCompilation.mainClassFromFile(file);
     }
 
     private static String firstOrNull(List<String> l) {
         return l == null || l.isEmpty() ? null : l.get(0);
     }
 
-    /** Matches a top-level type declaration, capturing its name (e.g. {@code public final class Foo}). */
-    private static final java.util.regex.Pattern TYPE_DECL =
-            java.util.regex.Pattern.compile("\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
-                    + "(?:class|record|enum|interface)\\s+([\\p{L}_$][\\p{L}\\p{N}_$]*)"); // not \\w: ASCII-only, cut
-    // Café to Caf
+    /** What java-debug is told before each Java session (step filters, statics, exception types). */
+    private JavaDebugSettings javaDebugSettings = JavaDebugSettings.defaults();
 
-    /**
-     * Derives the fully-qualified main-class name from a {@code .java} file: its {@code package}
-     * declaration plus the <em>declared</em> type name (the first top-level {@code class}/{@code record}/
-     * {@code enum}), falling back to the file's base name. Reads the source (not the filename) so a
-     * class whose name differs from the file resolves correctly. Pure-ish (one bounded file read).
-     */
-    static String mainClassFromFile(Path file) {
-        if (file == null || file.getFileName() == null) {
-            return null;
-        }
-        String base = file.getFileName().toString();
-        if (base.endsWith(".java")) {
-            base = base.substring(0, base.length() - ".java".length());
-        }
-        if (base.isEmpty()) {
-            return null;
-        }
-        String pkg = "";
-        String cls = null;
-        java.util.List<String> lines;
-        try (java.util.stream.Stream<String> s = java.nio.file.Files.lines(file)) {
-            lines = s.limit(500).toList();
-        } catch (java.io.IOException | RuntimeException ignored) {
-            lines = java.util.List.of();
-        }
-        for (String raw : lines) {
-            String t = raw.strip();
-            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) {
-                continue; // skip comment lines (crude, but enough to avoid most false matches)
-            }
-            if (pkg.isEmpty() && t.startsWith("package ") && t.endsWith(";")) {
-                pkg = t.substring("package ".length(), t.length() - 1).strip();
-            }
-            if (cls == null) {
-                java.util.regex.Matcher m = TYPE_DECL.matcher(t);
-                if (m.find()) {
-                    cls = m.group(1);
-                }
-            }
-            if (!pkg.isEmpty() && cls != null) {
-                break;
-            }
-        }
-        if (cls == null) {
-            cls = base; // no type declaration found — best-effort (e.g. a JEP 512 compact source)
-        }
-        return pkg.isEmpty() ? cls : pkg + "." + cls;
+    /** Sets the java-debug settings the next Java session starts with (FX thread). */
+    public void setJavaDebugSettings(JavaDebugSettings settings) {
+        this.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
     }
 
     private void startDebugSessionAndConnect(
@@ -1314,17 +1465,32 @@ public final class DapManager implements DapClient.Host {
         if (!isCurrent(epoch)) {
             return;
         }
+        // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
+        // failure (an older java-debug) is no reason not to debug, on its defaults as before.
+        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaDebugSettings.toJson()), (r, e) -> {
+            if (e != null) {
+                LOG.log(Level.FINE, "java-debug settings were not applied", e);
+            }
+            startDebugSession(file, args, attach, epoch);
+        });
+    }
+
+    private void startDebugSession(Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        javaAdapterEpoch = epoch;
         lsp.executeCommand(file, "vscode.java.startDebugSession", List.of(), (res, err) -> {
             if (!isCurrent(epoch)) {
                 return;
             }
             if (err != null) {
-                fail(epoch, "Could not start the debug session: " + msg(err));
+                fail(epoch, tr("debug.error.sessionFailed", msg(err)));
                 return;
             }
-            int port = asInt(res);
+            int port = JdtlsReplies.asInt(res);
             if (port <= 0) {
-                fail(epoch, "The debug adapter did not return a port.");
+                fail(epoch, tr("debug.error.noPort"));
                 return;
             }
             // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
@@ -1347,7 +1513,7 @@ public final class DapManager implements DapClient.Host {
             // marshaled back to the FX thread (it touches the Debug panel + status bar).
             io.submit(() -> connectJava(c, file, port).whenComplete((caps, e) -> {
                 if (e != null) {
-                    fail(epoch, "Could not connect to the debug adapter: " + msg(e));
+                    fail(epoch, tr("debug.error.connectFailed", msg(e)));
                     return;
                 }
                 if (!isCurrent(epoch, c)) {
@@ -1356,16 +1522,22 @@ public final class DapManager implements DapClient.Host {
                 }
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
-                        fail(epoch, (attach ? "attach" : "launch") + " failed: " + msg(le));
+                        fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                        return;
                     }
-                });
-                Platform.runLater(() -> {
-                    if (isCurrent(epoch, c)) {
-                        setState(State.RUNNING);
+                    // Running once the adapter has the program, not when the request left: until then
+                    // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
+                    Platform.runLater(() -> {
+                        if (!isCurrent(epoch, c)) {
+                            return;
+                        }
+                        if (state == State.STARTING) {
+                            setState(State.RUNNING);
+                        }
                         if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
                             listener.onDebuggeeRuntime(List.of(javaExec), runtimeWhere(file), Map.of());
                         }
-                    }
+                    });
                 });
             }));
         });
@@ -1417,7 +1589,7 @@ public final class DapManager implements DapClient.Host {
         }
         DapServerRegistry.DapServerSpec spec = DapServerRegistry.specFor(language);
         if (spec == null) {
-            listener.onError("No debug adapter is configured for this file type.");
+            listener.onError(tr("debug.error.noAdapter"));
             return;
         }
         restartAction = () -> startProgram(file, language, module);
@@ -1443,10 +1615,10 @@ public final class DapManager implements DapClient.Host {
                         startSocket(file, spec, bps, filters, epoch);
                     }
                 } else {
-                    fail(epoch, "Unsupported debug transport for " + language + ".");
+                    fail(epoch, tr("debug.error.transport", language));
                 }
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -1487,11 +1659,11 @@ public final class DapManager implements DapClient.Host {
             return false;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return false;
         }
         if (file == null) {
-            listener.onError("Open a file to debug first.");
+            listener.onError(tr("debug.error.openFile"));
             return false;
         }
         if (!com.editora.process.ExecTargets.runsHere(file)) {
@@ -1502,9 +1674,7 @@ public final class DapManager implements DapClient.Host {
             }
         } else if (!isLanguageAvailable(language)) {
             listener.onError(
-                    "python".equals(language)
-                            ? "Python debugging is not available (enable it and install debugpy)."
-                            : "JavaScript debugging is not available (enable it and install vscode-js-debug).");
+                    "python".equals(language) ? tr("debug.error.pythonUnavailable") : tr("debug.error.jsUnavailable"));
             return false;
         }
         if (client != null) {
@@ -1573,10 +1743,7 @@ public final class DapManager implements DapClient.Host {
         if (pytest.fallback() != null) {
             return pytest.fallback();
         }
-        fail(
-                epoch,
-                "pytest is not installed for " + program.executable()
-                        + " — install it in that environment (python -m pip install pytest).");
+        fail(epoch, tr("debug.error.pytestMissing", program.executable()));
         return null;
     }
 
@@ -1676,7 +1843,7 @@ public final class DapManager implements DapClient.Host {
         }
         c.connectStdio(proc, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to debugpy: " + msg(e) + AdapterStderr.suffix(stderr));
+                fail(epoch, tr("debug.error.debugpyConnect", msg(e)) + AdapterStderr.suffix(stderr));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -1713,10 +1880,12 @@ public final class DapManager implements DapClient.Host {
             t = t.getCause();
         }
         if (t instanceof java.util.concurrent.TimeoutException) {
-            return "debugpy did not start the program within " + DapClient.requestTimeoutSeconds()
-                    + " s — check that the Python interpreter runs: " + launch.get("python");
+            return tr(
+                    "debug.error.debugpyNoStart",
+                    String.valueOf(DapClient.requestTimeoutSeconds()),
+                    String.valueOf(launch.get("python")));
         }
-        return "launch failed: " + msg(error);
+        return tr("debug.error.launchFailed", msg(error));
     }
 
     /** vscode-js-debug over a socket: spawn {@code node dapDebugServer.js <port>}, connect, launch. */
@@ -1728,7 +1897,7 @@ public final class DapManager implements DapClient.Host {
             long epoch)
             throws Exception {
         if (jsServer == null) {
-            fail(epoch, "The vscode-js-debug adapter was not found.");
+            fail(epoch, tr("debug.error.jsNotFound"));
             return;
         }
         int port = freePort();
@@ -1767,11 +1936,11 @@ public final class DapManager implements DapClient.Host {
             return;
         }
         if (!enabled) {
-            listener.onError("Debugging is not enabled (turn it on in Settings → Debugging).");
+            listener.onError(tr("debug.error.disabled"));
             return;
         }
         if (!isLanguageAvailable("javascript")) {
-            listener.onError("JavaScript debugging is not available (enable it and install vscode-js-debug).");
+            listener.onError(tr("debug.error.jsUnavailable"));
             return;
         }
         if (client != null) {
@@ -1788,7 +1957,7 @@ public final class DapManager implements DapClient.Host {
         startupTask = io.submit(() -> {
             try {
                 if (jsServer == null) {
-                    fail(epoch, "The vscode-js-debug adapter was not found.");
+                    fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
                 int serverPort = freePort();
@@ -1813,7 +1982,7 @@ public final class DapManager implements DapClient.Host {
                         null,
                         attach);
             } catch (Exception e) {
-                fail(epoch, "Could not start the debugger: " + msg(e));
+                fail(epoch, tr("debug.error.startFailed", msg(e)));
             }
         });
     }
@@ -1857,7 +2026,7 @@ public final class DapManager implements DapClient.Host {
         }
         c.connect(port, spec.adapterId()).whenComplete((caps, e) -> {
             if (e != null) {
-                fail(epoch, "Could not connect to vscode-js-debug: " + msg(e));
+                fail(epoch, tr("debug.error.jsConnect", msg(e)));
                 return;
             }
             if (!isCurrent(epoch)) {
@@ -1870,7 +2039,13 @@ public final class DapManager implements DapClient.Host {
                                     LaunchConfig.program(spec.launchType(), program, cwd, nodeExe, programArgs, false)))
                     .whenComplete((v, le) -> {
                         if (le != null) {
-                            fail(epoch, (attachArgs != null ? "attach failed: " : "launch failed: ") + msg(le));
+                            fail(
+                                    epoch,
+                                    tr(
+                                            attachArgs != null
+                                                    ? "debug.error.attachFailed"
+                                                    : "debug.error.launchFailed",
+                                            msg(le)));
                         }
                     });
             Platform.runLater(() -> {
@@ -1897,15 +2072,13 @@ public final class DapManager implements DapClient.Host {
     /** Why {@code language} cannot be debugged on remote {@code file}'s host, or null when it can be tried. */
     private String remoteProblem(Path file, String language) {
         if (!debuggableOnHost(language)) {
-            return "Debugging this language on a remote host is not available yet.";
+            return tr("debug.error.remoteLanguage");
         }
         if ("python".equals(language) ? !pythonEnabled : !jsEnabled) {
-            return "python".equals(language)
-                    ? "Python debugging is turned off (Settings → Debugging)."
-                    : "JavaScript debugging is turned off (Settings → Debugging).";
+            return "python".equals(language) ? tr("debug.error.remotePythonOff") : tr("debug.error.remoteJsOff");
         }
         if (!com.editora.process.ExecTargets.forPath(file).isAvailable()) {
-            return "Commands cannot run on this file's host (connect, and allow running commands there).";
+            return tr("debug.error.remoteNoCommands");
         }
         return null;
     }
@@ -1977,10 +2150,7 @@ public final class DapManager implements DapClient.Host {
         List<String> probe = python.argv(List.of("-c", "import debugpy"));
         if (!ProcessRunner.run(dir, java.time.Duration.ofSeconds(20), probe, python.env())
                 .ok()) {
-            fail(
-                    epoch,
-                    "debugpy is not installed for " + python.executable() + " on " + target.id()
-                            + " (install it there with pip, or set the host's Python for debugging).");
+            fail(epoch, tr("debug.error.remoteDebugpyMissing", python.executable(), target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2062,9 +2232,8 @@ public final class DapManager implements DapClient.Host {
             fail(
                     epoch,
                     found.exit() == 2
-                            ? "node is not installed on " + target.id() + "."
-                            : "vscode-js-debug (dapDebugServer.js) was not found on " + target.id()
-                                    + " (install it there, or set its path for the host).");
+                            ? tr("debug.error.remoteNodeMissing", target.id())
+                            : tr("debug.error.remoteJsMissing", target.id()));
             return;
         }
         if (!isCurrent(epoch)) {
@@ -2081,7 +2250,7 @@ public final class DapManager implements DapClient.Host {
         int remotePort = listeningPort(proc.getInputStream(), java.time.Duration.ofSeconds(20));
         if (remotePort < 0) {
             com.editora.process.ProcessRegistry.killTree(proc);
-            fail(epoch, "vscode-js-debug did not start on " + target.id() + ".");
+            fail(epoch, tr("debug.error.remoteJsNoStart", target.id()));
             return;
         }
         com.editora.process.PortForward forward;
@@ -2188,6 +2357,9 @@ public final class DapManager implements DapClient.Host {
     public void resume() {
         DapClient c = client;
         if (c == null) {
+            return;
+        }
+        if (state == State.SUSPENDED && refuseWhileEvaluating()) {
             return;
         }
         long epoch = sessionEpoch;
@@ -2322,25 +2494,23 @@ public final class DapManager implements DapClient.Host {
                 }));
     }
 
-    /** The file's existing breakpoints plus a temporary plain one at {@code line} (no duplicate when a
-     *  breakpoint already sits there). Pure — tested. */
+    /**
+     * The file's existing breakpoints plus a temporary plain one at {@code line}. A breakpoint already on that
+     * line is made plain for the trip: left as it was, a condition that was false or a logpoint (which never
+     * suspends) let the program run past the cursor. {@link #clearTempBreakpoint} restores it. Pure — tested.
+     */
     static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
             if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                lines.addAll(fb.breakpoints());
+                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
+                    if (lb.line() != line) {
+                        lines.add(lb);
+                    }
+                }
             }
         }
-        boolean present = false;
-        for (DapModels.LineBreakpoint lb : lines) {
-            if (lb.line() == line) {
-                present = true;
-                break;
-            }
-        }
-        if (!present) {
-            lines.add(new DapModels.LineBreakpoint(line, null, null));
-        }
+        lines.add(new DapModels.LineBreakpoint(line, null, null));
         return new DapModels.FileBreakpoints(file, lines);
     }
 
@@ -2390,6 +2560,9 @@ public final class DapManager implements DapClient.Host {
         if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
             return;
         }
+        if (refuseWhileEvaluating()) {
+            return;
+        }
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
         int stops = stopCount;
@@ -2432,10 +2605,71 @@ public final class DapManager implements DapClient.Host {
         }
         killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
-            c.dispose();
+            // Ended for us now; the wait for the adapter's answer and the close happen off the FX thread.
+            c.disposeInBackground();
         }
+        killAdapterProgram(); // an adapter that is gone cannot end the program it launched
         releaseCompilationDirectory();
         setState(State.INACTIVE);
+    }
+
+    // --- the program the adapter launched (java-debug's processid) ------------------------------------
+
+    /**
+     * The program java-debug launched itself (program console off), from its {@code processid} event; null when
+     * Editora started the program ({@link #debuggee}), for an attach, or on another machine. Ended with the
+     * session: when the adapter is still there its {@code disconnect} has already done so and this finds
+     * nothing alive, but when jdtls crashed the program was left running with no way to stop it.
+     */
+    private ProcessHandle adapterProgram;
+
+    /** Records the program the adapter of session {@code epoch} launched (FX thread). */
+    private void onProcessId(long epoch, long pid) {
+        if (!isCurrent(epoch) || debugFile == null || !com.editora.process.ExecTargets.runsHere(debugFile)) {
+            return; // a pid on another machine names some other process here
+        }
+        adapterProgram = ProcessHandle.of(pid).orElse(null);
+    }
+
+    /** Ends the program the adapter launched, with its children, if it is still running (FX thread). */
+    private void killAdapterProgram() {
+        ProcessHandle program = adapterProgram;
+        adapterProgram = null;
+        if (program != null && program.isAlive()) { // isAlive also checks the start time: never a reused pid
+            program.descendants().forEach(ProcessHandle::destroyForcibly);
+            program.destroyForcibly();
+        }
+    }
+
+    /** The session whose adapter announced it was done ({@code terminated}); its transport closing is normal. */
+    private volatile long terminatedEpoch = -1;
+
+    /**
+     * The adapter's transport closed. After a {@code terminated} event that is how a session ends. Without one,
+     * the adapter is gone while its program may still run — jdtls crashed: the program resumed the moment its
+     * debugger connection dropped, and used to run on for the 3 s grace an ordinary end gets (or for good, when
+     * the adapter had launched it). End it at once and say why the session ended.
+     */
+    private void onTransportClosed(long epoch) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            if (terminatedEpoch == epoch) {
+                return; // the terminated event is ending it (or has ended it) already
+            }
+            Debuggee program = debuggee;
+            ProcessHandle launched = adapterProgram;
+            boolean programRunning =
+                    (program != null && program.isRunning()) || (launched != null && launched.isAlive());
+            killDebuggee();
+            killAdapterProgram();
+            if (programRunning) {
+                outputPump.flush();
+                listener.onAdapterLost();
+            }
+            endSession(epoch);
+        });
     }
 
     /** Final per-window shutdown: invalidates the session, stops transports, and releases the connect worker. */
@@ -2512,12 +2746,57 @@ public final class DapManager implements DapClient.Host {
             cb.accept("");
             return;
         }
+        boolean console = "repl".equals(context);
+        if (console) {
+            consoleEvaluations++;
+        }
         c.evaluate(expression, frameId, context)
                 .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (console && client == c) {
+                        consoleEvaluations = Math.max(0, consoleEvaluations - 1);
+                    }
                     if (client == c) {
-                        cb.accept(e != null ? "error: " + msg(e) : (r == null ? "" : r));
+                        cb.accept(
+                                e != null
+                                        ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
+                                        : (r == null ? "" : r));
                     }
                 }));
+    }
+
+    /** Console evaluations the adapter has not answered yet (FX thread); reset with each session. */
+    private int consoleEvaluations;
+
+    /**
+     * Whether an expression typed in the Debug console is still being evaluated. The program runs it on the
+     * stopped thread, and the adapter takes the next request only when it is done: a Step pressed meanwhile was
+     * queued there and ran many seconds later, with nothing shown in between.
+     */
+    public boolean evaluationRunning() {
+        return consoleEvaluations > 0;
+    }
+
+    /** Refuses a control while a console evaluation runs, saying why (FX thread); true when refused. */
+    private boolean refuseWhileEvaluating() {
+        if (!evaluationRunning()) {
+            return false;
+        }
+        listener.onStatus(tr("status.debug.evaluationRunning"));
+        return true;
+    }
+
+    private static boolean isTimeout(Throwable t) {
+        for (Throwable x = t; x != null; x = x.getCause()) {
+            if (x instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** What a console evaluation that timed out says: it has not failed, the program is still running it. */
+    static String stillEvaluating() {
+        return tr("debug.eval.stillRunning", DapClient.requestTimeoutSeconds());
     }
 
     /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
@@ -2585,17 +2864,7 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
-    // --- DapClient.Host (launcher reader thread → FX) -------------------------------------------
-
-    @Override
-    public void onStopped(int threadId, String reason) {
-        onStopped(sessionEpoch, threadId, reason, false);
-    }
-
-    @Override
-    public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
-        onStopped(sessionEpoch, threadId, reason, allThreadsStopped);
-    }
+    // --- DAP events (launcher reader thread → FX), reached only through sessionHost(epoch) -------
 
     private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
         DapClient c = client;
@@ -2677,16 +2946,6 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
-    @Override
-    public void onContinued() {
-        onContinued(sessionEpoch, 0, true);
-    }
-
-    @Override
-    public void onContinued(int threadId, boolean allThreadsContinued) {
-        onContinued(sessionEpoch, threadId, allThreadsContinued);
-    }
-
     private void onContinued(long epoch, int threadId, boolean allThreads) {
         Platform.runLater(() -> {
             if (!isCurrent(epoch)) {
@@ -2704,11 +2963,6 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
-    @Override
-    public void onOutput(String text, String category) {
-        onOutput(sessionEpoch, text, category);
-    }
-
     /** Batches adapter output onto the FX thread (see {@link DapOutputPump}); the sink runs on FX. */
     private final DapOutputPump outputPump = new DapOutputPump(Platform::runLater, (epoch, text, category) -> {
         if (isCurrent(epoch)) {
@@ -2717,12 +2971,13 @@ public final class DapManager implements DapClient.Host {
     });
 
     private void onOutput(long epoch, String text, String category) {
-        outputPump.offer(epoch, text, category);
-    }
-
-    @Override
-    public void onTerminated() {
-        onTerminated(sessionEpoch);
+        String shown = JavaLaunchSupport.withoutJvmVersionWarning(text);
+        if (shown != text) {
+            LOG.fine(() -> "java-debug: " + text.strip());
+        }
+        if (!shown.isEmpty()) {
+            outputPump.offer(epoch, shown, category);
+        }
     }
 
     private void onTerminated(long epoch) {
@@ -2762,8 +3017,9 @@ public final class DapManager implements DapClient.Host {
         }
         killDebuggee();
         if (c != null) {
-            c.dispose();
+            c.disposeInBackground(); // as in stop(): never hold the FX thread on the adapter
         }
+        killAdapterProgram();
         releaseCompilationDirectory();
         setState(State.INACTIVE);
     }
@@ -2822,6 +3078,9 @@ public final class DapManager implements DapClient.Host {
         }
     }
 
+    /** The session served by java-debug (whose {@code exited} event carries no real exit code). */
+    private long javaAdapterEpoch = -1;
+
     /** The session whose program Editora started itself (its exit is reported by its own process). */
     private long programStartedEpoch = -1;
 
@@ -2836,6 +3095,12 @@ public final class DapManager implements DapClient.Host {
             }
             exitReportedEpoch = epoch;
             outputPump.flush();
+            if (javaAdapterEpoch == epoch) {
+                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live):
+                // the console says the program ended, not a code that is not its own (review A10).
+                listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                return;
+            }
             listener.onProgramExit(exitCode);
         });
     }
@@ -2850,11 +3115,6 @@ public final class DapManager implements DapClient.Host {
         if (program != null) {
             program.kill();
         }
-    }
-
-    @Override
-    public void onError(String message) {
-        onError(sessionEpoch, message);
     }
 
     private void onError(long epoch, String message) {
@@ -2879,6 +3139,7 @@ public final class DapManager implements DapClient.Host {
             stepInFlight = false;
         }
         if (s == State.INACTIVE || s == State.STARTING) {
+            consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
         }
         this.state = s;
@@ -2892,6 +3153,9 @@ public final class DapManager implements DapClient.Host {
             startup.cancel(true);
         }
         killDebuggee();
+        // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
+        // its compiled classes: the next launch would overwrite the only reference to them (review D6).
+        releaseCompilationDirectory();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }
@@ -2945,12 +3209,18 @@ public final class DapManager implements DapClient.Host {
 
             @Override
             public void onTerminated() {
+                terminatedEpoch = epoch; // a plain long written once per session: read on the FX thread later
                 DapManager.this.onTerminated(epoch);
             }
 
             @Override
             public void onError(String message) {
                 DapManager.this.onError(epoch, message);
+            }
+
+            @Override
+            public void onProcessId(long pid) {
+                Platform.runLater(() -> DapManager.this.onProcessId(epoch, pid));
             }
 
             @Override
@@ -2969,6 +3239,11 @@ public final class DapManager implements DapClient.Host {
             }
 
             @Override
+            public void onHotCodeReplace(String changeType, String message) {
+                DapManager.this.onHotCodeReplace(epoch, changeType, message);
+            }
+
+            @Override
             public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
                 CompletableFuture<Long> started = new CompletableFuture<>();
                 Platform.runLater(() -> startDebuggee(epoch, cwd, argv, env, started));
@@ -2980,9 +3255,26 @@ public final class DapManager implements DapClient.Host {
                 if (error != null) {
                     LOG.log(Level.FINE, "Debug adapter transport closed", error);
                 }
-                DapManager.this.onTerminated(epoch);
+                DapManager.this.onTransportClosed(epoch);
             }
         };
+    }
+
+    /**
+     * Ends the starting session of {@code epoch} because of a failure with a report: {@code console} goes to
+     * the Debug console (as error output, links and all) and {@code status} to the status line.
+     */
+    private void failWithConsole(long epoch, String console, String status) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            if (console != null && !console.isBlank()) {
+                listener.onOutput(console.endsWith("\n") ? console : console + "\n", "stderr");
+            }
+            listener.onError(status);
+            stop();
+        });
     }
 
     private void fail(long epoch, String message) {
@@ -2995,7 +3287,7 @@ public final class DapManager implements DapClient.Host {
         });
     }
 
-    private static String msg(Throwable t) {
+    static String msg(Throwable t) {
         // A failed request arrives wrapped (CompletionException / ExecutionException), whose own message is
         // "<exception class>: <adapter message>" — show what the adapter said, not the Java class name.
         while ((t instanceof java.util.concurrent.CompletionException
@@ -3003,181 +3295,219 @@ public final class DapManager implements DapClient.Host {
                 && t.getCause() != null) {
             t = t.getCause();
         }
-        return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
+        if (t instanceof java.util.concurrent.TimeoutException) {
+            // "java.util.concurrent.TimeoutException" told the user nothing
+            return tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds());
+        }
+        // java-debug words a refusal as the Java exception behind it: "org.eclipse.debug.core.DebugException:
+        // com.sun.jdi.…: what happened". Only what happened is for the user.
+        return t == null ? "" : DapErrors.userText(t.getMessage() == null ? t.toString() : t.getMessage());
     }
 
-    // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------
+    // --- jdtls replies: read by JdtlsReplies (these three names are what tests reach by reflection) ----------
 
-    /**
-     * Reads {@code vscode.java.resolveMainClass}'s reply — {@code [{mainClass, projectName, filePath}, …]}.
-     *
-     * <p>Handles a raw {@link java.util.List} of {@link Map}s as well as a gson {@link JsonElement}, for the
-     * same reason {@link #parseClasspath} does — and here it was not merely a hazard but the whole feature:
-     * lsp4j hands this particular result back as an {@code ArrayList<LinkedTreeMap>}, so {@link #asJson}'s
-     * {@code String.valueOf} fallback fed gson Java's {@code toString()} form,
-     * {@code [{mainClass=com.example.App, filePath=/home/…}]}. Gson's lenient parser reads unquoted keys and
-     * {@code =} separators, but not an unquoted value beginning {@code /} (it scans as a comment) — so every
-     * absolute file path threw {@code MalformedJsonException}, {@code asJson} logged it at {@code FINE} and
-     * returned null, and Editora reported "no main class was found" for a project whose main class jdtls had
-     * just named. Confirmed against a real jdtls in {@code JdtlsResolveMainClassProbeTest}. Reading the list
-     * directly removes the round trip entirely.
-     */
     private static List<MainClassOption> parseMainClasses(Object res) {
-        List<MainClassOption> out = new ArrayList<>();
-        if (res instanceof List<?> list) {
-            for (Object e : list) {
-                if (e instanceof Map<?, ?> m) {
-                    out.add(new MainClassOption(str(m, "mainClass"), str(m, "projectName"), str(m, "filePath")));
-                } else if (e instanceof JsonObject o) {
-                    out.add(new MainClassOption(str(o, "mainClass"), str(o, "projectName"), str(o, "filePath")));
-                }
-            }
-            return out;
-        }
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (e.isJsonObject()) {
-                    JsonObject o = e.getAsJsonObject();
-                    out.add(new MainClassOption(str(o, "mainClass"), str(o, "projectName"), str(o, "filePath")));
-                }
-            }
-        }
-        return out;
+        return JdtlsReplies.parseMainClasses(res);
     }
 
-    /**
-     * resolveClasspath returns {@code [modulepaths, classpaths]} (a 2-element array of string arrays).
-     *
-     * <p>Handles a raw {@link java.util.List} as well as a gson {@link JsonElement}. lsp4j deserializes an
-     * untyped {@code executeCommand} result to whichever the payload maps to, and the {@link #asJson}
-     * fallback — {@code JsonParser.parseString(String.valueOf(res))} — round-trips a {@code List} through
-     * Java's {@code toString()}, which emits <em>unquoted</em> elements. Gson's lenient parser accepts that
-     * for a plain path but not for one containing a comma, bracket or space, so a classpath entry could be
-     * silently dropped or mangled depending on where the project happens to live. Reading the list directly
-     * removes the round trip entirely.
-     */
     private static void parseClasspath(Object res, List<String> modulepaths, List<String> classpaths) {
-        if (res instanceof List<?> list) {
-            if (!list.isEmpty()) {
-                collectStrings(list.get(0), modulepaths);
-            }
-            if (list.size() >= 2) {
-                collectStrings(list.get(1), classpaths);
-            }
-            return;
-        }
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonArray()) {
-            JsonArray arr = el.getAsJsonArray();
-            if (arr.size() >= 1) {
-                collectStrings(arr.get(0), modulepaths);
-            }
-            if (arr.size() >= 2) {
-                collectStrings(arr.get(1), classpaths);
-            }
-        }
+        JdtlsReplies.parseClasspath(res, modulepaths, classpaths);
     }
 
-    /** Collects strings from either a gson array or a plain {@link java.util.List}. */
-    private static void collectStrings(Object maybeList, List<String> out) {
-        if (maybeList instanceof JsonElement el) {
-            collectStrings(el, out);
-            return;
-        }
-        if (maybeList instanceof List<?> list) {
-            for (Object o : list) {
-                if (o instanceof String s) {
-                    out.add(s);
-                } else if (o != null) {
-                    out.add(String.valueOf(o));
+    private static String asString(Object res) {
+        return JdtlsReplies.asString(res);
+    }
+
+    // --- Java code changes and frame control (hot code replace, restart frame, smart step into) ------------
+
+    /** When saved Java code reaches a running program: on save, on {@code debug.applyCodeChanges}, or never. */
+    public enum CodeReplaceMode {
+        AUTO,
+        MANUAL,
+        OFF;
+
+        /** The setting's value ({@code auto} / {@code manual} / {@code off}); anything else is the default. */
+        public static CodeReplaceMode of(String value) {
+            if (value != null) {
+                for (CodeReplaceMode m : values()) {
+                    if (m.name().equalsIgnoreCase(value.strip())) {
+                        return m;
+                    }
                 }
             }
+            return AUTO;
         }
     }
 
-    private static void collectStrings(JsonElement el, List<String> out) {
-        if (el != null && el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (e.isJsonPrimitive()) {
-                    out.add(e.getAsString());
-                }
-            }
+    /** How an Apply Code Changes ended. */
+    public enum CodeReplaceResult {
+        /** Classes were replaced in the running program ({@link CodeReplaceOutcome#classes}). */
+        APPLIED,
+        /** The build and the replace found nothing the program runs that had changed. */
+        NOTHING_CHANGED,
+        /** The project has compile errors: nothing was replaced (a broken method would throw when it runs). */
+        COMPILE_ERRORS,
+        /** java-debug refused (an added or removed method or field, a JVM without redefinition…): restart. */
+        FAILED,
+        /** jdtls could not build: no Java server for the file, or the build failed or was cancelled. */
+        BUILD_FAILED,
+        /** No running Java session to apply to. */
+        NO_SESSION
+    }
+
+    /** {@code message} is java-debug's reason for {@link CodeReplaceResult#FAILED}, else empty. */
+    public record CodeReplaceOutcome(CodeReplaceResult result, List<String> classes, String message) {
+
+        public CodeReplaceOutcome {
+            classes = classes == null ? List.of() : List.copyOf(classes);
+            message = message == null ? "" : message.strip();
         }
     }
 
-    private static int asInt(Object res) {
-        JsonElement el = asJson(res);
-        if (el != null && el.isJsonPrimitive()) {
-            try {
-                return el.getAsInt();
-            } catch (RuntimeException ignored) {
-                // not a number
+    /** Receives java-debug's {@code hotcodereplace} progress and problems (FX thread); see {@link
+     *  #setCodeReplaceNotices}. */
+    private java.util.function.BiConsumer<String, String> codeReplaceNotices = (type, message) -> {};
+
+    /** Who is told java-debug's hot code replace events ({@code changeType}, message), on the FX thread. */
+    public void setCodeReplaceNotices(java.util.function.BiConsumer<String, String> notices) {
+        this.codeReplaceNotices = notices == null ? (type, message) -> {} : notices;
+    }
+
+    private void onHotCodeReplace(long epoch, String changeType, String message) {
+        Platform.runLater(() -> {
+            if (isCurrent(epoch)) {
+                outputPump.flush(); // after the program output that preceded it
+                codeReplaceNotices.accept(changeType, message);
             }
+        });
+    }
+
+    /** Whether a Java session is running or paused, so that saved code changes can be loaded into it. */
+    public boolean canReplaceCode() {
+        return client != null && "java".equals(sessionLanguage) && (state == State.RUNNING || state == State.SUSPENDED);
+    }
+
+    /** The session whose jdtls build {@link #primeCodeReplace} has started; -1 for none. */
+    private long codeReplacePrimedEpoch = -1;
+
+    /**
+     * Gives jdtls a build to compare saved changes with. A program Editora compiled itself (a Java file outside
+     * a build project) runs classes jdtls never built: without an earlier build, jdtls's first one reports every
+     * class as new rather than changed, and java-debug then has nothing to replace. Building once at session
+     * start fixes that. Only then: that build writes to jdtls's own output in its workspace, not the user's
+     * folder (a build project's output is built before its launch, see the launch path). Once per session.
+     */
+    public void primeCodeReplace() {
+        if (compilationDirectory == null
+                || debugFile == null
+                || !canReplaceCode()
+                || codeReplacePrimedEpoch == sessionEpoch) {
+            return;
         }
-        if (res instanceof Number n) {
-            return n.intValue();
-        }
-        return -1;
+        codeReplacePrimedEpoch = sessionEpoch;
+        lsp.buildJavaWorkspace(debugFile, false, built -> {});
+    }
+
+    /** The file the session was started for (it routes a build to that session's jdtls); null when none. */
+    public Path sessionFile() {
+        return debugFile;
     }
 
     /**
-     * A server reply that is meant to be a single string — a path, a name.
-     *
-     * <p>A {@link String} is taken <b>as the value</b> rather than as JSON text. lsp4j only hands back a
-     * gson {@link JsonElement} for a reply it could not type; {@code vscode.java.resolveJavaExecutable}
-     * answers a bare path, which arrives as a plain String and is not JSON — so routing it through
-     * {@link #asJson} threw on every debug launch, logged a WARNING with a stack trace, and then fell back
-     * to exactly this value anyway. The result was always right; the noise said otherwise.
+     * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
+     * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
+     * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
+     * and not at all when the session ended meanwhile.
      */
-    private static String asString(Object res) {
-        if (res instanceof String s) {
-            return s;
+    public void applyCodeChanges(Path file, Consumer<CodeReplaceOutcome> cb) {
+        DapClient c = client;
+        if (!canReplaceCode() || file == null) {
+            cb.accept(new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), ""));
+            return;
         }
-        JsonElement el = asJson(res);
-        return el != null && el.isJsonPrimitive() ? el.getAsString() : null;
+        long epoch = sessionEpoch;
+        lsp.buildJavaWorkspace(file, false, built -> {
+            if (!isCurrent(epoch, c)) {
+                return;
+            }
+            switch (built) {
+                case WITH_ERRORS -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.COMPILE_ERRORS, List.of(), ""));
+                case SUCCEEDED ->
+                    c.redefineClasses()
+                            .whenComplete((r, e) -> Platform.runLater(() -> {
+                                if (isCurrent(epoch, c)) {
+                                    cb.accept(codeReplaceOutcome(r, e == null ? null : msg(e)));
+                                }
+                            }));
+                default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
+            }
+        });
     }
 
-    private static String str(JsonObject o, String key) {
-        JsonElement e = o.get(key);
-        return e != null && e.isJsonPrimitive() ? e.getAsString() : null;
+    /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */
+    static CodeReplaceOutcome codeReplaceOutcome(DapModels.CodeReplace reply, String error) {
+        if (error != null) {
+            return new CodeReplaceOutcome(CodeReplaceResult.FAILED, List.of(), error);
+        }
+        if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
+            return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
+        }
+        return reply.failed()
+                ? new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error())
+                : new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), "");
     }
 
-    /** The {@link Map} twin of the above, for a reply lsp4j deserialized to plain collections. */
-    private static String str(Map<?, ?> m, String key) {
-        Object v = m.get(key);
-        return v == null ? null : String.valueOf(v);
+    /** Whether the session's adapter can restart a frame ({@code restartFrame}). */
+    public boolean supportsRestartFrame() {
+        DapClient c = client;
+        return c != null && c.supportsRestartFrame();
     }
 
-    /** Bounded rendering of a server reply for a log line — a classpath can be very long. */
-    private static String abbreviate(String s) {
-        if (s == null) {
-            return "null";
-        }
-        return s.length() <= 600 ? s : s.substring(0, 600) + "… (" + s.length() + " chars)";
+    /**
+     * Restart Frame: runs {@code frameId}'s method again from its start (frames above it are dropped). Behaves
+     * like a step: the session runs until the adapter's next stop; a refusal (the bottom frame, a native one)
+     * is reported and leaves the session paused where it was. FX thread, while SUSPENDED.
+     */
+    public void restartFrame(int frameId) {
+        step((c, threadId) -> c.restartFrame(frameId));
     }
 
-    /** lsp4j hands untyped executeCommand results back as gson {@link JsonElement}s; pass others through. */
-    private static JsonElement asJson(Object res) {
-        if (res instanceof JsonElement el) {
-            return el;
+    /** Whether the session's adapter can list the calls on a line ({@code stepInTargets}). */
+    public boolean supportsStepInTargets() {
+        DapClient c = client;
+        return c != null && c.supportsStepInTargets();
+    }
+
+    /**
+     * The calls on the current thread's line that Smart Step Into can enter (callback on the FX thread; empty
+     * when there are none, the session is not paused, or the adapter could not say).
+     */
+    public void stepInTargets(Consumer<List<DapModels.StepTarget>> cb) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED) {
+            cb.accept(List.of());
+            return;
         }
-        if (res == null) {
-            return null;
-        }
-        try {
-            return com.google.gson.JsonParser.parseString(String.valueOf(res));
-        } catch (RuntimeException e) {
-            // WARNING, not FINE: every caller turns null into an empty result, which reaches the user as a
-            // statement about their project ("no main class was found"). A swallowed parse failure reported
-            // as a fact about the workspace is how the resolveMainClass bug survived — say so in the log.
-            LOG.log(
-                    Level.WARNING,
-                    e,
-                    () -> "could not parse an executeCommand result of type "
-                            + res.getClass().getName() + ": " + abbreviate(String.valueOf(res)));
-            return null;
-        }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        c.stackTrace(threadId)
+                .thenCompose(frames -> frames == null || frames.isEmpty()
+                        ? CompletableFuture.completedFuture(List.<DapModels.StepTarget>of())
+                        : c.stepInTargets(frames.get(0).id()))
+                .whenComplete((targets, e) -> Platform.runLater(() -> {
+                    if (!isCurrent(epoch, c) || state != State.SUSPENDED) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(e));
+                    }
+                    cb.accept(targets == null ? List.of() : targets);
+                }));
+    }
+
+    /** Smart Step Into: steps the current thread into the call {@code targetId} (see {@link #stepInTargets}). */
+    public void stepIntoTarget(int targetId) {
+        step((c, threadId) -> c.stepIn(threadId, targetId));
     }
 
     private static Listener noopListener() {

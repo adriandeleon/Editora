@@ -214,5 +214,15 @@
   "C-c C-k": "http.cancelRequest",
   "C-x s": "file.saveAll",
   "C-c =": "edit.incrementNumber",
-  "C-c -": "edit.decrementNumber"
+  "C-c -": "edit.decrementNumber",
+  "C-c C-d r": "debug.restart",
+  "C-c C-d v": "debug.showValue",
+  "C-c C-d x": "debug.evaluate",
+  "C-c C-d w": "debug.addWatch",
+  "C-c C-d l": "debug.breakpoints",
+  "C-c C-d m": "debug.muteBreakpoints",
+  "C-c C-d t": "debug.toggleBreakpointEnabled",
+  "C-c C-d s": "debug.smartStepInto",
+  "C-c C-d h": "debug.applyCodeChanges",
+  "C-c C-d f": "debug.restartFrame"
 }

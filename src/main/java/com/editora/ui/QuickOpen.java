@@ -117,6 +117,19 @@ public class QuickOpen<T> {
         build(title, prompt);
     }
 
+    /** A key that acts on the highlighted row and keeps the picker open: the list is read again after it. */
+    private record RowAction<U>(javafx.scene.input.KeyCombination key, String legend, Consumer<U> action) {}
+
+    private final List<RowAction<T>> rowActions = new ArrayList<>();
+
+    /**
+     * Adds a key that acts on the highlighted row without closing the picker (the breakpoints list's enable /
+     * remove keys): {@code legend} is the already-translated entry for the key legend under the list.
+     */
+    public void addRowAction(javafx.scene.input.KeyCombination key, String legend, Consumer<T> action) {
+        rowActions.add(new RowAction<>(key, legend, action));
+    }
+
     /** Sets a per-item CSS class applied to the row's title label (e.g. "dirty-name" for unsaved files). */
     public void setItemStyleClass(Function<T, String> itemStyleClass) {
         this.itemStyleClass = itemStyleClass;
@@ -217,6 +230,23 @@ public class QuickOpen<T> {
     }
 
     private void onKey(KeyEvent e) {
+        for (RowAction<T> row : rowActions) {
+            if (row.key().match(e)) {
+                int at = list.getSelectionModel().getSelectedIndex();
+                T item = list.getSelectionModel().getSelectedItem();
+                if (item != null) {
+                    row.action().accept(item);
+                    reload();
+                    if (!items.isEmpty()) {
+                        int keep = Math.max(0, Math.min(at, items.size() - 1));
+                        list.getSelectionModel().select(keep);
+                        list.scrollTo(keep);
+                    }
+                }
+                e.consume();
+                return;
+            }
+        }
         PickerKeys.Action action = PickerKeys.action(e);
         switch (action) {
             case CANCEL -> hide();
@@ -290,7 +320,10 @@ public class QuickOpen<T> {
             return;
         }
         all = itemsSupplier.get();
-        hint.setText(PickerKeys.legend(PickerKeys.hint("select", "↵"))); // per show: follows a keymap switch
+        List<String> legend = new ArrayList<>();
+        legend.add(PickerKeys.hint("select", "↵"));
+        rowActions.forEach(r -> legend.add(r.legend()));
+        hint.setText(PickerKeys.legend(legend.toArray(String[]::new))); // per show: follows a keymap switch
         input.clear();
         filter("");
         chosen = false;

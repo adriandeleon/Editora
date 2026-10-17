@@ -48,6 +48,7 @@ class PythonDebugLaunchFxTest {
 
     @BeforeAll
     static void bootToolkit() throws Exception {
+        com.editora.i18n.Messages.init("en"); // the adapter's errors are shown in the UI's language
         FxToolkit.registerPrimaryStage();
     }
 

@@ -155,4 +155,48 @@ class QuickOpenPreviewFxTest {
         FxTestSupport.runOnFx(() -> overlay.hide());
         assertTrue(true, "reaching here without a NullPointerException is the assertion");
     }
+
+    /** A row action (the breakpoints list's Alt+E) acts on the highlighted row and leaves the picker open. */
+    @Test
+    void aRowActionActsOnTheHighlightedRowAndKeepsThePickerOpen() throws Exception {
+        List<String> items = new java.util.ArrayList<>(List.of("one", "two", "three"));
+        List<String> acted = new java.util.ArrayList<>();
+        QuickOpen<String> picker = FxTestSupport.callOnFx(() -> {
+            QuickOpen<String> p = new QuickOpen<>("Rows", "", () -> List.copyOf(items), x -> x, x -> "", x -> {});
+            p.addRowAction(
+                    new javafx.scene.input.KeyCodeCombination(
+                            javafx.scene.input.KeyCode.D, javafx.scene.input.KeyCombination.ALT_DOWN),
+                    "Alt+D remove",
+                    x -> {
+                        acted.add(x);
+                        items.remove(x);
+                    });
+            p.setOverlayHost(overlay);
+            p.show(null);
+            return p;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                ListView<String> list = FxTestSupport.field(picker, "list");
+                list.getSelectionModel().select(1);
+                javafx.scene.control.TextField input = FxTestSupport.field(picker, "input");
+                input.fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.D,
+                        false,
+                        false,
+                        true,
+                        false));
+                assertEquals(List.of("two"), acted);
+                assertTrue(picker.isShown(), "still open");
+                assertEquals(List.of("one", "three"), List.copyOf(list.getItems()), "the list was read again");
+                javafx.scene.control.Label hint = FxTestSupport.field(picker, "hint");
+                assertTrue(hint.getText().contains("Alt+D remove"), hint.getText());
+            });
+        } finally {
+            FxTestSupport.runOnFx(picker::hide);
+        }
+    }
 }

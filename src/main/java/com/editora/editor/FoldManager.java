@@ -96,6 +96,12 @@ public final class FoldManager {
     private static final double BREAKPOINT_SLOT_WIDTH = 14;
     /** Material "circle" — the filled red breakpoint dot. */
     static final String BREAKPOINT_GLYPH_PATH = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z";
+    /** A diamond — a logpoint (it logs, never stops), told apart by shape as well as colour (review C11). */
+    static final String LOGPOINT_GLYPH_PATH = "M12 1.5L22.5 12L12 22.5L1.5 12z";
+    /** Two bars over the dot — a conditional breakpoint ("="), as VS Code marks one. */
+    static final String CONDITION_MARK_PATH = "M7 8.5h10v2.4H7zM7 13.1h10v2.4H7z";
+    /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
+    static final String EXEC_ARROW_PATH = "M3 7.5h9V3l9.5 9-9.5 9v-4.5H3z";
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
     static final String RUN_GLYPH_PATH = "M8 5v14l11-7z";
 
@@ -141,6 +147,10 @@ public final class FoldManager {
     private IntFunction<String> breakpointTooltip = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
     private IntConsumer onBreakpointToggle = i -> {};
+    /** Whether the debugger is stopped on a line (draws the execution arrow in its breakpoint strip). */
+    private IntPredicate isExecutionLine = i -> false;
+    /** A right-click on a line's breakpoint glyph. */
+    private java.util.function.BiConsumer<Integer, javafx.scene.input.ContextMenuEvent> onBreakpointMenu = (i, e) -> {};
 
     /** Whether Git change tracking is active for this buffer (reserve the change-bar slot). */
     private BooleanSupplier changeBarsEnabled = () -> false;
@@ -717,6 +727,17 @@ public final class FoldManager {
         this.isBreakpoint = isBreakpoint == null ? i -> false : isBreakpoint;
         this.breakpointClass = classFor == null ? i -> null : classFor;
         this.onBreakpointToggle = onToggle == null ? i -> {} : onToggle;
+    }
+
+    /**
+     * Wires the debugger's own marks in the breakpoint strip: {@code isExecutionLine} draws the execution arrow on
+     * the line the debugger is stopped at, and {@code onMenu} handles a right-click on a breakpoint glyph.
+     */
+    public void setDebugGutterHooks(
+            IntPredicate isExecutionLine,
+            java.util.function.BiConsumer<Integer, javafx.scene.input.ContextMenuEvent> onMenu) {
+        this.isExecutionLine = isExecutionLine == null ? i -> false : isExecutionLine;
+        this.onBreakpointMenu = onMenu == null ? (i, e) -> {} : onMenu;
     }
 
     /** Supplies the hover text of a line's breakpoint glyph ({@code null} = none). */
@@ -1559,6 +1580,14 @@ public final class FoldManager {
                 if (bpTip != null && !bpTip.isEmpty()) {
                     LazyTooltip.install(bpSlot, () -> bpTip);
                 }
+                final int bpIdx = idx;
+                bpSlot.setOnContextMenuRequested(e -> {
+                    onBreakpointMenu.accept(bpIdx, e);
+                    e.consume();
+                });
+            }
+            if (isExecutionLine.test(idx)) {
+                bpSlot.getChildren().add(executionArrow());
             }
             ownPointer(bpSlot);
             bpSlot.setOnMouseClicked(e -> {
@@ -1818,16 +1847,34 @@ public final class FoldManager {
      *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}, space-separated when
      *  there are several) tweaks the look. */
     private Node breakpointMarker(String extraClass) {
+        java.util.List<String> kinds =
+                extraClass == null || extraClass.isEmpty() ? List.of() : List.of(extraClass.split(" "));
         SVGPath svg = new SVGPath();
-        svg.setContent(BREAKPOINT_GLYPH_PATH);
+        svg.setContent(kinds.contains("logpoint") ? LOGPOINT_GLYPH_PATH : BREAKPOINT_GLYPH_PATH);
         svg.getStyleClass().add("breakpoint-marker");
-        if (extraClass != null && !extraClass.isEmpty()) {
-            for (String one : extraClass.split(" ")) { // a kind and/or the live-session state
-                svg.getStyleClass().add("breakpoint-" + one);
-            }
+        for (String one : kinds) { // a kind and/or the live-session state
+            svg.getStyleClass().add("breakpoint-" + one);
         }
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);
+        if (!kinds.contains("conditional")) {
+            return new Group(svg);
+        }
+        SVGPath mark = new SVGPath(); // "=" over the dot: a condition, readable without telling colours apart
+        mark.setContent(CONDITION_MARK_PATH);
+        mark.getStyleClass().add("breakpoint-condition-mark");
+        mark.setScaleX(0.5);
+        mark.setScaleY(0.5);
+        return new Group(svg, mark); // both scale about (12, 12), the centre of the 24-unit glyph box
+    }
+
+    /** The execution-point arrow (the debugger is stopped on this line), drawn over any breakpoint glyph. */
+    private static Node executionArrow() {
+        SVGPath svg = new SVGPath();
+        svg.setContent(EXEC_ARROW_PATH);
+        svg.getStyleClass().add("exec-arrow");
+        svg.setScaleX(0.55);
+        svg.setScaleY(0.55);
         return new Group(svg);
     }
 

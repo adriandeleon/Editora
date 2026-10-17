@@ -132,7 +132,10 @@ class DebugPanelWatchesFxTest {
         @Override
         public void evaluate(String expression, int frameId, Consumer<String> cb) {
             calls.add("evaluate " + expression + " @" + frameId);
-            cb.accept(expression.startsWith("null") ? null : "val(" + expression + ")");
+            cb.accept(
+                    expression.startsWith("null")
+                            ? null
+                            : expression.startsWith("boom") ? "error: " + expression : "val(" + expression + ")");
         }
 
         @Override
@@ -330,7 +333,13 @@ class DebugPanelWatchesFxTest {
         FxTestSupport.runOnFx(() -> {
             List<MenuItem> menu = menuFor(row(tr("debugpanel.watches"), "count * 3"));
             assertEquals(
-                    List.of(tr("debugpanel.editWatch"), tr("debugpanel.removeWatch"), tr("debugpanel.addWatch")),
+                    java.util.Arrays.asList(
+                            tr("debugpanel.editWatch"),
+                            tr("debugpanel.removeWatch"),
+                            tr("debugpanel.copyValue"),
+                            tr("debugpanel.copyName"),
+                            null, // separator
+                            tr("debugpanel.addWatch")),
                     labels(menu));
             menu.get(1).fire();
         });
@@ -347,14 +356,22 @@ class DebugPanelWatchesFxTest {
 
             assertEquals(List.of(tr("debugpanel.addWatch")), labels(menuFor(row("Locals"))), "a scope: only Add");
             List<MenuItem> onVariable = menuFor(row("Locals", "count"));
-            assertEquals(List.of(tr("debugpanel.setValue"), tr("debugpanel.addWatch")), labels(onVariable));
+            assertEquals(
+                    java.util.Arrays.asList(
+                            tr("debugpanel.setValue"),
+                            tr("debugpanel.copyValue"),
+                            tr("debugpanel.copyName"),
+                            tr("debugpanel.addToWatches", "count"),
+                            null, // separator
+                            tr("debugpanel.addWatch")),
+                    labels(onVariable));
 
             promptAnswer = "7";
             onVariable.get(0).fire();
             assertEquals("<7>", row("Locals", "count").getValue().value());
 
             promptAnswer = "name.length()";
-            onVariable.get(1).fire();
+            onVariable.getLast().fire();
             assertEquals(List.of("count", "name.length()"), panel.getWatches());
 
             promptAnswer = "count + 1";
@@ -596,5 +613,246 @@ class DebugPanelWatchesFxTest {
         });
 
         assertEquals(List.of("input Ada", "input ", "endInput"), adapter.calls, "an empty line is a line too");
+    }
+
+    // --- review C ---------------------------------------------------------------------------------------
+
+    /** Review C7: a value could not be copied, and Add Watch from a variable started from an empty prompt. */
+    @Test
+    void copyValueCopiesAStringWithoutQuotesAndAddToWatchesIsPrefilled() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            stopWithLocals();
+            List<MenuItem> onName = menuFor(row("Locals", "name"));
+            onName.stream()
+                    .filter(m -> tr("debugpanel.copyValue").equals(m.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire();
+            assertEquals(
+                    "Ada", javafx.scene.input.Clipboard.getSystemClipboard().getString());
+            promptAnswer = null; // just look at what the prompt was opened with
+            onName.stream()
+                    .filter(m -> tr("debugpanel.addToWatches", "name").equals(m.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire();
+            assertEquals(
+                    tr("debugpanel.addWatchTitle") + "|" + tr("debugpanel.watchExpr") + "|name", prompts.getLast());
+        });
+    }
+
+    /** Review C13: the exception row stays at the top of Variables when the scopes arrive after it. */
+    @Test
+    void theExceptionRowLeadsTheTreeUntilTheNextStop() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            panel.setWatches(List.of("count"));
+            panel.setState(DapManager.State.SUSPENDED);
+            panel.setStopReason("exception");
+            panel.setExceptionInfo(new DapModels.ExceptionInfo("java.lang.IllegalStateException", "boom\nsecond line"));
+            panel.setScopes(List.of(new DapModels.ScopeInfo("Locals", LOCALS, false)));
+            TreeItem<DebugPanel.VarRow> first = tree().getRoot().getChildren().getFirst();
+            assertEquals(DebugPanel.Kind.EXCEPTION, first.getValue().kind());
+            assertEquals(
+                    tr("debugpanel.exceptionRow", "java.lang.IllegalStateException"),
+                    first.getValue().name());
+            assertEquals(
+                    List.of("boom", "second line"),
+                    first.getChildren().stream().map(c -> c.getValue().name()).toList());
+            assertEquals(
+                    List.of("count=w(count)", tr("debugpanel.addWatch")),
+                    rowNames(row(tr("debugpanel.watches"))),
+                    "the watches are still where they were, below it");
+            panel.setStopReason("breakpoint");
+            panel.setScopes(List.of(new DapModels.ScopeInfo("Locals", LOCALS, false)));
+            assertEquals(
+                    DebugPanel.Kind.SCOPE,
+                    tree().getRoot().getChildren().getFirst().getValue().kind());
+        });
+    }
+
+    /** Review C15: the thread selector named JVM housekeeping threads and never said which one stopped. */
+    @Test
+    void theThreadListLeavesOutJvmThreadsAndMarksTheStoppedOne() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            panel.setState(DapManager.State.SUSPENDED);
+            panel.setThreads(
+                    List.of(
+                            new DapModels.ThreadInfo(1, "Thread [main]"),
+                            new DapModels.ThreadInfo(2, "Thread [Reference Handler]"),
+                            new DapModels.ThreadInfo(3, "Thread [Signal Dispatcher]"),
+                            new DapModels.ThreadInfo(9, "Thread [worker-1]")),
+                    1);
+            javafx.scene.control.ComboBox<DapModels.ThreadInfo> threads = FxTestSupport.field(panel, "threads");
+            assertEquals(
+                    List.of(1, 9),
+                    threads.getItems().stream().map(DapModels.ThreadInfo::id).toList());
+            assertEquals(
+                    tr("debugpanel.threadPaused", "main"),
+                    threads.getConverter().toString(threads.getValue()));
+            assertEquals(
+                    "worker-1",
+                    threads.getConverter().toString(threads.getItems().get(1)));
+        });
+    }
+
+    private TextFlow render(DebugPanel.VarRow row) {
+        return (TextFlow) FxTestSupport.call(panel, "renderRow", new Class<?>[] {DebugPanel.VarRow.class}, row);
+    }
+
+    private static String text(TextFlow flow) {
+        StringBuilder sb = new StringBuilder();
+        flow.getChildren().forEach(n -> sb.append(((Text) n).getText()));
+        return sb.toString();
+    }
+
+    /** Review C17 / C19: a failed watch is one line; a watch with no value has no dangling " = ". */
+    @Test
+    void aFailedWatchIsOneLineAndAnIdleWatchHasNoEqualsSign() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            TextFlow failed = render(new DebugPanel.VarRow(
+                    "nosuch + 1",
+                    "Cannot evaluate because of\ncompilation error(s)",
+                    "",
+                    0,
+                    0,
+                    DebugPanel.Kind.WATCH,
+                    0,
+                    0,
+                    true));
+            assertEquals("nosuch + 1 = Cannot evaluate because of compilation error(s)", text(failed));
+            assertEquals(
+                    javafx.scene.layout.Region.USE_PREF_SIZE, failed.getMinWidth(), "never wrapped into the row below");
+            TextFlow idle = render(new DebugPanel.VarRow("names.size()", "", "", 0, 0, DebugPanel.Kind.WATCH));
+            assertEquals("names.size()", text(idle));
+        });
+    }
+
+    /** Review C19: after the program ended the state line said "Not debugging" and the outcome was gone. */
+    @Test
+    void theStateLineKeepsTheExitCodeUntilTheNextSession() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.Label state = FxTestSupport.field(panel, "status");
+            panel.setState(DapManager.State.RUNNING);
+            panel.setExitCode(1);
+            panel.setState(DapManager.State.INACTIVE);
+            assertEquals(tr("debugpanel.state.exited", 1), state.getText());
+            panel.setState(DapManager.State.STARTING);
+            assertEquals(tr("debugpanel.state.starting"), state.getText());
+        });
+    }
+
+    /** Review C20: the evaluate field had no history, and its lines looked like the program's output. */
+    @Test
+    void theEvaluateFieldHasHistoryAndItsEchoAndErrorsAreStyled() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            stopWithLocals();
+            TextField eval = FxTestSupport.field(panel, "evalInput");
+            for (String expr : List.of("count", "boom")) {
+                eval.setText(expr);
+                eval.fireEvent(new javafx.event.ActionEvent());
+            }
+            eval.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.UP, false, false, false, false));
+            assertEquals("boom", eval.getText());
+            eval.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.UP, false, false, false, false));
+            assertEquals("count", eval.getText());
+            eval.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+            assertEquals("boom", eval.getText());
+
+            CodeArea console = FxTestSupport.field(panel, "console");
+            FxTestSupport.call(FxTestSupport.field(panel, "appender"), "flush", new Class<?>[] {});
+            String all = console.getText();
+            int echo = all.indexOf("> count");
+            int error = all.indexOf("error: boom");
+            assertTrue(echo >= 0 && error >= 0, all);
+            assertTrue(console.getStyleOfChar(echo + 1).contains("run-command"), "the echo is muted");
+            assertTrue(console.getStyleOfChar(error + 1).contains("run-stderr"), "a failure is red");
+            assertFalse(console.getStyleOfChar(all.indexOf("val(count)") + 1).contains("run-stderr"));
+        });
+    }
+
+    /** Review C18 / C22: tooltips name the keymap chord; the empty stack says how to start. */
+    @Test
+    void tooltipsNameTheChordAndTheEmptyStackSaysHowToStart() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            panel.setChordLookup(id -> switch (id) {
+                case "debug.stepOver" -> "F10";
+                case "debug.start" -> "F5";
+                default -> null;
+            });
+            panel.setState(DapManager.State.INACTIVE);
+            Button stepOver = FxTestSupport.field(panel, "stepOver");
+            assertEquals(
+                    DebugPanelText.tooltip(tr("command.debug.stepOver"), "F10", "N", tr("debugpanel.inPanel")),
+                    stepOver.getTooltip().getText());
+            assertEquals(DebugPanelText.bareTitle(tr("command.debug.stepOver")), stepOver.getAccessibleText());
+            ListView<?> stack = FxTestSupport.field(panel, "stack");
+            assertEquals(
+                    tr("debugpanel.emptyHintChord", "F5"),
+                    ((javafx.scene.control.Label) stack.getPlaceholder()).getText());
+            Button start = FxTestSupport.field(panel, "start");
+            assertTrue(start.getTooltip().getText().startsWith(DebugPanelText.bareTitle(tr("command.debug.start"))));
+            panel.setState(DapManager.State.SUSPENDED);
+            assertTrue(
+                    start.getTooltip().getText().startsWith(DebugPanelText.bareTitle(tr("command.debug.continue"))),
+                    "paused, the green button is Continue");
+            assertEquals("", ((javafx.scene.control.Label) stack.getPlaceholder()).getText());
+        });
+    }
+
+    /** Review C21 / C9: a stack-trace line opens on one click; Tab leaves the console for the evaluate field. */
+    @Test
+    void oneClickOnAStackTraceLineOpensItAndTabLeavesTheConsole() throws Exception {
+        List<com.editora.run.StackTraceLinks.Link> opened = new ArrayList<>();
+        javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
+            panel.setOnLink(opened::add);
+            panel.setState(DapManager.State.RUNNING);
+            javafx.stage.Stage s = new javafx.stage.Stage();
+            s.setScene(new javafx.scene.Scene(panel, 1100, 360));
+            s.show();
+            panel.appendNotice("Exception in thread \"main\" java.lang.IllegalStateException: boom");
+            panel.appendNotice("\tat Main.main(Main.java:22)");
+            return s;
+        });
+        try {
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                CodeArea console = FxTestSupport.field(panel, "console");
+                console.applyCss();
+                console.layout();
+                int at = console.getText().indexOf("Main.main") + 2;
+                var b = console.getCharacterBoundsOnScreen(at, at + 1).orElseThrow();
+                // A fired event's coordinates are taken as scene coordinates and re-localised to the target.
+                var p = console.localToScene(console.screenToLocal(b.getMinX() + 1, b.getMinY() + b.getHeight() / 2));
+                console.fireEvent(new MouseEvent(
+                        MouseEvent.MOUSE_CLICKED,
+                        p.getX(),
+                        p.getY(),
+                        b.getMinX(),
+                        b.getMinY(),
+                        MouseButton.PRIMARY,
+                        1,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        false,
+                        true,
+                        false,
+                        true,
+                        null));
+                assertEquals(1, opened.size(), "one click opens the frame's line");
+                assertEquals(22, opened.getFirst().line());
+                assertTrue(console.getStyleOfChar(at).contains(DebugConsoleStyle.LINK), "drawn as a link");
+
+                console.requestFocus();
+                console.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false));
+                TextField eval = FxTestSupport.field(panel, "evalInput");
+                assertTrue(eval.isFocused(), "Tab leaves the console for the evaluate field");
+            });
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
     }
 }

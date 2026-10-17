@@ -132,4 +132,67 @@ final class DebugIdentifiers {
         }
         return out;
     }
+    /** Python's {@code lambda a, b=1: ...} — the parameter list up to the colon. */
+    private static final java.util.regex.Pattern PY_LAMBDA = java.util.regex.Pattern.compile("\\blambda\\b([^:]*):");
+
+    /**
+     * The parameters the lambdas on {@code line} declare: {@code n} of {@code names.forEach(n -> …)}, {@code a}
+     * and {@code b} of {@code (String a, int b) ->}, JavaScript's {@code x => …}, Python's {@code lambda x, y:}.
+     * Such a name on that line is the lambda's own parameter, not the stopped frame's variable of the same name
+     * (review C3).
+     */
+    static Set<String> lambdaParameters(String line) {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        if (line == null || line.isEmpty()) {
+            return out;
+        }
+        for (int i = line.indexOf('>'); i > 0; i = line.indexOf('>', i + 1)) {
+            char arrow = line.charAt(i - 1);
+            if (arrow != '-' && arrow != '=') {
+                continue;
+            }
+            int j = i - 2;
+            while (j >= 0 && line.charAt(j) == ' ') {
+                j--;
+            }
+            if (j < 0) {
+                continue;
+            }
+            if (line.charAt(j) == ')') {
+                int open = line.lastIndexOf('(', j);
+                if (open < 0) {
+                    continue;
+                }
+                for (String param : line.substring(open + 1, j).split(",")) {
+                    addLastIdentifier(param.split("=")[0], out); // "String a" → a; JS "b = 1" → b
+                }
+            } else {
+                addLastIdentifier(line.substring(0, j + 1), out);
+            }
+        }
+        var m = PY_LAMBDA.matcher(line);
+        while (m.find()) {
+            for (String param : m.group(1).split(",")) {
+                addLastIdentifier(param.split("=")[0].replace("*", ""), out);
+            }
+        }
+        return out;
+    }
+
+    private static void addLastIdentifier(String text, Set<String> out) {
+        int e = text.length();
+        while (e > 0 && !isIdentChar(text.charAt(e - 1))) {
+            if (text.charAt(e - 1) != ' ') {
+                return; // "f(x) ->" is not "x ->"; only spaces may sit between the name and the arrow
+            }
+            e--;
+        }
+        int b = e;
+        while (b > 0 && isIdentChar(text.charAt(b - 1))) {
+            b--;
+        }
+        if (b < e && isIdentStart(text.charAt(b))) {
+            out.add(text.substring(b, e));
+        }
+    }
 }

@@ -67,6 +67,9 @@
    later — so the theme won and stderr was drawn in the default ink. */
 .text.run-stderr,
 .editor-area .text.run-stderr { -fx-fill: -color-danger-fg; }
+/* A source location in the Debug console (a stack-trace frame): one click opens it (review C21). */
+.text.console-link,
+.editor-area .text.console-link { -fx-underline: true; -fx-cursor: hand; }
 
 /* Run console: the colours a program prints with SGR escape codes (com.editora.run.AnsiText). After the
    stderr rule and with the same `.editor-area` prefix, so a program's own colour wins over the stderr tint.

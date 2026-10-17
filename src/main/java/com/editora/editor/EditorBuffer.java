@@ -762,6 +762,8 @@ public class EditorBuffer implements TabContent {
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBreakpointClick =
             (buffer, line) -> buffer.toggleBreakpoint(line);
+    /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
+    private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
     private final NoteManager notes = new NoteManager(area);
 
@@ -1029,6 +1031,8 @@ public class EditorBuffer implements TabContent {
                 breakpoints::styleClasses,
                 line -> gutterBreakpointClick.accept(this, line));
         folds.setBreakpointTooltip(breakpoints::tooltip);
+        folds.setDebugGutterHooks(
+                i -> executionLine.isMarked(area, i), (l, e) -> gutterBreakpointMenu.show(this, l, e));
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -1841,6 +1845,9 @@ public class EditorBuffer implements TabContent {
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
+    /** Debugger actions at the click (breakpoint, Run to Cursor, Show Value…); null = none (review C10). */
+    private java.util.function.Supplier<List<MenuItem>> debugMenuContributor;
+
     /** Simple UI mode: the right-click menu keeps the editing actions only — see {@link #setSimpleMenu}. */
     private boolean simpleMenu;
 
@@ -1922,6 +1929,11 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
+            List<MenuItem> debugItems = debugMenuContributor == null || simpleMenu ? null : debugMenuContributor.get();
+            if (debugItems != null && !debugItems.isEmpty()) {
+                items.addAll(debugItems);
+                items.add(new SeparatorMenuItem());
+            }
             // LSP navigation (only when this buffer is served by a language server), for the symbol there.
             if (lspActive && !simpleMenu) {
                 items.add(lspMenu(at.offset()));
@@ -2000,6 +2012,11 @@ public class EditorBuffer implements TabContent {
     /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.menuContributor = contributor;
+    }
+
+    /** The debugger's right-click items, placed above the LSP submenu (built per showing; null clears it). */
+    public void setDebugMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
+        this.debugMenuContributor = contributor;
     }
 
     /**
@@ -4439,75 +4456,23 @@ public class EditorBuffer implements TabContent {
         return blameHashAt(focusedArea.getCurrentParagraph());
     }
 
-    /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
-     *  given the hovered identifier, deliver its rendered value (null/blank = show nothing). */
-    private java.util.function.BiConsumer<String, java.util.function.Consumer<String>> debugHoverEvaluator;
+    /** The debugger's value popup (hover and Show Value at Caret) — see {@link DebugHover}. */
+    private final DebugHover debugHover = new DebugHover();
 
-    private boolean debugHoverActive;
-    private javafx.scene.control.Tooltip debugTooltip;
-    private String debugHoverWord;
-
+    /** The DAP {@code evaluate} (context "hover") the value popup asks: expression → value (null/blank: none). */
     public void setDebugHoverEvaluator(
             java.util.function.BiConsumer<String, java.util.function.Consumer<String>> evaluator) {
-        this.debugHoverEvaluator = evaluator;
+        debugHover.setEvaluator(evaluator);
     }
 
     /** Flipped by the controller on suspend/resume so hovering costs nothing outside a pause. */
     public void setDebugHoverActive(boolean on) {
-        this.debugHoverActive = on && !hugeFile;
-        if (!this.debugHoverActive) {
-            hideDebugTooltip();
-        }
+        debugHover.setActive(on && !hugeFile);
     }
 
-    /** IntelliJ's value popup: hovering an identifier while suspended evaluates it in the selected
-     *  frame and shows {@code name = value}. One evaluation per distinct hovered word. */
-    private void installDebugHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!debugHoverActive || debugHoverEvaluator == null) {
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                String line = a.getParagraph(pos.getMajor()).getText();
-                String word = DebugIdentifiers.expressionAt(line, pos.getMinor()); // self.x, not x
-                if (word == null) {
-                    hideDebugTooltip();
-                    return;
-                }
-                if (word.equals(debugHoverWord)) {
-                    return; // already showing (or evaluating) this word
-                }
-                debugHoverWord = word;
-                double sx = e.getScreenX();
-                double sy = e.getScreenY();
-                debugHoverEvaluator.accept(word, value -> {
-                    if (!debugHoverActive || value == null || value.isBlank() || !word.equals(debugHoverWord)) {
-                        return; // evaluation failed / mouse moved on — show nothing
-                    }
-                    if (debugTooltip == null) {
-                        debugTooltip = new javafx.scene.control.Tooltip();
-                        debugTooltip.getStyleClass().add("debug-value-tooltip");
-                        debugTooltip.setWrapText(true);
-                        debugTooltip.setMaxWidth(480);
-                    }
-                    debugTooltip.setText(word + " = " + value);
-                    debugTooltip.show(a, sx + 12, sy + 16);
-                });
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hideDebugTooltip());
-    }
-
-    private void hideDebugTooltip() {
-        if (debugTooltip != null) {
-            debugTooltip.hide();
-        }
-        debugHoverWord = null;
+    /** Show Value at Caret: the value of the name at the caret, in the value popup; false when there is none. */
+    public boolean showDebugValueAtCaret() {
+        return debugHover.showAtCaret(focusedArea);
     }
 
     public MarkdownViewMode getMarkdownViewMode() {
@@ -7005,6 +6970,10 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    public void setGutterBreakpointMenu(BreakpointGutterMenu menu) {
+        gutterBreakpointMenu = menu == null ? (buffer, line, e) -> {} : menu;
+    }
+
     /** Callback fired after any breakpoint change (persist + re-send to a live DAP session). */
     public void setOnBreakpointsChanged(Runnable callback) {
         breakpoints.setOnChanged(callback);
@@ -7028,18 +6997,41 @@ public class EditorBuffer implements TabContent {
     private final ExecutionLine executionLine = new ExecutionLine();
 
     /**
-     * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
-     * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
+     * Marks {@code line} as the current execution point (a distinct background and a gutter arrow), puts the
+     * caret there and scrolls it into view clear of the sticky-scroll headers (review B6). Clears any previous mark.
      */
     public void setExecutionLine(int line) {
-        if (executionLine.set(area, folds, line)) {
-            jumpToLine(line);
+        if (executionLine.set(area, folds, line, () -> lineHighlightColor, this::refreshGutterLine)) {
+            area.moveTo(line, 0);
+            area.requestFocus();
+            int first;
+            int last;
+            try {
+                first = area.firstVisibleParToAllParIndex();
+                last = area.lastVisibleParToAllParIndex();
+            } catch (RuntimeException notLaidOut) {
+                first = last = -1;
+            }
+            int top = ExecutionLine.revealTop(
+                    line,
+                    first,
+                    last,
+                    stickyScrollEnabled ? stickyLines.size() : 0,
+                    t -> stickyScrollEnabled ? StickyScroll.navigationFirstVisible(folds.regions(), t) : t);
+            if (top >= 0) {
+                area.showParagraphAtTop(top);
+            }
         }
+    }
+
+    /** Draws the execution line as an exception stop (red) or a plain stop. */
+    public void setExecutionLineException(boolean exception) {
+        executionLine.setException(area, exception);
     }
 
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
-        executionLine.clear(area);
+        executionLine.clear(area, this::refreshGutterLine);
     }
 
     // ---- Personal Notes ----
@@ -7160,7 +7152,7 @@ public class EditorBuffer implements TabContent {
                 () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
                 hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
-        installDebugHover(a);
+        debugHover.install(a);
         installNoteHover(a);
     }
 

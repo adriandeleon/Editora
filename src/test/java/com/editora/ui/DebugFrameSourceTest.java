@@ -36,4 +36,19 @@ class DebugFrameSourceTest {
         assertEquals(0, DebugCoordinator.firstFrameWithSource(frames, f -> false));
         assertEquals(0, DebugCoordinator.firstFrameWithSource(List.of(), f -> true));
     }
+
+    private static final String STRING_CLASS =
+            "jdt://contents/java.base/java.lang/String.class?=proj/%3Cjava.lang%28String.class";
+
+    @Test
+    void aStepIntoLibraryCodeShowsThatCodeOtherStopsTheNearestUserFrame() {
+        // B5: Step Into a JDK method showed the caller's line again, so the step seemed to do nothing
+        List<StackFrameInfo> frames =
+                List.of(new StackFrameInfo(1, "String.length()", null, 1801, 0, STRING_CLASS), frame(2, MAIN));
+        assertEquals(0, DebugCoordinator.frameToShow("step", frames, f -> MAIN.equals(f.file())));
+        assertEquals(1, DebugCoordinator.frameToShow("pause", frames, f -> MAIN.equals(f.file())));
+        assertEquals(1, DebugCoordinator.frameToShow("exception", frames, f -> MAIN.equals(f.file())));
+        List<StackFrameInfo> noText = List.of(frame(1, null), frame(2, MAIN));
+        assertEquals(1, DebugCoordinator.frameToShow("step", noText, f -> MAIN.equals(f.file())), "nothing to show");
+    }
 }

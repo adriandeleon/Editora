@@ -46,5 +46,13 @@
   "M-S-i": "edit.addCaretsToLineEnds",
   "Cmd-enter": "edit.insertLineBelow",
   "Cmd-S-enter": "edit.insertLineAbove",
-  "Cmd-S-k": "edit.deleteLine"
+  "Cmd-S-k": "edit.deleteLine",
+  "f5": "debug.start",
+  "S-f5": "debug.stop",
+  "f6": "debug.pause",
+  "f9": "debug.toggleBreakpoint",
+  "f10": "debug.stepOver",
+  "f11": "debug.stepIntoOrFullScreen",
+  "S-f11": "debug.stepOut",
+  "Cmd-S-f5": "debug.restart"
 }

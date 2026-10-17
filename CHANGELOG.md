@@ -110,6 +110,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requirements files.
 - **"Turn on Python code intelligence?"** — a one-time offer when the first Python file opens while language
   servers are off.
+- **Java debugging: hot code replace.** Saving a `.java` file during a Java debug session rebuilds it with the
+  Java language server and loads the new code into the running program. The Debug console says which classes
+  changed, or why they could not be (adding a method or field still needs a restart). Settings → Debugging →
+  "Apply code changes to a running Java program": automatically (default), on command only, or off; and
+  **Debug: Apply Code Changes**.
+- **Java debugging: Restart Frame** (call-stack right-click menu and a command) and **Smart Step Into…** (pick
+  which call on the line to step into).
+- **Debug: Breakpoints…** lists every breakpoint: Enter jumps to it, Alt+E enables or disables it, Alt+D removes it,
+  Alt+M mutes them all. Also **Mute Breakpoints**, **Enable/Disable Breakpoint** at the caret, and a right-click
+  menu on a breakpoint glyph (Edit…, Enable/Disable, Remove, Breakpoints…).
+- **Exception breakpoints: Caught and Uncaught** are two toggles, checked in the Run menu and shown in the Debug
+  window, kept per project. Settings → Debugging can limit them to some exception classes.
+- **Java step filters and static fields.** Step Into skips JDK classes and synthetic methods, and a class's static
+  fields show among the variables; both are on by default and can be turned off in Settings → Debugging.
+- **Show Value at Caret** (keyboard), **Copy Value**, **Copy Name** and **Add to Watches** (filled in from the
+  selected variable) in the Variables tree; Up/Down history in the evaluate field.
+- **Debugger keys in every keymap.** CUA and Sublime get VS Code's F-keys (F5, Shift+F5, Ctrl+Shift+F5, F6, F9,
+  F10, F11 = Step Into while paused and Full Screen otherwise, Shift+F11); IntelliJ, VS Code and Emacs gain the
+  missing ones. The Run menu lists every debugger action, and the editor's right-click menu has Toggle/Edit
+  Breakpoint, and while paused Run to Cursor, Show Value and Add to Watches.
+- **JDK and library frames show their source** (read-only) when you step into them or click them.
 
 - **HTTP Client: results on the request lines.** After a request in a `.http` file runs, its method/URL line shows
   how it went, in muted text: `200 OK · 83 ms · ✗ 1 of 3 tests`, `404 Not Found · 1 ms`, `Connection refused`. The
@@ -170,6 +191,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Pipfile`, `poetry.lock`, `uv.lock` and `pdm.lock` open as TOML; `Pipfile.lock` and `.ipynb` as JSON.
   - `uv run`, `pipx run`, `pypy` and free-threaded `python3.14t` shebangs are Python.
   - Toggle Comment in an INI file uses the comment character the file already uses.
+- **Java Debug builds the project first.** A Maven or Gradle debug launch asks the Java language server to build
+  the project; compile errors stop the launch and are listed in the Debug console as links. Before, Debug ran
+  whatever was in `target/classes` (ClassNotFoundException on a new project, old code after an edit).
+- **Debug ▶ and Debug on a file use the class's run configuration** (arguments, VM options, environment, working
+  directory, JDK), as Run ▶ does, and every unsaved Java file of the project is saved before a Java debug launch.
+- **The Debug window never takes the keyboard.** Starting a session or stopping at a breakpoint leaves focus in the
+  editor; a stop reopens a closed Debug window. In the Debug window, Stop and Restart need Shift (Shift+K, Shift+R).
+- **The stopped line is easy to see:** amber with a gutter arrow, never hidden under the sticky header; the line an
+  exception was thrown from is red, and the exception is the top row of Variables.
+- **Inline values** stop at the stopped line, and a lambda parameter no longer shows an outer variable's value.
+  Hover waits for the mouse to rest and skips comments and strings.
+- **Breakpoint kinds differ by shape** (a diamond for a logpoint, "=" marks for a condition), and their hover says
+  the condition, log message and hit count. A breakpoint on a blank or comment-only line is refused.
+- **Debug window:** opens taller, Variables is the widest column, JVM housekeeping threads are hidden and the
+  stopped thread is marked, lambda frames read `<lambda>`, frames without source are muted, stack-trace links
+  open on one click, "Exited with code N" stays after the program ends, and setup messages say which piece is
+  missing (LSP off, Java server off, jdtls or java-debug missing), with an Install button on the Java card.
+- **Debug Test and Debug via Build** use a free JDWP port for Maven test JVMs and Spring Boot, attach every forked
+  JVM in turn, and Stop ends the test or build run too.
+- **Before-launch steps** of a Java run configuration run in the project root (Run and Debug).
+- **Settings schema 129** adds the hot code replace, step filter, static fields and exception class settings;
+  workspace schema 19 keeps the exception toggles per project.
 
 ### Fixed
 
@@ -207,6 +250,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spell check:** it now checks the first word of an f-string. Common Python terms (kwargs, asyncio, noqa) are no
   longer flagged.
 - **Go to Symbol without a language server:** Python methods show their class.
+- **Java Debug:**
+  - A class with a `package` line in a folder with no `pom.xml` or Gradle build could not be debugged
+    ("Could not find or load main class Main"). Editora now corrects the Java server's source folder.
+  - Debug on a file could run a different program: another `main` of the project, or a class never compiled.
+  - Editing a file during a session moved its breakpoints and the stopped line off the code the program runs;
+    lines are now matched to the launched code, and a stop in an edited file says the program runs the old code.
+  - Breakpoints in other unsaved files were silently not hit.
+  - Starting a session moved focus into the Debug window, where typing `r` or `k` restarted or killed the program.
+  - With "Run the debugged program in the Debug console" off, a crashed Java language server left the program
+    running; a lost connection to the debugger now ends the program at once and says so.
+  - A breakpoint set while the session was starting flashed "Empty debug session." as invalid.
+  - Run to Cursor ran past a line that had a false conditional breakpoint or a logpoint.
+  - Every stop fetched the whole call stack (thousands of frames in deep recursion); it is now paged.
+  - Stop and Restart froze the window for up to a quarter of a second, and logged a "Socket closed" stack trace.
+  - Hover and inline values showed the wrong variable for `obj.field`.
+  - A compile error of a loose file showed only in the status bar; it is now in the Debug console with links.
+  - A slow evaluation timed out with a raw Java exception name, and a Step pressed meanwhile fired seconds later.
+  - Install Java Support downloaded java-debug again while debugging was off; with `--config-dir` the installed
+    plugin was not found.
+  - Restart of a run configuration used its old arguments; F5 in another tab stopped a running session without
+    asking; Attach, configurations and Debug via Build of a remote file checked this machine's tools instead of
+    the host's; remote launch arguments were quoted for this machine's OS.
+  - java-debug's "different versions of JVMs" warning no longer clutters the console, and a program java-debug
+    started now ends with "The program ended." instead of a made-up exit code 0.
+  - Debugger launch, connect and adapter errors were English in every language and could start with Java class
+    names (`org.eclipse.debug.core.DebugException: …`); they are now translated and plain, and a report of
+    several lines goes to the Debug console with its first line in the status bar.
 
 ### Changed
 

@@ -747,7 +747,7 @@ class RunConfigurationCommandsFxTest {
         statuses.clear();
         buffer(dir.resolve("loose/Loose.java"), "class Loose {}\n");
         FxTestSupport.runOnFx(coordinator::debugViaBuild); // jdtls has no java-debug: nothing to attach with
-        assertEquals(List.of(tr("status.debug.unavailable")), statuses);
+        assertEquals(List.of(tr("status.debug.javaDebugMissing")), statuses, "the missing piece (review A7)");
 
         statuses.clear();
         FxTestSupport.runOnFx(() -> {

@@ -459,7 +459,6 @@ class ConfigMigrationsTest {
         assertEquals(
                 com.editora.config.Settings.SCHEMA_VERSION,
                 out.get("schemaVersion").asInt());
-        assertEquals(128, out.get("schemaVersion").asInt());
         assertFalse(out.has("httpInlineResults"), "left to the default");
         com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
         assertTrue(loaded.isHttpInlineResults(), "on for everyone, as nobody had a choice yet");

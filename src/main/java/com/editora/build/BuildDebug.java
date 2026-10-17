@@ -17,13 +17,13 @@ public final class BuildDebug {
     private BuildDebug() {}
 
     /**
-     * The JDWP agent options for a suspended debuggee on port 5005, listening on the loopback interface only
-     * (as Gradle's {@code --debug-jvm} does). JDWP is unauthenticated: {@code address=*:5005} offered code
-     * execution as the user to every host that could reach the machine, and Editora only ever attaches to
-     * {@code localhost}.
+     * The JDWP agent options for a suspended debuggee listening on the loopback interface only (as Gradle's
+     * {@code --debug-jvm} does), on a port the system picks: JDWP prints it in its banner, which is what the
+     * attach reads. A fixed 5005 failed with "address in use" beside another debug run (review A15). JDWP is
+     * unauthenticated: {@code address=*:5005} offered code execution as the user to every host that could
+     * reach the machine, and Editora only ever attaches to {@code localhost}.
      */
-    public static final String JDWP_AGENT =
-            "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
+    public static final String JDWP_AGENT = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:0";
 
     /** Gradle Run under debug: {@code <runTask> --debug-jvm} (suspends on 5005, prints the JDWP banner). */
     public static List<String> gradleDebugArgs(String runTask) {
