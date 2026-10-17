@@ -79,7 +79,7 @@ class StoreShapeGuardTest {
         PINNED.put(ConfigSchema.MACROS, "2:659c0d0ea97b3b12");
         PINNED.put(ConfigSchema.ABBREVIATIONS, "1:37b204a82fd27de2");
         PINNED.put(ConfigSchema.TRUST, "1:97df8267c8a7cf79");
-        PINNED.put(ConfigSchema.HTTP_HISTORY, "4:ce157138b7212ce2");
+        PINNED.put(ConfigSchema.HTTP_HISTORY, "5:0fa7c56855a1a291");
     }
 
     @Test
