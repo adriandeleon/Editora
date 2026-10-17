@@ -350,7 +350,13 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.launchCancelled"));
             updateDebugAvailability();
         } else {
+            Runnable owner = relaunch == ONE_SHOT_ATTACH ? ownerStop : null;
+            ownerStop = null;
+            queuedAttaches.clear(); // Stop ends the whole run, its other JVMs included
             dapManager.stop();
+            if (owner != null) {
+                owner.run();
+            }
         }
     }
 
@@ -1060,6 +1066,9 @@ final class DebugCoordinator {
                     clearExecHighlight();
                     clearDebugEditorSurfaces(); // inline values + hover live only while suspended
                 }
+                if (state == DapManager.State.INACTIVE && relaunch == ONE_SHOT_ATTACH && !queuedAttaches.isEmpty()) {
+                    Platform.runLater(queuedAttaches.poll()); // the next JVM of the same run is waiting
+                }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
                 updateDebugAvailability(); // keep the window available during a session; hide it once it ends
@@ -1673,8 +1682,31 @@ final class DebugCoordinator {
                                         ? com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER
                                         : s.getPythonDebugCommand());
             case "javascript" -> !s.isJsDebugEnabled() ? tr("status.debug.jsOff") : tr("status.debug.jsDebugMissing");
+            case "java" -> javaUnavailableMessage();
             default -> tr("status.debug.unavailable");
         };
+    }
+
+    /**
+     * Which piece of Java debugging is missing, as the user can act on it (review A7): it runs through the Java
+     * language server, so LSP being off, the Java server being off or not installed, and the java-debug plugin
+     * missing each have their own message. "Check Settings → Debugging" covered them all, and that page shows
+     * none of the first three.
+     */
+    private String javaUnavailableMessage() {
+        if (!lspEnabled()) {
+            return tr("status.debug.javaNeedsLsp");
+        }
+        if (!lsp.serverEnabled("java")) {
+            return tr("status.debug.javaServerOff");
+        }
+        if (!lsp.isServerAvailable("java")) {
+            return tr("status.debug.jdtlsMissing");
+        }
+        if (!dapManager.isAdapterAvailable()) {
+            return tr("status.debug.javaDebugMissing");
+        }
+        return tr("status.debug.unavailable");
     }
 
     /**
@@ -2176,9 +2208,33 @@ final class DebugCoordinator {
      * {@code anchorFile} names the debug session and anchors breakpoint resolution.
      */
     void attachToPort(Path anchorFile, String attachHost, int port) {
+        attachToPort(anchorFile, attachHost, port, null);
+    }
+
+    /** The test or build run that started the JVM of the attached session; Stop ends it too (review A4). */
+    private Runnable ownerStop;
+
+    /**
+     * JVMs of the same run that printed their banner while one of them was being debugged (several surefire
+     * forks, a multi-module build), attached in turn as each session ends (review D11). Each waits suspended.
+     */
+    private final java.util.ArrayDeque<Runnable> queuedAttaches = new java.util.ArrayDeque<>();
+
+    /**
+     * As above; {@code stopOwner} ends the test or build run that started the JVM: Stop on this session runs
+     * it after detaching, so Stop ends the program as it does every other session's — detaching alone left
+     * the test or app running on (review A4).
+     */
+    void attachToPort(Path anchorFile, String attachHost, int port, Runnable stopOwner) {
+        if (relaunch == ONE_SHOT_ATTACH && dapManager.isActive()) {
+            queuedAttaches.add(() -> attachToPort(anchorFile, attachHost, port, stopOwner));
+            host.setStatus(tr("status.debug.attachQueued", port));
+            return;
+        }
+        ownerStop = stopOwner;
         // On a remote anchor's host the adapter attaches from there: "localhost" is the host itself.
         if (!debugEffectiveFor("java", anchorFile)) {
-            host.setStatus(tr("status.debug.unavailable"));
+            host.setStatus(unavailableMessage("java", anchorFile));
             return;
         }
         ops.openToolWindow();
@@ -2244,8 +2300,8 @@ final class DebugCoordinator {
             host.setStatus(tr("status.debug.saveFirst"));
             return;
         }
-        if (!debugEffective()) {
-            host.setStatus(tr("status.debug.unavailable"));
+        if (!debugEffectiveFor("java", b.getPath())) { // a remote file attaches from its host (review A9)
+            host.setStatus(unavailableMessage("java", b.getPath()));
             return;
         }
         host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), "localhost:5005", input -> {

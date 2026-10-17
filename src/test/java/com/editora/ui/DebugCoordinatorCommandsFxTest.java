@@ -634,6 +634,49 @@ class DebugCoordinatorCommandsFxTest {
                 statuses().contains(tr("status.debug.noProject")), statuses().toString());
     }
 
+    /**
+     * Debug Test / Debug via Build attach to a JVM their run started: Stop used to detach only, and the test or
+     * app ran on (review A4). Every JVM of the run is attached in turn — several surefire forks each wait
+     * suspended on a port of their own (review D11).
+     */
+    @Test
+    void anAttachedTestRunIsStoppedWithItsSessionAndItsOtherJvmsAreAttachedInTurn() throws Exception {
+        Path test = open("src/main/java/demo/Args.java");
+        List<String> owner = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41001, () -> owner.add("stopped")));
+        FakeDebugAdapter.Session first = session("attach");
+        awaitState("debug.state.running");
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.attachToPort(test, "localhost", 41002, () -> owner.add("stopped")));
+        assertEquals(List.of(tr("status.debug.attachQueued", 41002)), statuses(), "the second fork waits its turn");
+        assertEquals(1, adapter.sessionCount());
+
+        first.terminate(); // the first fork's test finished
+        FakeDebugAdapter.Session second = session("attach");
+        assertEquals(41002.0, ((Number) second.launchArgs.get("port")).doubleValue());
+        awaitState("debug.state.running");
+
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertTrue(second.disconnected.await(10, TimeUnit.SECONDS));
+        assertEquals(List.of("stopped"), owner, "Stop ends the run that owns the JVM, once");
+    }
+
+    /** Each missing piece of Java debugging says what to do about it (review A7). */
+    @Test
+    void unavailableJavaDebuggingSaysWhichPieceIsMissing() throws Exception {
+        open("src/main/java/demo/Args.java");
+        FxTestSupport.runOnFx(() -> host.settings.setLspSupport(false));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        FxTestSupport.runOnFx(() -> host.settings.setLspSupport(true));
+        FxTestSupport.runOnFx(
+                () -> dap.configure(true, project.resolve("no-plugin-here").toString()));
+        FxTestSupport.runOnFx(() -> dap.setServerProvidesJavaDebug(false));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals(List.of(tr("status.debug.javaNeedsLsp"), tr("status.debug.javaDebugMissing")), statuses());
+        assertEquals(0, adapter.sessionCount());
+    }
+
     private static String javaExecutable() {
         boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
         return Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java")
@@ -802,7 +845,7 @@ class DebugCoordinatorCommandsFxTest {
         });
         FxTestSupport.drainFx();
 
-        String unavailable = tr("status.debug.unavailable");
+        String unavailable = tr("status.debug.javaDebugMissing"); // the missing piece, from every entry (A7)
         assertEquals(List.of(unavailable, unavailable, unavailable, unavailable, unavailable), statuses());
         assertEquals(0, adapter.sessionCount());
 

@@ -411,6 +411,32 @@ final class JavaLaunchSupport {
         return anyFolder && (fromSource || onlyFolders) ? ClassState.MISSING : ClassState.UNKNOWN;
     }
 
+    /**
+     * {@code text} without java-debug's three-line notice that jdtls's JVM and the program's differ ("[Warn] The
+     * debugger and the debuggee are running in different versions of JVMs…", then both versions): printed at the
+     * top of every attach and Debug Test, where the two are different JDKs as a matter of course, and alarming
+     * for nothing (review A17). The same object when there is nothing to drop. Pure.
+     */
+    static String withoutJvmVersionWarning(String text) {
+        if (text == null
+                || !(text.contains("running in different versions of JVMs")
+                        || text.contains("Debugger JVM version:")
+                        || text.contains("Debuggee JVM version:"))) {
+            return text;
+        }
+        StringBuilder kept = new StringBuilder();
+        for (String line : text.split("(?<=\n)")) {
+            String t = line.strip();
+            boolean notice = t.startsWith("[Warn] The debugger and the debuggee are running in different versions")
+                    || t.startsWith("Debugger JVM version:")
+                    || t.startsWith("Debuggee JVM version:");
+            if (!notice) {
+                kept.append(line);
+            }
+        }
+        return kept.toString();
+    }
+
     /** Windows refuses a command line longer than 32,767 characters ({@code CreateProcess}, error 206). */
     static final int WINDOWS_COMMAND_LIMIT = 32_767;
 

@@ -112,4 +112,15 @@ class JavaLaunchPlanningTest {
         Files.setLastModifiedTime(cls, FileTime.fromMillis(3_000_000));
         assertEquals(JavaLaunchSupport.ClassState.CURRENT, JavaLaunchSupport.classState(cp, "mod/demo.Main", source));
     }
+
+    /** java-debug's JVM-version notice is dropped from the console; program output around it is kept (A17). */
+    @Test
+    void theJvmVersionNoticeIsNotProgramOutput() {
+        String notice = "[Warn] The debugger and the debuggee are running in different versions of JVMs. You could"
+                + " see wrong source mapping results.\nDebugger JVM version: 27\nDebuggee JVM version: 25.0.4\n";
+        assertEquals("", JavaLaunchSupport.withoutJvmVersionWarning(notice));
+        assertEquals("tick 1\n", JavaLaunchSupport.withoutJvmVersionWarning("Debuggee JVM version: 25\ntick 1\n"));
+        String plain = "Debugger here\n";
+        assertTrue(plain == JavaLaunchSupport.withoutJvmVersionWarning(plain), "untouched text is the same object");
+    }
 }

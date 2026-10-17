@@ -211,4 +211,43 @@ class DebugAdapterLocatorTest {
         assertTrue(DebugAdapterLocator.locateDebugpy(custom.toString(), home).isEmpty());
         assertTrue(DebugAdapterLocator.locateDebugpy("", home).isEmpty());
     }
+
+    /**
+     * Install: Java Language Support puts java-debug in this launch's config folder, which --config-dir or
+     * EDITORA_CONFIG_DIR moves away from ~/.editora: it was never found there (review A8).
+     */
+    @Test
+    void theJarInstalledIntoThisLaunchsConfigFolderIsFound(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path home = java.nio.file.Files.createDirectories(dir.resolve("home"));
+        java.nio.file.Path config = dir.resolve("custom-config");
+        java.nio.file.Path jar = java.nio.file.Files.createDirectories(config.resolve("plugins/dap/java"))
+                .resolve("com.microsoft.java.debug.plugin-0.53.2.jar");
+        java.nio.file.Files.writeString(jar, "jar");
+        try {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    DebugAdapterLocator.locate("", home).isEmpty());
+            DebugAdapterLocator.setEditoraConfigDir(config);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    java.util.Optional.of(jar), DebugAdapterLocator.locate("", home));
+        } finally {
+            DebugAdapterLocator.setEditoraConfigDir(null);
+        }
+    }
+
+    /** Installed is not "switched on": with debugging off Install re-downloaded a plugin that was there (A6). */
+    @Test
+    void anInstalledPluginCountsAsInstalledWhileDebuggingIsOff(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path jar = dir.resolve("com.microsoft.java.debug.plugin-0.53.2.jar");
+        java.nio.file.Files.writeString(jar, "jar");
+        DapManager dap = new DapManager(null);
+        dap.configure(false, jar.toString());
+        org.junit.jupiter.api.Assertions.assertFalse(dap.isAdapterAvailable(), "switched off");
+        org.junit.jupiter.api.Assertions.assertTrue(dap.isJavaDebugInstalled(), "but installed");
+        dap.configure(false, dir.resolve("nothing.jar").toString());
+        org.junit.jupiter.api.Assertions.assertFalse(dap.isJavaDebugInstalled());
+        dap.setServerProvidesJavaDebug(true);
+        org.junit.jupiter.api.Assertions.assertTrue(dap.isJavaDebugInstalled(), "a jdtls that ships it");
+    }
 }

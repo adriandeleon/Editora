@@ -118,6 +118,14 @@ public final class DebugAdapterLocator {
         return scanNewest(candidateServerDirs(home));
     }
 
+    /** This launch's config folder (set once at startup); null: only the default folders are searched. */
+    private static volatile Path editoraConfigDir;
+
+    /** Tells the locator this launch's config folder, where the in-app installer puts the java-debug jar. */
+    public static void setEditoraConfigDir(Path configDir) {
+        editoraConfigDir = configDir;
+    }
+
     /** Collects matching jars across {@code dirs} and returns the newest. */
     private static Optional<Path> scanNewest(List<Path> dirs) {
         List<String> jars = new ArrayList<>();
@@ -145,6 +153,12 @@ public final class DebugAdapterLocator {
      */
     static List<Path> candidateServerDirs(Path home) {
         List<Path> dirs = new ArrayList<>();
+        // Where Install: Java Language Support puts the jar: this launch's config folder, which --config-dir or
+        // EDITORA_CONFIG_DIR moves away from ~/.editora (review A8).
+        Path configDir = editoraConfigDir;
+        if (configDir != null) {
+            dirs.add(configDir.resolve("plugins").resolve("dap").resolve("java"));
+        }
         // VS Code (desktop / remote-server / OSS) — the plugin jar ships in the "Debugger for Java"
         // extension (vscjava.vscode-java-debug-<ver>/server/), NOT the redhat.java language-server one.
         for (Path ext : List.of(

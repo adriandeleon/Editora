@@ -352,6 +352,16 @@ public final class DapManager implements DapClient.Host {
         this.serverProvidesJavaDebug = provided;
     }
 
+    /**
+     * Whether the java-debug plugin is installed — a jar is found, or the running jdtls provides it — whether
+     * or not debugging is switched on. What Install and Settings ask (review A6, A7): asked through
+     * {@link #isAdapterAvailable}, every Install re-downloaded a plugin that was there all along while
+     * debugging was off, and Settings said "not found" for a jdtls that ships it.
+     */
+    public boolean isJavaDebugInstalled() {
+        return serverProvidesJavaDebug || !locate().isEmpty();
+    }
+
     /** Whether Java debugging can run: we located a bundle to inject, <b>or</b> jdtls already provides it. */
     public boolean isAdapterAvailable() {
         return javaDebugUsable();
@@ -2936,7 +2946,13 @@ public final class DapManager implements DapClient.Host {
     });
 
     private void onOutput(long epoch, String text, String category) {
-        outputPump.offer(epoch, text, category);
+        String shown = JavaLaunchSupport.withoutJvmVersionWarning(text);
+        if (shown != text) {
+            LOG.fine(() -> "java-debug: " + text.strip());
+        }
+        if (!shown.isEmpty()) {
+            outputPump.offer(epoch, shown, category);
+        }
     }
 
     @Override
