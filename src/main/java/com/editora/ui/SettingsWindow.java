@@ -392,14 +392,14 @@ public class SettingsWindow {
     private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
 
     private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
-    private final Label httpNodeStatus = new Label();
+    private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
     private CheckBox mcpCheck;
     private CheckBox aiMasterCheck;
     private CheckBox agentCheck;
     private AgentCoordinator agentCoordinator; // injected; backs the AI Agent page's detection status rows
     private ComboBox<String> agentClientCombo;
     private final java.util.Map<String, TextField> agentCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, Label> agentStatusLabels = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, ToolStatusRow> agentStatusLabels = new java.util.LinkedHashMap<>();
     private CheckBox agentIncludeContextCheck;
     private CheckBox aiCheck;
     private TextField aiModelField;
@@ -429,17 +429,19 @@ public class SettingsWindow {
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
     private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, Label> debugStatusLabels = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, ToolStatusRow> debugStatusLabels = new java.util.LinkedHashMap<>();
     private TextField maidPathField;
     private TextField templateAuthorField;
-    private Label mermaidStatusLabel;
+    private final ToolStatusRow mmdcStatus = new ToolStatusRow("mmdc");
+    private final ToolStatusRow maidStatus = new ToolStatusRow("maid");
     private CheckBox diagramCheck;
     private TextField dotPathField;
     private TextField plantumlPathField;
     private CheckBox typstCheck;
     private TextField typstPathField;
-    private Label typstStatusLabel;
-    private Label diagramStatusLabel;
+    private final ToolStatusRow typstStatus = new ToolStatusRow("typst");
+    private final ToolStatusRow dotStatus = new ToolStatusRow("dot");
+    private final ToolStatusRow plantumlStatus = new ToolStatusRow("plantuml");
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
     private final ComboBox<JdkChoice> mavenJdkCombo = new ComboBox<>();
@@ -467,7 +469,7 @@ public class SettingsWindow {
     private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
 
     private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, Label> lspStatusLabels = new java.util.LinkedHashMap<>();
+    private final java.util.Map<String, ToolStatusRow> lspStatusLabels = new java.util.LinkedHashMap<>();
     /** Install buttons keyed by install-language ({@code java}/{@code python}/{@code javascript}/{@code mermaid}). */
     private final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
     /** Injected by MainController: runs {@code InstallCoordinator.installSupport} for the given language key. */
@@ -772,6 +774,13 @@ public class SettingsWindow {
         this.onInstallTool = onInstallTool;
     }
 
+    /** Opens a web page (the Diagrams page's "How to install"); injected by MainController. */
+    private Consumer<String> openUrl;
+
+    public void setOpenUrl(Consumer<String> openUrl) {
+        this.openUrl = openUrl;
+    }
+
     public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
         this.onInstallServer = onInstallServer;
     }
@@ -800,46 +809,6 @@ public class SettingsWindow {
     /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
     private Label javaDebugLspNote;
 
-    /** An "Install…" button for {@code langKey}, tracked under {@code trackKey} (a second button for it). */
-    private Button installButton(String langKey, String trackKey) {
-        Button b = new Button(tr("settings.install.button"));
-        b.getStyleClass().add("settings-install-button");
-        b.setOnAction(e -> {
-            if (onInstallSupport != null) {
-                onInstallSupport.accept(langKey);
-            }
-        });
-        installButtons.put(trackKey, b);
-        return b;
-    }
-
-    /** A small "Install…" button for {@code langKey}, wired to the injected install action + tracked for
-     *  enable/disable from the detection refresh. */
-    private Button installButton(String langKey) {
-        Button b = new Button(tr("settings.install.button"));
-        b.getStyleClass().add("settings-install-button");
-        b.setOnAction(e -> {
-            if (onInstallSupport != null) {
-                onInstallSupport.accept(langKey);
-            }
-        });
-        installButtons.put(langKey, b);
-        return b;
-    }
-
-    /** A per-LSP-server "Install…" button (json/bash/yaml/…), tracked under its server id. */
-    private Button installServerButton(String serverId) {
-        Button b = new Button(tr("settings.install.button"));
-        b.getStyleClass().add("settings-install-button");
-        b.setOnAction(e -> {
-            if (onInstallServer != null) {
-                onInstallServer.accept(serverId);
-            }
-        });
-        installButtons.put(serverInstallKey(serverId), b);
-        return b;
-    }
-
     /**
      * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
      * button for the {@code typst} CLI is tracked as {@code typst} too, and sharing the key left one of the two
@@ -847,15 +816,6 @@ public class SettingsWindow {
      */
     private static String serverInstallKey(String serverId) {
         return "server:" + serverId;
-    }
-
-    /** Reflects a tool's detected state on its Install button: disabled + "Installed" when present. */
-    private void updateInstallButton(String langKey, boolean installed) {
-        Button b = langKey == null ? null : installButtons.get(langKey);
-        if (b != null) {
-            b.setDisable(installed);
-            b.setText(installed ? tr("settings.install.installed") : tr("settings.install.button"));
-        }
     }
 
     public void show(Window owner) {
@@ -971,6 +931,19 @@ public class SettingsWindow {
         contentScroll.setFitToWidth(true);
         contentScroll.getStyleClass().add("settings-content");
         HBox.setHgrow(contentScroll, Priority.ALWAYS);
+        // A short page keeps the room a long page's scrollbar takes, so the cards' right edges (and the
+        // switches on them) sit at the same x on every page.
+        contentScroll.skinProperty().addListener((o, was, skin) -> {
+            for (Node n : contentScroll.lookupAll(".scroll-bar")) {
+                if (n instanceof javafx.scene.control.ScrollBar bar
+                        && bar.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
+                    Runnable reserve = () ->
+                            contentScroll.setPadding(new Insets(0, bar.isVisible() ? 0 : bar.prefWidth(-1), 0, 0));
+                    bar.visibleProperty().addListener((ob, a, b) -> reserve.run());
+                    reserve.run();
+                }
+            }
+        });
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
@@ -978,7 +951,7 @@ public class SettingsWindow {
         nav.getStyleClass().add("settings-nav");
         VBox.setVgrow(sidebar, Priority.ALWAYS);
 
-        body = new HBox(nav, contentScroll);
+        HBox body = new HBox(nav, contentScroll);
         VBox.setVgrow(body, Priority.ALWAYS);
 
         // Kit footer: Reset to Defaults on the left (secondary), Close on the right (the one accent
@@ -1140,12 +1113,11 @@ public class SettingsWindow {
         });
 
         themeCombo = new ComboBox<>();
-        themeCombo.getItems().setAll(Themes.names());
+        themeCombo.getItems().setAll(appThemeChoices());
         themeCombo.setPrefWidth(220);
-        themeCombo.setCellFactory(
-                v -> labelledCell(name -> withShade(name, Themes.themeFor(name).isDarkMode())));
+        ThemeGroups.install(themeCombo, name -> name);
         themeCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
+            if (loading || now == null || ThemeGroups.isHeading(now)) {
                 return;
             }
             config.getSettings().setTheme(now);
@@ -1162,9 +1134,12 @@ public class SettingsWindow {
         editorThemeCombo = new ComboBox<>();
         editorThemeCombo.getItems().setAll(editorThemeChoices());
         editorThemeCombo.setPrefWidth(220);
-        editorThemeCombo.setCellFactory(v -> editorThemeCell());
+        ThemeGroups.install(editorThemeCombo, SettingsWindow::editorThemeLabel);
         editorThemeCombo.setButtonCell(editorThemeCell());
         editorThemeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (ThemeGroups.isHeading(now)) {
+                return; // passing over a group title on the way to the theme below it
+            }
             if (now != null) {
                 applyPreviewTheme(
                         now.isEmpty()
@@ -1590,6 +1565,7 @@ public class SettingsWindow {
                 bt.setEnabledIn(config.getSettings(), now);
                 apply();
                 refreshBuildToolStatus();
+                refreshBuildCommandStatus(bt);
             });
             buildToolChecks.put(bt, check);
             TextField commandField = new TextField();
@@ -1597,7 +1573,7 @@ public class SettingsWindow {
             commitOnEnterOrBlur(commandField, () -> bt.commandIn(config.getSettings()), now -> {
                 bt.setCommandIn(config.getSettings(), now);
                 apply();
-                markCommand(commandField, now);
+                refreshBuildCommandStatus(bt);
             });
             buildToolCommandFields.put(bt, commandField);
             if (bt == BuildTool.MAVEN) {
@@ -3960,23 +3936,15 @@ public class SettingsWindow {
                 httpScriptsCheck,
                 tr("settings.httpClient.scriptsHint"),
                 "http client response handler javascript script node test assert client.global trust");
-        Button nodeBrowse = browseButton(tr("settings.httpClient.nodePath"), httpNodeField);
-        httpNodeField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
+        toolRows(
                 http,
                 Category.WEB,
                 tr("settings.httpClient.nodePath"),
                 tr("settings.httpClient.nodePathHint"),
-                dependent(httpScriptsCheck, new HBox(6, httpNodeField, nodeBrowse)),
-                "http client response handler node nodejs path executable javascript");
-        httpNodeStatus.getStyleClass().add("settings-git-status");
-        controlRow(
-                http,
-                Category.WEB,
-                tr("settings.git.detected"),
-                null,
+                httpNodeField,
+                httpScriptsCheck,
                 httpNodeStatus,
-                "http client response handler node nodejs path executable javascript");
+                "http client response handler node nodejs javascript");
         controlRow(
                 http,
                 Category.WEB,
@@ -3991,6 +3959,7 @@ public class SettingsWindow {
     // --- Sync page -----------------------------------------------------------------------------------------
 
     private SettingsSync settingsSync;
+    private VBox syncCredentialsWarning;
     private final Runnable syncStateListener = this::refreshSyncControls;
     private TextField syncUrlField;
     private TextField syncBranchField;
@@ -4051,6 +4020,24 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
         Settings settings = config.getSettings();
 
+        // A URL stored with a password or token before the field refused them: offered, once, to take it out.
+        Button removeSecret = new Button(tr("settings.sync.credentials.remove"));
+        removeSecret.setOnAction(e -> {
+            String clean = com.editora.sync.SyncEngine.withoutCredentials(
+                    config.getSettings().getSyncRepoUrl());
+            config.getSettings().setSyncRepoUrl(clean);
+            syncUrlField.setText(clean);
+            syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
+            showSyncNotice(tr("settings.sync.credentials.removed"));
+        });
+        Button keepSecret = new Button(tr("settings.sync.credentials.keep"));
+        keepSecret.setOnAction(e -> {
+            settingsSync.storedCredentialsKept = true;
+            refreshSyncControls();
+        });
+        syncCredentialsWarning =
+                new VBox(6, noteBox(tr("settings.sync.credentials.stored")), new HBox(8, removeSecret, keepSecret));
+        p.getChildren().add(syncCredentialsWarning);
         Card repo = card(p, null);
         syncUrlField = new TextField();
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
@@ -4270,6 +4257,11 @@ public class SettingsWindow {
         syncAnywayButton.setManaged(needsConfirmation);
         syncCancelButton.setVisible(syncChecking);
         syncCancelButton.setManaged(syncChecking);
+        boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
+                && settingsSync != null
+                && !settingsSync.storedCredentialsKept;
+        syncCredentialsWarning.setVisible(secret);
+        syncCredentialsWarning.setManaged(secret);
         String account = connected && settingsSync != null ? settingsSync.account() : "";
         syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
         syncAccountLabel.setVisible(!account.isEmpty());
@@ -4536,87 +4528,78 @@ public class SettingsWindow {
     /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
     private void refreshHttpNodeStatus() {
         String configured = config.getSettings().getHttpNodePath();
-        String found = com.editora.doctor.DoctorProbes.resolvedPath(
+        String found = ToolStatusRow.pathOf(
                 com.editora.run.ProgramArgs.commandLine(configured.isBlank() ? "node" : configured));
-        httpNodeStatus
-                .getStyleClass()
-                .setAll(
-                        "settings-git-status",
-                        pillClass(!found.isEmpty(), httpCheck.isSelected() && httpScriptsCheck.isSelected()));
-        httpNodeStatus.setText(
-                found.isEmpty() ? tr("settings.httpClient.nodeMissing") : tr("settings.httpClient.nodeFound", found));
+        httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
     }
 
     /**
-     * Marks a build tool's command override whose program cannot be found (a typo used to give no sign: the
-     * Detected row is about the project, not the command). A warning only: the value is still saved.
+     * The program a build tool's runs use when the project has no wrapper — the override, else the tool's
+     * command — and whether it is there (a typo in the override used to give no sign: the project row is about
+     * the project, not the command). Only a status: the override is saved either way.
      */
-    private static void markCommand(TextField field, String command) {
-        String exe = command == null || command.isBlank()
-                ? ""
-                : com.editora.doctor.DoctorProbes.resolvedPath(com.editora.run.ProgramArgs.commandLine(command));
-        boolean missing = command != null && !command.isBlank() && exe.isEmpty();
-        field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, missing);
-        field.setTooltip(missing ? new Tooltip(tr("settings.buildTools.commandMissing", command.strip())) : null);
+    private void refreshBuildCommandStatus(BuildTool bt) {
+        ToolStatusRow status = buildToolCommandStatus.get(bt);
+        if (status != null) {
+            List<String> argv = com.editora.build.BuildExecutable.resolve(
+                    null, bt.commandIn(config.getSettings()), bt.commandExample());
+            String found = ToolStatusRow.pathOf(argv);
+            status.tool(ToolStatusRow.toolName(argv, bt.commandExample()));
+            status.show(!found.isEmpty(), found, bt.enabledIn(config.getSettings()));
+        }
     }
+
+    private final Map<BuildTool, ToolStatusRow> buildToolCommandStatus = new java.util.EnumMap<>(BuildTool.class);
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
         dependsOn(p, mermaidCheck);
         Card c = card(p, null);
-        mermaidStatusLabel = new Label(tr("settings.mermaid.checking"));
-        mermaidStatusLabel.getStyleClass().add("settings-git-status");
-        mermaidStatusLabel.setWrapText(true);
-        mermaidStatusLabel.setMaxWidth(340);
         checkRow(
                 c,
                 Category.MERMAID,
                 mermaidCheck,
                 tr("settings.mermaid.hint"),
                 "mermaid diagram enable mmdc render mmd");
-        mmdcPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
-                c,
-                Category.MERMAID,
-                tr("settings.mermaid.mmdcPath"),
-                null,
-                dependent(
-                        mermaidCheck,
-                        new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField))),
-                "mermaid mmdc path executable render");
-        maidPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
-                c,
-                Category.MERMAID,
-                tr("settings.mermaid.maidPath"),
-                null,
-                dependent(
-                        mermaidCheck,
-                        new HBox(6, maidPathField, browseButton(tr("settings.mermaid.maidPath"), maidPathField))),
-                "mermaid maid path executable lint validate");
-        controlRow(
-                c,
-                Category.MERMAID,
-                tr("settings.git.detected"),
-                null,
-                new HBox(8, mermaidStatusLabel, installButton("mermaid"), mermaidRecheck()),
-                "mermaid mmdc maid found installed not found install download cli");
-        return p;
-    }
-
-    /**
-     * Mermaid's detection is kept until a path changes (probing the default maid through npx takes seconds on
-     * the thread that lints .mmd files), so a tool installed meanwhile is found only on request.
-     */
-    private Hyperlink mermaidRecheck() {
-        Hyperlink recheck = new Hyperlink(tr("settings.mermaid.recheck"));
-        recheck.setOnAction(e -> {
+        installButtons.put(
+                "mermaid", mmdcStatus.install(() -> installSupport("mermaid")).installButton());
+        // Mermaid's detection is kept until a path changes (probing the default maid through npx takes
+        // seconds on the thread that lints .mmd files), so a tool installed meanwhile is found on request.
+        mmdcStatus.link(tr("settings.mermaid.recheck"), () -> {
             if (mermaidService != null) {
                 mermaidService.invalidate();
                 refreshMermaidStatus();
             }
         });
-        return recheck;
+        String m = tr("settings.mermaid.mmdcPath");
+        toolRows(c, Category.MERMAID, m, null, mmdcPathField, mermaidCheck, mmdcStatus, "mermaid mmdc render");
+        String maid = tr("settings.mermaid.maidPath");
+        toolRows(
+                c, Category.MERMAID, maid, null, maidPathField, mermaidCheck, maidStatus, "mermaid maid lint validate");
+        return p;
+    }
+
+    /** The kit's tool rows (D13): "<title> [command][Browse…]" (greyed with {@code master}), then "Detected". */
+    private void toolRows(
+            Card c,
+            Category cat,
+            String title,
+            String description,
+            TextField field,
+            CheckBox master,
+            ToolStatusRow status,
+            String keywords) {
+        field.setPrefWidth(PATH_FIELD_WIDTH);
+        HBox path = new HBox(6, field, browseButton(title, field));
+        controlRow(c, cat, title, description, master == null ? path : dependent(master, path), keywords + " path");
+        controlRow(c, cat, tr("settings.git.detected"), null, status.node(), keywords + " found not found install");
+    }
+
+    /** The Install… action of the LSP, Debugging, Mermaid and Typst rows (the injected installer, if any). */
+    private void installSupport(String key) {
+        if (onInstallSupport != null) {
+            onInstallSupport.accept(key);
+        }
     }
 
     /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
@@ -4624,65 +4607,48 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.diagrams"), tr("settings.diagrams.subtitle"));
         dependsOn(p, diagramCheck);
         Card c = card(p, null);
-        diagramStatusLabel = new Label(tr("settings.diagram.checking"));
-        diagramStatusLabel.getStyleClass().add("settings-git-status");
-        diagramStatusLabel.setWrapText(true);
-        diagramStatusLabel.setMaxWidth(340);
         checkRow(
                 c,
                 Category.DIAGRAMS,
                 diagramCheck,
                 tr("settings.diagram.hint"),
                 "diagram dot graphviz plantuml enable render preview puml gv");
-        dotPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
+        // No installer for Graphviz or PlantUML: the docs say how (a package manager), instead of a button.
+        Runnable docs = () -> {
+            if (openUrl != null) {
+                openUrl.accept(com.editora.AppInfo.HOMEPAGE + "/features/diagrams/");
+            }
+        };
+        dotStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
+        plantumlStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
+        String dot = tr("settings.diagram.dotPath");
+        toolRows(c, Category.DIAGRAMS, dot, null, dotPathField, diagramCheck, dotStatus, "diagram dot graphviz render");
+        String puml = tr("settings.diagram.plantumlPath");
+        toolRows(
                 c,
                 Category.DIAGRAMS,
-                tr("settings.diagram.dotPath"),
+                puml,
                 null,
-                dependent(
-                        diagramCheck,
-                        new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField))),
-                "diagram dot graphviz path executable render");
-        plantumlPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
-                c,
-                Category.DIAGRAMS,
-                tr("settings.diagram.plantumlPath"),
-                null,
-                dependent(
-                        diagramCheck,
-                        new HBox(
-                                6,
-                                plantumlPathField,
-                                browseButton(tr("settings.diagram.plantumlPath"), plantumlPathField))),
-                "diagram plantuml puml path executable render");
-        controlRow(
-                c,
-                Category.DIAGRAMS,
-                tr("settings.git.detected"),
-                null,
-                diagramStatusLabel,
-                "diagram dot graphviz plantuml found installed not found");
+                plantumlPathField,
+                diagramCheck,
+                plantumlStatus,
+                "diagram plantuml puml");
         return p;
     }
 
     private void refreshDiagramStatus() {
-        if (diagramStatusLabel == null || diagramService == null) {
+        if (diagramService == null) {
             return;
         }
-        diagramStatusLabel.getStyleClass().setAll("settings-git-status");
-        diagramStatusLabel.setText(tr("settings.diagram.checking"));
+        dotStatus.checking();
+        plantumlStatus.checking();
         diagramService.detect(a -> {
-            boolean dot = a.has(com.editora.diagram.DiagramKind.DOT);
-            boolean puml = a.has(com.editora.diagram.DiagramKind.PLANTUML);
-            String dotState = dot ? tr("settings.diagram.found") : tr("settings.diagram.notFound");
-            String pumlState = puml ? tr("settings.diagram.found") : tr("settings.diagram.notFound");
-            // Green only when both tools are found, red when either is missing (like the Mermaid/LSP rows).
-            diagramStatusLabel
-                    .getStyleClass()
-                    .setAll("settings-git-status", pillClass(dot && puml, diagramCheck.isSelected()));
-            diagramStatusLabel.setText(tr("settings.diagram.status", dotState, pumlState));
+            for (var kind : List.of(com.editora.diagram.DiagramKind.DOT, com.editora.diagram.DiagramKind.PLANTUML)) {
+                boolean found = a.has(kind);
+                List<String> argv = diagramService.command(kind);
+                (kind == com.editora.diagram.DiagramKind.DOT ? dotStatus : plantumlStatus)
+                        .show(found, found ? ToolStatusRow.pathOf(argv) : "", diagramCheck.isSelected());
+            }
         });
     }
 
@@ -4691,47 +4657,33 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.typst"), tr("settings.typst.subtitle"));
         dependsOn(p, typstCheck);
         Card c = card(p, null);
-        typstStatusLabel = new Label(tr("settings.typst.checking"));
-        typstStatusLabel.getStyleClass().add("settings-git-status");
-        typstStatusLabel.setWrapText(true);
-        typstStatusLabel.setMaxWidth(340);
         checkRow(
                 c,
                 Category.TYPST,
                 typstCheck,
                 tr("settings.typst.hint"),
                 "typst document enable render preview typ pdf");
-        typstPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
+        installButtons.put(
+                "typst", typstStatus.install(() -> installSupport("typst")).installButton());
+        toolRows(
                 c,
                 Category.TYPST,
                 tr("settings.typst.path"),
                 null,
-                dependent(
-                        typstCheck,
-                        new HBox(6, typstPathField, browseButton(tr("settings.typst.path"), typstPathField))),
-                "typst path executable render document");
-        controlRow(
-                c,
-                Category.TYPST,
-                tr("settings.git.detected"),
-                null,
-                new HBox(8, typstStatusLabel, installButton("typst")),
-                "typst document found installed not found install download cli");
+                typstPathField,
+                typstCheck,
+                typstStatus,
+                "typst cli");
         return p;
     }
 
     private void refreshTypstStatus() {
-        if (typstStatusLabel == null || typstService == null) {
+        if (typstService == null) {
             return;
         }
-        typstStatusLabel.getStyleClass().setAll("settings-git-status");
-        typstStatusLabel.setText(tr("settings.typst.checking"));
-        typstService.detect(present -> {
-            typstStatusLabel.getStyleClass().setAll("settings-git-status", pillClass(present, typstCheck.isSelected()));
-            typstStatusLabel.setText(present ? tr("settings.typst.found") : tr("settings.typst.notFound"));
-            updateInstallButton("typst", present); // "Installed" + disabled when the typst CLI is found
-        });
+        typstStatus.checking();
+        typstService.detect(present -> typstStatus.show(
+                present, present ? ToolStatusRow.pathOf(typstService.command()) : "", typstCheck.isSelected()));
     }
 
     private VBox buildToolsPage() {
@@ -4753,18 +4705,25 @@ public class SettingsWindow {
             Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
             checkRow(c, Category.BUILD_TOOLS, buildToolChecks.get(bt), tr("settings." + bt.id() + ".hint"), kw);
-            TextField field = buildToolCommandFields.get(bt);
-            field.setPrefWidth(PATH_FIELD_WIDTH);
+            ToolStatusRow status = new ToolStatusRow(bt.commandExample());
+            buildToolCommandStatus.put(bt, status);
+            String title = tr("settings.buildTools.commandOverride");
+            toolRows(
+                    c,
+                    Category.BUILD_TOOLS,
+                    title,
+                    null,
+                    buildToolCommandFields.get(bt),
+                    buildToolChecks.get(bt),
+                    status,
+                    kw);
             controlRow(
                     c,
                     Category.BUILD_TOOLS,
-                    tr("settings.buildTools.commandOverride"),
+                    tr("settings.buildTools.project"),
                     null,
-                    dependent(
-                            buildToolChecks.get(bt),
-                            new HBox(6, field, browseButton(tr("settings.buildTools.commandOverride"), field))),
-                    kw + " path executable wrapper");
-            controlRow(c, Category.BUILD_TOOLS, tr("settings.git.detected"), null, buildToolStatusLabels.get(bt), kw);
+                    buildToolStatusLabels.get(bt),
+                    kw);
             if (bt == BuildTool.MAVEN) {
                 mavenArchetypeCatalogField.setPrefWidth(PATH_FIELD_WIDTH + 120); // the default URL in full
                 cardRow(
@@ -4922,7 +4881,7 @@ public class SettingsWindow {
         bodyLabel.setLabelFor(body);
         form.add(bodyLabel, 0, 5, 2, 1);
         form.add(body, 0, 6, 2, 1);
-        body.setMinWidth(180);
+        body.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
@@ -5373,7 +5332,7 @@ public class SettingsWindow {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         }
         // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
         if (field instanceof CodeArea) {
@@ -5648,26 +5607,15 @@ public class SettingsWindow {
         for (AgentClientUi a : agentClientUis()) {
             Card c = card(p, null);
             SettingsDependents.bind(aiMasterCheck.selectedProperty(), c.box());
-            Label status = new Label(tr("settings.agent.checking"));
-            status.getStyleClass().add("settings-git-status");
-            status.setWrapText(true);
-            status.setMaxWidth(340);
-            agentStatusLabels.put(a.id(), status);
             // The card of the client the combo picked says so.
             Label active = new Label(tr("settings.agent.active"));
             active.getStyleClass().addAll("settings-git-status", "settings-git-found");
             active.visibleProperty().bind(agentClientCombo.valueProperty().isEqualTo(a.id()));
             active.managedProperty().bind(active.visibleProperty());
-            TextField field = agentCommandFields.get(a.id());
-            field.setPrefWidth(PATH_FIELD_WIDTH);
-            controlRow(
-                    c,
-                    Category.AGENT,
-                    tr(a.commandLabelKey()),
-                    null,
-                    new HBox(6, field, browseButton(tr(a.commandLabelKey()), field)),
-                    a.keywords());
-            controlRow(c, Category.AGENT, tr("settings.git.detected"), null, new HBox(8, active, status), a.keywords());
+            ToolStatusRow status = new ToolStatusRow(agentToolName(a)).lead(active);
+            agentStatusLabels.put(a.id(), status);
+            String title = tr(a.commandLabelKey());
+            toolRows(c, Category.AGENT, title, null, agentCommandFields.get(a.id()), null, status, a.keywords());
             String setup =
                     switch (a.id()) {
                         case "codex" -> "settings.agent.codexHint";
@@ -5773,20 +5721,30 @@ public class SettingsWindow {
             return;
         }
         for (AgentClientUi a : agentClientUis()) {
-            Label status = agentStatusLabels.get(a.id());
+            ToolStatusRow status = agentStatusLabels.get(a.id());
             if (status == null) {
                 continue;
             }
-            status.getStyleClass().setAll("settings-git-status");
-            status.setText(tr("settings.agent.checking"));
-            agentCoordinator.detect(a.id(), found -> {
-                status.getStyleClass()
-                        .setAll(
-                                "settings-git-status",
-                                pillClass(found, aiMasterCheck.isSelected() && agentCheck.isSelected()));
-                status.setText(found ? tr("settings.agent.found") : tr("settings.agent.notFound"));
-            });
+            List<String> argv = agentArgv(a);
+            status.tool(agentToolName(a));
+            status.checking();
+            agentCoordinator.detect(
+                    a.id(),
+                    found -> status.show(
+                            found,
+                            found ? ToolStatusRow.pathOf(argv) : "",
+                            aiMasterCheck.isSelected() && agentCheck.isSelected()));
         }
+    }
+
+    private static List<String> agentArgv(AgentClientUi a) {
+        return com.editora.agent.AcpAgentRegistry.commandFor(
+                a.id(), Map.of(a.id(), a.getCommand().get()));
+    }
+
+    /** The program an agent client runs (claude-code-acp, gemini, codex-acp, …), as its pill names it. */
+    private static String agentToolName(AgentClientUi a) {
+        return ToolStatusRow.toolName(agentArgv(a), a.id());
     }
 
     /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
@@ -6224,13 +6182,12 @@ public class SettingsWindow {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
             if ("java".equals(dbg.id())) {
-                // Java debugging runs through the Java language server: the card says when that is off, and
-                // installs jdtls and java-debug together, as the LSP page's Java row does (review C6).
+                // Java debugging runs through the Java language server: the card says when that is off (review
+                // C6); its Install (below) fetches jdtls and java-debug together, as the LSP page's Java row does.
                 javaDebugLspNote = note("");
                 javaDebugLspNote.setWrapText(true);
                 javaDebugLspNote.setMaxWidth(440);
                 cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
-                cardRow(c, Category.DEBUG, installButton("java", "debug:java"), "debug java install download jdtls");
                 checkRow(
                         c,
                         Category.DEBUG,
@@ -6260,36 +6217,18 @@ public class SettingsWindow {
                         debugExceptionTypesField,
                         "debug java exception breakpoint class type filter caught uncaught");
             }
-            Label status = new Label(tr("settings.debug.checking"));
-            status.getStyleClass().add("settings-git-status");
-            status.setWrapText(true);
-            status.setMaxWidth(340);
-            debugStatusLabels.put(dbg.id(), status);
-            TextField field = debugCommandFields.get(dbg.id());
-            field.setPrefWidth(PATH_FIELD_WIDTH);
-            controlRow(
-                    c,
-                    Category.DEBUG,
-                    tr(dbg.commandLabelKey()),
-                    null,
-                    new HBox(6, field, browseButton(tr(dbg.commandLabelKey()), field)),
-                    dbg.keywords());
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
-            Button install = new Button(tr("settings.install.button"));
-            install.getStyleClass().add("settings-install-button");
-            install.setOnAction(e -> {
-                if (onInstallSupport != null) {
-                    onInstallSupport.accept(dbg.id());
-                }
-            });
-            installButtons.put("debug:" + dbg.id(), install);
-            controlRow(
-                    c,
-                    Category.DEBUG,
-                    tr("settings.git.detected"),
-                    null,
-                    new HBox(8, status, install),
-                    dbg.keywords() + " install download");
+            ToolStatusRow status = new ToolStatusRow(
+                            switch (dbg.id()) {
+                                case "java" -> "java-debug";
+                                case "python" -> "debugpy";
+                                default -> "js-debug";
+                            })
+                    .install(() -> installSupport(dbg.id()));
+            debugStatusLabels.put(dbg.id(), status);
+            installButtons.put("debug:" + dbg.id(), status.installButton());
+            String title = tr(dbg.commandLabelKey());
+            toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
         }
         return p;
     }
@@ -6308,7 +6247,7 @@ public class SettingsWindow {
             java.util.function.BooleanSupplier getEnabled,
             java.util.function.Consumer<String> setCommand,
             java.util.function.Supplier<String> getCommand,
-            java.util.function.Consumer<Consumer<Boolean>> detect) {}
+            java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
 
     /** The three debug adapters (java/python/javascript), in display order. */
     private java.util.List<DebugAdapterUi> debugAdapterUis() {
@@ -6327,13 +6266,13 @@ public class SettingsWindow {
                         cb -> { // lists the VS Code / mason folders: off the FX thread, like the other probes
                             String configured = config.getSettings().getJavaDebugPluginPath();
                             Thread.ofVirtual().name("settings-java-debug-probe").start(() -> {
-                                boolean found = com.editora.dap.DebugAdapterLocator.locate(
-                                                        configured,
-                                                        java.nio.file.Path.of(System.getProperty("user.home", "")))
-                                                .isPresent()
-                                        // A jdtls that ships java-debug has no jar to find (review A7).
-                                        || dapManager != null && dapManager.isJavaDebugInstalled();
-                                javafx.application.Platform.runLater(() -> cb.accept(found));
+                                String jar = com.editora.dap.DebugAdapterLocator.locate(
+                                                configured, java.nio.file.Path.of(System.getProperty("user.home", "")))
+                                        .map(Object::toString)
+                                        .orElse(null);
+                                // A jdtls that ships java-debug has no jar to find (review A7).
+                                boolean served = jar == null && dapManager != null && dapManager.isJavaDebugInstalled();
+                                javafx.application.Platform.runLater(() -> cb.accept(jar != null || served, jar));
                             });
                         }),
                 new DebugAdapterUi(
@@ -6349,9 +6288,13 @@ public class SettingsWindow {
                         () -> config.getSettings().getPythonDebugCommand(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectPythonInstalled(cb); // installed, whether or not switched on
+                                // installed, whether or not switched on; the detail is the interpreter that has it
+                                dapManager.detectPythonInstalled(found -> cb.accept(
+                                        found,
+                                        ToolStatusRow.pathOf(com.editora.dap.DapServerRegistry.interpreterArgv(
+                                                "python", config.getSettings().getPythonDebugCommand()))));
                             } else {
-                                cb.accept(false);
+                                cb.accept(false, "");
                             }
                         }),
                 new DebugAdapterUi(
@@ -6367,9 +6310,9 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                dapManager.detectJs(cb);
+                                dapManager.detectJs(found -> cb.accept(found, ""));
                             } else {
-                                cb.accept(false);
+                                cb.accept(false, "");
                             }
                         }));
     }
@@ -6409,29 +6352,30 @@ public class SettingsWindow {
                     Category.LSP,
                     settingRow(tr(srv.enableLabelKey()), null, switchFor(lspEnableChecks.get(srv.id()))),
                     srv.keywords());
-            Label status = new Label(tr("settings.lsp.checking"));
-            status.getStyleClass().add("settings-git-status");
-            status.setWrapText(true);
-            status.setMaxWidth(440);
+            ToolStatusRow status = new ToolStatusRow(lspToolName(srv.id(), lspArgv(srv.id())));
+            String langKey = installLangForServer(srv.id());
+            if (langKey != null) {
+                installButtons.put(
+                        langKey, status.install(() -> installSupport(langKey)).installButton());
+            } else if (com.editora.install.InstallCatalog.installableServerIds().contains(srv.id())) {
+                installButtons.put(
+                        serverInstallKey(srv.id()),
+                        status.install(() -> {
+                                    if (onInstallServer != null) {
+                                        onInstallServer.accept(srv.id());
+                                    }
+                                })
+                                .installButton());
+            }
             lspStatusLabels.put(srv.id(), status);
-            cardRow(c, Category.LSP, status, srv.keywords());
+            String title = tr(srv.commandLabelKey());
+            toolRows(c, Category.LSP, title, null, lspCommandFields.get(srv.id()), null, status, srv.keywords());
             Label project = note("");
             project.setVisible(false);
             project.setWrapText(true);
             project.managedProperty().bind(project.visibleProperty());
             lspProjectLabels.put(srv.id(), project);
             c.body().getChildren().add(project);
-            String langKey = installLangForServer(srv.id());
-            if (langKey != null) {
-                cardRow(c, Category.LSP, installButton(langKey), srv.keywords() + " install download");
-            } else if (com.editora.install.InstallCatalog.installableServerIds().contains(srv.id())) {
-                cardRow(c, Category.LSP, installServerButton(srv.id()), srv.keywords() + " install download");
-            }
-            cardRow(
-                    c,
-                    Category.LSP,
-                    exePathRow(tr(srv.commandLabelKey()), lspCommandFields.get(srv.id())),
-                    srv.keywords());
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
             }
@@ -6440,7 +6384,7 @@ public class SettingsWindow {
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
-    private final Map<String, Label> bashToolStatusLabels = new java.util.LinkedHashMap<>();
+    private final Map<String, ToolStatusRow> bashToolStatusLabels = new java.util.LinkedHashMap<>();
 
     private static String toolInstallKey(String toolId) {
         return "tool:" + toolId;
@@ -6458,13 +6402,7 @@ public class SettingsWindow {
         bashToolStatusLabels.forEach((toolId, status) -> {
             String command = "shfmt".equals(toolId) ? tools.effectiveShfmt() : tools.effectiveShellcheck();
             String found = com.editora.doctor.DoctorProbes.resolvedPath(List.of(command));
-            boolean ok = !found.isEmpty();
-            status.getStyleClass().setAll("settings-git-status", ok ? "settings-git-found" : "settings-git-missing");
-            status.setText(
-                    ok
-                            ? tr("settings.lsp.bash.toolFound", InstallCoordinator.toolName(toolId), found)
-                            : tr("settings.lsp.bash." + toolId + "Missing"));
-            updateInstallButton(toolInstallKey(toolId), ok);
+            status.show(!found.isEmpty(), found, lspCheck.isSelected());
         });
     }
 
@@ -6477,23 +6415,6 @@ public class SettingsWindow {
      * {@code .editora/settings.json}.
      */
     private void bashServerRows(Card c) {
-        for (String toolId : com.editora.install.InstallCatalog.PINNED_TOOL_IDS) {
-            Label status = new Label();
-            status.getStyleClass().add("settings-git-status");
-            status.setWrapText(true);
-            status.setMaxWidth(440);
-            bashToolStatusLabels.put(toolId, status);
-            cardRow(c, Category.LSP, status, BASH_KEYWORDS + "installed found");
-            Button install = new Button(tr("settings.install.button"));
-            install.getStyleClass().add("settings-install-button");
-            install.setOnAction(e -> {
-                if (onInstallTool != null) {
-                    onInstallTool.accept(toolId);
-                }
-            });
-            installButtons.put(toolInstallKey(toolId), install);
-            cardRow(c, Category.LSP, install, BASH_KEYWORDS + "install download");
-        }
         bashPathRow(c, "shellcheckPath", Settings::getBashShellcheckPath, Settings::setBashShellcheckPath);
         textRow(
                 c,
@@ -6610,7 +6531,16 @@ public class SettingsWindow {
             apply();
             refreshLspStatus();
         });
-        cardRow(c, Category.LSP, exePathRow(tr("settings.lsp.bash." + key), field), BASH_KEYWORDS + "path");
+        // Its status row (ShellCheck / shfmt: found, Install…) follows, like every other tool's.
+        String toolId = key.replace("Path", "");
+        ToolStatusRow status = new ToolStatusRow(toolId).install(() -> {
+            if (onInstallTool != null) {
+                onInstallTool.accept(toolId);
+            }
+        });
+        bashToolStatusLabels.put(toolId, status);
+        installButtons.put(toolInstallKey(toolId), status.installButton());
+        toolRows(c, Category.LSP, tr("settings.lsp.bash." + key), null, field, null, status, BASH_KEYWORDS);
         settingSyncs.add(st -> field.setText(get.apply(st)));
     }
 
@@ -6620,7 +6550,6 @@ public class SettingsWindow {
             String defaultCommand,
             String enableLabelKey,
             String commandLabelKey,
-            String statusKey,
             String keywords,
             java.util.function.Consumer<Boolean> setEnabled,
             java.util.function.BooleanSupplier getEnabled,
@@ -6635,7 +6564,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND,
                         "settings.lsp.enableJava",
                         "settings.lsp.javaCommand",
-                        "settings.lsp.status",
                         "lsp java jdtls language server found installed not found command path executable",
                         v -> config.getSettings().setJavaLspEnabled(v),
                         () -> config.getSettings().isJavaLspEnabled(),
@@ -6646,7 +6574,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND,
                         "settings.lsp.enableTypescript",
                         "settings.lsp.typescriptCommand",
-                        "settings.lsp.tsStatus",
                         "lsp typescript javascript language server found installed not found command path",
                         v -> config.getSettings().setTypescriptLspEnabled(v),
                         () -> config.getSettings().isTypescriptLspEnabled(),
@@ -6657,7 +6584,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND,
                         "settings.lsp.enablePython",
                         "settings.lsp.pythonCommand",
-                        "settings.lsp.pyStatus",
                         "lsp python pyright language server found installed not found command path executable",
                         v -> config.getSettings().setPythonLspEnabled(v),
                         () -> config.getSettings().isPythonLspEnabled(),
@@ -6668,7 +6594,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_XML_COMMAND,
                         "settings.lsp.enableXml",
                         "settings.lsp.xmlCommand",
-                        "settings.lsp.xmlStatus",
                         "lsp xml lemminx language server found installed not found command path executable",
                         v -> config.getSettings().setXmlLspEnabled(v),
                         () -> config.getSettings().isXmlLspEnabled(),
@@ -6679,7 +6604,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
                         "settings.lsp.enableJson",
                         "settings.lsp.jsonCommand",
-                        "settings.lsp.jsonStatus",
                         "lsp json language server found installed not found command path executable",
                         v -> config.getSettings().setJsonLspEnabled(v),
                         () -> config.getSettings().isJsonLspEnabled(),
@@ -6690,7 +6614,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_BASH_COMMAND,
                         "settings.lsp.enableBash",
                         "settings.lsp.bashCommand",
-                        "settings.lsp.bashStatus",
                         "lsp bash shell shellcheck language server found installed not found command path",
                         v -> config.getSettings().setBashLspEnabled(v),
                         () -> config.getSettings().isBashLspEnabled(),
@@ -6701,7 +6624,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_YAML_COMMAND,
                         "settings.lsp.enableYaml",
                         "settings.lsp.yamlCommand",
-                        "settings.lsp.yamlStatus",
                         "lsp yaml yml language server found installed not found command path executable",
                         v -> config.getSettings().setYamlLspEnabled(v),
                         () -> config.getSettings().isYamlLspEnabled(),
@@ -6712,7 +6634,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_GO_COMMAND,
                         "settings.lsp.enableGo",
                         "settings.lsp.goCommand",
-                        "settings.lsp.goStatus",
                         "lsp go golang gopls language server found installed not found command path",
                         v -> config.getSettings().setGoLspEnabled(v),
                         () -> config.getSettings().isGoLspEnabled(),
@@ -6723,7 +6644,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_RUST_COMMAND,
                         "settings.lsp.enableRust",
                         "settings.lsp.rustCommand",
-                        "settings.lsp.rustStatus",
                         "lsp rust rust-analyzer cargo language server found installed not found command path",
                         v -> config.getSettings().setRustLspEnabled(v),
                         () -> config.getSettings().isRustLspEnabled(),
@@ -6734,7 +6654,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_PHP_COMMAND,
                         "settings.lsp.enablePhp",
                         "settings.lsp.phpCommand",
-                        "settings.lsp.phpStatus",
                         "lsp php phpactor intelephense language server found installed not found command path",
                         v -> config.getSettings().setPhpLspEnabled(v),
                         () -> config.getSettings().isPhpLspEnabled(),
@@ -6745,7 +6664,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_RUBY_COMMAND,
                         "settings.lsp.enableRuby",
                         "settings.lsp.rubyCommand",
-                        "settings.lsp.rubyStatus",
                         "lsp ruby ruby-lsp solargraph language server found installed not found command path",
                         v -> config.getSettings().setRubyLspEnabled(v),
                         () -> config.getSettings().isRubyLspEnabled(),
@@ -6756,7 +6674,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_CLANGD_COMMAND,
                         "settings.lsp.enableClangd",
                         "settings.lsp.clangdCommand",
-                        "settings.lsp.clangdStatus",
                         "lsp c cpp c++ clangd language server found installed not found command path",
                         v -> config.getSettings().setClangdLspEnabled(v),
                         () -> config.getSettings().isClangdLspEnabled(),
@@ -6767,7 +6684,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_HTML_COMMAND,
                         "settings.lsp.enableHtml",
                         "settings.lsp.htmlCommand",
-                        "settings.lsp.htmlStatus",
                         "lsp html language server found installed not found command path executable",
                         v -> config.getSettings().setHtmlLspEnabled(v),
                         () -> config.getSettings().isHtmlLspEnabled(),
@@ -6778,7 +6694,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_CSS_COMMAND,
                         "settings.lsp.enableCss",
                         "settings.lsp.cssCommand",
-                        "settings.lsp.cssStatus",
                         "lsp css scss less language server found installed not found command path",
                         v -> config.getSettings().setCssLspEnabled(v),
                         () -> config.getSettings().isCssLspEnabled(),
@@ -6789,7 +6704,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
                         "settings.lsp.enableKotlin",
                         "settings.lsp.kotlinCommand",
-                        "settings.lsp.kotlinStatus",
                         "lsp kotlin language server found installed not found command path executable",
                         v -> config.getSettings().setKotlinLspEnabled(v),
                         () -> config.getSettings().isKotlinLspEnabled(),
@@ -6800,7 +6714,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
                         "settings.lsp.enableLua",
                         "settings.lsp.luaCommand",
-                        "settings.lsp.luaStatus",
                         "lsp lua language server found installed not found command path executable",
                         v -> config.getSettings().setLuaLspEnabled(v),
                         () -> config.getSettings().isLuaLspEnabled(),
@@ -6811,7 +6724,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
                         "settings.lsp.enableDockerfile",
                         "settings.lsp.dockerfileCommand",
-                        "settings.lsp.dockerfileStatus",
                         "lsp dockerfile docker language server found installed not found command path",
                         v -> config.getSettings().setDockerfileLspEnabled(v),
                         () -> config.getSettings().isDockerfileLspEnabled(),
@@ -6822,7 +6734,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_SQL_COMMAND,
                         "settings.lsp.enableSql",
                         "settings.lsp.sqlCommand",
-                        "settings.lsp.sqlStatus",
                         "lsp sql language server found installed not found command path executable",
                         v -> config.getSettings().setSqlLspEnabled(v),
                         () -> config.getSettings().isSqlLspEnabled(),
@@ -6833,7 +6744,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_TERRAFORM_COMMAND,
                         "settings.lsp.enableTerraform",
                         "settings.lsp.terraformCommand",
-                        "settings.lsp.terraformStatus",
                         "lsp terraform hcl terraform-ls language server found installed not found command path",
                         v -> config.getSettings().setTerraformLspEnabled(v),
                         () -> config.getSettings().isTerraformLspEnabled(),
@@ -6844,7 +6754,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_TOML_COMMAND,
                         "settings.lsp.enableToml",
                         "settings.lsp.tomlCommand",
-                        "settings.lsp.tomlStatus",
                         "lsp toml taplo language server found installed not found command path executable",
                         v -> config.getSettings().setTomlLspEnabled(v),
                         () -> config.getSettings().isTomlLspEnabled(),
@@ -6855,7 +6764,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_CSHARP_COMMAND,
                         "settings.lsp.enableCsharp",
                         "settings.lsp.csharpCommand",
-                        "settings.lsp.csharpStatus",
                         "lsp c# csharp csharp-ls dotnet language server found installed not found command path",
                         v -> config.getSettings().setCsharpLspEnabled(v),
                         () -> config.getSettings().isCsharpLspEnabled(),
@@ -6866,7 +6774,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_TYPST_COMMAND,
                         "settings.lsp.enableTypst",
                         "settings.lsp.typstCommand",
-                        "settings.lsp.typstStatus",
                         "lsp typst tinymist language server found installed not found command path executable",
                         v -> config.getSettings().setTypstLspEnabled(v),
                         () -> config.getSettings().isTypstLspEnabled(),
@@ -6877,7 +6784,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_ASTRO_COMMAND,
                         "settings.lsp.enableAstro",
                         "settings.lsp.astroCommand",
-                        "settings.lsp.astroStatus",
                         "lsp astro astro-ls web components language server found installed command path",
                         v -> config.getSettings().setAstroLspEnabled(v),
                         () -> config.getSettings().isAstroLspEnabled(),
@@ -6888,7 +6794,6 @@ public class SettingsWindow {
                         com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
                         "settings.lsp.enableMavenPom",
                         "settings.lsp.mavenPomCommand",
-                        "settings.lsp.mavenPomStatus",
                         "lsp maven pom.xml lemminx dependency completion language server found command path",
                         v -> config.getSettings().setMavenPomLspEnabled(v),
                         () -> config.getSettings().isMavenPomLspEnabled(),
@@ -7002,46 +6907,21 @@ public class SettingsWindow {
         }
     }
 
-    private HBox exePathRow(String label, TextField field) {
-        Button browse = new Button(tr("settings.mermaid.browse"));
-        browse.setOnAction(e -> {
-            javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
-            fc.setTitle(label);
-            java.io.File f = fc.showOpenDialog(stage);
-            if (f != null) {
-                field.setText(f.getAbsolutePath());
-                commitNow(field);
-            }
-        });
-        HBox.setHgrow(field, Priority.ALWAYS);
-        Label name = new Label(label);
-        name.setLabelFor(field);
-        keepWidth(name, browse); // the field gives way, not the label or the button
-        HBox box = new HBox(6, name, field, browse);
-        box.setAlignment(Pos.CENTER_LEFT);
-        return box;
-    }
-
     private void refreshMermaidStatus() {
-        if (mermaidStatusLabel == null || mermaidService == null) {
+        if (mermaidService == null) {
             return;
         }
-        mermaidStatusLabel.getStyleClass().setAll("settings-git-status");
-        mermaidStatusLabel.setText(tr("settings.mermaid.checking"));
+        mmdcStatus.checking();
+        maidStatus.checking();
         mermaidService.detect(a -> {
-            String mmdcState = a.mmdc() ? tr("settings.mermaid.found") : tr("settings.mermaid.notFound");
+            boolean on = mermaidCheck.isSelected();
+            mmdcStatus.show(a.mmdc(), a.mmdc() ? ToolStatusRow.pathOf(mermaidService.mmdcCommand()) : "", on);
             // The default maid is run through npx, which fetches it on first use: npx is what was found.
             boolean viaNpx = config.getSettings().getMaidPath().isBlank();
-            String maidState = !a.maid()
-                    ? tr("settings.mermaid.notFound")
-                    : tr(viaNpx ? "settings.mermaid.viaNpx" : "settings.mermaid.found");
-            // Color the label green/red like the LSP/Git status labels: green only when both tools are
-            // found, red when either is missing.
-            mermaidStatusLabel
-                    .getStyleClass()
-                    .setAll("settings-git-status", pillClass(a.mmdc() && a.maid(), mermaidCheck.isSelected()));
-            mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
-            updateInstallButton("mermaid", a.mmdc());
+            maidStatus.show(
+                    a.maid(),
+                    viaNpx ? tr("settings.mermaid.viaNpx") : ToolStatusRow.pathOf(mermaidService.maidCommand()),
+                    on);
         });
     }
 
@@ -7175,29 +7055,12 @@ public class SettingsWindow {
      *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
      *  subprocess off-thread and call back on the FX thread. */
     private void refreshDebugStatus() {
-        if (debugStatusLabels.isEmpty()) {
-            return;
-        }
         for (DebugAdapterUi dbg : debugAdapterUis()) {
-            Label status = debugStatusLabels.get(dbg.id());
-            if (status == null) {
-                continue;
+            ToolStatusRow status = debugStatusLabels.get(dbg.id());
+            if (status != null) {
+                status.checking();
+                dbg.detect().accept((found, detail) -> status.show(found, detail, debugCheck.isSelected()));
             }
-            status.getStyleClass().setAll("settings-git-status");
-            status.setText(tr("settings.debug.checking"));
-            dbg.detect().accept(found -> {
-                status.getStyleClass().setAll("settings-git-status", pillClass(found, debugCheck.isSelected()));
-                status.setText(
-                        tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
-                if ("java".equals(dbg.id()) && lspManager != null) {
-                    lspManager.detectCommand(
-                            "java",
-                            config.getSettings().getJavaLspCommand(),
-                            jdtls -> updateInstallButton("debug:java", found && jdtls));
-                } else {
-                    updateInstallButton("debug:" + dbg.id(), found);
-                }
-            });
         }
         if (javaDebugLspNote != null) {
             var st = config.getSettings();
@@ -7235,20 +7098,34 @@ public class SettingsWindow {
         // shut its running server down every time Settings was merely opened.
         java.util.Map<String, String> shown = LspCoordinator.commandsForAllServers(config.getSettings());
         for (LspServerUi srv : lspServerUis()) {
-            Label status = lspStatusLabels.get(srv.id());
+            ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
                 continue;
             }
-            String statusKey = srv.statusKey();
-            status.getStyleClass().setAll("settings-git-status");
-            status.setText(tr("settings.lsp.checking"));
-            String langKey = installLangForServer(srv.id());
-            lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
-                status.getStyleClass().setAll("settings-git-status", pillClass(found, lspCheck.isSelected()));
-                status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-                updateInstallButton(langKey != null ? langKey : serverInstallKey(srv.id()), found);
-            });
+            List<String> argv = lspArgv(srv.id());
+            status.tool(lspToolName(srv.id(), argv));
+            status.checking();
+            lspManager.detectCommand(
+                    srv.id(),
+                    shown.get(srv.id()),
+                    found -> status.show(
+                            found,
+                            found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
+                            lspCheck.isSelected()));
         }
+    }
+
+    private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
+
+    /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
+    private List<String> lspArgv(String serverId) {
+        return com.editora.lsp.LspServerRegistry.commandFor(
+                serverId, LspCoordinator.commandsForAllServers(config.getSettings()));
+    }
+
+    /** The program a server runs, as its pill names it (the pom.xml server runs through java). */
+    private static String lspToolName(String serverId, List<String> argv) {
+        return MAVEN_POM.equals(serverId) ? "lemminx-maven" : ToolStatusRow.toolName(argv, serverId);
     }
 
     /**
@@ -7842,26 +7719,9 @@ public class SettingsWindow {
         if (currentPreviewCss != null) {
             sheets.remove(currentPreviewCss);
         }
-        keyChipsFollowAppTheme();
         currentPreviewCss = EditorThemes.stylesheetFor(name);
         if (currentPreviewCss != null && !sheets.contains(currentPreviewCss)) {
             sheets.add(currentPreviewCss);
-        }
-    }
-
-    /**
-     * The keyboard's periwinkle follows the window's (app) theme, not the editor theme the preview sheet brings:
-     * a light editor theme under a dark app theme drew the chord chips at about 2.8:1 on the dark cards.
-     */
-    private HBox body; // the sidebar + pages, which carry the window's own periwinkle
-
-    private void keyChipsFollowAppTheme() {
-        if (body != null) { // not the root: its inline style is free for a font size
-            boolean dark = Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
-            body.setStyle(
-                    dark
-                            ? "-state-key: #9aa2d4; -state-key-bg: rgba(154, 162, 212, 0.16);"
-                            : "-state-key: #5c66ae; -state-key-bg: rgba(92, 102, 174, 0.14);");
         }
     }
 
@@ -8103,7 +7963,7 @@ public class SettingsWindow {
             for (BuildTool bt : BuildTool.enabled()) {
                 buildToolChecks.get(bt).setSelected(bt.enabledIn(settings));
                 buildToolCommandFields.get(bt).setText(bt.commandIn(settings));
-                markCommand(buildToolCommandFields.get(bt), bt.commandIn(settings));
+                refreshBuildCommandStatus(bt);
                 if (bt == BuildTool.MAVEN) {
                     JdkChoice.select(mavenJdkCombo, settings.getMavenJdkHome());
                     mavenArchetypeCatalogField.setText(settings.getMavenArchetypeCatalogUrl());
@@ -8595,40 +8455,35 @@ public class SettingsWindow {
         };
     }
 
-    /** A theme's name, marked dark or light when the name itself does not say which (Dracula, Yacht…). */
-    private static String withShade(String name, boolean dark) {
-        if (name.contains("Light") || name.contains("Dark")) {
-            return name;
-        }
-        return tr(dark ? "settings.theme.dark" : "settings.theme.light", name);
+    /** The app themes under their Light / Dark / Your themes headings. */
+    private static List<String> appThemeChoices() {
+        return ThemeGroups.grouped(
+                Themes.names(),
+                name -> Themes.themeFor(name).isDarkMode(),
+                UserThemes.controlThemes().keySet());
     }
 
-    /** "" (Automatic) followed by every editor theme. */
+    /** "" (Automatic), then the editor themes under their Light / Dark / Your themes headings. */
     private static List<String> editorThemeChoices() {
+        Set<String> user = new java.util.HashSet<>(UserThemes.controlThemes().keySet());
+        user.addAll(UserThemes.editorThemes().keySet());
         List<String> choices = new ArrayList<>();
         choices.add("");
-        choices.addAll(EditorThemes.names());
+        choices.addAll(ThemeGroups.grouped(
+                EditorThemes.names(),
+                name -> EditorThemes.editorBackgroundFor(name).getBrightness() < 0.5,
+                user));
         return choices;
     }
 
-    /** An editor-theme cell: "Automatic" for "", else the theme's name. */
+    /** "Automatic" for "", else the theme's name. */
+    private static String editorThemeLabel(String name) {
+        return name.isEmpty() ? tr("settings.editorTheme.auto") : name;
+    }
+
+    /** The editor-theme combo's button: "Automatic" for "", else the theme's name. */
     private ListCell<String> editorThemeCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(String name, boolean empty) {
-                super.updateItem(name, empty);
-                setText(
-                        empty || name == null
-                                ? null
-                                : name.isEmpty()
-                                        ? tr("settings.editorTheme.auto")
-                                        : withShade(
-                                                name,
-                                                EditorThemes.editorBackgroundFor(name)
-                                                                .getBrightness()
-                                                        < 0.5));
-            }
-        };
+        return labelledCell(SettingsWindow::editorThemeLabel);
     }
 
     public void syncThemes() {
@@ -8638,7 +8493,7 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
-            themeCombo.getItems().setAll(Themes.names()); // pick up user themes reloaded from the config folder
+            themeCombo.getItems().setAll(appThemeChoices()); // pick up user themes reloaded from the config folder
             editorThemeCombo.getItems().setAll(editorThemeChoices());
             themeCombo.setValue(config.getSettings().getTheme());
             editorThemeCombo.setValue(
@@ -8748,7 +8603,6 @@ public class SettingsWindow {
         config.save();
         onApply.accept(settings);
         updatePreviewFont();
-        keyChipsFollowAppTheme(); // the app theme may be what changed
     }
 
     /**

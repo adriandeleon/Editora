@@ -19,6 +19,13 @@ final class SettingRowPane extends Pane {
     /** Narrowest text column that still sits beside its control. */
     static final double TEXT_MIN_WIDTH = 260;
 
+    /**
+     * Narrowest a field may get in the list editors' forms (Snippets, Templates, Remote, External Tools,
+     * Abbreviations): enough for a word or a short path, and small enough that the list, the translated labels
+     * and the field fit the 900 px minimum window in every language.
+     */
+    static final double FIELD_MIN_WIDTH = 120;
+
     static final double GAP = 16;
     static final double STACK_GAP = 8;
 

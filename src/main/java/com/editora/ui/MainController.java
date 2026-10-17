@@ -790,6 +790,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
+        this.settingsWindow.setOpenUrl(this::openExternalUrl); // Diagrams' "How to install" docs link
         this.settingsWindow.setInstallToolActions(
                 id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
         this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page

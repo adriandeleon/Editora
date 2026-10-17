@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Export Configuration never includes a password or token stored in the Settings Sync repository URL**, and
+  the Sync page offers to remove one stored there before the URL check existed.
 - **Switching the AI provider no longer sends one provider's API key to another provider's server.** Anthropic
   and the OpenAI-compatible provider shared one endpoint and model, so after a switch to Anthropic the Anthropic
   key went to the OpenAI-compatible server set up before (and the other way round), within seconds and again on
@@ -123,6 +125,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings: every external tool row looks and reads the same** — language servers, debug adapters, Mermaid,
+  Diagrams, Typst, build tools, Node.js and AI agents show "tool: found (path)" or "tool: not found", then
+  Install… or a link. Diagrams links to its install help, and Build Tools says whether the command it would run
+  exists.
+- **The theme pickers group themes under Light and Dark headings**, with your own themes in a group of their own.
+- **Keyboard chips read on every app theme**, whatever the editor theme: the shortcut colour follows the app theme
+  everywhere (palette, Welcome, menus, Keymaps), with at least 4.5:1 contrast on all bundled themes.
+- **Macros:** the step reorder buttons are labelled Move Up / Move Down and grey out at either end.
 - **Python Run:**
   - The script runs in its own folder with the project root and `src/` on `PYTHONPATH`, so package imports work.
   - A saved run configuration writes that folder into Working directory.
@@ -183,6 +193,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings scrolled sideways at its 900 px minimum width** in German, French, Spanish and Portuguese (Snippets,
+  Templates, Remote), and controls sat a scrollbar's width apart on short and long pages.
+- **A snippet trigger with a space in it was saved and never expanded.** It is now refused with the reason shown.
 - **Python:**
   - Run used `python3` from PATH whatever the project or the Debug setting said.
   - Output arrived only when the program ended, with stderr ahead of stdout.

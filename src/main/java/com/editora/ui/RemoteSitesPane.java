@@ -126,7 +126,7 @@ final class RemoteSitesPane {
             }
         });
         keyPath.setPromptText(tr("remote.keyPrompt"));
-        keyPath.setMinWidth(160);
+        keyPath.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         Button keyBrowse = new Button(tr("dialog.clone.browse"));
         keyBrowse.setOnAction(e -> {
             FileChooser fc = new FileChooser();
@@ -482,7 +482,7 @@ final class RemoteSitesPane {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof Region r) {
-            r.setMinWidth(180);
+            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
         }
     }
 

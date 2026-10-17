@@ -98,6 +98,28 @@ public final class SyncEngine {
         return (scheme.equals("http") || scheme.equals("https")) && looksLikeToken(userInfo);
     }
 
+    /**
+     * {@code url} without the secret {@link #hasCredentials} finds: {@code https://me:TOKEN@host/r.git} becomes
+     * {@code https://me@host/r.git}, and {@code https://ghp_…@host/r.git} becomes {@code https://host/r.git}. Git
+     * then asks the credential helper (or SSH) for what the URL no longer carries. Anything else is returned as
+     * it is. Pure.
+     */
+    public static String withoutCredentials(String url) {
+        if (!hasCredentials(url)) {
+            return url;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\s*[A-Za-z][A-Za-z0-9+.-]*://)([^/@?#]*)@")
+                .matcher(url);
+        m.find(); // hasCredentials matched the same prefix
+        String userInfo = m.group(2);
+        int colon = userInfo.indexOf(':');
+        String user = colon >= 0 ? userInfo.substring(0, colon) : "";
+        if (looksLikeToken(user)) {
+            user = ""; // "ghp_…:x-oauth-basic": the user name is the token
+        }
+        return m.group(1) + (user.isEmpty() ? "" : user + "@") + url.substring(m.end());
+    }
+
     private static boolean looksLikeToken(String user) {
         return user.matches("(ghp|gho|ghu|ghs|ghr)_\\w+|github_pat_\\w+|glpat-[\\w-]+") || user.matches("[\\w-]{30,}");
     }

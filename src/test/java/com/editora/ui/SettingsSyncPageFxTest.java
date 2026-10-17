@@ -539,4 +539,46 @@ class SettingsSyncPageFxTest {
         awaitIdle();
         assertFalse(settings.isSyncEnabled(), "the look that finished after Cancel connects nothing");
     }
+
+    /**
+     * A URL stored with a token before the field refused them stayed as it was, with nothing on the page but a
+     * red field. The page now offers, once, to take the secret out of the stored URL.
+     */
+    @Test
+    void aTokenAlreadyInTheStoredUrlIsOfferedForRemoval() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            settings.setSyncRepoUrl("https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git");
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            javafx.scene.layout.VBox warning = control("syncCredentialsWarning");
+            assertTrue(warning.isVisible());
+            assertTrue(SettingsRig.texts(warning).contains(tr("settings.sync.credentials.stored")));
+            ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.remove"))).fire();
+            assertEquals("https://me@github.com/me/editora-sync.git", settings.getSyncRepoUrl());
+            assertEquals(
+                    "https://me@github.com/me/editora-sync.git",
+                    this.<TextField>control("syncUrlField").getText());
+            assertFalse(warning.isVisible());
+            assertEquals(
+                    tr("settings.sync.credentials.removed"),
+                    this.<Label>control("syncStateLabel").getText());
+        });
+        fx.shared.flushWrites();
+        assertFalse(Files.readString(fx.configDir.resolve("settings.json")).contains("ghp_FAKE"), "saved");
+    }
+
+    @Test
+    void keepingTheStoredTokenIsAskedOnlyOnce() throws Exception {
+        open(null);
+        FxTestSupport.runOnFx(() -> {
+            settings.setSyncRepoUrl("https://ghp_FAKEFAKEFAKE0000@github.com/me/editora-sync.git");
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            javafx.scene.layout.VBox warning = control("syncCredentialsWarning");
+            ((Button) SettingsRig.button(warning, tr("settings.sync.credentials.keep"))).fire();
+            assertFalse(warning.isVisible());
+            assertEquals("https://ghp_FAKEFAKEFAKE0000@github.com/me/editora-sync.git", settings.getSyncRepoUrl());
+            window.showSync(FxTestSupport.field(fx.controller, "stage"));
+            assertFalse(warning.isVisible(), "not again this run");
+        });
+    }
 }

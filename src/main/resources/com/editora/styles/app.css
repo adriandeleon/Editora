@@ -37,12 +37,15 @@
     -state-accent-hover: -color-accent-muted;
     -state-olive: #6e7b25;
     -state-violet: #8250df;
-    /* The kit's periwinkle is a pair (#5c66ae light / #9aa2d4 dark), but this default has to serve
-       every theme, light and dark, from one value — so it is a mid tone that keeps usable contrast
-       on both a white and a near-black ground. The flagship themes override it with the exact pair
-       (editor-themes/editora-{light,dark}.css); any theme can do the same. */
-    -state-key: #7078c0;
-    -state-key-bg: rgba(112, 120, 192, 0.15);
+    /* The keyboard's periwinkle follows the app theme's ground, not the editor theme: chord chips sit on the
+       window's cards, panels and popups, and an editor theme's pair (light ink under a dark app) read at
+       2.8:1 there. ladder() picks by the brightness of -color-bg-default: a darker ground gets a lighter
+       periwinkle, a mid-dark one (Autumn, Nord Dark, Dracula) a near-white one, a light ground a deep ink.
+       Every bundled app theme reads at 4.5:1 or more on its default and subtle surfaces, chip tint
+       included (StyleContrastTest). Editor themes no longer set these. */
+    -state-key: ladder(-color-bg-default, #b0b6e0 0%, #b8bee5 10%, #cdd1f1 20%, #e3e6f9 30%, #ecedfb 49%, #3c4380 50%);
+    -state-key-bg: ladder(-color-bg-default, rgba(176, 182, 224, 0.15) 0%, rgba(205, 209, 241, 0.15) 20%,
+            rgba(236, 237, 251, 0.15) 49%, rgba(60, 67, 128, 0.15) 50%);
     /* Selection wash for overlay rows (kit --sel, a ~13% accent tint). The default chains to the
        theme's accent-subtle; the flagship editor themes override it with the kit's exact rgba. */
     -state-sel: -color-accent-subtle;
