@@ -233,6 +233,7 @@ final class DebugCoordinator {
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
         dapManager.setListener(dapListener());
+        dapManager.setCodeReplaceNotices(this::codeReplaceNotice);
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
@@ -1037,6 +1038,7 @@ final class DebugCoordinator {
                     }
                 }
                 updateDebugStatus(state);
+                primeCodeReplace(state);
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
                     sentBreakpoints.clear(); // the next session is told everything afresh
                     breakpointStatus.clear(); // and what the last one said about them no longer holds
@@ -1122,6 +1124,12 @@ final class DebugCoordinator {
             @Override
             public void start() {
                 debugStart(); // start a session when idle, or continue when suspended
+            }
+
+            @Override
+            public List<javafx.scene.control.MenuItem> stackMenuItems(
+                    DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
+                return DebugCoordinator.this.stackMenuItems(frame, frames);
             }
 
             @Override
@@ -2397,5 +2405,235 @@ final class DebugCoordinator {
 
     void setSelectedValue() {
         panel().setSelectedValue();
+    }
+
+    // --- Java code changes and frame control: hot code replace, restart frame, smart step into -----------
+
+    /** An Apply Code Changes is building or replacing; a save meanwhile is folded into one more round. */
+    private boolean codeReplaceRunning;
+    /** Another save arrived during {@link #codeReplaceRunning}: apply once more when it ends. */
+    private Path codeReplaceAgain;
+    /** Java files saved since the running code last matched them (re-baselined by a successful replace). */
+    private final Set<Path> savedSinceReplace = new LinkedHashSet<>();
+    /** java-debug's last ERROR notice, so a failed replace does not print the same reason twice. */
+    private String lastCodeReplaceError = "";
+
+    private DapManager.CodeReplaceMode codeReplaceMode() {
+        return DapManager.CodeReplaceMode.of(host.settings().getDebugHotCodeReplace());
+    }
+
+    private static boolean isJavaSource(Path file) {
+        return file != null
+                && file.getFileName() != null
+                && file.getFileName()
+                        .toString()
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .endsWith(".java");
+    }
+
+    /**
+     * A user save (not an autosave) reached the language server. During a Java session in {@code auto} mode
+     * the change goes into the running program at once and the console says what happened; in {@code manual}
+     * mode the status bar says how to apply it. FX thread.
+     */
+    void sourceSaved(EditorBuffer buffer) {
+        Path file = buffer == null ? null : buffer.getPath();
+        if (!isJavaSource(file) || !dapManager.canReplaceCode()) {
+            return;
+        }
+        savedSinceReplace.add(file);
+        switch (codeReplaceMode()) {
+            case AUTO -> requestCodeReplace(file, false);
+            case MANUAL -> host.setStatus(tr("debug.hcr.manualHint"));
+            case OFF -> {
+                // the user chose to keep the running code as it is
+            }
+        }
+    }
+
+    /** A Java session started running: let jdtls build what it will compare saved changes with. */
+    private void primeCodeReplace(DapManager.State state) {
+        if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
+            dapManager.primeCodeReplace();
+        }
+    }
+
+    /** {@code debug.applyCodeChanges}: loads what is saved into the running program (auto and manual modes). */
+    void applyCodeChanges() {
+        if (!dapManager.canReplaceCode()) {
+            host.setStatus(tr("debug.hcr.noSession"));
+            return;
+        }
+        if (codeReplaceMode() == DapManager.CodeReplaceMode.OFF) {
+            host.setStatus(tr("debug.hcr.off"));
+            return;
+        }
+        EditorBuffer active = host.activeBuffer();
+        Path file = active != null && isJavaSource(active.getPath()) ? active.getPath() : dapManager.sessionFile();
+        if (active != null && active.isDirty() && isJavaSource(active.getPath())) {
+            panel().appendNotice(tr("debug.hcr.unsavedNote")); // only saved files are compiled
+        }
+        requestCodeReplace(file, true);
+    }
+
+    /** Starts a replace, or folds this request into the one running (one more round once it ends). */
+    private void requestCodeReplace(Path file, boolean asked) {
+        if (codeReplaceRunning) {
+            codeReplaceAgain = file;
+            return;
+        }
+        codeReplaceRunning = true;
+        lastCodeReplaceError = "";
+        Set<Path> covered = new LinkedHashSet<>(savedSinceReplace);
+        host.setStatus(tr("debug.hcr.applying"));
+        dapManager.applyCodeChanges(file, outcome -> {
+            codeReplaceRunning = false;
+            reportCodeReplace(outcome, covered, asked);
+            Path again = codeReplaceAgain;
+            codeReplaceAgain = null;
+            if (again != null && dapManager.canReplaceCode()) {
+                requestCodeReplace(again, false);
+            }
+        });
+    }
+
+    /** Says how a replace ended: status bar always, Debug console for anything the user must act on. */
+    private void reportCodeReplace(DapManager.CodeReplaceOutcome outcome, Set<Path> covered, boolean asked) {
+        switch (outcome.result()) {
+            case APPLIED -> {
+                String names = CodeReplaceText.classList(outcome.classes());
+                panel().appendNotice(tr("debug.hcr.applied", names));
+                host.setStatus(tr("debug.hcr.appliedStatus", names));
+                savedSinceReplace.removeAll(covered);
+                codeReplaced(covered);
+            }
+            case NOTHING_CHANGED -> {
+                savedSinceReplace.removeAll(covered); // the program already runs what these files say
+                codeReplaced(covered);
+                host.setStatus(tr(asked ? "debug.hcr.nothing" : "debug.hcr.nothingQuiet"));
+            }
+            case COMPILE_ERRORS -> {
+                panel().appendNotice(tr("debug.hcr.compileErrors"));
+                host.setStatus(tr("debug.hcr.compileErrors"));
+            }
+            case FAILED -> {
+                if (CodeReplaceText.saidAlready(outcome.message(), lastCodeReplaceError)) {
+                    panel().appendNotice(tr("debug.hcr.restartNeeded")); // the adapter's event gave the reason
+                } else {
+                    panel().appendNotice(tr("debug.hcr.failed", outcome.message()));
+                }
+                host.setStatus(tr("debug.hcr.failedStatus"));
+            }
+            case BUILD_FAILED -> {
+                panel().appendNotice(tr("debug.hcr.buildFailed"));
+                host.setStatus(tr("debug.hcr.buildFailed"));
+            }
+            case NO_SESSION -> host.setStatus(tr("debug.hcr.noSession"));
+        }
+    }
+
+    /**
+     * The running program now runs what {@code files} say on disk: a successful replace, or one that found
+     * nothing to change. Breakpoint and frame lines of these files no longer need mapping to launch-time lines.
+     */
+    private void codeReplaced(Set<Path> files) {
+        // LEAD-WIRE: B1 — re-baseline the launch-time line snapshot of each of `files` here (the code that runs
+        // matches the saved file again, so its breakpoint/frame line mapping starts afresh from the saved text).
+    }
+
+    /**
+     * java-debug's own hot code replace events. A replace it could not finish leaves the program on the old code
+     * somewhere: that is said in the console. Progress events need no words — Editora reports the outcome.
+     */
+    private void codeReplaceNotice(String changeType, String message) {
+        String text = CodeReplaceText.notice(changeType, message);
+        if ("ERROR".equals(changeType)) {
+            lastCodeReplaceError = message == null ? "" : message.strip();
+        }
+        if (text != null) {
+            panel().appendNotice(tr("debug.hcr.notice", text));
+        }
+    }
+
+    /**
+     * {@code debug.restartFrame}: runs the selected call-stack frame's method again from its start (the top frame
+     * when none is selected). Paused Java sessions only; the adapter says when a frame cannot be restarted.
+     */
+    void restartFrame() {
+        restartFrame(shownFrame);
+    }
+
+    private void restartFrame(DapModels.StackFrameInfo frame) {
+        if (dapManager.state() != DapManager.State.SUSPENDED || frame == null) {
+            host.setStatus(tr("debug.frame.notPaused"));
+            return;
+        }
+        if (!dapManager.supportsRestartFrame()) {
+            host.setStatus(tr("debug.restartFrame.unsupported"));
+            return;
+        }
+        dapManager.restartFrame(frame.id());
+    }
+
+    /**
+     * Whether the call-stack menu offers Restart Frame for {@code frame} of {@code frames}: a paused session whose
+     * adapter restarts frames, and not the bottom frame of a complete stack (nothing called it, so nothing can
+     * call it again).
+     */
+    static boolean canRestartFrame(
+            boolean suspended,
+            boolean supported,
+            DapModels.StackFrameInfo frame,
+            List<DapModels.StackFrameInfo> frames) {
+        if (!suspended || !supported || frame == null || frames == null || frames.isEmpty()) {
+            return false;
+        }
+        int index = frames.indexOf(frame);
+        return index >= 0 && index < frames.size() - 1;
+    }
+
+    /** The call-stack context menu for {@code frame} (Restart Frame). */
+    List<javafx.scene.control.MenuItem> stackMenuItems(
+            DapModels.StackFrameInfo frame, List<DapModels.StackFrameInfo> frames) {
+        javafx.scene.control.MenuItem restart = new javafx.scene.control.MenuItem(tr("debugpanel.restartFrame"));
+        restart.setDisable(!canRestartFrame(
+                dapManager.state() == DapManager.State.SUSPENDED, dapManager.supportsRestartFrame(), frame, frames));
+        restart.setOnAction(e -> restartFrame(frame));
+        return List.of(restart);
+    }
+
+    /** The last Smart Step Into picker shown (null before the first). */
+    private QuickOpen<DapModels.StepTarget> smartStepPicker;
+
+    /**
+     * {@code debug.smartStepInto}: lists the calls on the current line and steps into the one picked — straight
+     * into it when there is only one. Plain Step Into is unchanged.
+     */
+    void smartStepInto() {
+        if (dapManager.state() != DapManager.State.SUSPENDED) {
+            host.setStatus(tr("debug.frame.notPaused"));
+            return;
+        }
+        if (!dapManager.supportsStepInTargets()) {
+            host.setStatus(tr("debug.smartStep.unsupported"));
+            return;
+        }
+        dapManager.stepInTargets(targets -> {
+            if (targets.isEmpty()) {
+                host.setStatus(tr("debug.smartStep.none"));
+            } else if (targets.size() == 1) {
+                dapManager.stepIntoTarget(targets.get(0).id());
+            } else {
+                QuickOpen<DapModels.StepTarget> picker = smartStepPicker = new QuickOpen<>(
+                        tr("debug.smartStep.title"),
+                        tr("debug.smartStep.prompt"),
+                        () -> targets,
+                        DapModels.StepTarget::label,
+                        t -> t.line() >= 0 ? tr("debug.smartStep.line", t.line() + 1) : "",
+                        t -> dapManager.stepIntoTarget(t.id()));
+                picker.setOverlayHost(host.overlayHost());
+                picker.show(host.window());
+            }
+        });
     }
 }

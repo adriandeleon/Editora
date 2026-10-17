@@ -430,6 +430,8 @@ public class SettingsWindow {
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     private CheckBox debugProgramConsoleCheck;
+    /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
+    private ComboBox<String> debugHotCodeReplaceCombo;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1882,6 +1884,27 @@ public class SettingsWindow {
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
         debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugProgramConsole(now);
+            apply();
+        });
+        debugHotCodeReplaceCombo = new ComboBox<>();
+        debugHotCodeReplaceCombo.getItems().setAll("auto", "manual", "off");
+        debugHotCodeReplaceCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return key == null ? "" : tr("settings.debug.hotCodeReplace." + key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        debugHotCodeReplaceCombo.setMinWidth(170);
+        debugHotCodeReplaceCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setDebugHotCodeReplace(now);
             apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
@@ -6554,6 +6577,13 @@ public class SettingsWindow {
                         debugProgramConsoleCheck,
                         tr("settings.debug.programConsole.hint"),
                         "debug java console input stdin standard input program terminal type");
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.hotCodeReplace"),
+                        tr("settings.debug.hotCodeReplace.hint"),
+                        debugHotCodeReplaceCombo,
+                        "debug java hot code replace hotswap apply code changes reload save running");
             }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
@@ -7441,6 +7471,9 @@ public class SettingsWindow {
         }
         if (debugProgramConsoleCheck != null) {
             debugProgramConsoleCheck.setDisable(!on);
+        }
+        if (debugHotCodeReplaceCombo != null) {
+            debugHotCodeReplaceCombo.setDisable(!on);
         }
     }
 
@@ -8735,6 +8768,7 @@ public class SettingsWindow {
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
+            debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

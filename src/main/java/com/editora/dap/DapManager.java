@@ -2907,6 +2907,11 @@ public final class DapManager implements DapClient.Host {
             }
 
             @Override
+            public void onHotCodeReplace(String changeType, String message) {
+                DapManager.this.onHotCodeReplace(epoch, changeType, message);
+            }
+
+            @Override
             public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
                 CompletableFuture<Long> started = new CompletableFuture<>();
                 Platform.runLater(() -> startDebuggee(epoch, cwd, argv, env, started));
@@ -3116,6 +3121,198 @@ public final class DapManager implements DapClient.Host {
                             + res.getClass().getName() + ": " + abbreviate(String.valueOf(res)));
             return null;
         }
+    }
+
+    // --- Java code changes and frame control (hot code replace, restart frame, smart step into) ------------
+
+    /** When saved Java code reaches a running program: on save, on {@code debug.applyCodeChanges}, or never. */
+    public enum CodeReplaceMode {
+        AUTO,
+        MANUAL,
+        OFF;
+
+        /** The setting's value ({@code auto} / {@code manual} / {@code off}); anything else is the default. */
+        public static CodeReplaceMode of(String value) {
+            if (value != null) {
+                for (CodeReplaceMode m : values()) {
+                    if (m.name().equalsIgnoreCase(value.strip())) {
+                        return m;
+                    }
+                }
+            }
+            return AUTO;
+        }
+    }
+
+    /** How an Apply Code Changes ended. */
+    public enum CodeReplaceResult {
+        /** Classes were replaced in the running program ({@link CodeReplaceOutcome#classes}). */
+        APPLIED,
+        /** The build and the replace found nothing the program runs that had changed. */
+        NOTHING_CHANGED,
+        /** The project has compile errors: nothing was replaced (a broken method would throw when it runs). */
+        COMPILE_ERRORS,
+        /** java-debug refused (an added or removed method or field, a JVM without redefinition…): restart. */
+        FAILED,
+        /** jdtls could not build: no Java server for the file, or the build failed or was cancelled. */
+        BUILD_FAILED,
+        /** No running Java session to apply to. */
+        NO_SESSION
+    }
+
+    /** {@code message} is java-debug's reason for {@link CodeReplaceResult#FAILED}, else empty. */
+    public record CodeReplaceOutcome(CodeReplaceResult result, List<String> classes, String message) {
+
+        public CodeReplaceOutcome {
+            classes = classes == null ? List.of() : List.copyOf(classes);
+            message = message == null ? "" : message.strip();
+        }
+    }
+
+    /** Receives java-debug's {@code hotcodereplace} progress and problems (FX thread); see {@link
+     *  #setCodeReplaceNotices}. */
+    private java.util.function.BiConsumer<String, String> codeReplaceNotices = (type, message) -> {};
+
+    /** Who is told java-debug's hot code replace events ({@code changeType}, message), on the FX thread. */
+    public void setCodeReplaceNotices(java.util.function.BiConsumer<String, String> notices) {
+        this.codeReplaceNotices = notices == null ? (type, message) -> {} : notices;
+    }
+
+    private void onHotCodeReplace(long epoch, String changeType, String message) {
+        Platform.runLater(() -> {
+            if (isCurrent(epoch)) {
+                outputPump.flush(); // after the program output that preceded it
+                codeReplaceNotices.accept(changeType, message);
+            }
+        });
+    }
+
+    /** Whether a Java session is running or paused, so that saved code changes can be loaded into it. */
+    public boolean canReplaceCode() {
+        return client != null && "java".equals(sessionLanguage) && (state == State.RUNNING || state == State.SUSPENDED);
+    }
+
+    /** The session whose jdtls build {@link #primeCodeReplace} has started; -1 for none. */
+    private long codeReplacePrimedEpoch = -1;
+
+    /**
+     * Gives jdtls a build to compare saved changes with. A program Editora compiled itself (a Java file outside
+     * a build project) runs classes jdtls never built: without an earlier build, jdtls's first one reports every
+     * class as new rather than changed, and java-debug then has nothing to replace. Building once at session
+     * start fixes that. Only then: that build writes to jdtls's own output in its workspace, not the user's
+     * folder (a build project's output is built before its launch, see the launch path). Once per session.
+     */
+    public void primeCodeReplace() {
+        if (compilationDirectory == null
+                || debugFile == null
+                || !canReplaceCode()
+                || codeReplacePrimedEpoch == sessionEpoch) {
+            return;
+        }
+        codeReplacePrimedEpoch = sessionEpoch;
+        lsp.buildJavaWorkspace(debugFile, false, built -> {});
+    }
+
+    /** The file the session was started for (it routes a build to that session's jdtls); null when none. */
+    public Path sessionFile() {
+        return debugFile;
+    }
+
+    /**
+     * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
+     * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
+     * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
+     * and not at all when the session ended meanwhile.
+     */
+    public void applyCodeChanges(Path file, Consumer<CodeReplaceOutcome> cb) {
+        DapClient c = client;
+        if (!canReplaceCode() || file == null) {
+            cb.accept(new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), ""));
+            return;
+        }
+        long epoch = sessionEpoch;
+        lsp.buildJavaWorkspace(file, false, built -> {
+            if (!isCurrent(epoch, c)) {
+                return;
+            }
+            switch (built) {
+                case WITH_ERRORS -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.COMPILE_ERRORS, List.of(), ""));
+                case SUCCEEDED ->
+                    c.redefineClasses()
+                            .whenComplete((r, e) -> Platform.runLater(() -> {
+                                if (isCurrent(epoch, c)) {
+                                    cb.accept(codeReplaceOutcome(r, e == null ? null : msg(e)));
+                                }
+                            }));
+                default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
+            }
+        });
+    }
+
+    /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */
+    static CodeReplaceOutcome codeReplaceOutcome(DapModels.CodeReplace reply, String error) {
+        if (error != null) {
+            return new CodeReplaceOutcome(CodeReplaceResult.FAILED, List.of(), error);
+        }
+        if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
+            return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
+        }
+        return reply.failed()
+                ? new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error())
+                : new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), "");
+    }
+
+    /** Whether the session's adapter can restart a frame ({@code restartFrame}). */
+    public boolean supportsRestartFrame() {
+        DapClient c = client;
+        return c != null && c.supportsRestartFrame();
+    }
+
+    /**
+     * Restart Frame: runs {@code frameId}'s method again from its start (frames above it are dropped). Behaves
+     * like a step: the session runs until the adapter's next stop; a refusal (the bottom frame, a native one)
+     * is reported and leaves the session paused where it was. FX thread, while SUSPENDED.
+     */
+    public void restartFrame(int frameId) {
+        step((c, threadId) -> c.restartFrame(frameId));
+    }
+
+    /** Whether the session's adapter can list the calls on a line ({@code stepInTargets}). */
+    public boolean supportsStepInTargets() {
+        DapClient c = client;
+        return c != null && c.supportsStepInTargets();
+    }
+
+    /**
+     * The calls on the current thread's line that Smart Step Into can enter (callback on the FX thread; empty
+     * when there are none, the session is not paused, or the adapter could not say).
+     */
+    public void stepInTargets(Consumer<List<DapModels.StepTarget>> cb) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED) {
+            cb.accept(List.of());
+            return;
+        }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        c.stackTrace(threadId)
+                .thenCompose(frames -> frames == null || frames.isEmpty()
+                        ? CompletableFuture.completedFuture(List.<DapModels.StepTarget>of())
+                        : c.stepInTargets(frames.get(0).id()))
+                .whenComplete((targets, e) -> Platform.runLater(() -> {
+                    if (!isCurrent(epoch, c) || state != State.SUSPENDED) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(e));
+                    }
+                    cb.accept(targets == null ? List.of() : targets);
+                }));
+    }
+
+    /** Smart Step Into: steps the current thread into the call {@code targetId} (see {@link #stepInTargets}). */
+    public void stepIntoTarget(int targetId) {
+        step((c, threadId) -> c.stepIn(threadId, targetId));
     }
 
     private static Listener noopListener() {

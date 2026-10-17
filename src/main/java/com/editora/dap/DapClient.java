@@ -135,6 +135,10 @@ public final class DapClient implements IDebugProtocolClient {
         default CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
             return CompletableFuture.failedFuture(new UnsupportedOperationException("runInTerminal"));
         }
+
+        /** java-debug's {@code hotcodereplace} event: {@code changeType} (ERROR, WARNING, STARTING, END,
+         *  BUILD_COMPLETE) and its message. See {@link #redefineClasses}. */
+        default void onHotCodeReplace(String changeType, String message) {}
     }
 
     private final Host host;
@@ -331,6 +335,7 @@ public final class DapClient implements IDebugProtocolClient {
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, socket.getInputStream(), orderedWriter(socket.getOutputStream()), executor, c -> c);
             server = launcher.getRemoteProxy();
+            endpoint = launcher.getRemoteEndpoint(); // java-debug's own requests (redefineClasses)
             watchTransport(launcher.startListening());
             // A socket adapter can be joined by a second connection, so child sessions are possible here.
             return timed(server.initialize(initArgs(adapterId, true, runsDebuggee)))
@@ -367,6 +372,7 @@ public final class DapClient implements IDebugProtocolClient {
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
                     this, process.getInputStream(), orderedWriter(process.getOutputStream()), executor, c -> c);
             server = launcher.getRemoteProxy();
+            endpoint = launcher.getRemoteEndpoint(); // java-debug's own requests (redefineClasses)
             watchTransport(launcher.startListening());
             return timed(server.initialize(initArgs(adapterId, false, runsDebuggee)))
                     .thenApply(c -> {
@@ -1382,6 +1388,159 @@ public final class DapClient implements IDebugProtocolClient {
                 // best effort
             }
         }
+    }
+
+    // --- Java code changes and frame control: hot code replace, restart frame, smart step into ---------------
+
+    /** The connection's generic endpoint, for java-debug's requests outside the protocol; null until connected. */
+    private volatile org.eclipse.lsp4j.jsonrpc.RemoteEndpoint endpoint;
+
+    /** How long a {@code redefineClasses} may take: java-debug first waits for jdtls's build jobs to finish. */
+    private static final Duration REDEFINE_TIMEOUT = Duration.ofSeconds(90);
+
+    /** The body of java-debug's {@code hotcodereplace} event (not part of the protocol). */
+    public static final class HotCodeReplaceNotice {
+        String changeType;
+        String message;
+    }
+
+    /**
+     * java-debug reports the steps of a hot code replace with this event: the build it saw finish
+     * ({@code BUILD_COMPLETE}), a replace starting or done, and why one failed ({@code ERROR}) or left the program
+     * running old code somewhere ({@code WARNING}). lsp4j logged it as an unsupported notification before.
+     */
+    @JsonNotification("hotcodereplace")
+    public void hotCodeReplace(HotCodeReplaceNotice args) {
+        if (args != null && !disposed) {
+            host.onHotCodeReplace(
+                    args.changeType == null ? "" : args.changeType.strip(),
+                    args.message == null ? "" : args.message.strip());
+        }
+    }
+
+    /** The body of java-debug's {@code redefineClasses} answer. */
+    public static final class RedefineClassesBody {
+        String[] changedClasses;
+        String errorMessage;
+    }
+
+    /**
+     * Never called: it declares {@code redefineClasses} and its answer's type to lsp4j. The launcher learns the
+     * methods it can read answers for from the remote interface and the local service, and the remote interface
+     * is lsp4j's {@code IDebugProtocolServer}, which has no such request — for a request it has no type for,
+     * lsp4j drops the answer's body (measured against java-debug 0.53.2: the answer arrived as {@code null}).
+     * Declaring it here, on the local service, gives the answer its type without a launcher of our own.
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("redefineClasses")
+    public CompletableFuture<RedefineClassesBody> redefineClassesTypeOnly(Object args) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("redefineClasses"));
+    }
+
+    /**
+     * Asks java-debug to load the classes jdtls rebuilt since the last replace into the running program
+     * ({@code redefineClasses}, what VS Code's Apply Code Changes sends). java-debug waits for jdtls's build to
+     * finish, replaces every changed class the program has loaded, and drops frames running replaced methods.
+     * It only knows of classes jdtls compiled: Editora runs jdtls without autobuild, so the caller builds first.
+     */
+    public CompletableFuture<DapModels.CodeReplace> redefineClasses() {
+        DapClient session = target();
+        if (session != this) {
+            return session.redefineClasses();
+        }
+        org.eclipse.lsp4j.jsonrpc.RemoteEndpoint ep = endpoint;
+        if (ep == null || disposed) {
+            return CompletableFuture.failedFuture(new IllegalStateException("not connected"));
+        }
+        return withTimeout(ep.request("redefineClasses", new java.util.HashMap<String, Object>()), REDEFINE_TIMEOUT)
+                .thenApply(DapClient::codeReplace);
+    }
+
+    /** Pure: reads a {@code redefineClasses} answer ({@code {changedClasses: [...], errorMessage}}): the typed
+     *  body, or a gson tree / plain collections should lsp4j hand it over untyped. */
+    static DapModels.CodeReplace codeReplace(Object body) {
+        if (body instanceof RedefineClassesBody b) {
+            return new DapModels.CodeReplace(
+                    b.changedClasses == null ? List.of() : java.util.Arrays.asList(b.changedClasses), b.errorMessage);
+        }
+        com.google.gson.JsonElement json = body instanceof com.google.gson.JsonElement el
+                ? el
+                : body == null ? null : new com.google.gson.Gson().toJsonTree(body);
+        if (json == null || !json.isJsonObject()) {
+            return new DapModels.CodeReplace(List.of(), "");
+        }
+        com.google.gson.JsonObject o = json.getAsJsonObject();
+        List<String> classes = new ArrayList<>();
+        com.google.gson.JsonElement changed = o.get("changedClasses");
+        if (changed != null && changed.isJsonArray()) {
+            for (com.google.gson.JsonElement c : changed.getAsJsonArray()) {
+                if (c != null && c.isJsonPrimitive() && !c.getAsString().isBlank()) {
+                    classes.add(c.getAsString());
+                }
+            }
+        }
+        com.google.gson.JsonElement error = o.get("errorMessage");
+        return new DapModels.CodeReplace(classes, error != null && error.isJsonPrimitive() ? error.getAsString() : "");
+    }
+
+    /** Whether the adapter can restart a frame ({@code restartFrame}; java-debug pops frames to it). */
+    public boolean supportsRestartFrame() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsRestartFrame());
+    }
+
+    /**
+     * Restarts {@code frameId}: java-debug pops every frame above it and steps into it again, so the method runs
+     * from its first line with the arguments it was called with (fields and other state keep their values).
+     * The adapter then stops the thread, like the end of a step.
+     */
+    public CompletableFuture<Void> restartFrame(int frameId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.restartFrame(frameId);
+        }
+        org.eclipse.lsp4j.debug.RestartFrameArguments a = new org.eclipse.lsp4j.debug.RestartFrameArguments();
+        a.setFrameId(frameId);
+        return timed(server.restartFrame(a));
+    }
+
+    /** Whether the adapter can list the calls on a line to step into ({@code stepInTargets}). */
+    public boolean supportsStepInTargets() {
+        Capabilities caps = target().capabilities;
+        return caps != null && Boolean.TRUE.equals(caps.getSupportsStepInTargetsRequest());
+    }
+
+    /** The calls on {@code frameId}'s current line that a step can go into, in the adapter's order. */
+    public CompletableFuture<List<DapModels.StepTarget>> stepInTargets(int frameId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.stepInTargets(frameId);
+        }
+        org.eclipse.lsp4j.debug.StepInTargetsArguments a = new org.eclipse.lsp4j.debug.StepInTargetsArguments();
+        a.setFrameId(frameId);
+        return timed(server.stepInTargets(a)).thenApply(r -> {
+            List<DapModels.StepTarget> out = new ArrayList<>();
+            if (r != null && r.getTargets() != null) {
+                for (org.eclipse.lsp4j.debug.StepInTarget t : r.getTargets()) {
+                    if (t != null) {
+                        out.add(new DapModels.StepTarget(
+                                t.getId(), t.getLabel(), t.getLine() == null ? -1 : t.getLine() - 1));
+                    }
+                }
+            }
+            return List.copyOf(out);
+        });
+    }
+
+    /** Steps {@code threadId} into the call {@code targetId} of {@link #stepInTargets} (smart step into). */
+    public CompletableFuture<Void> stepIn(int threadId, int targetId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.stepIn(threadId, targetId);
+        }
+        StepInArguments a = new StepInArguments();
+        a.setThreadId(threadId);
+        a.setTargetId(targetId);
+        return timed(server.stepIn(a));
     }
 
     private static void ignore(CompletableFuture<?> f) {
