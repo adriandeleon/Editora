@@ -3932,6 +3932,7 @@ public class SettingsWindow {
     // --- Sync page -----------------------------------------------------------------------------------------
 
     private SettingsSync settingsSync;
+    private VBox syncCredentialsWarning;
     private final Runnable syncStateListener = this::refreshSyncControls;
     private TextField syncUrlField;
     private TextField syncBranchField;
@@ -3992,6 +3993,24 @@ public class SettingsWindow {
         VBox p = page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
         Settings settings = config.getSettings();
 
+        // A URL stored with a password or token before the field refused them: offered, once, to take it out.
+        Button removeSecret = new Button(tr("settings.sync.credentials.remove"));
+        removeSecret.setOnAction(e -> {
+            String clean = com.editora.sync.SyncEngine.withoutCredentials(
+                    config.getSettings().getSyncRepoUrl());
+            config.getSettings().setSyncRepoUrl(clean);
+            syncUrlField.setText(clean);
+            syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
+            showSyncNotice(tr("settings.sync.credentials.removed"));
+        });
+        Button keepSecret = new Button(tr("settings.sync.credentials.keep"));
+        keepSecret.setOnAction(e -> {
+            settingsSync.storedCredentialsKept = true;
+            refreshSyncControls();
+        });
+        syncCredentialsWarning =
+                new VBox(6, noteBox(tr("settings.sync.credentials.stored")), new HBox(8, removeSecret, keepSecret));
+        p.getChildren().add(syncCredentialsWarning);
         Card repo = card(p, null);
         syncUrlField = new TextField();
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
@@ -4211,6 +4230,11 @@ public class SettingsWindow {
         syncAnywayButton.setManaged(needsConfirmation);
         syncCancelButton.setVisible(syncChecking);
         syncCancelButton.setManaged(syncChecking);
+        boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
+                && settingsSync != null
+                && !settingsSync.storedCredentialsKept;
+        syncCredentialsWarning.setVisible(secret);
+        syncCredentialsWarning.setManaged(secret);
         String account = connected && settingsSync != null ? settingsSync.account() : "";
         syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
         syncAccountLabel.setVisible(!account.isEmpty());
