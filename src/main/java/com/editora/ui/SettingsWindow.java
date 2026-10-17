@@ -208,8 +208,6 @@ public class SettingsWindow {
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
     private VBox languageControl; // the combo + its "restart to apply" note
-    /** The UI language setting this run started with (the one in force until a restart). */
-    private static String languageAtStart;
 
     private ComboBox<String> keymapCombo;
     private ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
@@ -1181,13 +1179,21 @@ public class SettingsWindow {
             config.save();
         });
         // No dialog per change (the arrow keys change a closed combo one language at a time): the row says
-        // it, for as long as the choice is not the language this run started with.
-        if (languageAtStart == null) {
-            languageAtStart = config.getSettings().getUiLanguage();
-        }
+        // it, for as long as the choice resolves to another language than the one this run uses. (The system
+        // language is user.language: the app aligns the default Locale with the UI language at startup.)
         Label restartNote = new Label(tr("dialog.language.restart"));
         restartNote.getStyleClass().addAll("settings-row-desc", "settings-restart-note");
-        restartNote.visibleProperty().bind(languageCombo.valueProperty().isNotEqualTo(languageAtStart));
+        restartNote
+                .visibleProperty()
+                .bind(Bindings.createBooleanBinding(
+                        () -> languageCombo.getValue() != null
+                                && !com.editora.i18n.Messages.resolve(
+                                                languageCombo.getValue(),
+                                                com.editora.i18n.Messages.available()
+                                                        .keySet(),
+                                                System.getProperty("user.language"))
+                                        .equals(com.editora.i18n.Messages.current()),
+                        languageCombo.valueProperty()));
         restartNote.managedProperty().bind(restartNote.visibleProperty());
         languageControl = new VBox(4, languageCombo, restartNote);
         languageControl.setAlignment(Pos.CENTER_RIGHT);

@@ -322,8 +322,11 @@ class SettingsFrameFxTest {
             FxTestSupport.runOnFx(() -> {
                 language.requestFocus();
                 // Down on a closed combo commits the next language at once: it used to open a modal per step.
-                javafx.event.Event.fireEvent(
-                        language, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+                for (int i = 0; i < 2; i++) { // Automatic → English → the next language
+                    javafx.event.Event.fireEvent(
+                            language,
+                            new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.DOWN, false, false, false, false));
+                }
             });
             FxTestSupport.drainFx();
             FxTestSupport.runOnFx(() -> {
@@ -336,8 +339,8 @@ class SettingsFrameFxTest {
                 javafx.scene.Node note =
                         language.getParent().getChildrenUnmodifiable().get(1);
                 assertTrue(note.isVisible(), "the row says a restart applies it");
-                language.setValue(start);
-                assertTrue(!note.isVisible(), "back to the running language: nothing to restart for");
+                language.setValue(com.editora.i18n.Messages.current());
+                assertTrue(!note.isVisible(), "the running language: nothing to restart for");
                 FxTestSupport.<Stage>field(window, "stage").hide();
             });
         }

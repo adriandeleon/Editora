@@ -581,9 +581,11 @@ class SettingsControlsFxTest {
                     SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> language.setValue("es"));
 
             assertEquals("es", settings.getUiLanguage());
-            assertEquals(1, dialogs.size());
-            assertEquals(tr("dialog.language.title"), dialogs.get(0).title());
-            assertEquals(tr("dialog.language.restart"), dialogs.get(0).content());
+            assertEquals(List.of(), dialogs, "no dialog: the arrow keys change a closed combo one step at a time");
+            javafx.scene.Node note =
+                    language.getParent().getChildrenUnmodifiable().get(1);
+            assertTrue(note.isVisible(), "the row says it");
+            assertEquals(tr("dialog.language.restart"), ((javafx.scene.control.Label) note).getText());
             assertEquals(List.of(), rig.applied, "the running windows keep their language until the restart");
 
             assertEquals(
