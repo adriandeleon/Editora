@@ -64,8 +64,9 @@ class PythonInterpreterViewTest {
     /** A pick inside the project is stored relative, so the project folder can move; outside, absolute. */
     @Test
     void aPickInsideTheProjectIsStoredRelative() {
-        Path root = Path.of("/home/u/proj");
-        assertEquals(".venv/bin/python", PythonInterpreterView.storedChoice(root, "/home/u/proj/.venv/bin/python"));
+        Path root = Path.of("/home/u/proj").toAbsolutePath(); // on Windows, under the current drive
+        String inside = root.resolve(".venv").resolve("bin").resolve("python").toString();
+        assertEquals(".venv/bin/python", PythonInterpreterView.storedChoice(root, inside));
         assertEquals("/usr/bin/python3", PythonInterpreterView.storedChoice(root, "/usr/bin/python3"));
         assertEquals("/usr/bin/python3", PythonInterpreterView.storedChoice(null, "/usr/bin/python3"));
     }
@@ -79,6 +80,7 @@ class PythonInterpreterViewTest {
                 VENV,
                 List.of(Path.of("/p/.venv"), Path.of("/p/.venv-old")),
                 false,
+                PythonInterpreterViewTest::posix,
                 name -> Optional.ofNullable(onPath.get(name)),
                 exe -> exe.endsWith("3.12") ? "Python 3.12.4" : "Python 3.13.5");
         List<PythonInterpreterView.Kind> kinds =
@@ -97,6 +99,35 @@ class PythonInterpreterViewTest {
         assertTrue(rows.get(4).label().startsWith("Python 3.12.4"), rows.get(4).label());
     }
 
+    /** A POSIX machine's name for a path: as a remote host or WSL names it, also when Editora runs on Windows. */
+    private static String posix(Path p) {
+        return p.toString().replace('\\', '/');
+    }
+
+    /**
+     * On Windows, a WSL or SSH project's environment is offered as that machine names it — {@code /p/.venv/bin/python},
+     * not {@code \p\.venv\bin\python} — so it is the same row as the interpreter in use, and a pick stores a path
+     * the remote Python is at.
+     */
+    @Test
+    void aRemoteEnvironmentIsOfferedAsThatMachineNamesIt() {
+        var rows = PythonInterpreterView.choices(
+                VENV,
+                List.of(Path.of("/p/.venv")),
+                false,
+                PythonInterpreterViewTest::posix,
+                name -> Optional.empty(),
+                exe -> "");
+        assertEquals(
+                List.of(
+                        PythonInterpreterView.Kind.AUTO,
+                        PythonInterpreterView.Kind.CURRENT,
+                        PythonInterpreterView.Kind.BROWSE),
+                rows.stream().map(PythonInterpreterView.Choice::kind).toList(),
+                "the environment in use is listed once");
+        assertEquals("/p/.venv/bin/python", rows.get(1).command());
+    }
+
     /** The Microsoft Store alias is not a Python. */
     @Test
     void theWindowsStoreAliasIsNotListed() {
@@ -104,6 +135,7 @@ class PythonInterpreterViewTest {
                 null,
                 List.of(),
                 true,
+                Path::toString,
                 name -> name.equals("python")
                         ? Optional.of("C:\\Users\\u\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe")
                         : Optional.empty(),

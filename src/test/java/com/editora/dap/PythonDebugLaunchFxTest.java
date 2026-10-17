@@ -159,16 +159,33 @@ class PythonDebugLaunchFxTest {
         return out;
     }
 
-    /** A project with a {@code .venv} (an interpreter linked to the system one, as {@code venv} makes it). */
+    /**
+     * A project with a real {@code .venv}, made by {@code venv} without pip (fast, offline). Not a hand-made link to
+     * {@code /usr/bin/python3}: on macOS that is an xcrun shim, not the interpreter, and a link to it ran no Python
+     * in the venv — it imported neither debugpy nor the venv's pytest, so the adapter fell back to PATH's Python.
+     */
     private Path projectWithVenv() throws Exception {
         Path project = Files.createDirectories(base.resolve("my project"));
         Files.writeString(project.resolve("pyproject.toml"), "[project]\nname = \"x\"\n");
         Files.createDirectories(project.resolve("src"));
-        Path bin = Files.createDirectories(project.resolve(".venv/bin"));
-        Files.writeString(
-                project.resolve(".venv/pyvenv.cfg"), "home = /usr/bin\ninclude-system-site-packages = false\n");
-        Files.createSymbolicLink(bin.resolve("python"), Path.of("/usr/bin/python3"));
+        Process p = new ProcessBuilder(
+                        "python3",
+                        "-m",
+                        "venv",
+                        "--without-pip",
+                        project.resolve(".venv").toString())
+                .redirectErrorStream(true)
+                .start();
+        p.getInputStream().readAllBytes();
+        assumeTrue(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0, "python3 with venv is installed");
         return project;
+    }
+
+    /** The venv's {@code site-packages} folder ({@code lib/python3.X/site-packages}). */
+    private static Path sitePackages(Path project) throws Exception {
+        try (var lib = Files.list(project.resolve(".venv/lib"))) {
+            return lib.findFirst().orElseThrow().resolve("site-packages");
+        }
     }
 
     @Test
@@ -258,13 +275,7 @@ class PythonDebugLaunchFxTest {
     @Test
     void aTestIsDebuggedUnderPytestInTheProjectFolder() throws Exception {
         Path project = projectWithVenv();
-        String version = new String(new ProcessBuilder(
-                                "/usr/bin/python3", "-c", "import sys; print('%d.%d' % sys.version_info[:2])")
-                        .start()
-                        .getInputStream()
-                        .readAllBytes())
-                .strip();
-        Path stand = Files.createDirectories(project.resolve(".venv/lib/python" + version + "/site-packages/pytest"));
+        Path stand = Files.createDirectories(sitePackages(project).resolve("pytest"));
         Files.writeString(stand.resolve("__init__.py"), "");
         Path test = testFile(project);
         configure("", false);
