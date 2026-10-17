@@ -2371,7 +2371,8 @@ public final class DapManager {
         }
         killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
-            c.dispose();
+            // Ended for us now; the wait for the adapter's answer and the close happen off the FX thread.
+            c.disposeInBackground();
         }
         releaseCompilationDirectory();
         setState(State.INACTIVE);
@@ -2671,7 +2672,7 @@ public final class DapManager {
         }
         killDebuggee();
         if (c != null) {
-            c.dispose();
+            c.disposeInBackground(); // as in stop(): never hold the FX thread on the adapter
         }
         releaseCompilationDirectory();
         setState(State.INACTIVE);

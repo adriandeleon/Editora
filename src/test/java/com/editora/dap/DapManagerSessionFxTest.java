@@ -70,7 +70,7 @@ class DapManagerSessionFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lsp);
         lsp.configure(true, Map.of("java", "jdtls"));
@@ -1245,5 +1245,62 @@ class DapManagerSessionFxTest {
         onFx(dap::stop);
         await("the copy and its classes to be removed", () -> Files.notExists(classes));
         assertEquals("INACTIVE", lastState());
+    }
+
+    // --- ending a session never holds the FX thread on the adapter (D5) ---------------------------------
+
+    /**
+     * Runs {@code trigger}, then watches the FX thread until the session has ended (one more INACTIVE), with
+     * the adapter holding its {@code disconnect} answer, and fails if the FX thread is ever seen inside the
+     * client's dispose wait — the bounded wait for that answer and the socket close, which froze the window on
+     * every Stop and session end.
+     */
+    private void assertTheFxThreadNeverWaitsOnTheAdapter(FakeDebugAdapter.Session session, Runnable trigger)
+            throws Exception {
+        Thread[] fx = new Thread[1];
+        onFx(() -> fx[0] = Thread.currentThread()); // before the trigger: this round trip must not wait on it
+        int inactiveBefore = count("INACTIVE");
+        trigger.run();
+        List<String> seen = new ArrayList<>();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (count("INACTIVE") <= inactiveBefore) {
+            assertTrue(System.nanoTime() < deadline, () -> "the session never ended; events=" + events());
+            for (StackTraceElement frame : fx[0].getStackTrace()) {
+                if (frame.getClassName().equals(DapClient.class.getName())
+                        && List.of("dispose", "finishDispose", "closeSocket").contains(frame.getMethodName())) {
+                    seen.add(frame.getMethodName());
+                }
+            }
+            Thread.onSpinWait();
+        }
+        assertTrue(
+                seen.isEmpty(),
+                () -> "the FX thread was seen " + seen.size() + " times waiting on the adapter in DapClient."
+                        + new java.util.LinkedHashSet<>(seen));
+        assertTrue(session.disconnected.await(10, TimeUnit.SECONDS), "the adapter was still told to disconnect");
+    }
+
+    @Test
+    void stopReturnsAtOnceAndStillDisconnectsAndClosesTheConnection() throws Exception {
+        project();
+        CountDownLatch hold = new CountDownLatch(1);
+        adapter.holdDisconnect = hold;
+        FakeDebugAdapter.Session session = launch();
+
+        assertTheFxThreadNeverWaitsOnTheAdapter(session, () -> Platform.runLater(dap::stop));
+
+        hold.countDown();
+        assertTrue(session.clientClosed.await(10, TimeUnit.SECONDS), "the connection is still closed afterwards");
+    }
+
+    @Test
+    void aSessionTheAdapterEndsIsClosedOffTheFxThreadToo() throws Exception {
+        project();
+        CountDownLatch hold = new CountDownLatch(1); // an adapter that does not answer again in time
+        adapter.holdDisconnect = hold;
+        FakeDebugAdapter.Session session = launch();
+
+        assertTheFxThreadNeverWaitsOnTheAdapter(session, session::terminate);
+        hold.countDown();
     }
 }
