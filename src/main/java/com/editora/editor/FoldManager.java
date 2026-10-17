@@ -1863,6 +1863,9 @@ public final class FoldManager {
         SVGPath mark = new SVGPath(); // "=" over the dot: a condition, readable without telling colours apart
         mark.setContent(CONDITION_MARK_PATH);
         mark.getStyleClass().add("breakpoint-condition-mark");
+        if (kinds.contains("muted")) {
+            mark.getStyleClass().add("breakpoint-muted"); // faded with its dot
+        }
         mark.setScaleX(0.5);
         mark.setScaleY(0.5);
         return new Group(svg, mark); // both scale about (12, 12), the centre of the 24-unit glyph box

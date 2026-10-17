@@ -2733,11 +2733,28 @@ public final class DapManager {
             return;
         }
         c.variables(ref, filter, start, count)
+                .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(vars == null ? List.of() : vars);
                     }
                 }));
+    }
+
+    // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
+
+    /** Whether the session is java-debug's, whose string values may need {@link JdwpStringRepair}. */
+    private boolean javaDebugSession() {
+        return "java".equals(sessionLanguage);
+    }
+
+    private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
+            DapClient c, List<DapModels.VariableInfo> vars) {
+        return javaDebugSession() ? JdwpStringRepair.repairAll(c, vars) : CompletableFuture.completedFuture(vars);
+    }
+
+    private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
+        return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
     }
 
     public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
@@ -2750,12 +2767,14 @@ public final class DapManager {
         if (console) {
             consoleEvaluations++;
         }
-        c.evaluate(expression, frameId, context)
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+        c.evaluateFull(expression, frameId, context) // the full answer: a string result can be repaired from it
+                .thenCompose(full -> repairString(c, full))
+                .whenComplete((full, e) -> Platform.runLater(() -> {
                     if (console && client == c) {
                         consoleEvaluations = Math.max(0, consoleEvaluations - 1);
                     }
                     if (client == c) {
+                        String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
                                         ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
@@ -2808,6 +2827,7 @@ public final class DapManager {
             return;
         }
         c.evaluateFull(expression, frameId, context)
+                .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(
@@ -2827,6 +2847,7 @@ public final class DapManager {
             return;
         }
         c.evaluateFull(expression, frameId, "hover")
+                .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(e != null || r == null ? null : r.result());
