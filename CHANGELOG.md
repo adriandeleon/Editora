@@ -112,10 +112,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The technical dictionary knows over 500 more terms**: Git (worktree, unstaged, rebasing), editor and UI
-  words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), the Java toolchain
-  (jlink, jpackage, Temurin), language servers, web, security, devops and AI names, -ed and -ing forms of the
-  words it already had (deserialized, symlinking), and British spellings (tokenised, rasterising). It no longer
+- **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
+  words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
+  glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,
+  colormap, grayscale), the Java toolchain (jlink, jpackage, Temurin), language servers, web, devops and AI names,
+  -ed and -ing forms of the words it already had (deserialized, symlinking, canonicalized), and British spellings
+  (tokenised, rasterising). It no longer
   lists "nat", "elt", "os", "io" or "gan", which hid typos of "not", "let", "so", "to" and "can". The file is
   sorted by section and explains what not to add; plurals it listed twice are gone, since spell check accepts
   the plural of any listed word.
