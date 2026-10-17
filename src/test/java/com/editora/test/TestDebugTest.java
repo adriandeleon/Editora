@@ -21,6 +21,11 @@ class TestDebugTest {
 
         List<String> gradle = TestDebug.debugTaskArgs(BuildTool.GRADLE, "com.x.FooTest", "bar");
         assertEquals(List.of("test", "--tests", "com.x.FooTest.bar", "--debug-jvm"), gradle);
+        java.nio.file.Path init = java.nio.file.Path.of("/tmp/editora-debug-1.gradle");
+        assertEquals(
+                List.of("test", "--tests", "com.x.FooTest.bar", "--init-script", init.toString()),
+                TestDebug.debugTaskArgs(BuildTool.GRADLE, "com.x.FooTest", "bar", init),
+                "an init script: each test JVM on a port the system picks, not --debug-jvm's 5005");
 
         // A null method debugs the whole class.
         assertTrue(

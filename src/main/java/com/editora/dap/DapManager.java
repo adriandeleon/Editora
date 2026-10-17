@@ -1501,6 +1501,8 @@ public final class DapManager {
             if (!attach && programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
+            } else if (!attach) {
+                wrapForExitCode(file, args, epoch);
             }
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(filtersFor("java"));
@@ -1535,7 +1537,8 @@ public final class DapManager {
                             setState(State.RUNNING);
                         }
                         if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
-                            listener.onDebuggeeRuntime(List.of(javaExec), runtimeWhere(file), Map.of());
+                            listener.onDebuggeeRuntime(
+                                    List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
                         }
                     });
                 });
@@ -2610,6 +2613,7 @@ public final class DapManager {
         }
         killAdapterProgram(); // an adapter that is gone cannot end the program it launched
         releaseCompilationDirectory();
+        releaseExitWrapper();
         setState(State.INACTIVE);
     }
 
@@ -3042,6 +3046,7 @@ public final class DapManager {
         }
         killAdapterProgram();
         releaseCompilationDirectory();
+        releaseExitWrapper(); // no exited event came for it
         setState(State.INACTIVE);
     }
 
@@ -3117,13 +3122,91 @@ public final class DapManager {
             exitReportedEpoch = epoch;
             outputPump.flush();
             if (javaAdapterEpoch == epoch) {
-                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live):
-                // the console says the program ended, not a code that is not its own (review A10).
-                listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live).
+                // The wrapper the program was started through recorded its real code; without one the console
+                // says only that the program ended, not a code that is not its own (review A10).
+                reportJavaExit(epoch);
                 return;
             }
             listener.onProgramExit(exitCode);
         });
+    }
+
+    /** A session's exit-code wrapper ({@link JavaExitCodeWrapper}) and the session it belongs to. */
+    private record ExitWrapper(long epoch, JavaExitCodeWrapper wrapper, String realJava) {}
+
+    /**
+     * The {@code java} a launch of {@code epoch} really runs: its {@code javaExec}, or the one behind the
+     * exit-code wrapper. Anything that runs it itself (the runtime chip's {@code -version}) must run this one: a
+     * run of the wrapper would record that run's exit code as the program's.
+     */
+    private String realJavaExec(long epoch, String javaExec) {
+        ExitWrapper own = exitWrapper;
+        return own != null && own.epoch() == epoch ? own.realJava() : javaExec;
+    }
+
+    /** The current session's exit-code wrapper, or null (the program console is on, a remote file, Windows). */
+    private volatile ExitWrapper exitWrapper;
+
+    /**
+     * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
+     * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
+     * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
+     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
+     */
+    private void wrapForExitCode(Path file, Map<String, Object> args, long epoch) {
+        Object java = args.get("javaExec");
+        if (!(java instanceof String real)
+                || real.isBlank()
+                || !com.editora.process.ExecTargets.runsHere(file)
+                || LaunchConfig.Target.LOCAL.windows()) {
+            return;
+        }
+        try {
+            JavaExitCodeWrapper wrapper = JavaExitCodeWrapper.create(real);
+            releaseExitWrapper();
+            exitWrapper = new ExitWrapper(epoch, wrapper, real);
+            args.put("javaExec", wrapper.script().toString());
+        } catch (java.io.IOException | RuntimeException e) {
+            LOG.log(Level.FINE, "No exit-code wrapper; the program runs as before", e);
+        }
+    }
+
+    /**
+     * Says how the program of {@code epoch} ended: its real exit code when its wrapper recorded one — written a
+     * moment after java-debug reports the VM's death, so it is waited for off the FX thread — else that it
+     * ended. Nothing when another session has started meanwhile (its console is not this program's).
+     */
+    private void reportJavaExit(long epoch) {
+        ExitWrapper own = exitWrapper;
+        if (own == null || own.epoch() != epoch) {
+            listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+            return;
+        }
+        exitWrapper = null;
+        CompletableFuture.supplyAsync(() -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)))
+                .whenComplete((code, e) -> Platform.runLater(() -> {
+                    own.wrapper().delete();
+                    if (managerClosed || sessionEpoch - epoch > 1) {
+                        return; // a new session (or a Stop after the end) owns the console now
+                    }
+                    outputPump.flush();
+                    if (code != null) {
+                        listener.onProgramExit(code);
+                    } else {
+                        listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                    }
+                }));
+    }
+
+    /** Removes the exit-code wrapper of a session that will not report its exit (stopped, replaced). */
+    private void releaseExitWrapper() {
+        ExitWrapper old = exitWrapper;
+        exitWrapper = null;
+        if (old != null) {
+            // After the stop: java-debug may still be ending the program the wrapper runs.
+            CompletableFuture.delayedExecutor(10, TimeUnit.SECONDS).execute(old.wrapper()::delete);
+        }
     }
 
     /** The session whose exit code was already reported (a child session may report it again). */
@@ -3177,6 +3260,7 @@ public final class DapManager {
         // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
         releaseCompilationDirectory();
+        releaseExitWrapper();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }

@@ -171,6 +171,19 @@ class TestRunCoordinatorActionsFxTest {
     }
 
     /** A finished, filtered Gradle run of {@code com.x.FooTest} whose report was written during the run. */
+    /**
+     * A Gradle debug run of {@code tests}: an init script that debugs the test task's JVMs on ports the system
+     * picks, where {@code --debug-jvm} always used 5005 (follow-up to review A15).
+     */
+    private static void assertGradleDebugRun(String tests, String call) throws Exception {
+        String prefix = "run GRADLE [test, --tests, " + tests + ", --init-script, ";
+        assertTrue(call.startsWith(prefix) && call.endsWith("] [--offline]"), call);
+        Path script = Path.of(call.substring(prefix.length(), call.length() - "] [--offline]".length()));
+        String text = Files.readString(script);
+        assertTrue(text.contains("['test']"), text);
+        assertTrue(text.contains("address=127.0.0.1:0"), text);
+    }
+
     private void finishedGradleRun() throws Exception {
         List<String> task = List.of("test", "--tests", "com.x.FooTest");
         FxTestSupport.runOnFx(() -> assertTrue(
@@ -422,7 +435,7 @@ class TestRunCoordinatorActionsFxTest {
 
         finishedGradleRun(); // the rerun started a new run: finish it before using its rows
         chooseFromMenu(null, tr("testrunner.menu.debugClass"));
-        assertEquals("run GRADLE [test, --tests, com.x.FooTest, --debug-jvm] [--offline]", calls.get(0));
+        assertGradleDebugRun("com.x.FooTest", calls.get(0));
         FxTestSupport.runOnFx(() -> coordinator.onTestOutput(JDWP_BANNER, false));
         assertEquals("attach com.x.FooTest localhost:5005", calls.get(calls.size() - 1));
     }
@@ -449,7 +462,7 @@ class TestRunCoordinatorActionsFxTest {
         chooseFromMenu("fails", tr("testrunner.menu.debugTest"));
 
         assertEquals(List.of(tr("status.testrunner.debugWaiting")), statuses);
-        assertEquals("run GRADLE [test, --tests, com.x.FooTest.fails, --debug-jvm] [--offline]", calls.get(0));
+        assertGradleDebugRun("com.x.FooTest.fails", calls.get(0));
         FxTestSupport.runOnFx(() -> {
             coordinator.onTestOutput("> Task :test", false);
             coordinator.onTestOutput(JDWP_BANNER, false);
