@@ -193,4 +193,14 @@ class PythonLaunchTest {
         assertTrue(PythonLaunch.isPythonProgram("C:\\Python313\\python.exe"));
         assertFalse(PythonLaunch.isPythonProgram("bash"));
     }
+
+    /** Debug cannot start a program through a runner, so it needs to tell one from a Python. */
+    @Test
+    void aRunnerShebangIsToldFromAPythonOne() {
+        assertTrue(PythonLaunch.isRunner(PythonLaunch.shebang("#!/usr/bin/env -S uv run --script")));
+        assertTrue(PythonLaunch.isRunner(PythonLaunch.shebang("#!/usr/bin/env -S poetry run python")));
+        assertFalse(PythonLaunch.isRunner(PythonLaunch.shebang("#!/usr/bin/env python3.12")));
+        assertFalse(PythonLaunch.isRunner(PythonLaunch.shebang("#!/usr/bin/env python3")));
+        assertFalse(PythonLaunch.isRunner(PythonLaunch.shebang(null)));
+    }
 }
