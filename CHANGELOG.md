@@ -145,6 +145,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
+  words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
+  glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,
+  colormap, grayscale), the Java toolchain (jlink, jpackage, Temurin), language servers, web, devops and AI names,
+  -ed and -ing forms of the words it already had (deserialized, symlinking, canonicalized), and British spellings
+  (tokenised, rasterising). It no longer lists "nat", "elt", "os", "io" or "gan", which hid typos of "not",
+  "let", "so", "to" and "can". The file is sorted by section and explains what not to add; plurals it listed
+  twice are gone, since spell check accepts the plural of any listed word.
 - **Debug variables use the editor's syntax colours.** Names, values and types in the Debug tool window's
   variables and watches are coloured like code in the current editor theme — strings, numbers, `true`/`null`/`None`
   and type names — including each element of a list or dict value, instead of the app's status colours.
@@ -216,6 +224,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Spell check accepts the possessive of any dictionary word**, such as "someone else's" and "another's". Only
+  words the dictionary lists with a possessive were accepted.
 - **Settings scrolled sideways at its 900 px minimum width** in German, French, Spanish and Portuguese (Snippets,
   Templates, Remote), and controls sat a scrollbar's width apart on short and long pages.
 - **A snippet trigger with a space in it was saved and never expanded.** It is now refused with the reason shown.

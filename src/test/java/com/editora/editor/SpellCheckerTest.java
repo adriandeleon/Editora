@@ -361,6 +361,9 @@ class SpellCheckerTest {
         assertTrue(c.isMisspelled("wrolds"), "the plural of an unknown word is still flagged");
         c.setUserWordsEnabled(false);
         assertTrue(c.isMisspelled("adrianx's"), "the possessive follows the personal-dictionary switch");
+        assertFalse(c.isMisspelled("else's"), "a dictionary word the dictionary lists no possessive for");
+        assertFalse(c.isMisspelled("another’s"));
+        assertTrue(c.isMisspelled("wrold's"), "the possessive of an unknown word is still flagged");
         assertEquals("class", SpellChecker.stem("class's"));
         assertEquals(null, SpellChecker.stem("class"));
         assertEquals(null, SpellChecker.stem("its"));
