@@ -654,6 +654,18 @@ public class Settings {
      * own (the command still applies). Read by {@code DapManager.CodeReplaceMode.of}.
      */
     private String debugHotCodeReplace = "auto";
+    /**
+     * Java debugging: Step Into skips JDK classes and synthetic methods (java-debug's step filters) — what
+     * IntelliJ and VS Code do by default. Off steps into everything, JDK internals included.
+     */
+    private boolean debugStepFilters = true;
+    /** Java debugging: a class's static fields are shown among the variables (java-debug hides them otherwise). */
+    private boolean debugShowStatics = true;
+    /**
+     * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
+     * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
+     */
+    private String debugExceptionTypes = "";
     /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
      *  auto-detect common install locations (VS Code java extension, mason, …). */
     private String javaDebugPluginPath = "";
@@ -2792,6 +2804,30 @@ public class Settings {
 
     public void setDebugSupport(boolean debugSupport) {
         this.debugSupport = debugSupport;
+    }
+
+    public boolean isDebugStepFilters() {
+        return debugStepFilters;
+    }
+
+    public void setDebugStepFilters(boolean debugStepFilters) {
+        this.debugStepFilters = debugStepFilters;
+    }
+
+    public boolean isDebugShowStatics() {
+        return debugShowStatics;
+    }
+
+    public void setDebugShowStatics(boolean debugShowStatics) {
+        this.debugShowStatics = debugShowStatics;
+    }
+
+    public String getDebugExceptionTypes() {
+        return debugExceptionTypes == null ? "" : debugExceptionTypes;
+    }
+
+    public void setDebugExceptionTypes(String debugExceptionTypes) {
+        this.debugExceptionTypes = debugExceptionTypes == null ? "" : debugExceptionTypes.strip();
     }
 
     public boolean isDebugProgramConsole() {

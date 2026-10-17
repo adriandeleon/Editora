@@ -2571,6 +2571,23 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public void openLibraryFrame(
+                            Path anchor, String uri, int line0, java.util.function.Consumer<EditorBuffer> opened) {
+                        lspCoordinator.openLibraryFrame(anchor, uri, line0, opened);
+                    }
+
+                    @Override
+                    public java.util.Map<String, List<String>> debugExceptionFilters() {
+                        return config.getWorkspaceState().getDebugExceptionFilters();
+                    }
+
+                    @Override
+                    public void persistDebugExceptionFilters(java.util.Map<String, List<String>> filters) {
+                        config.getWorkspaceState().setDebugExceptionFilters(filters);
+                        config.save();
+                    }
+
+                    @Override
                     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
                         return config.getBreakpoints();
                     }

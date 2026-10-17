@@ -266,6 +266,8 @@ final class MenuBarModel {
                                 "debug.showValue",
                                 "debug.addWatch",
                                 "debug.toggleBreakpoint",
+                                "debug.exceptions.caught",
+                                "debug.exceptions.uncaught",
                                 submenu("menubar.run.breakpoints"),
                                 SEPARATOR,
                                 "test.run",

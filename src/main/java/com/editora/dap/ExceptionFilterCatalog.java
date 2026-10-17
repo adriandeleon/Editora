@@ -32,4 +32,26 @@ public final class ExceptionFilterCatalog {
             default -> List.of();
         };
     }
+
+    /**
+     * The id of {@code language}'s "stop on caught exceptions too" filter (java-debug: {@code caught}, debugpy:
+     * {@code raised}, vscode-js-debug: {@code all}), or null when its adapter has none. What the Caught toggle of
+     * the Run menu and the Debug window turns on and off.
+     */
+    public static String caughtFilter(String language) {
+        if (language == null) {
+            return null;
+        }
+        return switch (language) {
+            case "java" -> "caught";
+            case "python" -> "raised";
+            case "javascript" -> "all";
+            default -> null;
+        };
+    }
+
+    /** The id of {@code language}'s "stop on uncaught exceptions" filter, or null when its adapter has none. */
+    public static String uncaughtFilter(String language) {
+        return caughtFilter(language) == null ? null : "uncaught";
+    }
 }

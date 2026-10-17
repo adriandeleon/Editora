@@ -432,6 +432,10 @@ public class SettingsWindow {
     private CheckBox debugProgramConsoleCheck;
     /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
     private ComboBox<String> debugHotCodeReplaceCombo;
+
+    private CheckBox debugStepFiltersCheck;
+    private CheckBox debugShowStaticsCheck;
+    private TextField debugExceptionTypesField;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1905,6 +1909,22 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setDebugHotCodeReplace(now);
+            apply();
+        });
+        debugStepFiltersCheck = new CheckBox(tr("settings.debug.stepFilters"));
+        debugStepFiltersCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugStepFilters(now);
+            apply();
+        });
+        debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
+        debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugShowStatics(now);
+            apply();
+        });
+        debugExceptionTypesField = new TextField();
+        debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
+        commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
+            config.getSettings().setDebugExceptionTypes(now);
             apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
@@ -6584,6 +6604,21 @@ public class SettingsWindow {
                         tr("settings.debug.hotCodeReplace.hint"),
                         debugHotCodeReplaceCombo,
                         "debug java hot code replace hotswap apply code changes reload save running");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugStepFiltersCheck,
+                        tr("settings.debug.stepFilters.hint"),
+                        "debug java step into filter skip jdk library synthetic");
+                checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
+                debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
+                controlRow(
+                        c,
+                        Category.DEBUG,
+                        tr("settings.debug.exceptionTypes"),
+                        tr("settings.debug.exceptionTypes.hint"),
+                        debugExceptionTypesField,
+                        "debug java exception breakpoint class type filter caught uncaught");
             }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
@@ -7471,6 +7506,9 @@ public class SettingsWindow {
         }
         if (debugProgramConsoleCheck != null) {
             debugProgramConsoleCheck.setDisable(!on);
+            debugStepFiltersCheck.setDisable(!on);
+            debugShowStaticsCheck.setDisable(!on);
+            debugExceptionTypesField.setDisable(!on);
         }
         if (debugHotCodeReplaceCombo != null) {
             debugHotCodeReplaceCombo.setDisable(!on);
@@ -8769,6 +8807,9 @@ public class SettingsWindow {
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
             debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
+            debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
+            debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
+            debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

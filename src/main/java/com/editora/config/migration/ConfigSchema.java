@@ -253,8 +253,10 @@ public enum ConfigSchema {
                     // v125→126: + containerEngine / containerBindings (additive: docker, no folder bound to a
                     // container by hand; a dev container is still found by its label).
                     Map.entry(125, (Migration) ConfigMigrations::identity),
-                    // v126→127: + debugHotCodeReplace (additive: "auto", saved Java code reaches a running
-                    // debug session on save; no earlier file could have chosen otherwise).
+                    // v126→127: + debugHotCodeReplace ("auto": saved Java code reaches a running debug
+                    // session on save) and debugStepFilters / debugShowStatics / debugExceptionTypes (step
+                    // filters on and statics shown — what java-debug is now told; every exception, as before).
+                    // Additive: no earlier file could have chosen otherwise.
                     Map.entry(126, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
@@ -307,7 +309,9 @@ public enum ConfigSchema {
                     // script's shebang decides)
                     Map.entry(16, ConfigMigrations::identity),
                     // v17→18: + pythonInterpreter (additive; blank means the interpreter is detected)
-                    Map.entry(17, ConfigMigrations::identity))),
+                    Map.entry(17, ConfigMigrations::identity),
+                    // v18→19: + debugExceptionFilters (additive; absent means each adapter's defaults)
+                    Map.entry(18, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

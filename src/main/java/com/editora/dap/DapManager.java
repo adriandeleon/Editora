@@ -30,6 +30,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * UI-facing facade for Java debugging over DAP (mirrors {@code LspManager} + {@code RunService}). Owns the
  * single active {@link DapClient} (one debug session at a time, like Run), locates the java-debug plugin
@@ -121,6 +123,15 @@ public final class DapManager {
         /** The program Editora started for this session ended by itself with {@code code}; the session
          *  ends right after. Not reported for a program that was stopped. */
         default void onProgramExit(int code) {}
+
+        /**
+         * The connection to the debug adapter was lost while its program was still running (jdtls, which hosts
+         * java-debug, crashed or was ended): the program has been ended and the session ends right after.
+         */
+        default void onAdapterLost() {}
+
+        /** A short message for the status bar about a control that cannot act now (not an error). */
+        default void onStatus(String message) {}
     }
 
     private final LspManager lsp;
@@ -249,6 +260,11 @@ public final class DapManager {
             }
         }
         return ExceptionFilterCatalog.known(language);
+    }
+
+    /** The exception filters chosen per language (a language not listed uses its adapter's defaults). */
+    public Map<String, List<String>> exceptionChoices() {
+        return new java.util.LinkedHashMap<>(exceptionChoices);
     }
 
     /** The exception filters in force for {@code language}: the chosen ones, else the adapter's defaults. */
@@ -1302,8 +1318,30 @@ public final class DapManager {
         return pkg.isEmpty() ? cls : pkg + "." + cls;
     }
 
+    /** What java-debug is told before each Java session (step filters, statics, exception types). */
+    private JavaDebugSettings javaDebugSettings = JavaDebugSettings.defaults();
+
+    /** Sets the java-debug settings the next Java session starts with (FX thread). */
+    public void setJavaDebugSettings(JavaDebugSettings settings) {
+        this.javaDebugSettings = settings == null ? JavaDebugSettings.defaults() : settings;
+    }
+
     private void startDebugSessionAndConnect(
             Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        // java-debug keeps one set of settings per jdtls: give it this session's before the session starts. A
+        // failure (an older java-debug) is no reason not to debug, on its defaults as before.
+        lsp.executeCommand(file, JavaDebugSettings.COMMAND, List.of(javaDebugSettings.toJson()), (r, e) -> {
+            if (e != null) {
+                LOG.log(Level.FINE, "java-debug settings were not applied", e);
+            }
+            startDebugSession(file, args, attach, epoch);
+        });
+    }
+
+    private void startDebugSession(Path file, java.util.Map<String, Object> args, boolean attach, long epoch) {
         if (!isCurrent(epoch)) {
             return;
         }
@@ -1350,12 +1388,15 @@ public final class DapManager {
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
                         fail(epoch, (attach ? "attach" : "launch") + " failed: " + msg(le));
+                        return;
                     }
-                });
-                Platform.runLater(() -> {
-                    if (isCurrent(epoch, c)) {
-                        setState(State.RUNNING);
-                    }
+                    // Running once the adapter has the program, not when the request left: until then
+                    // java-debug is still starting the JVM. A stop that came first has already said SUSPENDED.
+                    Platform.runLater(() -> {
+                        if (isCurrent(epoch, c) && state == State.STARTING) {
+                            setState(State.RUNNING);
+                        }
+                    });
                 });
             }));
         });
@@ -2129,6 +2170,9 @@ public final class DapManager {
         if (c == null) {
             return;
         }
+        if (state == State.SUSPENDED && refuseWhileEvaluating()) {
+            return;
+        }
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
         stepInFlight = false;
@@ -2261,25 +2305,23 @@ public final class DapManager {
                 }));
     }
 
-    /** The file's existing breakpoints plus a temporary plain one at {@code line} (no duplicate when a
-     *  breakpoint already sits there). Pure — tested. */
+    /**
+     * The file's existing breakpoints plus a temporary plain one at {@code line}. A breakpoint already on that
+     * line is made plain for the trip: left as it was, a condition that was false or a logpoint (which never
+     * suspends) let the program run past the cursor. {@link #clearTempBreakpoint} restores it. Pure — tested.
+     */
     static DapModels.FileBreakpoints withTempLine(List<DapModels.FileBreakpoints> all, Path file, int line) {
         List<DapModels.LineBreakpoint> lines = new ArrayList<>();
         for (DapModels.FileBreakpoints fb : all == null ? List.<DapModels.FileBreakpoints>of() : all) {
             if (com.editora.config.PathKeys.samePath(fb.file(), file)) {
-                lines.addAll(fb.breakpoints());
+                for (DapModels.LineBreakpoint lb : fb.breakpoints()) {
+                    if (lb.line() != line) {
+                        lines.add(lb);
+                    }
+                }
             }
         }
-        boolean present = false;
-        for (DapModels.LineBreakpoint lb : lines) {
-            if (lb.line() == line) {
-                present = true;
-                break;
-            }
-        }
-        if (!present) {
-            lines.add(new DapModels.LineBreakpoint(line, null, null));
-        }
+        lines.add(new DapModels.LineBreakpoint(line, null, null));
         return new DapModels.FileBreakpoints(file, lines);
     }
 
@@ -2329,6 +2371,9 @@ public final class DapManager {
         if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
             return;
         }
+        if (refuseWhileEvaluating()) {
+            return;
+        }
         long epoch = sessionEpoch;
         int threadId = currentThreadId;
         int stops = stopCount;
@@ -2374,8 +2419,68 @@ public final class DapManager {
             // Ended for us now; the wait for the adapter's answer and the close happen off the FX thread.
             c.disposeInBackground();
         }
+        killAdapterProgram(); // an adapter that is gone cannot end the program it launched
         releaseCompilationDirectory();
         setState(State.INACTIVE);
+    }
+
+    // --- the program the adapter launched (java-debug's processid) ------------------------------------
+
+    /**
+     * The program java-debug launched itself (program console off), from its {@code processid} event; null when
+     * Editora started the program ({@link #debuggee}), for an attach, or on another machine. Ended with the
+     * session: when the adapter is still there its {@code disconnect} has already done so and this finds
+     * nothing alive, but when jdtls crashed the program was left running with no way to stop it.
+     */
+    private ProcessHandle adapterProgram;
+
+    /** Records the program the adapter of session {@code epoch} launched (FX thread). */
+    private void onProcessId(long epoch, long pid) {
+        if (!isCurrent(epoch) || debugFile == null || !com.editora.process.ExecTargets.runsHere(debugFile)) {
+            return; // a pid on another machine names some other process here
+        }
+        adapterProgram = ProcessHandle.of(pid).orElse(null);
+    }
+
+    /** Ends the program the adapter launched, with its children, if it is still running (FX thread). */
+    private void killAdapterProgram() {
+        ProcessHandle program = adapterProgram;
+        adapterProgram = null;
+        if (program != null && program.isAlive()) { // isAlive also checks the start time: never a reused pid
+            program.descendants().forEach(ProcessHandle::destroyForcibly);
+            program.destroyForcibly();
+        }
+    }
+
+    /** The session whose adapter announced it was done ({@code terminated}); its transport closing is normal. */
+    private volatile long terminatedEpoch = -1;
+
+    /**
+     * The adapter's transport closed. After a {@code terminated} event that is how a session ends. Without one,
+     * the adapter is gone while its program may still run — jdtls crashed: the program resumed the moment its
+     * debugger connection dropped, and used to run on for the 3 s grace an ordinary end gets (or for good, when
+     * the adapter had launched it). End it at once and say why the session ended.
+     */
+    private void onTransportClosed(long epoch) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            if (terminatedEpoch == epoch) {
+                return; // the terminated event is ending it (or has ended it) already
+            }
+            Debuggee program = debuggee;
+            ProcessHandle launched = adapterProgram;
+            boolean programRunning =
+                    (program != null && program.isRunning()) || (launched != null && launched.isAlive());
+            killDebuggee();
+            killAdapterProgram();
+            if (programRunning) {
+                outputPump.flush();
+                listener.onAdapterLost();
+            }
+            endSession(epoch);
+        });
     }
 
     /** Final per-window shutdown: invalidates the session, stops transports, and releases the connect worker. */
@@ -2452,12 +2557,57 @@ public final class DapManager {
             cb.accept("");
             return;
         }
+        boolean console = "repl".equals(context);
+        if (console) {
+            consoleEvaluations++;
+        }
         c.evaluate(expression, frameId, context)
                 .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (console && client == c) {
+                        consoleEvaluations = Math.max(0, consoleEvaluations - 1);
+                    }
                     if (client == c) {
-                        cb.accept(e != null ? "error: " + msg(e) : (r == null ? "" : r));
+                        cb.accept(
+                                e != null
+                                        ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
+                                        : (r == null ? "" : r));
                     }
                 }));
+    }
+
+    /** Console evaluations the adapter has not answered yet (FX thread); reset with each session. */
+    private int consoleEvaluations;
+
+    /**
+     * Whether an expression typed in the Debug console is still being evaluated. The program runs it on the
+     * stopped thread, and the adapter takes the next request only when it is done: a Step pressed meanwhile was
+     * queued there and ran many seconds later, with nothing shown in between.
+     */
+    public boolean evaluationRunning() {
+        return consoleEvaluations > 0;
+    }
+
+    /** Refuses a control while a console evaluation runs, saying why (FX thread); true when refused. */
+    private boolean refuseWhileEvaluating() {
+        if (!evaluationRunning()) {
+            return false;
+        }
+        listener.onStatus(tr("status.debug.evaluationRunning"));
+        return true;
+    }
+
+    private static boolean isTimeout(Throwable t) {
+        for (Throwable x = t; x != null; x = x.getCause()) {
+            if (x instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** What a console evaluation that timed out says: it has not failed, the program is still running it. */
+    static String stillEvaluating() {
+        return tr("debug.eval.stillRunning", DapClient.requestTimeoutSeconds());
     }
 
     /** Full evaluate (result + expandable reference + type) for watches and the hover value popup.
@@ -2674,6 +2824,7 @@ public final class DapManager {
         if (c != null) {
             c.disposeInBackground(); // as in stop(): never hold the FX thread on the adapter
         }
+        killAdapterProgram();
         releaseCompilationDirectory();
         setState(State.INACTIVE);
     }
@@ -2784,6 +2935,7 @@ public final class DapManager {
             stepInFlight = false;
         }
         if (s == State.INACTIVE || s == State.STARTING) {
+            consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
         }
         this.state = s;
@@ -2850,12 +3002,18 @@ public final class DapManager {
 
             @Override
             public void onTerminated() {
+                terminatedEpoch = epoch; // a plain long written once per session: read on the FX thread later
                 DapManager.this.onTerminated(epoch);
             }
 
             @Override
             public void onError(String message) {
                 DapManager.this.onError(epoch, message);
+            }
+
+            @Override
+            public void onProcessId(long pid) {
+                Platform.runLater(() -> DapManager.this.onProcessId(epoch, pid));
             }
 
             @Override
@@ -2890,7 +3048,7 @@ public final class DapManager {
                 if (error != null) {
                     LOG.log(Level.FINE, "Debug adapter transport closed", error);
                 }
-                DapManager.this.onTerminated(epoch);
+                DapManager.this.onTransportClosed(epoch);
             }
         };
     }
@@ -2905,13 +3063,17 @@ public final class DapManager {
         });
     }
 
-    private static String msg(Throwable t) {
+    static String msg(Throwable t) {
         // A failed request arrives wrapped (CompletionException / ExecutionException), whose own message is
         // "<exception class>: <adapter message>" — show what the adapter said, not the Java class name.
         while ((t instanceof java.util.concurrent.CompletionException
                         || t instanceof java.util.concurrent.ExecutionException)
                 && t.getCause() != null) {
             t = t.getCause();
+        }
+        if (t instanceof java.util.concurrent.TimeoutException) {
+            // "java.util.concurrent.TimeoutException" told the user nothing
+            return tr("status.debug.noAnswer", DapClient.requestTimeoutSeconds());
         }
         return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
     }

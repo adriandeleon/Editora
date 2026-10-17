@@ -49,6 +49,39 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CONSOLE_CHARS = 200_000;
 
     /** Callbacks into the controller / {@link DapManager}. */
+    // --- Fixer B: the Caught / Uncaught exception-breakpoint toggles (B10) -----------------------------
+
+    private final javafx.scene.control.ToggleButton caughtToggle = new javafx.scene.control.ToggleButton();
+
+    private final javafx.scene.control.ToggleButton uncaughtToggle = new javafx.scene.control.ToggleButton();
+    /** True while {@link #setExceptionToggles} writes the buttons, so that is not taken for a click. */
+    private boolean settingExceptionToggles;
+
+    private javafx.scene.control.ToggleButton exceptionToggle(
+            javafx.scene.control.ToggleButton b, String key, boolean caught) {
+        b.setText(tr(key));
+        b.setTooltip(new javafx.scene.control.Tooltip(tr(key + ".tip")));
+        b.getStyleClass().add("debug-exception-toggle");
+        b.setFocusTraversable(false);
+        b.selectedProperty().addListener((o, was, now) -> {
+            if (!settingExceptionToggles) {
+                actions.toggleExceptions(caught);
+            }
+        });
+        return b;
+    }
+
+    /** Shows whether exception breakpoints stop on caught and on uncaught exceptions. */
+    public void setExceptionToggles(boolean caught, boolean uncaught) {
+        settingExceptionToggles = true;
+        try {
+            caughtToggle.setSelected(caught);
+            uncaughtToggle.setSelected(uncaught);
+        } finally {
+            settingExceptionToggles = false;
+        }
+    }
+
     public interface Actions {
         /** Start a debug session when idle, or continue when suspended (the green play button). */
         void start();
@@ -112,6 +145,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         /** End the running program's standard input (end of file). */
         default void endInput() {}
+
+        /** Turn exception breakpoints on caught ({@code caught}) or uncaught exceptions on or off. */
+        default void toggleExceptions(boolean caught) {}
     }
 
     private final Actions actions;
@@ -282,6 +318,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(stepInto, DebugPanelText.Control.STEP_INTO, actions::stepInto, Icons.debugStepInto()),
                 btn(stepOut, DebugPanelText.Control.STEP_OUT, actions::stepOut, Icons.debugStepOut()),
                 btn(runToCursor, DebugPanelText.Control.RUN_TO_CURSOR, actions::runToCursor, Icons.debugRunToCursor()),
+                groupSeparator(),
+                exceptionToggle(caughtToggle, "debugpanel.exceptions.caught", true),
+                exceptionToggle(uncaughtToggle, "debugpanel.exceptions.uncaught", false),
                 spacer(),
                 busy,
                 status);
