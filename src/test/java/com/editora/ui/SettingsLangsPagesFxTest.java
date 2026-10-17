@@ -161,7 +161,29 @@ class SettingsLangsPagesFxTest {
             int toc = titles.indexOf(tr("settings.markdownTocLevels"));
             assertTrue(folder < name && name < alt && alt < toc, "image rows together, then the TOC: " + titles);
             Label note = rig.control("markdownLintConfigNoteLabel");
-            assertFalse(note.getParent().isManaged(), "no blank row while there is no project config");
+            assertFalse(note.isManaged(), "no blank row while there is no project config");
+            assertTrue(note.getParent().getStyleClass().contains("settings-card-body"), "no row around it");
+        });
+    }
+
+    /** A tool missing for a feature that is off gets the neutral pill; red is for a feature that is on. */
+    @Test
+    void aMissingToolIsRedOnlyWhileItsFeatureIsOn() throws Exception {
+        org.junit.jupiter.api.Assertions.assertEquals("settings-git-found", SettingsWindow.pillClass(true, false));
+        org.junit.jupiter.api.Assertions.assertEquals("settings-git-neutral", SettingsWindow.pillClass(false, false));
+        org.junit.jupiter.api.Assertions.assertEquals("settings-git-missing", SettingsWindow.pillClass(false, true));
+        FxTestSupport.runOnFx(() -> {
+            rig.settings.setDebugSupport(false);
+            rig.show();
+            Map<String, Label> pills = rig.control("debugStatusLabels");
+            Label python = pills.get("python"); // no adapter manager in the rig: not found
+            assertTrue(
+                    python.getStyleClass().contains("settings-git-neutral"),
+                    python.getStyleClass().toString());
+            ((CheckBox) rig.control("debugCheck")).setSelected(true);
+            assertTrue(
+                    python.getStyleClass().contains("settings-git-missing"),
+                    python.getStyleClass().toString());
         });
     }
 

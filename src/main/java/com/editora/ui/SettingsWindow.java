@@ -1731,12 +1731,14 @@ public class SettingsWindow {
             config.getSettings().setAiEnabled(now);
             apply();
             scheduleAiStatus(); // the AI Actions status said "Connected" after AI was turned off
+            refreshAgentClientStatus();
         });
 
         agentCheck = new CheckBox(tr("settings.agent.enable"));
         agentCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setAgentSupport(now);
             apply();
+            refreshAgentClientStatus(); // the pills turn red/neutral with the switch
         });
         agentClientCombo = new ComboBox<>();
         com.editora.agent.AcpAgentRegistry.all()
@@ -3037,15 +3039,9 @@ public class SettingsWindow {
         markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
         markdownLintConfigNoteLabel.setWrapText(true);
         refreshMarkdownLintConfigNote();
-        cardRow(
-                lint,
-                Category.MARKDOWN,
-                markdownLintConfigNoteLabel,
-                "markdown lint project config markdownlint rules");
-        // Its card row takes no room either while there is no project config to mention (a blank gap).
-        Node noteRow = markdownLintConfigNoteLabel.getParent();
-        noteRow.visibleProperty().bind(markdownLintConfigNoteLabel.visibleProperty());
-        noteRow.managedProperty().bind(noteRow.visibleProperty());
+        // Straight into the card, no row around it: hidden, it takes no room (a wrapping row left a blank gap).
+        markdownLintConfigNoteLabel.getStyleClass().add("settings-row");
+        lint.body().getChildren().add(markdownLintConfigNoteLabel);
         cardRow(
                 lint,
                 Category.MARKDOWN,
@@ -4503,9 +4499,24 @@ public class SettingsWindow {
                 Category.MERMAID,
                 tr("settings.git.detected"),
                 null,
-                new HBox(8, mermaidStatusLabel, installButton("mermaid")),
+                new HBox(8, mermaidStatusLabel, installButton("mermaid"), mermaidRecheck()),
                 "mermaid mmdc maid found installed not found install download cli");
         return p;
+    }
+
+    /**
+     * Mermaid's detection is kept until a path changes (probing the default maid through npx takes seconds on
+     * the thread that lints .mmd files), so a tool installed meanwhile is found only on request.
+     */
+    private Hyperlink mermaidRecheck() {
+        Hyperlink recheck = new Hyperlink(tr("settings.mermaid.recheck"));
+        recheck.setOnAction(e -> {
+            if (mermaidService != null) {
+                mermaidService.invalidate();
+                refreshMermaidStatus();
+            }
+        });
+        return recheck;
     }
 
     /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
@@ -4570,7 +4581,7 @@ public class SettingsWindow {
             // Green only when both tools are found, red when either is missing (like the Mermaid/LSP rows).
             diagramStatusLabel
                     .getStyleClass()
-                    .setAll("settings-git-status", dot && puml ? "settings-git-found" : "settings-git-missing");
+                    .setAll("settings-git-status", pillClass(dot && puml, diagramCheck.isSelected()));
             diagramStatusLabel.setText(tr("settings.diagram.status", dotState, pumlState));
         });
     }
@@ -4617,9 +4628,7 @@ public class SettingsWindow {
         typstStatusLabel.getStyleClass().setAll("settings-git-status");
         typstStatusLabel.setText(tr("settings.typst.checking"));
         typstService.detect(present -> {
-            typstStatusLabel
-                    .getStyleClass()
-                    .setAll("settings-git-status", present ? "settings-git-found" : "settings-git-missing");
+            typstStatusLabel.getStyleClass().setAll("settings-git-status", pillClass(present, typstCheck.isSelected()));
             typstStatusLabel.setText(present ? tr("settings.typst.found") : tr("settings.typst.notFound"));
             updateInstallButton("typst", present); // "Installed" + disabled when the typst CLI is found
         });
@@ -6021,7 +6030,9 @@ public class SettingsWindow {
             status.setText(tr("settings.agent.checking"));
             agentCoordinator.detect(a.id(), found -> {
                 status.getStyleClass()
-                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                        .setAll(
+                                "settings-git-status",
+                                pillClass(found, aiMasterCheck.isSelected() && agentCheck.isSelected()));
                 status.setText(found ? tr("settings.agent.found") : tr("settings.agent.notFound"));
             });
         }
@@ -7206,9 +7217,7 @@ public class SettingsWindow {
             // found, red when either is missing.
             mermaidStatusLabel
                     .getStyleClass()
-                    .setAll(
-                            "settings-git-status",
-                            a.mmdc() && a.maid() ? "settings-git-found" : "settings-git-missing");
+                    .setAll("settings-git-status", pillClass(a.mmdc() && a.maid(), mermaidCheck.isSelected()));
             mermaidStatusLabel.setText(tr("settings.mermaid.status", mmdcState, maidState));
             updateInstallButton("mermaid", a.mmdc());
         });
@@ -7295,6 +7304,14 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Pill style for a tool's Found/Not found row: green when found; red only when the feature that needs it
+     * is on — a tool missing for a feature that is off is a fact, not a fault, so it gets the neutral pill. Pure.
+     */
+    static String pillClass(boolean found, boolean featureOn) {
+        return found ? "settings-git-found" : featureOn ? "settings-git-missing" : "settings-git-neutral";
+    }
+
     /** Pill style for a build tool's detection row: green when detected, the neutral pill when it simply
      *  does not apply to the active file (red is reserved for something broken). Pure. */
     static String buildToolStatusClass(boolean detected) {
@@ -7341,8 +7358,7 @@ public class SettingsWindow {
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.debug.checking"));
             dbg.detect().accept(found -> {
-                status.getStyleClass()
-                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                status.getStyleClass().setAll("settings-git-status", pillClass(found, debugCheck.isSelected()));
                 status.setText(
                         tr("settings.debug.status", tr(found ? "settings.debug.found" : "settings.debug.notFound")));
                 updateInstallButton("debug:" + dbg.id(), found);
@@ -7384,8 +7400,7 @@ public class SettingsWindow {
             status.setText(tr("settings.lsp.checking"));
             String langKey = installLangForServer(srv.id());
             lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
-                status.getStyleClass()
-                        .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+                status.getStyleClass().setAll("settings-git-status", pillClass(found, lspCheck.isSelected()));
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
                 updateInstallButton(langKey != null ? langKey : serverInstallKey(srv.id()), found);
             });
@@ -8582,6 +8597,9 @@ public class SettingsWindow {
                 if (field != null) {
                     field.setText(a.getCommand().get());
                 }
+            }
+            if (agentCoordinator != null) {
+                agentCoordinator.invalidateDetection(); // an agent installed meanwhile is found
             }
             refreshAgentClientStatus();
             agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
