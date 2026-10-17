@@ -956,7 +956,7 @@ public class SettingsWindow {
         nav.getStyleClass().add("settings-nav");
         VBox.setVgrow(sidebar, Priority.ALWAYS);
 
-        body = new HBox(nav, contentScroll);
+        HBox body = new HBox(nav, contentScroll);
         VBox.setVgrow(body, Priority.ALWAYS);
 
         // Kit footer: Reset to Defaults on the left (secondary), Close on the right (the one accent
@@ -7735,26 +7735,9 @@ public class SettingsWindow {
         if (currentPreviewCss != null) {
             sheets.remove(currentPreviewCss);
         }
-        keyChipsFollowAppTheme();
         currentPreviewCss = EditorThemes.stylesheetFor(name);
         if (currentPreviewCss != null && !sheets.contains(currentPreviewCss)) {
             sheets.add(currentPreviewCss);
-        }
-    }
-
-    /**
-     * The keyboard's periwinkle follows the window's (app) theme, not the editor theme the preview sheet brings:
-     * a light editor theme under a dark app theme drew the chord chips at about 2.8:1 on the dark cards.
-     */
-    private HBox body; // the sidebar + pages, which carry the window's own periwinkle
-
-    private void keyChipsFollowAppTheme() {
-        if (body != null) { // not the root: its inline style is free for a font size
-            boolean dark = Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
-            body.setStyle(
-                    dark
-                            ? "-state-key: #9aa2d4; -state-key-bg: rgba(154, 162, 212, 0.16);"
-                            : "-state-key: #5c66ae; -state-key-bg: rgba(92, 102, 174, 0.14);");
         }
     }
 
@@ -8637,7 +8620,6 @@ public class SettingsWindow {
         config.save();
         onApply.accept(settings);
         updatePreviewFont();
-        keyChipsFollowAppTheme(); // the app theme may be what changed
     }
 
     /**
