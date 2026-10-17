@@ -1435,14 +1435,7 @@ public class WindowManager {
      */
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
-        List<java.util.Map<String, String>> pluginKeymaps = new ArrayList<>();
-        if (settings.isPluginSupport()) {
-            for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
-                if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
-                    pluginKeymaps.add(d.manifest().keymap);
-                }
-            }
-        }
+        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(settings, pluginManager);
         KeymapLayers.rebuild(
                 keymap,
                 settings.getKeymap(),

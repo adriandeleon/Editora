@@ -176,9 +176,9 @@ class SettingsKeyboardFxTest {
                     HBox selected = rows.get(id[0]);
                     assertNotSame(second[0], selected, "the list was rebuilt");
                     assertEquals(
-                            2,
+                            3,
                             all(selected, Button.class, new ArrayList<>()).size(),
-                            "Enter selects the row and reveals Record and Reset");
+                            "Enter selects the row and reveals Record, Reset and Remove");
                     assertSame(selected, stage[0].getScene().getFocusOwner(), "focus stays on the selected row");
                     javafx.event.Event.fireEvent(selected, press(KeyCode.ENTER));
                 });

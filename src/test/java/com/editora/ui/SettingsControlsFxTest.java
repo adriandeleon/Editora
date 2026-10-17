@@ -245,13 +245,11 @@ class SettingsControlsFxTest {
             CheckBox console = rig.control("debugProgramConsoleCheck");
             debug.setSelected(false);
             assertFalse(settings.isDebugSupport());
-            assertTrue(fields.get("python").isDisable());
-            assertTrue(enables.get("python").isDisable());
-            assertTrue(console.isDisable());
+            assertTrue(fields.get("python").isDisabled());
+            assertTrue(fields.get("java").isDisabled(), "the Java card too (it holds the console switch)");
             debug.setSelected(true);
             assertTrue(settings.isDebugSupport());
-            assertFalse(fields.get("python").isDisable());
-            assertFalse(console.isDisable());
+            assertFalse(fields.get("python").isDisabled());
 
             console.setSelected(!console.isSelected());
             assertEquals(console.isSelected(), settings.isDebugProgramConsole());
@@ -314,17 +312,20 @@ class SettingsControlsFxTest {
             theme.setValue(others.get(0));
             assertEquals(others.get(0), settings.getTheme());
             assertEquals(EditorThemes.defaultFor(others.get(0)), settings.getEditorTheme());
-            assertEquals(settings.getEditorTheme(), editorTheme.getValue(), "the combo follows");
+            assertEquals("", editorTheme.getValue(), "the combo says Automatic: it follows");
             assertFalse(settings.isEditorThemeUserSet(), "following is not the user's choice");
             assertEquals(Themes.stylesheetFor(others.get(0)), javafx.application.Application.getUserAgentStylesheet());
             assertEquals(1, rig.applied.size());
             assertTrue(
-                    rig.stage().getScene().getStylesheets().contains(EditorThemes.stylesheetFor(editorTheme.getValue()))
-                            || EditorThemes.stylesheetFor(editorTheme.getValue()) == null,
+                    rig.stage()
+                                    .getScene()
+                                    .getStylesheets()
+                                    .contains(EditorThemes.stylesheetFor(settings.getEditorTheme()))
+                            || EditorThemes.stylesheetFor(settings.getEditorTheme()) == null,
                     "the preview is recoloured");
 
             String picked = editorTheme.getItems().stream()
-                    .filter(name -> !name.equals(editorTheme.getValue()))
+                    .filter(name -> !name.isEmpty() && !name.equals(settings.getEditorTheme()))
                     .findFirst()
                     .orElseThrow();
             editorTheme.setValue(picked);
@@ -353,8 +354,8 @@ class SettingsControlsFxTest {
             ComboBox<String> family = rig.control("fontFamily");
             assertEquals(Themes.normalize("A Theme That Was Removed"), theme.getValue());
             assertEquals(theme.getValue(), settings.getTheme());
-            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), editorTheme.getValue());
-            assertEquals(editorTheme.getValue(), settings.getEditorTheme());
+            assertEquals("", editorTheme.getValue(), "never picked: Automatic");
+            assertEquals(EditorThemes.normalize("An Editor Theme That Was Removed"), settings.getEditorTheme());
             assertEquals("A Font This Machine Lacks", family.getValue(), "the font in force stays selectable");
             assertEquals("A Font This Machine Lacks", family.getItems().get(0));
             assertEquals(List.of(), rig.applied);
@@ -639,6 +640,34 @@ class SettingsControlsFxTest {
             assertTrue(mcp.isSelected());
             assertEquals(2, asked[0]);
             assertEquals(2, rig.applied.size());
+        });
+    }
+
+    /** The MCP page used to be one switch: no way to see whether it runs, where, or to get the command. */
+    @Test
+    void theMcpPageShowsWhereTheServerRunsAndOffersItsActions() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setMcpSupport(false);
+            String[] endpoint = {""};
+            int[] copied = {0};
+            int[] rotated = {0};
+            rig.window.setMcpConfirm(() -> true);
+            rig.window.setMcpActions(
+                    new SettingsWindow.McpActions(() -> endpoint[0], () -> copied[0]++, () -> rotated[0]++));
+            rig.show();
+            javafx.scene.layout.Region page = rig.page("MCP");
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.off")));
+            assertTrue(SettingsRig.button(page, tr("settings.mcp.copy")).isDisabled(), "nothing to copy while off");
+
+            endpoint[0] = "http://127.0.0.1:4242/mcp"; // what the server reports once the switch starts it
+            CheckBox mcp = rig.control("mcpCheck");
+            mcp.setSelected(true);
+            assertTrue(SettingsRig.texts(page).contains(tr("settings.mcp.running", "http://127.0.0.1:4242/mcp")));
+            SettingsRig.button(page, tr("settings.mcp.copy")).fire();
+            SettingsRig.button(page, tr("settings.mcp.newToken")).fire();
+            assertEquals(1, copied[0]);
+            assertEquals(1, rotated[0]);
+            assertFalse(SettingsRig.texts(page).stream().anyMatch(t -> t.contains("Off by default")));
         });
     }
 

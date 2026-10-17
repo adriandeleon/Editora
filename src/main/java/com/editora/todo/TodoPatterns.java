@@ -21,6 +21,27 @@ public final class TodoPatterns {
     private TodoPatterns() {}
 
     /**
+     * The expression a pattern named {@code name} matches by default: the name as a whole word ({@code \bTODO\b}
+     * for {@code TODO}), with any regex metacharacter in it escaped. Blank for a blank name.
+     */
+    public static String regexFor(String name) {
+        String n = name == null ? "" : name.strip();
+        if (n.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        for (char c : n.toCharArray()) {
+            if ("\\.[]{}()<>*+-=!?^$|".indexOf(c) >= 0) {
+                out.append('\\');
+            }
+            out.append(c);
+        }
+        boolean wordStart = Character.isLetterOrDigit(n.charAt(0)) || n.charAt(0) == '_';
+        boolean wordEnd = Character.isLetterOrDigit(n.charAt(n.length() - 1)) || n.charAt(n.length() - 1) == '_';
+        return (wordStart ? "\\b" : "") + out + (wordEnd ? "\\b" : "");
+    }
+
+    /**
      * Why {@code regex} cannot be compiled (the first line of the engine's description), or {@code null}
      * when it is valid. A blank expression is valid here: {@link #compile} skips it as "no pattern".
      */

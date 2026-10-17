@@ -41,4 +41,17 @@ class SettingsResetFlowTest {
         assertFalse(SettingsResetFlow.keptByReset("aiProvider"));
         assertFalse(SettingsResetFlow.keptByReset("pluginSupport"));
     }
+
+    @Test
+    void aResetCarriesAMacrosKeyToTheDefaultKeymapAsAKeymapSwitchDoes() {
+        Settings live = new Settings();
+        String defaultKeymap = live.getKeymap();
+        live.setKeymap("vscode".equals(defaultKeymap) ? "cua" : "vscode");
+        live.keybindingsFor(false).put("C-M-9", "macro.run.Tidy"); // no bundled keymap binds a macro
+
+        SettingsResetFlow.reset(live);
+
+        assertEquals(defaultKeymap, live.getKeymap());
+        assertEquals("macro.run.Tidy", live.keybindingsFor(false).get("C-M-9"), "the macro keeps its key");
+    }
 }

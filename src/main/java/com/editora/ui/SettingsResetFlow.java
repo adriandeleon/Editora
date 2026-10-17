@@ -56,6 +56,9 @@ final class SettingsResetFlow {
      * looser than the defaults (a stricter default would delete revisions; the spinners ask before that).
      */
     static void reset(Settings live) {
+        // The default keymap first, the way a keymap switch goes: bindings of commands no keymap binds (macros,
+        // external tools, run configurations) come along, the others stay parked with the keymap they were made in.
+        KeymapLayers.switchKeymap(live, new Settings().getKeymap());
         ObjectMapper json = new ObjectMapper();
         ObjectNode before = json.valueToTree(live);
         Settings.resetToDefaults(live);
