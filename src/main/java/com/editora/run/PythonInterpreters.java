@@ -40,6 +40,9 @@ public final class PythonInterpreters {
     /** Folder names a project's own virtual environment is looked for under, in this order. */
     public static final List<String> VENV_DIRS = List.of(".venv", "venv", "env", ".env");
 
+    /** With no project root, how many folders (the file's own included) are searched for an environment. */
+    static final int NO_PROJECT_LEVELS = 4;
+
     /** Files that mark the top of a Python project when there is no Editora project root to stop at. */
     static final List<String> PROJECT_MARKERS =
             List.of(".git", "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile");
@@ -150,6 +153,15 @@ public final class PythonInterpreters {
             Path file, Path projectRoot, String configured, String projectChoice, String setting) {
         return resolve(Inputs.local(
                 file, projectRoot, configured, projectChoice, setting, PythonInterpreters::onAugmentedPath));
+    }
+
+    private static Path userHome() {
+        String home = System.getProperty("user.home", "");
+        try {
+            return home.isBlank() ? null : Path.of(home).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Whether this JVM runs on Windows. */
@@ -268,13 +280,19 @@ public final class PythonInterpreters {
     /**
      * The nearest project virtual environment for {@code file}: each folder from the file's own up to
      * {@code projectRoot} (inclusive) is checked for {@link #VENV_DIRS}. With no project root the walk stops
-     * at the first folder holding a {@link #PROJECT_MARKERS project marker}, or after eight levels.
+     * at the first folder holding a {@link #PROJECT_MARKERS project marker}, after
+     * {@link #NO_PROJECT_LEVELS} folders, or below the home folder: an environment in the home folder itself
+     * is never taken for a loose script.
      */
     public static Optional<Path> findProjectVenv(Path file, Path projectRoot, Predicate<Path> isFile, boolean windows) {
         Path dir = file == null ? projectRoot : file.getParent();
         Path stop = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        Path home = projectRoot == null ? userHome() : null;
         int levels = 0;
         while (dir != null && levels++ < 64) {
+            if (home != null && home.startsWith(dir.toAbsolutePath().normalize())) {
+                break; // a loose script never picks up an environment in (or above) the home folder
+            }
             for (String name : VENV_DIRS) {
                 Path candidate = dir.resolve(name);
                 if (isVenv(candidate, isFile, windows)) {
@@ -286,7 +304,7 @@ public final class PythonInterpreters {
                 if (here.equals(stop) || !here.startsWith(stop)) {
                     break;
                 }
-            } else if (levels >= 8
+            } else if (levels >= NO_PROJECT_LEVELS
                     || PROJECT_MARKERS.stream()
                             .anyMatch(m -> isFile.test(here.resolve(m)) || Files.isDirectory(here.resolve(m)))) {
                 break;

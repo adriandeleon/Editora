@@ -220,4 +220,27 @@ class PythonInterpretersTest {
     void venvOfANonVenvInterpreterIsNull() {
         assertNull(PythonInterpreters.venvOf(Path.of("/usr/bin/python3"), p -> false));
     }
+
+    @Test
+    void aLooseScriptNeverPicksAnEnvironmentInTheHomeFolder() throws Exception {
+        Path home = tmp.resolve("home");
+        venv(home.resolve(".venv"));
+        Path file = home.resolve("scratch/x.py");
+        Files.createDirectories(file.getParent());
+        String saved = System.getProperty("user.home");
+        System.setProperty("user.home", home.toString());
+        try {
+            assertEquals(
+                    Source.PATH,
+                    PythonInterpreters.resolve(in(file, null, "", "", "", Map.of()))
+                            .source());
+            Path near = venv(home.resolve("scratch/venv"));
+            assertEquals(
+                    near,
+                    PythonInterpreters.resolve(in(file, null, "", "", "", Map.of()))
+                            .venv());
+        } finally {
+            System.setProperty("user.home", saved);
+        }
+    }
 }
