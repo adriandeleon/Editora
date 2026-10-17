@@ -111,4 +111,23 @@ class RunConfigDefaultsTest {
                 RunConfigDefaults.uniquelyNamed(c, java.util.List.of("deploy.sh"))
                         .name());
     }
+
+    @Test
+    void aSavedScriptConfigurationRunsWhereItsGutterRunWould() {
+        // C8: the folder ▶ runs the script in is written into the configuration's Working directory.
+        java.nio.file.Path root = java.nio.file.Path.of("/work/site").toAbsolutePath();
+        assertEquals(
+                java.nio.file.Path.of("scripts").toString(),
+                RunConfigDefaults.forScript("python", root.resolve("scripts/report.py"), root)
+                        .workingDir());
+        assertEquals(
+                "",
+                RunConfigDefaults.forScript("python", root.resolve("main.py"), root)
+                        .workingDir(),
+                "root = blank");
+        java.nio.file.Path outside = java.nio.file.Path.of("/elsewhere/tool.py").toAbsolutePath();
+        assertEquals(
+                outside.getParent().toString(),
+                RunConfigDefaults.forScript("python", outside, root).workingDir());
+    }
 }

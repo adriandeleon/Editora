@@ -252,6 +252,39 @@ class RemoteDebugFxTest {
                 "debugpy was not started on the host: " + sftp.commands());
     }
 
+    /**
+     * The program runs on the host as Run runs it there: the project's venv on the host (named as the host names
+     * it), with the project root on PYTHONPATH — not the host's python3 that runs debugpy.
+     */
+    @Test
+    void pythonOnTheHostRunsUnderTheProjectsVenvThere() throws Exception {
+        String site = sftp.serverPath("site").toString();
+        ExecTargets.setRemoteTools((id, tool) ->
+                "dap.python".equals(tool) ? "env FAKE_DAP_LOG=" + log + " PYTHONPATH=" + site + " python3" : null);
+        Files.createDirectories(sftp.serverPath("my app/.venv/bin"));
+        Files.writeString(sftp.serverPath("my app/.venv/pyvenv.cfg"), "home = /usr/bin\n");
+        Files.writeString(sftp.serverPath("my app/.venv/bin/python"), "");
+        Path file = sftp.remotePath("my app/main.py");
+        Path root = sftp.remotePath("my app");
+        var target = ExecTargets.forPath(file);
+        onFx(() -> dap.setPythonPlan(
+                com.editora.run.PythonRunPlan.Request.file(
+                        file, root, target.toTargetPath(file), List.of(), "", "", ""),
+                com.editora.run.PythonRunPlan.Host.elsewhere(target::toTargetPath)));
+
+        debug(file, "python");
+        awaitStop();
+
+        JsonObject launch = logged("launch");
+        assertEquals(
+                sftp.serverPath("my app/.venv/bin/python").toString(),
+                launch.get("python").getAsString());
+        assertEquals(
+                sftp.serverPath("my app").toString(),
+                launch.getAsJsonObject("env").get("PYTHONPATH").getAsString());
+        assertEquals(sftp.serverPath("my app").toString(), launch.get("cwd").getAsString());
+    }
+
     @Test
     void javascriptIsDebuggedByJsDebugOnTheHostThroughATunnel() throws Exception {
         ExecTargets.setRemoteTools((id, tool) -> switch (tool) {

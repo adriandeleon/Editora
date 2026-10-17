@@ -22,6 +22,11 @@ import java.util.Map;
  *   <li>Pyright sets {@code autoSearchPaths = !!analysis.autoSearchPaths} as soon as an {@code analysis}
  *       object is present, so a partial object switches its default-on {@code src/} search path off. Every
  *       analysis object built here therefore carries {@code autoSearchPaths}.</li>
+ *   <li>Pyright analyses with the interpreter in {@code python.pythonPath}; without one it runs whatever
+ *       {@code python3} is first on PATH, so a project's virtual environment was never seen and every
+ *       installed package was an unresolved import (review B1). The session's resolved interpreter is sent in
+ *       both channels. A project's own {@code pyrightconfig.json} / {@code [tool.pyright] venv} still wins
+ *       inside Pyright.</li>
  * </ul>
  */
 final class LspServerSettings {
@@ -50,16 +55,23 @@ final class LspServerSettings {
      * defaults) for the Bash server.
      */
     static Map<String, Object> push(String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde) {
+        return push(serverId, javaOnTypeFormatting, bashIde, null);
+    }
+
+    /**
+     * As {@link #push(String, boolean, BashIdeConfig)}, with the Python interpreter ({@code null}/blank = let the
+     * server pick its own) for the Python server.
+     */
+    static Map<String, Object> push(
+            String serverId, boolean javaOnTypeFormatting, BashIdeConfig bashIde, String pythonPath) {
         if (BASH_SERVER_ID.equals(serverId)) {
             Map<String, Object> settings = new HashMap<>();
             settings.put(BashIdeConfig.SECTION, bashSection(bashIde));
             return settings;
         }
         if (PYTHON_SERVER_ID.equals(serverId)) {
-            Map<String, Object> python = new HashMap<>();
-            python.put("analysis", pythonAnalysis());
             Map<String, Object> settings = new HashMap<>();
-            settings.put("python", python);
+            settings.put("python", pythonSection(pythonPath));
             return settings;
         }
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
@@ -84,6 +96,11 @@ final class LspServerSettings {
      * left every one of its settings at the built-in default with no way to change them.
      */
     static Object answer(String serverId, String section, BashIdeConfig bashIde) {
+        return answer(serverId, section, bashIde, null);
+    }
+
+    /** As {@link #answer(String, String, BashIdeConfig)}, with the Python server's interpreter (may be null). */
+    static Object answer(String serverId, String section, BashIdeConfig bashIde, String pythonPath) {
         String s = section == null ? "" : section;
         if (BASH_SERVER_ID.equals(serverId)) {
             return s.equals(BashIdeConfig.SECTION) ? bashSection(bashIde) : null;
@@ -94,13 +111,14 @@ final class LspServerSettings {
             if (s.endsWith("autoImportCompletions") || s.endsWith("autoSearchPaths")) {
                 return Boolean.TRUE;
             }
+            if (s.endsWith(".pythonPath")) {
+                return blank(pythonPath) ? null : pythonPath;
+            }
             if (s.endsWith(".analysis")) {
                 return pythonAnalysis();
             }
             if (s.equals("python")) {
-                Map<String, Object> python = new HashMap<>();
-                python.put("analysis", pythonAnalysis());
-                return python;
+                return pythonSection(pythonPath);
             }
             return null;
         }
@@ -112,6 +130,20 @@ final class LspServerSettings {
             return s.equals("css") || s.equals("html") || s.equals("javascript") ? new HashMap<String, Object>() : null;
         }
         return null;
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** The whole {@code python} object: the analysis settings, and the interpreter when one was resolved. */
+    private static Map<String, Object> pythonSection(String pythonPath) {
+        Map<String, Object> python = new HashMap<>();
+        python.put("analysis", pythonAnalysis());
+        if (!blank(pythonPath)) {
+            python.put("pythonPath", pythonPath);
+        }
+        return python;
     }
 
     /** The one {@code python.analysis} object, so the push and both answer shapes cannot drift apart. */

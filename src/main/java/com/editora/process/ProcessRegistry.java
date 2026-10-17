@@ -270,6 +270,75 @@ public final class ProcessRegistry {
         }
     }
 
+    /**
+     * Interrupts a process tree as Ctrl-C in a terminal does — SIGINT to the root and its descendants — and
+     * kills whatever is still alive after {@link #GRACE_MS} with {@link #killTree}. For a Python program, whose
+     * default SIGTERM handling ends it on the spot: interrupted, it raises {@code KeyboardInterrupt}, so its
+     * {@code finally} blocks, {@code with} exits and {@code atexit} handlers run. On Windows (no SIGINT for
+     * another process) and for a remote process this is {@link #killTree}. Non-blocking.
+     */
+    public static void interruptThenKillTree(Process p) {
+        if (p == null) {
+            return;
+        }
+        if (p instanceof RemoteProcess || isWindows()) {
+            killTree(p);
+            return;
+        }
+        List<ProcessHandle> descendants = descendantsOf(p);
+        retainPending(descendants);
+        List<String> kill = new ArrayList<>(List.of("kill", "-INT"));
+        for (ProcessHandle h : descendants) {
+            kill.add(Long.toString(h.pid()));
+        }
+        kill.add(Long.toString(p.pid()));
+        try {
+            SCHEDULER.execute(() -> {
+                signal(kill);
+                try {
+                    SCHEDULER.schedule(
+                            () -> {
+                                if (p.isAlive()) {
+                                    killTree(p);
+                                } else {
+                                    // Children that outlived their interrupted parent, by their original handles.
+                                    destroyHandles(descendants, true);
+                                    releaseDeadPending();
+                                    untrack(p);
+                                }
+                            },
+                            GRACE_MS,
+                            TimeUnit.MILLISECONDS);
+                } catch (RuntimeException ex) {
+                    killTree(p);
+                }
+            });
+        } catch (RuntimeException ex) {
+            killTree(p); // scheduler rejected (JVM shutting down)
+        }
+    }
+
+    /** Runs {@code kill -INT …}; when it cannot be run, the escalation that follows still ends the tree. */
+    private static void signal(List<String> argv) {
+        try {
+            ProcessBuilder pb =
+                    new ProcessBuilder(argv).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            ProcessRunner.applyStandardEnv(pb);
+            Process kill = pb.start();
+            kill.waitFor(2, TimeUnit.SECONDS);
+        } catch (java.io.IOException e) {
+            // no `kill`: the scheduled killTree is the fallback
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+    }
+
     /** {@link #killTree} for a child on another machine: the target signals the group, there are no handles. */
     private static void killRemoteTree(RemoteProcess p) {
         signalRemote(p, false);

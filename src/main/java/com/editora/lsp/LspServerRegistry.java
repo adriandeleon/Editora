@@ -276,6 +276,23 @@ public final class LspServerRegistry {
         return "shell".equals(routeLanguageId) ? "shellscript" : routeLanguageId;
     }
 
+    /**
+     * The root markers for a server id in tiers, nearest-first within a tier and tier by tier: Python's own
+     * project files ({@code pyproject.toml}, {@code setup.py}, {@code setup.cfg}) first, then the repository,
+     * and only then a {@code requirements.txt}/{@code Pipfile}. Nearest-of-any let a {@code docs/requirements.txt}
+     * (Read the Docs) make {@code docs/} a server root of its own, where the project's package did not resolve
+     * (review B9). Every other server: its markers as one tier.
+     */
+    public static List<List<String>> rootMarkerTiersForServer(String serverId) {
+        if ("python".equals(serverId)) {
+            return List.of(
+                    List.of("pyproject.toml", "setup.py", "setup.cfg"),
+                    List.of(".git"),
+                    List.of("requirements.txt", "Pipfile"));
+        }
+        return List.of(rootMarkersForServer(serverId));
+    }
+
     /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */
     public static List<String> rootMarkersForServer(String serverId) {
         for (ServerDef d : ServerDef.values()) {
@@ -284,6 +301,21 @@ public final class LspServerRegistry {
             }
         }
         return List.of();
+    }
+
+    /**
+     * Lines up to which a language keeps its server in the "large source" tier (whose minimap and language
+     * server are otherwise off from {@code Settings.largeFileThreshold}, 10,000 lines by default). Pyright
+     * checks a 10,000-line file in about four seconds, and long generated or vendored Python modules are
+     * common, so Python keeps it to 50,000 lines (Python review B10). 0 = the tier's default (no server).
+     */
+    public static int heavyFileLspLineLimit(String languageId) {
+        return "python".equals(languageId) ? 50_000 : 0;
+    }
+
+    /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */
+    public static boolean lspAllowedForSize(String languageId, boolean heavyFile, int lines) {
+        return !heavyFile || lines < heavyFileLspLineLimit(languageId);
     }
 
     /** Whether any registered server serves {@code languageId}. */
@@ -319,7 +351,7 @@ public final class LspServerRegistry {
         }
         String configured = commands == null ? null : commands.get(d.id);
         String cmd = configured == null || configured.isBlank() ? d.defaultCommand : configured;
-        return new ServerSpec(d.id, tokenize(cmd), d.rootMarkers);
+        return new ServerSpec(d.id, com.editora.run.ProgramArgs.commandLine(cmd), d.rootMarkers);
     }
 
     /**
@@ -349,7 +381,7 @@ public final class LspServerRegistry {
         if (def.isEmpty() && (configured == null || configured.isBlank())) {
             return List.of();
         }
-        return tokenize(configured == null || configured.isBlank() ? def : configured);
+        return com.editora.run.ProgramArgs.commandLine(configured == null || configured.isBlank() ? def : configured);
     }
 
     /**

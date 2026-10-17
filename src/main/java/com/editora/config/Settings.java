@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 127;
+    public static final int SCHEMA_VERSION = 128;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -632,9 +632,15 @@ public class Settings {
     /** The AI provider: {@code "anthropic"} (default), {@code "openai"} for a compatible HTTP server,
      *  {@code "lmstudio"} for isolated Bionic settings, or {@code "codex"} for the ACP adapter. */
     private String aiProvider = "";
-    /** The AI endpoint URL; blank = the provider's default (Anthropic's API, or LM Studio's local
-     *  {@code http://127.0.0.1:1234/v1/chat/completions}). */
+    /** The Anthropic (and Codex) endpoint URL; blank = Anthropic's API. */
     private String aiEndpoint = "";
+    /** The OpenAI-compatible provider's endpoint, model and inline model, kept apart from the Anthropic ones
+     *  ({@link #aiEndpoint}, {@link #aiModel}, {@link #aiCompletionModel}): with one shared endpoint, switching
+     *  provider sent the Anthropic key to the OpenAI-compatible server (and the other way round). */
+    private String aiEndpointOpenai = "";
+
+    private String aiModelOpenai = "";
+    private String aiCompletionModelOpenai = "";
     /** LM Studio / Bionic configuration shared by AI actions and the OpenCode ACP preset.
      * Kept separate so selecting local inference never reuses a cloud endpoint, model, or credential. */
     private String aiLmStudioEndpoint = "";
@@ -1364,40 +1370,82 @@ public class Settings {
         aiApiKeyLmstudio = value;
     }
 
+    public String getAiEndpointOpenai() {
+        return aiEndpointOpenai == null ? "" : aiEndpointOpenai;
+    }
+
+    public void setAiEndpointOpenai(String value) {
+        aiEndpointOpenai = value;
+    }
+
+    public String getAiModelOpenai() {
+        return aiModelOpenai == null ? "" : aiModelOpenai;
+    }
+
+    public void setAiModelOpenai(String value) {
+        aiModelOpenai = value;
+    }
+
+    public String getAiCompletionModelOpenai() {
+        return aiCompletionModelOpenai == null ? "" : aiCompletionModelOpenai;
+    }
+
+    public void setAiCompletionModelOpenai(String value) {
+        aiCompletionModelOpenai = value;
+    }
+
+    /** {@code provider}'s own endpoint: each provider keeps one, so a switch never reuses another's server. */
     public String getAiEndpointFor(com.editora.ai.AiProvider provider) {
-        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioEndpoint() : getAiEndpoint();
+        return switch (aiSlot(provider)) {
+            case LMSTUDIO -> getAiLmStudioEndpoint();
+            case OPENAI -> getAiEndpointOpenai();
+            default -> getAiEndpoint();
+        };
     }
 
     public void setAiEndpointFor(com.editora.ai.AiProvider provider, String value) {
-        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
-            setAiLmStudioEndpoint(value);
-        } else {
-            setAiEndpoint(value);
+        switch (aiSlot(provider)) {
+            case LMSTUDIO -> setAiLmStudioEndpoint(value);
+            case OPENAI -> setAiEndpointOpenai(value);
+            default -> setAiEndpoint(value);
         }
     }
 
     public String getAiModelFor(com.editora.ai.AiProvider provider) {
-        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioModel() : getAiModel();
+        return switch (aiSlot(provider)) {
+            case LMSTUDIO -> getAiLmStudioModel();
+            case OPENAI -> getAiModelOpenai();
+            default -> getAiModel();
+        };
     }
 
     public void setAiModelFor(com.editora.ai.AiProvider provider, String value) {
-        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
-            setAiLmStudioModel(value);
-        } else {
-            setAiModel(value);
+        switch (aiSlot(provider)) {
+            case LMSTUDIO -> setAiLmStudioModel(value);
+            case OPENAI -> setAiModelOpenai(value);
+            default -> setAiModel(value);
         }
     }
 
     public String getAiCompletionModelFor(com.editora.ai.AiProvider provider) {
-        return provider == com.editora.ai.AiProvider.LMSTUDIO ? getAiLmStudioCompletionModel() : getAiCompletionModel();
+        return switch (aiSlot(provider)) {
+            case LMSTUDIO -> getAiLmStudioCompletionModel();
+            case OPENAI -> getAiCompletionModelOpenai();
+            default -> getAiCompletionModel();
+        };
     }
 
     public void setAiCompletionModelFor(com.editora.ai.AiProvider provider, String value) {
-        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
-            setAiLmStudioCompletionModel(value);
-        } else {
-            setAiCompletionModel(value);
+        switch (aiSlot(provider)) {
+            case LMSTUDIO -> setAiLmStudioCompletionModel(value);
+            case OPENAI -> setAiCompletionModelOpenai(value);
+            default -> setAiCompletionModel(value);
         }
+    }
+
+    /** The provider whose fields hold {@code provider}'s values (null = Anthropic, the default). */
+    private static com.editora.ai.AiProvider aiSlot(com.editora.ai.AiProvider provider) {
+        return provider == null ? com.editora.ai.AiProvider.ANTHROPIC : provider;
     }
 
     public java.util.List<Integer> getRulers() {

@@ -30,6 +30,7 @@ import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.keyverifier.KnownHostsServerKeyVerifier;
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.AttributeRepository;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.keyprovider.FileKeyPairProvider;
@@ -58,6 +59,9 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     private static final long POLL_MILLIS = 200;
 
     private final SshClient client;
+    /** This engine's host-key check: its own {@code known_hosts}, its own window's prompt. */
+    private final ServerKeyVerifier serverKeyVerifier;
+
     private final Duration connectTimeout;
     private final Duration authTimeout;
     /**
@@ -73,13 +77,12 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     private final AtomicLong promptAccumulatedNanos = new AtomicLong();
 
     private final AtomicLong promptStartNanos = new AtomicLong();
+    private final java.util.concurrent.atomic.AtomicBoolean shutDown = new java.util.concurrent.atomic.AtomicBoolean();
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sftp-connect");
         t.setDaemon(true);
         return t;
     });
-    private static final Duration HEARTBEAT = Duration.ofSeconds(30);
-
     private final List<BiConsumer<String, Boolean>> connectionListeners =
             new java.util.concurrent.CopyOnWriteArrayList<>();
     private final Map<String, SftpFileSystem> byAuthority = new ConcurrentHashMap<>();
@@ -121,18 +124,15 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     RemoteFileSystems(HostKeyPrompt prompt, Path knownHosts, Duration connectTimeout, Duration authTimeout) {
         this.connectTimeout = connectTimeout;
         this.authTimeout = authTimeout;
-        client = SshClient.setUpDefaultClient();
         // Verify the server's host key against ~/.ssh/known_hosts — the same file ssh itself uses, so a host
         // already accepted at the terminal connects without a prompt, and an entry accepted here is honoured
         // by ssh afterwards. MINA's verifier gives the three outcomes SSH requires: a known host whose key
         // matches connects silently; an UNKNOWN host goes to the trust-on-first-use delegate below and is
         // written to the file only once the user accepts; and a known host presenting a DIFFERENT key is
         // refused outright, without asking. That last case is the man-in-the-middle, and it is the point.
-        client.setServerKeyVerifier(new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts));
-        keepAlive(client, HEARTBEAT);
-        // A language server's messages are small and wait for each other: never hold one back to fill a packet.
-        CoreModuleProperties.TCP_NODELAY.set(client, true);
-        client.start();
+        serverKeyVerifier = new KnownHostsServerKeyVerifier(unknownHostVerifier(prompt), knownHosts);
+        // The client is shared by every window (SshClients), so a logged-in session can move to another one.
+        client = SshClients.acquire();
         // Register this window's engine in the Vfs provider registry (one per window). resolve()/storable() only
         // answer for authorities/filesystems this instance owns, so windows never clobber each other (#436).
         Vfs.registerRemoteProvider(this);
@@ -166,6 +166,11 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
 
     /** Unanswered keep-alives before a connection is taken as dead: about a minute and a half at 30 s. */
     static final int HEARTBEAT_MISSES = 3;
+
+    /** The shared client's host-key check, for a session this engine owns (see {@link SshClients}). */
+    boolean verifyServerKey(ClientSession session, java.net.SocketAddress address, java.security.PublicKey key) {
+        return serverKeyVerifier.verifyServerKey(session, address, key);
+    }
 
     /**
      * Registers {@code listener} to be told, on the FX thread, when a connection comes up ({@code true}) and
@@ -242,26 +247,18 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
             Result result;
             try {
                 SftpFileSystem fs = open(conn, secret);
-                knownAuthorities.put(fs, conn.id());
-                execTargets.put(fs, new SshExecTarget(conn.id(), fs));
                 String authority = conn.id();
                 fs.getSession().addSessionListener(new SessionListener() {
                     @Override
                     public void sessionClosed(Session session) {
-                        execTargets.remove(fs);
-                        // A reconnect closes the session it replaces: that is not the connection going down.
-                        SftpFileSystem current = byAuthority.get(authority);
-                        if (current == null || current == fs) {
-                            notifyConnection(authority, false);
+                        // Told to whichever engine holds the session now: it may have moved to another window.
+                        RemoteFileSystems owner = SshClients.engineOf(session);
+                        if (owner != null) {
+                            owner.sessionClosed(authority, fs);
                         }
                     }
                 });
-                notifyConnection(authority, true);
-                SftpFileSystem prev = byAuthority.put(conn.id(), fs);
-                if (prev != null && prev != fs) {
-                    execTargets.remove(prev);
-                    close(prev); // reconnecting the same site: don't leak the previous filesystem or its session
-                }
+                hold(authority, fs, new SshExecTarget(authority, fs));
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
                 // Resolved to an absolute path now, while the session is live: "." is the SFTP home directory,
                 // and since MINA SSHD 2.17 a relative path can no longer be made absolute once its
@@ -279,13 +276,112 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
         });
     }
 
+    /** Takes {@code fs} on as this engine's connection to {@code authority}, replacing any earlier one. */
+    private void hold(String authority, SftpFileSystem fs, SshExecTarget target) {
+        knownAuthorities.put(fs, authority);
+        execTargets.put(fs, target);
+        notifyConnection(authority, true);
+        SftpFileSystem prev = byAuthority.put(authority, fs);
+        if (prev != null && prev != fs) {
+            execTargets.remove(prev);
+            close(prev); // reconnecting the same site: don't leak the previous filesystem or its session
+        }
+    }
+
+    /** The session under {@code fs} ended — closed here, dropped by the network, or ended by the server. */
+    private void sessionClosed(String authority, SftpFileSystem fs) {
+        execTargets.remove(fs);
+        // A reconnect closes the session it replaces: that is not the connection going down.
+        SftpFileSystem current = byAuthority.get(authority);
+        if (current == null || current == fs) {
+            notifyConnection(authority, false);
+        }
+    }
+
+    /**
+     * A live, logged-in connection on its way from one window's engine to another's: what {@link #handOff}
+     * gives up and {@link #adopt} takes on. {@code root} is the folder the receiving window opens.
+     */
+    public static final class LiveConnection {
+        private final String authority;
+        private final SftpFileSystem fs;
+        private final SshExecTarget target;
+        private final Path root;
+
+        private LiveConnection(String authority, SftpFileSystem fs, SshExecTarget target, Path root) {
+            this.authority = authority;
+            this.fs = fs;
+            this.target = target;
+            this.root = root;
+        }
+
+        /** The connection's {@code user@host:port}. */
+        public String authority() {
+            return authority;
+        }
+
+        /** Ends the connection: for a handover that found nobody to take it. */
+        public void close() {
+            RemoteFileSystems.close(fs);
+        }
+    }
+
+    /**
+     * Gives up this engine's connection to {@code authority} without closing it, so another window's engine can
+     * {@link #adopt} it: the connect's one login then serves the project's own window, where a second login
+     * would ask for another password or 2FA code. Null when not connected (or the session has already gone).
+     * Listeners hear the connection go down here — this window no longer has it.
+     *
+     * @param root the folder the receiving window opens, a path on this connection
+     */
+    public LiveConnection handOff(String authority, Path root) {
+        SftpFileSystem fs = byAuthority.remove(authority);
+        if (fs == null) {
+            return null;
+        }
+        SshExecTarget target = execTargets.remove(fs);
+        knownAuthorities.remove(fs);
+        notifyConnection(authority, false);
+        ClientSession session = fs.getSession();
+        if (target == null || session == null || !session.isOpen()) {
+            close(fs);
+            return null;
+        }
+        return new LiveConnection(authority, fs, target, root);
+    }
+
+    /**
+     * Takes on a connection another window's engine {@linkplain #handOff handed off}: from now on its host-key
+     * checks, its listeners and its commands belong to this window. Returns the folder to open; a connection
+     * that ended on the way is closed and gives null.
+     */
+    public Path adopt(LiveConnection live) {
+        ClientSession session = live.fs.getSession();
+        if (session == null || !session.isOpen()) {
+            live.close();
+            return null;
+        }
+        session.setAttribute(SshClients.ENGINE, this);
+        hold(live.authority, live.fs, live.target);
+        if (!session.isOpen()) { // ended while changing hands, before its close could be told to this engine
+            sessionClosed(live.authority, live.fs);
+            return null;
+        }
+        return live.root;
+    }
+
     private SftpFileSystem open(RemoteConnection conn, char[] secret) throws IOException {
         // Reset the host-key-dialog clock: the trust-on-first-use prompt runs during the key exchange, which MINA
         // completes as part of the *auth* wait (the connect future is fulfilled at the transport level, before
         // KEX), so the verifier's time accumulates here and the auth wait below discounts it (#486).
         promptAccumulatedNanos.set(0);
         promptStartNanos.set(0);
-        ClientSession session = client.connect(conn.user(), conn.host(), conn.port())
+        ClientSession session = client.connect(
+                        conn.user(),
+                        conn.host(),
+                        conn.port(),
+                        AttributeRepository.ofKeyValuePair(SshClients.ENGINE, this),
+                        null)
                 .verify(connectTimeout)
                 .getSession();
         try {
@@ -469,7 +565,7 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
     }
 
     /**
-     * Closes every connection + the client. Called when the owning window closes (and on app exit).
+     * Closes every connection this engine holds, and lets go of the shared client. Called when the owning window closes (and on app exit).
      *
      * <p>Also deregisters this engine from the app-wide {@link Vfs} provider registry — it is {@code static}, so
      * without this a closed window's instance (its SSH client, NIO threads, and every open SFTP session) stays
@@ -477,12 +573,15 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider, ExecTargets.
      * removed, so every other window's stays live (a closed window no longer strands another's remote paths).
      */
     public void shutdown() {
+        if (!shutDown.compareAndSet(false, true)) {
+            return; // once: a second release would stop the shared client under another window
+        }
         Vfs.unregisterRemoteProvider(this);
         ExecTargets.unregister(this);
         execTargets.clear();
         byAuthority.values().forEach(RemoteFileSystems::close);
         byAuthority.clear();
-        client.stop();
+        SshClients.release(); // the last window's engine stops the shared client
         exec.shutdownNow();
     }
 

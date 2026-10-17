@@ -148,7 +148,7 @@ final class AiCoordinator {
     }
 
     private void probeNow() {
-        checkConnection((ok, message) -> {});
+        checkConnection(false, (ok, message) -> {}); // a check the Settings page just made answers
     }
 
     /** The effective inline-completion gate: master + sub-toggle + a key when the provider needs one. */
@@ -533,12 +533,34 @@ final class AiCoordinator {
         return provider() == AiProvider.ANTHROPIC ? DEFAULT_MODEL : "";
     }
 
+    /** How long a finished connection check answers for the same provider/endpoint/key/model. */
+    static final long CHECK_REUSE_NANOS = java.util.concurrent.TimeUnit.MINUTES.toNanos(3);
+
+    /** A finished check: what it checked ({@link #connectionSignature}), its answer, and when (nanoTime). */
+    private record CheckResult(String signature, boolean ok, String message, long at) {}
+
+    private CheckResult lastCheck;
+
+    /** Callers waiting on the request in flight for each signature: a second caller joins, no new request. */
+    private final java.util.Map<String, java.util.List<java.util.function.BiConsumer<Boolean, String>>> pending =
+            new java.util.HashMap<>();
+
     /**
      * Runs a live connection check for the configured provider/endpoint/key/model and delivers
      * {@code (ok, message)} on the FX thread — green when the endpoint accepts a minimal request, red
-     * with the error otherwise. Reports the gate state (disabled / no key) without a network call.
+     * with the error otherwise. Reports the gate state (disabled / no key) without a network call. A check
+     * already in flight for the same configuration is joined rather than repeated.
      */
     void checkConnection(java.util.function.BiConsumer<Boolean, String> onResult) {
+        checkConnection(true, onResult);
+    }
+
+    /**
+     * {@link #checkConnection(java.util.function.BiConsumer)}, but unless {@code fresh} a check of the same
+     * configuration that finished within {@link #CHECK_REUSE_NANOS} answers without a request — what the
+     * Settings page uses when it is shown, so opening it does not spend a request each time.
+     */
+    void checkConnection(boolean fresh, java.util.function.BiConsumer<Boolean, String> onResult) {
         if (!isEnabled()) {
             onResult.accept(false, disabledReason());
             return;
@@ -548,13 +570,33 @@ final class AiCoordinator {
             return;
         }
         String signature = connectionSignature();
+        CheckResult last = lastCheck;
+        if (!fresh
+                && last != null
+                && last.signature().equals(signature)
+                && System.nanoTime() - last.at() < CHECK_REUSE_NANOS) {
+            onResult.accept(last.ok(), last.message());
+            return;
+        }
+        var waiting = pending.get(signature);
+        if (waiting != null) {
+            waiting.add(onResult);
+            return;
+        }
+        waiting = new java.util.ArrayList<>(java.util.List.of(onResult));
+        pending.put(signature, waiting);
         java.util.function.Consumer<AiService.Ping> result = ping -> {
+            var callers = pending.remove(signature);
+            String message = ping.ok() ? tr("settings.ai.connected") : ping.message();
+            lastCheck = new CheckResult(signature, ping.ok(), message, System.nanoTime());
             // Both automatic and manual checks refresh action visibility. Stale provider results cannot
             // re-enable controls after a settings change or feature disable.
             if (isEnabled() && signature.equals(connectionSignature())) {
                 connected = ping.ok();
                 pushAvailability();
-                onResult.accept(ping.ok(), ping.ok() ? tr("settings.ai.connected") : ping.message());
+                if (callers != null) {
+                    callers.forEach(c -> c.accept(ping.ok(), message));
+                }
             }
         };
         if (provider() == AiProvider.CODEX) {

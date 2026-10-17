@@ -847,6 +847,12 @@ class CommandSweepFxTest {
             if (command.contains("__EDITORA_PATH_BEGIN__")) {
                 return null;
             }
+            // A snapshot build asks git which commit and branch it was built from (AppInfo.gitCommitAsync /
+            // gitBranchAsync, for About), in its own code-source folder: a read-only question about Editora
+            // itself, like a version probe. It runs once per JVM, so it shows only when this class runs first.
+            if (command.matches("\\S*git(\\.exe)? rev-parse (--short|--abbrev-ref) HEAD")) {
+                return null;
+            }
             // The container engine asked which containers run (Containers: Run This Project's Tools in a
             // Container… lists them): a read-only question, like a version probe.
             if (command.matches("\\S*(docker|podman)(\\.exe)? (ps|inspect)\\b.*")) {

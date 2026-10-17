@@ -40,4 +40,22 @@ class LspDiagnosticLookTest {
                 javafx.scene.paint.Color.WHITE,
                 OverlayPalette.of(javafx.scene.paint.Color.WHITE).ground());
     }
+
+    /** A deprecated call is struck through; nothing else is (Python review B3). */
+    @Test
+    void deprecatedCodeIsStruckThrough() {
+        var deprecated = new LspDiagnostic(
+                0, 0, 0, 8, LspDiagnostic.Severity.HINT, "deprecated", null, "Pyright", null, false, true);
+        assertTrue(LspDiagnosticOverlay.lookOf(deprecated).struck());
+        assertFalse(LspDiagnosticOverlay.lookOf(diag(LspDiagnostic.Severity.HINT, true))
+                .struck());
+    }
+
+    /** Tag-only hints are drawn but not listed; a real hint or any tagged warning still is. */
+    @Test
+    void onlyAHintThatIsJustATagIsKeptOutOfProblems() {
+        assertTrue(diag(LspDiagnostic.Severity.HINT, true).tagOnlyHint());
+        assertFalse(diag(LspDiagnostic.Severity.HINT, false).tagOnlyHint());
+        assertFalse(diag(LspDiagnostic.Severity.WARNING, true).tagOnlyHint());
+    }
 }

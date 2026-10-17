@@ -896,6 +896,48 @@ public final class ConfigMigrations {
         }
     }
 
+    /**
+     * v126→127: the OpenAI-compatible provider's endpoint, model and inline model move out of the fields it
+     * shared with Anthropic ({@code aiEndpoint}, {@code aiModel}, {@code aiCompletionModel}) into
+     * {@code aiEndpointOpenai}, {@code aiModelOpenai}, {@code aiCompletionModelOpenai}. With the provider set to
+     * OpenAI all three belonged to it, so they move and the Anthropic ones are cleared. Under any other provider
+     * an endpoint of the OpenAI shape ({@code …/chat/completions}) is a leftover from an earlier OpenAI setup —
+     * the very URL the Anthropic key was being sent to — so it moves too; an Anthropic proxy URL stays. Safe to
+     * repeat: nothing moves into a field that already has a value.
+     */
+    static JsonNode splitOpenaiEndpoint(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode provider = o.get("aiProvider");
+        boolean openai = provider != null
+                && provider.isTextual()
+                && provider.asText().strip().equalsIgnoreCase("openai");
+        String endpoint = textOf(o, "aiEndpoint");
+        if (openai || endpoint.strip().replaceAll("/+$", "").endsWith("/chat/completions")) {
+            moveIfBlank(o, "aiEndpoint", "aiEndpointOpenai");
+        }
+        if (openai) {
+            moveIfBlank(o, "aiModel", "aiModelOpenai");
+            moveIfBlank(o, "aiCompletionModel", "aiCompletionModelOpenai");
+        }
+        return o;
+    }
+
+    private static String textOf(ObjectNode o, String key) {
+        JsonNode v = o.get(key);
+        return v != null && v.isTextual() ? v.asText() : "";
+    }
+
+    /** Moves a non-blank {@code from} into a blank {@code to} and clears {@code from}. */
+    private static void moveIfBlank(ObjectNode o, String from, String to) {
+        String value = textOf(o, from);
+        if (!value.isBlank() && textOf(o, to).isBlank()) {
+            o.put(to, value);
+            o.put(from, "");
+        }
+    }
+
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;

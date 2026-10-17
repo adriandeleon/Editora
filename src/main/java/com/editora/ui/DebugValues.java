@@ -53,8 +53,14 @@ final class DebugValues {
 
     /** How many more children the next "show more" reveals, with {@code shown} of {@code total} on screen. */
     static int nextPage(int shown, int total) {
-        return Math.max(0, Math.min(PAGE_SIZE, total - shown));
+        int remaining = Math.max(0, total - shown);
+        // A short tail comes with the page: debugpy sends a list's first 100 items plus its own "more" group and
+        // len(), which made a "Show 4 more…" row stand between the user and them.
+        return remaining <= PAGE_SIZE + PAGE_SLACK ? remaining : PAGE_SIZE;
     }
+
+    /** How many rows past a page are shown with it rather than behind a "show more" row of their own. */
+    static final int PAGE_SLACK = 25;
 
     /**
      * The short name shown for a frame's source. Adapters also put things that are not files there — {@code

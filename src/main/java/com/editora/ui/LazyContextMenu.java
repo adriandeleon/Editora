@@ -1,11 +1,13 @@
 package com.editora.ui;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import javafx.event.EventHandler;
 import javafx.scene.Node;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.stage.WindowEvent;
 
 /**
@@ -49,5 +51,30 @@ final class LazyContextMenu {
         item.setGraphic(icon);
         item.setOnAction(e -> action.run());
         return item;
+    }
+
+    /**
+     * Hide the separators that hidden items have orphaned — leading, trailing, or with nothing visible since
+     * the previous one — and show the rest again, so a menu that hides items per showing never draws two
+     * rules in a row.
+     */
+    static void collapseSeparators(List<MenuItem> items) {
+        SeparatorMenuItem pending = null; // a separator after a visible item, awaiting a visible one after it
+        boolean visibleSince = false; // a visible item since the last kept separator (or the top)
+        for (MenuItem item : items) {
+            if (item instanceof SeparatorMenuItem sep) {
+                sep.setVisible(false);
+                if (visibleSince) {
+                    pending = sep;
+                    visibleSince = false;
+                }
+            } else if (item.isVisible()) {
+                if (pending != null) {
+                    pending.setVisible(true);
+                    pending = null;
+                }
+                visibleSince = true;
+            }
+        }
     }
 }

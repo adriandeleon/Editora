@@ -203,7 +203,8 @@ prefer-server-then-fall-back dispatch.
   app uses. Placing it at the caret is a refinement that can follow.
 - **Sticky scroll** — `StickyScroll` (pure) decides what to pin from `FoldRegions`: a block whose
   header has scrolled above the viewport while its body is still inside it is exactly a scope you are
-  in but cannot see the name of. Capped at `DEFAULT_MAX` (5) rows, beyond which the pin eats the
+  in but cannot see the name of. Python's blocks come from indentation (`editops/PythonScan`, read the
+  way Python reads it), not from a server: Pyright offers no folding ranges. Capped at `DEFAULT_MAX` (5) rows, beyond which the pin eats the
   viewport it exists to explain. `StickyScrollBar` renders it **from the area's already-applied style
   spans**, which sidesteps re-tokenizing on the shared, non-thread-safe grammar. The managed bar gets
   its width from the editor's anchors, with zero minimum/preferred width; each single-line row can
