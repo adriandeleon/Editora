@@ -145,7 +145,11 @@ class TerminalPanelFxTest {
     }
 
     @Test
-    void ctrlShiftCCopiesInsteadOfSendingAnInterrupt() throws Exception {
+    void theCopyChordCopiesInsteadOfSendingAnInterrupt() throws Exception {
+        // Ctrl+Shift+C off macOS; Cmd+C on it, where Ctrl+Shift+C is the shell's like any Ctrl chord.
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
         show(fakeShells(), (title, programs) -> true, null);
         fx(() -> {
             panel.newTerminal();
@@ -153,7 +157,8 @@ class TerminalPanelFxTest {
         });
         fx(() -> {
             var view = panel.activeView();
-            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, true, true, false, false));
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, !mac, !mac, false, mac)); // copy
             Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, false, true, false, false));
             return null;
         });
