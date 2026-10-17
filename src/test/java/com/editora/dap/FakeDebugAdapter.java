@@ -49,14 +49,40 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
  * connection is a root session that debugs nothing. After its {@code launch} it sends the reverse request
  * {@code startDebugging} and expects a <em>second</em> connection whose {@code launch} carries the
  * {@code __pendingTargetId} it handed out — that child session is where breakpoints and stops live.
+ *
+ * <p>{@link #javaDebug()} makes it behave as Microsoft's java-debug 0.53.2 does where the client can tell
+ * (each point read from that adapter's request handlers):
+ * <ul>
+ *   <li>{@code initialized} is sent from the {@code launch}/{@code attach} handler — once the debuggee exists,
+ *       just before that request is answered — not after {@code initialize};
+ *   <li>until then, {@code setBreakpoints}, {@code setExceptionBreakpoints} and {@code configurationDone}
+ *       are refused with {@value #EMPTY_DEBUG_SESSION}, as there is no debug session yet;
+ *   <li>{@code stackTrace} honours {@code startFrame}/{@code levels} although the adapter does not advertise
+ *       {@code supportsDelayedStackTraceLoading}.
+ * </ul>
+ * The default keeps the older, simpler order (and pages only when it advertises paging), which the
+ * transport and js-debug-style tests are written against.
  */
 public final class FakeDebugAdapter implements AutoCloseable {
 
     /** The id js-debug uses to bind a new connection to the target it asked a session for. */
     public static final String PENDING_TARGET = "target-1";
 
+    /** java-debug's answer to a configuration request that arrives before its debug session exists. */
+    public static final String EMPTY_DEBUG_SESSION = "Empty debug session.";
+
     private final ServerSocket server;
     private final boolean multiSession;
+
+    /** Behave as java-debug 0.53.2 does (see the class doc); set before the client connects. */
+    public volatile boolean javaDebugOrder;
+
+    /**
+     * When set (before the client connects), {@code disconnect} is answered only once this latch is released —
+     * an adapter that is slow to end its debuggee, or that is no longer answering at all.
+     */
+    public volatile CountDownLatch holdDisconnect;
+
     private final BlockingQueue<Session> accepted = new LinkedBlockingQueue<>();
     private final List<Session> sessions = new CopyOnWriteArrayList<>();
     private volatile boolean closed;
@@ -81,12 +107,6 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
     // --- Fixer B (engine): java-debug's start-up order, held answers, processid, a dropped connection ------
 
-    /**
-     * java-debug's order: the {@code initialized} event follows the {@code launch}/{@code attach} answer, not the
-     * {@code initialize} one — until then it refuses {@code setBreakpoints} ("Empty debug session.").
-     */
-    public volatile boolean initializedAfterLaunch;
-
     /** When set, {@code launch} is answered only when this completes (the adapter still starting the JVM). */
     public volatile CompletableFuture<Void> launchGate;
 
@@ -103,6 +123,13 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
     public FakeDebugAdapter(boolean multiSession) throws IOException {
         this(multiSession, InetAddress.getLoopbackAddress());
+    }
+
+    /** A single-session adapter that orders and refuses requests as java-debug 0.53.2 does (class doc). */
+    public static FakeDebugAdapter javaDebug() throws IOException {
+        FakeDebugAdapter adapter = new FakeDebugAdapter(false);
+        adapter.javaDebugOrder = true;
+        return adapter;
     }
 
     /** Listens on {@code bindAddress} only — e.g. {@code ::1}, where js-debug ends up on many systems. */
@@ -212,6 +239,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
         /** Root only: completes when the client has answered the reverse {@code startDebugging} request. */
         public final CompletableFuture<Void> startDebuggingAnswered = new CompletableFuture<>();
 
+        /** java-debug order (see the class doc), fixed when the connection is accepted. */
+        private final boolean javaDebug = javaDebugOrder;
+
+        /** java-debug: whether {@code launch}/{@code attach} has created the debug session yet. */
+        private volatile boolean sessionCreated;
+
+        /** Whether the client has closed its side of the connection (the session's reader saw its end). */
+        public final CountDownLatch clientClosed = new CountDownLatch(1);
+
         private Session(Socket socket, boolean first) {
             this.socket = socket;
             this.first = first;
@@ -224,7 +260,16 @@ public final class FakeDebugAdapter implements AutoCloseable {
             var launcher = DSPLauncher.createServerLauncher(this, socket.getInputStream(), socket.getOutputStream());
             client = launcher.getRemoteProxy();
             remote = launcher.getRemoteEndpoint();
-            launcher.startListening();
+            java.util.concurrent.Future<Void> listening = launcher.startListening();
+            Thread.ofVirtual().name("fake-dap-session-end").start(() -> {
+                try {
+                    listening.get();
+                } catch (Exception ended) {
+                    // closed either way
+                } finally {
+                    clientClosed.countDown();
+                }
+            });
         }
 
         /**
@@ -401,7 +446,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 capabilities.setSupportsGotoTargetsRequest(true);
             }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
-            if (!initializedAfterLaunch) {
+            if (!javaDebug) {
                 // The event follows the response, as the protocol orders them.
                 CompletableFuture.runAsync(() -> client.initialized());
             }
@@ -422,14 +467,28 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 CompletableFuture.runAsync(this::requestChildSession);
             }
             CompletableFuture<Void> gate = launchGate;
-            CompletableFuture<Void> answer = gate == null ? CompletableFuture.completedFuture(null) : gate;
-            if (initializedAfterLaunch) {
-                return answer.thenApply(v -> {
-                    CompletableFuture.runAsync(() -> client.initialized());
-                    return v;
-                });
+            if (gate == null) {
+                createJavaDebugSession();
+                return CompletableFuture.completedFuture(null);
             }
-            return answer;
+            return gate.thenApply(
+                    v -> { // the adapter still starting the JVM until the gate opens
+                        createJavaDebugSession();
+                        return v;
+                    });
+        }
+
+        /** java-debug: the launch/attach handler creates the session and says {@code initialized} before answering. */
+        private void createJavaDebugSession() {
+            if (javaDebug) {
+                sessionCreated = true;
+                client.initialized(); // written before this request's answer, as java-debug does
+            }
+        }
+
+        /** java-debug's refusal of a configuration request before its session exists, else null. */
+        private <T> CompletableFuture<T> beforeSession() {
+            return javaDebug && !sessionCreated ? refused(EMPTY_DEBUG_SESSION) : null;
         }
 
         @Override
@@ -440,6 +499,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (launchFailure != null) {
                 return refused(launchFailure);
             }
+            createJavaDebugSession();
             return CompletableFuture.completedFuture(null);
         }
 
@@ -464,6 +524,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public CompletableFuture<SetBreakpointsResponse> setBreakpoints(SetBreakpointsArguments args) {
             breakpoints.add(args);
             record("setBreakpoints");
+            CompletableFuture<SetBreakpointsResponse> early = beforeSession();
+            if (early != null) {
+                return early;
+            }
             if (breakpointFailure != null) {
                 return refused(breakpointFailure);
             }
@@ -480,12 +544,17 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 SetExceptionBreakpointsArguments args) {
             exceptionBreakpoints.add(args);
             record("setExceptionBreakpoints");
-            return CompletableFuture.completedFuture(new SetExceptionBreakpointsResponse());
+            CompletableFuture<SetExceptionBreakpointsResponse> early = beforeSession();
+            return early != null ? early : CompletableFuture.completedFuture(new SetExceptionBreakpointsResponse());
         }
 
         @Override
         public CompletableFuture<Void> configurationDone(ConfigurationDoneArguments args) {
             record("configurationDone");
+            CompletableFuture<Void> early = beforeSession();
+            if (early != null) {
+                return early;
+            }
             configured.countDown();
             return CompletableFuture.completedFuture(null);
         }
@@ -527,9 +596,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 // An adapter that pages returns the window asked for and says how many there are in all.
                 int from = args.getStartFrame() == null ? 0 : Math.min(args.getStartFrame(), scripted.size());
                 int levels = args.getLevels() == null || args.getLevels() == 0 ? scripted.size() : args.getLevels();
-                int to = delayedStackTraceLoading ? Math.min(scripted.size(), from + levels) : scripted.size();
-                response.setStackFrames(scripted.subList(delayedStackTraceLoading ? from : 0, to)
-                        .toArray(new StackFrame[0]));
+                boolean pages = delayedStackTraceLoading || javaDebug; // java-debug pages without saying so
+                int to = pages ? Math.min(scripted.size(), from + levels) : scripted.size();
+                response.setStackFrames(scripted.subList(pages ? from : 0, to).toArray(new StackFrame[0]));
                 response.setTotalFrames(scripted.size());
                 return CompletableFuture.completedFuture(response);
             }
@@ -587,6 +656,16 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public CompletableFuture<Void> disconnect(DisconnectArguments args) {
             record("disconnect");
             disconnected.countDown();
+            CountDownLatch hold = holdDisconnect;
+            if (hold != null) {
+                return CompletableFuture.runAsync(() -> {
+                    try {
+                        hold.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
             return CompletableFuture.completedFuture(null);
         }
         // --- scripted inspection: scopes, variables, evaluate, setVariable -----------------------------

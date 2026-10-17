@@ -60,7 +60,7 @@ class RemoteJavaDebugFxTest {
     void setUp() throws Exception {
         ExecTargets.setRemoteEnabled(() -> true);
         sftp = EmbeddedSftpFixture.startWithShell(base); // forwards ports, as an OpenSSH server does
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lsp);
         lsp.configure(true, Map.of("java", "jdtls"));

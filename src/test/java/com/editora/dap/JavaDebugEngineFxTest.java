@@ -62,7 +62,7 @@ class JavaDebugEngineFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        adapter = new FakeDebugAdapter(false);
+        adapter = FakeDebugAdapter.javaDebug();
         lsp = new LspManager((f, d) -> {}, (t, m) -> {});
         fakes = LspTestHooks.useFakeSessions(lsp);
         lsp.configure(true, Map.of("java", "jdtls"));

@@ -60,8 +60,7 @@ class DapClientConfigurationTest {
 
     @Test
     void aBreakpointSetWhileTheAdapterIsStillStartingIsInstalledWithTheConfigurationNotRefused() throws Exception {
-        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
-            adapter.initializedAfterLaunch = true;
+        try (FakeDebugAdapter adapter = FakeDebugAdapter.javaDebug()) {
             adapter.launchGate = new CompletableFuture<>();
             adapter.sessionBreakpointAnswer = args -> List.of(FakeDebugAdapter.Session.breakpoint(1, true, 6, null));
             Host host = new Host();
