@@ -19,6 +19,18 @@ enum HttpResponseTab {
      * count.
      */
     static HttpResponseTab choose(HttpResponseTab picked, boolean testsFailed, Set<HttpResponseTab> available) {
+        return choose(picked, testsFailed, false, available);
+    }
+
+    /**
+     * As {@link #choose(HttpResponseTab, boolean, Set)}, and a request that got no response ({@code sendFailed}: refused,
+     * timed out, not sent — a pre-request script that failed included) opens on Body, where its error card is.
+     */
+    static HttpResponseTab choose(
+            HttpResponseTab picked, boolean testsFailed, boolean sendFailed, Set<HttpResponseTab> available) {
+        if (sendFailed) {
+            return BODY;
+        }
         if (testsFailed && available.contains(TESTS)) {
             return TESTS;
         }

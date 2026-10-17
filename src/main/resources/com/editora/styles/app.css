@@ -3819,6 +3819,65 @@
 .http-panel .http-test-passed { -fx-text-fill: -state-green; }
 .http-panel .http-test-failed { -fx-text-fill: -state-red; }
 .http-panel .http-body-note { -fx-text-fill: -state-amber; -fx-padding: 2 4 2 4; }
+/* The states between responses. While a request is sent: a thin indeterminate line under the header, and the response
+   shown before it as one muted "Previous: …" row. */
+.http-panel .http-progress { -fx-pref-height: 3; -fx-min-height: 3; -fx-max-height: 3; -fx-padding: 0; }
+.http-panel .http-progress > .track {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-progress > .bar {
+    -fx-background-color: -color-accent-emphasis;
+    -fx-background-insets: 0;
+    -fx-background-radius: 2;
+    -fx-padding: 1.5 0 1.5 0;
+}
+.http-panel .http-previous {
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 5 9 5 9;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+}
+.http-panel .http-previous:hover { -fx-text-fill: -color-fg-default; -fx-background-color: -color-neutral-muted; }
+/* Before any response: which request Run sends, the Run chord, the gutter's ▶, and the file's requests as rows. */
+.http-panel .http-empty-lead { -fx-fill: -color-fg-muted; -fx-font-size: 1.15em; }
+.http-panel .http-empty-name { -fx-fill: -color-fg-default; -fx-font-size: 1.15em; -fx-font-weight: bold; }
+.http-panel .http-empty-hint { -fx-text-fill: -color-fg-muted; }
+.http-panel .http-empty-heading { -fx-text-fill: -color-fg-muted; -fx-font-weight: bold; -fx-font-size: 0.92em; }
+.http-panel .http-empty-scroll,
+.http-panel .http-empty-scroll > .viewport { -fx-background-color: transparent; -fx-padding: 0; }
+.http-panel .http-empty-row { -fx-padding: 4 8 4 8; -fx-background-radius: 5; -fx-cursor: hand; }
+.http-panel .http-empty-row:hover { -fx-background-color: -color-neutral-muted; }
+.http-panel .http-empty-row:caret { -fx-background-color: -state-sel; }
+.http-panel .http-empty-method {
+    -fx-font-family: "JetBrains Mono", "monospace";
+    -fx-font-weight: bold;
+    -fx-text-fill: -state-accent;
+    -fx-min-width: 4.2em;
+}
+.http-panel .http-empty-name-cell { -fx-text-fill: -color-fg-default; }
+.http-panel .http-empty-url { -fx-text-fill: -color-fg-muted; }
+/* A request that got no response: a card naming the failure (red), its explanation (selectable), what to do next. */
+.http-panel .http-error-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+}
+.http-panel .http-error-title { -fx-text-fill: -state-red; -fx-font-weight: bold; -fx-font-size: 1.15em; }
+.http-panel .http-error-text,
+.http-panel .http-error-text .scroll-pane,
+.http-panel .http-error-text .scroll-pane .viewport,
+.http-panel .http-error-text .scroll-pane .content {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+.http-panel .http-error-text { -fx-text-fill: -color-fg-default; }
 .http-history-code { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests { -fx-font-weight: bold; -fx-padding: 0 6 0 0; }
 .http-history-tests.http-test-passed { -fx-text-fill: -state-green; }

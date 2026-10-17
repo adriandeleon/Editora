@@ -580,6 +580,15 @@ public final class HttpFile {
         return line.stripLeading().startsWith("###");
     }
 
+    /**
+     * The title a {@code ###} separator {@code line} gives its request ({@code ### Get one user} → "Get one user"), or
+     * null when {@code line} is not a separator or names nothing. A request's {@link Request#name()} prefers its
+     * {@code # @name}; this is the title as written, for what the response view shows.
+     */
+    public static String separatorTitle(String line) {
+        return line == null || !isSeparator(line) ? null : separatorName(line);
+    }
+
     /** The label after {@code ###}, or null for a bare separator. */
     private static String separatorName(String line) {
         String s = line.stripLeading();
