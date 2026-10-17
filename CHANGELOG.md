@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Remote: one login per connect.** Connecting to a remote folder from another window no longer logs in a
+  second time for the project's own window: that window takes over the session you just logged in with. A
+  password or passphrase is asked for once, and a server that wants a one-time 2FA code no longer needs two of
+  them. Closing the window you connected from leaves the project's window connected.
 - **Settings switches that only change the editor view** (line numbers, minimap, rulers, wrapping, tab size…)
   no longer rebuild the rest of every window; with many files open they apply about five times faster.
 - **Reset to Defaults keeps your AI API keys and the Settings Sync connection.** Its question lists what is reset

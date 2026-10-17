@@ -94,11 +94,20 @@ final class RemoteCoordinator {
         }
 
         /**
-         * Opens (or focuses) {@code project}'s own window and has <em>it</em> connect with {@code secret},
-         * which it wipes. A window holds its own connections, so the one that shows a remote project is
-         * the one that must be connected to its host.
+         * Opens (or focuses) {@code project}'s own window and gives it the connection: {@code live}, the
+         * session this window logged in with, when it could be handed over; otherwise the window logs in for
+         * itself with {@code secret}, which it wipes. A window holds its own connections, so the one that
+         * shows a remote project is the one that must be connected to its host.
          */
-        default void openRemoteProject(Project project, RemoteConnection conn, char[] secret) {}
+        default void openRemoteProject(
+                Project project, RemoteConnection conn, RemoteFileSystems.LiveConnection live, char[] secret) {
+            if (live != null) {
+                live.close();
+            }
+            if (secret != null) {
+                java.util.Arrays.fill(secret, '\0');
+            }
+        }
 
         /** The Project panel, or null while it has not been built (it is built on first use). */
         default ProjectPanel projectPanel() {
@@ -409,8 +418,9 @@ final class RemoteCoordinator {
     /**
      * A connect from the form succeeded. The folder is a project, and a project has its own window: when
      * that is this window (it was reopened disconnected, or its connection dropped) the folder is mounted
-     * here; otherwise the project's window is opened and logs in for itself, and this window's connection,
-     * which only served to find the folder, is closed unless its tabs still use it.
+     * here; otherwise the project's window is opened and takes this window's connection over, so the one
+     * login serves it (a second would ask for another password or 2FA code). When this window's tabs still
+     * use that connection it stays here, and the project's window logs in for itself.
      */
     void connected(RemoteConnection conn, Path root, char[] secret) {
         if (!ops.projectsEnabled()) {
@@ -430,12 +440,17 @@ final class RemoteCoordinator {
         RemoteConnection at = withPath(conn, location == null ? conn.lastPath() : location.path());
         ops.putConnection(at);
         refreshPanel();
+        RemoteFileSystems.LiveConnection live = null;
         if (!conn.id().equals(activeRemoteAuthority)
                 && buffersOn(Set.of(conn.id()), false).isEmpty()) {
-            remoteFs.disconnect(conn.id());
+            live = remoteFs.handOff(conn.id(), root);
+        }
+        if (live != null) {
+            wipe(secret); // the window takes over the logged-in session: nothing to log in with again
+            secret = null;
         }
         host.setStatus(tr("status.remote.openingProject", project.name()));
-        ops.openRemoteProject(project, at, secret);
+        ops.openRemoteProject(project, at, live, secret);
     }
 
     private static String projectName(RemoteConnection conn, Path root) {
@@ -446,6 +461,20 @@ final class RemoteCoordinator {
     private static RemoteConnection withPath(RemoteConnection conn, String path) {
         return new RemoteConnection(
                 conn.host(), conn.port(), conn.user(), conn.auth(), conn.keyPath(), conn.label(), path);
+    }
+
+    /**
+     * Mounts this window's own remote project over a connection another window logged in and handed over. One
+     * that ended on the way leaves the window in its not-connected state, with Reconnect.
+     */
+    void adoptForWindowProject(RemoteConnection conn, RemoteFileSystems.LiveConnection live) {
+        Path root = remoteFs().adopt(live);
+        if (root != null) {
+            mount(conn, root);
+        } else {
+            showDisconnected();
+            host.setStatus(tr("status.remote.lost", conn.id()));
+        }
     }
 
     /**
