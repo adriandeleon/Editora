@@ -395,7 +395,8 @@ class InstallCoordinatorFxTest {
                             tr("status.install.installing", java),
                             tr("status.install.installingTool", "jdtls"),
                             tr("status.install.installingTool", "java-debug"),
-                            tr("status.install.done", java)),
+                            // it brought a debugger while debugging is off: where to turn it on
+                            tr("status.install.done", java) + " " + tr("status.install.enableDebugging")),
                     rig.host.statuses);
         }
     }

@@ -40,6 +40,57 @@ final class DebugIdentifiers {
         return isIdentStart(line.charAt(s)) ? line.substring(s, e + 1) : null;
     }
 
+    /**
+     * What hovering 0-based {@code col} of {@code line} means: the identifier there together with the
+     * attribute chain before it — {@code self.total} when the mouse is on {@code total}, {@code p} when it is on
+     * the {@code p} of {@code p.x}. Hovering the {@code x} of {@code p.x} used to evaluate a variable {@code x},
+     * a different value or none. A chain stops at a call or an index ({@code f().x} is just {@code x}: hovering
+     * must not run code). Null when {@code col} is not on an identifier.
+     */
+    static String expressionAt(String line, int col) {
+        String word = wordAt(line, col);
+        if (word == null) {
+            return null;
+        }
+        int s = col;
+        while (s > 0 && isIdentChar(line.charAt(s - 1))) {
+            s--;
+        }
+        int e = s + word.length();
+        int start = s;
+        while (true) {
+            int dot = start - 1;
+            while (dot >= 0 && line.charAt(dot) == ' ') {
+                dot--;
+            }
+            if (dot < 0 || line.charAt(dot) != '.') {
+                break;
+            }
+            int end = dot; // exclusive end of the identifier before the dot
+            while (end > 0 && line.charAt(end - 1) == ' ') {
+                end--;
+            }
+            int b = end;
+            while (b > 0 && isIdentChar(line.charAt(b - 1))) {
+                b--;
+            }
+            if (b == end || !isIdentStart(line.charAt(b))) {
+                break; // "f().x", "a[0].x", "1.5": not a plain attribute chain
+            }
+            start = b;
+        }
+        return start == s ? word : line.substring(start, e).replace(" ", "");
+    }
+
+    /** Whether the identifier starting at {@code start} follows a {@code .} — an attribute, not a variable. */
+    static boolean isAttribute(String line, int start) {
+        int i = start - 1;
+        while (i >= 0 && line.charAt(i) == ' ') {
+            i--;
+        }
+        return i >= 0 && line.charAt(i) == '.';
+    }
+
     /** The members of {@code names} appearing in {@code line} as whole identifiers, in
      *  first-occurrence order, deduplicated. */
     static List<String> matchesIn(String line, Set<String> names) {
@@ -65,7 +116,8 @@ final class DebugIdentifiers {
                     i++;
                 }
                 String w = line.substring(s, i);
-                if (names.contains(w) && !out.contains(w) && !notCode.test(s)) {
+                // obj.x is obj's attribute x, not the variable x: a value shown for it would be another one's.
+                if (names.contains(w) && !out.contains(w) && !notCode.test(s) && !isAttribute(line, s)) {
                     out.add(w);
                 }
             } else if (isIdentChar(c)) {

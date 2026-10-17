@@ -1012,7 +1012,7 @@ class DapManagerSessionFxTest {
                 List.of(new DapModels.FileBreakpoints(script, List.of(new DapModels.LineBreakpoint(0, null, null))));
         onFx(() -> {
             dap.setProgramArgs(List.of("--verbose", "in put"));
-            dap.setExceptionFilters(List.of("uncaught"));
+            dap.setExceptionFilters("python", List.of("uncaught"));
             dap.startLaunch(script, "python", noPicker);
         });
 

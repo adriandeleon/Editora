@@ -27,6 +27,7 @@ import com.editora.config.Settings;
 import com.editora.run.StackTraceLinks;
 import com.editora.test.JavaTestScanner;
 import com.editora.test.TestNode;
+import com.editora.test.TestNodeKind;
 import com.editora.test.TestRun;
 import com.editora.test.TestStatus;
 import org.fxmisc.richtext.CodeArea;
@@ -269,6 +270,43 @@ class TestRunCoordinatorActionsFxTest {
     }
 
     // --- the run as shown -------------------------------------------------------------------------------
+
+    /** Debug on a row of an external (pytest / unittest) run said "not supported"; the run now debugs it. */
+    @Test
+    void debugOnAnExternalRunsRowGoesToThatRun() throws Exception {
+        List<String> debugged = new ArrayList<>();
+        TestRunCoordinator.ExternalRun pytest = new TestRunCoordinator.ExternalRun() {
+            @Override
+            public void rerun() {}
+
+            @Override
+            public void rerunFailed(List<TestNode> failed) {}
+
+            @Override
+            public void runOne(TestNode node) {}
+
+            @Override
+            public void stop() {}
+
+            @Override
+            public void jump(TestNode node) {}
+
+            @Override
+            public boolean debug(TestNode node) {
+                debugged.add(node.className() + "#" + node.methodName());
+                return true;
+            }
+        };
+        TestNode row = new TestNode(TestNodeKind.TEST, "tests.test_cart.TestCart#test_add", "test_add");
+        row.setClassName("tests.test_cart.TestCart");
+        row.setMethodName("test_add");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(coordinator.startExternalRun("tests", dir, pytest));
+            FxTestSupport.call(coordinator, "debugOne", new Class<?>[] {TestNode.class}, row);
+        });
+        assertEquals(List.of("tests.test_cart.TestCart#test_add"), debugged);
+        assertEquals(List.of(), statuses);
+    }
 
     @Test
     void theReportOfARunBecomesRowsWithTheirOutcomeAndTheSuiteASummary() throws Exception {

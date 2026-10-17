@@ -108,12 +108,9 @@ final class InstallCoordinator {
             return;
         }
         service.detectPrereqs(present -> {
-            Set<Prereq> needed = missing.stream()
-                    .flatMap(s -> s.prereqs().stream())
-                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(Prereq.class)));
-            needed.removeAll(present);
-            if (!needed.isEmpty()) {
-                String names = needed.stream().map(this::prereqName).collect(Collectors.joining(", "));
+            InstallCatalog.Plan plan = InstallCatalog.plan(missing, present);
+            if (plan.runnable().isEmpty()) {
+                String names = plan.need().stream().map(this::prereqName).collect(Collectors.joining(", "));
                 host.setStatus(tr("status.install.needPrereq", names));
                 alert(Alert.AlertType.WARNING, tr("status.install.needPrereq", names));
                 onResult.accept(false);
@@ -122,11 +119,14 @@ final class InstallCoordinator {
             installing.add(lang);
             host.setStatus(tr("status.install.installing", langName(lang)));
             service.install(
-                    missing, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                    plan.runnable(),
+                    ops.configDir(),
+                    id -> host.setStatus(tr("status.install.installingTool", id)),
+                    result -> {
                         installing.remove(lang);
                         if (result.ok()) {
                             postInstall(lang);
-                            host.setStatus(tr("status.install.done", langName(lang)));
+                            host.setStatus(doneMessage(lang, plan));
                         } else {
                             host.setStatus(tr("status.install.failed", langName(lang)));
                             alert(Alert.AlertType.ERROR, result.message());
@@ -134,6 +134,23 @@ final class InstallCoordinator {
                         onResult.accept(result.ok());
                     });
         });
+    }
+
+    /**
+     * What a finished language install says: done, or which tool still waits for a missing runtime — and, when
+     * it brought a debugger while debugging is off, where to turn it on (installing one did not).
+     */
+    String doneMessage(Lang lang, InstallCatalog.Plan plan) {
+        String done = plan.blocked().isEmpty()
+                ? tr("status.install.done", langName(lang))
+                : tr(
+                        "status.install.partial",
+                        langName(lang),
+                        plan.blocked().stream().map(Step::id).collect(Collectors.joining(", ")),
+                        plan.need().stream().map(this::prereqName).collect(Collectors.joining(", ")));
+        boolean debugger = plan.runnable().stream()
+                .anyMatch(s -> s.destSubpath() != null && s.destSubpath().startsWith("plugins/dap/"));
+        return debugger && !host.settings().isDebugSupport() ? done + " " + tr("status.install.enableDebugging") : done;
     }
 
     /** Installs an LSP-only server ({@code json}/{@code bash}/{@code go}/…) by its registry server id. */
@@ -357,7 +374,13 @@ final class InstallCoordinator {
             case "jdtls" -> ops.lspAvailable("java");
             case "java-debug" -> ops.dapAvailable("java");
             case "pyright" -> ops.lspAvailable("python");
-            case "debugpy" -> ops.dapAvailable("python");
+            // Found where the installer puts it, whether or not debugging is switched on (detection only runs
+            // then, so an installed debugpy was downloaded again by every install while it was off).
+            case "debugpy" ->
+                ops.dapAvailable("python")
+                        || com.editora.dap.DebugAdapterLocator.locateDebugpy(
+                                        "", Path.of(System.getProperty("user.home", "")))
+                                .isPresent();
             case "typescript-language-server" -> ops.lspAvailable("typescript");
             case "js-debug" -> ops.dapAvailable("javascript");
             case "mmdc" -> ops.mmdcAvailable();

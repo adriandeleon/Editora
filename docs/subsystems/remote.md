@@ -198,7 +198,7 @@ Three things have to hold before anything runs on a host, all checked by `ExecTa
 
 `ConnectionStore.exec[…].tools` holds a command per tool id for a host whose `PATH` does not have the right
 one; `ExecTargets.remoteTool(path, id)` reads it. Local tool settings are never used remotely: they are paths
-on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `dap.python`, `dap.js`, `dap.java`, and
+on this machine. The ids: `git`, `gh`, `rg`, `jdk.home`, `node`, `python`, `dap.python`, `dap.js`, `dap.java`, and
 `lsp.<server id>`.
 
 Settings → Remote edits both per saved site, below the connection form: "Allow running commands on this host"
@@ -270,7 +270,9 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   Maven / Gradle / npm / Cargo / Go builds and tests run on the host (`RunService.startRemote`: user locale,
   long-lived, so Stop and a lost connection end the tree). Typed input goes as UTF-8 lines ending in `\n`.
   This machine's JDK setting and PATH are never sent; a host's JDK is its own `java`, or `jdk.home` from its
-  tools (sent as `JAVA_HOME`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
+  tools (sent as `JAVA_HOME`). A Python file or configuration runs under the project's venv on the host
+  (`.venv`/`venv`/… with `pyvenv.cfg`, found over SFTP off the FX thread), else the host's `python` tool, else
+  `python3` there (`PythonRunPlan` with `Host.elsewhere`). Build-wrapper detection on a host is POSIX (`./mvnw`, `./gradlew`) and reads
   the execute bits over SFTP. Test reports are polled every 2 s instead of 750 ms. Run is enabled for a remote
   file whatever the host allows; a refusal is reported when it is launched.
 - **Java projects:** the main class (gutter ▶, Run Main Class, a saved configuration) runs on the host with

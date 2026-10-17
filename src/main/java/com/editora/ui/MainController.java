@@ -2515,6 +2515,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public Path projectRoot() {
+                        return windowProjectRoot();
+                    }
+
+                    @Override
+                    public String pythonInterpreterChoice() {
+                        return config.getWorkspaceState().getPythonInterpreter();
+                    }
+
+                    @Override
                     public void openLink(com.editora.run.StackTraceLinks.Link link) {
                         testNavigation.openRunLink(link);
                     }
@@ -4842,6 +4852,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public DebugCoordinator debugCoordinator() {
+                    return debugCoordinator;
+                }
+
+                @Override
                 public TestRunCoordinator testRunCoordinator() {
                     return testRunCoordinator;
                 }
@@ -4936,6 +4951,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean lspEnabled() {
             return MainController.this.lspEnabled();
+        }
+
+        @Override
+        public void turnOnLsp() {
+            if (!config.getSettings().isLspSupport()) {
+                toggleLsp();
+            }
+        }
+
+        @Override
+        public void openLspSettings() {
+            settingsWindow.showDoctorTarget("lsp", stage);
         }
     });
 
@@ -5991,6 +6018,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public String pythonInterpreterChoice() {
+            return config.getWorkspaceState().getPythonInterpreter();
+        }
+
+        @Override
+        public boolean runPythonTestFile(java.nio.file.Path file, String text) {
+            return testNavigation.runPythonTestFile(file, text);
+        }
+
+        @Override
         public java.nio.file.Path projectRoot() {
             return windowProjectRoot();
         }
@@ -6254,6 +6291,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void setStatusBarLsp(String label) {
             statusBar.setLsp(label);
+        }
+
+        @Override
+        public void setStatusBarPython(String text, String tooltip) {
+            statusBar.setPythonInterpreter(text, tooltip);
         }
 
         @Override
@@ -6633,8 +6675,29 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public java.nio.file.Path projectRoot() {
+                    return windowProjectRoot();
+                }
+
+                @Override
+                public String pythonInterpreterChoice() {
+                    return config.getWorkspaceState().getPythonInterpreter();
+                }
+
+                @Override
                 public void openSettingsFor(String settingsKey) {
                     settingsWindow.showDoctorTarget(settingsKey, stage);
+                }
+
+                @Override
+                public java.util.function.Supplier<com.editora.run.PythonInterpreters.PythonInterpreter>
+                        pythonInterpreter() {
+                    return lspCoordinator.pythonInterpreterForDoctor();
+                }
+
+                @Override
+                public boolean pythonInterpreterElsewhere() {
+                    return lspCoordinator.pythonInterpreterElsewhereForDoctor();
                 }
             });
 
@@ -7782,7 +7845,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         httpVariableHints.wire(buffer); // {{variable}} squiggles + {{ completion (on for .http buffers)
         buffer.setHttpEnabled(httpClient.isEnabled() && local);
         buffer.setMakeRunHandler(target -> runCoordinator.runMakeTarget(buffer, target)); // Makefile target ▶
-        buffer.setTestRunHandler(testNavigation::runSingleTest); // JUnit class/method gutter ▶ → the build tool
+        buffer.setTestRunHandler(t -> testNavigation.runSingleTest(buffer, t)); // JUnit → build tool; Python → pytest
         buffer.setTestDebugHandler(testNavigation::debugSingleTest); // editor menu → suspended test + debugger attach
         testNavigation.applyTestGutter(
                 buffer); // gated by the Test Runner feature + a detected JVM (Maven/Gradle) project

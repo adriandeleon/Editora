@@ -230,6 +230,7 @@ public final class GrammarRegistry {
         scopeToResource.put("source.graphql", "graphql");
         scopeToResource.put("source.java-properties", "properties");
         scopeToResource.put("source.gitattributes", "gitattributes");
+        scopeToResource.put("source.pip-requirements", "pip-requirements"); // in-house, by file name only
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
@@ -247,7 +248,7 @@ public final class GrammarRegistry {
         mapExtensions("source.go", "go");
         mapExtensions("source.cs", "cs", "csx");
         mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
-        mapExtensions("source.json", "json", "jsonc", "json5");
+        mapExtensions("source.json", "json", "jsonc", "json5", "ipynb"); // a Jupyter notebook is JSON
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
         mapExtensions("source.astro", "astro");

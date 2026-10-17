@@ -41,16 +41,23 @@ public final class IndentWindow {
      * may keep the result until one of those characters changes.
      */
     public static String unit(Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize) {
+        return unit(doc, tabSize, insertSpaces, indentSize, null);
+    }
+
+    /** As {@link #unit(Doc, int, Boolean, Integer)}, detecting the unit as {@code language} reads indentation. */
+    public static String unit(Doc doc, int tabSize, Boolean insertSpaces, Integer indentSize, String language) {
         String head = insertSpaces != null ? "" : doc.text(0, Math.min(doc.length(), HEAD_CHARS));
-        return Indenter.unitFor(head, tabSize, insertSpaces, indentSize);
+        return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
     }
 
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {
         int line = doc.lineOf(caret);
-        // Shell reads the stretch above the caret (its blocks, quotes and here-docs); the rest only the line.
-        int start =
-                Indenter.styleFor(language) == Indenter.Style.SHELL ? backScanStart(doc, line) : doc.lineStart(line);
+        // Shell and Python read the stretch above the caret (blocks, quotes, wrapped statements); the rest only the
+        // line.
+        int start = Indenter.styleFor(language) == Indenter.Style.SHELL || "python".equals(language)
+                ? backScanStart(doc, line)
+                : doc.lineStart(line);
         return Indenter.enterEdit(
                 doc.text(start, doc.lineStart(line) + doc.lineLength(line)), caret - start, language, unit);
     }

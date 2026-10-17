@@ -3795,6 +3795,12 @@
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0.0, 0, 2);
 }
 
+/* A hover's code is a signature, not a document: no language tag sitting on top of its first line (B12). */
+.lsp-hover-popup .md-code-lang { visibility: hidden; }
+/* The card has its own padding: the preview's page margins (48px a side) only squeezed the signature. */
+.lsp-hover-popup .markdown-preview-wrap,
+.lsp-hover-popup .markdown-preview { -fx-padding: 0; -fx-background-color: transparent; }
+
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }
 .run-panel .text.console-url {

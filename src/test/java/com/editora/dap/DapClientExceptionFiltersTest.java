@@ -107,4 +107,54 @@ class DapClientExceptionFiltersTest {
         c.initialized(); // ...which then installs them
         assertEquals(List.of(List.of("uncaught")), server.exceptionFilterCalls);
     }
+
+    /** debugpy's capabilities: uncaught exceptions on by default, as it declares. */
+    private static void debugpyCapabilities(DapClient c) throws Exception {
+        org.eclipse.lsp4j.debug.Capabilities caps = new org.eclipse.lsp4j.debug.Capabilities();
+        caps.setExceptionBreakpointFilters(new org.eclipse.lsp4j.debug.ExceptionBreakpointsFilter[] {
+            filter("raised", "Raised Exceptions", false),
+            filter("uncaught", "Uncaught Exceptions", true),
+            filter("userUnhandled", "User Uncaught Exceptions", false)
+        });
+        var f = DapClient.class.getDeclaredField("capabilities");
+        f.setAccessible(true);
+        f.set(c, caps);
+    }
+
+    private static org.eclipse.lsp4j.debug.ExceptionBreakpointsFilter filter(String id, String label, boolean on) {
+        var f = new org.eclipse.lsp4j.debug.ExceptionBreakpointsFilter();
+        f.setFilter(id);
+        f.setLabel(label);
+        f.setDefault_(on);
+        return f;
+    }
+
+    /** A Python program that crashed ran straight past the debugger: nothing asked debugpy to stop on it. */
+    @Test
+    void withNothingChosenTheAdaptersDefaultFiltersAreInstalled() throws Exception {
+        RecordingServer server = new RecordingServer();
+        DapClient c = connected(server);
+        debugpyCapabilities(c);
+
+        c.initialized();
+
+        assertEquals(List.of(List.of("uncaught")), server.exceptionFilterCalls);
+        assertEquals(
+                List.of("raised", "uncaught", "userUnhandled"),
+                c.exceptionFilterOptions().stream()
+                        .map(DapModels.ExceptionFilterOption::filter)
+                        .toList());
+    }
+
+    @Test
+    void aChoiceReplacesTheDefaultsAndNullGoesBackToThem() throws Exception {
+        RecordingServer server = new RecordingServer();
+        DapClient c = connected(server);
+        debugpyCapabilities(c);
+        c.setExceptionFilters(List.of("raised"));
+        c.initialized();
+        c.setExceptionFilters(null);
+
+        assertEquals(List.of(List.of("raised"), List.of("uncaught")), server.exceptionFilterCalls);
+    }
 }

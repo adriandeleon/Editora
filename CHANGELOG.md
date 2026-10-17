@@ -61,6 +61,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Project files:** License: MIT (this year and your author name), License: Apache 2.0 (verbatim), `.gitignore`
     for Java, Python and Node, `.editorconfig`, and GitHub Issue + PR Templates under `.github/`.
   - The multi-file ones are also offered by New Project From Template.
+- **Python: one interpreter for Run, Debug and code intelligence.** Editora now finds a project's own Python: an
+  activated environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`), else a `.venv`/`venv`/`env` folder in the project, else
+  Settings → Debugging → Python interpreter, else the system Python (`py -3` on Windows, never the Microsoft Store
+  stub). Run, run configurations, Debug, Pyright, Doctor and the formatter all use the same answer.
+  - A **status-bar item** on Python files shows the interpreter and why (`Python 3.13.5 (.venv)`); click it (or
+    `Python: Select Interpreter`) to pick one of the project's environments, a Python on PATH, or any file, per
+    project. "Detect automatically" goes back to the rules above.
+  - Pyright is told the interpreter, so a venv's packages resolve without a `pyrightconfig.json`.
+  - On SSH hosts, WSL and containers the project's venv is found on that machine; a new **`python` host tool**
+    sets the host's Python.
+- **Python tests: a pytest runner.** Test files (`test_*.py`, `*_test.py`) get a gutter ▶ on every test function,
+  class and method and one for the whole file; results fill the Test Results window, with Rerun, Rerun Failed and
+  run-one-row. It uses pytest when the interpreter has it, else `unittest` for `TestCase` tests, else says how to
+  install pytest. **Debug Test** works from a test line and from a Test Results row.
+- **Python: Format Document runs Ruff or Black** (the project venv's first, then PATH), also with language
+  servers off. Doctor shows which one it will use.
+- **Python run configurations:** an **Interpreter** and **Interpreter options** field, and a new **Python module**
+  type that runs `python -m <name>`.
+- **Debugging:** a **hit count** for breakpoints (Edit Breakpoint), an **exception breakpoint picker** that lists what
+  the debugger offers (Python: raised, uncaught, user-uncaught), **Debug File** next to Run File in the editor's
+  menu, and the exit code at the end of a Python debug session.
+- **Python editing:** folding by indentation (so sticky scroll pins Python scopes), and highlighting for pip
+  requirements files.
+- **"Turn on Python code intelligence?"** — a one-time offer when the first Python file opens while language
+  servers are off.
+
+### Changed
+
+- **Python Run:**
+  - The script runs in its own folder with the project root and `src/` on `PYTHONPATH`, so package imports work.
+  - A saved run configuration writes that folder into Working directory.
+  - Output streams as the program prints (`PYTHONUNBUFFERED`) and is UTF-8 on every platform.
+  - A specific shebang (`python3.12`, `pypy3`, `uv run --script`) is honoured.
+  - **Stop** sends Ctrl-C first, so `finally` blocks and `atexit` handlers run, and the console's first line shows
+    the command that ran.
+- **Python Debug** runs the program in the same folder, with the same interpreter and `PYTHONPATH` as Run.
+  - A program that reads `input()` gets the program console.
+  - An uncaught exception stops the debugger, as in VS Code.
+  - `multiprocessing` children run instead of waiting for a debugger.
+- **Python typing:**
+  - `else`, `elif`, `except`, `finally` and `case` line up with their statement as you type the `:`.
+  - Enter after `return`, `pass`, `raise`, `break` or `continue` steps out a level.
+  - Wrapped statements and open brackets indent as PEP 8 shows.
+  - In Python and YAML, Backspace in the indentation removes one level and no longer joins the line above.
+- **Python code intelligence:**
+  - Unused names are faded and deprecated calls struck through.
+  - Go to Definition into the standard library or site-packages stays on the project's server and opens the file
+    read-only.
+  - Organize Imports works for Python and for any server with a `source.organizeImports` action.
+  - Python keeps its server up to 50,000 lines.
+  - Untitled Python buffers get it too.
+- **Python highlighting:** generics (`def f[T]`, `class C[T]`), `type` aliases, t-strings, `match` used as a name, and
+  `0x`/`j` numbers. `__init__` and other methods named like builtins are back in Structure.
+- **Python indentation:** a file's indent size is guessed from its statements only, so PEP 8 hanging indents no
+  longer make it 8 spaces.
+- **Language names:** the status bar and the language picker show readable names ("pip requirements").
+- **Quotes:** `f"`, `rb"` and the other string prefixes auto-close in Python, and `"""` closes itself.
+- **File types:**
+  - `Pipfile`, `poetry.lock`, `uv.lock` and `pdm.lock` open as TOML; `Pipfile.lock` and `.ipynb` as JSON.
+  - `uv run`, `pipx run`, `pypy` and free-threaded `python3.14t` shebangs are Python.
+  - Toggle Comment in an INI file uses the comment character the file already uses.
+
+### Fixed
+
+- **Python:**
+  - Run used `python3` from PATH whatever the project or the Debug setting said.
+  - Output arrived only when the program ended, with stderr ahead of stdout.
+  - On Windows the Store stub ran, and `print('✓')` raised `UnicodeEncodeError`.
+  - Changing a Python configuration's working directory broke its target.
+  - ▶ on a test file reported exit code 0 without running a test.
+- **Python Debug:**
+  - Debugging a `multiprocessing` program hung.
+  - `input()` raised `EOFError`.
+  - An interpreter with arguments or an `env` prefix hung or lost them.
+  - A breakpoint the debugger moved onto a conditional one silently dropped its condition.
+  - Hovering `p.x` showed the local `x`.
+  - debugpy installed without Node and is no longer fetched again while debugging is off.
+- **Python code intelligence:**
+  - A new module created outside Editora never resolved until a restart.
+  - Windows with no project saw no file changes at all.
+  - A nested `requirements.txt` split the project's server.
+  - A missing custom server command was offered the Pyright installer.
+  - An empty "…" stayed in the status bar.
+  - The hover cut off Pyright's signature block.
+  - Structure showed return types with a trailing colon.
+- **Python console links:**
+  - Extensionless scripts, warnings and pytest/mypy/ruff `file.py:12:` lines are now links.
+  - So are pdb's `> file.py(12)` lines and paths containing quotes.
+- **Python Project template:** its README commands work on a fresh project.
+- **Spell check:** it now checks the first word of an f-string. Common Python terms (kwargs, asyncio, noqa) are no
+  longer flagged.
+- **Go to Symbol without a language server:** Python methods show their class.
 
 ### Changed
 

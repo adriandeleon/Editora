@@ -115,8 +115,8 @@ public final class RunConfigurationsWindow {
         });
 
         TextField name = new TextField();
-        ComboBox<String> type =
-                new ComboBox<>(FXCollections.observableArrayList("java", "python", "shell", "make", "npm"));
+        ComboBox<String> type = new ComboBox<>(
+                FXCollections.observableArrayList("java", "python", "python-module", "shell", "make", "npm"));
         type.setConverter(new StringConverter<>() {
             @Override
             public String toString(String value) {
@@ -189,6 +189,22 @@ public final class RunConfigurationsWindow {
             browse.setManaged(scriptFile);
             setRowDisabled(form, !RunConfigFields.usesInterpreter(value), interpreter, interpreterOptions);
             setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClass, projectName, vmArgs, jdk);
+            // The prompts say what a blank field means for this type (a Python script runs in its own folder).
+            boolean python = com.editora.run.ScriptRunCommand.isPython(value);
+            interpreter.setPromptText(
+                    tr(python ? "settings.runConfig.interpreterPromptPython" : "settings.runConfig.interpreterPrompt"));
+            interpreterOptions.setPromptText(tr(
+                    python
+                            ? "settings.runConfig.interpreterOptionsPromptPython"
+                            : "settings.runConfig.interpreterOptionsPrompt"));
+            workingDir.setPromptText(tr(
+                    com.editora.run.ScriptRunCommand.PYTHON.equals(value)
+                            ? "settings.runConfig.workingDirPromptPython"
+                            : "settings.runConfig.workingDirPrompt"));
+            target.setPromptText(tr(
+                    com.editora.run.ScriptRunCommand.PYTHON_MODULE.equals(value)
+                            ? "settings.runConfig.targetPromptModule"
+                            : "settings.runConfig.targetPrompt"));
         };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
                 name.getText(),
