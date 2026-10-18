@@ -39,9 +39,10 @@ class ChildLocalePolicyTest {
             Pattern.compile("ProcessRunner\\s*\\.\\s*(?:run|runBytes|applyStandardEnv)\\s*\\(");
     private static final Pattern USER_LOCALE = Pattern.compile("ProcessRunner\\s*\\.\\s*"
             + "(?:runInUserLocale|runLiveInUserLocale|runWithInputInUserLocale|runScrubbed|applyUserEnv)\\s*\\(");
-    /** Starting a process any other way bypasses both environments (and the augmented PATH). */
+    /** Starting a process any other way (pty4j's builder included) bypasses both environments and the augmented
+     *  PATH. */
     private static final Pattern RAW_SPAWN =
-            Pattern.compile("new\\s+ProcessBuilder\\s*\\(|getRuntime\\(\\)\\s*\\.exec\\s*\\(");
+            Pattern.compile("new\\s+(?:Pty)?ProcessBuilder\\s*\\(|getRuntime\\(\\)\\s*\\.exec\\s*\\(");
 
     /** Output is parsed, or only the exit code is read: these may start a child with {@code LC_ALL=C}. */
     private static final Set<String> PARSE_STABLE_FILES = Set.of(
@@ -95,6 +96,7 @@ class ChildLocalePolicyTest {
             Map.entry("mermaid/Mermaid.java", 2), // render + export
             Map.entry("process/DesktopActions.java", 1), // terminal / file manager
             Map.entry("run/RunService.java", 1), // the user's program
+            Map.entry("terminal/TerminalImageCheck.java", 1), // a shell on a pseudo-terminal
             Map.entry("typst/TypstRenderer.java", 2), // render + export
             Map.entry("ui/PluginCoordinator.java", 1), // a plugin's own command
             Map.entry("web/HtmlPreviewService.java", 1)); // the browser
@@ -113,6 +115,7 @@ class ChildLocalePolicyTest {
             "process/ProcessRegistry.java", // `kill -INT` for Stop on a Python program, standard environment
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
+            "terminal/TerminalImageCheck.java", // pty4j's PtyProcessBuilder, with applyUserEnv
             "web/HtmlPreviewService.java");
 
     @Test

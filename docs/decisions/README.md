@@ -21,7 +21,8 @@ rather than rewriting history.
 | [0010](0010-builtin-headless-test-platform.md) | JavaFX 26 built-in Headless test platform, drop self-built Monocle | Accepted |
 | [0011](0011-json-settings.md) | JSON for global and project settings | Accepted |
 | [0012](0012-settings-sync-git-transport.md) | Settings sync: Git carries the data, Editora merges it | Accepted |
-| [0013](0013-remote-execution-over-ssh-exec.md) | Remote development: tools run on the host over SSH exec channels | Accepted |
+| [0013](0013-remote-execution-over-ssh-exec.md) | Remote development: tools run on the host over SSH exec channels | Accepted (terminal clause superseded by 0014) |
+| [0014](0014-integrated-terminal.md) | Integrated terminal: Termina's emulator, a PTY only for terminal channels | Accepted (in progress) |
 
 ## Writing a new one
 
