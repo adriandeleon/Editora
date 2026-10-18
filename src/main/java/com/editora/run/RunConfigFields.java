@@ -22,7 +22,9 @@ public final class RunConfigFields {
 
     /** Whether {@code type}'s target is a script file (Python or shell), which Browse can pick. */
     public static boolean usesScriptFile(String type) {
-        return ScriptRunCommand.PYTHON.equals(type) || ScriptRunCommand.SHELL.equals(type);
+        return ScriptRunCommand.PYTHON.equals(type)
+                || ScriptRunCommand.SHELL.equals(type)
+                || ScriptRunCommand.NODE.equals(type);
     }
 
     /**
@@ -30,7 +32,9 @@ public final class RunConfigFields {
      * Python script's or module's (normally the project's venv, else the system Python).
      */
     public static boolean usesInterpreter(String type) {
-        return ScriptRunCommand.SHELL.equals(type) || ScriptRunCommand.isPython(type);
+        return ScriptRunCommand.SHELL.equals(type)
+                || ScriptRunCommand.isPython(type)
+                || ScriptRunCommand.NODE.equals(type);
     }
 
     /** Whether {@code type} launches with the main class, module, VM arguments and JDK. */

@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run File runs Node.js scripts.** A `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` or `.cts` file, or a script with a
+  `node` (or `deno`, `bun`, `tsx`) shebang, gets a gutter ▶ and runs in the Run console under the Node.js Editora
+  resolves (the Node.js setting, the project's `.nvmrc`/`.node-version`, else `node` on PATH), from its package
+  folder, with `--enable-source-maps` and colours on. TypeScript runs on plain Node 22.18+; an older Node says so.
+  The ▶ of a test file (`*.test.*`, `*.spec.*`, `test/`, `__tests__/`) runs `node --test` into Test Results, with
+  Rerun Failed and Rerun This Test. Run configurations gain a **Node.js script** type (script, Node.js arguments,
+  interpreter, arguments, environment).
+- **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
+  reporter flag, and node:test results can be rerun one by one or failed-only.
+
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
   only the changed settings.
@@ -380,6 +390,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transliteration letters and combining marks. The four font files add about 145 KB to the package.
 
 ### Fixed
+
+- **npm scripts:** a workspace member runs its workspace's package manager (pnpm, yarn, bun), not npm; an npm run
+  configuration uses the project's manager too, and the npm command setting no longer replaces a different manager.
+  Settings → Build Tools names the detected manager and why ("pnpm (pnpm-lock.yaml)"). A file inside
+  `node_modules` no longer turns the npm tool window into the dependency's. A missing node, npm, pnpm, yarn or bun
+  says how to get it instead of showing the Java error; a script that fails with no `node_modules` suggests
+  installing first. The Output console draws colours, names the runtime ("Node.js 24.18.1"), and its tab is named
+  after the manager. Stop sends Ctrl+C (SIGINT) first to Node and its package managers. A malformed package.json
+  says where. Script rows show their command.
+- **Test Results with TAP:** a `describe` block is no longer counted as a failed test, and a failure shows its error
+  and stack instead of the YAML block.
+- **Node.js stack-trace links** work for ESM `file://` frames (spaces, Windows drives), paths with spaces,
+  `.jsx/.tsx/.mts/.cts` files and tsc errors, and jump to the column.
+- **Run and Output consoles** say when the oldest output was dropped to stay under the size cap.
 
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
   servers silently stopped following the disk. They now check folders every 2 seconds.
