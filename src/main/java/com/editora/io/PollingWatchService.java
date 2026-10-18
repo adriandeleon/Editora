@@ -38,7 +38,8 @@ public final class PollingWatchService implements WatchService {
 
     /**
      * A folder entry as last seen: what a change to it would alter. The file key (the inode on Linux) catches a
-     * save that renames a new file over the old one within the same millisecond and size.
+     * save that renames a new file over the old one within the same millisecond and size. Windows gives no file
+     * key, so there such a save goes unseen; a real one rarely lands on the same timestamp.
      */
     private record Stamp(long modified, long size, boolean dir, Object fileKey) {}
 
