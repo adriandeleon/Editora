@@ -37,6 +37,23 @@ public final class LinkPaths {
         }
     }
 
+    /**
+     * The file a path token names for a shell on another machine: resolved against {@code cwd} as that shell names
+     * it, then mapped to a path Editora can open by {@code toPath} (the host's file over SFTP, the folder a
+     * container mounts). Null when it is not a path or there is no directory to resolve a relative one against.
+     * {@code ~} is not expanded: it is that machine's home, not this one's.
+     */
+    public static Path resolveOn(String token, String cwd, java.util.function.Function<String, Path> toPath) {
+        if (token == null || token.isBlank()) return null;
+        try {
+            if (token.startsWith("/")) return toPath.apply(token).normalize();
+            if (cwd == null || cwd.isBlank() || token.startsWith("~")) return null;
+            return toPath.apply(cwd).resolve(token).normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** {@code ~} and {@code ~/…} against the running user's home. {@code ~other} is left alone. */
     static String expandHome(String token) {
         if (token.equals("~")) return home();

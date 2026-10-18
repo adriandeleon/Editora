@@ -58,6 +58,46 @@ public final class PosixShell {
 
     private PosixShell() {}
 
+    /** What a terminal script prints first when asked to mark its pid: this, the pid, a newline. */
+    public static final String TERMINAL_PID_MARK = "\u001eEDITORA ";
+
+    /**
+     * The script an integrated terminal's shell starts with, on any target: optionally print its pid (so a
+     * target whose launcher does not end it — a container — can signal it on close), say what terminal this is,
+     * start in {@code cwd} (home when it is null or gone), and become the account's login shell — {@code $SHELL},
+     * else bash, else sh, since a container often sets none. Run with {@code /bin/sh -c}.
+     */
+    public static String terminalScript(String cwd, boolean markPid) {
+        return terminalScript(cwd, markPid, null);
+    }
+
+    /**
+     * As above, starting bash or zsh with Editora's shell integration from {@code integration} (a folder as the
+     * target names it) when the scripts are readable there: bash with {@code --init-file}, zsh with
+     * {@code ZDOTDIR}. Any other shell, or missing scripts, start as a plain login shell.
+     */
+    public static String terminalScript(String cwd, boolean markPid, String integration) {
+        StringBuilder script = new StringBuilder();
+        if (markPid) {
+            script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
+        }
+        script.append("export TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=Editora; ");
+        if (cwd != null && !cwd.isBlank()) {
+            script.append("cd -- ").append(quote(cwd)).append(" 2>/dev/null || cd; ");
+        }
+        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); ");
+        if (integration != null && !integration.isBlank()) {
+            script.append("I=")
+                    .append(quote(integration))
+                    .append("; case \"${s##*/}\" in ")
+                    .append("bash) [ -r \"$I/editora.bash\" ] && exec \"$s\" --init-file \"$I/editora.bash\" -i ;; ")
+                    .append("zsh) [ -r \"$I/zsh/.zshrc\" ] && USER_ZDOTDIR=\"${ZDOTDIR:-$HOME}\" ZDOTDIR=\"$I/zsh\" ")
+                    .append("exec \"$s\" -l ;; esac; ");
+        }
+        script.append("exec \"$s\" -l");
+        return script.toString();
+    }
+
     /** {@code text} as one shell word. */
     public static String quote(String text) {
         return "'" + text.replace("'", "'\\''") + "'";

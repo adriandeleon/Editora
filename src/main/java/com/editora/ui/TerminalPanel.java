@@ -95,6 +95,13 @@ final class TerminalPanel extends StackPane {
     private final Map<Tab, String> dirs = new LinkedHashMap<>();
 
     private java.util.function.Function<Path, String> targetLabel = dir -> tr("terminal.target.local");
+
+    /** For a tab's folder, how its shell's paths map to paths here (null: this machine). */
+    private java.util.function.Function<Path, java.util.function.Function<String, Path>> shellPaths = dir -> null;
+
+    /** What a shell elsewhere (its folder, its pid there) is running; asked before its tab closes. */
+    private java.util.function.BiFunction<Path, Long, List<String>> remotePrograms = (dir, pid) -> List.of();
+
     private final Shells shells;
     private final CloseGuard closeGuard;
     private final Supplier<Path> directory;
@@ -147,6 +154,42 @@ final class TerminalPanel extends StackPane {
             }
             updateEmpty();
         });
+    }
+
+    /** How a tab's shell's paths map to paths here, by the tab's folder (null for this machine). */
+    void setShellPaths(java.util.function.Function<Path, java.util.function.Function<String, Path>> shellPaths) {
+        this.shellPaths = shellPaths == null ? dir -> null : shellPaths;
+    }
+
+    /** What a shell elsewhere is running, for the close prompt (a shell here is asked of this machine). */
+    void setRemotePrograms(java.util.function.BiFunction<Path, Long, List<String>> remotePrograms) {
+        this.remotePrograms = remotePrograms == null ? (dir, pid) -> List.of() : remotePrograms;
+    }
+
+    /**
+     * A new tab in the selected shell's own directory (as its shell last reported it), on the same machine; in the
+     * tab's starting folder when the shell has said nothing.
+     */
+    void newTerminalHere() {
+        Tab tab = activeTab();
+        TerminalView view = activeView();
+        if (tab == null || view == null) {
+            newTerminal();
+            return;
+        }
+        String stored = dirs.getOrDefault(tab, "");
+        Path start = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+        String cwd = view.getDisplay().getCwd();
+        Path here = null;
+        if (cwd != null && !cwd.isBlank()) {
+            var map = shellPaths.apply(start);
+            try {
+                here = map == null ? Path.of(cwd) : map.apply(cwd);
+            } catch (RuntimeException notAPath) {
+                here = null;
+            }
+        }
+        newTerminal(here != null ? here : start);
     }
 
     /** What a tab's chip says about where its shell runs ("Local", a host name). */
@@ -223,6 +266,7 @@ final class TerminalPanel extends StackPane {
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
         view.setPalette(palette);
+        view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
         view.setOnSessionEnded(() -> shellEnded(tab, view));
         try {
             view.start(shells.open(dir, config.shell()));
@@ -371,7 +415,17 @@ final class TerminalPanel extends StackPane {
             return true;
         }
         long pid = view.getSession().pid();
-        List<String> programs = pid > 0 ? RunningProgram.in(pid) : List.of();
+        long remote = view.getSession().remotePid();
+        List<String> programs;
+        if (pid > 0) {
+            programs = RunningProgram.in(pid);
+        } else if (remote > 0) {
+            String stored = dirs.getOrDefault(tab, "");
+            Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+            programs = dir == null ? List.of() : remotePrograms.apply(dir, remote);
+        } else {
+            programs = List.of();
+        }
         return programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs));
     }
 
@@ -385,6 +439,12 @@ final class TerminalPanel extends StackPane {
             e.consume();
         } else if (TerminalKeys.isPaste(e, MAC)) {
             view.paste();
+            e.consume();
+        } else if (TerminalKeys.isPreviousPrompt(e, MAC)) {
+            view.previousPrompt();
+            e.consume();
+        } else if (TerminalKeys.isNextPrompt(e, MAC)) {
+            view.nextPrompt();
             e.consume();
         }
     }

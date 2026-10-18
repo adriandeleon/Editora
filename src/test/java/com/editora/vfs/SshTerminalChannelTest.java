@@ -2,7 +2,6 @@ package com.editora.vfs;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The command line a terminal channel runs on the host. */
@@ -10,10 +9,19 @@ class SshTerminalChannelTest {
 
     @Test
     void itStartsInTheFolderThenBecomesTheLoginShell() {
-        assertEquals(
-                "exec /bin/sh -c 'export COLORTERM=truecolor TERM_PROGRAM=Editora; cd -- '\\''/srv/my app'\\'' "
-                        + "2>/dev/null || cd; exec \"${SHELL:-/bin/sh}\" -l'",
-                SshTerminalChannel.commandLine("/srv/my app"));
+        String line = SshTerminalChannel.commandLine("/srv/my app");
+        assertTrue(line.startsWith("exec /bin/sh -c '"), line);
+        assertTrue(line.contains("cd -- '\\''/srv/my app'\\''"), line);
+        assertTrue(line.contains("TERM_PROGRAM=Editora"), line);
+        assertTrue(line.contains("EDITORA %s"), "a pid line, for the close check on the host: " + line);
+    }
+
+    @Test
+    void withShellIntegrationBashAndZshStartWithItsScripts() {
+        String line = SshTerminalChannel.commandLine("/srv/app", "/home/me/.cache/editora/shell-integration/abc");
+        assertTrue(line.contains("--init-file"), line);
+        assertTrue(line.contains("ZDOTDIR"), line);
+        assertTrue(line.endsWith("-l'"), "any other shell still starts plain: " + line);
     }
 
     @Test
@@ -21,7 +29,7 @@ class SshTerminalChannelTest {
         String line = SshTerminalChannel.commandLine(null);
         assertTrue(line.startsWith("exec /bin/sh -c "), "wrapped for a fish or csh account: " + line);
         assertTrue(!line.contains("cd --"), line);
-        assertTrue(line.contains("exec \"${SHELL:-/bin/sh}\" -l"), line);
+        assertTrue(line.endsWith("-l'"), line);
     }
 
     @Test

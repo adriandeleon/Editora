@@ -145,6 +145,11 @@ public final class TerminalSession {
         return connector.lostConnection();
     }
 
+    /** The shell's pid on the machine it runs on when that is not this one, once known; -1 otherwise. */
+    public long remotePid() {
+        return connector.remotePid();
+    }
+
     /** The shell's pid on this machine, or {@code -1} when it runs elsewhere. */
     public long pid() {
         return connector.pid();

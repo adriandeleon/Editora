@@ -90,6 +90,62 @@ class WslProbeTest {
     }
 
     @Test
+    void aTerminalForTheFolderIsALoginShellInsideTheDistribution() throws Exception {
+        com.editora.process.TerminalChannel shell =
+                ExecTargets.forPath(folder).startTerminal(new com.editora.process.TerminalSpec(folder, 100, 30));
+        StringBuffer seen = new StringBuffer();
+        Thread.ofVirtual().start(() -> {
+            byte[] buf = new byte[4096];
+            try {
+                int n;
+                while ((n = shell.output().read(buf)) > 0) {
+                    seen.append(new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8));
+                }
+            } catch (java.io.IOException ended) {
+                // closed
+            }
+        });
+        try {
+            type(shell, "stty size; pwd; echo $WSL_DISTRO_NAME $TERM\n");
+            awaitOutput(seen, "30 100");
+            awaitOutput(seen, inside);
+            awaitOutput(seen, distro + " xterm-256color");
+            assertFalse(seen.toString().contains("EDITORA"), "the pid line is the transport's: " + seen);
+
+            shell.resize(120, 40);
+            type(shell, "stty size\n");
+            awaitOutput(seen, "40 120");
+
+            type(shell, "exec sleep 6010\n");
+            Thread.sleep(2000);
+            assertEquals(
+                    "1", wsl(distro, "pgrep -f '^sleep 6010$' | wc -l").out().strip(), "the sleep running");
+        } finally {
+            shell.close();
+        }
+        String left = "1";
+        for (int i = 0; i < 50 && !left.equals("0"); i++) {
+            Thread.sleep(200);
+            left = wsl(distro, "pgrep -f '^sleep 6010$' | wc -l").out().strip();
+        }
+        assertEquals("0", left, "closing the terminal ended its program in the distribution");
+    }
+
+    private static void type(com.editora.process.TerminalChannel shell, String text) throws java.io.IOException {
+        shell.input().write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        shell.input().flush();
+    }
+
+    private static void awaitOutput(StringBuffer seen, String needle) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (System.nanoTime() < deadline && !seen.toString().contains(needle)) {
+            Thread.sleep(100);
+        }
+        assertTrue(
+                seen.toString().contains(needle), () -> "\"" + needle + "\" in the terminal's output: [" + seen + "]");
+    }
+
+    @Test
     void gitForTheFolderIsTheDistributions() {
         ProcessRunner.Result init = ProcessRunner.run(
                 folder,

@@ -128,4 +128,40 @@ class PosixShellTest {
         assertThrows(IllegalArgumentException.class, () -> PosixShell.killCommandLine(1, true));
         assertThrows(IllegalArgumentException.class, () -> PosixShell.killCommandLine(-1, true));
     }
+
+    @Test
+    void aTerminalScriptMarksItsPidStartsInTheFolderAndBecomesALoginShell() throws Exception {
+        String script = PosixShell.terminalScript("/w/my app", true);
+        org.junit.jupiter.api.Assertions.assertTrue(script.startsWith("printf '\\036EDITORA %s\\n' \"$$\"; "), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.contains("cd -- '/w/my app' 2>/dev/null || cd; "), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.endsWith("exec \"$s\" -l"), script);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                !PosixShell.terminalScript(null, false).contains("cd --"), "home when there is no folder");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                !PosixShell.terminalScript(null, false).contains("EDITORA"), "no pid line unless asked");
+    }
+
+    @Test
+    void aTerminalScriptsPidLineIsTheMarkThenThePid() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
+        // Up to the cd: replace the login shell with a plain exit so the script can be run here.
+        String script = PosixShell.terminalScript(null, true).replaceFirst("s=\\$\\{SHELL.*$", "exit 0");
+        Process p = new ProcessBuilder("/bin/sh", "-c", script).start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        p.waitFor();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                out.matches(java.util.regex.Pattern.quote(PosixShell.TERMINAL_PID_MARK) + "\\d+\n"), out);
+    }
+
+    @Test
+    void aTerminalScriptStartsBashAndZshWithTheIntegrationWhenItIsThere() {
+        String script = PosixShell.terminalScript("/w", true, "/home/ana/.cache/editora/shell-integration/abc");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                script.contains("I='/home/ana/.cache/editora/shell-integration/abc'"), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.contains("--init-file \"$I/editora.bash\" -i"), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.contains("ZDOTDIR=\"$I/zsh\""), script);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                script.endsWith("exec \"$s\" -l"), "the plain login shell is the fallback");
+    }
 }

@@ -25,6 +25,11 @@ public interface TerminalConnector extends TtyConnector {
         return false;
     }
 
+    /** The shell's pid on the machine it runs on when that is not this one, once known; -1 otherwise. */
+    default long remotePid() {
+        return -1;
+    }
+
     /**
      * Opens a connector at the size the view has laid out, so the shell starts at the right size rather than
      * learning it from a resize a moment later.

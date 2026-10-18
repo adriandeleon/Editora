@@ -3895,6 +3895,14 @@ public class SettingsWindow {
         switchRow(
                 shell,
                 cat,
+                "terminal.shellIntegration",
+                true,
+                Settings::isTerminalShellIntegration,
+                Settings::setTerminalShellIntegration,
+                "terminal shell integration osc prompt marks cwd directory bash zsh");
+        switchRow(
+                shell,
+                cat,
                 "terminal.useExternal",
                 true,
                 Settings::isTerminalUseExternal,

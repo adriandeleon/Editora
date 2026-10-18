@@ -78,6 +78,12 @@ public final class ChannelConnector implements TerminalConnector {
         channel.close();
     }
 
+    /** The shell's pid on its own machine, once known; what a "still running?" check asks about there. */
+    @Override
+    public long remotePid() {
+        return channel.pid();
+    }
+
     @Override
     public boolean lostConnection() {
         return channel.lostConnection();

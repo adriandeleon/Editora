@@ -32,7 +32,7 @@ public final class TerminalKeys {
      * @param ideCommands command ids that pass, each exact or ending in {@code .*} for a prefix
      */
     public static boolean reachesEditora(String token, String commandId, List<String> ideCommands, boolean mac) {
-        if (token == null || isCopyOrPaste(token, mac)) {
+        if (token == null || isCopyOrPaste(token, mac) || isPromptJump(token, mac)) {
             return false;
         }
         if (mac && token.contains("Cmd-")) {
@@ -58,6 +58,23 @@ public final class TerminalKeys {
     /** The terminal's own Copy/Paste chord tokens. */
     static boolean isCopyOrPaste(String token, boolean mac) {
         return mac ? token.equals("Cmd-c") || token.equals("Cmd-v") : token.equals("C-S-c") || token.equals("C-S-v");
+    }
+
+    /** The terminal's own jump-to-prompt chord tokens. */
+    static boolean isPromptJump(String token, boolean mac) {
+        return mac
+                ? token.equals("Cmd-up") || token.equals("Cmd-down")
+                : token.equals("C-S-up") || token.equals("C-S-down");
+    }
+
+    /** Scroll to the previous prompt: Ctrl+Shift+Up, or Cmd+Up on macOS (shell integration's prompt marks). */
+    public static boolean isPreviousPrompt(KeyEvent e, boolean mac) {
+        return e.getCode() == KeyCode.UP && clipboardModifier(e, mac);
+    }
+
+    /** Scroll to the next prompt: Ctrl+Shift+Down, or Cmd+Down on macOS. */
+    public static boolean isNextPrompt(KeyEvent e, boolean mac) {
+        return e.getCode() == KeyCode.DOWN && clipboardModifier(e, mac);
     }
 
     /** Copy: Ctrl+Shift+C, or Cmd+C on macOS. */

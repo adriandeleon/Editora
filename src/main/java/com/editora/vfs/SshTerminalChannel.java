@@ -31,11 +31,15 @@ final class SshTerminalChannel implements TerminalChannel {
     private final ChannelExec channel;
     private final CountDownLatch closed = new CountDownLatch(1);
     private volatile boolean closedByUs;
+    private volatile long pid = -1;
+    /** The channel's output with the start script's pid line taken out (and its pid kept). */
+    private final InputStream output;
 
     private SshTerminalChannel(ClientSession session, ChannelExec channel) {
         this.session = session;
         this.channel = channel;
         channel.addCloseFutureListener(f -> closed.countDown());
+        this.output = new com.editora.terminal.PidMarkStream(channel.getInvertedOut(), found -> pid = found);
     }
 
     /** Opens {@code commandLine} on a new PTY channel of {@code session}, sized as {@code spec} says. */
@@ -67,7 +71,12 @@ final class SshTerminalChannel implements TerminalChannel {
 
     @Override
     public InputStream output() {
-        return channel.getInvertedOut();
+        return output;
+    }
+
+    @Override
+    public long pid() {
+        return pid;
     }
 
     @Override
@@ -117,13 +126,13 @@ final class SshTerminalChannel implements TerminalChannel {
      * or csh.
      */
     static String commandLine(String cwd) {
-        StringBuilder script = new StringBuilder("export COLORTERM=truecolor TERM_PROGRAM=Editora; ");
-        if (cwd != null && !cwd.isBlank()) {
-            script.append("cd -- ")
-                    .append(com.editora.process.PosixShell.quote(cwd))
-                    .append(" 2>/dev/null || cd; ");
-        }
-        script.append("exec \"${SHELL:-/bin/sh}\" -l");
-        return "exec /bin/sh -c " + com.editora.process.PosixShell.quote(script.toString());
+        return commandLine(cwd, null);
+    }
+
+    /** As above, with Editora's shell integration from {@code integration} on the host (null for none). */
+    static String commandLine(String cwd, String integration) {
+        return "exec /bin/sh -c "
+                + com.editora.process.PosixShell.quote(
+                        com.editora.process.PosixShell.terminalScript(cwd, true, integration));
     }
 }

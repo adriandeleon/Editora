@@ -43,6 +43,17 @@ public record ContainerEngine(List<String> command) {
         return List.copyOf(argv);
     }
 
+    /**
+     * {@code exec -i -t [-u user] <container> <inner…>}: as {@link #execArgv}, with a pseudo-terminal in the
+     * container — for the integrated terminal only, run on a pseudo-terminal here (the engine's client wants a tty
+     * of its own for {@code -t}).
+     */
+    public List<String> terminalArgv(String container, String user, List<String> inner) {
+        List<String> argv = new ArrayList<>(execArgv(container, user, inner));
+        argv.add(command.size() + 2, "-t");
+        return List.copyOf(argv);
+    }
+
     /** {@code inspect <container>}, parsed; null when the engine does not answer or knows no such container. */
     public ContainerInfo inspect(String container) {
         List<String> argv = new ArrayList<>(command);

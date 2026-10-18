@@ -5931,6 +5931,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public java.nio.file.Path configDir() {
+                    return config.getConfigDir();
+                }
+
+                @Override
                 public void openLink(java.nio.file.Path file, int line, int column) {
                     if (java.nio.file.Files.isDirectory(file)) {
                         openAndNavigate(file, -1); // reveals it in the Project tree

@@ -113,8 +113,8 @@ final class SshExecTarget implements ExecTarget {
             throw new IOException(e.getMessage() + " (each terminal on it is one)", e);
         }
         try {
-            SshTerminalChannel terminal =
-                    SshTerminalChannel.open(session, SshTerminalChannel.commandLine(cwd), spec, START_TIMEOUT);
+            SshTerminalChannel terminal = SshTerminalChannel.open(
+                    session, SshTerminalChannel.commandLine(cwd, spec.shellIntegration()), spec, START_TIMEOUT);
             terminal.whenClosed(budget::release);
             return terminal;
         } catch (IOException | RuntimeException e) {
