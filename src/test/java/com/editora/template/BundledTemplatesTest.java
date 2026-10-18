@@ -101,6 +101,17 @@ class BundledTemplatesTest {
         }
     }
 
+    /**
+     * The Node TypeScript project pins a TypeScript that ships {@code tsserver}: TypeScript 7 has none, so the
+     * project's own language server could not start (Node review A9/B1).
+     */
+    @Test
+    void theNodeTypescriptProjectPinsATypescriptWithATsserver(@TempDir Path tmp) throws Exception {
+        var pkg = new ObjectMapper()
+                .readTree(rendered(tmp, bundled(tmp, "node-typescript-project")).get("package.json"));
+        assertEquals("^6.0.0", pkg.path("devDependencies").path("typescript").asText());
+    }
+
     @Test
     void theHttpRequestsParseWithTheirChecksAndBothEnvironmentsResolve(@TempDir Path tmp) throws Exception {
         Map<String, String> files = rendered(tmp, bundled(tmp, "http-requests"));
