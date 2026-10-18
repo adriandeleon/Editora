@@ -938,6 +938,18 @@ public final class ConfigMigrations {
         }
     }
 
+    /**
+     * v133→134: Codex gets its own model field. It used {@code aiModel}, the Anthropic one, so the value there is
+     * copied: each provider keeps the model it had. Safe to repeat — a file that has the field is left alone.
+     */
+    static JsonNode splitCodexModel(JsonNode input) {
+        if (input instanceof ObjectNode o && !o.has("aiModelCodex")) {
+            JsonNode model = o.get("aiModel");
+            o.put("aiModelCodex", model != null && model.isTextual() ? model.asText() : "");
+        }
+        return input;
+    }
+
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {
         if (!(input instanceof ObjectNode o)) {
             return input;

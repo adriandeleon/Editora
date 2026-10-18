@@ -138,7 +138,7 @@ class AiCoordinatorFxTest {
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Settings settings = enabled();
             settings.setAiProvider("codex");
-            settings.setAiModel("test-model");
+            settings.setAiModelCodex("test-model"); // Codex has its own model field
             // This deliberately invalid HTTP endpoint must never be used by the Codex provider.
             settings.setAiEndpoint("not-an-http-endpoint");
             settings.setCodexAgentCommand("\"" + Path.of(System.getProperty("java.home"), "bin", "java")
@@ -196,7 +196,7 @@ class AiCoordinatorFxTest {
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Settings settings = enabled();
             settings.setAiProvider("codex");
-            settings.setAiModel("test-model");
+            settings.setAiModelCodex("test-model"); // Codex has its own model field
             settings.setCodexAgentCommand("\"" + Path.of(System.getProperty("java.home"), "bin", "java")
                     + "\" -cp \"" + System.getProperty("java.class.path")
                     + "\" com.editora.ai.CodexAiClientTest$Peer ui");
