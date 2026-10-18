@@ -305,7 +305,8 @@ class TerminalPanelFxTest {
             panel.newTerminal();
             return null;
         });
-        shells.get(0).emit(file + ":12:3\r\nsee https://example.com/docs\r\n");
+        // The URL first: a long temp path (macOS's /var/folders/…) can wrap onto a second row.
+        shells.get(0).emit("see https://example.com/docs\r\n" + file + ":12:3\r\n");
         await(() -> call(() -> screen().contains("example.com")), "the output on screen");
         // A click is only a link once the view has a size: before its first layout every point is outside it.
         await(
@@ -313,10 +314,10 @@ class TerminalPanelFxTest {
                         panel.activeView().getWidth() > 0 && panel.activeView().getHeight() > 0),
                 "a layout");
 
-        clickWithLinkModifier(1, 0); // a column inside the path on the first row
-        clickWithLinkModifier(6, 1); // inside the URL on the second row
+        clickWithLinkModifier(6, 0); // inside the URL on the first row
+        clickWithLinkModifier(1, 1); // a column inside the path on the second row
 
-        assertEquals(List.of(file + ":12:3", "url https://example.com/docs"), opened);
+        assertEquals(List.of("url https://example.com/docs", file + ":12:3"), opened);
     }
 
     @Test

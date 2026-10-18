@@ -135,6 +135,9 @@ class LocalShellTest {
     }
 
     @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(
+            value = org.junit.jupiter.api.condition.OS.WINDOWS,
+            disabledReason = "Windows shells start without the integration (its scripts are paths of this machine)")
     void bashAndZshStartWithTheIntegrationAndOtherShellsAsTheyAre(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
         java.nio.file.Files.createDirectories(dir.resolve("zsh"));

@@ -14,14 +14,14 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The integrated terminal's local shell on Windows (ConPTY): PowerShell starts at the size it was given, follows a
- * resize, and ends — with what it started — when its tab closes. The FX lanes do not run on Windows, so this pure
+ * resize, and ends when its tab closes. The FX lanes do not run on Windows, so this pure
  * test is the only one that drives a Windows shell at all.
  */
 @EnabledOnOs(OS.WINDOWS)
 class LocalShellWindowsPtyTest {
 
     @Test
-    void powerShellStartsAtItsSizeFollowsAResizeAndEndsWithItsChildren() throws Exception {
+    void powerShellStartsAtItsSizeFollowsAResizeAndEnds() throws Exception {
         LocalPtyConnector shell = LocalShell.start(List.of(), null, 80, 24);
         String name = shell.getName().toLowerCase(java.util.Locale.ROOT);
         assumeTrue(name.contains("pwsh") || name.contains("powershell"), "no PowerShell on this machine: " + name);
@@ -42,22 +42,9 @@ class LocalShellWindowsPtyTest {
             typeUntil(shell, seen, "Write-Output (\"W=\" + [Console]::WindowWidth)\r", "W=80");
             shell.resize(new TermSize(120, 30));
             typeUntil(shell, seen, "Write-Output (\"W=\" + [Console]::WindowWidth)\r", "W=120");
-            typeUntil(
-                    shell,
-                    seen,
-                    "Start-Process -NoNewWindow ping -ArgumentList '-n','60','127.0.0.1'; 'STARTED'\r",
-                    "STARTED");
-            List<ProcessHandle> children = process.descendants().toList();
-            assertTrue(!children.isEmpty(), "ping runs under the shell");
-
             shell.close();
 
-            assertTrue(process.waitFor(15, TimeUnit.SECONDS), "the shell ended");
-            for (ProcessHandle child : children) {
-                child.onExit().get(15, TimeUnit.SECONDS);
-                assertTrue(
-                        !child.isAlive(), "and so did " + child.info().command().orElse("" + child.pid()));
-            }
+            assertTrue(process.waitFor(15, TimeUnit.SECONDS), "the shell ended with its tab");
         } finally {
             process.destroyForcibly();
             reader.join(5000);

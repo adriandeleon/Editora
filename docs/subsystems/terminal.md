@@ -65,8 +65,9 @@ Debug can run a program in a tab instead of their consoles.
   one question listing every busy tab in every window (`busyTabs`, remote ones within 2 s). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
   `UnixPtyProcess` throws from `toHandle()`, which the registry needs, so `LocalPtyConnector.trackableProcess()`
   wraps it (`PtyHandleProcess`). Before that wrapper, tracking threw after the shell had started.
-- **How a terminal's process ends:** a shell is *hung up* (`ProcessRegistry.HangsUp`): SIGTERM to its group and
-  the pty closed, so it passes SIGHUP to its jobs, a job the user detached (`nohup`, `disown`) keeps running, and
+- **How a terminal's process ends:** a shell is *hung up* (`ProcessRegistry.HangsUp`): its pty is closed, so it
+  gets SIGHUP and passes it to its jobs (no SIGTERM: pty4j's `destroy` signals the whole process group, which on
+  macOS ended a `nohup` job too), a job the user detached (`nohup`, `disown`) keeps running, and
   only the shell itself is force-killed after the grace period. The shutdown hook does the same, rather than
   killing every descendant. A program (Run in Terminal) is ended as console Run ends one, `killTree`: TERM to
   its tree, KILL to what ignored it; its streams stay open until it is gone, so its last words are shown.
