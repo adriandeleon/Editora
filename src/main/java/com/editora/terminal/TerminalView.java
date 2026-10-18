@@ -693,7 +693,23 @@ public final class TerminalView extends Region {
         Color bg = backgroundOf(style);
         if (bg.equals(palette.background())) return; // already cleared
         g.setFill(bg);
-        g.fillRect(column * charWidth, row * lineHeight, length * charWidth, lineHeight);
+        fillCells(g, column, column + length, row * lineHeight, lineHeight);
+    }
+
+    /**
+     * Fills columns {@code from} to {@code to} (end exclusive) of a row, edges on whole pixels. A cell is a
+     * fractional number of pixels wide (8.43 at 14 px), so two runs that met at 25.29 px were each drawn
+     * anti-aliased there, and a seam showed between backgrounds of the same colour; on whole pixels they abut.
+     */
+    private void fillCells(GraphicsContext g, double from, double to, double y, double height) {
+        double left = cellEdge(from, charWidth);
+        double right = cellEdge(to, charWidth);
+        if (right > left) g.fillRect(left, y, right - left, height);
+    }
+
+    /** The whole-pixel x where column {@code column} starts (the same for a run ending there and one starting). */
+    static double cellEdge(double column, double charWidth) {
+        return Math.round(column * charWidth);
     }
 
     private void drawRun(GraphicsContext g, int column, int row, TextStyle style, CharBuffer characters) {
@@ -712,7 +728,7 @@ public final class TerminalView extends Region {
 
         if (!bg.equals(palette.background())) {
             g.setFill(bg);
-            g.fillRect(x, y, width, lineHeight);
+            fillCells(g, column, column + CellWidth.cells(text), y, lineHeight);
         }
 
         if (style.hasOption(TextStyle.Option.HIDDEN)) return;
@@ -1120,6 +1136,11 @@ public final class TerminalView extends Region {
         }
     };
 
+    /** A cell's width in pixels, for tests. */
+    double cellWidth() {
+        return charWidth;
+    }
+
     /** Rows scrolled back from the live screen (0 at it, negative into history), for tests. */
     int scrollOrigin() {
         return scrollOrigin;
@@ -1472,7 +1493,7 @@ public final class TerminalView extends Region {
             double x = ColumnMap.columnAt(text, h.from());
             double to = ColumnMap.columnAt(text, h.to());
             g.setFill(i == state.current() ? strong : wash);
-            g.fillRect(x * charWidth, (row - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
+            fillCells(g, x, to, (row - scrollOrigin) * lineHeight, lineHeight);
         }
     }
 
@@ -2352,7 +2373,7 @@ public final class TerminalView extends Region {
             String text = lineTextAt(line);
             double x = ColumnMap.columnAt(text, from);
             double to = ColumnMap.columnAt(text, from + length);
-            g.fillRect(x * charWidth, row * lineHeight, (to - x) * charWidth, lineHeight);
+            fillCells(g, x, to, row * lineHeight, lineHeight);
         }
     }
 

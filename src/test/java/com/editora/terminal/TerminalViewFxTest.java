@@ -360,6 +360,17 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void cellEdgesFallOnWholePixelsSoAdjacentRunsAbut() {
+        // An 8.43 px cell: a run ending at column 3 and one starting there used to meet at 25.29 px, each
+        // anti-aliased, with a seam between backgrounds of one colour on GPU pipelines.
+        for (int column = 0; column < 200; column++) {
+            double edge = TerminalView.cellEdge(column, 8.43);
+            assertEquals(Math.rint(edge), edge, "column " + column);
+            assertTrue(TerminalView.cellEdge(column + 1, 8.43) - edge >= 8, "a cell keeps its width");
+        }
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
