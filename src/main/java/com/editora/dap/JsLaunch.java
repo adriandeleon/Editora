@@ -56,11 +56,30 @@ public final class JsLaunch {
             List<String> runtime,
             List<String> args,
             boolean clientConsole) {
+        return request(type, program, cwd, workspaceFolder, runtime, args, clientConsole, Map.of());
+    }
+
+    /**
+     * As above, with {@code env} set on top of the inherited environment (a {@code null} value unsets a variable).
+     * A blank {@code program} launches {@code runtime} itself — a package manager's {@code run <script>} — and
+     * js-debug attaches to the Node processes it starts.
+     */
+    public static Map<String, Object> request(
+            String type,
+            String program,
+            String cwd,
+            String workspaceFolder,
+            List<String> runtime,
+            List<String> args,
+            boolean clientConsole,
+            Map<String, String> env) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", type == null || type.isBlank() ? "pwa-node" : type);
         m.put("name", "Editora (Launch)");
         m.put("request", "launch");
-        m.put("program", program == null ? "" : program);
+        if (notBlank(program)) {
+            m.put("program", program);
+        }
         if (notBlank(cwd)) {
             m.put("cwd", cwd);
         }
@@ -76,6 +95,9 @@ public final class JsLaunch {
             if (runtime.size() > 1) {
                 m.put("runtimeArgs", List.copyOf(runtime.subList(1, runtime.size())));
             }
+        }
+        if (env != null && !env.isEmpty()) {
+            m.put("env", new LinkedHashMap<>(env));
         }
         m.put("skipFiles", List.of(NODE_INTERNALS));
         if (clientConsole) {
