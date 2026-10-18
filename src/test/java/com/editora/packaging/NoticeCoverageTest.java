@@ -130,10 +130,10 @@ class NoticeCoverageTest {
                     text.contains("for doc in LICENSE NOTICE"),
                     "scripts/" + script + " no longer copies LICENSE and NOTICE into its bundle");
         }
-        String nativeArchive = Files.readString(REPO.resolve(Path.of("scripts", "native", "package-release.py")));
+        String nativeArchive = Files.readString(REPO.resolve(Path.of("scripts", "nativeimage", "PackageRelease.java")));
         assertTrue(
-                nativeArchive.contains("'LICENSE', 'NOTICE'"),
-                "scripts/native/package-release.py no longer adds LICENSE and NOTICE to the archive");
+                nativeArchive.contains("List.of(\"LICENSE\", \"NOTICE\")"),
+                "scripts/nativeimage/PackageRelease.java no longer adds LICENSE and NOTICE to the archive");
     }
 
     private static byte[] resource(String name) throws IOException {

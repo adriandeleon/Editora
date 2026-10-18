@@ -30,6 +30,10 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * working directory; a non-zero exit aborts the launch, so a stale binary is never run by accident. Both the
  * run and the debug path honour it.
  *
+ * <p>{@code deployment} names a {@link Deployment} of the project ("Run on"): blank runs here, as before. Named,
+ * the project is first copied to that host's folder and the program — and its before-launch step — runs there,
+ * in the copy.
+ *
  * <p>Persisted per window in {@code WorkspaceState.runConfigurations}. Jackson
  * round-trips this record; the compact constructor defaults every field so an older/partial entry loads.
  */
@@ -48,7 +52,8 @@ public record RunConfiguration(
         String jdkHome,
         String interpreter,
         String interpreterOptions,
-        boolean runInTerminal) {
+        boolean runInTerminal,
+        String deployment) {
 
     /** Prefix of the synthetic per-configuration run commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
@@ -76,6 +81,41 @@ public record RunConfiguration(
         jdkHome = jdkHome == null ? "" : jdkHome;
         interpreter = interpreter == null ? "" : interpreter;
         interpreterOptions = interpreterOptions == null ? "" : interpreterOptions;
+        deployment = deployment == null ? "" : deployment.strip();
+    }
+
+    /** A configuration that runs on this machine — every shape saved before deployments existed. */
+    public RunConfiguration(
+            String name,
+            String type,
+            String target,
+            String mainClass,
+            String projectName,
+            String args,
+            String vmArgs,
+            String workingDir,
+            String env,
+            String beforeLaunch,
+            String jdkHome,
+            String interpreter,
+            String interpreterOptions,
+            boolean runInTerminal) {
+        this(
+                name,
+                type,
+                target,
+                mainClass,
+                projectName,
+                args,
+                vmArgs,
+                workingDir,
+                env,
+                beforeLaunch,
+                jdkHome,
+                interpreter,
+                interpreterOptions,
+                runInTerminal,
+                "");
     }
 
     /** A configuration that runs in the Run console — every shape saved before Run in Terminal existed. */
@@ -152,6 +192,52 @@ public record RunConfiguration(
             String env,
             String beforeLaunch) {
         this(name, type, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch, "");
+    }
+
+    /** This configuration under another name, every other field kept. */
+    public RunConfiguration withName(String newName) {
+        return new RunConfiguration(
+                newName,
+                type,
+                target,
+                mainClass,
+                projectName,
+                args,
+                vmArgs,
+                workingDir,
+                env,
+                beforeLaunch,
+                jdkHome,
+                interpreter,
+                interpreterOptions,
+                runInTerminal,
+                deployment);
+    }
+
+    /** This configuration, run on the deployment named {@code name} (blank: on this machine). */
+    public RunConfiguration withDeployment(String name) {
+        return new RunConfiguration(
+                this.name,
+                type,
+                target,
+                mainClass,
+                projectName,
+                args,
+                vmArgs,
+                workingDir,
+                env,
+                beforeLaunch,
+                jdkHome,
+                interpreter,
+                interpreterOptions,
+                runInTerminal,
+                name);
+    }
+
+    /** Whether this configuration runs on a deployment rather than on this machine. */
+    @JsonIgnore
+    public boolean isDeployed() {
+        return !deployment.isEmpty();
     }
 
     /** The id of the synthetic command that runs this configuration ({@code run.config.<slug>}). */

@@ -188,7 +188,8 @@ class JavaCodeChangesProbeFxTest {
             });
 
             await(w, "the new code to run", 300, () -> console(w).contains("hello-v2"));
-            assertTrue(console(w).contains(tr("debug.hcr.applied", "Main")), console(w));
+            // The redefined class can print before the adapter's reply to the redefinition is handled.
+            await(w, "the change to be reported", 300, () -> console(w).contains(tr("debug.hcr.applied", "Main")));
             assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(w.dap()::state), "no restart");
         } finally {
             stop(w, dir);
