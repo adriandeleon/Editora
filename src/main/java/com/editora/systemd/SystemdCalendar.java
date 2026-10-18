@@ -98,20 +98,19 @@ public final class SystemdCalendar {
             }
         }
         String lower = s.toLowerCase(Locale.ROOT);
-        String shorthand =
-                switch (lower) {
-                    case "minutely",
-                            "hourly",
-                            "daily",
-                            "midnight",
-                            "weekly",
-                            "monthly",
-                            "yearly",
-                            "annually",
-                            "quarterly",
-                            "semiannually" -> lower;
-                    default -> null;
-                };
+        String shorthand = switch (lower) {
+            case "minutely",
+                    "hourly",
+                    "daily",
+                    "midnight",
+                    "weekly",
+                    "monthly",
+                    "yearly",
+                    "annually",
+                    "quarterly",
+                    "semiannually" -> lower;
+            default -> null;
+        };
         String expanded = shorthand == null ? s : expand(shorthand);
         try {
             return new Parsed(build(expanded, shorthand, zone), null);

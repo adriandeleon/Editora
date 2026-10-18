@@ -951,12 +951,11 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void cycleWhitespace() {
-        DiffEngine.WhitespaceMode next =
-                switch (options.whitespace()) {
-                    case NONE -> DiffEngine.WhitespaceMode.TRIM;
-                    case TRIM -> DiffEngine.WhitespaceMode.ALL;
-                    case ALL -> DiffEngine.WhitespaceMode.NONE;
-                };
+        DiffEngine.WhitespaceMode next = switch (options.whitespace()) {
+            case NONE -> DiffEngine.WhitespaceMode.TRIM;
+            case TRIM -> DiffEngine.WhitespaceMode.ALL;
+            case ALL -> DiffEngine.WhitespaceMode.NONE;
+        };
         options = options.withWhitespace(next);
         updateWhitespaceButton();
         onOptionsChanged.accept(options);

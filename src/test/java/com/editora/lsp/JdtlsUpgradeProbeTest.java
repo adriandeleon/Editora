@@ -239,14 +239,12 @@ class JdtlsUpgradeProbeTest {
         Map<String, String> outcome = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
         for (String method : BLIND_REQUESTS) {
-            Object params =
-                    switch (method) {
-                        case "java/buildWorkspace" -> Boolean.FALSE;
-                        case "java/classFileContents" ->
-                            new TextDocumentIdentifier("jdt://contents/none.jar/demo/None.class");
-                        case "java/searchSymbols" -> Map.of("query", "App");
-                        default -> actionJson;
-                    };
+            Object params = switch (method) {
+                case "java/buildWorkspace" -> Boolean.FALSE;
+                case "java/classFileContents" -> new TextDocumentIdentifier("jdt://contents/none.jar/demo/None.class");
+                case "java/searchSymbols" -> Map.of("query", "App");
+                default -> actionJson;
+            };
             try {
                 s.rawRequest(method, params, Duration.ofSeconds(60)).get(70, TimeUnit.SECONDS);
                 outcome.put(method, "answered");

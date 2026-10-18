@@ -785,13 +785,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                         installCoordinator.installTypstCli();
                         return;
                     }
-                    com.editora.install.InstallCatalog.Lang lang =
-                            switch (key) {
-                                case "python" -> com.editora.install.InstallCatalog.Lang.PYTHON;
-                                case "javascript" -> com.editora.install.InstallCatalog.Lang.JAVASCRIPT;
-                                case "mermaid" -> com.editora.install.InstallCatalog.Lang.MERMAID;
-                                default -> com.editora.install.InstallCatalog.Lang.JAVA;
-                            };
+                    com.editora.install.InstallCatalog.Lang lang = switch (key) {
+                        case "python" -> com.editora.install.InstallCatalog.Lang.PYTHON;
+                        case "javascript" -> com.editora.install.InstallCatalog.Lang.JAVASCRIPT;
+                        case "mermaid" -> com.editora.install.InstallCatalog.Lang.MERMAID;
+                        default -> com.editora.install.InstallCatalog.Lang.JAVA;
+                    };
                     installCoordinator.installSupport(lang);
                 });
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install

@@ -84,13 +84,12 @@ public final class SearchEverywhere {
         if (q.isEmpty()) {
             return new Scope(null, "");
         }
-        Kind kind =
-                switch (q.charAt(0)) {
-                    case '>' -> Kind.COMMAND;
-                    case '#' -> Kind.FILE;
-                    case '@' -> Kind.SYMBOL;
-                    default -> null;
-                };
+        Kind kind = switch (q.charAt(0)) {
+            case '>' -> Kind.COMMAND;
+            case '#' -> Kind.FILE;
+            case '@' -> Kind.SYMBOL;
+            default -> null;
+        };
         return kind == null
                 ? new Scope(null, q)
                 : new Scope(kind, q.substring(1).strip());

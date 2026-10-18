@@ -1987,12 +1987,11 @@ final class EditingCoordinator {
             int first = a.firstVisibleParToAllParIndex();
             int last = a.lastVisibleParToAllParIndex();
             windowLineCycle = (windowLineCycle + 1) % 3;
-            int target =
-                    switch (windowLineCycle) {
-                        case 0 -> (first + last) / 2; // center
-                        case 1 -> first; // top
-                        default -> last; // bottom
-                    };
+            int target = switch (windowLineCycle) {
+                case 0 -> (first + last) / 2; // center
+                case 1 -> first; // top
+                default -> last; // bottom
+            };
             a.moveTo(a.getAbsolutePosition(target, 0), host.selPolicy());
             a.requestFollowCaret();
         } catch (RuntimeException ignored) {

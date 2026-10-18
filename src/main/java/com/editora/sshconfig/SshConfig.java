@@ -41,12 +41,11 @@ public final class SshConfig {
             return null;
         }
         for (Block b : blocks) {
-            boolean applies =
-                    switch (b.type()) {
-                        case "global" -> true;
-                        case "Host" -> SshPattern.matches(b.argument(), host);
-                        default -> false; // Match blocks: criteria not modelled
-                    };
+            boolean applies = switch (b.type()) {
+                case "global" -> true;
+                case "Host" -> SshPattern.matches(b.argument(), host);
+                default -> false; // Match blocks: criteria not modelled
+            };
             if (applies) {
                 String v = b.first(key);
                 if (v != null) {

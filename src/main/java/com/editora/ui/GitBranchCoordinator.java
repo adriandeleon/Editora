@@ -1347,18 +1347,17 @@ final class GitBranchCoordinator {
                 actions.add(BranchPopup.RowAction.SEPARATOR);
                 continue;
             }
-            Runnable run =
-                    switch (id) {
-                        case "newFrom" -> () -> promptNewBranchFrom(root, name);
-                        case "compare" -> () -> compare(root, current, name);
-                        case "merge" -> () -> merge(root, current, name);
-                        case "rebase" -> () -> rebase(root, current, name);
-                        case "rename" -> () -> promptRename(root, name);
-                        case "setUpstream" -> () -> promptUpstream(root, name);
-                        case "unsetUpstream" -> () -> unsetUpstream(root, name);
-                        case "delete" -> () -> deleteBranch(root, current, name);
-                        default -> () -> deleteRemoteBranch(root, name, branches.remoteNames());
-                    };
+            Runnable run = switch (id) {
+                case "newFrom" -> () -> promptNewBranchFrom(root, name);
+                case "compare" -> () -> compare(root, current, name);
+                case "merge" -> () -> merge(root, current, name);
+                case "rebase" -> () -> rebase(root, current, name);
+                case "rename" -> () -> promptRename(root, name);
+                case "setUpstream" -> () -> promptUpstream(root, name);
+                case "unsetUpstream" -> () -> unsetUpstream(root, name);
+                case "delete" -> () -> deleteBranch(root, current, name);
+                default -> () -> deleteRemoteBranch(root, name, branches.remoteNames());
+            };
             boolean danger = id.equals("delete") || id.equals("deleteRemote");
             actions.add(new BranchPopup.RowAction(tr("branch.row." + id, name, nz(current)), danger, guard.apply(run)));
         }

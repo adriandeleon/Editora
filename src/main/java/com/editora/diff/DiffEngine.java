@@ -252,12 +252,11 @@ public final class DiffEngine {
         }
         List<String> out = new ArrayList<>(lines.size());
         for (String s : lines) {
-            String normalized =
-                    switch (mode) {
-                        case NONE -> s;
-                        case TRIM -> s.strip();
-                        case ALL -> normalize(s);
-                    };
+            String normalized = switch (mode) {
+                case NONE -> s;
+                case TRIM -> s.strip();
+                case ALL -> normalize(s);
+            };
             out.add(options.ignoreCase() ? normalized.toLowerCase(Locale.ROOT) : normalized);
         }
         return out;
