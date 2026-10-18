@@ -2620,6 +2620,17 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
 
                     @Override
+                    public boolean debugBreakpointsMuted() {
+                        return config.getWorkspaceState().isDebugBreakpointsMuted();
+                    }
+
+                    @Override
+                    public void persistDebugBreakpointsMuted(boolean muted) {
+                        config.getWorkspaceState().setDebugBreakpointsMuted(muted);
+                        config.save();
+                    }
+
+                    @Override
                     public java.util.Map<String, List<com.editora.config.Breakpoint>> breakpointMap() {
                         return config.getBreakpoints();
                     }

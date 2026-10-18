@@ -2123,8 +2123,9 @@ final class WindowCommandRegistrar {
                         "debug.breakpoints",
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::showBreakpoints)));
         host.registry()
-                .register(Command.of(
+                .register(Command.toggle( // checked in the Run menu while muted
                         "debug.muteBreakpoints",
+                        () -> host.debugCoordinator().breakpointsMuted(),
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::toggleMuteBreakpoints)));
         host.registry()
                 .register(Command.of(

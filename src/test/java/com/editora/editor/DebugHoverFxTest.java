@@ -30,6 +30,11 @@ class DebugHoverFxTest {
 
     private static final String SOURCE = "total = other.depth + 1  # depth of total\nlabel = \"depth\"\n";
 
+    @org.junit.jupiter.api.BeforeAll
+    static void boot() throws Exception {
+        EditorFx.boot(); // alone in a fork, nothing else has started the toolkit
+    }
+
     @AfterEach
     void restore() {
         DebugHover.setDebounceForTest(null);
@@ -120,6 +125,75 @@ class DebugHoverFxTest {
             assertEquals("other.depth = v(other.depth)", tip.getText());
             buffer.getArea().moveTo(SOURCE.indexOf("=")); // "total |= ...": a space before, an operator after
             assertFalse(buffer.showDebugValueAtCaret(), "on an operator there is no name");
+            stage.close();
+            buffer.dispose();
+        });
+    }
+
+    /** Records what the hover asks of an expandable value popup (follow-up 6). */
+    private static final class Presenter implements DebugValuePresenter {
+        final List<String> calls = new ArrayList<>();
+        boolean showing;
+        boolean inside;
+
+        @Override
+        public void show(CodeArea area, String expression, double x, double y, boolean keyboard) {
+            calls.add((keyboard ? "key " : "hover ") + expression);
+            showing = true;
+        }
+
+        @Override
+        public void hide() {
+            calls.add("hide");
+            showing = false;
+        }
+
+        @Override
+        public void mouseLeft() {
+            calls.add("left");
+        }
+
+        @Override
+        public boolean mouseInside() {
+            return inside;
+        }
+
+        @Override
+        public boolean isShowing() {
+            return showing;
+        }
+    }
+
+    /**
+     * Follow-up 6: with an expandable popup the hover hands it the expression; leaving the word only tells it (the
+     * mouse may be on its way into the popup), and a word crossed while the mouse is inside it is not shown.
+     */
+    @Test
+    void anExpandablePopupIsShownLeftAndNotReplacedWhileTheMouseIsInIt() throws Exception {
+        DebugHover.setDebounceForTest(Duration.ZERO);
+        EditorFx.onFx(() -> {
+            List<String> asked = new ArrayList<>();
+            EditorBuffer buffer = buffer(asked);
+            Presenter presenter = new Presenter();
+            buffer.setDebugValuePresenter(presenter);
+            Stage stage = EditorFx.show(buffer, 700, 300);
+            buffer.setDebugHoverActive(true);
+            buffer.getArea().fireEvent(moveTo(buffer, SOURCE.indexOf("depth") + 1));
+            assertEquals(List.of("left", "hover other.depth"), presenter.calls);
+            presenter.calls.clear();
+            buffer.getArea().fireEvent(moveTo(buffer, SOURCE.indexOf("="))); // off the word
+            assertEquals(List.of("left"), presenter.calls, "leaving the word does not close it at once");
+            presenter.calls.clear();
+            presenter.inside = true;
+            buffer.getArea().fireEvent(moveTo(buffer, 1)); // "total", crossed on the way into the popup
+            assertEquals(List.of("left"), presenter.calls, "not replaced while the mouse is in the popup");
+            presenter.inside = false;
+            buffer.getArea().moveTo(SOURCE.indexOf("depth") + 2);
+            assertTrue(buffer.showDebugValueAtCaret());
+            assertTrue(presenter.calls.contains("key other.depth"), "Show Value at Caret opens it for the keyboard");
+            assertEquals(List.of(), asked, "the popup evaluates; the tooltip's evaluator is not asked");
+            buffer.setDebugHoverActive(false);
+            assertEquals("hide", presenter.calls.getLast(), "resuming closes it");
             stage.close();
             buffer.dispose();
         });

@@ -1484,7 +1484,9 @@ class DebugCoordinatorCommandsFxTest {
 
         FakeDebugAdapter.Session session = session("launch");
         assertEquals("Hello", session.launchArgs.get("mainClass"));
-        assertEquals(jdk.resolve("bin").resolve("java").toString(), session.launchArgs.get("javaExec"));
+        assertEquals(
+                jdk.resolve("bin").resolve("java").toString(),
+                com.editora.dap.ExitCodeWrappers.wrappedJava(session.launchArgs.get("javaExec")));
         List<String> args = Files.readAllLines(loose.resolve("javac-args.txt"));
         assertEquals(file.toString(), args.get(args.size() - 1));
         assertEquals("-g", args.get(0));

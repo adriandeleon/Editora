@@ -36,6 +36,13 @@ public final class DebugHover {
 
     private PauseTransition pending;
 
+    /** Shows the value as an expandable popup (follow-up 6); null: the one-line tooltip. */
+    private DebugValuePresenter presenter;
+
+    void setPresenter(DebugValuePresenter presenter) {
+        this.presenter = presenter;
+    }
+
     /** Test seam: the rest the mouse needs before an evaluation ({@link Duration#ZERO}: none, synchronous). */
     public static void setDebounceForTest(Duration rest) {
         debounce = rest == null ? Duration.millis(250) : rest;
@@ -64,13 +71,13 @@ public final class DebugHover {
                         hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
                 String expression = expressionAt(a, pos.getMajor(), pos.getMinor());
                 if (expression == null) {
-                    hide();
+                    leave();
                     return;
                 }
                 if (expression.equals(word)) {
                     return; // already showing (or about to evaluate) this one
                 }
-                hide();
+                leave();
                 word = expression;
                 double sx = e.getScreenX() + 12;
                 double sy = e.getScreenY() + 16;
@@ -79,7 +86,7 @@ public final class DebugHover {
                 // viewport mid-layout / hit miss — ignore
             }
         });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hide());
+        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> leave());
     }
 
     /**
@@ -99,6 +106,10 @@ public final class DebugHover {
         double sy = b == null ? 0 : b.getMaxY() + 2;
         hide();
         word = expression;
+        if (presenter != null) {
+            presenter.show(a, expression, sx, sy, true);
+            return true;
+        }
         evaluate(a, expression, sx, sy);
         return true;
     }
@@ -121,6 +132,12 @@ public final class DebugHover {
     private void evaluate(CodeArea a, String expression, double sx, double sy) {
         if (!active || !expression.equals(word)) {
             return; // moved on, or resumed, while the mouse was resting
+        }
+        if (presenter != null) {
+            if (!presenter.mouseInside()) { // on its way into the open popup, the mouse crossed this word
+                presenter.show(a, expression, sx, sy, false);
+            }
+            return;
         }
         evaluator.accept(expression, value -> {
             if (!active || value == null || value.isBlank() || !expression.equals(word)) {
@@ -158,6 +175,28 @@ public final class DebugHover {
         if (tooltip != null) {
             tooltip.hide();
         }
+        if (presenter != null) {
+            presenter.hide();
+        }
+        word = null;
+    }
+
+    /**
+     * The mouse left the word: the tooltip goes at once; an expandable popup only if the mouse does not go into
+     * it (it is hovered to unfold a field), so it is told and decides itself.
+     */
+    private void leave() {
+        if (presenter == null) {
+            hide();
+            return;
+        }
+        if (pending != null) {
+            pending.stop();
+        }
+        if (tooltip != null) {
+            tooltip.hide();
+        }
+        presenter.mouseLeft();
         word = null;
     }
 
