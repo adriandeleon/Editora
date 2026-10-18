@@ -89,10 +89,13 @@ class ShellIntegrationPtyTest {
             await("the new directory reported", () -> events.contains("cwd " + target));
             connector.write("false\n".getBytes(StandardCharsets.UTF_8));
             await("the failed command's status", () -> events.contains("mark D 1"));
-            assertTrue(events.stream().filter("mark A"::equals).count() >= 3, () -> "a mark per prompt: " + events);
+            // The next prompt's mark comes a moment after the status, so wait for it rather than count at once.
+            await(
+                    "a mark per prompt",
+                    () -> events.stream().filter("mark A"::equals).count() >= 3);
             // bash before 4.4 (macOS's /bin/bash 3.2) has no PS0, so no output mark; zsh and newer bash do.
             if (!shell.endsWith("bash") || bashAtLeast44(shell)) {
-                assertTrue(events.contains("mark C"), () -> "the output mark: " + events);
+                await("the output mark", () -> events.contains("mark C"));
             }
         } finally {
             connector.close();
