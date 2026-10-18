@@ -230,6 +230,9 @@ public final class TerminalView extends Region {
         getChildren().addAll(canvas, scrollBar);
         setFocusTraversable(true);
         canvas.setFocusTraversable(false);
+        // A screen reader sees a text area holding the screen, not an unnamed group (see queryAccessibleAttribute).
+        setAccessibleRole(javafx.scene.AccessibleRole.TEXT_AREA);
+        setAccessibleRoleDescription(tr("toolwindow.terminal"));
 
         addEventFilter(MouseEvent.MOUSE_PRESSED, this::onMousePressed);
         addEventFilter(MouseEvent.MOUSE_DRAGGED, this::onMouseDragged);
@@ -938,6 +941,10 @@ public final class TerminalView extends Region {
             }
         }
         if (session == null || !session.isRunning()) return;
+        if (scrollbackKey(e)) {
+            e.consume();
+            return;
+        }
 
         if (e.getCode() == KeyCode.ALT_GRAPH) {
             altGrHeld = true;
@@ -951,6 +958,74 @@ public final class TerminalView extends Region {
             clearSelection();
             session.send(encoded);
             e.consume();
+        }
+    }
+
+    /**
+     * Shift+PageUp/PageDown/Home/End scroll the scrollback, as in xterm, GNOME Terminal and Konsole: the keyboard's
+     * only way into history without shell integration's prompt marks. Not on the alternate screen, where a
+     * full-screen program owns those keys (and there is no scrollback).
+     */
+    private boolean scrollbackKey(KeyEvent e) {
+        boolean modifier = e.isShiftDown() && !e.isControlDown() && !e.isAltDown() && (!e.isMetaDown() || MAC);
+        if (!modifier || buffer == null || display.isAlternateScreen()) return false;
+        int history = buffer.getHistoryLinesCount();
+        int next = switch (e.getCode()) {
+            case PAGE_UP -> scrollOrigin - Math.max(1, rows - 1);
+            case PAGE_DOWN -> scrollOrigin + Math.max(1, rows - 1);
+            case HOME -> -history;
+            case END -> 0;
+            default -> Integer.MIN_VALUE;
+        };
+        if (next == Integer.MIN_VALUE) return false;
+        next = Math.max(-history, Math.min(0, next));
+        if (next != scrollOrigin) {
+            scrollOrigin = next;
+            markDirty();
+        }
+        return true;
+    }
+
+    /** The screen as a screen reader reads it, and where the cursor is in it. */
+    @Override
+    public Object queryAccessibleAttribute(javafx.scene.AccessibleAttribute attribute, Object... parameters) {
+        return switch (attribute) {
+            case TEXT -> accessibleText();
+            case CARET_OFFSET -> accessibleCaret();
+            case EDITABLE -> false;
+            default -> super.queryAccessibleAttribute(attribute, parameters);
+        };
+    }
+
+    /** The rows in view, one per line; empty while the emulator holds the buffer (asked again later). */
+    private String accessibleText() {
+        if (buffer == null || !buffer.tryLock()) return "";
+        try {
+            StringBuilder text = new StringBuilder();
+            for (int row = 0; row < rows; row++) {
+                text.append(accessibleRow(scrollOrigin + row)).append('\n');
+            }
+            return text.toString();
+        } finally {
+            buffer.unlock();
+        }
+    }
+
+    private String accessibleRow(int row) {
+        return lineTextAt(row).replace(String.valueOf(CharUtils.DWC), "").stripTrailing();
+    }
+
+    private int accessibleCaret() {
+        int cursorRow = display.getCursorY() - 1 - scrollOrigin;
+        if (buffer == null || cursorRow < 0 || cursorRow >= rows || !buffer.tryLock()) return 0;
+        try {
+            int offset = 0;
+            for (int row = 0; row < cursorRow; row++) {
+                offset += accessibleRow(scrollOrigin + row).length() + 1;
+            }
+            return offset + Math.max(0, display.getCursorX());
+        } finally {
+            buffer.unlock();
         }
     }
 

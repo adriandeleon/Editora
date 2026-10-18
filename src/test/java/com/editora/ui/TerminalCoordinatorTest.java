@@ -69,4 +69,18 @@ class TerminalCoordinatorTest {
         s.setTerminalFontSize(10);
         org.junit.jupiter.api.Assertions.assertEquals(15.0, TerminalCoordinator.config(s).fontSize(), 0.001);
     }
+
+    @Test
+    void everyKeymapHasAKeyBackToTheEditorThatWorksFromATerminal() {
+        for (String name : java.util.List.of("emacs", "intellij", "vscode", "cua", "sublime")) {
+            for (boolean mac : new boolean[] {false, true}) {
+                org.junit.jupiter.api.Assertions.assertEquals(
+                        "terminal.focusEditor",
+                        com.editora.command.KeymapManager.defaults(name, mac).get("S-escape"),
+                        name + (mac ? ".mac" : ""));
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(com.editora.terminal.TerminalKeys.reachesEditora(
+                "S-escape", "terminal.focusEditor", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false));
+    }
 }

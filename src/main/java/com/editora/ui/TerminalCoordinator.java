@@ -58,6 +58,9 @@ final class TerminalCoordinator {
         /** Closes the Terminal tool window. */
         void hideToolWindow();
 
+        /** Gives the keyboard to the editor, leaving the tool windows as they are. */
+        default void focusEditor() {}
+
         /** Editora's config folder, where the shell-integration scripts for this machine go. */
         Path configDir();
 
@@ -150,6 +153,9 @@ final class TerminalCoordinator {
         registry.register(Command.of("terminal.previous", () -> {
             if (panel != null) panel.selectNext(false);
         }));
+        // Back to the editor with the terminal left open (IntelliJ's Escape, VS Code's Ctrl+1): Escape itself is the
+        // shell's, so it is Shift+Escape, which a terminal program cannot tell from Escape anyway.
+        registry.register(Command.of("terminal.focusEditor", ops::focusEditor));
         registry.register(Command.of("terminal.rename", () -> {
             if (panel != null) panel.renameActive();
         }));

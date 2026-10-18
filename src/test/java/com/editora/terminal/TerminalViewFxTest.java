@@ -334,6 +334,32 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void shiftPageUpScrollsTheScrollbackAndAScreenReaderSeesTheScreen() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        int origin = fx(() -> {
+            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, false, false, false));
+            return view.scrollOrigin();
+        });
+        assertTrue(origin < 0, "Shift+PageUp scrolled back: " + origin);
+        Thread.sleep(200);
+        assertEquals("", connector.written(), "and sent nothing to the shell");
+        assertEquals(0, (int) fx(() -> {
+            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.END, true, false, false, false));
+            return view.scrollOrigin();
+        }), "Shift+End: back to the live screen");
+
+        assertEquals(javafx.scene.AccessibleRole.TEXT_AREA, fx(view::getAccessibleRole));
+        assertTrue(
+                fx(() -> String.valueOf(view.queryAccessibleAttribute(javafx.scene.AccessibleAttribute.TEXT)))
+                        .contains("line 199"),
+                "its text is the screen");
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");

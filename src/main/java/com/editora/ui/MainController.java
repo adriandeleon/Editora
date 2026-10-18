@@ -5934,6 +5934,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void focusEditor() {
+                    toolWindows.focusEditor();
+                }
+
+                @Override
                 public java.nio.file.Path configDir() {
                     return config.getConfigDir();
                 }
