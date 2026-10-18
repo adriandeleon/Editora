@@ -748,6 +748,19 @@ class LspCoordinatorCommandsFxTest {
     }
 
     @Test
+    void startupEndsWithAReadyLineOnceTheServerHasSettled() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            fx.coordinator.onServerStatus("Starting", "Init...");
+            fx.coordinator.onServerStatus("ServiceReady", "ServiceReady");
+            fx.coordinator.onServerStatus("Progress", "Publish Diagnostics");
+            fx.coordinator.onServerStatus("ProgressEnd", null);
+            assertEquals(tr("status.lsp.server", "LSP", "Publish Diagnostics"), fx.host.lastStatus());
+        });
+        Thread.sleep(com.editora.lsp.ServerStatusNarrator.QUIET_MILLIS * 3);
+        FxTestSupport.runOnFx(() -> assertEquals(tr("status.lsp.ready", "LSP"), fx.host.lastStatus()));
+    }
+
+    @Test
     void restartingServersStartsAFreshSessionForTheActiveFile() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
         assertEquals(1, fx.fakes.size());

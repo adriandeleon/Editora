@@ -707,8 +707,26 @@ public class SettingsWindow {
                     () -> runConfigScriptSuggestion == null ? null : runConfigScriptSuggestion.get(),
                     () -> runConfigProjectRoot == null ? null : runConfigProjectRoot.get(),
                     onRunConfigsChanged);
+            runConfigurationsWindow.setEditDeployments(editDeployments);
         }
         runConfigurationsWindow.show(selectName, owner);
+    }
+
+    /** What the Run Configurations window's Run on → Deployments… opens. */
+    private java.util.function.Consumer<String> editDeployments;
+
+    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+        this.editDeployments = editDeployments;
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.setEditDeployments(editDeployments);
+        }
+    }
+
+    /** The project's deployments changed: the Run Configurations window's Run on choices follow. */
+    public void refreshRunConfigDeployments() {
+        if (runConfigurationsWindow != null) {
+            runConfigurationsWindow.refreshDeployments();
+        }
     }
 
     /** Supplies the active Java main class used to seed a newly added configuration. */

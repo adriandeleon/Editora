@@ -421,6 +421,7 @@ final class LanguageServerSession implements LanguageClient {
             this.launcher = launcher;
             server = launcher.getRemoteProxy();
             listening = launcher.startListening();
+            onStatus.accept("Launching", null); // a new process: the UI forgets what the last one said
             sendInitialize();
             return true;
         } catch (Exception e) {
@@ -1457,7 +1458,8 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage — or null when
      * there is nothing to say: Pyright begins every analysis with an empty title, and "…" then sat in the status
-     * bar long after the work had ended (Python review B11). The loading bar still spins either way.
+     * bar long after the work had ended (Python review B11). The loading bar still spins either way. A 0% is
+     * left out: every jdtls job begins at it, and the log then read as if each one had stalled.
      */
     static String progressText(String title, String message, Integer percentage) {
         StringBuilder sb = new StringBuilder(title == null || title.isBlank() ? "" : title.strip());
@@ -1467,7 +1469,7 @@ final class LanguageServerSession implements LanguageClient {
         if (sb.isEmpty()) {
             return null;
         }
-        if (percentage != null) {
+        if (percentage != null && percentage > 0) { // "(0%)" on a Begin only made the work look stalled
             sb.append(" (").append(percentage).append("%)");
         }
         return sb.toString();

@@ -119,21 +119,9 @@ public final class RunConfigDefaults {
     /** {@code cfg} renamed with a {@link #uniqueName} among {@code existingNames}. */
     public static com.editora.config.RunConfiguration uniquelyNamed(
             com.editora.config.RunConfiguration cfg, Collection<String> existingNames) {
-        String name = uniqueName(cfg.name(), existingNames);
-        return new com.editora.config.RunConfiguration(
-                name,
-                cfg.type(),
-                cfg.target(),
-                cfg.mainClass(),
-                cfg.projectName(),
-                cfg.args(),
-                cfg.vmArgs(),
-                cfg.workingDir(),
-                cfg.env(),
-                cfg.beforeLaunch(),
-                cfg.jdkHome(),
-                cfg.interpreter(),
-                cfg.interpreterOptions());
+        // A copy of every field but the name: rebuilding it field by field dropped the ones added later
+        // (Run in Terminal, the deployment).
+        return cfg.withName(uniqueName(cfg.name(), existingNames));
     }
 
     /**
