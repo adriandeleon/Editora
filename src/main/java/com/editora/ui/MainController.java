@@ -196,7 +196,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final DebugLogWindow debugLogWindow = new DebugLogWindow();
 
     /** Shared in-scene overlay host for the command palette + pickers (replaces focus-stealing Popups). */
-    private final OverlayHost overlayHost = new OverlayHost();
+    final OverlayHost overlayHost = new OverlayHost();
 
     com.editora.snippet.SnippetManager snippets;
     SnippetCoordinator snippetCoordinator;
@@ -815,6 +815,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     setStatus(tr("status.mcp.newToken"));
                 }));
         this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
+        this.settingsWindow.setEditDeployments(deployments::editDeployments); // Run on → Deployments…
         this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
             @Override
             public List<String> trustedRoots() {
@@ -2510,6 +2511,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void openToolWindow() {
                         toolWindows.open(debugToolWindow, false); // never takes focus (review C2)
+                    }
+
+                    @Override
+                    public void debugDeployed(com.editora.config.RunConfiguration cfg) {
+                        runCoordinator.debugDeployedConfig(cfg);
                     }
 
                     @Override
@@ -4608,6 +4614,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void fileSaved(Path file) {
             snippetCoordinator.fileSaved(file);
+            deployments.fileSaved(file); // a deployment that uploads on save
             if (windowManager != null && windowManager.isSettingsFile(file)) {
                 MainController.this.setStatus(windowManager.settingsFileSaved()); // a hand edit applies on save
             }
@@ -6115,10 +6122,31 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
+    /** This window's deployments: running configurations on a host, in a copy of the project there. */
+    final DeploymentCoordinator deployments = new DeploymentCoordinator(new DeploymentHost(this));
+
     final RunCoordinator runCoordinator = new RunCoordinator(coordinatorHost, new RunCoordinator.Ops() {
         @Override
         public void openToolWindow() {
             toolWindows.open(runToolWindow);
+        }
+
+        @Override
+        public void deployThen(
+                String name,
+                DeploymentCoordinator.Console console,
+                java.util.function.Consumer<DeploymentCoordinator.Deployed> then) {
+            deployments.deployThen(name, console, then);
+        }
+
+        @Override
+        public void cancelDeploy() {
+            deployments.cancel();
+        }
+
+        @Override
+        public void attachJavaDebugger(Path anchor, int port, Runnable stopOwner) {
+            debugCoordinator.attachToPort(anchor, "localhost", port, stopOwner);
         }
 
         @Override
@@ -9345,7 +9373,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * not change it), so a window behind it would act on somebody else's project. Every coordinator's
      * {@code projectRoot()} / {@code activeProjectRoot()} reads {@code windowProject} for that reason.
      */
-    private Path windowProjectRoot() {
+    Path windowProjectRoot() {
         Project project = enabledWindowProject();
         return project == null ? null : project.rootPath();
     }

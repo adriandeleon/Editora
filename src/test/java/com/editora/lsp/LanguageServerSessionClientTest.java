@@ -214,7 +214,7 @@ class LanguageServerSessionClientTest {
         assertNull(LanguageServerSession.progressText(null, null, null));
         assertNull(LanguageServerSession.progressText("  ", " ", null));
         assertEquals("Build", LanguageServerSession.progressText("Build", "", null));
-        assertEquals("Build (0%)", LanguageServerSession.progressText("Build", null, 0));
+        assertEquals("Build", LanguageServerSession.progressText("Build", null, 0));
         assertEquals("Build — step", LanguageServerSession.progressText("Build", " step ", null));
     }
 

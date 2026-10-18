@@ -523,7 +523,7 @@ adapter id, and the default interpreter + adapter args). `languageIdsForDebug()`
 | `java` | `JDTLS` | The Microsoft java-debug adapter is started *inside* jdtls via `workspace/executeCommand` (`vscode.java.startDebugSession` returns a port), then `DapClient.connect(port, "java")` opens a socket. |
 | `python` | `STDIO` | `<python> -m debugpy.adapter`; `DapClient.connectStdio(proc, "python")` wires DAP to the process's stdin/stdout. |
 | `javascript` | `SOCKET` | `node <dapDebugServer.js> <port>`; `DapClient.connect(port, "pwa-node")`. |
-| `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0016](../decisions/0016-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
+| `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0017](../decisions/0017-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send
