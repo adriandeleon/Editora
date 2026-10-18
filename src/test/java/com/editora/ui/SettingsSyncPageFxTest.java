@@ -645,6 +645,18 @@ class SettingsSyncPageFxTest {
         return new SyncReport(status, List.of(), List.of(), List.of(), List.of(), detail);
     }
 
+    /** The pill is as wide as its words, never the width of the row (adl's screenshots). */
+    private static void assertHugsItsText(Label pill) {
+        pill.getScene().getRoot().applyCss();
+        pill.getScene().getRoot().layout();
+        double pref = pill.prefWidth(-1);
+        double row = ((javafx.scene.layout.Region) pill.getParent().getParent()).getWidth();
+        assertTrue(
+                Math.abs(pill.getWidth() - Math.min(pref, pill.getMaxWidth())) < 2,
+                pill.getText() + ": " + pill.getWidth() + " wide, its text needs " + pref);
+        assertTrue(pill.getWidth() < row - 20, pill.getText() + " fills the row (" + row + ")");
+    }
+
     /** adl: a green pill when connected, a yellow or red one when not, on the Status row of the Sync page. */
     @Test
     void theStatusRowIsAPillInEveryState() throws Exception {
@@ -656,6 +668,7 @@ class SettingsSyncPageFxTest {
             assertEquals(tr("settings.sync.pill.notConnected"), pill.getText());
             assertTrue(pill.getStyleClass().contains("settings-git-warn"));
             assertEquals(tr("settings.sync.pill.accessible", pill.getText()), pill.getAccessibleText());
+            assertHugsItsText(pill);
             assertFalse(detail.isVisible(), "the pill says it all");
 
             settings.setSyncRepoUrl("git@example.invalid:me/editora-sync.git"); // never contacted: no run starts
@@ -666,6 +679,7 @@ class SettingsSyncPageFxTest {
                     pill.getText());
             assertTrue(pill.getStyleClass().contains("settings-git-found"));
             assertTrue(detail.isVisible(), "what the last run did");
+            assertHugsItsText(pill);
 
             fakeState(SettingsSync.Phase.SYNCING, report(SyncReport.Status.OK, ""), java.time.LocalTime.now());
             assertEquals(
@@ -680,6 +694,7 @@ class SettingsSyncPageFxTest {
                             "fatal: unable to access: Could not resolve host: example.invalid"),
                     java.time.LocalTime.now());
             assertTrue(pill.getStyleClass().contains("settings-git-warn"), "offline: it retries by itself");
+            assertHugsItsText(pill);
             assertTrue(pill.getText().startsWith(tr("settings.sync.pill.notConnected")));
 
             fakeState(
@@ -688,6 +703,7 @@ class SettingsSyncPageFxTest {
                     java.time.LocalTime.now());
             assertEquals(tr("settings.sync.pill.failing"), pill.getText());
             assertTrue(pill.getStyleClass().contains("settings-git-missing"));
+            assertHugsItsText(pill);
             assertTrue(detail.isVisible(), "with the reason under it");
             assertEquals(sync.stateText(), detail.getText());
             assertEquals(detail.getText(), pill.getTooltip().getText());
