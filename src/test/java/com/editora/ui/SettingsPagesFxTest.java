@@ -636,6 +636,7 @@ class SettingsPagesFxTest {
             Button fromFile = (Button) SettingsRig.button(page, tr("settings.plugins.installFromFile"));
             Button reload = (Button) SettingsRig.button(page, tr("settings.plugins.reload"));
 
+            rig.<CheckBox>control("pluginCheck").setSelected(true); // A5: the buttons are greyed while plugins are off
             browse.fire();
             fromFile.fire();
             reload.fire();
@@ -645,7 +646,11 @@ class SettingsPagesFxTest {
             assertEquals(List.of(tr("settings.plugins.none")), SettingsRig.texts(list));
 
             rig.window.setPluginActions(
-                    () -> rig.events.add("browse"), () -> rig.events.add("file"), id -> rig.events.add("remove " + id));
+                    () -> rig.events.add("browse"),
+                    () -> rig.events.add("file"),
+                    d -> rig.events.add("remove " + d.id()),
+                    d -> false,
+                    d -> {});
             fromFile.fire();
             assertEquals(List.of("file"), rig.events);
             browse.fire();
@@ -715,43 +720,59 @@ class SettingsPagesFxTest {
                     pluginsDir, id -> rig.config.getPluginStore().isEnabled(id));
             manager.discover();
             rig.window.setPluginManager(manager);
-            rig.window.setPluginActions(() -> {}, () -> {}, id -> rig.events.add("remove " + id));
+            // The consent is the coordinator's (PluginCoordinatorFxTest); here: what the page does with its answer.
+            boolean[] accept = {false};
+            List<String> asked = new java.util.ArrayList<>();
+            rig.window.setPluginActions(
+                    () -> {},
+                    () -> {},
+                    d -> rig.events.add("remove " + d.id()),
+                    d -> {
+                        asked.add(d.id());
+                        if (accept[0]) {
+                            rig.config.getPluginStore().enable(d.id(), d.digest());
+                        }
+                        return accept[0];
+                    },
+                    d -> rig.config.getPluginStore().setEnabled(d.id(), false));
             rig.show();
             rig.page("PLUGINS");
             VBox list = rig.control("pluginListBox");
             assertEquals(manager.descriptors().size(), list.getChildren().size());
             List<CheckBox> boxes = SettingsRig.all(list, CheckBox.class);
             CheckBox greeter = boxes.stream()
-                    .filter(b -> b.getText().equals("Greeter  1.2  (greeter)"))
+                    .filter(b -> b.getText().equals("Greeter  1.2"))
                     .findFirst()
                     .orElseThrow(() -> new AssertionError(
                             boxes.stream().map(CheckBox::getText).toList().toString()));
-            assertTrue(boxes.stream().anyMatch(b -> b.getText().equals("plain  (plain)")), "no name: the id");
+            assertTrue(boxes.stream().anyMatch(b -> b.getText().equals("plain")), "no name: the id");
+            assertTrue(SettingsRig.texts(list).contains("greeter"), "the id is shown beside the name");
             assertFalse(greeter.isSelected());
             assertFalse(greeter.isDisable());
             manager.descriptors().stream()
                     .filter(d -> d.loadError() != null)
                     .forEach(d -> assertTrue( // S3: in the user's language, not the loader's English
                             SettingsRig.texts(list).contains(PluginLoadProblems.text(d)), d.loadError()));
+            // A1: a plugin whose manifest cannot be read cannot be ticked — there is nothing to consent to.
+            CheckBox broken = boxes.stream()
+                    .filter(b -> b.getText().equals("broken"))
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(broken.isDisable(), "a load error: no checkbox to tick");
 
-            List<SettingsRig.Shown> asked =
-                    SettingsRig.answering(ButtonBar.ButtonData.CANCEL_CLOSE, () -> greeter.setSelected(true));
-            assertEquals(1, asked.size());
-            assertEquals(tr("dialog.plugins.enableTitle"), asked.get(0).title());
-            assertEquals(tr("dialog.plugins.enableHeader"), asked.get(0).header());
-            assertTrue(asked.get(0).content().contains("Greeter"));
+            greeter.setSelected(true);
+            assertEquals(List.of("greeter"), asked);
             assertFalse(greeter.isSelected(), "declined: the box goes back");
             assertFalse(rig.config.getPluginStore().isEnabled("greeter"));
 
-            asked = SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> greeter.setSelected(true));
-            assertEquals(1, asked.size());
+            accept[0] = true;
+            greeter.setSelected(true);
+            assertEquals(List.of("greeter", "greeter"), asked);
             assertTrue(greeter.isSelected());
             assertTrue(rig.config.getPluginStore().isEnabled("greeter"));
 
-            assertEquals(
-                    List.of(),
-                    SettingsRig.answering(ButtonBar.ButtonData.OK_DONE, () -> greeter.setSelected(false)),
-                    "switching a plugin off needs no confirmation");
+            greeter.setSelected(false);
+            assertEquals(2, asked.size(), "switching a plugin off needs no confirmation");
             assertFalse(rig.config.getPluginStore().isEnabled("greeter"));
 
             HBox header = (HBox) greeter.getParent();
@@ -772,7 +793,7 @@ class SettingsPagesFxTest {
             SettingsRig.button(rig.page("PLUGINS"), tr("settings.plugins.reload"))
                     .fire();
             assertFalse(SettingsRig.all(list, CheckBox.class).stream()
-                    .anyMatch(b -> b.getText().contains("(plain)")));
+                    .anyMatch(b -> b.getText().equals("plain")));
         });
     }
 

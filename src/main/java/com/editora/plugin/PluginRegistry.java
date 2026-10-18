@@ -34,14 +34,20 @@ public final class PluginRegistry {
     private static final long MAX_INDEX_BYTES = 8L * 1024 * 1024;
     /** Detached signature is tiny; cap its download hard. */
     private static final long MAX_SIG_BYTES = 4096;
+    /** The longest the index body may take once its headers arrived (a server can drip bytes for ever). */
+    private static final Duration BODY_DEADLINE = Duration.ofSeconds(60);
 
     /**
      * The outcome of a fetch: either {@code entries} (possibly empty) or a non-null {@code error}.
      * {@code signed} is true when the index's detached signature verified against the bundled registry key.
      */
-    public record Result(List<RegistryEntry> entries, String error, boolean signed) {
+    public record Result(List<RegistryEntry> entries, String error, boolean signed, PluginProblem problem) {
         public boolean ok() {
             return error == null;
+        }
+
+        static Result failed(PluginProblem p) {
+            return new Result(List.of(), p.english(), false, p);
         }
     }
 
@@ -73,6 +79,8 @@ public final class PluginRegistry {
 
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private final ConcurrentHashMap<String, Result> cache = new ConcurrentHashMap<>();
+    /** URL → the callbacks waiting for its fetch: a second Browse while one runs joins it instead of queueing. */
+    private final java.util.Map<String, List<Consumer<Result>>> inFlight = new java.util.HashMap<>();
 
     /** Stops the worker and releases the HTTP client (window dispose). */
     public void shutdown() {
@@ -90,6 +98,23 @@ public final class PluginRegistry {
      * response can't exhaust memory. Throws {@link java.io.IOException} when the cap is exceeded.
      */
     public static byte[] readCapped(java.io.InputStream in, long max) throws java.io.IOException {
+        return readCapped(in, max, null);
+    }
+
+    /** The exception {@link #readCapped} throws when the body is over its cap. */
+    public static final class TooLargeException extends java.io.IOException {
+        TooLargeException(long max) {
+            super("response exceeds " + max + " bytes");
+        }
+    }
+
+    /**
+     * As {@link #readCapped(java.io.InputStream, long)}, and also aborts once {@code deadline} (null: none) has
+     * passed since the read began. The JDK's request timeout ends when the headers arrive; a server that then
+     * sends a byte every few seconds kept Browse "Fetching…" for minutes.
+     */
+    public static byte[] readCapped(java.io.InputStream in, long max, Duration deadline) throws java.io.IOException {
+        long end = deadline == null ? Long.MAX_VALUE : System.nanoTime() + deadline.toNanos();
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         long total = 0;
@@ -97,9 +122,12 @@ public final class PluginRegistry {
         while ((n = in.read(buf)) > 0) {
             total += n;
             if (total > max) {
-                throw new java.io.IOException("response exceeds " + max + " bytes");
+                throw new TooLargeException(max);
             }
             out.write(buf, 0, n);
+            if (System.nanoTime() - end > 0) {
+                throw new java.io.IOException(PluginProblem.DEADLINE + deadline.toSeconds() + " s");
+            }
         }
         return out.toByteArray();
     }
@@ -131,19 +159,45 @@ public final class PluginRegistry {
             Platform.runLater(() -> onResult.accept(cached));
             return;
         }
+        String key = String.valueOf(url);
+        synchronized (inFlight) {
+            List<Consumer<Result>> waiting = inFlight.get(key);
+            if (waiting != null) {
+                waiting.add(onResult); // a second click while the first fetch runs: one fetch, both answered
+                return;
+            }
+            inFlight.put(key, new java.util.ArrayList<>(List.of(onResult)));
+        }
         exec.submit(() -> {
-            Result r = fetchSync(url);
+            Result r;
+            try {
+                r = fetchSync(url);
+            } catch (Throwable t) { // NOSONAR: the waiting callers must hear back
+                r = Result.failed(new PluginProblem(PluginProblem.Kind.FAILED, List.of(), String.valueOf(t)));
+            }
             if (r.ok()) {
                 cache.put(url, r);
             }
-            Platform.runLater(() -> onResult.accept(r));
+            List<Consumer<Result>> callers;
+            synchronized (inFlight) {
+                callers = inFlight.remove(key);
+            }
+            Result result = r;
+            Platform.runLater(() -> callers.forEach(c -> c.accept(result)));
         });
+    }
+
+    /** Whether a fetch of {@code url} is running now. */
+    public boolean fetching(String url) {
+        synchronized (inFlight) {
+            return inFlight.containsKey(String.valueOf(url));
+        }
     }
 
     /** {@link #fetch} without the worker and the FX hand-off. Never throws. */
     Result fetchSync(String url) {
         if (!isHttps(url)) {
-            return new Result(List.of(), "registry url must be https", false);
+            return Result.failed(PluginProblem.of(PluginProblem.Kind.NOT_HTTPS));
         }
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url.strip()))
@@ -154,21 +208,30 @@ public final class PluginRegistry {
             HttpResponse<java.io.InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
-                return new Result(List.of(), "HTTP " + resp.statusCode(), false);
+                return Result.failed(
+                        PluginProblem.of(PluginProblem.Kind.HTTP_STATUS, String.valueOf(resp.statusCode())));
             }
             byte[] body;
             try (java.io.InputStream in = resp.body()) {
-                body = readCapped(in, MAX_INDEX_BYTES);
+                body = readCapped(in, MAX_INDEX_BYTES, BODY_DEADLINE);
             }
-            RegistryIndex idx = RegistryIndex.parse(mapper, new ByteArrayInputStream(body));
+            RegistryIndex idx;
+            try {
+                idx = RegistryIndex.parse(mapper, new ByteArrayInputStream(body));
+            } catch (java.io.IOException | RuntimeException bad) {
+                return Result.failed(new PluginProblem(
+                        PluginProblem.Kind.INDEX_INVALID, List.of(), PluginManager.readableError(bad)));
+            }
+            if (idx.schemaVersion > RegistryIndex.SCHEMA_VERSION) {
+                // A format this build does not know may mean fields it would ignore (a requirement, a warning).
+                return Result.failed(
+                        PluginProblem.of(PluginProblem.Kind.INDEX_TOO_NEW, String.valueOf(idx.schemaVersion)));
+            }
             boolean signed = verifyIndexSignature(url, body);
-            return new Result(List.copyOf(idx.plugins), null, signed);
+            return new Result(List.copyOf(idx.plugins), null, signed, null);
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to fetch plugin registry " + url, e);
-            return new Result(
-                    List.of(),
-                    e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()),
-                    false);
+            return Result.failed(PluginProblem.network(url, e));
         }
     }
 
@@ -193,7 +256,8 @@ public final class PluginRegistry {
             }
             String sig;
             try (java.io.InputStream in = resp.body()) {
-                sig = new String(readCapped(in, MAX_SIG_BYTES), java.nio.charset.StandardCharsets.UTF_8).strip();
+                sig = new String(readCapped(in, MAX_SIG_BYTES, BODY_DEADLINE), java.nio.charset.StandardCharsets.UTF_8)
+                        .strip();
             }
             return PluginSignature.verify(indexBytes, sig, key);
         } catch (Exception e) {

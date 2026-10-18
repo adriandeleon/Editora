@@ -176,16 +176,27 @@ public class WindowManager {
     }
 
     /**
-     * Lists the plugins directory and reads every manifest (startup I/O + class loaders). The predicate
-     * factors the master gate, so no untrusted code loads unless plugins are enabled; the Settings page
-     * still lists all of them. Safe off the FX thread: the launch runs it on the config-prefetch thread.
+     * Lists the plugins directory and reads every manifest (startup I/O + class loaders): the session's launch
+     * set. The consent factors the master gate and {@code --disable-plugins}, so no untrusted code loads unless
+     * plugins are enabled, and a plugin loads only with the capabilities the user enabled it with; the Settings
+     * page still lists all of them. Then the store is brought in line with what is on disk ({@link
+     * com.editora.config.PluginStore#reconcile}). Safe off the FX thread: the launch runs it on the
+     * config-prefetch thread, before any window exists.
      */
     public static com.editora.plugin.PluginManager discoverPlugins(SharedConfig shared) {
         var manager = new com.editora.plugin.PluginManager(
                 shared.getPluginsDir(),
-                id -> shared.getSettings().isPluginSupport()
-                        && shared.getPluginStore().isEnabled(id));
+                (id, digest) -> shared.getSettings().isPluginSupport()
+                        && !com.editora.plugin.PluginManager.disabledForSession()
+                        && shared.getPluginStore().allows(id, digest));
         manager.discover();
+        java.util.Map<String, String> present = new java.util.HashMap<>();
+        for (com.editora.plugin.PluginDescriptor d : manager.descriptors()) {
+            present.put(d.id(), d.loadError() == null ? d.digest() : null);
+        }
+        if (shared.getPluginStore().reconcile(present)) {
+            shared.savePlugins();
+        }
         return manager;
     }
 
@@ -1469,7 +1480,8 @@ public class WindowManager {
      */
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
-        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(settings, pluginManager);
+        List<java.util.Map<String, String>> pluginKeymaps = KeymapLayers.pluginKeymaps(
+                settings, pluginManager, com.editora.command.KeymapManager.resolveName(settings.getKeymap()));
         KeymapLayers.rebuild(
                 keymap,
                 settings.getKeymap(),
