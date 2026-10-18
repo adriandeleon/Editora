@@ -402,6 +402,9 @@ public class App extends Application {
         // routing is done by the OS (Finder's openFiles Apple Event → MacOpenFiles), so this covers the
         // platforms where a file manager can only pass argv.
         java.util.List<String> argList = java.util.List.of(args);
+        if (disablePluginsFlag(argList)) {
+            com.editora.plugin.PluginManager.disableForSession(); // before the prefetch thread discovers them
+        }
         try {
             diffUiArg(argList); // validate the two operands before starting JavaFX
         } catch (IllegalArgumentException e) {
@@ -454,6 +457,12 @@ public class App extends Application {
         // will run, so the load may go ahead.)
         loadGate.countDown();
         launch(args);
+        // The windows are gone and stop() has flushed the configuration. Exit now rather than when the last
+        // non-daemon thread ends: plugin code runs with full trust and can leave one running (a task runner's
+        // process reader), which kept a window-less JVM alive holding the single-instance endpoint, so the next
+        // launch was "handed to" an editor nobody could see. Shutdown hooks (process reaping, the endpoint,
+        // a "Restart now") still run.
+        System.exit(0);
     }
 
     /**
@@ -623,6 +632,8 @@ public class App extends Application {
                   --expert              Start in Expert mode: like Zen, but keeps the editor
                                         view (line numbers, status bar) (session only)
                   --simple              Start in Simple UI mode (minimal chrome; session only)
+                  --disable-plugins     Start with every plugin switched off (session only): a way out
+                                        of a plugin that hangs or breaks Editora at startup
                   --version, -V         Print the version and exit
                   --help, -h            Print this help and exit
 
@@ -673,6 +684,9 @@ public class App extends Application {
     static boolean shouldForwardLaunch(java.util.List<String> args) {
         if (args == null || newInstanceFlag(args)) {
             return false;
+        }
+        if (disablePluginsFlag(args)) {
+            return false; // the running editor has its plugins loaded: this launch is about not loading them
         }
         if (diffUiFlag(args)) {
             return false; // a standalone diff owns its window and startup chrome
@@ -729,6 +743,11 @@ public class App extends Application {
     /** True if {@code --expert} is present (session-only Expert mode override, like {@code --zen}). */
     static boolean expertFlag(java.util.List<String> args) {
         return args != null && args.contains("--expert");
+    }
+
+    /** True if {@code --disable-plugins} is present (this session loads no plugin; nothing is saved). */
+    static boolean disablePluginsFlag(java.util.List<String> args) {
+        return args != null && args.contains("--disable-plugins");
     }
 
     /** True if {@code --simple} is present (session-only Simple UI mode override). */
@@ -866,6 +885,7 @@ public class App extends Application {
             "--zen",
             "--expert",
             "--simple",
+            "--disable-plugins",
             "--diff-ui",
             "--no-session",
             "--new-file",

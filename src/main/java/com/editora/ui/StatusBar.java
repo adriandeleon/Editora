@@ -401,15 +401,40 @@ public final class StatusBar extends HBox {
         return label;
     }
 
-    /** Adds a plugin-contributed segment (text + optional command) at the right end of the status bar. */
-    public void addPluginSegment(String text, String commandId) {
+    /**
+     * Adds a plugin-contributed segment (text + optional command) at the right end of the status bar, with
+     * {@code hint} ("Plugin: command") as its tooltip and accessible help. A segment with a command is a
+     * keyboard-reachable button (Tab, then Enter or Space), not a mouse-only label.
+     *
+     * @return the segment, for {@link #removePluginSegment}
+     */
+    public Node addPluginSegment(String text, String commandId, String hint) {
         Label seg = new Label(text == null ? "" : text);
         seg.getStyleClass().add("status-segment");
+        if (hint != null && !hint.isBlank()) {
+            seg.setTooltip(new Tooltip(hint));
+            seg.setAccessibleHelp(hint);
+        }
         if (commandId != null && !commandId.isBlank()) {
             seg.getStyleClass().add("status-segment-clickable");
             seg.setOnMouseClicked(e -> registry.run(commandId));
+            seg.setFocusTraversable(true);
+            seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+            seg.setOnKeyPressed(e -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                    e.consume();
+                    registry.run(commandId);
+                }
+            });
         }
         getChildren().add(seg);
+        return seg;
+    }
+
+    /** Takes back a segment {@link #addPluginSegment} added (its plugin failed to start). */
+    public void removePluginSegment(Node segment) {
+        getChildren().remove(segment);
     }
 
     /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.

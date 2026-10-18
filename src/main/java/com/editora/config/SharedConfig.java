@@ -698,6 +698,12 @@ public class SharedConfig {
     }
 
     Path exportConfig(Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys) throws IOException {
+        return exportConfig(destinationDir, includeHttpHistory, includeApiKeys, true);
+    }
+
+    Path exportConfig(
+            Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData)
+            throws IOException {
         if (includeHttpHistory) {
             awaitHttpHistoryWork(); // the response that just landed belongs in the export too
         }
@@ -711,7 +717,21 @@ public class SharedConfig {
                 System.getProperty("user.name"),
                 java.time.LocalDateTime.now(),
                 includeHttpHistory,
-                includeApiKeys);
+                includeApiKeys,
+                includePluginData);
+    }
+
+    /** Whether a plugin keeps data of its own ({@code plugins/<id>/data/}), which an export leaves out unless asked. */
+    public boolean hasPluginData() {
+        Path plugins = getPluginsDir();
+        try (Stream<Path> dirs = Files.list(plugins)) {
+            return dirs.filter(d -> !d.getFileName().toString().startsWith("."))
+                    .filter(d -> !com.editora.plugin.PluginInstaller.isReservedId(
+                            d.getFileName().toString()))
+                    .anyMatch(d -> Files.isDirectory(d.resolve("data")));
+        } catch (IOException | RuntimeException none) {
+            return false;
+        }
     }
 
     /** The AI keys' vault once {@link #useSecretStore} ran; null keeps them in {@code settings.json}. */
@@ -779,6 +799,12 @@ public class SharedConfig {
         return exportConfigAsync(exportDirectory(), includeHttpHistory, includeApiKeys);
     }
 
+    /** As above, and the plugins' data folders when {@code includePluginData}. */
+    public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
+            boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData) {
+        return exportConfigAsync(exportDirectory(), includeHttpHistory, includeApiKeys, includePluginData);
+    }
+
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {
         return exportConfigAsync(destinationDir, false);
     }
@@ -790,6 +816,11 @@ public class SharedConfig {
 
     synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
             Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys) {
+        return exportConfigAsync(destinationDir, includeHttpHistory, includeApiKeys, true);
+    }
+
+    synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(
+            Path destinationDir, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData) {
         if (runningExport != null && !runningExport.isDone()) {
             return runningExport;
         }
@@ -798,7 +829,8 @@ public class SharedConfig {
         Thread thread = new Thread(
                 () -> {
                     try {
-                        export.complete(exportConfig(destinationDir, includeHttpHistory, includeApiKeys));
+                        export.complete(
+                                exportConfig(destinationDir, includeHttpHistory, includeApiKeys, includePluginData));
                     } catch (IOException | RuntimeException e) {
                         export.completeExceptionally(e);
                     }

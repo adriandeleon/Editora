@@ -365,7 +365,9 @@ public enum ConfigSchema {
     // v1 → v2: + exec, what the user allowed and configured for running commands on each host (additive;
     // absent means nothing is allowed anywhere, which is what every connection meant before).
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
-    PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: + consent, the fingerprint of what each enabled plugin was allowed to do; v1's enabled ids
+    // carry "*" (adopt what is installed at the next launch), so nobody's plugins switch off on the upgrade.
+    PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::pluginConsentAdopt)),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
     // v2 → v3 added charset/bom/lineEnding on pre-delete revisions (additive; absent ⇒ unknown, restore as before).
     // v3 → v4 added acknowledgedLimits, the retention limits the user last agreed to (additive; absent ⇒ the

@@ -29,21 +29,75 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Installs a plugin from a remote registry entry (download + verify sha-256) or a local {@code .zip},
- * unpacking it into {@code <pluginsDir>/<id>/} through {@link Unzip} (zip-slip + size guards). Off-thread
- * (daemon executor + {@link Platform#runLater}), the {@code GitService}/{@code HttpClientService} idiom.
- * On success it re-runs {@link PluginManager#discover()}; enabling the plugin + persisting is left to the
- * caller (it owns the {@code PluginStore} + UI refresh) via the returned id.
+ * Installs a plugin from a remote registry entry (download + verify sha-256) or a local {@code .zip}, in two
+ * steps so nothing on disk changes until the user has seen what the plugin does:
+ *
+ * <ol>
+ *   <li>{@link #stageFromUrl}/{@link #stageFromZip} (worker thread): download or read, check, and unpack through
+ *       {@link Unzip} (zip-slip + size guards) into a staging folder beside the plugins
+ *       ({@code plugins/.installing-*}), then read its manifest. A registry archive must be the plugin and
+ *       version its entry names. The result is a {@link Staged} install, or a {@link PluginProblem}.
+ *   <li>{@link #commit} (FX thread, after the consent): swap the staged folder into {@code plugins/<id>},
+ *       carrying the old install's {@code data/} over — or, for a plugin running in this session, leave it as
+ *       {@code plugins/.pending-<id>} for the next start ({@link #applyPending}); a running plugin's jar is open,
+ *       and on Windows an open jar cannot be moved or deleted. {@link #discard} drops a staged install the user
+ *       declined, so declining an update keeps the version that was there.
+ * </ol>
  */
 public final class PluginInstaller {
 
     private static final Logger LOG = Logger.getLogger(PluginInstaller.class.getName());
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
+    /** The longest a download may take once its headers arrived (a server can drip bytes for ever). */
+    private static final Duration BODY_DEADLINE = Duration.ofMinutes(5);
+
     private static final long MAX_DOWNLOAD_BYTES = 128L * 1024 * 1024;
 
-    /** Outcome of an install: {@code ok} + the installed plugin {@code id} + {@code name}, else an error. */
-    public record Result(boolean ok, String id, String name, String error) {}
+    /** Outcome of a one-step install (tests, tools): {@code ok} + the plugin {@code id} + {@code name}, or why not. */
+    public record Result(boolean ok, String id, String name, String error, PluginProblem problem) {
+        static Result failed(PluginProblem p) {
+            return new Result(false, "", "", p.english(), p);
+        }
+    }
+
+    /**
+     * A plugin unpacked into a staging folder, waiting for the user's answer.
+     *
+     * @param root     the folder holding its {@code plugin.json} (the staging folder or its only subfolder)
+     * @param staging  the staging folder to delete afterwards
+     * @param manifest its manifest (id = the folder it will be installed as)
+     * @param jars     its jar files, relative ({@code x.jar}, {@code lib/y.jar})
+     * @param previous the manifest of the copy installed now, or null for a new plugin
+     */
+    public record Staged(Path root, Path staging, PluginManifest manifest, List<String> jars, PluginManifest previous) {
+        public String id() {
+            return manifest.id;
+        }
+
+        public String name() {
+            return manifest.name == null || manifest.name.isBlank() ? manifest.id : manifest.name.strip();
+        }
+
+        public String version() {
+            return manifest.version == null ? "" : manifest.version.strip();
+        }
+
+        /** The fingerprint the consent to this version is stored with (see {@link PluginDescriptor#digest}). */
+        public String digest() {
+            return PluginDescriptor.digest(manifest, jars);
+        }
+    }
+
+    /** What staging produced: a {@link Staged} install, or the reason there is none. */
+    public record Staging(Staged staged, PluginProblem problem) {
+        public boolean ok() {
+            return staged != null;
+        }
+    }
+
+    /** How a commit went: installed now, waiting for the next start, or failed for {@code problem}. */
+    public record Commit(boolean ok, boolean pending, PluginProblem problem) {}
 
     private final PluginManager manager;
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
@@ -80,43 +134,52 @@ public final class PluginInstaller {
         client.close();
     }
 
-    /** Downloads {@code entry.download}, verifies its sha-256, and installs it; posts a {@link Result} on FX. */
-    public void installFromUrl(RegistryEntry entry, Consumer<Result> onResult) {
-        exec.submit(() -> {
-            Result r = installFromUrlSync(entry);
-            Platform.runLater(() -> onResult.accept(r));
-        });
+    /** Downloads {@code entry.download}, verifies it, and stages it; posts the {@link Staging} on FX. */
+    public void stageFromUrl(RegistryEntry entry, Consumer<Staging> onResult) {
+        submit(() -> stageFromUrlSync(entry), onResult);
     }
 
-    /** Installs from a local {@code .zip} (no checksum — the user picked the file); posts a {@link Result}. */
-    public void installFromZip(Path zip, Consumer<Result> onResult) {
-        exec.submit(() -> {
-            Result r = installFromZipSync(zip);
-            Platform.runLater(() -> onResult.accept(r));
-        });
+    /** Stages a local {@code .zip} (no checksum — the user picked the file); posts the {@link Staging} on FX. */
+    public void stageFromZip(Path zip, Consumer<Staging> onResult) {
+        submit(() -> stageFromZipSync(zip), onResult);
     }
 
-    /** {@link #installFromZip} without the worker and the FX hand-off. Never throws. */
-    Result installFromZipSync(Path zip) {
-        try {
-            byte[] bytes = Files.readAllBytes(zip);
-            if (bytes.length > maxArchiveBytes) {
-                return new Result(false, "", "", "archive too large");
+    /** Runs {@code work} on the worker and always posts an answer — an Error included (a huge file, OOM). */
+    private void submit(java.util.function.Supplier<Staging> work, Consumer<Staging> onResult) {
+        exec.submit(() -> {
+            Staging r;
+            try {
+                r = work.get();
+            } catch (Throwable t) { // NOSONAR: the user must hear back whatever happened
+                LOG.log(Level.WARNING, "Plugin install failed", t);
+                r = new Staging(null, new PluginProblem(PluginProblem.Kind.FAILED, List.of(), String.valueOf(t)));
             }
-            return installBytes(bytes);
+            Staging result = r;
+            Platform.runLater(() -> onResult.accept(result));
+        });
+    }
+
+    /** {@link #stageFromZip} without the worker and the FX hand-off. Never throws an exception. */
+    Staging stageFromZipSync(Path zip) {
+        try {
+            if (Files.size(zip) > maxArchiveBytes) { // before reading: a 3 GB pick must not reach the heap
+                return failure(PluginProblem.of(PluginProblem.Kind.TOO_LARGE, megabytes(maxArchiveBytes)));
+            }
+            return stageBytes(Files.readAllBytes(zip), null);
         } catch (IOException e) {
-            return new Result(false, "", "", "read failed: " + e.getMessage());
+            return failure(new PluginProblem(PluginProblem.Kind.FAILED, List.of(), "read failed: " + e.getMessage()));
         }
     }
 
-    /** {@link #installFromUrl} without the worker and the FX hand-off. Never throws. */
-    Result installFromUrlSync(RegistryEntry e) {
+    /** {@link #stageFromUrl} without the worker and the FX hand-off. Never throws an exception. */
+    Staging stageFromUrlSync(RegistryEntry e) {
         if (e == null || !PluginRegistry.isHttps(e.download)) {
-            return new Result(false, "", "", "download url must be https");
+            return failure(PluginProblem.of(PluginProblem.Kind.NOT_HTTPS));
         }
         if (e.sha256 == null || e.sha256.isBlank()) {
-            return new Result(false, "", "", "registry entry has no sha256");
+            return failure(PluginProblem.of(PluginProblem.Kind.NO_CHECKSUM));
         }
+        byte[] body;
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(e.download.strip()))
                     .timeout(REQUEST_TIMEOUT)
@@ -125,119 +188,338 @@ public final class PluginInstaller {
             HttpResponse<java.io.InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
-                return new Result(false, "", "", "HTTP " + resp.statusCode());
+                return failure(PluginProblem.of(PluginProblem.Kind.HTTP_STATUS, String.valueOf(resp.statusCode())));
             }
-            byte[] body;
             try (java.io.InputStream in = resp.body()) {
-                body = PluginRegistry.readCapped(in, maxArchiveBytes); // bounded; aborts an oversized stream
+                // bounded in size and in time; aborts an oversized or dripping stream
+                body = PluginRegistry.readCapped(in, maxArchiveBytes, BODY_DEADLINE);
+            } catch (PluginRegistry.TooLargeException tooLarge) {
+                return failure(PluginProblem.of(PluginProblem.Kind.TOO_LARGE, megabytes(maxArchiveBytes)));
             }
-            String actual = sha256(body);
-            if (!actual.equalsIgnoreCase(e.sha256.strip())) {
-                return new Result(false, "", "", "checksum mismatch");
-            }
-            return installBytes(body);
         } catch (Exception ex) {
             LOG.log(Level.WARNING, "Plugin download failed: " + e.download, ex);
-            return new Result(
-                    false,
-                    "",
-                    "",
-                    ex.getClass().getSimpleName() + (ex.getMessage() == null ? "" : ": " + ex.getMessage()));
+            return failure(PluginProblem.network(e.download, ex));
         }
+        if (!sha256(body).equalsIgnoreCase(e.sha256.strip())) {
+            return failure(PluginProblem.of(PluginProblem.Kind.CHECKSUM_MISMATCH));
+        }
+        return stageBytes(body, e);
+    }
+
+    private static String megabytes(long bytes) {
+        return String.valueOf(Math.max(1, bytes / (1024 * 1024)));
+    }
+
+    private static Staging failure(PluginProblem p) {
+        return new Staging(null, p);
     }
 
     /**
-     * Extracts the zip to a temp dir, finds the plugin root + id, puts it in the plugins dir, rescans.
-     *
-     * <p>An update keeps what the old install owned. "Replace an existing install" used to be a recursive
-     * delete of {@code plugins/<id>/} followed by a move, which wiped the plugin's {@code data/} directory
-     * (the writable store {@code PluginContext.dataDir()} hands out) on every update, and left nothing at all
-     * if the move then failed. Now the new version is brought next to the old one first, the two folders are
-     * swapped by rename, {@code data/} is carried over, and the old folder is deleted last; a failure in
-     * between puts the old install back.
+     * Unpacks {@code zipBytes} into a staging folder beside the plugins and reads its manifest. A registry
+     * install ({@code entry} not null) must be the plugin and version its entry names: an index that pointed
+     * one entry at another plugin's archive downgraded or replaced that plugin without a word.
      */
-    Result installBytes(byte[] zipBytes) {
-        Path temp = null;
+    Staging stageBytes(byte[] zipBytes, RegistryEntry entry) {
+        Path staging = null;
+        boolean keep = false;
         try {
-            temp = Files.createTempDirectory("editora-plugin-");
-            Unzip.extract(new ByteArrayInputStream(zipBytes), temp);
-            Path root = findPluginRoot(temp);
+            Path pluginsDir = manager.pluginsDir();
+            Files.createDirectories(pluginsDir);
+            // Unpacked straight beside the plugins (same volume), so the final swap is a rename.
+            staging = Files.createTempDirectory(pluginsDir, STAGING_PREFIX);
+            try {
+                Unzip.extract(new ByteArrayInputStream(zipBytes), staging);
+            } catch (IOException unsafe) {
+                return failure(new PluginProblem(
+                        PluginProblem.Kind.ARCHIVE_INVALID, List.of(), String.valueOf(unsafe.getMessage())));
+            }
+            Path root = findPluginRoot(staging);
             if (root == null) {
-                return new Result(false, "", "", "no plugin.json in archive");
+                return failure(PluginProblem.of(PluginProblem.Kind.NO_MANIFEST));
             }
             PluginManifest m;
             try (InputStream in = Files.newInputStream(root.resolve("plugin.json"))) {
                 m = PluginManager.parseManifest(mapper, in);
+            } catch (IOException | RuntimeException bad) {
+                PluginDescriptor.LoadProblem lp = PluginManager.manifestProblem(bad);
+                List<String> at = lp.args().size() == 2 ? lp.args() : List.of("", "");
+                return failure(new PluginProblem(PluginProblem.Kind.MANIFEST_INVALID, at, lp.detail()));
             }
             String id = m.id == null ? "" : m.id.strip();
             if (id.isBlank()) {
-                id = root.getFileName() == null ? "" : root.getFileName().toString();
+                id = root == staging ? "" : root.getFileName().toString();
             }
             if (id.isBlank() || !isSafeId(id)) {
-                return new Result(false, "", "", "invalid plugin id");
+                return failure(PluginProblem.of(PluginProblem.Kind.INVALID_ID, id));
             }
             if (isReservedId(id)) {
-                return new Result(false, "", "", "plugin id \"" + id + "\" is reserved");
+                return failure(PluginProblem.of(PluginProblem.Kind.RESERVED_ID, id));
+            }
+            m.id = id;
+            if (entry != null) {
+                String wantId = entry.id == null ? "" : entry.id.strip();
+                if (!wantId.equals(id)) {
+                    return failure(PluginProblem.of(PluginProblem.Kind.ID_MISMATCH, wantId, id));
+                }
+                String wantVersion = entry.version == null ? "" : entry.version.strip();
+                String version = m.version == null ? "" : m.version.strip();
+                if (!wantVersion.isEmpty() && !wantVersion.equals(version)) {
+                    return failure(PluginProblem.of(PluginProblem.Kind.VERSION_MISMATCH, wantVersion, version));
+                }
             }
             if (RetiredPlugins.isRetired(id)) {
                 // The feature is built in now; installing the plugin again would run the two side by side.
-                return new Result(false, "", "", com.editora.i18n.Messages.tr("plugins.retired", id));
+                return failure(PluginProblem.of(PluginProblem.Kind.RETIRED, id));
             }
-            Path pluginsDir = manager.pluginsDir();
             Path target = pluginsDir.resolve(id);
-            Files.createDirectories(pluginsDir);
-            boolean update = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
-            if (update && !Files.isRegularFile(target.resolve("plugin.json"))) {
-                // Whatever this is, it is not an install of this plugin: never delete it to make room.
-                return new Result(false, "", "", "a folder named \"" + id + "\" that is not a plugin is in the way");
+            PluginManifest previous = null;
+            if (Files.isSymbolicLink(target)) {
+                // A plugin under development, linked in from its source folder: an install would move that
+                // folder's data/ out of it and replace the link. Refused; the developer updates the source.
+                return failure(PluginProblem.of(PluginProblem.Kind.SYMLINKED, id));
             }
-            Path incoming = Files.createTempDirectory(pluginsDir, STAGING_PREFIX + id + ".new-");
-            Path previous = null;
-            boolean previousIsSpare = false; // true once the new install is complete and holds the old data
-            try {
-                Files.delete(incoming); // moveDir needs the name free; the unique name stays ours
-                moveDir(root, incoming); // the slow, fallible part (a cross-volume copy) happens beside the old one
-                if (update) {
-                    Path aside = Files.createTempDirectory(pluginsDir, STAGING_PREFIX + id + ".old-");
-                    Files.delete(aside);
-                    Files.move(target, aside);
-                    previous = aside;
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                if (!Files.isRegularFile(target.resolve("plugin.json"))) {
+                    // Whatever this is, it is not an install of this plugin: never delete it to make room.
+                    return failure(PluginProblem.of(PluginProblem.Kind.IN_THE_WAY, id));
                 }
-                try {
-                    Files.move(incoming, target);
-                    if (previous != null) {
-                        carryOverData(previous, target);
-                    }
-                    previousIsSpare = true;
-                } catch (IOException | RuntimeException failure) {
-                    if (previous != null) {
-                        // Put the old install back, data and all. If even that fails it stays where it is,
-                        // under its staging name, rather than being deleted.
-                        deleteQuietly(target);
-                        Files.move(previous, target);
-                    }
-                    throw failure;
-                }
-            } finally {
-                deleteQuietly(incoming);
-                if (previous != null && previousIsSpare) {
-                    deleteQuietly(previous);
-                }
+                previous = readManifestOrStub(target, id);
             }
-            manager.discover(); // pick up the new plugin for the Settings list (loads next launch)
-            return new Result(true, id, m.name == null || m.name.isBlank() ? id : m.name, null);
+            keep = true;
+            return new Staging(new Staged(root, staging, m, PluginManager.jarNames(root), previous), null);
         } catch (IOException | RuntimeException ex) {
             LOG.log(Level.WARNING, "Plugin install failed", ex);
-            return new Result(false, "", "", ex.getMessage());
+            return failure(new PluginProblem(PluginProblem.Kind.FAILED, List.of(), String.valueOf(ex.getMessage())));
         } finally {
-            if (temp != null) {
-                deleteQuietly(temp);
+            if (!keep && staging != null) {
+                deleteQuietly(staging);
             }
+        }
+    }
+
+    /** The manifest in {@code dir}, or a stub naming {@code id} when it cannot be read. */
+    private PluginManifest readManifestOrStub(Path dir, String id) {
+        try (InputStream in = Files.newInputStream(dir.resolve("plugin.json"))) {
+            return PluginManager.parseManifest(mapper, in);
+        } catch (IOException | RuntimeException e) {
+            PluginManifest stub = new PluginManifest();
+            stub.id = id;
+            stub.name = id;
+            return stub;
+        }
+    }
+
+    /** Drops a staged install the user declined. */
+    public static void discard(Staged staged) {
+        if (staged != null) {
+            deleteQuietly(staged.staging());
+        }
+    }
+
+    /**
+     * Puts a staged install in place. With {@code deferToRestart} — the plugin runs in this session — it is left
+     * as {@code plugins/.pending-<id>} and swapped in at the next start, before discovery; otherwise the old
+     * install (if any) is swapped out by rename, its {@code data/} carried over, and deleted last. A failure in
+     * between puts the old install back. Either way the staging folder is gone afterwards.
+     */
+    public Commit commit(Staged staged, boolean deferToRestart) {
+        Path pluginsDir = manager.pluginsDir();
+        try {
+            if (deferToRestart) {
+                Path pending = pluginsDir.resolve(PENDING_PREFIX + staged.id());
+                deleteRecursively(pending); // an older waiting update is superseded
+                moveDir(staged.root(), pending);
+                Files.deleteIfExists(pluginsDir.resolve(REMOVE_PREFIX + staged.id())); // installing again wins
+                return new Commit(true, true, null);
+            }
+            swapIn(pluginsDir, staged.root(), staged.id());
+            return new Commit(true, false, null);
+        } catch (IOException | RuntimeException ex) {
+            LOG.log(Level.WARNING, "Plugin install failed", ex);
+            return new Commit(
+                    false,
+                    false,
+                    new PluginProblem(PluginProblem.Kind.FAILED, List.of(), String.valueOf(ex.getMessage())));
+        } finally {
+            deleteQuietly(staged.staging());
+        }
+    }
+
+    /**
+     * Moves {@code incoming} to {@code plugins/<id>}. An existing install is moved aside first, its
+     * {@code data/} is carried into the new one, and it is deleted last; if the new one cannot be put in place,
+     * the old one is put back, data and all.
+     *
+     * <p>An update used to be a recursive delete of {@code plugins/<id>/} followed by a move, which wiped the
+     * plugin's {@code data/} (the writable store {@code PluginContext.dataDir()} hands out) on every update, and
+     * left nothing at all if the move then failed.
+     */
+    private static void swapIn(Path pluginsDir, Path incoming, String id) throws IOException {
+        Path target = pluginsDir.resolve(id);
+        boolean update = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
+        if (update && Files.isSymbolicLink(target)) {
+            throw new IOException("the installed \"" + id + "\" is a link to another folder");
+        }
+        if (update && !Files.isRegularFile(target.resolve("plugin.json"))) {
+            throw new IOException("a folder named \"" + id + "\" that is not a plugin is in the way");
+        }
+        Path previous = null;
+        boolean previousIsSpare = false; // true once the new install is complete and holds the old data
+        try {
+            if (update) {
+                Path aside = Files.createTempDirectory(pluginsDir, STAGING_PREFIX + id + ".old-");
+                Files.delete(aside);
+                Files.move(target, aside);
+                previous = aside;
+            }
+            try {
+                moveDir(incoming, target);
+                if (previous != null) {
+                    carryOverData(previous, target);
+                }
+                previousIsSpare = true;
+            } catch (IOException | RuntimeException failure) {
+                if (previous != null) {
+                    // Put the old install back, data and all. If even that fails it stays where it is,
+                    // under its staging name, rather than being deleted.
+                    deleteQuietly(target);
+                    Files.move(previous, target);
+                }
+                throw failure;
+            }
+        } finally {
+            if (previous != null && previousIsSpare) {
+                deleteQuietly(previous);
+            }
+        }
+    }
+
+    /**
+     * Stages and installs in one step, with no question in between — for tests and tools. {@code entry} (may be
+     * null) is the registry entry the archive must match.
+     */
+    Result installBytes(byte[] zipBytes) {
+        return installStaged(stageBytes(zipBytes, null));
+    }
+
+    /** {@link #installBytes} for a picked file. */
+    Result installFromZipSync(Path zip) {
+        return installStaged(stageFromZipSync(zip));
+    }
+
+    /** {@link #installBytes} for a registry entry. */
+    Result installFromUrlSync(RegistryEntry e) {
+        return installStaged(stageFromUrlSync(e));
+    }
+
+    private Result installStaged(Staging s) {
+        if (!s.ok()) {
+            return Result.failed(s.problem());
+        }
+        Commit c = commit(s.staged(), false);
+        if (!c.ok()) {
+            return Result.failed(c.problem());
+        }
+        manager.discover();
+        return new Result(true, s.staged().id(), s.staged().name(), null, null);
+    }
+
+    /**
+     * Marks {@code id} — a plugin running in this session, whose jar may be open — for removal at the next
+     * start (a {@code plugins/.remove-<id>} marker, applied by {@link #applyPending} before discovery). A waiting
+     * update of it is dropped.
+     */
+    public static boolean markForRemoval(Path pluginsDir, String id) {
+        if (!isSafeId(id) || isReservedId(id)) {
+            return false;
+        }
+        try {
+            Files.createDirectories(pluginsDir);
+            deleteRecursively(pluginsDir.resolve(PENDING_PREFIX + id));
+            Path marker = pluginsDir.resolve(REMOVE_PREFIX + id);
+            if (!Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
+                Files.createFile(marker);
+            }
+            return true;
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not mark plugin " + id + " for removal", e);
+            return false;
+        }
+    }
+
+    /** How old a staging folder must be before {@link #applyPending} treats it as left by a crash. */
+    static final Duration STALE_STAGING = Duration.ofHours(1);
+
+    /**
+     * Applies what a previous session left for the next start, before anything is discovered: removes the
+     * plugins marked {@code .remove-<id>}, swaps each {@code .pending-<id>} update into place (keeping
+     * {@code data/}), and deletes staging folders a crash left behind. Called once per launch by
+     * {@link PluginManager#discover()}. Never throws; what fails stays for the next start.
+     */
+    static void applyPending(Path pluginsDir) {
+        if (pluginsDir == null || !Files.isDirectory(pluginsDir)) {
+            return;
+        }
+        List<Path> entries;
+        try (Stream<Path> s = Files.list(pluginsDir)) {
+            entries = s.sorted().toList();
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not list " + pluginsDir, e);
+            return;
+        }
+        for (Path p : entries) {
+            String name = p.getFileName().toString();
+            if (!name.startsWith(REMOVE_PREFIX)) {
+                continue;
+            }
+            String id = name.substring(REMOVE_PREFIX.length());
+            if (!isSafeId(id) || isReservedId(id)) {
+                deleteQuietly(p);
+                continue;
+            }
+            Path dir = pluginsDir.resolve(id);
+            deleteQuietly(pluginsDir.resolve(PENDING_PREFIX + id));
+            if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS) || deletePluginFolder(dir)) {
+                deleteQuietly(p);
+            }
+        }
+        for (Path p : entries) {
+            String name = p.getFileName().toString();
+            if (name.startsWith(PENDING_PREFIX) && Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) {
+                String id = name.substring(PENDING_PREFIX.length());
+                if (!isSafeId(id) || isReservedId(id) || !Files.isRegularFile(p.resolve("plugin.json"))) {
+                    deleteQuietly(p);
+                    continue;
+                }
+                try {
+                    swapIn(pluginsDir, p, id);
+                } catch (IOException | RuntimeException e) {
+                    LOG.log(Level.WARNING, "Could not apply the waiting update of plugin " + id, e);
+                }
+            } else if (name.startsWith(STAGING_PREFIX) && isStale(p)) {
+                deleteQuietly(p); // a crash mid-install; nothing will ever pick it up
+            }
+        }
+    }
+
+    private static boolean isStale(Path p) {
+        try {
+            return Files.getLastModifiedTime(p, LinkOption.NOFOLLOW_LINKS)
+                    .toInstant()
+                    .isBefore(java.time.Instant.now().minus(STALE_STAGING));
+        } catch (IOException e) {
+            return false;
         }
     }
 
     /** Prefix of the folders an install stages beside the plugins; {@link PluginManager#discover} skips them. */
     static final String STAGING_PREFIX = ".installing-";
+
+    /** {@code .pending-<id>}: an update of a plugin that ran when it was accepted, swapped in at the next start. */
+    static final String PENDING_PREFIX = ".pending-";
+
+    /** {@code .remove-<id>}: an empty file marking a plugin that ran when it was removed, deleted at the next start. */
+    static final String REMOVE_PREFIX = ".remove-";
 
     /** The per-plugin writable store ({@code PluginContext.dataDir()}), preserved across updates. */
     static final String DATA_DIR = "data";
@@ -307,7 +589,50 @@ public final class PluginInstaller {
         if (dir == null) {
             return false;
         }
-        deleteQuietly(dir);
+        return deletePluginFolder(dir);
+    }
+
+    /**
+     * Deletes a plugin folder with its {@code plugin.json} last, carrying on past files that cannot be deleted
+     * (a jar Windows keeps locked): what is left then still has its manifest, so it is still listed and can be
+     * removed again. Deleting in reverse name order and stopping at the first failure used to remove the
+     * manifest and {@code data/} of most plugins and leave an unlisted folder that also blocked a reinstall.
+     *
+     * @return whether the folder is gone
+     */
+    static boolean deletePluginFolder(Path dir) {
+        if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
+            return true;
+        }
+        Path manifest = dir.resolve("plugin.json");
+        List<Path> all;
+        try (Stream<Path> s = Files.walk(dir)) {
+            all = s.sorted(Comparator.reverseOrder()).toList();
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not list " + dir, e);
+            return false;
+        }
+        boolean failed = false;
+        for (Path p : all) {
+            if (p.equals(manifest) || p.equals(dir)) {
+                continue;
+            }
+            try {
+                Files.deleteIfExists(p);
+            } catch (IOException e) {
+                failed = true;
+                LOG.log(Level.FINE, "Could not delete " + p, e);
+            }
+        }
+        if (failed) {
+            return false;
+        }
+        try {
+            Files.deleteIfExists(manifest);
+            Files.deleteIfExists(dir);
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Could not delete " + dir, e);
+        }
         return !Files.exists(dir, LinkOption.NOFOLLOW_LINKS);
     }
 
@@ -347,15 +672,18 @@ public final class PluginInstaller {
      * non-numeric segment falls back to a case-insensitive string compare. Pure — unit-tested. Returns
      * negative/zero/positive like {@link Comparator}.
      *
-     * <p>A semver <b>pre-release</b> suffix ({@code 1.0.0-rc1}) ranks <i>below</i> the same numeric core
-     * ({@code 1.0.0}), per the spec. Comparing the raw last segments instead made {@code "0"} sort before
-     * {@code "0-rc1"} — i.e. the release looked *older* than its own release candidate, so a user running an
-     * {@code -rcN} build (which the release pipeline publishes as a pre-release) was never told the final
-     * version had shipped.
+     * <p>Semver rules where they matter: a <b>pre-release</b> suffix ({@code 1.0.0-rc1}) ranks <i>below</i> the
+     * same numeric core ({@code 1.0.0}), and its dot-separated identifiers compare numerically when both are
+     * numbers ({@code rc.10 > rc.2}, and {@code rc10 > rc2} by their trailing number); {@code +build} metadata is
+     * ignored; a leading {@code v} is dropped ({@code v2.0 < 10.0}).
+     *
+     * <p>Comparing the raw last segments made {@code "0"} sort before {@code "0-rc1"} — i.e. the release looked
+     * *older* than its own release candidate, so a user running an {@code -rcN} build (which the release pipeline
+     * publishes as a pre-release) was never told the final version had shipped.
      */
     public static int compareVersions(String a, String b) {
-        String an = (a == null ? "" : a.strip());
-        String bn = (b == null ? "" : b.strip());
+        String an = normalizeVersion(a);
+        String bn = normalizeVersion(b);
         String ap = preRelease(an);
         String bp = preRelease(bn);
         String[] as = core(an).split("\\.");
@@ -364,16 +692,9 @@ public final class PluginInstaller {
         for (int i = 0; i < n; i++) {
             String x = (i < as.length && !as[i].isBlank()) ? as[i] : "0";
             String y = (i < bs.length && !bs[i].isBlank()) ? bs[i] : "0";
-            Integer xi = tryInt(x);
-            Integer yi = tryInt(y);
-            int cmp;
-            if (xi != null && yi != null) {
-                cmp = Integer.compare(xi, yi);
-            } else {
-                cmp = x.toLowerCase(Locale.ROOT).compareTo(y.toLowerCase(Locale.ROOT));
-            }
+            int cmp = compareIdentifier(x, y);
             if (cmp != 0) {
-                return cmp < 0 ? -1 : 1;
+                return cmp;
             }
         }
         if (ap.isEmpty() && bp.isEmpty()) {
@@ -385,8 +706,47 @@ public final class PluginInstaller {
         if (bp.isEmpty()) {
             return -1;
         }
-        int cmp = ap.toLowerCase(Locale.ROOT).compareTo(bp.toLowerCase(Locale.ROOT));
-        return cmp == 0 ? 0 : (cmp < 0 ? -1 : 1);
+        String[] ax = ap.split("\\.");
+        String[] bx = bp.split("\\.");
+        for (int i = 0; i < Math.min(ax.length, bx.length); i++) {
+            int cmp = compareIdentifier(ax[i], bx[i]);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return Integer.compare(ax.length, bx.length) < 0 ? -1 : (ax.length == bx.length ? 0 : 1);
+    }
+
+    /** Numbers numerically; {@code rc10} vs {@code rc2} by their text, then their trailing number; else text. */
+    private static int compareIdentifier(String x, String y) {
+        Integer xi = tryInt(x);
+        Integer yi = tryInt(y);
+        int cmp;
+        if (xi != null && yi != null) {
+            cmp = Integer.compare(xi, yi);
+        } else {
+            String xs = x.replaceAll("\\d+$", "");
+            String ys = y.replaceAll("\\d+$", "");
+            Integer xn = xs.length() < x.length() ? tryInt(x.substring(xs.length())) : null;
+            Integer yn = ys.length() < y.length() ? tryInt(y.substring(ys.length())) : null;
+            cmp = xs.toLowerCase(Locale.ROOT).compareTo(ys.toLowerCase(Locale.ROOT));
+            if (cmp == 0 && xn != null && yn != null) {
+                cmp = Integer.compare(xn, yn);
+            } else if (cmp == 0) {
+                cmp = x.toLowerCase(Locale.ROOT).compareTo(y.toLowerCase(Locale.ROOT));
+            }
+        }
+        return Integer.signum(cmp);
+    }
+
+    /** Strips blanks, a leading {@code v} and {@code +build} metadata. */
+    private static String normalizeVersion(String v) {
+        String s = v == null ? "" : v.strip();
+        if (s.length() > 1 && (s.charAt(0) == 'v' || s.charAt(0) == 'V') && Character.isDigit(s.charAt(1))) {
+            s = s.substring(1);
+        }
+        int plus = s.indexOf('+');
+        return plus < 0 ? s : s.substring(0, plus);
     }
 
     /** The numeric core of a version — everything before a {@code -pre.release} suffix. */
