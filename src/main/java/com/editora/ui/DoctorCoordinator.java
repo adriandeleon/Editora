@@ -571,18 +571,26 @@ final class DoctorCoordinator {
             };
         }));
         specs.add(pythonRun(s));
+        specs.add(nodeRun(s, needs));
         specs.add(optionalRunTool("run.make", "Make", List.of("make"), null, "Makefile"));
         specs.add(optionalRunTool("run.shell", "Bash", List.of("bash"), null, "shell"));
 
         // HTTP Client: its JavaScript response handlers run on the user's Node.js ------------------
         if (s.isHttpClientSupport() && !simple) {
-            String nodeSetting = s.getHttpNodePath().isBlank() ? "node" : s.getHttpNodePath();
+            // A blank HTTP field runs the shared Node.js, as the run itself does (review E6).
+            String httpNode = s.getHttpNodePath();
+            String sharedNode = s.getNodePath();
+            java.nio.file.Path httpRoot = ops.projectRoot();
+            String nodeSetting = com.editora.http.HttpNodeChoice.displayed(httpNode, sharedNode);
             DoctorCheck handlers = DoctorCheck.checking(
                             "http.scripts", "http", tr("doctor.label.httpScripts"), nodeSetting)
                     .withSettings("web");
             if (s.isHttpScriptsEnabled()) {
                 specs.add(probe(handlers, base -> {
-                    String exe = com.editora.process.ProcessRunner.resolveExecutable(List.of(nodeSetting))
+                    String command = com.editora.vfs.Vfs.isRemote(httpRoot)
+                            ? nodeSetting
+                            : com.editora.http.HttpNodeChoice.resolveLocal(httpNode, sharedNode, null, httpRoot);
+                    String exe = com.editora.process.ProcessRunner.resolveExecutable(List.of(command))
                             .get(0);
                     int[] v = com.editora.http.NodeResponseScripts.version(exe);
                     if (v == null) {
@@ -927,6 +935,34 @@ final class DoctorCoordinator {
                 return base.warn(what, "doctor.tip.pythonInterpreter", String.join(" ", py.command()));
             }
             return base.ok(version + " — " + what);
+        });
+    }
+
+    /**
+     * The one Node.js row (review E6): the Node.js {@link com.editora.run.NodeRuntimes} picks for this project —
+     * what Run, Debug, npm scripts, the TypeScript server and the HTTP Client share — with its version and why.
+     * Red only when the project needs Node (a {@code package.json}, or a JavaScript/TypeScript file open).
+     */
+    private DoctorService.CheckSpec nodeRun(Settings s, Needs needs) {
+        java.nio.file.Path root = ops.projectRoot();
+        String setting = s.getNodePath();
+        DoctorCheck row = DoctorCheck.checking(
+                        "run.node", "run", tr("doctor.label.node"), setting.isBlank() ? "node" : setting)
+                .withSettings("debug");
+        return probe(row, base -> {
+            boolean local = com.editora.vfs.Vfs.isLocal(root);
+            com.editora.run.NodeRuntimes.NodeRuntime node = com.editora.run.NodeRuntimes.resolveLocal(
+                    local && root != null ? root.resolve("package.json") : null, local ? root : null, "", setting);
+            base = base.withCommand(String.join(" ", node.command()));
+            List<String> argv = new ArrayList<>(node.command());
+            argv.add("--version");
+            String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
+            boolean needed = needs.openServers().contains("typescript") || needs.rootHasAny(List.of("package.json"));
+            return switch (com.editora.doctor.NodeRuntimeRow.status(version, needed)) {
+                case OK -> base.ok(com.editora.doctor.NodeRuntimeRow.detail(version, node));
+                case MISSING -> base.missing("doctor.tip.nodeMissing", node.executable());
+                default -> base.optional("doctor.tip.nodeOptional");
+            };
         });
     }
 
