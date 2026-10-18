@@ -113,6 +113,11 @@ class EditorBufferFeaturesFxTest {
             assertFalse(area.isLineHighlighterOn(), "the setting cannot turn it back on there");
             buffer.setLargeFile(false);
             assertTrue(area.isLineHighlighterOn(), "leaving large-file mode restores the setting");
+            // A loading shell holds it back too: once on, RichTextFX keeps watching the caret even after it is off.
+            buffer.setLoading(true);
+            assertFalse(area.isLineHighlighterOn(), "not while the document has not arrived");
+            buffer.setLoading(false);
+            assertTrue(area.isLineHighlighterOn());
             buffer.dispose();
         });
     }
