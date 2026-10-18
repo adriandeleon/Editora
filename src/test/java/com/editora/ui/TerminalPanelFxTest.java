@@ -514,6 +514,75 @@ class TerminalPanelFxTest {
         assertTrue(fx(() -> panel.activeView().searchMatches().isEmpty()), "the highlights went with it");
     }
 
+    @Test
+    void aProgramTabStaysWhenItsProgramEndsAndTellsItsStarterTheExitCode() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        assertEquals("Main", fx(() -> panel.activeTab().getText()));
+        assertTrue(run.isRunning());
+
+        program.emit("hello\r\n");
+        program.exit(3);
+        await(() -> !exits.isEmpty(), "the program's end");
+        assertEquals(List.of(3), exits);
+        assertFalse(run.isRunning());
+        assertEquals(1, fx(panel::terminalCount), "the tab stays, with what the program printed");
+        assertEquals("Process finished with exit code 3", fx(() -> panel.exitBanner(panel.activeTab())));
+        assertFalse(fx(() -> panel.showsReconnect(panel.activeTab())), "an exit is not a lost connection");
+    }
+
+    @Test
+    void closingAProgramTabEndsTheProgramAndSaysSoOnce() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertTrue(program.wasClosed());
+        Thread.sleep(300);
+        assertEquals(List.of(-1), exits);
+    }
+
+    @Test
+    void stopEndsTheProgramButKeepsItsTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        fx(() -> {
+            run.stop();
+            return null;
+        });
+        await(() -> !exits.isEmpty(), "the end after Stop");
+        assertTrue(program.wasClosed());
+        assertEquals(1, fx(panel::terminalCount));
+    }
+
+    @Test
+    void aProgramThatCannotStartLeavesNoTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        java.io.IOException failure = org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException.class, () -> {
+            try {
+                fx(() -> panel.runProgram(
+                        "Main",
+                        null,
+                        (c, r) -> {
+                            throw new java.io.IOException("no such program");
+                        },
+                        code -> {}));
+            } catch (java.util.concurrent.ExecutionException e) {
+                throw e.getCause();
+            }
+        });
+        assertEquals("no such program", failure.getMessage());
+        assertFalse(fx(panel::hasTerminals));
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private TerminalPanel.Shells fakeShells() {

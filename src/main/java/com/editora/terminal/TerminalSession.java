@@ -97,7 +97,7 @@ public final class TerminalSession {
     private void settle() {
         Thread waiter = Thread.ofVirtual().name("terminal-settle").start(() -> {
             try {
-                connector.waitFor();
+                exitCode = connector.waitFor();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -108,6 +108,26 @@ public final class TerminalSession {
             Thread.currentThread().interrupt();
         }
         waiter.interrupt();
+    }
+
+    private volatile Integer exitCode;
+
+    /** The program's exit code once it has ended and the code arrived; null before, or when none came. */
+    public Integer exitCode() {
+        return exitCode;
+    }
+
+    /**
+     * Ends the program but keeps the session listening, so its end is still reported ({@link #setOnSessionEnded})
+     * — Stop on a program run in a terminal. {@link #close} is the silent version.
+     */
+    public void terminate() {
+        if (closed) return;
+        try {
+            connector.close();
+        } catch (Exception ignored) {
+            // already gone
+        }
     }
 
     /** Called off the FX thread when the shell exits. */

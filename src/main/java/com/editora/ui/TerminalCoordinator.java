@@ -380,6 +380,46 @@ final class TerminalCoordinator {
         };
     }
 
+    /**
+     * Runs {@code argv} in a new Terminal tab titled {@code title}, where {@code directory}'s commands run: on this
+     * machine, or on its host, container or WSL distribution (then {@code argv} names that machine's paths, as Run
+     * builds them). {@code env} goes over the user's (here) or the login (there) environment; a null value unsets.
+     * Opens the tool window. {@code onExit} gets the exit code on the FX thread, -1 when there was none.
+     */
+    com.editora.terminal.ProgramRun runProgram(
+            String title,
+            Path directory,
+            List<String> argv,
+            java.util.Map<String, String> env,
+            java.util.function.IntConsumer onExit)
+            throws IOException {
+        started = true; // the window opening for a program does not also start a shell
+        ops.showToolWindow();
+        return panel().runProgram(title, directory, programConnector(directory, argv, env), onExit);
+    }
+
+    /** Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. */
+    static TerminalConnector.Factory programConnector(
+            Path directory, List<String> argv, java.util.Map<String, String> env) {
+        return (columns, rows) -> {
+            ExecTarget target = directory == null ? null : ExecTargets.forPath(directory);
+            if (target != null && !target.isLocal()) {
+                TerminalChannel channel =
+                        target.startTerminal(TerminalSpec.program(directory, columns, rows, argv, env));
+                return new ChannelConnector(channel, target.id());
+            }
+            LocalPtyConnector connector =
+                    LocalShell.startProgram(argv, directory == null ? null : directory.toString(), columns, rows, env);
+            try {
+                ProcessRegistry.track(connector.trackableProcess());
+            } catch (RuntimeException e) {
+                java.util.logging.Logger.getLogger(TerminalCoordinator.class.getName())
+                        .warning("terminal program " + connector.pid() + " is not tracked: " + e);
+            }
+            return connector;
+        };
+    }
+
     /** Asks before ending a shell that is running something; Cancel is the default, so Enter keeps it. */
     private boolean confirmClose(String title, List<String> programs) {
         ButtonType close = new ButtonType(tr("terminal.close.confirm"), ButtonBar.ButtonData.OK_DONE);

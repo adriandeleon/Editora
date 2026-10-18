@@ -34,6 +34,14 @@ public final class FakeConnector implements TerminalConnector {
         output.flush();
     }
 
+    private volatile int exitCode;
+
+    /** Ends the "shell" as a program exiting with {@code code} would. */
+    public void exit(int code) throws IOException {
+        exitCode = code;
+        endOfOutput();
+    }
+
     public void endOfOutput() throws IOException {
         finished.countDown();
         output.close();
@@ -76,7 +84,7 @@ public final class FakeConnector implements TerminalConnector {
     @Override
     public int waitFor() throws InterruptedException {
         finished.await();
-        return 0;
+        return exitCode;
     }
 
     @Override

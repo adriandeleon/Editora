@@ -1,5 +1,6 @@
 package com.editora.process;
 
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -68,7 +69,7 @@ public final class PosixShell {
      * else bash, else sh, since a container often sets none. Run with {@code /bin/sh -c}.
      */
     public static String terminalScript(String cwd, boolean markPid) {
-        return terminalScript(cwd, markPid, null);
+        return terminalScript(cwd, markPid, (String) null);
     }
 
     /**
@@ -95,6 +96,51 @@ public final class PosixShell {
                     .append("exec \"$s\" -l ;; esac; ");
         }
         script.append("exec \"$s\" -l");
+        return script.toString();
+    }
+
+    /**
+     * The script for {@code spec} on a target, its folder as the target names it: the login shell (with
+     * integration), or {@link TerminalSpec#command} run by it.
+     */
+    public static String terminalScript(String cwd, boolean markPid, TerminalSpec spec) {
+        return spec.runsProgram()
+                ? programScript(cwd, markPid, spec.command(), spec.env())
+                : terminalScript(cwd, markPid, spec.shellIntegration());
+    }
+
+    /**
+     * A program on a terminal: the pid line, {@code TERM}, the folder, {@code env} (a null value unsets), then the
+     * program run by the account's login shell, so it gets the PATH and variables its login sets. {@code exec}
+     * all the way down keeps the marked pid the program's own. A shell that does not take {@code -c 'exec "$@"'}
+     * (fish, csh) is passed over for {@code /bin/sh}.
+     *
+     * @throws IllegalArgumentException if a variable name is not a valid shell identifier
+     */
+    static String programScript(String cwd, boolean markPid, List<String> argv, Map<String, String> env) {
+        StringBuilder script = new StringBuilder();
+        if (markPid) {
+            script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
+        }
+        script.append("export TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=Editora; ");
+        if (cwd != null && !cwd.isBlank()) {
+            script.append("cd -- ").append(quote(cwd)).append(" 2>/dev/null || cd; ");
+        }
+        for (Map.Entry<String, String> e : env.entrySet()) {
+            if (!e.getKey().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                throw new IllegalArgumentException("not a variable name: " + e.getKey());
+            }
+            script.append(
+                    e.getValue() == null
+                            ? "unset " + e.getKey() + "; "
+                            : "export " + e.getKey() + "=" + quote(e.getValue()) + "; ");
+        }
+        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); ");
+        script.append("case \"${s##*/}\" in bash|zsh|sh|dash|ksh|mksh|ash|busybox) ;; *) s=/bin/sh ;; esac; ");
+        script.append("exec \"$s\" -l -c 'exec \"$@\"' editora");
+        for (String arg : argv) {
+            script.append(' ').append(quote(arg));
+        }
         return script.toString();
     }
 
