@@ -35,4 +35,48 @@ class NpmPackageManagerTest {
         assertNull(NpmPackageManager.fromField("something-else@1"));
         assertNull(NpmPackageManager.fromField(null));
     }
+
+    // --- workspace walk (review C3) -------------------------------------------------------------
+
+    private static NpmPackageManager.Detection walk(java.nio.file.Path dir, java.util.Map<String, String> files) {
+        return NpmPackageManager.detect(
+                dir,
+                java.nio.file.Path.of("/mono"),
+                java.nio.file.Path.of("/home/u"),
+                p -> files.containsKey(p.toString()),
+                p -> java.util.Optional.ofNullable(files.get(p.toString())));
+    }
+
+    @Test
+    void aWorkspaceMemberUsesItsRootsManager() {
+        var files = java.util.Map.of(
+                "/mono/package.json", "{\"packageManager\":\"pnpm@9.12.0\",\"workspaces\":[\"packages/*\"]}",
+                "/mono/pnpm-lock.yaml", "",
+                "/mono/packages/a/package.json", "{\"name\":\"a\"}");
+        NpmPackageManager.Detection d = walk(java.nio.file.Path.of("/mono/packages/a"), files);
+        assertEquals("pnpm", d.manager());
+        assertEquals("package.json", d.reason());
+        assertEquals("pnpm (package.json)", d.describe());
+        var yarnRoot = java.util.Map.of("/mono/yarn.lock", "", "/mono/packages/b/package.json", "{}");
+        assertEquals(
+                "yarn (yarn.lock)",
+                walk(java.nio.file.Path.of("/mono/packages/b"), yarnRoot).describe());
+    }
+
+    @Test
+    void theMembersOwnDecisionWinsAndTheWalkStopsAtTheProject() {
+        var files = java.util.Map.of("/mono/pnpm-lock.yaml", "", "/mono/a/bun.lock", "", "/yarn.lock", "");
+        assertEquals("bun", walk(java.nio.file.Path.of("/mono/a"), files).manager());
+        assertEquals("npm", walk(java.nio.file.Path.of("/other/x"), files).manager(), "outside the project: its own");
+        assertEquals("", walk(java.nio.file.Path.of("/other/x"), files).reason());
+    }
+
+    @Test
+    void anOverrideAppliesOnlyToItsOwnManager() {
+        assertEquals(true, NpmPackageManager.overrideApplies("/opt/npm/bin/npm", "npm"));
+        assertEquals(false, NpmPackageManager.overrideApplies("npm", "pnpm"), "npm must not replace pnpm");
+        assertEquals(true, NpmPackageManager.overrideApplies("C:\\tools\\pnpm.cmd", "pnpm"));
+        assertEquals(true, NpmPackageManager.overrideApplies("my-wrapper --quiet", "yarn"), "a wrapper: always");
+        assertEquals(false, NpmPackageManager.overrideApplies("", "npm"));
+    }
 }

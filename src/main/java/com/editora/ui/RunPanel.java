@@ -299,6 +299,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
     public void clearConsole() {
         appender.discard();
+        appender.resetTrimmed();
         output.clear();
         overwriteLine = false;
     }
@@ -457,14 +458,19 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
     public void finished(int code) {
-        status.setText(code < 0 ? tr("run.stopped") : tr("run.exited", code));
+        status.setText((code < 0 ? tr("run.stopped") : tr("run.exited", code)) + trimNote());
         setRunning(false);
     }
 
     /** The program ended because Stop was pressed: says so, rather than "finished" with a signal's exit code. */
     public void stopped() {
-        status.setText(tr("run.stopped"));
+        status.setText(tr("run.stopped") + trimNote());
         setRunning(false);
+    }
+
+    /** " — earlier output dropped" when the console cut its oldest lines to stay under its cap, else "". */
+    private String trimNote() {
+        return appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CHARS) : "";
     }
 
     /** The process failed to launch (e.g. {@code java} not found). */
