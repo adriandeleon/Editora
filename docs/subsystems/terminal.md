@@ -1,7 +1,8 @@
 # Integrated terminal
 
 Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
-runs shells on this machine. "Open in Terminal" and the SSH, container and WSL connectors follow.
+runs shells on this machine, Open Terminal Here opens one, and links in the output open in the editor. The
+SSH, container and WSL connectors follow.
 
 ## The tool window
 
@@ -19,6 +20,18 @@ runs shells on this machine. "Open in Terminal" and the SSH, container and WSL c
   turn it off). Local shells are tracked by `ProcessRegistry` so a crash does not orphan them. pty4j's
   `UnixPtyProcess` throws from `toHandle()`, which the registry needs, so `LocalPtyConnector.trackableProcess()`
   wraps it (`PtyHandleProcess`). Before that wrapper, tracking threw after the shell had started.
+
+## Open Terminal Here and links
+
+- **Open Terminal Here** (`file.openTerminal`, the tab menu, the Project tree, the breadcrumb) all go through
+  `MainController.openTerminalAt`. It opens a tab in the Terminal tool window, in the folder
+  (`TerminalCoordinator.openAt`; the first shell the window would start by itself is skipped, so it does not
+  open with a second tab in the project folder). With `terminalUseExternal` (Settings → Terminal, schema
+  131) it starts the system's terminal as before (`DesktopActions`). A remote path still says it cannot.
+- **Links:** a path or URL under the pointer with Ctrl held (Cmd on macOS) is underlined; a click, or the
+  menu's Open Link, opens it. `TerminalView` resolves a relative path against the shell's directory and only
+  offers one that exists. The coordinator's `LinkActions` sends files to `MainController.openAndGoto` at the
+  1-based `line:col` the output carried, folders to the Project tree, and URLs to the browser.
 
 ## Keys
 

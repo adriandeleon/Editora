@@ -12,6 +12,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
 import com.editora.process.ProcessRegistry;
+import com.editora.terminal.LinkActions;
 import com.editora.terminal.LocalPtyConnector;
 import com.editora.terminal.LocalShell;
 import com.editora.terminal.RunningProgram;
@@ -44,6 +45,12 @@ final class TerminalCoordinator {
 
         /** Closes the Terminal tool window. */
         void hideToolWindow();
+
+        /**
+         * Opens a link clicked in a terminal: a file at its 1-based {@code line}/{@code column} (0 = none), or a
+         * folder, revealed in the Project tree.
+         */
+        void openLink(Path file, int line, int column);
     }
 
     private final CoordinatorHost host;
@@ -62,6 +69,17 @@ final class TerminalCoordinator {
         if (panel == null) {
             panel = new TerminalPanel(this::localShell, this::confirmClose, ops::workingDirectory);
             panel.setOnError(host::setError);
+            panel.setLinkActions(new LinkActions() {
+                @Override
+                public void openUrl(String url) {
+                    host.openExternalUrl(url);
+                }
+
+                @Override
+                public void openFile(Path file, int line, int column) {
+                    ops.openLink(file, line, column);
+                }
+            });
             panel.apply(config(host.settings()));
             // The first time the panel reaches a scene the theme can be read, and a shell started: opening the
             // window from its stripe should give a prompt, not a "New Terminal" button.
@@ -110,6 +128,16 @@ final class TerminalCoordinator {
             started = true;
             p.newTerminal();
         }
+    }
+
+    /**
+     * "Open in Terminal": a new tab with a shell in {@code dir}. The first shell the tool window would start on
+     * its own is skipped, so the window does not open with a second tab in the project folder.
+     */
+    void openAt(Path dir) {
+        started = true;
+        ops.showToolWindow();
+        panel().newTerminal(dir);
     }
 
     /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */

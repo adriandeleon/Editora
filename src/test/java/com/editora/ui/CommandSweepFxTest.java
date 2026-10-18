@@ -122,7 +122,7 @@ class CommandSweepFxTest {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("app.quit", "closes every window and exits the toolkit the other FX tests share");
         m.put("file.revealInFileManager", "starts the desktop's file manager");
-        m.put("file.openTerminal", "starts a terminal emulator");
+        m.put("file.openTerminal", "starts a shell in the Terminal tool window (or the system terminal)");
         String shell = "starts a shell on a pseudo-terminal (TerminalPanelFxTest drives the panel with a stand-in)";
         m.put("tool.terminal", shell);
         m.put("terminal.new", shell);
