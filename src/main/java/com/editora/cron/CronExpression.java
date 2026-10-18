@@ -103,15 +103,14 @@ public final class CronExpression {
             if (macro.equals("@reboot")) {
                 return new Parsed(new CronExpression(true, null, null, null, null, null), null);
             }
-            String expanded =
-                    switch (macro) {
-                        case "@yearly", "@annually" -> "0 0 1 1 *";
-                        case "@monthly" -> "0 0 1 * *";
-                        case "@weekly" -> "0 0 * * 0";
-                        case "@daily", "@midnight" -> "0 0 * * *";
-                        case "@hourly" -> "0 * * * *";
-                        default -> null;
-                    };
+            String expanded = switch (macro) {
+                case "@yearly", "@annually" -> "0 0 1 1 *";
+                case "@monthly" -> "0 0 1 * *";
+                case "@weekly" -> "0 0 * * 0";
+                case "@daily", "@midnight" -> "0 0 * * *";
+                case "@hourly" -> "0 * * * *";
+                default -> null;
+            };
             if (expanded == null) {
                 return new Parsed(null, "unknown macro \"" + s + "\"");
             }

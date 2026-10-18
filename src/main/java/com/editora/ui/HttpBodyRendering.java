@@ -55,12 +55,11 @@ final class HttpBodyRendering {
         }
         HttpResponseFormat.BodyView view = HttpResponseFormat.view(r, maxChars);
         String ext = extFor(r.contentType());
-        String text =
-                switch (ext == null ? "" : ext) {
-                    case "xml" -> HttpXmlIndent.indent(view.text());
-                    case "html" -> HttpHtmlIndent.indent(view.text());
-                    default -> view.text();
-                };
+        String text = switch (ext == null ? "" : ext) {
+            case "xml" -> HttpXmlIndent.indent(view.text());
+            case "html" -> HttpHtmlIndent.indent(view.text());
+            default -> view.text();
+        };
         StyleSpans<Collection<String>> spans = null;
         IGrammar grammar = text.isEmpty() ? null : grammarFor(ext);
         if (grammar != null) {

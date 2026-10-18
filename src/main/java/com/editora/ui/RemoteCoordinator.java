@@ -343,12 +343,11 @@ final class RemoteCoordinator {
         for (LoginPrompt.Question q : challenge.questions()) {
             TextField field = q.echo() ? new TextField() : new PasswordField();
             field.setPrefColumnCount(24);
-            String label =
-                    switch (challenge.kind()) {
-                        case PASSWORD -> tr("dialog.login.password");
-                        case PASSPHRASE -> tr("dialog.login.passphrase");
-                        case INTERACTIVE -> q.text().strip();
-                    };
+            String label = switch (challenge.kind()) {
+                case PASSWORD -> tr("dialog.login.password");
+                case PASSPHRASE -> tr("dialog.login.passphrase");
+                case INTERACTIVE -> q.text().strip();
+            };
             grid.add(new Label(label), 0, row);
             grid.add(field, 1, row++);
             fields.add(field);

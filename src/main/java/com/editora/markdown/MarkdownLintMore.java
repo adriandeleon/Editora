@@ -457,13 +457,12 @@ final class MarkdownLintMore {
                 if (index == 1 && style.equals("one_or_ordered")) {
                     incrementing = number != previousNumber;
                 }
-                boolean ok =
-                        switch (style) {
-                            case "one" -> number == 1;
-                            case "zero" -> number == 0;
-                            case "ordered" -> index == 0 || number == previousNumber + 1;
-                            default -> index == 0 || number == (incrementing ? previousNumber + 1 : previousNumber);
-                        };
+                boolean ok = switch (style) {
+                    case "one" -> number == 1;
+                    case "zero" -> number == 0;
+                    case "ordered" -> index == 0 || number == previousNumber + 1;
+                    default -> index == 0 || number == (incrementing ? previousNumber + 1 : previousNumber);
+                };
                 if (!ok && number >= 0) {
                     emit.add(lineNo, column + 1, end - column, "MD029", "MD029");
                 }

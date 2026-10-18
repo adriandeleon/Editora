@@ -1127,13 +1127,12 @@ public final class MarkdownTable {
         StringBuilder sb = new StringBuilder("|");
         for (int c = 0; c < width.length; c++) {
             int w = width[c];
-            String dashes =
-                    switch (align[c]) {
-                        case LEFT -> ":" + "-".repeat(w - 1);
-                        case RIGHT -> "-".repeat(w - 1) + ":";
-                        case CENTER -> ":" + "-".repeat(w - 2) + ":";
-                        case NONE -> "-".repeat(w);
-                    };
+            String dashes = switch (align[c]) {
+                case LEFT -> ":" + "-".repeat(w - 1);
+                case RIGHT -> "-".repeat(w - 1) + ":";
+                case CENTER -> ":" + "-".repeat(w - 2) + ":";
+                case NONE -> "-".repeat(w);
+            };
             sb.append(' ').append(dashes).append(" |");
         }
         return sb.toString();

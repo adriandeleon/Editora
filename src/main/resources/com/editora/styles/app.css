@@ -3762,8 +3762,9 @@
     -fx-font-size: 0.9em;
 }
 
-/* Doctor screen (external-tool health, a Welcome-style tab): sectioned rows of status glyph + tool +
-   command + version/tip, all in semantic colors so every theme reads correctly. */
+/* Doctor screen (external-tool health, a Welcome-style tab). What needs attention sits on top; each row is a
+   status pill (the Settings pages' .settings-git-status family, plus amber), the tool with its command under
+   it, the version or path, and the actions — all in semantic colours so every theme reads correctly. */
 .doctor-pane {
     -fx-background-color: -color-bg-default;
 }
@@ -3779,17 +3780,41 @@
 .doctor-content {
     -fx-spacing: 4;
 }
+.doctor-body {
+    -fx-spacing: 2;
+}
 .doctor-title {
     -fx-font-size: 2.4em;
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-default;
 }
-.doctor-caption {
+.doctor-caption,
+.doctor-machine {
     -fx-text-fill: -color-fg-muted;
 }
-.doctor-summary {
+.doctor-remote-note {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-padding: 6 10 6 10;
+}
+.doctor-summary-part {
     -fx-text-fill: -color-fg-default;
 }
+.doctor-summary-checking {
+    -fx-text-fill: -color-fg-muted;
+}
+.doctor-summary-clear {
+    -fx-text-fill: -state-green;
+    -fx-font-weight: bold;
+}
+.doctor-summary-link {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+    -fx-font-weight: bold;
+}
+.doctor-summary-problems { -fx-text-fill: -state-red; }
+.doctor-summary-warnings { -fx-text-fill: -state-amber; }
 .doctor-status-line {
     -fx-padding: 10 0 0 0;
 }
@@ -3799,8 +3824,39 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 22 0 6 0;
 }
+.doctor-section.doctor-attention {
+    -fx-text-fill: -state-red;
+}
+.doctor-section-line .doctor-section {
+    -fx-padding: 0;
+}
+.doctor-section-line {
+    -fx-padding: 12 0 2 0;
+}
+.doctor-fold-count {
+    -fx-text-fill: -color-fg-muted;
+}
+.doctor-fold-link {
+    -fx-padding: 0;
+    -fx-border-color: transparent;
+}
+.doctor-optional-fold {
+    -fx-padding: 4 0 4 0;
+}
 .doctor-row {
-    -fx-padding: 3 0 3 0;
+    -fx-padding: 4 0 4 0;
+}
+.doctor-stale {
+    -fx-opacity: 0.55;
+}
+/* One width for every pill, so the names line up down the page. */
+.doctor-pill {
+    -fx-min-width: 8.5em;
+    -fx-alignment: center;
+}
+.doctor-pill-warn {
+    -fx-text-fill: -state-amber;
+    -fx-background-color: -state-amber-bg;
 }
 .doctor-name {
     -fx-font-weight: bold;
@@ -3814,19 +3870,10 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 0.92em;
 }
-.doctor-settings-link {
-    -fx-text-fill: -color-accent-fg;
-    -fx-border-color: transparent;
-    -fx-padding: 0 0 0 4;
+.doctor-row-missing .doctor-tip { -fx-text-fill: -color-fg-default; }
+.doctor-installing {
+    -fx-opacity: 0.7;
 }
-.doctor-status {
-    -fx-font-weight: bold;
-}
-.doctor-status-ok { -fx-text-fill: -color-success-fg; }
-.doctor-status-warn { -fx-text-fill: -color-warning-fg; }
-.doctor-status-missing { -fx-text-fill: -color-danger-fg; }
-.doctor-status-disabled { -fx-text-fill: -color-fg-muted; }
-.doctor-status-checking { -fx-text-fill: -color-fg-muted; }
 
 /* TODO tool window: file-group rows + the per-pattern color tag. (The in-editor highlight is a Canvas
    overlay colored inline per pattern, so it needs no CSS.) */

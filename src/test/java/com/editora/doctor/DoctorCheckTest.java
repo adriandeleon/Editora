@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DoctorCheckTest {
@@ -48,7 +49,8 @@ class DoctorCheckTest {
 
     @Test
     void nullsNormalizeToEmpty() {
-        DoctorCheck c = new DoctorCheck("id", "sec", "L", null, DoctorStatus.OK, null, null, null, null, null, null);
+        DoctorCheck c = new DoctorCheck(
+                "id", "sec", "L", null, DoctorStatus.OK, null, null, null, null, null, null, null, null);
         assertEquals("", c.command());
         assertEquals("", c.detail());
         assertEquals("", c.tipKey());
@@ -56,5 +58,38 @@ class DoctorCheckTest {
         assertEquals(DoctorCheck.Install.NONE, c.install());
         assertEquals("", c.installArg());
         assertEquals("", c.settingsKey());
+        assertEquals("", c.enableKey());
+        assertEquals("", c.helpUrl());
+    }
+
+    @Test
+    void optionalIsTheNeutralAbsentStateAndKeepsItsActions() {
+        DoctorCheck c = DoctorCheck.checking("lsp.lua", "lsp", "Lua", "lua-language-server")
+                .withInstall(DoctorCheck.Install.SERVER, "lua")
+                .withSettings("lsp")
+                .optional("doctor.tip.serverOptional");
+        assertEquals(DoctorStatus.OPTIONAL, c.status());
+        assertFalse(c.status().needsAttention(), "a tool nothing needs is not a problem");
+        assertEquals(DoctorCheck.Install.SERVER, c.install());
+        assertEquals("lsp", c.settingsKey());
+        assertTrue(DoctorStatus.MISSING.needsAttention());
+        assertTrue(DoctorStatus.WARN.needsAttention());
+    }
+
+    @Test
+    void actionCopiesKeepEverythingElse() {
+        DoctorCheck c = DoctorCheck.checking("debug.java", "debug", "Java debug plugin", "")
+                .withInstall(DoctorCheck.Install.LANG, "JAVA")
+                .missing("doctor.tip.needsLsp")
+                .withoutInstall()
+                .withEnable("lsp")
+                .withHelp("https://example.invalid/help")
+                .withCommand("jdtls");
+        assertEquals(DoctorCheck.Install.NONE, c.install());
+        assertEquals("lsp", c.enableKey());
+        assertEquals("https://example.invalid/help", c.helpUrl());
+        assertEquals("jdtls", c.command());
+        assertEquals(DoctorStatus.MISSING, c.status());
+        assertEquals("doctor.tip.needsLsp", c.tipKey());
     }
 }

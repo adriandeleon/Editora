@@ -1251,13 +1251,12 @@ final class GitCoordinator {
         }
         Path root = repoRoot;
         String name = operationName(op.kind());
-        String lost =
-                switch (op.kind()) {
-                    case MERGE -> tr("dialog.abortOperation.merge");
-                    case REBASE -> tr("dialog.abortOperation.rebase");
-                    case CHERRY_PICK -> tr("dialog.abortOperation.cherryPick");
-                    default -> tr("dialog.abortOperation.revert");
-                };
+        String lost = switch (op.kind()) {
+            case MERGE -> tr("dialog.abortOperation.merge");
+            case REBASE -> tr("dialog.abortOperation.rebase");
+            case CHERRY_PICK -> tr("dialog.abortOperation.cherryPick");
+            default -> tr("dialog.abortOperation.revert");
+        };
         if (confirmDestructive(
                 tr("dialog.abortOperation.title", name), lost, tr("dialog.abortOperation.action", name))) {
             runOperationStep(root, op, op.abortArgs(), tr("status.git.operationAborted", name));

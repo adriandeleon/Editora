@@ -280,13 +280,12 @@ final class DirectoryReviewPane implements TabContent {
                 setText(null);
                 return;
             }
-            String kind =
-                    switch (entry.kind) {
-                        case MODIFIED -> "≠";
-                        case LEFT_ONLY -> "←";
-                        case RIGHT_ONLY -> "→";
-                        case UNREADABLE -> "!";
-                    };
+            String kind = switch (entry.kind) {
+                case MODIFIED -> "≠";
+                case LEFT_ONLY -> "←";
+                case RIGHT_ONLY -> "→";
+                case UNREADABLE -> "!";
+            };
             Label badge = new Label(kind);
             badge.getStyleClass().add("patch-file-status");
             Label name = new Label(entry.label);

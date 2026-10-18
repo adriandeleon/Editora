@@ -312,15 +312,14 @@ public final class NodeResponseScripts implements ResponseScripts {
     private PreResult runPreScripts(HttpFile.Parsed request, PreInput input) {
         Ready ready = ready(input.cancelled());
         if (ready.skip() != null) {
-            String why =
-                    switch (ready.skip()) {
-                        case CANCELLED -> null;
-                        case OFF -> tr("http.preScript.why.off");
-                        case NO_FOLDER -> tr("http.preScript.why.noFolder");
-                        case UNTRUSTED -> tr("http.preScript.why.untrusted");
-                        case NO_NODE -> tr("http.preScript.why.noNode", ready.detail());
-                        case SHIM -> tr("http.preScript.why.shim", ready.detail());
-                    };
+            String why = switch (ready.skip()) {
+                case CANCELLED -> null;
+                case OFF -> tr("http.preScript.why.off");
+                case NO_FOLDER -> tr("http.preScript.why.noFolder");
+                case UNTRUSTED -> tr("http.preScript.why.untrusted");
+                case NO_NODE -> tr("http.preScript.why.noNode", ready.detail());
+                case SHIM -> tr("http.preScript.why.shim", ready.detail());
+            };
             return why == null ? cancelled() : notRun(why, HttpTests.NONE, List.of(), List.of());
         }
         Node node = ready.node();
