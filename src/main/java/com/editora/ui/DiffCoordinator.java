@@ -2072,12 +2072,11 @@ final class DiffCoordinator {
             boolean hasMarkers,
             ConflictParser.ConflictFile merged) {
         ConflictParser.ConflictFile written = ConflictParser.parse(format.lines());
-        MergeSource source =
-                switch (ThreeWayMerge.sourceFor(merged, written)) {
-                    case MERGE -> MergeSource.GIT_VERSIONS;
-                    case FILE_MARKERS -> MergeSource.FILE_MARKERS;
-                    case ASK -> mergeSourceChooser.apply(hasMarkers);
-                };
+        MergeSource source = switch (ThreeWayMerge.sourceFor(merged, written)) {
+            case MERGE -> MergeSource.GIT_VERSIONS;
+            case FILE_MARKERS -> MergeSource.FILE_MARKERS;
+            case ASK -> mergeSourceChooser.apply(hasMarkers);
+        };
         switch (source) {
             case GIT_VERSIONS -> openMergePane(buffer, sourceText, format, merged);
             case FILE_MARKERS -> openMergePane(buffer, sourceText, format, written);

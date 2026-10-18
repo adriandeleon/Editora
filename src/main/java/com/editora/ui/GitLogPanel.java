@@ -488,12 +488,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             if (e.isAltDown() || e.isMetaDown() || e.isShiftDown()) {
                 return;
             }
-            int delta =
-                    switch (e.getCode()) {
-                        case N -> 1;
-                        case P -> -1;
-                        default -> 0;
-                    };
+            int delta = switch (e.getCode()) {
+                case N -> 1;
+                case P -> -1;
+                default -> 0;
+            };
             if (delta == 0) {
                 return;
             }

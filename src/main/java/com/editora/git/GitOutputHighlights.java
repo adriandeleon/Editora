@@ -38,12 +38,11 @@ public final class GitOutputHighlights {
                     while (end < graph.length() && graph.charAt(end) == marker) {
                         end++;
                     }
-                    String style =
-                            switch (marker) {
-                                case '+' -> "diff-inserted";
-                                case '-' -> "diff-deleted";
-                                default -> "git-output-neutral";
-                            };
+                    String style = switch (marker) {
+                        case '+' -> "diff-inserted";
+                        case '-' -> "diff-deleted";
+                        default -> "git-output-neutral";
+                    };
                     spans.add(new Span(start + i, start + end, style));
                     i = end;
                 }

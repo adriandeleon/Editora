@@ -694,13 +694,12 @@ public final class StatusBar extends HBox {
      * {@code ○ #12 Checks 5/9} (how many of the checks that will run have finished). Pure.
      */
     static String checksText(int prNumber, com.editora.github.ChecksParser.ChecksSummary summary, String word) {
-        String glyph =
-                switch (summary.overall()) {
-                    case PASS -> "✓"; // ✓
-                    case FAIL -> "✗"; // ✗
-                    case PENDING -> "○"; // ○
-                    case NONE -> "";
-                };
+        String glyph = switch (summary.overall()) {
+            case PASS -> "✓"; // ✓
+            case FAIL -> "✗"; // ✗
+            case PENDING -> "○"; // ○
+            case NONE -> "";
+        };
         StringBuilder text = new StringBuilder(glyph);
         if (prNumber > 0) {
             text.append(" #").append(prNumber);

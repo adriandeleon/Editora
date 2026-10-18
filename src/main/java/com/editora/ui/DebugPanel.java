@@ -723,17 +723,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (control == null) {
             return;
         }
-        Button target =
-                switch (control) {
-                    case START -> start;
-                    case PAUSE -> pause;
-                    case STOP -> stop;
-                    case RESTART -> restart;
-                    case STEP_OVER -> stepOver;
-                    case STEP_INTO -> stepInto;
-                    case STEP_OUT -> stepOut;
-                    case RUN_TO_CURSOR -> runToCursor;
-                };
+        Button target = switch (control) {
+            case START -> start;
+            case PAUSE -> pause;
+            case STOP -> stop;
+            case RESTART -> restart;
+            case STEP_OVER -> stepOver;
+            case STEP_INTO -> stepInto;
+            case STEP_OUT -> stepOut;
+            case RUN_TO_CURSOR -> runToCursor;
+        };
         if (!target.isDisabled()) {
             target.fire();
         } else if (target == restart && restartBlocked != null && lastState != DapManager.State.INACTIVE) {

@@ -1955,12 +1955,11 @@ public final class LspManager {
             if (!p.startsWith(rootNorm)) {
                 continue;
             }
-            var type =
-                    switch (c.kind()) {
-                        case CREATED -> org.eclipse.lsp4j.FileChangeType.Created;
-                        case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
-                        case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
-                    };
+            var type = switch (c.kind()) {
+                case CREATED -> org.eclipse.lsp4j.FileChangeType.Created;
+                case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
+                case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
+            };
             out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(DocumentUris.of(p)), type));
         }
         return out;

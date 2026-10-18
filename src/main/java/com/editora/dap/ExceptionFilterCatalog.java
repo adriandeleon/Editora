@@ -65,14 +65,13 @@ public final class ExceptionFilterCatalog {
         if (label == null) {
             return "";
         }
-        String key =
-                switch (label) {
-                    case "Caught Exceptions" -> "debug.exceptionFilter.caught";
-                    case "Uncaught Exceptions" -> "debug.exceptionFilter.uncaught";
-                    case "Raised Exceptions" -> "debug.exceptionFilter.raised";
-                    case "User Uncaught Exceptions" -> "debug.exceptionFilter.userUncaught";
-                    default -> null;
-                };
+        String key = switch (label) {
+            case "Caught Exceptions" -> "debug.exceptionFilter.caught";
+            case "Uncaught Exceptions" -> "debug.exceptionFilter.uncaught";
+            case "Raised Exceptions" -> "debug.exceptionFilter.raised";
+            case "User Uncaught Exceptions" -> "debug.exceptionFilter.userUncaught";
+            default -> null;
+        };
         return key == null ? label : com.editora.i18n.Messages.tr(key);
     }
 }

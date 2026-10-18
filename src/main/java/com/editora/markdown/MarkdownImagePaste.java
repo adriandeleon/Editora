@@ -151,19 +151,17 @@ public final class MarkdownImagePaste {
         StringBuilder sb = new StringBuilder(alt.length());
         for (int i = 0; i < alt.length(); i++) {
             char c = alt.charAt(i);
-            boolean escape =
-                    switch (c) {
-                        case '[', ']', '\\', '<', '>', '*', '`', '~' -> true;
-                        case '&' ->
-                            i + 1 < alt.length()
-                                    && (Character.isLetterOrDigit(alt.charAt(i + 1)) || alt.charAt(i + 1) == '#');
-                        case '_' ->
-                            !(i > 0
-                                    && i + 1 < alt.length()
-                                    && Character.isLetterOrDigit(alt.charAt(i - 1))
-                                    && Character.isLetterOrDigit(alt.charAt(i + 1)));
-                        default -> false;
-                    };
+            boolean escape = switch (c) {
+                case '[', ']', '\\', '<', '>', '*', '`', '~' -> true;
+                case '&' ->
+                    i + 1 < alt.length() && (Character.isLetterOrDigit(alt.charAt(i + 1)) || alt.charAt(i + 1) == '#');
+                case '_' ->
+                    !(i > 0
+                            && i + 1 < alt.length()
+                            && Character.isLetterOrDigit(alt.charAt(i - 1))
+                            && Character.isLetterOrDigit(alt.charAt(i + 1)));
+                default -> false;
+            };
             if (escape) {
                 sb.append('\\');
             }

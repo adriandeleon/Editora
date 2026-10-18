@@ -439,13 +439,12 @@ final class McpTools {
                 continue; // an explicit null is "not given"
             }
             String type = declared.path("type").asText();
-            boolean typed =
-                    switch (type) {
-                        case "string" -> value.isTextual();
-                        case "boolean" -> value.isBoolean();
-                        case "integer" -> value.isIntegralNumber();
-                        default -> true;
-                    };
+            boolean typed = switch (type) {
+                case "string" -> value.isTextual();
+                case "boolean" -> value.isBoolean();
+                case "integer" -> value.isIntegralNumber();
+                default -> true;
+            };
             if (!typed) {
                 return tool + ": argument '" + name + "' must be a JSON " + type + ".";
             }

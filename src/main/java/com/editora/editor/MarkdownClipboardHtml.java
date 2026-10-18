@@ -246,15 +246,14 @@ public final class MarkdownClipboardHtml {
 
         /** GitHub's heading scale: h1/h2 carry the underline rule, h4+ stop shrinking below body size. */
         private String headingStyle(int level) {
-            String size =
-                    switch (level) {
-                        case 1 -> "2em";
-                        case 2 -> "1.5em";
-                        case 3 -> "1.25em";
-                        case 4 -> "1em";
-                        case 5 -> "0.875em";
-                        default -> "0.85em";
-                    };
+            String size = switch (level) {
+                case 1 -> "2em";
+                case 2 -> "1.5em";
+                case 3 -> "1.25em";
+                case 4 -> "1em";
+                case 5 -> "0.875em";
+                default -> "0.85em";
+            };
             String base = "margin:24px 0 16px;font-weight:600;line-height:1.25;font-size:" + size + ";";
             if (level <= 2) {
                 base += "padding-bottom:0.3em;border-bottom:1px solid " + BORDER + ";";
