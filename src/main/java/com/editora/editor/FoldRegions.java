@@ -223,6 +223,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 blockStartLine = line;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
@@ -329,6 +331,7 @@ public final class FoldRegions {
      * @param tripleQuote     {@code """} opens a multi-line text block / raw string
      * @param multiLineDouble a {@code "} string may span lines
      * @param lifetimes       a {@code '} may be a Rust lifetime or loop label rather than a char literal
+     * @param regexLiterals   a {@code /} where an operand is expected opens a regular expression (JS/TS)
      */
     record Syntax(
             boolean slashSlash,
@@ -337,7 +340,8 @@ public final class FoldRegions {
             boolean backtickEscapes,
             boolean tripleQuote,
             boolean multiLineDouble,
-            boolean lifetimes) {
+            boolean lifetimes,
+            boolean regexLiterals) {
 
         static Syntax of(String language) {
             String l = language == null ? "" : language;
@@ -349,7 +353,78 @@ public final class FoldRegions {
                     script,
                     l.equals("java") || l.equals("kotlin") || l.equals("groovy") || l.equals("csharp"),
                     l.equals("rust") || l.equals("php"),
-                    l.equals("rust"));
+                    l.equals("rust"),
+                    script);
+        }
+
+        /** Words after which a {@code /} starts a regular expression rather than dividing. */
+        private static final java.util.Set<String> REGEX_AFTER_WORD = java.util.Set.of(
+                "return",
+                "typeof",
+                "instanceof",
+                "in",
+                "of",
+                "new",
+                "delete",
+                "void",
+                "throw",
+                "case",
+                "do",
+                "else",
+                "yield",
+                "await");
+
+        /**
+         * Index of the last character of the regular-expression literal opened by the {@code /} at {@code i}, or
+         * {@code i} itself when that slash divides (it follows an operand) or the language has no regex literals.
+         * Without this a regex holding a backtick ({@code s.split(/`/)}) opened a template literal that swallowed
+         * every brace below it, and an escaped brace in one opened a block that never closed. The caller has ruled
+         * out {@code //} and {@code /*}. A literal not closed on its line is taken as a division.
+         */
+        int regexEnd(String text, int i) {
+            if (!regexLiterals || !operandExpected(text, i)) {
+                return i;
+            }
+            boolean inClass = false;
+            for (int j = i + 1; j < text.length(); j++) {
+                char c = text.charAt(j);
+                if (c == '\\') {
+                    j++;
+                } else if (c == '\n') {
+                    return i;
+                } else if (c == '[') {
+                    inClass = true;
+                } else if (c == ']') {
+                    inClass = false;
+                } else if (c == '/' && !inClass) {
+                    return j;
+                }
+            }
+            return i;
+        }
+
+        /** Whether the code before {@code i} ends where an operand (so a regex) may begin. */
+        private static boolean operandExpected(String text, int i) {
+            int k = i - 1;
+            while (k >= 0 && Character.isWhitespace(text.charAt(k))) {
+                k--;
+            }
+            if (k < 0) {
+                return true;
+            }
+            char p = text.charAt(k);
+            if (Character.isLetterOrDigit(p) || p == '_' || p == '$') {
+                int start = k;
+                while (start > 0 && isWordPart(text.charAt(start - 1))) {
+                    start--;
+                }
+                return REGEX_AFTER_WORD.contains(text.substring(start, k + 1));
+            }
+            return "(,=:[!&|?{};+-*%<>~^".indexOf(p) >= 0;
+        }
+
+        private static boolean isWordPart(char c) {
+            return Character.isLetterOrDigit(c) || c == '_' || c == '$';
         }
 
         /** Whether a line comment starts at {@code i}. */
@@ -439,6 +514,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 inBlockComment = true;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
