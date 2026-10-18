@@ -355,6 +355,16 @@ final class FileWorkflowCoordinator {
     /** A paragraph this wide makes RichTextFX layout pathological even when the file itself is small. */
     static final int LONG_LINE_FILE_CHARS = 64 * 1024;
 
+    /** A line at least this long counts toward {@link #LONG_LINES_FILE_CHARS}. */
+    static final int LONG_LINE_CHARS = 10_000;
+
+    /**
+     * So many characters in {@link #LONG_LINE_CHARS long} lines make a file long-lined too, though no one line
+     * reaches {@link #LONG_LINE_FILE_CHARS}: a minified bundle wrapped at ~19,000 characters (757 KB in 40 lines)
+     * held the FX thread 2.4 s laying out its styled paragraphs, and its tokenizing took ~30 s.
+     */
+    static final int LONG_LINES_FILE_CHARS = 200_000;
+
     /** Buffers whose tab shell exists but whose document has not reached the FX thread yet. FX-thread only. */
     final Set<EditorBuffer> loadingBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -814,22 +824,35 @@ final class FileWorkflowCoordinator {
     }
 
     /** Document shape computed while the decoded text is already in background-thread memory. */
-    record TextStats(int lines, int maxLineLength) {}
+    record TextStats(int lines, int maxLineLength, long longLineChars) {
+
+        TextStats(int lines, int maxLineLength) {
+            this(lines, maxLineLength, 0);
+        }
+
+        /** Whether the file opens in long-line (large-file) mode: one giant line, or many long ones. */
+        boolean longLined() {
+            return maxLineLength >= LONG_LINE_FILE_CHARS || longLineChars >= LONG_LINES_FILE_CHARS;
+        }
+    }
 
     static TextStats textStats(String text) {
         int lines = 1;
         int lineLength = 0;
         int maxLineLength = 0;
+        long longLineChars = 0;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) == '\n') {
                 lines++;
                 maxLineLength = Math.max(maxLineLength, lineLength);
+                longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
                 lineLength = 0;
             } else {
                 lineLength++;
             }
         }
-        return new TextStats(lines, Math.max(maxLineLength, lineLength));
+        longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
+        return new TextStats(lines, Math.max(maxLineLength, lineLength), longLineChars);
     }
 
     PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
@@ -899,7 +922,7 @@ final class FileWorkflowCoordinator {
                         false,
                         true,
                         false,
-                        stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
+                        stats.longLined(),
                         true,
                         true,
                         tail.offset(),
@@ -921,7 +944,7 @@ final class FileWorkflowCoordinator {
                     false,
                     true,
                     false,
-                    stats.maxLineLength() >= LONG_LINE_FILE_CHARS,
+                    stats.longLined(),
                     true,
                     false,
                     0,
@@ -979,7 +1002,7 @@ final class FileWorkflowCoordinator {
         // but drops the minimap + LSP — the two heaviest features for a huge source — so it stays responsive.
         int threshold = host.config().getSettings().getLargeFileThreshold();
         TextStats stats = textStats(content);
-        boolean longLine = stats.maxLineLength() >= LONG_LINE_FILE_CHARS;
+        boolean longLine = stats.longLined();
         boolean heavy = !large && !longLine && threshold > 0 && stats.lines() >= threshold;
         return new PreparedLoad(
                 file,

@@ -962,6 +962,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return switch (value) {
             case "abstract",
                     "async",
+                    "const",
+                    "let",
+                    "var",
+                    "get",
+                    "set",
+                    "readonly",
+                    "override",
+                    "declare",
                     "default",
                     "def",
                     "export",
@@ -1190,7 +1198,65 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             // do not fold: the symbols are still the structure (one marker used to empty the outline).
             return symbolNodes(area, symbolByLine, paras, Map.of());
         }
+        String language = buffer.getLanguage();
+        if (language != null && (language.startsWith("javascript") || language.startsWith("typescript"))) {
+            addFoldlessSymbols(rootNodes, symbolByLine, paras);
+        }
         return rootNodes;
+    }
+
+    /**
+     * Adds the symbols no region is headed by — a one-line method ({@code get(key) { return x; }}), a one-line
+     * arrow function ({@code const twice = (x) => x * 2;}) — as leaves under the innermost node whose block holds
+     * their line. In JavaScript those are most declarations, and the outline used to leave every one of them out.
+     */
+    private static void addFoldlessSymbols(
+            List<StructureNode> rootNodes, Map<Integer, Symbol> symbolByLine, int paras) {
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        collectLines(rootNodes, used);
+        boolean added = false;
+        for (Map.Entry<Integer, Symbol> e : symbolByLine.entrySet()) {
+            int line = e.getKey();
+            if (used.contains(line)
+                    || line < 0
+                    || line >= paras
+                    || "tag".equals(e.getValue().kind())) {
+                continue; // a JSX element (`<p>`) is markup, not a declaration
+            }
+            List<StructureNode> siblings = rootNodes;
+            for (boolean deeper = true; deeper; ) {
+                deeper = false;
+                for (StructureNode n : siblings) {
+                    if (n.region() != null
+                            && n.region().startLine() < line
+                            && line <= n.region().endLine()) {
+                        siblings = n.children();
+                        deeper = true;
+                        break;
+                    }
+                }
+            }
+            siblings.add(
+                    new StructureNode(null, e.getValue().name(), e.getValue().kind(), line));
+            added = true;
+        }
+        if (added) {
+            sortByLine(rootNodes);
+        }
+    }
+
+    private static void collectLines(List<StructureNode> nodes, java.util.Set<Integer> out) {
+        for (StructureNode n : nodes) {
+            out.add(n.line());
+            collectLines(n.children(), out);
+        }
+    }
+
+    private static void sortByLine(List<StructureNode> nodes) {
+        nodes.sort(Comparator.comparingInt(StructureNode::line));
+        for (StructureNode n : nodes) {
+            sortByLine(n.children());
+        }
     }
 
     /**

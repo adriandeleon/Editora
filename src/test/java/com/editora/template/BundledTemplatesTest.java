@@ -179,4 +179,16 @@ class BundledTemplatesTest {
         assertEquals("java", t.language());
         assertTrue(rendered(tmp, t).get("script").startsWith("#!/usr/bin/env -S java --source 25\n"));
     }
+
+    @Test
+    void theNodeScriptIsAShebangJsFileWhoseFailureSetsTheExitCode(@TempDir Path tmp) throws Exception {
+        Template t = bundled(tmp, "node-script");
+        Map<String, String> files = rendered(tmp, t);
+        assertEquals(List.of("script.js"), List.copyOf(files.keySet()));
+        String js = files.get("script.js");
+        assertTrue(js.startsWith("#!/usr/bin/env node\n"), js); // so the created file is made executable
+        assertTrue(js.contains("main(process.argv.slice(2)).catch("), js);
+        assertTrue(js.contains("process.exitCode = 1;"), js);
+        assertEquals("javascript", t.language());
+    }
 }

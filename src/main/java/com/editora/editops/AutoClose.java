@@ -81,6 +81,15 @@ public final class AutoClose {
      * a triple quote closes it as well (caret between), and a backtick (not Python syntax) does not pair.
      */
     public static Decision decide(
+            char typed, String lineBeforeCaret, char next, boolean hasSelection, String language, boolean inLiteral) {
+        Decision d = decide(typed, lineBeforeCaret, next, hasSelection, language);
+        // Inside a string, comment or regex a quote is text: `/['"]/` and `'He said "hi"'` must not grow pairs.
+        // Brackets still pair there, as in VS Code.
+        return inLiteral && isQuote(typed) && d.action() == Action.INSERT_PAIR ? Decision.NONE : d;
+    }
+
+    /** As {@link #decide(char, String, char, boolean, String, boolean)} outside any literal. */
+    public static Decision decide(
             char typed, String lineBeforeCaret, char next, boolean hasSelection, String language) {
         char prev = lineBeforeCaret.isEmpty() ? 0 : lineBeforeCaret.charAt(lineBeforeCaret.length() - 1);
         if (!"python".equals(language) || hasSelection) {

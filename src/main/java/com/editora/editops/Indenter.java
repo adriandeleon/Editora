@@ -292,7 +292,9 @@ public final class Indenter {
 
     /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
      *  reads only the caret's own line of {@code text} — except in shell, whose blocks, quotes and here-docs
-     *  are read from the bounded stretch above it ({@link ShellIndent}). */
+     *  are read from the bounded stretch above it ({@link ShellIndent}), and brace languages, whose case labels,
+     *  brace-less headers and open argument lists are read from above ({@link BraceIndent}) and whether a
+     *  {@code /**} is closed yet from below ({@link CommentContinuation}). */
     static EnterEdit enterEdit(String text, int caret, String language, String unit) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
@@ -303,15 +305,22 @@ public final class Indenter {
         // of code that is still indented by its own four.
         String indent = leadingWhitespace(before);
 
+        EnterEdit comment = style == Style.BRACES ? CommentContinuation.enter(text, caret, before, after) : null;
+        if (comment != null) {
+            return comment; // ` * ` inside a /** … */ comment
+        }
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;
             return new EnterEdit("\n" + body + "\n" + indent, 1 + body.length());
         }
-        String newIndent = style == Style.SHELL
-                ? ShellIndent.afterEnter(text, caret, unit)
-                : "python".equals(language)
-                        ? PythonIndent.afterEnter(text, caret, unit, unit.startsWith("\t") ? 4 : unit.length())
-                        : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
+        String brace = style == Style.BRACES ? BraceIndent.afterEnter(text, ls, before, unit) : null;
+        String newIndent = brace != null
+                ? brace // case bodies, brace-less if, open argument lists, `.then()` chains
+                : style == Style.SHELL
+                        ? ShellIndent.afterEnter(text, caret, unit)
+                        : "python".equals(language)
+                                ? PythonIndent.afterEnter(text, caret, unit, unit.startsWith("\t") ? 4 : unit.length())
+                                : opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
         return new EnterEdit("\n" + newIndent, 1 + newIndent.length());
     }
 
@@ -415,6 +424,11 @@ public final class Indenter {
             if (shell != null) {
                 return shell;
             }
+        }
+        if (style == Style.BRACES && (typed == ':' || typed == '.')) {
+            String clause = BraceIndent.clauseIndent(
+                    text, ls, typed, currentIndent, unit != null ? unit : indentUnit(currentIndent, tabSize));
+            return clause != null ? clause : currentIndent;
         }
         if (style == Style.PY && (typed == ':' || typed == '\n')) {
             String clause = PythonIndent.clauseIndent(text, caret, tabSize, currentIndent);
@@ -577,6 +591,9 @@ public final class Indenter {
     public static boolean completesCloserKeyword(Style style, String lineUpToCaretPlusChar, String language) {
         if (style == Style.PY && "python".equals(language)) {
             return PythonIndent.completesClause(lineUpToCaretPlusChar); // `else:` / `except …:` — on its `:`
+        }
+        if (style == Style.BRACES) {
+            return BraceIndent.completesClause(lineUpToCaretPlusChar); // `case 2:` on its `:`, a leading `.`
         }
         return completesCloserKeyword(style, lineUpToCaretPlusChar);
     }

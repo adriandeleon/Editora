@@ -25,6 +25,14 @@ final class SourceBlanker {
 
     /** {@code text} with comment and string-literal contents replaced by spaces, same length. */
     static String blank(String text, CommentStyle style) {
+        return blank(text, style, false);
+    }
+
+    /**
+     * As {@link #blank(String, CommentStyle)}; {@code regexLiterals} (JavaScript/TypeScript) blanks regex literals
+     * too, so a backtick or brace inside one is not read as a template literal or a block.
+     */
+    static String blank(String text, CommentStyle style, boolean regexLiterals) {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : text;
         }
@@ -54,6 +62,14 @@ final class SourceBlanker {
             if (c == '"' || c == '\'' || c == '`') {
                 i = blankString(text, out, i, c);
                 continue;
+            }
+            if (c == '/' && regexLiterals) {
+                int end = com.editora.editor.RegexLiterals.end(text, i);
+                if (end > i) {
+                    blankRange(out, i, end + 1);
+                    i = end + 1;
+                    continue;
+                }
             }
             i++;
         }

@@ -48,6 +48,20 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 --- end
+=== node-script
+--- sample.js caret=58
+#!/usr/bin/env node
+// Sum
+
+async function main(args) {
+  
+}
+
+main(process.argv.slice(2)).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+--- end
 === shell-script
 --- sample.sh caret=61
 #!/usr/bin/env bash

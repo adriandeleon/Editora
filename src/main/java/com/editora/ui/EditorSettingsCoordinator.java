@@ -647,7 +647,7 @@ final class EditorSettingsCoordinator {
         }
         List<String> names = new ArrayList<>();
         names.add(LanguageRegistry.plaintext());
-        names.addAll(GrammarRegistry.shared().availableLanguageNames());
+        names.addAll(GrammarRegistry.shared().pickableLanguageNames());
         // An in-scene picker, like every other status-bar selector — filterable, keyboard-first, and it
         // does not open a second window over the editor. (The list is ~100 grammars; a ChoiceDialog's
         // combo made that unsearchable.)

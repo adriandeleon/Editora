@@ -83,4 +83,18 @@ class DoubleClickWordTest {
         assertEquals("beta", word("alpha beta", 5, false, false));
         assertEquals("stop", word("don't stop", 5, true, false));
     }
+
+    @Test
+    void javaScriptIdentifiersKeepTheirDollarAndHash() {
+        String line = "const $el = user$; this.#count++;";
+        int[] a = DoubleClickWord.at(line, line.indexOf("el"), false, false, true);
+        assertEquals("$el", line.substring(a[0], a[1]));
+        int[] b = DoubleClickWord.at(line, line.indexOf("user"), false, false, true);
+        assertEquals("user$", line.substring(b[0], b[1]));
+        int[] c = DoubleClickWord.at(line, line.indexOf("count"), false, false, true);
+        assertEquals("#count", line.substring(c[0], c[1]));
+        assertEquals("el", code(line, "el"), "other languages keep the plain word rule");
+        assertTrue(IdentifierChars.dollarIdentifiers("typescriptreact"));
+        assertFalse(IdentifierChars.dollarIdentifiers("shell"));
+    }
 }

@@ -91,9 +91,9 @@ public final class Commenter {
     /**
      * Computes the toggle edit for the selection {@code [selStart, selEnd]}, or null if unsupported.
      *
-     * <p>A {@code #!} shebang on the first line of a {@code #}-comment language is never toggled: it is not a
-     * comment, and removing its {@code #} breaks the script ({@code !/usr/bin/env bash}). A selection that
-     * covers it toggles the lines after it; the shebang line alone toggles nothing.
+     * <p>A {@code #!} shebang on the first line is never toggled: it is not a comment, and removing its {@code #}
+     * ({@code !/usr/bin/env bash}) or commenting it ({@code // #!/usr/bin/env node}) breaks the script. A selection
+     * that covers it toggles the lines after it; the shebang line alone toggles nothing.
      */
     public static Edit toggle(String text, int selStart, int selEnd, CommentStyle style) {
         if (onShebang(text, selStart, style)) {
@@ -201,9 +201,14 @@ public final class Commenter {
         return n;
     }
 
-    /** Whether {@code selStart} is on a first-line {@code #!} shebang of a {@code #}-comment language. */
+    /** Whether {@code selStart} is on a first-line {@code #!} shebang (in any language with comment syntax). */
     public static boolean onShebang(String text, int selStart, CommentStyle style) {
-        return "#".equals(style.line()) && text.startsWith("#!") && selStart <= lineEnd(text, 0);
+        // Any language a script can be written in: `// #!/usr/bin/env node` is as broken as `!/usr/bin/env bash`.
+        // Rust's `#![attribute]` is code, not a shebang.
+        return (style.hasLine() || style.hasBlock())
+                && text.startsWith("#!")
+                && !text.startsWith("#![")
+                && selStart <= lineEnd(text, 0);
     }
 
     /** Whether the selection is the shebang line alone, which {@link #toggle} leaves untouched. */
@@ -242,13 +247,21 @@ public final class Commenter {
         int to = lineEnd(text, effEnd);
         String[] lines = selectedLines(text, selStart, effEnd);
         boolean uncomment = allLineCommented(lines, token);
+        // Commenting several lines puts every marker in one column, the shallowest indent among them (as VS Code
+        // does): `// /**` over `//  * Loads`, not `// /**` over ` // * Loads`.
+        int column = Integer.MAX_VALUE;
+        for (String line : lines) {
+            if (!line.isBlank()) {
+                column = Math.min(column, firstNonWs(line));
+            }
+        }
 
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < lines.length; i++) {
             if (i > 0) {
                 out.append('\n');
             }
-            out.append(uncomment ? removeLineComment(lines[i], token) : addLineComment(lines[i], token));
+            out.append(uncomment ? removeLineComment(lines[i], token) : addLineComment(lines[i], token, column));
         }
         String replacement = out.toString();
         return new Edit(from, to, replacement, from, from + replacement.length());
@@ -287,12 +300,13 @@ public final class Commenter {
                         || !Character.isLetterOrDigit(s.charAt(token.length())) && s.charAt(token.length()) != '_');
     }
 
-    private static String addLineComment(String line, String token) {
+    private static String addLineComment(String line, String token, int column) {
         int i = firstNonWs(line);
         if (i == line.length()) {
             return line; // skip blank lines
         }
-        return line.substring(0, i) + token + " " + line.substring(i);
+        int at = Math.min(i, column); // within the leading whitespace, which the shallowest line decides
+        return line.substring(0, at) + token + " " + line.substring(at);
     }
 
     private static String removeLineComment(String line, String token) {

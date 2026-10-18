@@ -223,6 +223,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 blockStartLine = line;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
@@ -329,6 +331,7 @@ public final class FoldRegions {
      * @param tripleQuote     {@code """} opens a multi-line text block / raw string
      * @param multiLineDouble a {@code "} string may span lines
      * @param lifetimes       a {@code '} may be a Rust lifetime or loop label rather than a char literal
+     * @param regexLiterals   a {@code /} where an operand is expected opens a regular expression (JS/TS)
      */
     record Syntax(
             boolean slashSlash,
@@ -337,7 +340,8 @@ public final class FoldRegions {
             boolean backtickEscapes,
             boolean tripleQuote,
             boolean multiLineDouble,
-            boolean lifetimes) {
+            boolean lifetimes,
+            boolean regexLiterals) {
 
         static Syntax of(String language) {
             String l = language == null ? "" : language;
@@ -349,7 +353,18 @@ public final class FoldRegions {
                     script,
                     l.equals("java") || l.equals("kotlin") || l.equals("groovy") || l.equals("csharp"),
                     l.equals("rust") || l.equals("php"),
-                    l.equals("rust"));
+                    l.equals("rust"),
+                    script);
+        }
+
+        /**
+         * Index of the last character of the regular-expression literal opened by the {@code /} at {@code i}, or
+         * {@code i} itself when that slash divides or the language has no regex literals (see {@link
+         * RegexLiterals}). Without this a regex holding a backtick ({@code s.split(/`/)}) opened a template
+         * literal that swallowed every brace below it. The caller has ruled out {@code //} and {@code /*}.
+         */
+        int regexEnd(String text, int i) {
+            return regexLiterals ? RegexLiterals.end(text, i) : i;
         }
 
         /** Whether a line comment starts at {@code i}. */
@@ -439,6 +454,8 @@ public final class FoldRegions {
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 inBlockComment = true;
                 i++;
+            } else if (c == '/') {
+                i = syntax.regexEnd(text, i);
             } else if (c == '"' || c == '\'' || c == '`') {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);

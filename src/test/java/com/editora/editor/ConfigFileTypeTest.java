@@ -184,6 +184,10 @@ class ConfigFileTypeTest {
         assertEquals("json", ConfigFileType.resolve(".babelrc"));
         assertEquals("json", ConfigFileType.resolve(".eslintrc"));
         assertEquals("json", ConfigFileType.resolve(".prettierrc"));
+        // Node test/coverage/release tool rc files are JSON, not the generic *rc INI (Node.js review A16).
+        assertEquals("json", ConfigFileType.resolve(".mocharc"));
+        assertEquals("json", ConfigFileType.resolve("/proj/.nycrc"));
+        assertEquals("json", ConfigFileType.resolve(".lintstagedrc"));
         // Eclipse project metadata is XML.
         assertEquals("xml", ConfigFileType.resolve(".classpath"));
         assertEquals("xml", ConfigFileType.resolve("/proj/.project"));
