@@ -123,7 +123,7 @@ convention — postinst runs as root and must not rewrite per-user config). Then
 expert-default lines from `mimeapps.list`, **putting back the defaults `postinst` displaced** (unless
 the type has since been given another default) and deleting that file only when nothing but section
 headers remains, i.e. postinst created it. Both scripts address every path under `$DPKG_ROOT`, which
-is how `scripts/packaging/test_deb_maintainer_scripts.py` runs them against a scratch root. DEB-only — the RPM bundler ignores the resource-dir maintainer
+is how `scripts/packaging/MaintainerScriptsTest.java` runs them against a scratch root. DEB-only — the RPM bundler ignores the resource-dir maintainer
 scripts, and the `.tar.gz`'s `tarball-install.sh` installs its own single `.desktop`. **Device-test on Linux** (install the `.deb`: `which editora`
 works + the app shows our icon in the menu and dock; then remove: both are gone) — the macOS dev box and
 the `os-linux` profile can't exercise this. *(If a terminal-launched window's dock icon is still generic,

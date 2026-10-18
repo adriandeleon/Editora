@@ -246,11 +246,14 @@ because the runner lacks a tool, prefer installing the tool in `ci.yml`, as is d
 
 ## Script tests
 
-The release and packaging scripts have their own tests — Python `unittest` files beside the scripts,
-run by the `scripts` CI job (not by Maven):
+The release and packaging scripts have their own tests, run by the `scripts` CI job (not by Maven).
+The packaging ones are Java `*Test.java` files under `scripts/packaging/`, run with the JDK's source
+launcher by `scripts/lib/RunTests.java` (no build, no test library; the argument is a class-name prefix);
+the rest are still Python `unittest` files beside the scripts:
 
 ```
-for d in scripts scripts/release scripts/packaging scripts/native; do
+java scripts/lib/RunTests.java packaging
+for d in scripts scripts/release scripts/native; do
   python3 -m unittest discover -s "$d" -p 'test_*.py'
 done
 ```
@@ -384,16 +387,19 @@ name-conflict case. These probes print generated fixture source on failure, neve
 
 ### Sustained typing and large-file measurements
 
-`scripts/probes/java-typing-study.py` copies real projects to a new output directory and snapshots the
+`scripts/probes/JavaTypingStudy.java` copies real projects to a new output directory and snapshots the
 compiled runtime, so ongoing builds cannot change a running study. It never edits the source project.
 First run `mvn test` on JDK 25 to compile the probes and generate the dependency classpath, then:
 
 ```sh
-python3 scripts/probes/java-typing-study.py \
+java scripts/probes/JavaTypingStudy.java \
   --maven-project /path/to/Editora --gradle-project /path/to/RichTextFX \
   --jdtls /path/to/jdtls --java-home /path/to/jdk25 \
   --gradle-java-home /path/to/jdk21 --output /tmp/java-typing-study --seconds 1800
 ```
+
+`--projects maven` or `--projects gradle` studies one project only. The study's output goes to
+`study.log` in the output directory, which must not exist yet.
 
 The current readiness assertions are specific to these two projects: `EditorBuffer.getArea` and
 `CodeArea.getText` must resolve. Adapt those assertions and the source location for other projects.
