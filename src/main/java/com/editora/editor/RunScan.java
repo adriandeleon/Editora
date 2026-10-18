@@ -93,6 +93,13 @@ final class RunScan {
             runnable = true;
             line = 0; // run the whole script from the top (the shebang line, if any)
         } else if (in.eligible()
+                && com.editora.run.NodeRunPlan.isNodeLanguage(language)
+                && com.editora.run.NodeRunPlan.runnableName(in.name())) {
+            // A Node script (.js/.mjs/.cjs/.ts/.mts/.cts, or a node/deno/bun/tsx shebang): run from the top. A test
+            // file's ▶ runs its tests (node --test) — decided at launch, where the path is known.
+            runnable = true;
+            line = 0;
+        } else if (in.eligible()
                 && "java".equals(language)
                 && (CompactSource.isLaunchable(in.name(), text)
                         || (in.javaShebang() && CompactSource.hasTopLevelMain(text)))) {

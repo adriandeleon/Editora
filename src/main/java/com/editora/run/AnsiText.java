@@ -50,6 +50,11 @@ public final class AnsiText {
         private boolean underline;
         private final StringBuilder held = new StringBuilder();
 
+        /** Whether a colour or style is in force (or a sequence is half read): plain text is then not plain. */
+        public boolean active() {
+            return fg != null || bold || dim || italic || underline || !held.isEmpty();
+        }
+
         /** Reads one chunk. */
         public Chunk feed(String chunk) {
             if (held.isEmpty() && chunk.indexOf(ESC) < 0) {

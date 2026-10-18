@@ -4802,15 +4802,30 @@ public class SettingsWindow {
     private void refreshBuildCommandStatus(BuildTool bt) {
         ToolStatusRow status = buildToolCommandStatus.get(bt);
         if (status != null) {
-            List<String> argv = com.editora.build.BuildExecutable.resolve(
-                    null, bt.commandIn(config.getSettings()), bt.commandExample());
+            // npm: the manager the active project uses (pnpm, yarn, bun), not always npm (review E9).
+            String command = bt == BuildTool.NPM ? npmManagerName() : bt.commandExample();
+            String override = bt.commandIn(config.getSettings());
+            if (bt == BuildTool.NPM && !com.editora.build.NpmPackageManager.overrideApplies(override, command)) {
+                override = "";
+            }
+            List<String> argv = com.editora.build.BuildExecutable.resolve(null, override, command);
             String found = ToolStatusRow.pathOf(argv);
-            status.tool(ToolStatusRow.toolName(argv, bt.commandExample()));
+            status.tool(ToolStatusRow.toolName(argv, command));
             status.show(!found.isEmpty(), found, bt.enabledIn(config.getSettings()));
         }
     }
 
     private final Map<BuildTool, ToolStatusRow> buildToolCommandStatus = new java.util.EnumMap<>(BuildTool.class);
+
+    /** The package manager of the npm project detected for the active file, else npm. */
+    private String npmManagerName() {
+        for (BuildCoordinator c : buildCoordinators) {
+            if (c.tool() == BuildTool.NPM && c.detectedManager() != null) {
+                return c.detectedManager().manager();
+            }
+        }
+        return "npm";
+    }
 
     private VBox mermaidPage() {
         VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
@@ -7295,6 +7310,10 @@ public class SettingsWindow {
                                             c.tool().displayName())
                                     : tr("settings.buildTools.found", detected))
                             : tr("settings.buildTools.notFound", c.tool().displayName()));
+            if (found && c.detectedManager() != null) {
+                label.setText(label.getText() + " · " + c.detectedManager().describe()); // "pnpm (pnpm-lock.yaml)"
+            }
+            refreshBuildCommandStatus(c.tool());
         }
     }
 

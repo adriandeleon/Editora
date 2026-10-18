@@ -68,6 +68,9 @@ final class ConsoleAppender {
         }
         discard(); // first: a failing edit must not leave its text to be applied again
         int start = console.getLength();
+        if (start + appended.length() > maxChars) {
+            trimmed = true; // the oldest output is about to be cut: the console's owner says so
+        }
         int caretBefore = console.getCaretPosition();
         boolean follow = caretBefore >= start; // scrolled back? stay put
         console.appendText(appended);
@@ -88,6 +91,18 @@ final class ConsoleAppender {
         if (start < console.getLength()) {
             console.deleteText(start, console.getLength());
         }
+    }
+
+    private boolean trimmed;
+
+    /** Whether output was dropped from the top to stay under the cap since {@link #resetTrimmed()}. */
+    boolean trimmed() {
+        return trimmed;
+    }
+
+    /** Starts counting afresh (a new run, a cleared console). */
+    void resetTrimmed() {
+        trimmed = false;
     }
 
     /** Drops text that has not been applied yet: the console is about to be cleared. */

@@ -128,4 +128,14 @@ class TestRunRecognizerTest {
                 TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "testMethod[0]")
                         .get(1));
     }
+
+    @Test
+    void onlyTestScriptsAndTheirVariantsAreTestRuns() {
+        assertTrue(TestRunRecognizer.isTestRun(com.editora.build.BuildTool.NPM, java.util.List.of("run", "test")));
+        assertTrue(TestRunRecognizer.isTestRun(com.editora.build.BuildTool.NPM, java.util.List.of("run", "test:unit")));
+        assertTrue(TestRunRecognizer.isTestRun(com.editora.build.BuildTool.NPM, java.util.List.of("run", "test-e2e")));
+        assertTrue(!TestRunRecognizer.isTestRun(
+                com.editora.build.BuildTool.NPM, java.util.List.of("run", "testdata-gen")));
+        assertTrue(!TestRunRecognizer.isTestRun(com.editora.build.BuildTool.NPM, java.util.List.of("run", "tests")));
+    }
 }

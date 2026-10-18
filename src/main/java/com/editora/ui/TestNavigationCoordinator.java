@@ -141,6 +141,56 @@ final class TestNavigationCoordinator {
     /** Python tests (pytest, else unittest) — the gutter ▶ of a test file, Run Test at Caret, {@code test.run}. */
     final PythonTestRunner pythonTests;
 
+    /** Node.js test files ({@code node --test}) — the gutter ▶ of a {@code *.test.js} / {@code test/} file. */
+    private final NodeTestRunner nodeTests = new NodeTestRunner(new NodeTestRunner.Host() {
+        @Override
+        public RunCoordinator runCoordinator() {
+            return host.runCoordinator();
+        }
+
+        @Override
+        public TestRunCoordinator testRunCoordinator() {
+            return host.testRunCoordinator();
+        }
+
+        @Override
+        public Path projectRoot() {
+            return TestNavigationCoordinator.this.projectRoot();
+        }
+
+        @Override
+        public com.editora.config.Settings settings() {
+            return host.config().getSettings();
+        }
+
+        @Override
+        public void setStatus(String message) {
+            host.setStatus(message);
+        }
+
+        @Override
+        public void openFrame(com.editora.test.TestNode node, Runnable fallback) {
+            com.editora.run.StackTraceLinks.Link frame = node.stackTrace() == null
+                    ? null
+                    : TestRunCoordinator.firstFrame(node.stackTrace(), node.sourceFileHint());
+            if (frame == null) {
+                fallback.run();
+            } else {
+                openRunLink(frame, fallback);
+            }
+        }
+    });
+
+    /** Runs a Node.js test file's tests into Test Results; false when Test Results is off (it runs as a script). */
+    boolean runNodeTestFile(Path file) {
+        if (!host.config().getSettings().isTestRunner()
+                || host.coordinatorHost().simpleModeActive()) {
+            return false;
+        }
+        nodeTests.run(file);
+        return true;
+    }
+
     /** Runs the tests of a Python test file (Run File on {@code test_*.py}); false when it has none. */
     boolean runPythonTestFile(Path file, String text) {
         if (file == null
@@ -248,7 +298,7 @@ final class TestNavigationCoordinator {
 
     private void finishRunLink(com.editora.run.StackTraceLinks.Link link, Path resolved, Runnable onUnresolved) {
         if (resolved != null) {
-            host.openAndGoto(resolved, link.line() - 1, 0); // console lines are 1-based
+            host.openAndGoto(resolved, link.line() - 1, Math.max(0, link.column() - 1)); // both printed 1-based
         } else if (onUnresolved != null) {
             onUnresolved.run();
         } else {
