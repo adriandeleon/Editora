@@ -5371,7 +5371,7 @@ public class EditorBuffer implements TabContent {
             query = sel;
             anchor = a.getSelection().getStart();
         } else {
-            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition());
+            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition(), language);
             if (w == null) {
                 return 0;
             }

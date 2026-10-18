@@ -60,7 +60,8 @@ public final class DeclarationScanner {
         }
         String src = "shell".equals(language)
                 ? SourceBlanker.blankShell(text, Commenter.styleFor(language))
-                : SourceBlanker.blank(text, Commenter.styleFor(language));
+                : SourceBlanker.blank(
+                        text, Commenter.styleFor(language), com.editora.editor.RegexLiterals.in(language));
         boolean braces = DeclarationRules.braceScoped(language);
         boolean python = "python".equals(language);
 
