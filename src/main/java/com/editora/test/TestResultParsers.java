@@ -13,6 +13,8 @@ public final class TestResultParsers {
             case GO -> new GoTestJsonParser();
             case CARGO -> new CargoTestParser();
             case NPM -> new TapParser();
+            // The Scala tools' runs are not read as test runs yet (TestRunRecognizer): never asked in practice.
+            case SBT, MILL, SCALA_CLI -> new TapParser();
         };
     }
 

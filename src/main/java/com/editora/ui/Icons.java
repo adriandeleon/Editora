@@ -770,6 +770,27 @@ final class Icons {
                 + "7 1.63 1.27L12 16z");
     }
 
+    /** Material "category" (outlined shapes) for the sbt build tool. */
+    static Node sbt() {
+        return of(
+                "M12 2l-5.5 9h11L12 2zm0 3.84L13.93 9h-3.87L12 5.84zM17.5 13c-2.49 0-4.5 2.01-4.5 4.5s2.01 4.5 4.5 4.5 "
+                        + "4.5-2.01 4.5-4.5-2.01-4.5-4.5-4.5zm0 7a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5zM3 21.5h8v-8H3v8zm2-6h4v4H5v-4z");
+    }
+
+    /** Material "donut_large" (a millstone) for the Mill build tool. */
+    static Node mill() {
+        return of("M11 5.08V2c-5 .5-9 4.81-9 10s4 9.5 9 10v-3.08c-3-.48-6-3.4-6-6.92s3-6.44 6-6.92zM18.97 11H22c-.47-5"
+                + "-4-8.53-9-9v3.08C16 5.51 18.54 8 18.97 11zM13 18.92V22c5-.47 8.53-4 9-9h-3.03c-.43 3-2.97 5.49-5.97 "
+                + "5.92z");
+    }
+
+    /** The Scala mark (Simple Icons, CC0, as the file icon uses) for the Scala CLI build tool. */
+    static Node scalaCli() {
+        return of("M4.589 24c4.537 0 13.81-1.516 14.821-3v-5.729c-.957 1.408-10.284 2.912-14.821 2.912V24zM4.589 1"
+                + "6.365c4.537 0 13.81-1.516 14.821-3V7.636c-.957 1.408-10.284 2.912-14.821 2.912v5.817zM4.589 8"
+                + ".729c4.537 0 13.81-1.516 14.821-3V0C18.453 1.408 9.126 2.912 4.589 2.912v5.817z");
+    }
+
     /** Material "edit" (pencil) — rename / edit-note context-menu items. */
     static Node edit() {
         return of("M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-"

@@ -2252,9 +2252,196 @@ final class LanguageServerSession implements LanguageClient {
         onStatus.accept("Message", messageParams.getMessage());
     }
 
+    /** Where the user is asked a server's questions; null (a test, a headless session) answers none. */
+    private volatile LspClientUi clientUi;
+
+    /** Sets where this server's questions go ({@link LspManager} hands a wrapper that runs on the FX thread). */
+    void setClientUi(LspClientUi ui) {
+        this.clientUi = ui;
+    }
+
+    /**
+     * Asks the user the server's question and answers with the action they chose, or null when they closed it
+     * (or nobody can ask). The dialog runs on the FX thread and this future completes from there, so the
+     * reader thread is free meanwhile: a server that asks "Import build?" and keeps talking still gets its
+     * other replies. Metals asks this way before importing an sbt or Mill build; it used to wait forever.
+     */
     @Override
     public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams params) {
-        return CompletableFuture.completedFuture(null);
+        LspClientUi ui = clientUi;
+        if (ui == null || disposed || params == null || params.getMessage() == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        List<String> titles = new ArrayList<>();
+        if (params.getActions() != null) {
+            for (MessageActionItem action : params.getActions()) {
+                if (action != null && action.getTitle() != null) {
+                    titles.add(action.getTitle());
+                }
+            }
+        }
+        return ui.chooseAction(serverId, params.getType(), params.getMessage(), List.copyOf(titles))
+                .handle((chosen, error) ->
+                        chosen == null || error != null || disposed ? null : new MessageActionItem(chosen));
+    }
+
+    // --- Metals' client extensions (scalameta.org/metals/docs/integrations/new-editor) ------------------
+
+    /**
+     * {@code metals/status}: Metals' status-bar text. A spinning item (an import, a compile) is progress — the
+     * loading bar runs until Metals hides it; any other text is a status message.
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("metals/status")
+    public void metalsStatus(MetalsStatus status) {
+        MetalsStatusView view = MetalsStatusView.of(status);
+        if (view != null) {
+            onStatus.accept(view.type(), view.text());
+        }
+    }
+
+    /**
+     * {@code metals/executeClientCommand}: an action Metals asks the editor for. Opening a location is carried
+     * out; every other command (its tree views, doctor page, run lenses, focusing diagnostics) is ignored, as the
+     * protocol allows a client that does not know one.
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("metals/executeClientCommand")
+    public void metalsExecuteClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
+        LspClientUi ui = clientUi;
+        if (ui == null || disposed || params == null || params.getCommand() == null) {
+            return;
+        }
+        switch (params.getCommand()) {
+            case "metals-goto-location" -> {
+                org.eclipse.lsp4j.Location at = firstArgument(params, org.eclipse.lsp4j.Location.class);
+                if (at != null && at.getUri() != null && at.getRange() != null) {
+                    Path file = DocumentUris.toPath(named.toKey(at.getUri()));
+                    if (file != null) {
+                        ui.openLocation(
+                                serverId,
+                                file,
+                                at.getRange().getStart().getLine(),
+                                at.getRange().getStart().getCharacter());
+                    }
+                }
+            }
+            default -> LOG.fine(() -> "[" + serverId + "] client command not handled: " + params.getCommand());
+        }
+    }
+
+    /** {@code metals/inputBox}: a line of text from the user, or {@code cancelled}. */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("metals/inputBox")
+    public CompletableFuture<MetalsInputBoxResult> metalsInputBox(MetalsInputBoxParams params) {
+        LspClientUi ui = clientUi;
+        if (ui == null || disposed || params == null) {
+            return CompletableFuture.completedFuture(MetalsInputBoxResult.cancel());
+        }
+        return ui.inputBox(serverId, params.prompt, params.value, params.placeHolder)
+                .handle((value, error) -> value == null || error != null
+                        ? MetalsInputBoxResult.cancel()
+                        : MetalsInputBoxResult.of(value));
+    }
+
+    /** {@code metals/quickPick}: one of the offered items, by id, or {@code cancelled}. */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("metals/quickPick")
+    public CompletableFuture<MetalsQuickPickResult> metalsQuickPick(MetalsQuickPickParams params) {
+        LspClientUi ui = clientUi;
+        if (ui == null || disposed || params == null || params.items == null || params.items.isEmpty()) {
+            return CompletableFuture.completedFuture(MetalsQuickPickResult.cancel());
+        }
+        List<LspClientUi.PickItem> items = new ArrayList<>();
+        for (MetalsQuickPickItem item : params.items) {
+            if (item != null && item.id != null) {
+                items.add(new LspClientUi.PickItem(
+                        item.id, item.label == null ? item.id : item.label, item.description, item.detail));
+            }
+        }
+        return ui.quickPick(serverId, params.placeHolder, List.copyOf(items))
+                .handle((id, error) ->
+                        id == null || error != null ? MetalsQuickPickResult.cancel() : MetalsQuickPickResult.of(id));
+    }
+
+    /** The first argument of a client command read as {@code type} (lsp4j hands it over as raw JSON), or null. */
+    private static <T> T firstArgument(org.eclipse.lsp4j.ExecuteCommandParams params, Class<T> type) {
+        if (params.getArguments() == null || params.getArguments().isEmpty()) {
+            return null;
+        }
+        try {
+            return LSP_GSON.fromJson(LSP_GSON.toJsonTree(params.getArguments().get(0)), type);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Payload of {@code metals/status}. */
+    public static final class MetalsStatus {
+        public String text;
+        public Boolean show;
+        public Boolean hide;
+        public String tooltip;
+        public String command;
+    }
+
+    /** Payload of {@code metals/inputBox}. */
+    public static final class MetalsInputBoxParams {
+        public String prompt;
+        public String value;
+        public String placeHolder;
+        public Boolean password;
+        public Boolean ignoreFocusOut;
+    }
+
+    /** Reply to {@code metals/inputBox}. */
+    public static final class MetalsInputBoxResult {
+        public String value;
+        public Boolean cancelled;
+
+        static MetalsInputBoxResult of(String value) {
+            MetalsInputBoxResult r = new MetalsInputBoxResult();
+            r.value = value;
+            return r;
+        }
+
+        static MetalsInputBoxResult cancel() {
+            MetalsInputBoxResult r = new MetalsInputBoxResult();
+            r.cancelled = true;
+            return r;
+        }
+    }
+
+    /** One item of {@code metals/quickPick}. */
+    public static final class MetalsQuickPickItem {
+        public String id;
+        public String label;
+        public String description;
+        public String detail;
+        public Boolean alwaysShow;
+    }
+
+    /** Payload of {@code metals/quickPick}. */
+    public static final class MetalsQuickPickParams {
+        public List<MetalsQuickPickItem> items;
+        public Boolean matchOnDescription;
+        public Boolean matchOnDetail;
+        public String placeHolder;
+        public Boolean ignoreFocusOut;
+    }
+
+    /** Reply to {@code metals/quickPick}. */
+    public static final class MetalsQuickPickResult {
+        public String itemId;
+        public Boolean cancelled;
+
+        static MetalsQuickPickResult of(String id) {
+            MetalsQuickPickResult r = new MetalsQuickPickResult();
+            r.itemId = id;
+            return r;
+        }
+
+        static MetalsQuickPickResult cancel() {
+            MetalsQuickPickResult r = new MetalsQuickPickResult();
+            r.cancelled = true;
+            return r;
+        }
     }
 
     @Override

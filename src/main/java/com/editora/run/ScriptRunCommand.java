@@ -2,6 +2,7 @@ package com.editora.run;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The launch argv for a run configuration that is <b>not</b> a Java main class.
@@ -31,13 +32,24 @@ public final class ScriptRunCommand {
     /** A Groovy script, run by {@code groovy} on the configuration's JDK ({@link JvmScriptRun}). */
     public static final String GROOVY = "groovy";
 
+    /** A Scala file or {@code .sc} script, run by Scala CLI on the configuration's JDK ({@link JvmScriptRun}). */
+    public static final String SCALA = "scala";
+
+    /**
+     * Whether {@code type} runs one file through a JVM language's own tool ({@link JvmScriptRun}): its type is
+     * the language id ({@code groovy}, {@code scala}).
+     */
+    public static boolean isJvmScript(String type) {
+        return JvmScriptRun.supports(type);
+    }
+
     public static final String JAVA = "java";
 
     private ScriptRunCommand() {}
 
     /** Whether {@code type} is a script type this builder can launch (i.e. anything but {@code java}). */
     public static boolean isScript(String type) {
-        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type) || GROOVY.equals(type);
+        return isPython(type) || SHELL.equals(type) || MAKE.equals(type) || NPM.equals(type) || isJvmScript(type);
     }
 
     /** Whether {@code type} is a Python script or module (launched through {@code PythonRunPlan}). */
@@ -52,7 +64,7 @@ public final class ScriptRunCommand {
      * {@code make} does, so it is a valid configuration rather than an incomplete one.
      */
     public static boolean needsTarget(String type) {
-        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || GROOVY.equals(type);
+        return isPython(type) || SHELL.equals(type) || NPM.equals(type) || isJvmScript(type);
     }
 
     /**
@@ -96,13 +108,13 @@ public final class ScriptRunCommand {
                 argv.addAll(shell == null ? List.of(ShellCommand.defaultInterpreter(t)) : shell.interpreter());
                 argv.add(t);
             }
-            case GROOVY -> {
+            case GROOVY, SCALA -> {
                 if (t.isEmpty()) {
                     return List.of();
                 }
                 // The shape only: the real tool and JDK come from JvmTools and the configuration's JDK.
-                argv.add(JvmScriptRun.tool(GROOVY));
-                argv.add(t);
+                return JvmScriptRun.launch(type, JvmScriptRun.tool(type), t, List.of(), args, Map.of(), Map.of())
+                        .argv();
             }
             case MAKE -> {
                 argv.add("make");

@@ -408,6 +408,8 @@ public final class DapManager {
             case "javascript" -> jsAvailable;
             // Editora's own adapter: nothing to install, only the debugging switch (the tool is checked at start).
             case "groovy" -> enabled;
+            // Metals' adapter (checked at start: it needs Metals running) or, for a script, Editora's own.
+            case "scala" -> enabled;
             default -> false;
         };
     }
@@ -1637,6 +1639,14 @@ public final class DapManager {
                     }
                 } else if (spec.kind() == DapServerRegistry.Kind.JVM && !remote) {
                     startJvm(file, spec, bps, filters, epoch);
+                } else if (spec.kind() == DapServerRegistry.Kind.LANGUAGE_SERVER && !remote) {
+                    if (serverDebugs(file, language)) {
+                        startHosted(file, spec, bps, filters, epoch);
+                    } else if (DapServerRegistry.fallbackKind(language) == DapServerRegistry.Kind.JVM) {
+                        startJvm(file, spec, bps, filters, epoch);
+                    } else {
+                        fail(epoch, tr("debug.error.transport", language));
+                    }
                 } else if (spec.kind() == DapServerRegistry.Kind.SOCKET) {
                     if (remote) {
                         startRemoteSocket(file, spec, bps, filters, epoch);
@@ -1972,11 +1982,30 @@ public final class DapManager {
             fail(epoch, tr(com.editora.run.JvmScriptRun.missingToolKey(language)));
             return;
         }
-        List<String> argv = com.editora.run.JvmScriptRun.argv(tool, file.toString(), programArgs);
         Map<String, String> programEnv = env;
         Map<String, Object> launch = new java.util.LinkedHashMap<>();
-        launch.put("argv", argv);
         Path folder = jvmCwd;
+        List<String> argv;
+        if (com.editora.run.JvmScriptRun.takesJvmOptionsInArgv(language)) {
+            // Scala CLI: the agent (and the VM arguments) as --java-opt; the file, or its project folder with
+            // the file's main class. It compiles before the JVM starts — a first run fetches the compiler too.
+            com.editora.run.ScalaRun.Owner owner =
+                    com.editora.run.ScalaRun.ownerOf(file, null, java.nio.file.Files::isRegularFile);
+            List<String> inputs = com.editora.run.ScalaRun.cliInputs(
+                    file.toString(),
+                    owner,
+                    owner.root() == null ? null : owner.root().toString(),
+                    com.editora.run.ScalaRun.mainClass(readQuietly(file)));
+            argv = com.editora.run.JvmScriptRun.scalaCliDebug(tool, inputs, jvmOptions(), programArgs);
+            launch.put("agentArgument", com.editora.run.JvmScriptRun.AGENT_ARGUMENT);
+            launch.put("connectTimeoutMs", SCALA_CLI_CONNECT_TIMEOUT_MS);
+            if (owner.root() != null) {
+                launch.put("sourceRoots", List.of(owner.root().toString()));
+            }
+        } else {
+            argv = com.editora.run.JvmScriptRun.argv(tool, file.toString(), programArgs);
+        }
+        launch.put("argv", argv);
         launch.put("cwd", folder != null ? folder.toString() : cwdOf(file));
         launch.put("env", programEnv);
         launch.put("language", language);
@@ -2011,6 +2040,120 @@ public final class DapManager {
                     setState(State.RUNNING);
                     listener.onDebuggeeRuntime(List.of(tool), runtimeWhere(file), programEnv);
                 }
+            });
+        });
+    }
+
+    /** How long a Scala CLI program may take to compile and connect back (a first run downloads the compiler). */
+    private static final long SCALA_CLI_CONNECT_TIMEOUT_MS = 5 * 60_000;
+
+    /** How long a language server may take to start a debug adapter: Metals compiles the build target first. */
+    private static final java.time.Duration HOSTED_START_TIMEOUT = java.time.Duration.ofMinutes(10);
+
+    /** The VM arguments set for the next launch, as arguments. */
+    private List<String> jvmOptions() {
+        List<String> list = vmArgList;
+        return list != null ? list : com.editora.run.ProgramArgs.tokenize(vmArgs);
+    }
+
+    private static String readQuietly(Path file) {
+        try {
+            return java.nio.file.Files.readString(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * Whether {@code file} is debugged by its language server's own adapter ({@link DapServerRegistry.Kind
+     * #LANGUAGE_SERVER}) rather than the fallback: for Scala, a file of an sbt, Mill, Gradle or Maven build —
+     * Metals has imported it and knows its classpath. A script, or a Scala CLI project, runs under Scala CLI.
+     */
+    static boolean serverDebugs(Path file, String language) {
+        if (!"scala".equals(language)) {
+            return true;
+        }
+        com.editora.run.ScalaRun.Build build = com.editora.run.ScalaRun.ownerOf(
+                        file, null, java.nio.file.Files::isRegularFile)
+                .build();
+        return build == com.editora.run.ScalaRun.Build.SBT
+                || build == com.editora.run.ScalaRun.Build.MILL
+                || build == com.editora.run.ScalaRun.Build.OTHER;
+    }
+
+    /**
+     * A debug adapter the file's language server starts ({@link HostedDebugAdapter}): Metals'
+     * {@code debug-adapter-start} with the file, its arguments, VM arguments and environment compiles the build
+     * target, starts scala-debug-adapter and answers its socket. The adapter runs the program and reports its
+     * output; this client only connects, sends {@code launch} and the breakpoints.
+     */
+    private void startHosted(
+            Path file,
+            DapServerRegistry.DapServerSpec spec,
+            List<DapModels.FileBreakpoints> bps,
+            List<String> filters,
+            long epoch) {
+        String language = spec.language();
+        String command = HostedDebugAdapter.startCommand(language);
+        Map<String, Object> params =
+                HostedDebugAdapter.discovery(file.toUri().toString(), false, programArgs, jvmOptions(), env);
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch)) {
+                return;
+            }
+            if (command == null || !lsp.isManaged(file)) {
+                fail(epoch, tr("debug.error.hostedNoServer", file.getFileName().toString()));
+                return;
+            }
+            onOutput(epoch, tr("debug.hosted.starting") + "\n", COMMAND_CATEGORY);
+            lsp.executeCommand(file, command, List.of(params), HOSTED_START_TIMEOUT, (res, err) -> {
+                if (!isCurrent(epoch)) {
+                    return;
+                }
+                if (err != null) {
+                    fail(epoch, tr("debug.error.sessionFailed", msg(err)));
+                    return;
+                }
+                HostedDebugAdapter.Address address = HostedDebugAdapter.address(res);
+                if (address == null) {
+                    fail(epoch, tr("debug.error.noPort"));
+                    return;
+                }
+                // The adapter (and the program it starts) live inside that server: pin it for the session.
+                lspLease.run();
+                lspLease = lsp.retain(file);
+                DapClient c = new DapClient(sessionHost(epoch));
+                c.setPaths(DapPaths.LOCAL);
+                c.setBreakpoints(bps);
+                c.setExceptionFilters(filters);
+                if (!publishClient(epoch, c)) {
+                    c.dispose();
+                    return;
+                }
+                Map<String, Object> launch = new java.util.LinkedHashMap<>();
+                launch.put("name", address.name().isBlank() ? file.getFileName().toString() : address.name());
+                launch.put("noDebug", false);
+                io.submit(() -> c.connect(address.port(), spec.adapterId()).whenComplete((caps, e) -> {
+                    if (e != null) {
+                        fail(epoch, tr("debug.error.connectFailed", msg(e)));
+                        return;
+                    }
+                    if (!isCurrent(epoch, c)) {
+                        c.dispose();
+                        return;
+                    }
+                    c.launch(launch).whenComplete((v, le) -> {
+                        if (le != null) {
+                            fail(epoch, tr("debug.error.launchFailed", msg(le)));
+                            return;
+                        }
+                        Platform.runLater(() -> {
+                            if (isCurrent(epoch, c) && state == State.STARTING) {
+                                setState(State.RUNNING);
+                            }
+                        });
+                    });
+                }));
             });
         });
     }

@@ -49,7 +49,7 @@ public final class RunConfigDefaults {
         if (script == null
                 || !(ScriptRunCommand.PYTHON.equals(type)
                         || ScriptRunCommand.SHELL.equals(type)
-                        || ScriptRunCommand.GROOVY.equals(type))
+                        || ScriptRunCommand.isJvmScript(type))
                 || script.getFileName() == null) {
             return null;
         }

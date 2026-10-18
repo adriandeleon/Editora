@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -350,6 +351,78 @@ class JvmDebugAdapterTest {
             cont.setThreadId(stop.getThreadId());
             s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
             assertEquals(1, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+        } finally {
+            s.socket().close();
+        }
+    }
+
+    /** Scala CLI here: {@code -Deditora.test.scalaCli=<path>}, else the one {@link com.editora.run.JvmTools} finds. */
+    private static String scalaCli() {
+        String set = System.getProperty("editora.test.scalaCli", "");
+        return !set.isBlank() ? set : com.editora.run.JvmTools.locate("scala-cli");
+    }
+
+    /**
+     * A Scala file run by Scala CLI, with the agent on its command line ({@code --java-opt}): a breakpoint in a
+     * lambda binds although the file's package ({@code demo}) is not its folder, the frame reads as the source
+     * names it, and the program's output arrives. Scala CLI compiles first (and on a first run fetches the
+     * compiler), so this waits minutes, not seconds.
+     */
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES) // a first Scala CLI run downloads the compiler
+    void aScalaProgramRunByScalaCliStopsInALambdaWhereScalaCliIsInstalled(@TempDir Path dir) throws Exception {
+        String cli = scalaCli();
+        Assumptions.assumeTrue(cli != null, "Scala CLI is not installed here");
+        Path main = dir.resolve("Main.scala");
+        Files.writeString(main, """
+                package demo
+
+                @main def tally(): Unit =
+                  val doubled = List(1, 2, 3).map { n =>
+                    n * 2
+                  }
+                  println(s"total=${doubled.sum}")
+                """);
+        Session s = open();
+        try {
+            Map<String, Object> launch = new java.util.LinkedHashMap<>();
+            // --server=false: compiled in Scala CLI's own process, so the test needs no Bloop daemon.
+            launch.put(
+                    "argv",
+                    com.editora.run.JvmScriptRun.scalaCliDebug(
+                            cli, List.of("--server=false", main.toString()), List.of(), List.of()));
+            launch.put("agentArgument", com.editora.run.JvmScriptRun.AGENT_ARGUMENT);
+            launch.put("connectTimeoutMs", 600_000);
+            launch.put("cwd", dir.toString());
+            launch.put("env", Map.of("JAVA_HOME", System.getProperty("java.home")));
+            launch.put("language", "scala");
+            CompletableFuture<Void> launched = s.server().launch(launch);
+            launched.exceptionally(e -> {
+                s.client().initialized.completeExceptionally(e); // a failed start ends the wait at once
+                return null;
+            });
+            s.client().initialized.get(4, TimeUnit.MINUTES);
+            breakAt(s.server(), main, 5);
+            s.server().configurationDone(null);
+            launched.get(WAIT, TimeUnit.SECONDS);
+
+            StoppedEventArguments stop = s.client().stops.poll(WAIT, TimeUnit.SECONDS);
+            assertNotNull(stop, "the breakpoint in the lambda is hit: " + s.client().output);
+            StackFrame frame = top(s.server(), stop.getThreadId());
+            assertEquals(5, frame.getLine());
+            assertEquals(main.toString(), frame.getSource().getPath());
+            // Scala 3 names the lambda $anonfun$1, without its enclosing method.
+            assertEquals("Main { lambda }", frame.getName(), frames(s.server(), stop.getThreadId()));
+            assertEquals("1", valueOf(locals(s.server(), frame.getId()), "n"));
+
+            breakAt(s.server(), main);
+            ContinueArguments cont = new ContinueArguments();
+            cont.setThreadId(stop.getThreadId());
+            s.server().continue_(cont).get(WAIT, TimeUnit.SECONDS);
+            assertEquals(0, s.client().exited.get(WAIT, TimeUnit.SECONDS));
+            assertTrue(
+                    s.client().output.toString().contains("total=12"),
+                    s.client().output.toString());
         } finally {
             s.socket().close();
         }

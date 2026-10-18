@@ -326,6 +326,7 @@ final class LspCoordinator {
         "css",
         "kotlin",
         "groovy",
+        "scala",
         "lua",
         "dockerfile",
         "sql",
@@ -496,6 +497,7 @@ final class LspCoordinator {
         lspManager.setOnRefreshRequested(this::refreshRequested);
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
+        lspManager.setClientUi(new ServerPrompts()); // a server's questions (Metals' "Import build?") get asked
     }
 
     /**
@@ -1384,6 +1386,7 @@ final class LspCoordinator {
             case "css" -> s.isCssLspEnabled();
             case "kotlin" -> s.isKotlinLspEnabled();
             case "groovy" -> s.isGroovyLspEnabled();
+            case "scala" -> s.isScalaLspEnabled();
             case "lua" -> s.isLuaLspEnabled();
             case "dockerfile" -> s.isDockerfileLspEnabled();
             case "sql" -> s.isSqlLspEnabled();
@@ -1769,6 +1772,7 @@ final class LspCoordinator {
             case "css" -> s.getCssLspCommand();
             case "kotlin" -> s.getKotlinLspCommand();
             case "groovy" -> com.editora.lsp.JvmServerCommand.withJdk(s.getGroovyLspCommand(), s.getMavenJdkHome());
+            case "scala" -> com.editora.lsp.JvmServerCommand.withJdk(s.getScalaLspCommand(), s.getMavenJdkHome());
             case "lua" -> s.getLuaLspCommand();
             case "dockerfile" -> s.getDockerfileLspCommand();
             case "sql" -> s.getSqlLspCommand();
@@ -1816,6 +1820,7 @@ final class LspCoordinator {
             case "css" -> s.setCssLspEnabled(on);
             case "kotlin" -> s.setKotlinLspEnabled(on);
             case "groovy" -> s.setGroovyLspEnabled(on);
+            case "scala" -> s.setScalaLspEnabled(on);
             case "lua" -> s.setLuaLspEnabled(on);
             case "dockerfile" -> s.setDockerfileLspEnabled(on);
             case "sql" -> s.setSqlLspEnabled(on);
@@ -1848,6 +1853,7 @@ final class LspCoordinator {
             case "css" -> s.setCssLspCommand(command);
             case "kotlin" -> s.setKotlinLspCommand(command);
             case "groovy" -> s.setGroovyLspCommand(command);
+            case "scala" -> s.setScalaLspCommand(command);
             case "lua" -> s.setLuaLspCommand(command);
             case "dockerfile" -> s.setDockerfileLspCommand(command);
             case "sql" -> s.setSqlLspCommand(command);
@@ -2818,6 +2824,91 @@ final class LspCoordinator {
         buffer.addLanguageListener(() -> syncBufferWhenShown(buffer));
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
+    }
+
+    /**
+     * Asks the user what a language server asks ({@code window/showMessageRequest}, Metals' input box and quick
+     * pick) and carries out the editor actions it requests. Every method runs on the FX thread and returns at
+     * once; the dialog completes the answer when the user closes it.
+     */
+    private final class ServerPrompts implements com.editora.lsp.LspClientUi {
+
+        @Override
+        public java.util.concurrent.CompletableFuture<String> chooseAction(
+                String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
+            var answer = new java.util.concurrent.CompletableFuture<String>();
+            List<javafx.scene.control.ButtonType> buttons = new java.util.ArrayList<>();
+            for (String action : actions) {
+                buttons.add(
+                        new javafx.scene.control.ButtonType(action, javafx.scene.control.ButtonBar.ButtonData.OTHER));
+            }
+            buttons.add(javafx.scene.control.ButtonType.CLOSE);
+            javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
+                    alertType(type), message, buttons.toArray(javafx.scene.control.ButtonType[]::new)));
+            alert.initOwner(host.window());
+            alert.initModality(javafx.stage.Modality.NONE); // the editor stays usable while it is asked
+            alert.setTitle(serverLabel(serverId));
+            alert.setHeaderText(null);
+            alert.getDialogPane().setMinWidth(480);
+            alert.setOnHidden(e -> {
+                javafx.scene.control.ButtonType chosen = alert.getResult();
+                answer.complete(
+                        chosen == null || chosen == javafx.scene.control.ButtonType.CLOSE ? null : chosen.getText());
+            });
+            alert.show();
+            return answer;
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<String> inputBox(
+                String serverId, String prompt, String value, String placeHolder) {
+            var answer = new java.util.concurrent.CompletableFuture<String>();
+            javafx.scene.control.TextInputDialog dialog =
+                    Dialogs.styled(new javafx.scene.control.TextInputDialog(value == null ? "" : value));
+            dialog.initOwner(host.window());
+            dialog.setTitle(serverLabel(serverId));
+            dialog.setHeaderText(prompt == null || prompt.isBlank() ? null : prompt);
+            if (placeHolder != null) {
+                dialog.getEditor().setPromptText(placeHolder);
+            }
+            dialog.setOnHidden(e -> answer.complete(dialog.getResult()));
+            dialog.show();
+            return answer;
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<String> quickPick(
+                String serverId, String placeHolder, List<PickItem> items) {
+            var answer = new java.util.concurrent.CompletableFuture<String>();
+            QuickOpen<PickItem> picker = new QuickOpen<>(
+                    serverLabel(serverId),
+                    placeHolder == null || placeHolder.isBlank() ? tr("palette.setting.pick") : placeHolder,
+                    () -> items,
+                    PickItem::label,
+                    item -> item.description() == null ? "" : item.description(),
+                    chosen -> answer.complete(chosen == null ? null : chosen.id()));
+            // No preview; the cancel hook is what tells the server the user chose nothing.
+            picker.setPreview(item -> {}, () -> answer.complete(null));
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+            return answer;
+        }
+
+        @Override
+        public void openLocation(String serverId, Path file, int line, int column) {
+            ops.openAndGoto(file, line, column);
+        }
+
+        private javafx.scene.control.Alert.AlertType alertType(org.eclipse.lsp4j.MessageType type) {
+            if (type == null) {
+                return javafx.scene.control.Alert.AlertType.INFORMATION;
+            }
+            return switch (type) {
+                case Error -> javafx.scene.control.Alert.AlertType.ERROR;
+                case Warning -> javafx.scene.control.Alert.AlertType.WARNING;
+                default -> javafx.scene.control.Alert.AlertType.INFORMATION;
+            };
+        }
     }
 
     /** Palette picker over the LSP servers: toggles the chosen server's per-server enable ({@code lsp.toggleServer}). */

@@ -199,6 +199,9 @@ public final class InstallService {
             case JVM_LSP_JAR -> {
                 return installJvmLspJar(s, configDir);
             }
+            case COURSIER_LSP -> {
+                return installCoursierLsp(s, configDir);
+            }
         }
         return null;
     }
@@ -239,6 +242,8 @@ public final class InstallService {
             Path program = staged.resolve(fileName);
             if (asset.packing() == InstallCatalog.Packing.RAW) {
                 Files.write(program, data);
+            } else if (asset.packing() == InstallCatalog.Packing.GZ) {
+                Files.write(program, gunzip(data));
             } else {
                 Path unpacked = Files.createDirectory(staged.resolve(".unpacked"));
                 String suffix = asset.packing() == InstallCatalog.Packing.ZIP ? ".zip" : ".tar.gz";
@@ -310,6 +315,121 @@ public final class InstallService {
             return null;
         });
         return InstallCatalog.jvmJarCommand(dest.resolve(jar.fileName()));
+    }
+
+    /** Where coursier-resolved server recipes come from ({@link InstallCatalog#coursierLsp}); a test supplies its own. */
+    private java.util.function.Function<String, java.util.Optional<InstallCatalog.CoursierLsp>> coursierLsps =
+            InstallCatalog::coursierLsp;
+
+    /** The coursier launcher a {@link InstallCatalog.Kind#COURSIER_LSP} step downloads; a test supplies its own. */
+    private InstallCatalog.PinnedTool coursierTool = InstallCatalog.COURSIER_TOOL;
+
+    /** Test seam: a coursier "release" whose hash matches a test's own launcher, and the server it resolves. */
+    void setCoursierForTest(
+            InstallCatalog.PinnedTool tool,
+            java.util.function.Function<String, java.util.Optional<InstallCatalog.CoursierLsp>> recipes) {
+        this.coursierTool = tool;
+        this.coursierLsps = recipes;
+    }
+
+    /**
+     * Installs a server published only as Maven artifacts (Metals): downloads coursier's pinned launcher for this
+     * platform and refuses it unless its SHA-256 matches, runs {@code cs fetch <artifact>} with coursier's cache
+     * inside the staging folder, copies every jar it names into {@code <dest>/lib}, and keeps {@code cs} beside
+     * them. Returns the {@code java … -cp "<lib>/*" <mainClass>} launch command. Nothing outside the config dir
+     * is written: the cache is the staging folder's, and goes with it.
+     */
+    private String installCoursierLsp(Step s, Path configDir) throws Exception {
+        InstallCatalog.CoursierLsp server = coursierLsps.apply(s.id()).orElse(null);
+        if (server == null) {
+            throw new InstallException(s.id() + ": no recipe");
+        }
+        InstallCatalog.Platform platform = InstallCatalog.currentPlatform();
+        InstallCatalog.PinnedAsset asset = coursierTool.assetFor(platform);
+        if (asset == null) {
+            throw new InstallException(s.id() + ": coursier publishes no launcher for this OS/architecture");
+        }
+        byte[] data = download(asset.url());
+        String actual = InstallCatalog.sha256Hex(data);
+        if (!actual.equalsIgnoreCase(asset.sha256())) {
+            throw new InstallException(s.id() + ": the coursier download does not match its published checksum"
+                    + " (expected " + asset.sha256() + ", got " + actual + ") — not installed");
+        }
+        String csName = platform == InstallCatalog.Platform.WIN_X64
+                ? coursierTool.binaryName() + ".exe"
+                : coursierTool.binaryName();
+        Path dest = configDir.resolve(s.destSubpath());
+        replaceInstall(dest, staged -> {
+            Path cs = staged.resolve(csName);
+            switch (asset.packing()) {
+                case GZ -> Files.write(cs, gunzip(data));
+                case RAW -> Files.write(cs, data);
+                default -> {
+                    Path unpacked = Files.createDirectory(staged.resolve(".unpacked"));
+                    extractArchive(
+                            s, asset.packing() == InstallCatalog.Packing.ZIP ? ".zip" : ".tar.gz", data, unpacked);
+                    // Windows' zip holds cs-x86_64-pc-win32.exe: the launcher is named for its platform.
+                    Path found = findBinary(unpacked, coursierTool.binaryName(), true);
+                    if (found == null) {
+                        throw new InstallException(s.id() + ": 'cs' not found in the coursier download");
+                    }
+                    Files.copy(found, cs);
+                    deleteRecursively(unpacked);
+                }
+            }
+            makeExecutable(cs);
+            Path cache = Files.createDirectory(staged.resolve(".coursier-cache"));
+            ProcessRunner.Result fetched = ProcessRunner.run(
+                    staged,
+                    CMD_TIMEOUT,
+                    InstallCatalog.coursierFetchArgv(cs.toString(), server.artifact()),
+                    java.util.Map.of("COURSIER_CACHE", cache.toString()));
+            if (!fetched.ok()) {
+                throw new InstallException(s.id() + ": coursier could not resolve " + server.artifact() + ": "
+                        + (fetched.message().isBlank() ? "command failed" : fetched.message()));
+            }
+            Path lib = Files.createDirectory(staged.resolve("lib"));
+            int copied = copyFetchedJars(fetched.out(), lib);
+            deleteRecursively(cache);
+            if (copied == 0) {
+                throw new InstallException(s.id() + ": coursier resolved no jars for " + server.artifact());
+            }
+            return null;
+        });
+        return InstallCatalog.coursierLspCommand(dest.resolve("lib"), server);
+    }
+
+    /**
+     * Copies each jar {@code cs fetch} printed (one path a line) into {@code lib}; a second jar with a name
+     * already taken gets a numbered prefix, since the {@code lib/*} classpath needs them all. Returns how many.
+     */
+    static int copyFetchedJars(String fetchOutput, Path lib) throws IOException {
+        int copied = 0;
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (String line : fetchOutput == null ? new String[0] : fetchOutput.split("\\R")) {
+            String path = line.strip();
+            if (!path.endsWith(".jar")) {
+                continue; // coursier's progress lines go to stderr; anything else here is not a jar
+            }
+            Path jar = Path.of(path);
+            if (!Files.isRegularFile(jar)) {
+                continue;
+            }
+            String name = jar.getFileName().toString();
+            String target = name;
+            for (int i = 2; !names.add(target); i++) {
+                target = i + "-" + name;
+            }
+            Files.copy(jar, lib.resolve(target));
+            copied++;
+        }
+        return copied;
+    }
+
+    private static byte[] gunzip(byte[] data) throws IOException {
+        try (var in = new java.util.zip.GZIPInputStream(new ByteArrayInputStream(data))) {
+            return in.readAllBytes();
+        }
     }
 
     private static boolean hasTopLevelJar(Path dir) throws IOException {

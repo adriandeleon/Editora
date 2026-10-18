@@ -132,7 +132,7 @@ public final class TestRun {
                 }
                 yield List.copyOf(args);
             }
-            case NPM -> List.of(); // no universal per-test filter — caller does a full rerun
+            case NPM, SBT, MILL, SCALA_CLI -> List.of(); // no per-test filter here — caller does a full rerun
         };
     }
 }

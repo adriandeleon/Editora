@@ -212,7 +212,12 @@ class SourceScanEdgeCasesTest {
         assertEquals(List.of("run", "test"), TestRunRecognizer.defaultTestTask(BuildTool.NPM));
         assertEquals(List.of("test", "./..."), TestRunRecognizer.defaultTestTask(BuildTool.GO));
         for (BuildTool tool : BuildTool.values()) {
-            assertTrue(TestRunRecognizer.isTestRun(tool, TestRunRecognizer.defaultTestTask(tool)), tool.toString());
+            // sbt, Mill and Scala CLI tests stream to their console: Test Results does not read them yet.
+            boolean readsResults = tool != BuildTool.SBT && tool != BuildTool.MILL && tool != BuildTool.SCALA_CLI;
+            assertEquals(
+                    readsResults,
+                    TestRunRecognizer.isTestRun(tool, TestRunRecognizer.defaultTestTask(tool)),
+                    tool.toString());
         }
     }
 

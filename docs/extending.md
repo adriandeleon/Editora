@@ -71,7 +71,8 @@ not new logic:
    `settings-controls.properties` rows, a schema bump with an additive migration, and the i18n keys in
    all six catalogs.
 5. An installer, if it has one: `InstallCatalog.serverInstall` (`ARCHIVE` for a per-OS binary,
-   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle), and the
+   `JVM_LSP_JAR` for one pinned jar run with `java -jar`, `JVM_LSP_ZIP` for a jar bundle, `COURSIER_LSP` for a
+   server published only as Maven artifacts — a pinned coursier resolves it, as for Metals), and the
    persist case in `InstallCoordinator.applyServerCommand`. A server run by `java` gets the Settings JDK
    through `JvmServerCommand.withJdk`.
 
@@ -83,7 +84,7 @@ signature change. If the language has no bundled grammar, also do
 
 Mirrors the LSP recipe. The language→adapter spec is
 [`dap/DapServerRegistry.java`](../src/main/java/com/editora/dap/DapServerRegistry.java)
-(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM`), `languageIdsForDebug()` gates the breakpoint gutter +
+(`Kind` = `JDTLS` / `STDIO` / `SOCKET` / `JVM` / `LANGUAGE_SERVER`), `languageIdsForDebug()` gates the breakpoint gutter +
 debug commands, and the Settings → Debugging page is data-driven over
 `SettingsWindow.debugAdapterUis()`. Java rides the jdtls session; Python (debugpy) is stdio;
 JavaScript (vscode-js-debug) is a socket. External adapters are never bundled — they're located by
@@ -92,7 +93,17 @@ JavaScript (vscode-js-debug) is a socket. External adapters are never bundled �
 A JVM language other than Java (Groovy today) uses `Kind.JVM`: Editora's own JDI adapter
 ([ADR 0016](decisions/0016-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
 the variable its launcher passes JVM options in), a `run/JvmTools` home variable, a `DapServerRegistry`
-`Def`, its `RunScan` branch, and its runtime-internal packages in `JvmSourceMap.stepFilters`.
+`Def`, its `RunScan` branch, and its runtime-internal packages in `JvmSourceMap.stepFilters`. A tool that takes
+JVM options on its command line rather than in a variable (Scala CLI's `--java-opt`) answers
+`JvmScriptRun.takesJvmOptionsInArgv` and puts `JvmScriptRun.AGENT_ARGUMENT` where the agent goes; a language
+whose packages need not follow folders says so in `JvmSourceMap.packagesFollowFolders`, and its breakpoints bind
+by file name.
+
+An adapter that the language's **server** starts on request is `Kind.LANGUAGE_SERVER`: the start command and its
+arguments go in [`dap/HostedDebugAdapter`](../src/main/java/com/editora/dap/HostedDebugAdapter.java) (Metals'
+`debug-adapter-start`), which also reads the reply's socket; `DapManager.startHosted` does the rest. A file the
+server does not debug can fall back to another kind (`DapServerRegistry.fallbackKind`). jdtls keeps its own
+`JDTLS` path, since Java's launch is resolved by the client first.
 
 ## Add a language / TextMate grammar
 

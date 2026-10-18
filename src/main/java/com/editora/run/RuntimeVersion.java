@@ -30,7 +30,8 @@ public record RuntimeVersion(String label, String detail) {
         ZSH("--version"),
         FISH("--version"),
         MAKE("--version"),
-        GROOVY("--version");
+        GROOVY("--version"),
+        SCALA("--version");
 
         final List<String> versionArgs;
 
@@ -59,6 +60,12 @@ public record RuntimeVersion(String label, String detail) {
     /** {@code Groovy Version: 5.1.3 JVM: 25.0.4 Vendor: Eclipse Adoptium OS: Linux} → 5.1.3 on Java 25.0.4. */
     private static final Pattern GROOVY_VERSION =
             Pattern.compile("^Groovy Version: (\\d+\\.\\d+(?:\\.\\d+)?\\S*)(?:\\s+JVM: (\\S+))?");
+
+    private static final Pattern SCALA_CLI_VERSION =
+            Pattern.compile("^Scala CLI version:? (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
+    /** {@code Scala version (default): 3.9.0}, or an old runner's {@code Scala code runner version 2.13.16 -- …}. */
+    private static final Pattern SCALA_DEFAULT_VERSION =
+            Pattern.compile("^Scala (?:version \\(default\\):|code runner version) (\\d+\\.\\d+(?:\\.\\d+)?\\S*)");
     /** The distribution in {@code java.vendor.version}: "Temurin-25.0.3+9" → "Temurin", "Zulu21.38+21-CA" → "Zulu". */
     private static final Pattern DISTRIBUTION = Pattern.compile("^([A-Za-z][A-Za-z ]*?)[\\s-]*(?:\\d.*)?$");
 
@@ -89,6 +96,7 @@ public record RuntimeVersion(String label, String detail) {
             case "fish" -> kind = Kind.FISH;
             case "make", "gmake" -> kind = Kind.MAKE;
             case "groovy" -> kind = Kind.GROOVY;
+            case "scala-cli", "scala" -> kind = Kind.SCALA;
             default -> kind = PYTHON_NAME.matcher(name).matches() ? Kind.PYTHON : null;
         }
         if (kind == null) {
@@ -117,6 +125,7 @@ public record RuntimeVersion(String label, String detail) {
             case FISH -> simple(output, FISH_VERSION, "fish ", probe.argv().get(0));
             case MAKE -> simple(output, MAKE_VERSION, "GNU Make ", probe.argv().get(0));
             case GROOVY -> parseGroovy(output, probe.argv().get(0));
+            case SCALA -> parseScala(output, probe.argv().get(0));
         };
     }
 
@@ -194,6 +203,31 @@ public record RuntimeVersion(String label, String detail) {
             }
         }
         return null;
+    }
+
+    /**
+     * {@code Scala CLI 1.18.0 (Scala 3.9.0)}: Scala CLI's own version and the Scala it compiles with by default
+     * ({@code Scala CLI version: 1.18.0} / {@code Scala version (default): 3.9.0}); an old {@code scala} runner's
+     * {@code Scala code runner version 2.13.16 …} reads {@code Scala 2.13.16}.
+     */
+    private static RuntimeVersion parseScala(String output, String executable) {
+        String cli = null;
+        String scala = null;
+        for (String line : output.split("\\R")) {
+            Matcher m = SCALA_CLI_VERSION.matcher(line.strip());
+            if (m.find()) {
+                cli = m.group(1);
+                continue;
+            }
+            m = SCALA_DEFAULT_VERSION.matcher(line.strip());
+            if (m.find()) {
+                scala = m.group(1);
+            }
+        }
+        String label = cli != null
+                ? "Scala CLI " + cli + (scala == null ? "" : " (Scala " + scala + ")")
+                : scala != null ? "Scala " + scala : null;
+        return label == null ? null : new RuntimeVersion(label, detail(bannerLines(output), executable));
     }
 
     /** A runtime whose first matching line holds its version; the tooltip names the executable asked. */

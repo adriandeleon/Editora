@@ -3462,6 +3462,7 @@ public class EditorBuffer implements TabContent {
             "css",
             "kotlin",
             "groovy",
+            "scala",
             "lua",
             "dockerfile",
             "sql",

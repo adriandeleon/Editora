@@ -46,7 +46,9 @@ It ships **twenty-three** general-purpose servers (plus the Maven-aware `pom.xml
 | `astro` | `astro-ls --stdio` | `astro.config.mjs`, `astro.config.ts`, `package.json`, `.git` |
 
 The rest cover XML (lemminx), JSON, Bash, YAML, PHP, Ruby, HTML, CSS, Kotlin, Groovy (gvy's `gls` jar, pinned,
-run with `java -jar` on the Settings JDK; CodeNarc style rules off), Lua, Dockerfile, SQL, Terraform, TOML, C#,
+run with `java -jar` on the Settings JDK; CodeNarc style rules off), Scala (Metals 1.6.9, resolved by a pinned
+coursier into `plugins/lsp/scala/lib` and run with `java … -cp "lib/*" scala.meta.metals.Main` on the Settings JDK),
+Lua, Dockerfile, SQL, Terraform, TOML, C#,
 Typst, and Astro. Commands are user-configurable (Settings) and **never bundled** — servers
 are auto-detected on the augmented PATH or installed in-app.
 
@@ -510,13 +512,13 @@ the child env. The result is cached after the first call.
 
 ## DAP
 
-### Three transports
+### Five transports
 
 Editora debugs Java, Python, and JavaScript (Node), off by default
 (`Settings.debugSupport`). [`dap/DapServerRegistry`](../../src/main/java/com/editora/dap/DapServerRegistry.java)
 is the pure language → adapter spec (a `Kind` transport, the DAP `launch` type, the `initialize`
 adapter id, and the default interpreter + adapter args). `languageIdsForDebug()` =
-`{java, python, javascript, groovy}`.
+`{java, python, javascript, groovy, scala}`.
 
 | Language | `Kind` | How |
 | --- | --- | --- |
@@ -524,6 +526,7 @@ adapter id, and the default interpreter + adapter args). `languageIdsForDebug()`
 | `python` | `STDIO` | `<python> -m debugpy.adapter`; `DapClient.connectStdio(proc, "python")` wires DAP to the process's stdin/stdout. |
 | `javascript` | `SOCKET` | `node <dapDebugServer.js> <port>`; `DapClient.connect(port, "pwa-node")`. |
 | `groovy` | `JVM` | Editora's own JDI adapter (`dap/jvm`, [ADR 0016](../decisions/0016-jvm-debug-adapter.md)), served in-process on a loopback port; `DapClient.connect(port, "editora-jvm")`. The program is `groovy <file>` started through `runInTerminal`, with the JDWP agent (`server=n`, connecting back) in `JAVA_OPTS`. Breakpoints bind by source name. |
+| `scala` | `LANGUAGE_SERVER` | An adapter the language server starts on request ([`HostedDebugAdapter`](../../src/main/java/com/editora/dap/HostedDebugAdapter.java)): Metals' `workspace/executeCommand debug-adapter-start` with `{path, runType: "run", args, jvmOptions, env}` compiles the build target and answers `{name, uri: "tcp://host:port"}`; `DapClient.connect(port, "scala")`, then `launch {name, noDebug: false}`. Metals' adapter runs the program and reports its output. Only for a file of an sbt, Mill, Gradle or Maven build (`ScalaRun.ownerOf`); a script or a Scala CLI project falls back (`DapServerRegistry.fallbackKind`) to `JVM`: `scala-cli run --java-opt <agent> <file> -- args`, the agent in place of `JvmScriptRun.AGENT_ARGUMENT`, and breakpoints bound by file name (Scala packages need not follow folders). |
 
 [`dap/DapClient`](../../src/main/java/com/editora/dap/DapClient.java) (mirrors `LanguageServerSession`)
 runs the handshake over an lsp4j.debug `DSPLauncher`: `initialize` → on the `initialized` event send
