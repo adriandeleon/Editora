@@ -250,10 +250,13 @@ The release and packaging scripts have their own tests — Python `unittest` fil
 run by the `scripts` CI job (not by Maven):
 
 ```
-for d in scripts scripts/release scripts/packaging scripts/native; do
+for d in scripts scripts/release scripts/packaging; do
   python3 -m unittest discover -s "$d" -p 'test_*.py'
 done
 ```
+
+The native-image scripts under `scripts/nativeimage/` are Java; their tests run with
+`java scripts/lib/RunTests.java nativeimage`.
 
 They run the real shell scripts against throwaway directories: the tarball installer in user mode and,
 through `--destdir`, in system mode; the `.deb` `postinst`/`postrm` against a scratch root
