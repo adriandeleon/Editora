@@ -703,6 +703,13 @@ final class RunCoordinator {
         });
     }
 
+    /** Debugs {@code cfg} on its deployment (Debug's entry): refused while something already runs, as Run is. */
+    void debugDeployedConfig(RunConfiguration cfg) {
+        if (beginRunRequest()) {
+            runDeployedConfig(cfg, true);
+        }
+    }
+
     /** Saves every open, edited file of the project at {@code root}; false when a save was refused. */
     private boolean saveProjectBuffers(Path root) {
         List<EditorBuffer> dirty = new java.util.ArrayList<>();

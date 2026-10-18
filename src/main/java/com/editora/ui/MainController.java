@@ -2511,7 +2511,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void debugDeployed(com.editora.config.RunConfiguration cfg) {
-                        runCoordinator.runDeployedConfig(cfg, true);
+                        runCoordinator.debugDeployedConfig(cfg);
                     }
 
                     @Override

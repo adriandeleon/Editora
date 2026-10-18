@@ -171,7 +171,8 @@ final class RunConfigurationCoordinator {
      * No i18n: a class name and a script path are technical identifiers, not prose.
      */
     static String runConfigDetail(com.editora.config.RunConfiguration cfg) {
-        return cfg.isJava() ? cfg.mainClass() : cfg.target();
+        String what = cfg.isJava() ? cfg.mainClass() : cfg.target();
+        return cfg.isDeployed() ? tr("run.config.detailDeployed", what, cfg.deployment()) : what;
     }
 
     /** {@code run.config}: pick a saved configuration and run it. */
