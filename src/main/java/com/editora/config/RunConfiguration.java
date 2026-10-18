@@ -23,6 +23,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * Run button a duplicate of Debug and left no way to plain-run such an entry at all; a stored
  * {@code "kind"} is now ignored on load (see {@code JsonIgnoreProperties}) and dropped on the next write.
  *
+ * <p>{@code runInTerminal} runs the program in a Terminal tab (a real terminal: programs that draw on the screen
+ * or read single keys) instead of the Run console. The before-launch step still runs in the console.
+ *
  * <p>{@code beforeLaunch} is an optional command line run first — a build, a codegen step — in the same
  * working directory; a non-zero exit aborts the launch, so a stale binary is never run by accident. Both the
  * run and the debug path honour it.
@@ -44,7 +47,8 @@ public record RunConfiguration(
         String beforeLaunch,
         String jdkHome,
         String interpreter,
-        String interpreterOptions) {
+        String interpreterOptions,
+        boolean runInTerminal) {
 
     /** Prefix of the synthetic per-configuration run commands, so stale ones can be found and dropped. */
     public static final String COMMAND_PREFIX = "run.config.";
@@ -72,6 +76,38 @@ public record RunConfiguration(
         jdkHome = jdkHome == null ? "" : jdkHome;
         interpreter = interpreter == null ? "" : interpreter;
         interpreterOptions = interpreterOptions == null ? "" : interpreterOptions;
+    }
+
+    /** A configuration that runs in the Run console — every shape saved before Run in Terminal existed. */
+    public RunConfiguration(
+            String name,
+            String type,
+            String target,
+            String mainClass,
+            String projectName,
+            String args,
+            String vmArgs,
+            String workingDir,
+            String env,
+            String beforeLaunch,
+            String jdkHome,
+            String interpreter,
+            String interpreterOptions) {
+        this(
+                name,
+                type,
+                target,
+                mainClass,
+                projectName,
+                args,
+                vmArgs,
+                workingDir,
+                env,
+                beforeLaunch,
+                jdkHome,
+                interpreter,
+                interpreterOptions,
+                false);
     }
 
     /** A configuration with no interpreter override — every shape saved before shell interpreters existed. */

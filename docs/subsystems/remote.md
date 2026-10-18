@@ -290,7 +290,9 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   It hangs its shell up through the target on close, because a container keeps what an `exec` client left
   ([terminal.md](terminal.md#terminals-in-a-container-or-a-wsl-distribution)). Shell integration writes its bash
   and zsh scripts to the target's cache once per version, and closing a busy remote shell asks first, from `ps`
-  on the target ([terminal.md](terminal.md#shell-integration)).
+  on the target ([terminal.md](terminal.md#shell-integration)). A run configuration with Run in a Terminal tab,
+  and a debugged program with `debugProgramInTerminal`, run in a terminal on the target too
+  (`TerminalSpec.program`, through the account's login shell; [terminal.md](terminal.md#ide-features)).
 - **Git:** status, the gutter diff, tab colouring, log, blame and blob lookups, and every command that changes
   a repository (stage, commit, checkout, stash, merge, rebase, fetch / pull / push, hunk staging). `GitService`
   keeps git's availability and version per host (`gitAvailable(Path)`), uses the host's `git` (or its
@@ -431,7 +433,8 @@ checks. A feature that only works on this machine keeps gating on `Vfs.isLocal`.
   is tunnelled (`DapManager.connectJava`). jdtls's main class is matched to the file by host path, the
   working directory is named as the host names it, and the JDK is the one the host's jdtls resolves (a JDK
   setting on this machine is not used). With the program console on, `runInTerminal` starts the debuggee
-  through `RunService` in the host folder the adapter names. Attach and Debug Test go through the host's
+  through `RunService` in the host folder the adapter names, or in a Terminal tab on the host with
+  `debugProgramInTerminal`. Attach and Debug Test go through the host's
   jdtls, so `localhost` there is the host. A saved configuration is debugged on the host too, with its
   folder there and none of this machine's JDK environment. A loose file (no Maven or Gradle project) is
   compiled for the debugger on its host, with the host's `javac` (beside its `jdk.home`, else on its `PATH`),

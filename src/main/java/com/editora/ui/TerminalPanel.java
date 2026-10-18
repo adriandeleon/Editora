@@ -30,6 +30,7 @@ import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
 import com.editora.terminal.LinkActions;
+import com.editora.terminal.ProgramRun;
 import com.editora.terminal.RunningProgram;
 import com.editora.terminal.SyntaxColors;
 import com.editora.terminal.TerminalConnector;
@@ -63,7 +64,20 @@ final class TerminalPanel extends StackPane {
             boolean bell,
             String shell,
             List<String> ideCommands,
-            boolean confirmClose) {
+            boolean confirmClose,
+            boolean typeAhead) {
+
+        Config(
+                String fontFamily,
+                double fontSize,
+                int scrollback,
+                TerminalCursor cursor,
+                boolean bell,
+                String shell,
+                List<String> ideCommands,
+                boolean confirmClose) {
+            this(fontFamily, fontSize, scrollback, cursor, bell, shell, ideCommands, confirmClose, true);
+        }
 
         static Config defaults() {
             return new Config("", 13, 5000, TerminalCursor.BLOCK, true, "", TerminalKeys.DEFAULT_IDE_COMMANDS, true);
@@ -84,6 +98,7 @@ final class TerminalPanel extends StackPane {
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
 
     private final TabPane tabs = new TabPane();
+    private final TerminalFindBar findBar = new TerminalFindBar();
     private final Button newTab = new Button();
     private final Button emptyStart = new Button(tr("terminal.new"));
     private final Map<Tab, TerminalView> views = new LinkedHashMap<>();
@@ -141,11 +156,22 @@ final class TerminalPanel extends StackPane {
         // otherwise encode Ctrl+Shift+C as ^C.
         addEventFilter(KeyEvent.KEY_PRESSED, this::onClipboardKey);
 
-        tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> focusActive());
+        tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (findBar.isShowing()) {
+                placeFindBar(now);
+            }
+            focusActive();
+        });
+        findBar.setOnClose(this::focusActive);
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
             while (change.next()) {
                 for (Tab removed : change.getRemoved()) {
+                    java.util.function.IntConsumer killed = programExits.remove(removed);
+                    if (killed != null) {
+                        killed.accept(-1); // its tab closed under it: the program ends with it
+                    }
                     dirs.remove(removed);
+                    programNames.remove(removed);
                     TerminalView view = views.remove(removed);
                     if (view != null) {
                         view.close();
@@ -250,6 +276,119 @@ final class TerminalPanel extends StackPane {
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
         focusActive();
+    }
+
+    /** Program tabs, with whom to tell when the program ends; told once. */
+    private final Map<Tab, java.util.function.IntConsumer> programExits = new LinkedHashMap<>();
+
+    /** What a program tab runs, by name, for the question its close asks while it runs. */
+    private final Map<Tab, String> programNames = new LinkedHashMap<>();
+
+    /**
+     * Runs a program in a new tab titled {@code title}: {@code connector} opens it at the tab's size. When it ends
+     * the tab keeps its text under a banner with the exit code, which {@code onExit} receives on the FX thread (-1
+     * when it was ended without one: its tab closed, its connection lost). Throws when it cannot start; no tab
+     * is left then.
+     */
+    ProgramRun runProgram(
+            String title, Path dir, TerminalConnector.Factory connector, java.util.function.IntConsumer onExit)
+            throws IOException {
+        return runProgram(title, title, dir, connector, onExit);
+    }
+
+    /** As above; {@code program} names what runs (its executable), for the question closing its tab asks. */
+    ProgramRun runProgram(
+            String title,
+            String program,
+            Path dir,
+            TerminalConnector.Factory connector,
+            java.util.function.IntConsumer onExit)
+            throws IOException {
+        TerminalView view = new TerminalView(config.fontSize());
+        configure(view);
+        view.setPalette(palette);
+        view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
+        Tab tab = new Tab(title);
+        StackPane content = new StackPane(view);
+        content.getStyleClass().add("terminal-content");
+        content.setStyle(groundStyle());
+        tab.setContent(content);
+        Label target = new Label(targetLabel.apply(dir));
+        target.getStyleClass().add("terminal-target-chip");
+        tab.setGraphic(target);
+        tab.setTooltip(new Tooltip(title));
+        tab.setOnCloseRequest(e -> {
+            if (!mayClose(tab)) {
+                e.consume();
+            }
+        });
+        view.setOnSessionEnded(() -> programEnded(tab, view));
+        programExits.put(tab, onExit == null ? code -> {} : onExit);
+        try {
+            view.start(connector);
+        } catch (IOException | RuntimeException e) {
+            programExits.remove(tab);
+            view.close();
+            throw e;
+        }
+        dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
+        views.put(tab, view);
+        programNames.put(tab, program == null || program.isBlank() ? title : program);
+        tabs.getTabs().add(tab);
+        tabs.getSelectionModel().select(tab);
+        focusActive();
+        return new ProgramRun() {
+            @Override
+            public long pid() {
+                var session = view.getSession();
+                if (session == null) return -1;
+                return session.pid() > 0 ? session.pid() : session.remotePid();
+            }
+
+            @Override
+            public boolean isRunning() {
+                return programExits.containsKey(tab);
+            }
+
+            @Override
+            public void stop() {
+                if (view.getSession() != null) view.getSession().terminate();
+            }
+        };
+    }
+
+    /** A program tab's program ended: the tab stays, saying how, and its starter is told the exit code. */
+    private void programEnded(Tab tab, TerminalView view) {
+        java.util.function.IntConsumer onExit = programExits.remove(tab);
+        if (onExit == null || views.get(tab) != view) {
+            return;
+        }
+        var session = view.getSession();
+        Integer code = session == null ? null : session.exitCode();
+        boolean lost = session != null && session.lostConnection();
+        String text = lost
+                ? tr("terminal.connectionLost")
+                : code == null ? tr("terminal.program.ended") : tr("run.exited", code);
+        Label message = new Label(text);
+        HBox banner = new HBox(10, message);
+        banner.getStyleClass().add("terminal-exit-banner");
+        banner.setAlignment(Pos.CENTER_LEFT);
+        banner.setMaxHeight(Region.USE_PREF_SIZE);
+        banner.setMaxWidth(Region.USE_PREF_SIZE);
+        StackPane.setAlignment(banner, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(banner, new javafx.geometry.Insets(0, 18, 6, 0));
+        ((StackPane) tab.getContent()).getChildren().add(banner);
+        onExit.accept(lost || code == null ? -1 : code);
+    }
+
+    /** The banner a program tab shows once its program ended, or null; for tests. */
+    String exitBanner(Tab tab) {
+        return ((StackPane) tab.getContent())
+                .getChildren().stream()
+                        .filter(n -> n.getStyleClass().contains("terminal-exit-banner"))
+                        .map(n -> ((Label) ((HBox) n).getChildren().getFirst()).getText())
+                        .findFirst()
+                        .orElse(null);
     }
 
     /**
@@ -403,6 +542,7 @@ final class TerminalPanel extends StackPane {
         view.setFontSize(config.fontSize());
         view.setPreferredCursor(config.cursor());
         view.setBellEnabled(config.bell());
+        view.setTypeAhead(config.typeAhead());
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);
@@ -413,6 +553,11 @@ final class TerminalPanel extends StackPane {
         TerminalView view = views.get(tab);
         if (view == null || !config.confirmClose() || view.getSession() == null) {
             return true;
+        }
+        if (programNames.containsKey(tab)) {
+            // A program tab: its program is what closing ends, while it runs; once it ended there is nothing to ask.
+            return !programExits.containsKey(tab)
+                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))));
         }
         long pid = view.getSession().pid();
         long remote = view.getSession().remotePid();
@@ -440,6 +585,9 @@ final class TerminalPanel extends StackPane {
         } else if (TerminalKeys.isPaste(e, MAC)) {
             view.paste();
             e.consume();
+        } else if (TerminalKeys.isFind(e, MAC)) {
+            find();
+            e.consume();
         } else if (TerminalKeys.isPreviousPrompt(e, MAC)) {
             view.previousPrompt();
             e.consume();
@@ -447,6 +595,37 @@ final class TerminalPanel extends StackPane {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** Opens the find bar over the selected tab, seeded with a one-line selection. */
+    void find() {
+        TerminalView view = activeView();
+        if (view == null) {
+            return;
+        }
+        placeFindBar(activeTab());
+        findBar.open(view, view.selectedText());
+    }
+
+    TerminalFindBar findBar() {
+        return findBar;
+    }
+
+    /** Moves the find bar into {@code tab}'s content and points it at that tab's terminal. */
+    private void placeFindBar(Tab tab) {
+        if (findBar.getParent() instanceof StackPane old) {
+            old.getChildren().remove(findBar);
+        }
+        TerminalView view = tab == null ? null : views.get(tab);
+        if (view == null) {
+            findBar.close();
+            return;
+        }
+        StackPane content = (StackPane) tab.getContent();
+        StackPane.setAlignment(findBar, Pos.TOP_RIGHT);
+        StackPane.setMargin(findBar, new javafx.geometry.Insets(6, 18, 0, 0));
+        content.getChildren().add(findBar);
+        findBar.bindTo(view);
     }
 
     private void updateEmpty() {

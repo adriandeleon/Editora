@@ -3,7 +3,8 @@
 Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
 runs shells where a project's commands run: this machine, an SSH host, a dev container or a WSL distribution.
 Open Terminal Here opens one, links in the output open in the editor, and shell integration reports the
-shell's folder and its prompts.
+shell's folder and its prompts. Scrollback search, OSC 8 links and type-ahead work in every tab, and Run and
+Debug can run a program in a tab instead of their consoles.
 
 ## Terminals on an SSH host
 
@@ -127,6 +128,65 @@ VS Code, iTerm2 and WezTerm shells do.
   through the host's cache, OSC 7 and 133 from the host's bash or zsh, and the close check seeing a `sleep`
   (passes against OpenSSH 10.0; skipped for an account with another shell).
 
+## IDE features
+
+- **Find** (`terminal.find`, the menu's Find…, Ctrl+Shift+F or Cmd+F): `TerminalFindBar` sits over the selected
+  tab's content, top right, and follows the selection to another tab. `TerminalSearch` (pure) finds every hit in
+  history and screen, one row at a time, up to 1,000; `TerminalView.search` paints them in a wash of the
+  palette's yellow, stronger on the current one, which starts at the latest hit at or above the bottom of the
+  view. Enter steps up (older output), Shift+Enter down, both wrap; Escape closes and gives the keys back. Hits
+  shift with their text as lines scroll into history, like the prompt marks. Output that arrives while the bar
+  is open marks the search stale, and the next step finds again from the current hit.
+- **OSC 8 links**: `TerminalSession` gives JediTerm `Osc8Links.filter()`. JediTerm keeps what it returns in the
+  style of every cell the program writes until the closing sequence, so the URI is in the cells. `linkAt`
+  reads the cell under the pointer before scanning the text (`osc8At`), and the run of cells with the same
+  target is the link. Only http, https, ftp, mailto and file are links. A link whose text is not its address
+  shows the address in a tip while hovered with the modifier. A remote shell's `file://` goes through the tab's
+  path mapping.
+- **Type-ahead** (`terminalTypeAhead`, on): JediTerm's `TerminalTypeAheadManager` predicts into
+  `TypeAheadOverlay`, our model. JediTerm's own model writes predictions into a package-private field only its
+  Swing renderer reads, so ours keeps the predicted text of the cursor's row, and the view paints it from the
+  first differing cell in ANSI bright black, with the cursor where the prediction puts it. The data stream
+  calls `onTerminalStateChanged` after each chunk, and `JediTermDebouncerImpl` clears stale predictions. The
+  manager predicts only once two echoes took 100 ms or more, and stops when they get fast, so local shells
+  never show a prediction. Nothing is predicted on the alternate screen.
+- **Programs in a tab**: `TerminalCoordinator.runProgram(title, dir, argv, env, onExit)` opens a tab running a
+  program instead of a shell, where `dir`'s commands run.
+  - Locally it uses `LocalShell.startProgram` (the user's environment plus `env`, a null value unsetting).
+  - On a target it uses `TerminalSpec.program`. Its script (`PosixShell.programScript`) marks the pid, sets
+    the variables and runs the program through the account's login shell, with `exec` all the way down, so the
+    marked pid is the program's. fish and csh are passed over for `/bin/sh`.
+  - When the program ends the tab stays, with a corner chip giving the exit code (`run.exited`), and `onExit`
+    gets it: -1 when the tab was closed under the program or the connection went.
+  - `ProgramRun.stop` ends the program and keeps the tab.
+  - Closing the tab while its program runs asks first: the busy-shell question, naming the program's
+    executable, under the same `terminalConfirmClose` setting. An ended program's tab closes without asking.
+- **Run in a Terminal tab** (a run configuration's Console option, `RunConfiguration.runInTerminal`, workspace
+  schema 21): `RunCoordinator.runConfig` marks the request, and `streamRun`, where every type's launch ends,
+  sends the command to `runProgram` instead of `RunService`.
+  - The before-launch step still runs in the console.
+  - The `read -p` shim's variables are dropped, since a terminal is a tty.
+  - The status line gives the exit code.
+  - Rerun is left unavailable rather than replaying an older console run.
+- **The debugged program in a tab** (`debugProgramInTerminal`, off; needs the program console): `DebugCoordinator`
+  gives `DapManager` a `ProgramTerminal` (the window's `runProgram`), and `Debuggee` then starts the adapter's
+  `runInTerminal` command there, untouched, instead of through `RunService`.
+  - The tab is "Debug: <file>".
+  - The Debug console offers no input.
+  - The program's exit ends the session, and Stop ends the program.
+  - The reply names no pid while a remote program's pid line has not arrived (rather than -1).
+- **Tests:**
+  - `TerminalSearchTest`, plus `TerminalViewFxTest` (search through history and its shift; type-ahead over a
+    slow, fast or disabled link) and `TerminalPanelFxTest` (the find bar).
+  - OSC 8: `Osc8LinksTest` and `TerminalPanelFxTest`'s OSC 8 test, which covers the target vs the text, the
+    scheme filter, `file://` and the tip. Without the filter it fails.
+  - Program tabs: `TerminalPanelFxTest` (exit chip and code, close, Stop, a start failure), `LocalShellTest`
+    (a program on a PTY), `PosixShellTest` (the program script run with `/bin/sh`: the pid kept, env set and
+    unset, arguments whole, the exit code).
+  - Run and Debug: `RunCoordinatorFlowsFxTest`, `RunConfigurationsWindowFxTest`, `DebugProgramConsoleFxTest`
+    (two cases).
+  - `RealSshdProbeFxTest`'s program step: a tty, its variables and exit code 7 from a real OpenSSH host.
+
 ## Keys
 
 A focused terminal owns the keyboard. `TerminalPanel` sets `KeyDispatcher.SHELL_KEYS`, a predicate that says
@@ -137,7 +197,8 @@ word, Escape is vim's, and Emacs's C-x is the shell's.
 - Through by default: `tool.*`, `palette.show`, `search.everywhere`, `terminal.*` (Settings → Terminal →
   Commands that reach Editora; `Settings.DEFAULT_TERMINAL_IDE_COMMANDS`, kept equal to
   `TerminalKeys.DEFAULT_IDE_COMMANDS` by a test). On macOS every Cmd chord reaches Editora too.
-- Prompt jumps (Ctrl+Shift+Up/Down, Cmd+Up/Down on macOS) are the terminal's own too, never Editora's.
+- Prompt jumps (Ctrl+Shift+Up/Down, Cmd+Up/Down on macOS) and Find (Ctrl+Shift+F, Cmd+F) are the terminal's own
+  too, never Editora's.
 - Copy and Paste are the terminal's own: Ctrl+Shift+C/V, Cmd+C/V on macOS. A filter on the panel runs before
   the view's, which would otherwise encode Ctrl+Shift+C as ^C.
 - Bindings: `tool.terminal` is Alt+F12 (IntelliJ) and Ctrl+` (VS Code, CUA, Sublime); `terminal.new` is
@@ -149,7 +210,8 @@ Settings → Terminal (Languages & Tools), schema 130: `terminalShell` (blank = 
 `terminalFontSize` (0 = the editor's size; the face is always the editor's), `terminalCursor`, `terminalBell`,
 `terminalScrollback`, `terminalIdeCommands`, `terminalConfirmClose`. Font, cursor, bell and the key list apply
 to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds `terminalUseExternal`; 132
-adds `terminalShellIntegration`, which applies from the next tab.
+adds `terminalShellIntegration`, which applies from the next tab; 133 adds `terminalTypeAhead` (applies at
+once) and Debug's `debugProgramInTerminal`.
 
 ## Where the code came from
 
@@ -166,7 +228,8 @@ Termina change, diff Termina from `caebc9f` and update this commit here.
 | `TerminalPalettes`, `SyntaxColors` (new) | `ui/Theme` | Derives the 16 ANSI colours from an editor theme's token colours (see below) instead of four fixed themes. |
 | `FxTerminalDisplay`, `TerminalTitle` | `ui/…` | An untitled terminal reports `""`, and the window shows its own label. |
 | `KeyTrace` | `ui/KeyTrace` | Property `-Deditora.terminal.keyTrace`, logger `com.editora.terminal.keys`. |
-| `KeyEncoding`, `MouseEncoding`, `CellWidth`, `ColumnMap`, `RunColumns`, `ScrollBarModel`, `TerminalPalette`, `Link*`, `ProcessCwd`, `CwdWatcher`, `TerminalExecutors`, `DisabledTypeAhead` | same names | Package only. |
+| `KeyEncoding`, `MouseEncoding`, `CellWidth`, `ColumnMap`, `RunColumns`, `ScrollBarModel`, `TerminalPalette`, `Link*`, `ProcessCwd`, `CwdWatcher`, `TerminalExecutors` | same names | Package only. |
+| `TypeAheadOverlay` (new) | `DisabledTypeAhead` | A working type-ahead model in place of Termina's switched-off one. |
 
 Termina's window, tabs, settings, profiles, command palette, update check, CLI and `DevCapture` are not
 ported; Editora has its own. The tests came with the code. `TerminalViewFxTest` is new: it drives the view
@@ -206,7 +269,11 @@ terminal as it does into the editor.
 - Local shell cwd tracking (`ProcessCwd`) works on Linux (`/proc`) and macOS (`proc_pidinfo` via JNA), not
   Windows. A shell with integration reports its own directory (OSC 7), which wins over the pid's.
 - A remote terminal opens on the FX thread (as since SSH terminals came in), and the first one on a target also
-  writes the integration scripts there: a few SFTP writes, or one `exec` per file in a container.
+  writes the integration scripts there: a few SFTP writes, or one `exec` per file in a container. A program
+  tab on a target opens the same way.
+- Search matches within a row: text a soft wrap split across two rows is not found as one.
+- JediTerm's history listener fires only on resizes and clears; `TerminalView` derives the history shift on
+  every model change instead (marks, search hits, a scrolled-back view, the selection).
 - The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`
   (`.terminal-scroll-bar` in `app.css`, Termina's rules).
 - No palette rescues a prompt built for a dark terminal. Oh My Bash's agnoster theme draws `user@host` in the

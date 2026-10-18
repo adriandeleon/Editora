@@ -112,10 +112,24 @@ class RunCoordinatorFlowsFxTest {
         final List<String> mavenJdks = new ArrayList<>();
         final List<String> urls = new ArrayList<>();
         int toolWindowOpened;
+        final List<String> terminalRuns = new ArrayList<>();
+        java.util.function.IntConsumer terminalExit;
 
         @Override
         public void openToolWindow() {
             toolWindowOpened++;
+        }
+
+        @Override
+        public com.editora.terminal.ProgramRun runInTerminal(
+                String title,
+                Path dir,
+                List<String> command,
+                Map<String, String> env,
+                java.util.function.IntConsumer onExit) {
+            terminalRuns.add(title + " | " + dir.getFileName() + " | " + command.getLast() + " | " + env.keySet());
+            terminalExit = onExit;
+            return null;
         }
 
         @Override
@@ -593,6 +607,37 @@ class RunCoordinatorFlowsFxTest {
         FxTestSupport.runOnFx(() -> run.runConfig(plain));
         awaitStatus(tr("status.run.ok"));
         assertEquals("AFTER in sub\n", console());
+    }
+
+    @Test
+    void aConfigurationThatRunsInATerminalGoesThereNotToTheConsole() throws Exception {
+        Files.createDirectories(project.resolve("sub"));
+        Files.writeString(project.resolve("sub/menu.sh"), "#!/bin/bash\nread -p 'Pick: ' x\n");
+        RunConfiguration cfg = new RunConfiguration(
+                "Menu", "shell", "menu.sh", "", "", "", "", "sub", "MODE=tty", "", "", "", "", true);
+
+        FxTestSupport.runOnFx(() -> run.runConfig(cfg));
+        awaitStatus(tr("status.run.inTerminal", "Menu"));
+
+        assertEquals(1, ops.terminalRuns.size(), ops.terminalRuns.toString());
+        String launched = ops.terminalRuns.getFirst();
+        assertTrue(launched.startsWith("Menu | sub | "), launched);
+        assertTrue(launched.contains("menu.sh"), launched);
+        assertTrue(launched.contains("MODE"), "the configuration's own variables: " + launched);
+        assertFalse(launched.contains("BASH_ENV"), "a terminal needs no read -p shim: " + launched);
+        assertFalse(FxTestSupport.callOnFx(run::isRunning), "the console runs nothing");
+        assertEquals("", console());
+
+        FxTestSupport.runOnFx(() -> ops.terminalExit.accept(2));
+        awaitStatus(tr("status.run.exit", 2));
+
+        // The next configuration without the flag runs in the console, as ever.
+        RunConfiguration plain = new RunConfiguration("Plain", "shell", "menu.sh", "", "", "", "", "sub", "", "", "");
+        Files.writeString(project.resolve("sub/menu.sh"), "#!/bin/sh\necho console\n");
+        FxTestSupport.runOnFx(() -> run.runConfig(plain));
+        awaitStatus(tr("status.run.ok"));
+        assertEquals("console\n", console());
+        assertEquals(1, ops.terminalRuns.size());
     }
 
     @Test

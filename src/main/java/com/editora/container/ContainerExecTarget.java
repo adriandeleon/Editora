@@ -98,9 +98,7 @@ public final class ContainerExecTarget implements ExecTarget {
         }
         String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
         List<String> argv = engine.terminalArgv(
-                info.id(),
-                info.user(),
-                List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true, spec.shellIntegration())));
+                info.id(), info.user(), List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true, spec)));
         return PtyChannel.start(
                 com.editora.process.ProcessRunner.resolveExecutable(argv),
                 com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),

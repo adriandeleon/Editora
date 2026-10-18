@@ -247,6 +247,7 @@ public final class TerminalView extends Region {
         // clears), so the history shift is checked here too.
         buffer.addModelListener(() -> {
             onHistoryLineCountChanged();
+            if (search != SearchState.NONE) searchStale = true;
             markDirty();
         });
         buffer.addHistoryBufferListener(this::onHistoryLineCountChanged);
@@ -257,6 +258,8 @@ public final class TerminalView extends Region {
                 discardedHistoryLines += lines.size();
             }
         });
+        session.setTypeAhead(typeAhead);
+        session.setOnTypeAheadChanged(this::markDirty);
         session.setOnSessionEnded(() -> Platform.runLater(() -> {
             if (onSessionEnded != null) onSessionEnded.run();
         }));
@@ -390,6 +393,14 @@ public final class TerminalView extends Region {
         this.bellEnabled = bellEnabled;
     }
 
+    private boolean typeAhead;
+
+    /** Paints keystrokes before a slow shell echoes them (see {@link TypeAheadOverlay}); applies at once. */
+    public void setTypeAhead(boolean typeAhead) {
+        this.typeAhead = typeAhead;
+        if (session != null) session.setTypeAhead(typeAhead);
+    }
+
     /**
      * Shows or hides the scrollbar. This changes how many columns fit, so the shell is resized —
      * the bar takes real width rather than floating over the text, where it would cover the last
@@ -518,8 +529,10 @@ public final class TerminalView extends Region {
                 @Override
                 public void consumeQueue(int x, int y, int nulIndex, int startRow) {}
             });
+            drawSearch(g);
             drawSelection(g);
             drawLinkUnderline(g);
+            drawPredictions(g);
             drawCursor(g);
             updateScrollBar();
         } finally {
@@ -643,12 +656,43 @@ public final class TerminalView extends Region {
                 inverse ? palette.foreground() : palette.background());
     }
 
+    /**
+     * Paints type-ahead predictions over the cursor's row: from the first cell where they differ from what the
+     * shell has echoed, in the palette's dim grey (JediTerm's colour for them). Caller holds the lock.
+     */
+    private void drawPredictions(GraphicsContext g) {
+        TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+        if (p == null) return;
+        int row = p.row() - scrollOrigin;
+        if (row < 0 || row >= rows) return;
+        String actual = lineTextAt(p.row());
+        String predicted = p.text();
+        int from = 0;
+        while (from < actual.length() && from < predicted.length() && actual.charAt(from) == predicted.charAt(from)) {
+            from++;
+        }
+        int end = Math.max(actual.length(), predicted.length());
+        if (from >= end) return;
+        double y = row * lineHeight;
+        double x = ColumnMap.columnAt(actual, from) * charWidth;
+        g.setFill(palette.background());
+        g.fillRect(x, y, Math.max(0, columns * charWidth - x), lineHeight);
+        if (from < predicted.length()) {
+            g.setFont(font);
+            g.setFill(palette.ansi()[8]);
+            g.setTextBaseline(VPos.BASELINE);
+            drawGlyphs(g, predicted.substring(from), x, y + ascent);
+        }
+    }
+
     private void drawCursor(GraphicsContext g) {
         if (!display.isCursorVisible()) return;
         // JediTerm reports the cursor row 1-based against the live screen; scrolling back moves it
         // out of view rather than dragging it along.
         int row = display.getCursorY() - 1 - scrollOrigin;
-        int column = display.getCursorX();
+        int column = session != null && session.typeAheadPrediction() != null
+                ? session.typeAheadCursorColumn()
+                : display.getCursorX();
         if (row < 0 || row >= rows || column < 0 || column >= columns) return;
 
         double x = column * charWidth;
@@ -662,7 +706,10 @@ public final class TerminalView extends Region {
                 g.fillRect(x, y, charWidth, lineHeight);
                 // Re-draw the glyph underneath in the background colour so a block cursor does not
                 // hide the character it is sitting on.
-                char ch = buffer.getCharAt(column, display.getCursorY() - 1);
+                TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+                char ch = p == null
+                        ? buffer.getCharAt(column, display.getCursorY() - 1)
+                        : column < p.text().length() ? p.text().charAt(column) : ' ';
                 if (ch != '\0' && ch != ' ') {
                     g.setFill(palette.background());
                     g.setFont(font);
@@ -889,6 +936,172 @@ public final class TerminalView extends Region {
         return true;
     }
 
+    // ---------------------------------------------------------------- search
+
+    /** What a search found: the current hit (1-based; 0 for none) and how many there are. */
+    public record SearchResult(int index, int count) {
+
+        static final SearchResult NONE = new SearchResult(0, 0);
+    }
+
+    /** The search being shown: its hits, oldest first, and which one is current (-1 for none). */
+    private record SearchState(
+            String query, boolean matchCase, java.util.List<TerminalSearch.Match> matches, int current) {
+
+        static final SearchState NONE = new SearchState("", false, java.util.List.of(), -1);
+
+        SearchResult result() {
+            return new SearchResult(current < 0 ? 0 : current + 1, matches.size());
+        }
+    }
+
+    private final Object searchLock = new Object();
+    private volatile SearchState search = SearchState.NONE;
+
+    /** Set when the buffer changed under a search, so the next step finds again before moving. */
+    private volatile boolean searchStale;
+
+    /**
+     * Highlights every occurrence of {@code query} in the scrollback and screen and scrolls to the most recent one
+     * at or above the bottom of the view. An empty query clears the search.
+     */
+    public SearchResult search(String query, boolean matchCase) {
+        if (buffer == null || query == null || query.isEmpty()) {
+            clearSearch();
+            return SearchResult.NONE;
+        }
+        java.util.List<TerminalSearch.Match> found = findAll(query, matchCase);
+        int current = TerminalSearch.startIndex(found, scrollOrigin + rows - 1);
+        SearchState next = new SearchState(query, matchCase, java.util.List.copyOf(found), current);
+        synchronized (searchLock) {
+            search = next;
+            searchStale = false;
+        }
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    /**
+     * Moves to the next hit up ({@code older}) or down, wrapping at either end. Finds again first when output
+     * arrived since, keeping to the hit nearest the one that was current.
+     */
+    public SearchResult findNext(boolean older) {
+        SearchState state = search;
+        if (state.query().isEmpty()) {
+            return SearchResult.NONE;
+        }
+        if (searchStale) {
+            int row =
+                    state.current() >= 0 ? state.matches().get(state.current()).row() : scrollOrigin + rows - 1;
+            java.util.List<TerminalSearch.Match> found = findAll(state.query(), state.matchCase());
+            state = new SearchState(
+                    state.query(),
+                    state.matchCase(),
+                    java.util.List.copyOf(found),
+                    TerminalSearch.startIndex(found, row));
+            searchStale = false;
+        }
+        int count = state.matches().size();
+        if (count == 0) {
+            synchronized (searchLock) {
+                search = state;
+            }
+            markDirty();
+            return state.result();
+        }
+        int current = state.current() < 0 ? count - 1 : Math.floorMod(state.current() + (older ? -1 : 1), count);
+        SearchState next = new SearchState(state.query(), state.matchCase(), state.matches(), current);
+        synchronized (searchLock) {
+            search = next;
+        }
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    /** Removes the highlights; the view stays where it is. */
+    public void clearSearch() {
+        synchronized (searchLock) {
+            search = SearchState.NONE;
+            searchStale = false;
+        }
+        markDirty();
+    }
+
+    /** The hits being highlighted, for tests. */
+    public java.util.List<TerminalSearch.Match> searchMatches() {
+        return search.matches();
+    }
+
+    private java.util.List<TerminalSearch.Match> findAll(String query, boolean matchCase) {
+        buffer.lock();
+        try {
+            int history = buffer.getHistoryLinesCount();
+            return TerminalSearch.find(this::lineTextAt, -history, buffer.getHeight() - 1, query, matchCase);
+        } finally {
+            buffer.unlock();
+        }
+    }
+
+    /** Scrolls so the current hit is in view, a third of the way down, unless it already is. */
+    private void reveal(SearchState state) {
+        if (state.current() < 0 || buffer == null) {
+            return;
+        }
+        int row = state.matches().get(state.current()).row();
+        if (row >= scrollOrigin && row < scrollOrigin + rows) {
+            return;
+        }
+        int origin = row - rows / 3;
+        scrollOrigin = Math.max(-buffer.getHistoryLinesCount(), Math.min(0, origin));
+    }
+
+    /** Moves the hits with their text as lines age into history (see {@link #shiftMarks}). */
+    private void shiftSearch(int delta, int history) {
+        synchronized (searchLock) {
+            SearchState state = search;
+            if (state.matches().isEmpty()) {
+                return;
+            }
+            java.util.List<TerminalSearch.Match> moved =
+                    new java.util.ArrayList<>(state.matches().size());
+            int current = state.current();
+            for (int i = 0; i < state.matches().size(); i++) {
+                TerminalSearch.Match m = state.matches().get(i).shifted(delta);
+                if (m.row() >= -history) {
+                    moved.add(m);
+                } else if (i < state.current()) {
+                    current--;
+                } else if (i == state.current()) {
+                    current = -1;
+                }
+            }
+            search = new SearchState(state.query(), state.matchCase(), java.util.List.copyOf(moved), current);
+        }
+    }
+
+    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. */
+    private void drawSearch(GraphicsContext g) {
+        SearchState state = search;
+        if (state.matches().isEmpty()) return;
+        Color yellow = palette.ansi()[3];
+        Color wash = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.35);
+        Color strong = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.75);
+        int first = scrollOrigin;
+        int last = scrollOrigin + rows - 1;
+        for (int i = 0; i < state.matches().size(); i++) {
+            TerminalSearch.Match m = state.matches().get(i);
+            if (m.row() < first || m.row() > last) continue;
+            String text = lineTextAt(m.row());
+            if (m.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
+            double x = ColumnMap.columnAt(text, m.from());
+            double to = ColumnMap.columnAt(text, m.to());
+            g.setFill(i == state.current() ? strong : wash);
+            g.fillRect(x * charWidth, (m.row() - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
+        }
+    }
+
     // ---------------------------------------------------------------- selection
 
     /**
@@ -915,6 +1128,7 @@ public final class TerminalView extends Region {
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
         shiftMarks(delta, now);
+        shiftSearch(delta, now);
         markDirty();
     }
 
@@ -1058,7 +1272,35 @@ public final class TerminalView extends Region {
         Hover previous = hover;
         hover = modifierDown ? linkAt(x, y) : null;
         setCursor(hover == null ? javafx.scene.Cursor.DEFAULT : javafx.scene.Cursor.HAND);
-        if (!sameHover(previous, hover)) markDirty();
+        if (!sameHover(previous, hover)) {
+            markDirty();
+            showLinkTarget(hover, x, y);
+        }
+    }
+
+    /** Shows where an OSC 8 link goes: its text is the program's to choose, and need not be its address. */
+    private javafx.scene.control.Tooltip linkTip;
+
+    private void showLinkTarget(Hover target, double x, double y) {
+        boolean disguised = target != null
+                && target.match().isUrl()
+                && !target.match().text().equals(target.match().target());
+        if (!disguised) {
+            if (linkTip != null) linkTip.hide();
+            return;
+        }
+        if (linkTip == null) {
+            linkTip = new javafx.scene.control.Tooltip();
+            linkTip.getStyleClass().add("terminal-link-tip");
+        }
+        linkTip.setText(target.match().target());
+        javafx.geometry.Point2D at = localToScreen(x, y + lineHeight);
+        if (at != null && getScene() != null) linkTip.show(this, at.getX(), at.getY());
+    }
+
+    /** The address an OSC 8 link under the pointer shows in its tip, or null; for tests. */
+    public String linkTipText() {
+        return linkTip != null && linkTip.isShowing() ? linkTip.getText() : null;
     }
 
     private static boolean sameHover(Hover a, Hover b) {
@@ -1083,7 +1325,8 @@ public final class TerminalView extends Region {
             if (logical == null) return null;
             int slot = ColumnMap.slotAt(lineTextAt(line), column);
             int index = logical.offsetOf(line) + slot;
-            LinkMatch match = LinkScanner.at(logical.text(), index);
+            LinkMatch match = osc8At(logical, line, slot, index);
+            if (match == null) match = LinkScanner.at(logical.text(), index);
             if (match == null) return null;
 
             // Moving along a link with the modifier held asks the same question of the filesystem
@@ -1103,6 +1346,35 @@ public final class TerminalView extends Region {
     }
 
     /**
+     * The OSC 8 link at a cell, as a URL match over the run of cells that carry the same target, or null. A program
+     * that marked text as a link meant it, so it wins over what the text itself looks like. Caller holds the lock.
+     */
+    private LinkMatch osc8At(LogicalLine logical, int line, int slot, int index) {
+        Osc8Links.Target target = osc8TargetAt(line, slot);
+        if (target == null) return null;
+        int start = index;
+        while (start > 0 && osc8TargetAtIndex(logical, start - 1) == target) start--;
+        int end = index + 1;
+        while (end < logical.text().length() && osc8TargetAtIndex(logical, end) == target) end++;
+        return new LinkMatch(LinkMatch.Kind.URL, logical.text().substring(start, end), start, end, target.uri(), 0, 0);
+    }
+
+    private Osc8Links.Target osc8TargetAt(int line, int slot) {
+        var row = buffer.getLine(line);
+        return row == null || slot < 0 || slot >= row.length() ? null : Osc8Links.targetOf(row.getStyleAt(slot));
+    }
+
+    private Osc8Links.Target osc8TargetAtIndex(LogicalLine logical, int index) {
+        int offset = 0;
+        for (int i = 0; i < logical.rowTexts().size(); i++) {
+            int length = logical.rowTexts().get(i).length();
+            if (index < offset + length) return osc8TargetAt(logical.firstLine() + i, index - offset);
+            offset += length;
+        }
+        return null;
+    }
+
+    /**
      * The file a match names, or null when it names none.
      *
      * <p>This is the whole safety story for paths: a candidate is any word under the pointer, and
@@ -1113,7 +1385,9 @@ public final class TerminalView extends Region {
     private java.nio.file.Path fileFor(LinkMatch match) {
         String target = match.target();
         if (match.kind() == LinkMatch.Kind.URL) {
-            java.nio.file.Path fromUri = LinkPaths.fromFileUri(target);
+            // A remote shell's file:// names a file of its machine: the tab's mapping finds it here.
+            String onShell = shellPaths == null ? null : ShellIntegration.pathOfCwdUrl(target);
+            java.nio.file.Path fromUri = onShell != null ? shellPaths.apply(onShell) : LinkPaths.fromFileUri(target);
             return fromUri != null && java.nio.file.Files.exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
@@ -1393,6 +1667,7 @@ public final class TerminalView extends Region {
         knownHistoryLines = 0;
         discardedHistoryLines = 0;
         marks.removeIf(m -> m.row() < 0);
+        clearSearch();
         markDirty();
     }
 
@@ -1533,6 +1808,19 @@ public final class TerminalView extends Region {
 
     public boolean hasSelection() {
         return selection != null;
+    }
+
+    /** The selected text, or "" — the find bar starts from a one-line selection. */
+    public String selectedText() {
+        TerminalSelection current = selection;
+        if (current == null || buffer == null) return "";
+        buffer.lock();
+        try {
+            String text = SelectionUtil.getSelectionText(current, buffer);
+            return text == null ? "" : text;
+        } finally {
+            buffer.unlock();
+        }
     }
 
     /** Copies the selection, returning false when there was nothing to copy. */

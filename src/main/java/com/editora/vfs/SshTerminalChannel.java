@@ -126,7 +126,7 @@ final class SshTerminalChannel implements TerminalChannel {
      * or csh.
      */
     static String commandLine(String cwd) {
-        return commandLine(cwd, null);
+        return commandLine(cwd, (String) null);
     }
 
     /** As above, with Editora's shell integration from {@code integration} on the host (null for none). */
@@ -134,5 +134,11 @@ final class SshTerminalChannel implements TerminalChannel {
         return "exec /bin/sh -c "
                 + com.editora.process.PosixShell.quote(
                         com.editora.process.PosixShell.terminalScript(cwd, true, integration));
+    }
+
+    /** The command line for {@code spec}: its login shell, or the program it names. */
+    static String commandLine(String cwd, com.editora.process.TerminalSpec spec) {
+        return "exec /bin/sh -c "
+                + com.editora.process.PosixShell.quote(com.editora.process.PosixShell.terminalScript(cwd, true, spec));
     }
 }

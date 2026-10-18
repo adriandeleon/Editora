@@ -164,4 +164,54 @@ class PosixShellTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 script.endsWith("exec \"$s\" -l"), "the plain login shell is the fallback");
     }
+
+    @Test
+    void aProgramScriptRunsTheProgramUnderTheLoginShellKeepingTheMarkedPid(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path home) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("FOO", "a b'c");
+        env.put("BAR", null);
+        String script = PosixShell.terminalScript(
+                home.toString(),
+                true,
+                TerminalSpec.program(
+                        null,
+                        80,
+                        24,
+                        List.of(
+                                "/bin/sh",
+                                "-c",
+                                "echo \"pid=$$ foo=$FOO bar=${BAR-unset} arg=$1 dir=$(pwd -P)\"; exit 4",
+                                "x",
+                                "it's"),
+                        env));
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", script);
+        pb.environment().put("SHELL", "/bin/sh");
+        pb.environment().put("HOME", home.toString());
+        pb.environment().put("BAR", "set before");
+        Process p = pb.start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(4, p.waitFor(), "the program's exit code is the channel's");
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                        java.util.regex.Pattern.quote(PosixShell.TERMINAL_PID_MARK) + "(\\d+)\n")
+                .matcher(out);
+        assertTrue(m.find(), out);
+        assertTrue(
+                out.contains("pid=" + m.group(1) + " foo=a b'c bar=unset arg=it's dir=" + home.toRealPath()),
+                () -> "exec all the way down keeps the marked pid, env set and unset, arguments whole: " + out);
+    }
+
+    @Test
+    void aProgramScriptPassesOverAShellThatCannotRunIt() {
+        String script =
+                PosixShell.terminalScript(null, false, TerminalSpec.program(null, 80, 24, List.of("ls"), Map.of()));
+        assertTrue(script.contains("*) s=/bin/sh"), script);
+        assertTrue(script.endsWith("exec \"$s\" -l -c 'exec \"$@\"' editora 'ls'"), script);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PosixShell.terminalScript(
+                        null, false, TerminalSpec.program(null, 80, 24, List.of("ls"), Map.of("A-B", "x"))));
+    }
 }

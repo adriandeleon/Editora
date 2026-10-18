@@ -294,8 +294,61 @@ class TerminalPanelFxTest {
         assertEquals(List.of(file + ":12:3", "url https://example.com/docs"), opened);
     }
 
+    @Test
+    void anOsc8LinkOpensItsTargetNotItsTextAndOnlySafeSchemesAreLinks(@TempDir Path dir) throws Exception {
+        Path file = java.nio.file.Files.writeString(dir.resolve("Bar.java"), "class Bar {}\n");
+        List<String> opened = new ArrayList<>();
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.setLinkActions(new com.editora.terminal.LinkActions() {
+                @Override
+                public void openUrl(String url) {
+                    opened.add("url " + url);
+                }
+
+                @Override
+                public void openFile(Path f, int line, int column) {
+                    opened.add("file " + f);
+                }
+            });
+            panel.newTerminal();
+            return null;
+        });
+        String st = "\u001b\\";
+        shells.get(0)
+                .emit("\u001b]8;;https://example.com/manual" + st + "the manual\u001b]8;;" + st + " end\r\n"
+                        + "\u001b]8;;" + file.toUri() + st + "Bar\u001b]8;;" + st + "\r\n"
+                        + "\u001b]8;;javascript:alert(1)" + st + "trap\u001b]8;;" + st + "\r\n");
+        await(() -> call(() -> screen().contains("trap")), "the output on screen");
+        assertFalse(call(() -> screen().contains("example.com")), "the target is not drawn");
+        await(
+                () -> call(() ->
+                        panel.activeView().getWidth() > 0 && panel.activeView().getHeight() > 0),
+                "a layout");
+
+        clickWithLinkModifier(5, 0); // inside "the manual"
+        clickWithLinkModifier(12, 0); // " end": past the link
+        clickWithLinkModifier(1, 1); // "Bar", a file:// link
+        clickWithLinkModifier(1, 2); // "trap": a scheme that is never a link
+
+        assertEquals(List.of("url https://example.com/manual", "file " + file), opened);
+
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 5, 0);
+        assertEquals(
+                "https://example.com/manual",
+                fx(() -> panel.activeView().linkTipText()),
+                "hovering shows where the link really goes");
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 12, 0);
+        assertEquals(null, fx(() -> panel.activeView().linkTipText()), "and hides off it");
+    }
+
     /** A primary press with the platform's link modifier (Cmd on macOS, Ctrl elsewhere) at a cell. */
     private void clickWithLinkModifier(int column, int row) throws Exception {
+        mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_PRESSED, column, row);
+    }
+
+    private void mouseWithLinkModifier(javafx.event.EventType<javafx.scene.input.MouseEvent> type, int column, int row)
+            throws Exception {
         boolean mac = System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .startsWith("mac");
@@ -311,7 +364,7 @@ class TerminalPanelFxTest {
             Event.fireEvent(
                     view,
                     new javafx.scene.input.MouseEvent(
-                            javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                            type,
                             x,
                             y,
                             x,
@@ -417,6 +470,182 @@ class TerminalPanelFxTest {
                 .map(n -> (javafx.scene.control.Button) n)
                 .findFirst()
                 .orElseThrow();
+    }
+
+    @Test
+    void theFindChordOpensTheFindBarOverTheTabAndEscapeGivesTheKeysBack() throws Exception {
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("alpha beta\r\nbeta gamma\r\n");
+        await(
+                () -> call(() -> panel.activeView()
+                        .getSession()
+                        .getTextBuffer()
+                        .getScreenLines()
+                        .contains("gamma")),
+                "the output");
+
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.F, !mac, !mac, false, mac));
+            return null;
+        });
+        assertTrue(fx(() -> panel.findBar().isShowing()), "the chord opened the bar");
+        assertTrue(shells.get(0).written().isEmpty(), "and nothing reached the shell");
+        fx(() -> {
+            panel.findBar().field().setText("beta");
+            return null;
+        });
+        assertEquals("2 of 2", fx(() -> panel.findBar().countText()));
+
+        fx(() -> {
+            Event.fireEvent(
+                    panel.findBar().field(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ESCAPE, false, false, false, false));
+            return null;
+        });
+        assertFalse(fx(() -> panel.findBar().isShowing()));
+        assertTrue(fx(() -> panel.activeView().searchMatches().isEmpty()), "the highlights went with it");
+    }
+
+    @Test
+    void aProgramTabStaysWhenItsProgramEndsAndTellsItsStarterTheExitCode() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        assertEquals("Main", fx(() -> panel.activeTab().getText()));
+        assertTrue(run.isRunning());
+
+        program.emit("hello\r\n");
+        program.exit(3);
+        await(() -> !exits.isEmpty(), "the program's end");
+        assertEquals(List.of(3), exits);
+        assertFalse(run.isRunning());
+        assertEquals(1, fx(panel::terminalCount), "the tab stays, with what the program printed");
+        assertEquals("Process finished with exit code 3", fx(() -> panel.exitBanner(panel.activeTab())));
+        assertFalse(fx(() -> panel.showsReconnect(panel.activeTab())), "an exit is not a lost connection");
+    }
+
+    @Test
+    void closingAProgramTabEndsTheProgramAndSaysSoOnce() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertTrue(program.wasClosed());
+        Thread.sleep(300);
+        assertEquals(List.of(-1), exits);
+    }
+
+    @Test
+    void closingARunningProgramsTabAsksFirstAndAnEndedOneDoesNot() throws Exception {
+        AtomicBoolean answer = new AtomicBoolean(false);
+        List<String> asked = new ArrayList<>();
+        show(
+                fakeShells(),
+                (title, programs) -> {
+                    asked.add(title + ": " + programs);
+                    return answer.get();
+                },
+                null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Main", "java", null, (c, r) -> program, exits::add));
+
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of("Main: [java]"), asked, "asked, naming the program");
+        assertTrue(fx(panel::hasTerminals), "Cancel keeps the tab");
+        assertFalse(program.wasClosed(), "and the program runs on");
+        assertTrue(exits.isEmpty());
+
+        answer.set(true);
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertFalse(fx(panel::hasTerminals), "Close ends it");
+        assertTrue(program.wasClosed());
+
+        // Once its program has ended, a tab closes without a question.
+        asked.clear();
+        FakeConnector done = new FakeConnector();
+        List<Integer> doneExits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Done", "make", null, (c, r) -> done, doneExits::add));
+        done.exit(0);
+        await(() -> !doneExits.isEmpty(), "the program's end");
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of(), asked);
+        assertFalse(fx(panel::hasTerminals));
+    }
+
+    @Test
+    void withConfirmCloseOffAProgramsTabClosesWithoutAsking() throws Exception {
+        List<String> asked = new ArrayList<>();
+        show(fakeShells(), (title, programs) -> asked.add(title) && false, null);
+        fx(() -> {
+            panel.apply(new TerminalPanel.Config("", 13, 1000, TerminalCursor.BAR, false, "", List.of(), false));
+            return null;
+        });
+        FakeConnector program = new FakeConnector();
+        fx(() -> panel.runProgram("Main", "java", null, (c, r) -> program, code -> {}));
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of(), asked);
+        assertTrue(program.wasClosed());
+    }
+
+    @Test
+    void stopEndsTheProgramButKeepsItsTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram("Main", null, (c, r) -> program, exits::add));
+        fx(() -> {
+            run.stop();
+            return null;
+        });
+        await(() -> !exits.isEmpty(), "the end after Stop");
+        assertTrue(program.wasClosed());
+        assertEquals(1, fx(panel::terminalCount));
+    }
+
+    @Test
+    void aProgramThatCannotStartLeavesNoTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        java.io.IOException failure = org.junit.jupiter.api.Assertions.assertThrows(java.io.IOException.class, () -> {
+            try {
+                fx(() -> panel.runProgram(
+                        "Main",
+                        null,
+                        (c, r) -> {
+                            throw new java.io.IOException("no such program");
+                        },
+                        code -> {}));
+            } catch (java.util.concurrent.ExecutionException e) {
+                throw e.getCause();
+            }
+        });
+        assertEquals("no such program", failure.getMessage());
+        assertFalse(fx(panel::hasTerminals));
     }
 
     // ---------------------------------------------------------------- helpers

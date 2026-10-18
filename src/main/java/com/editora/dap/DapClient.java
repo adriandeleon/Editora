@@ -709,7 +709,7 @@ public final class DapClient implements IDebugProtocolClient {
             }
             org.eclipse.lsp4j.debug.RunInTerminalResponse response =
                     new org.eclipse.lsp4j.debug.RunInTerminalResponse();
-            response.setProcessId(pid == null || pid > Integer.MAX_VALUE ? null : pid.intValue());
+            response.setProcessId(pid == null || pid <= 0 || pid > Integer.MAX_VALUE ? null : pid.intValue());
             return response;
         });
     }

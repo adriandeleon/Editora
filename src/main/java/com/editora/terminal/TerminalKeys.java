@@ -32,7 +32,7 @@ public final class TerminalKeys {
      * @param ideCommands command ids that pass, each exact or ending in {@code .*} for a prefix
      */
     public static boolean reachesEditora(String token, String commandId, List<String> ideCommands, boolean mac) {
-        if (token == null || isCopyOrPaste(token, mac) || isPromptJump(token, mac)) {
+        if (token == null || isCopyOrPaste(token, mac) || isPromptJump(token, mac) || isFindToken(token, mac)) {
             return false;
         }
         if (mac && token.contains("Cmd-")) {
@@ -65,6 +65,16 @@ public final class TerminalKeys {
         return mac
                 ? token.equals("Cmd-up") || token.equals("Cmd-down")
                 : token.equals("C-S-up") || token.equals("C-S-down");
+    }
+
+    /** The terminal's own Find chord token. */
+    static boolean isFindToken(String token, boolean mac) {
+        return mac ? token.equals("Cmd-f") : token.equals("C-S-f");
+    }
+
+    /** Find in the terminal's output: Ctrl+Shift+F, or Cmd+F on macOS. */
+    public static boolean isFind(KeyEvent e, boolean mac) {
+        return e.getCode() == KeyCode.F && clipboardModifier(e, mac);
     }
 
     /** Scroll to the previous prompt: Ctrl+Shift+Up, or Cmd+Up on macOS (shell integration's prompt marks). */

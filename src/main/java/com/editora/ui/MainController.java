@@ -2651,6 +2651,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     }
                 });
         debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        debugCoordinator.setProgramTerminal(terminalCoordinator::runProgram); // Settings → Debug → in the Terminal
         debugToolWindow.setFirstOpenShare(0.42); // stack, variables and console need rows (review C4)
         externalToolToolWindow = toolWindow(
                 "externalTool",
@@ -6104,6 +6105,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void openToolWindow() {
             toolWindows.open(runToolWindow);
+        }
+
+        @Override
+        public com.editora.terminal.ProgramRun runInTerminal(
+                String title,
+                Path dir,
+                List<String> command,
+                Map<String, String> env,
+                java.util.function.IntConsumer onExit)
+                throws java.io.IOException {
+            return terminalCoordinator.runProgram(title, dir, command, env, onExit);
         }
 
         @Override

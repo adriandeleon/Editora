@@ -650,8 +650,11 @@ path, main class, arguments), the `cwd`, and the launch's own `env` — and `Dap
 exactly that through [`dap/Debuggee`](../../src/main/java/com/editora/dap/Debuggee.java), a per-session
 `RunService`: the user's environment with the augmented PATH and the launch's variables on top (what Run
 gives a program; not jdtls's environment), tracked by `ProcessRegistry`, stdout/stderr through the Run
-console's bounded pump into `Listener.onOutput` as `stdout`/`stderr`. What follows from owning the process
-(all measured against java-debug 0.53.2):
+console's bounded pump into `Listener.onOutput` as `stdout`/`stderr`. With `debugProgramInTerminal` on,
+`DapManager` holds a `ProgramTerminal` and `Debuggee` starts the same command in a Terminal tab instead: a real
+terminal, whose tab owns the output and input (no Debug-console input then), while its exit and Stop behave as
+below ([terminal.md](terminal.md#ide-features)). What follows from owning the process (all measured against
+java-debug 0.53.2):
 
 - the adapter sends **no `output` events** for it — the pump above is the only source of program output;
 - `disconnect(terminateDebuggee)` does **not** end it — `DapManager` kills it on `stop()` (Stop, Restart,

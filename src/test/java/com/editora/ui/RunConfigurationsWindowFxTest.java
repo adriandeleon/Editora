@@ -225,6 +225,34 @@ class RunConfigurationsWindowFxTest {
     }
 
     @Test
+    void runInATerminalTabIsAPersistedChoiceOfEachConfiguration(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("Menu", "python", "menu.py", "", "", "", "", "", "", ""),
+                        new RunConfiguration("Other", "shell", "o.sh", "", "", "", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Menu", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        javafx.scene.control.CheckBox inTerminal =
+                (javafx.scene.control.CheckBox) stage.getScene().lookup("#run-config-in-terminal");
+
+        assertFalse(FxTestSupport.callOnFx(inTerminal::isSelected), "the Run console, by default");
+        FxTestSupport.runOnFx(() -> inTerminal.setSelected(true));
+        assertTrue(persisted(config, "Menu").runInTerminal());
+        assertFalse(persisted(config, "Other").runInTerminal());
+
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(1));
+        assertFalse(FxTestSupport.callOnFx(inTerminal::isSelected), "each configuration has its own");
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+        assertTrue(FxTestSupport.callOnFx(inTerminal::isSelected));
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    @Test
     void addProposesTheActiveScriptAndTheFormShowsOnlyItsFields(@TempDir Path dir) throws Exception {
         ConfigManager config = new ConfigManager(dir);
         Path root = dir.resolve("site");

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 132;
+    public static final int SCHEMA_VERSION = 133;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -660,6 +660,11 @@ public class Settings {
      */
     private boolean debugProgramConsole = true;
     /**
+     * With {@link #debugProgramConsole}: the program Editora starts for a debug session runs in a Terminal tab (a
+     * real terminal, for programs that draw on the screen or read keys) instead of the Debug console. Off by default.
+     */
+    private boolean debugProgramInTerminal = false;
+    /**
      * Java debugging: when a saved change reaches the running program (hot code replace) — {@code auto} on
      * every save during a session, {@code manual} only on Debug: Apply Code Changes, {@code off} never on its
      * own (the command still applies). Read by {@code DapManager.CodeReplaceMode.of}.
@@ -682,6 +687,8 @@ public class Settings {
      * directory (links, New Terminal Here) and where each command's output is. Users' own files are not changed.
      */
     private boolean terminalShellIntegration = true;
+    /** Integrated terminal: paint keystrokes before a slow shell echoes them (only once echoes take over 100 ms). */
+    private boolean terminalTypeAhead = true;
     /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
     private boolean terminalUseExternal = false;
 
@@ -2993,6 +3000,22 @@ public class Settings {
 
     public void setTerminalShellIntegration(boolean terminalShellIntegration) {
         this.terminalShellIntegration = terminalShellIntegration;
+    }
+
+    public boolean isTerminalTypeAhead() {
+        return terminalTypeAhead;
+    }
+
+    public void setTerminalTypeAhead(boolean terminalTypeAhead) {
+        this.terminalTypeAhead = terminalTypeAhead;
+    }
+
+    public boolean isDebugProgramInTerminal() {
+        return debugProgramInTerminal;
+    }
+
+    public void setDebugProgramInTerminal(boolean debugProgramInTerminal) {
+        this.debugProgramInTerminal = debugProgramInTerminal;
     }
 
     public boolean isTerminalUseExternal() {

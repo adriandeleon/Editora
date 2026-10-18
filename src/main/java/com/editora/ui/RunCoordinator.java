@@ -36,6 +36,20 @@ final class RunCoordinator {
         void openToolWindow();
 
         /**
+         * Runs {@code command} in a Terminal tab titled {@code title} instead of the Run console (a configuration's
+         * Run in a Terminal tab); {@code onExit} gets its exit code, -1 when there was none.
+         */
+        default com.editora.terminal.ProgramRun runInTerminal(
+                String title,
+                Path dir,
+                List<String> command,
+                java.util.Map<String, String> env,
+                java.util.function.IntConsumer onExit)
+                throws java.io.IOException {
+            throw new java.io.IOException("no terminal");
+        }
+
+        /**
          * A program started or ended, so anything reading {@link RunCoordinator#isRunning()} must re-read it —
          * today the toolbar's Stop button, which is enabled only while something is running.
          *
@@ -543,6 +557,7 @@ final class RunCoordinator {
         if (!beginRunRequest()) {
             return;
         }
+        terminalRun = cfg.runInTerminal(); // read where the launch is built (streamRun), after any build
         // Save first, as Debug and the gutter marker do. The save used to sit inside the Java launch, after
         // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
         // without the edit on screen; a script configuration never saved at all.
@@ -1423,6 +1438,7 @@ final class RunCoordinator {
      * the console, then reports that another launch cannot start yet.
      */
     private boolean beginRunRequest() {
+        terminalRun = false; // only a configuration that asks for it, and only its own launch
         ops.openToolWindow();
         if (!isRunning()) { // a before-launch build counts: a second Run must not start a second build
             return true;
@@ -1442,9 +1458,17 @@ final class RunCoordinator {
         streamRun(label, workingDir, command, env, null);
     }
 
+    /** Set by a configuration whose program runs in a Terminal tab; its launch, built later, goes there. */
+    private boolean terminalRun;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             String label, Path workingDir, List<String> command, java.util.Map<String, String> env, Path script) {
+        if (terminalRun) {
+            terminalRun = false;
+            runInTerminal(label, workingDir, command, env);
+            return;
+        }
         lastRunScript = script;
         TestStream tests = pendingTestStream;
         pendingTestStream = null;
@@ -1513,6 +1537,32 @@ final class RunCoordinator {
         // After the call, not inside onStart: RunService publishes the process before it notifies, so by here
         // isRunning() is true whether the launch succeeded or failed back through onError above.
         ops.onRunStateChanged();
+    }
+
+    /**
+     * Runs a configuration's program in a Terminal tab. The console's crutches stay behind: the {@code read -p}
+     * prompt shim (a terminal is a tty, so bash prompts by itself). Rerun is left to the tab: it does not replay
+     * an older console run.
+     */
+    private void runInTerminal(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
+        java.util.Map<String, String> own = new java.util.LinkedHashMap<>(env);
+        ReadPromptShim.environment(System.getenv()).forEach((k, v) -> own.remove(k, v));
+        lastRunCommand = null;
+        try {
+            ops.runInTerminal(
+                    label,
+                    workingDir,
+                    command,
+                    own,
+                    code -> host.setStatus(
+                            code == 0
+                                    ? tr("status.run.ok")
+                                    : code < 0 ? tr("status.run.stopped") : tr("status.run.exit", code)));
+            host.setStatus(tr("status.run.inTerminal", label));
+        } catch (java.io.IOException | RuntimeException e) {
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            host.setStatus(tr("status.run.failed", message));
+        }
     }
 
     /**

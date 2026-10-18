@@ -163,6 +163,40 @@ public final class LocalShell {
     }
 
     /**
+     * Starts a program (Run in Terminal, a debugged program) on a pseudo-terminal: {@code argv} in {@code directory}
+     * with {@code extraEnv} over the user's environment, a null value unsetting a variable. Quitting the program
+     * ends the terminal. The executable is found on the user's augmented PATH, as Run finds it.
+     */
+    public static LocalPtyConnector startProgram(
+            List<String> argv, String directory, int columns, int rows, Map<String, String> extraEnv)
+            throws IOException {
+        if (argv == null || argv.isEmpty()) {
+            throw new IOException("no program to run");
+        }
+        Map<String, String> env = environment();
+        if (extraEnv != null) {
+            extraEnv.forEach((name, value) -> {
+                if (value == null) {
+                    env.remove(name);
+                } else {
+                    env.put(name, value);
+                }
+            });
+        }
+        List<String> command = com.editora.process.ProcessRunner.resolveExecutable(argv);
+        PtyProcess process = new PtyProcessBuilder(command.toArray(String[]::new))
+                .setEnvironment(env)
+                .setDirectory(workingDirectory(directory))
+                .setInitialColumns(columns)
+                .setInitialRows(rows)
+                .setConsole(false)
+                .setUseWinConPty(true)
+                .setWindowsAnsiColorEnabled(true)
+                .start();
+        return new LocalPtyConnector(process, command);
+    }
+
+    /**
      * {@code login} ({@code <shell> -l}) with the integration scripts when the shell is bash or zsh and they are
      * there: {@code bash --init-file <dir>/editora.bash -i}, or zsh with {@code ZDOTDIR=<dir>/zsh} and the user's own
      * {@code ZDOTDIR} kept in {@code USER_ZDOTDIR}. Anything else is returned as it is. Pure apart from reading

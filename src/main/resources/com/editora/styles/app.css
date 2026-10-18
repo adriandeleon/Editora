@@ -5429,3 +5429,14 @@
 .terminal-lost-banner .label {
     -fx-text-fill: -color-warning-fg;
 }
+/* A program run in a terminal tab ended: a quiet chip in the corner, over the text it printed. */
+.terminal-exit-banner {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-padding: 4 10 4 10;
+}
+.terminal-exit-banner .label {
+    -fx-text-fill: -color-fg-muted;
+}

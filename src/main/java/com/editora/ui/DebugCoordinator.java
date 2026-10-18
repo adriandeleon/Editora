@@ -504,6 +504,13 @@ final class DebugCoordinator {
      * bundle set changes, a running jdtls is restarted so it reloads with (or without) the plugin. Gates the
      * breakpoint gutter + Debug window. Runs at init + every settings apply.
      */
+    /** Runs a debugged program in a Terminal tab (Settings → Debug → in the Terminal); set by the window. */
+    private com.editora.dap.ProgramTerminal programTerminal;
+
+    void setProgramTerminal(com.editora.dap.ProgramTerminal programTerminal) {
+        this.programTerminal = programTerminal;
+    }
+
     void applySupport() {
         restoreExceptionFilters();
         var s = host.settings();
@@ -516,6 +523,8 @@ final class DebugCoordinator {
                 s.isJsDebugEnabled(),
                 s.getJsDebugPath());
         dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
+        dapManager.setProgramTerminal(
+                s.isDebugProgramConsole() && s.isDebugProgramInTerminal() ? programTerminal : null);
         dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
                 s.isDebugStepFilters(),
                 s.isDebugShowStatics(),

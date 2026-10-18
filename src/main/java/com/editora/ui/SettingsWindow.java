@@ -421,6 +421,7 @@ public class SettingsWindow {
     private TextField mmdcPathField;
     private CheckBox debugCheck;
     private CheckBox debugProgramConsoleCheck;
+    private CheckBox debugProgramInTerminalCheck;
     /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
     private ComboBox<String> debugHotCodeReplaceCombo;
 
@@ -1847,6 +1848,14 @@ public class SettingsWindow {
         debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
         debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugProgramConsole(now);
+            apply();
+        });
+        debugProgramInTerminalCheck = new CheckBox(tr("settings.debug.programInTerminal"));
+        debugProgramInTerminalCheck
+                .disableProperty()
+                .bind(debugProgramConsoleCheck.selectedProperty().not());
+        debugProgramInTerminalCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugProgramInTerminal(now);
             apply();
         });
         debugHotCodeReplaceCombo = new ComboBox<>();
@@ -3900,6 +3909,14 @@ public class SettingsWindow {
                 Settings::isTerminalShellIntegration,
                 Settings::setTerminalShellIntegration,
                 "terminal shell integration osc prompt marks cwd directory bash zsh");
+        switchRow(
+                shell,
+                cat,
+                "terminal.typeAhead",
+                true,
+                Settings::isTerminalTypeAhead,
+                Settings::setTerminalTypeAhead,
+                "terminal type ahead typeahead prediction latency ssh slow remote echo");
         switchRow(
                 shell,
                 cat,
@@ -6303,6 +6320,12 @@ public class SettingsWindow {
                         debugProgramConsoleCheck,
                         tr("settings.debug.programConsole.hint"),
                         "debug java console input stdin standard input program terminal type");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugProgramInTerminalCheck,
+                        tr("settings.debug.programInTerminal.hint"),
+                        "debug program terminal tab tty curses screen keys run in terminal integrated");
                 controlRow(
                         c,
                         Category.DEBUG,
@@ -8125,6 +8148,7 @@ public class SettingsWindow {
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
+            debugProgramInTerminalCheck.setSelected(settings.isDebugProgramInTerminal());
             debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());

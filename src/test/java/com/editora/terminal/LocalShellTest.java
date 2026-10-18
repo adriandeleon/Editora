@@ -108,4 +108,30 @@ class LocalShellTest {
                 LocalShell.integrated(java.util.List.of("vim"), dir, env),
                 "a command, not a shell");
     }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void aProgramRunsOnAPtyWithItsEnvironmentAndExitCode(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.util.Map<String, String> env = new java.util.HashMap<>();
+        env.put("EDITORA_PROBE", "here");
+        env.put("HOME", null);
+        LocalPtyConnector program = LocalShell.startProgram(
+                java.util.List.of(
+                        "sh", "-c", "[ -t 0 ] && echo tty; echo \"$EDITORA_PROBE ${HOME-unset} $(pwd -P)\"; exit 5"),
+                dir.toString(),
+                80,
+                24,
+                env);
+        StringBuilder out = new StringBuilder();
+        char[] buf = new char[1024];
+        int n;
+        while ((n = program.read(buf, 0, buf.length)) > 0) {
+            out.append(buf, 0, n);
+        }
+        assertEquals(5, program.waitFor());
+        String text = out.toString();
+        org.junit.jupiter.api.Assertions.assertTrue(text.contains("tty"), text);
+        org.junit.jupiter.api.Assertions.assertTrue(text.contains("here unset " + dir.toRealPath()), text);
+    }
 }

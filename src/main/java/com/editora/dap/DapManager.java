@@ -283,6 +283,14 @@ public final class DapManager {
      * (the default here; the window turns it on from the setting), the adapter starts the program as before.
      * An attach, and the Python and JavaScript adapters, are not affected either way.
      */
+    /** Where a program Editora starts runs instead of the Debug console (a Terminal tab); null for the console. */
+    private ProgramTerminal programTerminal;
+
+    /** Takes effect at the next launch; see {@link ProgramTerminal}. */
+    public void setProgramTerminal(ProgramTerminal programTerminal) {
+        this.programTerminal = programTerminal;
+    }
+
     public void setProgramConsole(boolean programConsole) {
         this.programConsole = programConsole;
     }
@@ -3063,7 +3071,7 @@ public final class DapManager {
         }
         killDebuggee(); // a session has one program
         programStartedEpoch = epoch;
-        Debuggee program = new Debuggee();
+        Debuggee program = new Debuggee(programTerminal, programTitle());
         try {
             // The adapter names the folder as its machine does: on a remote file's host, a path there.
             DapPaths paths = pathsFor(debugFile);
@@ -3097,11 +3105,22 @@ public final class DapManager {
             });
             debuggee = program;
             started.complete(pid);
-            listener.onProgramInput(true);
+            if (!program.inTerminal()) {
+                listener.onProgramInput(true); // in a terminal, the terminal takes the input
+            }
         } catch (java.io.IOException | RuntimeException e) {
             program.kill();
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
         }
+    }
+
+    /** A Terminal tab's title for the debugged program: the file being debugged. */
+    private String programTitle() {
+        Path file = debugFile;
+        String name = file == null || file.getFileName() == null
+                ? ""
+                : file.getFileName().toString();
+        return com.editora.i18n.Messages.tr("terminal.debugTitle", name);
     }
 
     /** The session served by java-debug (whose {@code exited} event carries no real exit code). */
