@@ -70,11 +70,11 @@ class NodeRuntimesTest {
 
     @Test
     void theSettingComesNext() {
-        NodeRuntime r =
-                NodeRuntimes.resolve(in(tmp.resolve("a.js"), null, "", "/opt/node20/bin/node", tmp, "/usr/bin/node"));
-        assertEquals(List.of("/opt/node20/bin/node"), r.command());
+        String node = tmp.resolve("opt/node20/bin/node").toString(); // absolute on every OS
+        NodeRuntime r = NodeRuntimes.resolve(in(tmp.resolve("a.js"), null, "", node, tmp, "/usr/bin/node"));
+        assertEquals(List.of(node), r.command());
         assertEquals(Source.SETTING, r.source());
-        assertEquals(Optional.of(Path.of("/opt/node20/bin")), r.binDir());
+        assertEquals(Optional.of(tmp.resolve("opt/node20/bin")), r.binDir());
     }
 
     @Test

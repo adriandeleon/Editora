@@ -61,15 +61,16 @@ class TypeScriptServerTest {
 
     @Test
     void theWalkFindsTheNearestTsserverWithinTheCeilingAndSkipsTypescriptSeven() {
-        Path near = Path.of("/r/a/node_modules/typescript/lib/tsserver.js");
-        Path far = Path.of("/r/node_modules/typescript/lib/tsserver.js");
+        Path root = root.resolve("").toAbsolutePath(); // a drive on Windows: the walk works on absolute paths
+        Path near = root.resolve("r/a/node_modules/typescript/lib/tsserver.js");
+        Path far = root.resolve("r/node_modules/typescript/lib/tsserver.js");
         Set<Path> files = Set.of(near, far);
-        assertEquals(near, TypeScriptServer.findTsserver(Path.of("/r/a/b"), null, files::contains));
-        assertEquals(far, TypeScriptServer.findTsserver(Path.of("/r/x"), null, files::contains));
-        assertNull(TypeScriptServer.findTsserver(Path.of("/r/x"), Path.of("/r/x"), files::contains));
+        assertEquals(near, TypeScriptServer.findTsserver(root.resolve("r/a/b"), null, files::contains));
+        assertEquals(far, TypeScriptServer.findTsserver(root.resolve("r/x"), null, files::contains));
+        assertNull(TypeScriptServer.findTsserver(root.resolve("r/x"), root.resolve("r/x"), files::contains));
         // A TypeScript 7 package has lib/version.cjs and lib/tsc.js but no tsserver.js.
         assertNull(TypeScriptServer.findTsserver(
-                Path.of("/s"), null, p -> p.endsWith("node_modules/typescript/lib/tsc.js")));
+                root.resolve("s"), null, p -> p.endsWith("node_modules/typescript/lib/tsc.js")));
     }
 
     @Test

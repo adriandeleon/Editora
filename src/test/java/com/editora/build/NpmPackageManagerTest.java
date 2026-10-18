@@ -41,10 +41,21 @@ class NpmPackageManagerTest {
     private static NpmPackageManager.Detection walk(java.nio.file.Path dir, java.util.Map<String, String> files) {
         return NpmPackageManager.detect(
                 dir,
-                java.nio.file.Path.of("/mono"),
-                java.nio.file.Path.of("/home/u"),
-                p -> files.containsKey(p.toString()),
-                p -> java.util.Optional.ofNullable(files.get(p.toString())));
+                abs("/mono"),
+                abs("/home/u"),
+                p -> files.containsKey(key(p)),
+                p -> java.util.Optional.ofNullable(files.get(key(p))));
+    }
+
+    /** A POSIX-style test path made absolute on this OS (a drive on Windows: the walk works on absolute paths). */
+    private static java.nio.file.Path abs(String posix) {
+        return java.nio.file.Path.of("/").toAbsolutePath().resolve(posix.substring(1));
+    }
+
+    /** The POSIX-style key of {@code p}, for the maps written below. */
+    private static String key(java.nio.file.Path p) {
+        java.nio.file.Path root = java.nio.file.Path.of("/").toAbsolutePath();
+        return p.startsWith(root) ? "/" + root.relativize(p).toString().replace('\\', '/') : p.toString();
     }
 
     @Test
@@ -53,22 +64,20 @@ class NpmPackageManagerTest {
                 "/mono/package.json", "{\"packageManager\":\"pnpm@9.12.0\",\"workspaces\":[\"packages/*\"]}",
                 "/mono/pnpm-lock.yaml", "",
                 "/mono/packages/a/package.json", "{\"name\":\"a\"}");
-        NpmPackageManager.Detection d = walk(java.nio.file.Path.of("/mono/packages/a"), files);
+        NpmPackageManager.Detection d = walk(abs("/mono/packages/a"), files);
         assertEquals("pnpm", d.manager());
         assertEquals("package.json", d.reason());
         assertEquals("pnpm (package.json)", d.describe());
         var yarnRoot = java.util.Map.of("/mono/yarn.lock", "", "/mono/packages/b/package.json", "{}");
-        assertEquals(
-                "yarn (yarn.lock)",
-                walk(java.nio.file.Path.of("/mono/packages/b"), yarnRoot).describe());
+        assertEquals("yarn (yarn.lock)", walk(abs("/mono/packages/b"), yarnRoot).describe());
     }
 
     @Test
     void theMembersOwnDecisionWinsAndTheWalkStopsAtTheProject() {
         var files = java.util.Map.of("/mono/pnpm-lock.yaml", "", "/mono/a/bun.lock", "", "/yarn.lock", "");
-        assertEquals("bun", walk(java.nio.file.Path.of("/mono/a"), files).manager());
-        assertEquals("npm", walk(java.nio.file.Path.of("/other/x"), files).manager(), "outside the project: its own");
-        assertEquals("", walk(java.nio.file.Path.of("/other/x"), files).reason());
+        assertEquals("bun", walk(abs("/mono/a"), files).manager());
+        assertEquals("npm", walk(abs("/other/x"), files).manager(), "outside the project: its own");
+        assertEquals("", walk(abs("/other/x"), files).reason());
     }
 
     @Test

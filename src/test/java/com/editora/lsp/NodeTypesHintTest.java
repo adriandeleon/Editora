@@ -32,9 +32,10 @@ class NodeTypesHintTest {
 
     @Test
     void typesAnywhereAboveTheFileCount() {
-        Set<Path> files = Set.of(Path.of("/p/node_modules/@types/node/package.json"));
-        assertTrue(NodeTypesHint.hasNodeTypes(Path.of("/p/src/deep/a.js"), files::contains));
-        assertFalse(NodeTypesHint.hasNodeTypes(Path.of("/q/a.js"), files::contains));
+        Path root = Path.of("/").toAbsolutePath(); // a drive on Windows: the walk works on absolute paths
+        Set<Path> files = Set.of(root.resolve("p/node_modules/@types/node/package.json"));
+        assertTrue(NodeTypesHint.hasNodeTypes(root.resolve("p/src/deep/a.js"), files::contains));
+        assertFalse(NodeTypesHint.hasNodeTypes(root.resolve("q/a.js"), files::contains));
         assertFalse(NodeTypesHint.hasNodeTypes(null, files::contains));
     }
 }
