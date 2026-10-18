@@ -94,4 +94,12 @@ class LocalPtyConnectorPtyTest {
         assertTrue(pattern.matcher(text).find(), () -> regex + " in: [" + text + "]");
         return text;
     }
+
+    @Test
+    void aProgramWhoseFolderIsGoneIsNotStartedInTheHomeFolder() {
+        java.io.IOException e = org.junit.jupiter.api.Assertions.assertThrows(
+                java.io.IOException.class,
+                () -> LocalShell.startProgram(List.of("/bin/true"), "/nonexistent/build-dir", 80, 24, null));
+        assertTrue(e.getMessage().contains("/nonexistent/build-dir"), e.getMessage());
+    }
 }

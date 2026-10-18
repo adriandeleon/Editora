@@ -190,13 +190,19 @@ public final class LocalShell {
     /**
      * Starts a program (Run in Terminal, a debugged program) on a pseudo-terminal: {@code argv} in {@code directory}
      * with {@code extraEnv} over the user's environment, a null value unsetting a variable. Quitting the program
-     * ends the terminal. The executable is found on the user's augmented PATH, as Run finds it.
+     * ends the terminal. The executable is found on the user's augmented PATH, as Run finds it. A {@code directory}
+     * that is not there fails the start.
      */
     public static LocalPtyConnector startProgram(
             List<String> argv, String directory, int columns, int rows, Map<String, String> extraEnv)
             throws IOException {
         if (argv == null || argv.isEmpty()) {
             throw new IOException("no program to run");
+        }
+        // Unlike a shell, a program does not fall back to the home folder: its relative paths would land there.
+        // Console Run refuses a missing folder too.
+        if (directory != null && !directory.isBlank() && !Files.isDirectory(Path.of(directory.trim()))) {
+            throw new IOException("folder not found: " + directory);
         }
         Map<String, String> env = environment();
         if (extraEnv != null) {

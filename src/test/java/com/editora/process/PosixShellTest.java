@@ -208,10 +208,54 @@ class PosixShellTest {
         String script =
                 PosixShell.terminalScript(null, false, TerminalSpec.program(null, 80, 24, List.of("ls"), Map.of()));
         assertTrue(script.contains("*) s=/bin/sh"), script);
-        assertTrue(script.endsWith("exec \"$s\" -l -c 'exec \"$@\"' editora 'ls'"), script);
+        assertTrue(script.endsWith(" editora -- 'ls'"), script);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PosixShell.terminalScript(
                         null, false, TerminalSpec.program(null, 80, 24, List.of("ls"), Map.of("A-B", "x"))));
+    }
+
+    @Test
+    void aProgramsVariablesWinOverTheLoginProfileAsInConsoleRun(@org.junit.jupiter.api.io.TempDir java.nio.file.Path home)
+            throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
+        // A profile that sets what a run configuration also sets: Debian's /etc/profile sets PATH, an
+        // installer's ~/.profile sets JAVA_HOME. The run configuration's values are the ones that count.
+        java.nio.file.Files.writeString(
+                home.resolve(".profile"), "export FOO=from-profile\nexport JAVA_HOME=/usr/lib/jvm/profile\n");
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("FOO", "from-run-config");
+        env.put("JAVA_HOME", "/opt/jdk-from-run-config");
+        String script = PosixShell.terminalScript(
+                null,
+                false,
+                TerminalSpec.program(
+                        null, 80, 24, List.of("/bin/sh", "-c", "echo \"foo=$FOO java=$JAVA_HOME\""), env));
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", script);
+        pb.environment().put("SHELL", "/bin/sh");
+        pb.environment().put("HOME", home.toString());
+        Process p = pb.start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(0, p.waitFor());
+        assertTrue(out.contains("foo=from-run-config java=/opt/jdk-from-run-config"), out);
+    }
+
+    @Test
+    void aProgramWhoseFolderIsGoneDoesNotRunInTheHomeFolder(@org.junit.jupiter.api.io.TempDir java.nio.file.Path home)
+            throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
+        String script = PosixShell.terminalScript(
+                home.resolve("gone").toString(),
+                false,
+                TerminalSpec.program(null, 80, 24, List.of("/bin/sh", "-c", "echo ran in $(pwd)"), Map.of()));
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", script);
+        pb.environment().put("SHELL", "/bin/sh");
+        pb.environment().put("HOME", home.toString());
+        Process p = pb.start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(126, p.waitFor(), "it fails, as console Run does");
+        assertFalse(out.contains("ran in"), out);
     }
 }

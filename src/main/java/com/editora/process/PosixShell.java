@@ -110,10 +110,15 @@ public final class PosixShell {
     }
 
     /**
-     * A program on a terminal: the pid line, {@code TERM}, the folder, {@code env} (a null value unsets), then the
-     * program run by the account's login shell, so it gets the PATH and variables its login sets. {@code exec}
-     * all the way down keeps the marked pid the program's own. A shell that does not take {@code -c 'exec "$@"'}
-     * (fish, csh) is passed over for {@code /bin/sh}.
+     * A program on a terminal: the pid line, {@code TERM}, the folder, then the program run by the account's login
+     * shell, so it gets the PATH and variables its login sets, with {@code env} (a null value unsets) applied after
+     * that login, as console Run applies a run configuration's variables over the profile's. {@code exec} all the
+     * way down keeps the marked pid the program's own. A shell that does not take {@code -c 'exec "$@"'} (fish,
+     * csh) is passed over for {@code /bin/sh}. A folder that is not there fails the run (exit 126), as console Run
+     * does, rather than running the program in the home folder.
+     *
+     * <p>The variables reach the login shell as arguments ({@code NAME=value} to export, a bare {@code NAME} to
+     * unset, then {@code --}), so no value is ever quoted twice.
      *
      * @throws IllegalArgumentException if a variable name is not a valid shell identifier
      */
@@ -124,25 +129,30 @@ public final class PosixShell {
         }
         script.append("export TERM=xterm-256color COLORTERM=truecolor TERM_PROGRAM=Editora; ");
         if (cwd != null && !cwd.isBlank()) {
-            script.append("cd -- ").append(quote(cwd)).append(" 2>/dev/null || cd; ");
+            script.append("cd -- ").append(quote(cwd)).append(" || exit 126; ");
         }
+        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); ");
+        script.append("case \"${s##*/}\" in bash|zsh|sh|dash|ksh|mksh|ash|busybox) ;; *) s=/bin/sh ;; esac; ");
+        script.append("exec \"$s\" -l -c ").append(quote(AFTER_LOGIN)).append(" editora");
         for (Map.Entry<String, String> e : env.entrySet()) {
             if (!e.getKey().matches("[A-Za-z_][A-Za-z0-9_]*")) {
                 throw new IllegalArgumentException("not a variable name: " + e.getKey());
             }
-            script.append(
-                    e.getValue() == null
-                            ? "unset " + e.getKey() + "; "
-                            : "export " + e.getKey() + "=" + quote(e.getValue()) + "; ");
+            script.append(' ').append(quote(e.getValue() == null ? e.getKey() : e.getKey() + "=" + e.getValue()));
         }
-        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); ");
-        script.append("case \"${s##*/}\" in bash|zsh|sh|dash|ksh|mksh|ash|busybox) ;; *) s=/bin/sh ;; esac; ");
-        script.append("exec \"$s\" -l -c 'exec \"$@\"' editora");
+        script.append(" --");
         for (String arg : argv) {
             script.append(' ').append(quote(arg));
         }
         return script.toString();
     }
+
+    /**
+     * What the login shell runs for {@link #programScript}: export or unset each variable up to {@code --}, then
+     * become the program.
+     */
+    static final String AFTER_LOGIN = "while [ \"$1\" != -- ]; do case \"$1\" in *=*) export \"$1\" ;; "
+            + "*) unset \"$1\" ;; esac; shift; done; shift; exec \"$@\"";
 
     /** {@code text} as one shell word. */
     public static String quote(String text) {
