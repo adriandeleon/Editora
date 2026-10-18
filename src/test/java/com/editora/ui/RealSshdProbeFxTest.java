@@ -797,6 +797,27 @@ class RealSshdProbeFxTest {
             }
         });
 
+        step("a program in a terminal on the host: a tty, its variables and its exit code", () -> {
+            com.editora.process.TerminalChannel shell = target().startTerminal(com.editora.process.TerminalSpec.program(
+                    app,
+                    80,
+                    24,
+                    List.of("/bin/sh", "-c", "[ -t 0 ] && echo is-a-tty; echo \"X=$X pwd=$(pwd -P)\"; exit 7"),
+                    Map.of("X", "from editora")));
+            try {
+                StringBuffer seen = pump(shell);
+                awaitOutput(seen, "is-a-tty");
+                awaitOutput(seen, "X=from editora");
+                check(!seen.toString().contains("EDITORA "), "the pid line is not shown");
+                int code = shell.waitFor();
+                check(code == 7, "the program's exit code reaches the channel: " + code);
+                check(shell.pid() > 0, "its pid was marked");
+                return "tty, variables and exit code 7";
+            } finally {
+                shell.close();
+            }
+        });
+
         step("shell integration on the host: folder and prompt marks, and the close check", () -> {
             String integration = com.editora.terminal.ShellIntegration.installOn(target().cache());
             com.editora.process.TerminalChannel shell =

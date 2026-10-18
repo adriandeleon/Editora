@@ -52,6 +52,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     tab where the shell is. Ctrl+Shift+Up/Down (Cmd+Up/Down on macOS) jump between prompts, and **Copy Last
     Command Output** copies what the last command printed. Closing a remote terminal that is running a program
     asks first. Settings → Terminal → Shell integration turns it off.
+  - **Find in the terminal** (Ctrl+Shift+F, Cmd+F on macOS, or Terminal: Find) highlights every match in the
+    scrollback; Enter goes to older ones.
+  - **OSC 8 hyperlinks** (`ls --hyperlink`, gcc, git and other tools that mark links) open with a Ctrl/Cmd
+    click; hovering one whose text is not its address shows the address.
+  - **Type-ahead** shows what you type at once over a slow SSH connection, dimmed until the shell echoes it.
+    It starts only when echoes take over 100 ms (Settings → Terminal → Type-ahead).
+  - **Run in a Terminal tab**: a run configuration's Console option runs its program in the Terminal (programs
+    that draw on the screen or read single keys), locally or on the project's host. The tab stays when it
+    ends, with the exit code.
+  - **Debug in a Terminal tab**: Settings → Debugging → Java → "Run the program in a Terminal tab instead" does the same
+    for a debugged Java or Python program.
   - The terminal is Termina's (github.com/adriandeleon/Termina), ported.
 - **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
   state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it
