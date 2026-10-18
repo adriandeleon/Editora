@@ -218,7 +218,8 @@ final class TerminalCoordinator {
                 s.isTerminalBell(),
                 s.getTerminalShell(),
                 s.getTerminalIdeCommands(),
-                s.isTerminalConfirmClose());
+                s.isTerminalConfirmClose(),
+                s.isTerminalTypeAhead());
     }
 
     /**

@@ -258,6 +258,8 @@ public final class TerminalView extends Region {
                 discardedHistoryLines += lines.size();
             }
         });
+        session.setTypeAhead(typeAhead);
+        session.setOnTypeAheadChanged(this::markDirty);
         session.setOnSessionEnded(() -> Platform.runLater(() -> {
             if (onSessionEnded != null) onSessionEnded.run();
         }));
@@ -391,6 +393,14 @@ public final class TerminalView extends Region {
         this.bellEnabled = bellEnabled;
     }
 
+    private boolean typeAhead;
+
+    /** Paints keystrokes before a slow shell echoes them (see {@link TypeAheadOverlay}); applies at once. */
+    public void setTypeAhead(boolean typeAhead) {
+        this.typeAhead = typeAhead;
+        if (session != null) session.setTypeAhead(typeAhead);
+    }
+
     /**
      * Shows or hides the scrollbar. This changes how many columns fit, so the shell is resized —
      * the bar takes real width rather than floating over the text, where it would cover the last
@@ -522,6 +532,7 @@ public final class TerminalView extends Region {
             drawSearch(g);
             drawSelection(g);
             drawLinkUnderline(g);
+            drawPredictions(g);
             drawCursor(g);
             updateScrollBar();
         } finally {
@@ -645,12 +656,43 @@ public final class TerminalView extends Region {
                 inverse ? palette.foreground() : palette.background());
     }
 
+    /**
+     * Paints type-ahead predictions over the cursor's row: from the first cell where they differ from what the
+     * shell has echoed, in the palette's dim grey (JediTerm's colour for them). Caller holds the lock.
+     */
+    private void drawPredictions(GraphicsContext g) {
+        TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+        if (p == null) return;
+        int row = p.row() - scrollOrigin;
+        if (row < 0 || row >= rows) return;
+        String actual = lineTextAt(p.row());
+        String predicted = p.text();
+        int from = 0;
+        while (from < actual.length() && from < predicted.length() && actual.charAt(from) == predicted.charAt(from)) {
+            from++;
+        }
+        int end = Math.max(actual.length(), predicted.length());
+        if (from >= end) return;
+        double y = row * lineHeight;
+        double x = ColumnMap.columnAt(actual, from) * charWidth;
+        g.setFill(palette.background());
+        g.fillRect(x, y, Math.max(0, columns * charWidth - x), lineHeight);
+        if (from < predicted.length()) {
+            g.setFont(font);
+            g.setFill(palette.ansi()[8]);
+            g.setTextBaseline(VPos.BASELINE);
+            drawGlyphs(g, predicted.substring(from), x, y + ascent);
+        }
+    }
+
     private void drawCursor(GraphicsContext g) {
         if (!display.isCursorVisible()) return;
         // JediTerm reports the cursor row 1-based against the live screen; scrolling back moves it
         // out of view rather than dragging it along.
         int row = display.getCursorY() - 1 - scrollOrigin;
-        int column = display.getCursorX();
+        int column = session != null && session.typeAheadPrediction() != null
+                ? session.typeAheadCursorColumn()
+                : display.getCursorX();
         if (row < 0 || row >= rows || column < 0 || column >= columns) return;
 
         double x = column * charWidth;
@@ -664,7 +706,10 @@ public final class TerminalView extends Region {
                 g.fillRect(x, y, charWidth, lineHeight);
                 // Re-draw the glyph underneath in the background colour so a block cursor does not
                 // hide the character it is sitting on.
-                char ch = buffer.getCharAt(column, display.getCursorY() - 1);
+                TypeAheadOverlay.Prediction p = session == null ? null : session.typeAheadPrediction();
+                char ch = p == null
+                        ? buffer.getCharAt(column, display.getCursorY() - 1)
+                        : column < p.text().length() ? p.text().charAt(column) : ' ';
                 if (ch != '\0' && ch != ' ') {
                     g.setFill(palette.background());
                     g.setFont(font);

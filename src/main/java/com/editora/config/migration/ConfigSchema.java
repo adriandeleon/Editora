@@ -272,7 +272,10 @@ public enum ConfigSchema {
                     // opens the Terminal tool window; the system terminal is the opt-in).
                     Map.entry(130, (Migration) ConfigMigrations::identity),
                     // v131→132: + terminalShellIntegration (additive: absent is the default, on).
-                    Map.entry(131, (Migration) ConfigMigrations::identity)),
+                    Map.entry(131, (Migration) ConfigMigrations::identity),
+                    // v132→133: + terminalTypeAhead (on) and debugProgramInTerminal (off); additive, absent is the
+                    // default.
+                    Map.entry(132, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

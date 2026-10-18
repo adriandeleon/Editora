@@ -3903,6 +3903,14 @@ public class SettingsWindow {
         switchRow(
                 shell,
                 cat,
+                "terminal.typeAhead",
+                true,
+                Settings::isTerminalTypeAhead,
+                Settings::setTerminalTypeAhead,
+                "terminal type ahead typeahead prediction latency ssh slow remote echo");
+        switchRow(
+                shell,
+                cat,
                 "terminal.useExternal",
                 true,
                 Settings::isTerminalUseExternal,

@@ -25,6 +25,9 @@ public final class TerminalSession {
     private final TerminalExecutors executors;
     private final Thread emulatorThread;
 
+    private final TypeAheadOverlay typeAheadOverlay;
+    private final TerminalTypeAheadManager typeAhead;
+    private volatile Runnable onTypeAheadChanged = () -> {};
     private volatile boolean closed;
     private Runnable onSessionEnded = () -> {};
 
@@ -42,9 +45,17 @@ public final class TerminalSession {
         terminal.setUrlHyperlinkFilter(Osc8Links.filter()); // OSC 8: the URI rides in the cells' style
 
         executors = new TerminalExecutors();
-        TerminalTypeAheadManager typeAhead = new TerminalTypeAheadManager(new DisabledTypeAhead());
-        starter =
-                new TerminalStarter(terminal, connector, new TtyBasedArrayDataStream(connector), typeAhead, executors);
+        typeAheadOverlay = new TypeAheadOverlay(terminal, textBuffer, () -> onTypeAheadChanged.run());
+        typeAhead = new TerminalTypeAheadManager(typeAheadOverlay);
+        typeAhead.setClearPredictionsDebouncer(new com.jediterm.terminal.model.JediTermDebouncerImpl(
+                typeAhead::debounce, TerminalTypeAheadManager.MAX_TERMINAL_DELAY, executors));
+        // The manager checks its predictions against what the shell echoed after every chunk of output.
+        starter = new TerminalStarter(
+                terminal,
+                connector,
+                new TtyBasedArrayDataStream(connector, typeAhead::onTerminalStateChanged),
+                typeAhead,
+                executors);
 
         emulatorThread = new Thread(this::runEmulator, "editora-terminal-emulator");
         emulatorThread.setDaemon(true);
@@ -111,6 +122,7 @@ public final class TerminalSession {
     public void resize(int columns, int rows) {
         if (closed || columns <= 0 || rows <= 0) return;
         starter.postResize(new TermSize(columns, rows), RequestOrigin.User);
+        typeAhead.onResize();
     }
 
     /** Sends raw bytes to the shell (already-encoded key sequences, pasted text). */
@@ -127,6 +139,26 @@ public final class TerminalSession {
     /** Encodes a key using the emulator's current modes (application vs ANSI cursor keys). */
     public byte[] keyCode(int awtKeyCode, int awtModifiers) {
         return starter.getCode(awtKeyCode, awtModifiers);
+    }
+
+    /** Turns type-ahead on or off (see {@link TypeAheadOverlay}); off until set. */
+    public void setTypeAhead(boolean enabled) {
+        typeAheadOverlay.setEnabled(enabled);
+    }
+
+    /** Where predictions changed and the view should repaint. */
+    public void setOnTypeAheadChanged(Runnable onChanged) {
+        this.onTypeAheadChanged = onChanged == null ? () -> {} : onChanged;
+    }
+
+    /** The predicted text to paint over the cursor's row, or null. Caller holds the buffer lock. */
+    public TypeAheadOverlay.Prediction typeAheadPrediction() {
+        return typeAheadOverlay.prediction();
+    }
+
+    /** The cursor column, 0-based, where the predictions put it. Caller holds the buffer lock. */
+    public int typeAheadCursorColumn() {
+        return typeAhead.getCursorX() - 1;
     }
 
     public TerminalTextBuffer getTextBuffer() {

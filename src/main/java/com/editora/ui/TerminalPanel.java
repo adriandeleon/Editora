@@ -63,7 +63,20 @@ final class TerminalPanel extends StackPane {
             boolean bell,
             String shell,
             List<String> ideCommands,
-            boolean confirmClose) {
+            boolean confirmClose,
+            boolean typeAhead) {
+
+        Config(
+                String fontFamily,
+                double fontSize,
+                int scrollback,
+                TerminalCursor cursor,
+                boolean bell,
+                String shell,
+                List<String> ideCommands,
+                boolean confirmClose) {
+            this(fontFamily, fontSize, scrollback, cursor, bell, shell, ideCommands, confirmClose, true);
+        }
 
         static Config defaults() {
             return new Config("", 13, 5000, TerminalCursor.BLOCK, true, "", TerminalKeys.DEFAULT_IDE_COMMANDS, true);
@@ -410,6 +423,7 @@ final class TerminalPanel extends StackPane {
         view.setFontSize(config.fontSize());
         view.setPreferredCursor(config.cursor());
         view.setBellEnabled(config.bell());
+        view.setTypeAhead(config.typeAhead());
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);

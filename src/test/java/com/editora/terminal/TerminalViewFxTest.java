@@ -314,6 +314,84 @@ class TerminalViewFxTest {
         assertTrue(fx(() -> view.searchMatches().isEmpty()));
     }
 
+    @Test
+    void overASlowLinkTypingIsShownBeforeTheEchoAndReplacedByIt() throws Exception {
+        open();
+        fx(() -> {
+            view.setTypeAhead(true);
+            return null;
+        });
+        connector.emit("$ ");
+        await(() -> screen().startsWith("$ "), "the prompt");
+        // Two keystrokes whose echo takes 150 ms: the manager measures the link as slow.
+        for (String key : java.util.List.of("a", "b")) {
+            type(key);
+            Thread.sleep(150);
+            connector.emit(key);
+            String typed = "$ " + (key.equals("a") ? "a" : "ab");
+            await(() -> screen().startsWith(typed), "the echo of " + key);
+        }
+
+        type("c");
+        await(() -> "$ abc".equals(call(this::predictedText)), "c shown before its echo");
+        assertFalse(screen().startsWith("$ abc"), "the shell has not echoed it yet");
+
+        connector.emit("c");
+        await(() -> screen().startsWith("$ abc"), "the echo of c");
+        await(() -> call(this::predictedText) == null, "the prediction gives way to the echo");
+    }
+
+    @Test
+    void overAFastLinkTypeAheadStaysOutOfSight() throws Exception {
+        open();
+        fx(() -> {
+            view.setTypeAhead(true);
+            return null;
+        });
+        connector.emit("$ ");
+        await(() -> screen().startsWith("$ "), "the prompt");
+        StringBuilder typed = new StringBuilder("$ ");
+        for (String key : java.util.List.of("a", "b", "c", "d")) {
+            type(key);
+            connector.emit(key); // echoed at once, as a local shell does
+            typed.append(key);
+            String now = typed.toString();
+            await(() -> screen().startsWith(now), "the echo of " + key);
+            assertEquals(null, call(this::predictedText), "nothing predicted after " + key);
+        }
+    }
+
+    @Test
+    void withTypeAheadOffNothingIsPredicted() throws Exception {
+        open();
+        connector.emit("$ ");
+        await(() -> screen().startsWith("$ "), "the prompt");
+        for (String key : java.util.List.of("a", "b", "c")) {
+            type(key);
+            Thread.sleep(150);
+            assertEquals(null, call(this::predictedText));
+            connector.emit(key);
+        }
+    }
+
+    private void type(String text) throws Exception {
+        fx(() -> {
+            view.getSession().sendString(text);
+            return null;
+        });
+    }
+
+    private String predictedText() {
+        var buffer = view.getSession().getTextBuffer();
+        buffer.lock();
+        try {
+            var p = view.getSession().typeAheadPrediction();
+            return p == null ? null : p.text().stripTrailing();
+        } finally {
+            buffer.unlock();
+        }
+    }
+
     private static <T> T call(java.util.concurrent.Callable<T> work) {
         try {
             return fx(work);
