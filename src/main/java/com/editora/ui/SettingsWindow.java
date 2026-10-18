@@ -983,7 +983,9 @@ public class SettingsWindow {
         buttons.setAlignment(Pos.CENTER_LEFT);
         buttons.getStyleClass().add("settings-footer");
 
-        VBox root = new VBox(0, body, buttons);
+        VBox root = new VBox(0, scopeUi.bar(), body, buttons);
+        scopeUi.setRows(() -> rows.stream().map(SettingsSearch.Row::node).toList());
+        registerScopedControls();
         javafx.geometry.Dimension2D size = preferredSize(owner);
         root.setPrefWidth(size.getWidth());
         root.setPrefHeight(size.getHeight());
@@ -1176,7 +1178,7 @@ public class SettingsWindow {
         tabSizeSpinner = IntSpinners.editable(Settings.MIN_TAB_SIZE, Settings.MAX_TAB_SIZE, 4, 1);
         tabSizeSpinner.setPrefWidth(90);
         tabSizeSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
+            if (loading || now == null || scopeUi.write("editor.tabSize", now)) {
                 return;
             }
             config.getSettings().setTabSize(now);
@@ -1209,8 +1211,16 @@ public class SettingsWindow {
         lineHighlightCheck = viewCheck(tr("settings.highlightLine"), Settings::setHighlightCurrentLine);
         lineNumbersCheck = viewCheck(tr("settings.showLineNumbers"), Settings::setShowLineNumbers);
         minimapCheck = viewCheck(tr("settings.showMinimap"), Settings::setShowMinimap);
-        wordWrapCheck = viewCheck(tr("settings.wordWrap"), Settings::setWordWrap);
-        wordWrapProseCheck = viewCheck(tr("settings.wordWrapProse"), Settings::setWordWrapProse);
+        wordWrapCheck = viewCheck(tr("settings.wordWrap"), (st, on) -> {
+            if (!scopeUi.write("editor.wordWrap", on)) {
+                st.setWordWrap(on);
+            }
+        });
+        wordWrapProseCheck = viewCheck(tr("settings.wordWrapProse"), (st, on) -> {
+            if (!scopeUi.write("editor.wordWrapProse", on)) {
+                st.setWordWrapProse(on);
+            }
+        });
         buildMarkdownControls();
         adminSaveCheck = viewCheck(tr("settings.adminSave"), Settings::setAdminSave);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
@@ -1278,7 +1288,7 @@ public class SettingsWindow {
         });
         indentStyleCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         indentStyleCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
+            if (loading || now == null || scopeUi.write("editor.indentStyle", now)) {
                 return;
             }
             config.getSettings().setIndentStyle(now);
@@ -1361,7 +1371,7 @@ public class SettingsWindow {
             }
         });
         spellLanguageCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
+            if (loading || now == null || scopeUi.write("editor.spellLanguage", now)) {
                 return;
             }
             config.getSettings().setSpellLanguage(now);
@@ -1583,11 +1593,15 @@ public class SettingsWindow {
             buildToolChecks.put(bt, check);
             TextField commandField = new TextField();
             commandField.setPromptText(bt.commandExample());
-            commitOnEnterOrBlur(commandField, () -> bt.commandIn(config.getSettings()), now -> {
-                bt.setCommandIn(config.getSettings(), now);
-                apply();
-                refreshBuildCommandStatus(bt);
-            });
+            String buildKey = "build." + ProjectScope.toolId(bt);
+            commitOnEnterOrBlur(
+                    commandField, () -> scopeUi.shown(buildKey, bt.commandIn(config.getSettings())), now -> {
+                        if (!scopeUi.write(buildKey, now)) {
+                            bt.setCommandIn(config.getSettings(), now);
+                        }
+                        apply();
+                        refreshBuildCommandStatus(bt);
+                    });
             buildToolCommandFields.put(bt, commandField);
             if (bt == BuildTool.MAVEN) {
                 JdkChoice.configure(mavenJdkCombo, tr("settings.maven.jdk.system"));
@@ -1907,11 +1921,15 @@ public class SettingsWindow {
             }
             TextField field = new TextField();
             field.setPromptText(dbg.commandPrompt());
-            commitOnEnterOrBlur(field, dbg.getCommand(), now -> {
-                dbg.setCommand().accept(now);
-                apply();
-                refreshDebugStatus();
-            });
+            String debugKey = "debug." + dbg.id();
+            commitOnEnterOrBlur(
+                    field, () -> scopeUi.shown(debugKey, dbg.getCommand().get()), now -> {
+                        if (!scopeUi.write(debugKey, now)) {
+                            dbg.setCommand().accept(now);
+                        }
+                        apply();
+                        refreshDebugStatus();
+                    });
             debugCommandFields.put(dbg.id(), field);
         }
 
@@ -1925,18 +1943,26 @@ public class SettingsWindow {
         for (LspServerUi srv : lspServerUis()) {
             CheckBox enable = new CheckBox(tr(srv.enableLabelKey()));
             enable.selectedProperty().addListener((obs, was, now) -> {
-                srv.setEnabled().accept(now);
-                apply();
+                if (!scopeUi.write("lspEnabled." + srv.id(), now)) {
+                    srv.setEnabled().accept(now);
+                    apply();
+                }
             });
             TextField field = new TextField();
             // A server with no default command (Maven's pom.xml server) has only what Install… puts here.
             field.setPromptText(
                     srv.defaultCommand().isBlank() ? tr("settings.lsp.installedPrompt") : srv.defaultCommand());
-            commitOnEnterOrBlur(field, srv.getCommand(), now -> {
-                srv.setCommand().accept(now);
-                apply();
-                refreshLspStatus();
-            });
+            commitOnEnterOrBlur(
+                    field,
+                    () -> scopeUi.shown(
+                            "lspCommands." + srv.id(), srv.getCommand().get()),
+                    now -> {
+                        if (!scopeUi.write("lspCommands." + srv.id(), now)) {
+                            srv.setCommand().accept(now);
+                        }
+                        apply();
+                        refreshLspStatus();
+                    });
             lspEnableChecks.put(srv.id(), enable);
             lspCommandFields.put(srv.id(), field);
         }
@@ -2687,8 +2713,12 @@ public class SettingsWindow {
                 Category.EDITOR,
                 "rulers",
                 "80, 120",
-                st -> com.editora.editor.RulerColumns.format(st.getRulers()),
-                (st, v) -> st.setRulers(com.editora.editor.RulerColumns.parse(v)),
+                st -> com.editora.editor.RulerColumns.format(scopeUi.shown("editor.rulers", st.getRulers())),
+                (st, v) -> {
+                    if (!scopeUi.write("editor.rulers", com.editora.editor.RulerColumns.parse(v))) {
+                        st.setRulers(com.editora.editor.RulerColumns.parse(v));
+                    }
+                },
                 v -> rulerProblem(com.editora.editor.RulerColumns.problem(v)),
                 "rulers ruler columns column margin line length 80 100 120");
         textRow(
@@ -2696,8 +2726,14 @@ public class SettingsWindow {
                 Category.EDITOR,
                 "languageRulers",
                 "java: 100; python: 79, 88",
-                st -> com.editora.editor.RulerColumns.formatByLanguage(st.getLanguageRulers()),
-                (st, v) -> st.setLanguageRulers(com.editora.editor.RulerColumns.parseByLanguage(v)),
+                st -> com.editora.editor.RulerColumns.formatByLanguage(
+                        scopeUi.shown("editor.languageRulers", st.getLanguageRulers())),
+                (st, v) -> {
+                    java.util.Map<String, List<Integer>> by = com.editora.editor.RulerColumns.parseByLanguage(v);
+                    if (!scopeUi.write("editor.languageRulers", by.isEmpty() ? null : by)) {
+                        st.setLanguageRulers(by);
+                    }
+                },
                 v -> rulerProblem(com.editora.editor.RulerColumns.byLanguageProblem(
                         v, SpellFileTypesEditor.languageNames(config.getSettings()))),
                 "rulers per language ruler columns margin line length");
@@ -2852,6 +2888,21 @@ public class SettingsWindow {
                 adminSaveCheck,
                 tr("settings.adminSave.note"),
                 "save administrator root sudo pkexec permission etc linux polkit");
+        // Set per project only (there is no user setting: .editorconfig decides elsewhere).
+        controlRow(
+                saving,
+                Category.EDITOR,
+                tr("settings.scope.trimTrailingWhitespace"),
+                tr("settings.scope.projectOnly"),
+                trimOnSaveCombo,
+                "trim trailing whitespace save project editorconfig");
+        controlRow(
+                saving,
+                Category.EDITOR,
+                tr("settings.scope.insertFinalNewline"),
+                tr("settings.scope.projectOnly"),
+                finalNewlineCombo,
+                "final newline end of file save project editorconfig");
         Card performance = card(p, tr("settings.section.performance"));
         HBox largeFileBox = new HBox(8, largeFileThresholdSpinner, note(tr("settings.largeFileThreshold.unit")));
         largeFileBox.setAlignment(Pos.CENTER_LEFT);
@@ -7942,6 +7993,103 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Project scope (F4): the two save rules that exist only per project, the scopable controls, and how this
+     * window reaches its project (through the window's {@link LspCoordinator}, which owns its project scope).
+     */
+    private final ComboBox<String> trimOnSaveCombo = projectOnlyCombo("editor.trimTrailingWhitespace");
+
+    private final ComboBox<String> finalNewlineCombo = projectOnlyCombo("editor.insertFinalNewline");
+    private LspCoordinator projectLsp;
+    private final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
+            this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, this::scopeError);
+
+    /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
+    void setProjectLsp(LspCoordinator lsp) {
+        this.projectLsp = lsp;
+        this.lspProjectNotes = lsp::projectOverrideNote;
+    }
+
+    private ProjectScope projectScope() {
+        return projectLsp == null ? ProjectScope.NONE : projectLsp.projectScope();
+    }
+
+    private boolean isLoading() {
+        return loading;
+    }
+
+    private void trustProject() {
+        if (projectLsp != null) {
+            projectLsp.trustProjectSettings(); // asks first; applies the project's values once trusted
+        }
+        load();
+    }
+
+    private void scopeError(String message) {
+        javafx.application.Platform.runLater(() -> {
+            Alert failed = Dialogs.styled(new Alert(Alert.AlertType.ERROR, message, ButtonType.OK));
+            failed.initOwner(stage);
+            failed.setHeaderText(null);
+            failed.showAndWait();
+        });
+    }
+
+    /** A Not set / On / Off choice for a save rule only a project sets (greyed out in User mode). */
+    private ComboBox<String> projectOnlyCombo(String key) {
+        ComboBox<String> combo = new ComboBox<>();
+        combo.getItems().setAll("", "true", "false");
+        combo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String v) {
+                return v == null || v.isEmpty()
+                        ? tr("settings.scope.notSet")
+                        : tr("true".equals(v) ? "common.on" : "common.off");
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        combo.setMinWidth(170);
+        combo.valueProperty().addListener((obs, was, now) -> {
+            if (!loading && now != null) {
+                scopeUi.write(key, now.isEmpty() ? null : Boolean.valueOf(now));
+            }
+        });
+        return combo;
+    }
+
+    /** The project-only rows show the project's choice in Project mode, "Not set" otherwise. */
+    private void showProjectOnlyValues() {
+        trimOnSaveCombo.setValue(String.valueOf(scopeUi.shown("editor.trimTrailingWhitespace", "")));
+        finalNewlineCombo.setValue(String.valueOf(scopeUi.shown("editor.insertFinalNewline", "")));
+    }
+
+    /** Registers every project-scopable control with the User / Project switch. */
+    private void registerScopedControls() {
+        scopeUi.register("editor.indentStyle", indentStyleCombo, v -> indentStyleCombo.setValue((String) v));
+        scopeUi.register(
+                "editor.tabSize",
+                tabSizeSpinner,
+                v -> tabSizeSpinner.getValueFactory().setValue((Integer) v));
+        scopeUi.register("editor.rulers", settingControls.get("rulers"), v -> {});
+        scopeUi.register("editor.languageRulers", settingControls.get("languageRulers"), v -> {});
+        scopeUi.register("editor.wordWrap", wordWrapCheck, v -> wordWrapCheck.setSelected((Boolean) v));
+        scopeUi.register("editor.wordWrapProse", wordWrapProseCheck, v -> wordWrapProseCheck.setSelected((Boolean) v));
+        scopeUi.registerProjectOnly("editor.trimTrailingWhitespace", trimOnSaveCombo);
+        scopeUi.registerProjectOnly("editor.insertFinalNewline", finalNewlineCombo);
+        scopeUi.register("editor.spellLanguage", spellLanguageCombo, v -> spellLanguageCombo.setValue((String) v));
+        buildToolCommandFields.forEach((bt, field) ->
+                scopeUi.register("build." + ProjectScope.toolId(bt), field, v -> field.setText((String) v)));
+        debugCommandFields.forEach(
+                (id, field) -> scopeUi.register("debug." + id, field, v -> field.setText((String) v)));
+        lspCommandFields.forEach(
+                (id, field) -> scopeUi.register("lspCommands." + id, field, v -> field.setText((String) v)));
+        lspEnableChecks.forEach(
+                (id, check) -> scopeUi.register("lspEnabled." + id, check, v -> check.setSelected((Boolean) v)));
+    }
+
     private void load() {
         // Another window's change re-reads every control: the field being typed in keeps what was typed.
         TextField typing = typingField();
@@ -8183,6 +8331,8 @@ public class SettingsWindow {
             autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)
                     Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
             autoSaveDelaySpinner.setDisable(!FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(mode));
+            showProjectOnlyValues();
+            scopeUi.showProjectValues(); // Project mode: the project's values where its file sets them
             if (typing != null) {
                 typing.setText(typed);
                 typing.positionCaret(caret);
@@ -8190,6 +8340,7 @@ public class SettingsWindow {
         } finally {
             loading = false;
         }
+        scopeUi.refresh();
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
         updatePreviewFont();
         fileNotes.show(config.shared().settingsFileIssues());

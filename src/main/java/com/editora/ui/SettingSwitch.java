@@ -41,6 +41,7 @@ final class SettingSwitch extends ToggleSwitch {
             sw.setAccessibleText(check.getText()); // a row title replaces this when the row supplies one
         }
         sw.selectedProperty().bindBidirectional(check.selectedProperty());
+        sw.getProperties().put(SettingSwitch.class, check); // which setting a row's switch shows (ProjectScopeSettings)
         sw.disableProperty().bind(check.disableProperty());
         return sw;
     }
