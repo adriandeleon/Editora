@@ -171,6 +171,8 @@ public final class GrammarRegistry {
         scopeToResource.put("source.python", "python");
         scopeToResource.put("source.groovy", "groovy");
         scopeToResource.put("source.kotlin", "kotlin");
+        scopeToResource.put("source.scala", "scala");
+        scopeToResource.put("source.clojure", "clojure");
         scopeToResource.put("source.ruby", "ruby");
         scopeToResource.put("source.c", "c");
         scopeToResource.put("source.cpp", "cpp");
@@ -241,6 +243,10 @@ public final class GrammarRegistry {
         mapExtensions("source.python", "py", "pyw", "pyi");
         mapExtensions("source.groovy", "groovy", "gvy", "gradle");
         mapExtensions("source.kotlin", "kt", "kts");
+        // Scala sources, Scala CLI / Ammonite scripts (.sc), sbt build files and Mill builds.
+        mapExtensions("source.scala", "scala", "sc", "sbt", "mill");
+        // Clojure, ClojureScript, shared .cljc (and the older .cljx), EDN data files and Babashka scripts.
+        mapExtensions("source.clojure", "clj", "cljs", "cljc", "cljx", "edn", "bb"); // .bb: a Babashka script
         mapExtensions("source.ruby", "rb", "rake", "gemspec");
         mapExtensions("source.c", "c", "h");
         mapExtensions("source.cpp", "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "inl");
