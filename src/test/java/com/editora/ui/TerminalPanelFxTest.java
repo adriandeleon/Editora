@@ -37,6 +37,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.testfx.api.FxToolkit;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1047,6 +1048,50 @@ class TerminalPanelFxTest {
         FakeConnector third = new FakeConnector();
         fx(() -> panel.runProgram("App.java", null, (c, r) -> third, code -> {}));
         assertEquals(2, fx(panel::terminalCount), "a run still going keeps its tab");
+    }
+
+    @Test
+    void tabsCanBeRenamedMovedAndHaveTheirOwnMenu() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        var first = fx(() -> panel.tabsForTest().getTabs().get(0));
+        var views = fx(panel::viewsForTest);
+
+        fx(() -> {
+            panel.rename(first, "build");
+            return null;
+        });
+        assertEquals("build", fx(first::getText), "a name of the user's own");
+
+        fx(() -> {
+            panel.moveTab(0, 2); // what a drag or Move Tab Right does
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)));
+        assertEquals(3, fx(panel::terminalCount), "a move closes nothing");
+        assertTrue(shells.stream().noneMatch(FakeConnector::wasClosed), "and ends no shell");
+        assertEquals(views.size(), fx(() -> panel.viewsForTest().size()));
+
+        fx(() -> {
+            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, true, false, false));
+            return null;
+        });
+        assertEquals(1, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)), "Ctrl+Shift+PageUp moves it left");
+
+        assertTrue(fx(() -> first.getContextMenu() != null
+                && first.getContextMenu().getItems().stream()
+                        .anyMatch(i -> tr("terminal.tab.rename").equals(i.getText()))),
+                "its own menu");
+        fx(() -> {
+            panel.rename(first, "");
+            return null;
+        });
+        assertFalse(fx(() -> "build".equals(first.getText())), "an empty name gives back the shell's title");
     }
 
     @Test

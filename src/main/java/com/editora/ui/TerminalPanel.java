@@ -49,8 +49,8 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Each tab owns a {@link TerminalView} and the shell behind it. Disposal is driven off the tab list rather
  * than the close button (Termina's rule): a tab leaves the list by its ✕, by "Close Terminal", by its shell
- * exiting, or by the window closing, and every one of those must end the shell. Tabs are not reorderable,
- * because a reorder is a remove and an add, which that listener would read as a close.
+ * exiting, or by the window closing, and every one of those must end the shell. A reorder is a remove and an add,
+ * so it runs with {@code reordering} set, which that listener reads as "nothing closed" (Termina's rule too).
  */
 final class TerminalPanel extends StackPane implements ToolWindowContent {
 
@@ -187,6 +187,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         });
         findBar.setOnClose(this::focusActive);
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
+            if (reordering) {
+                return; // a move is a remove and an add: nothing closed
+            }
             while (change.next()) {
                 for (Tab removed : change.getRemoved()) {
                     java.util.function.IntConsumer killed = programExits.remove(removed);
@@ -195,6 +198,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     }
                     dirs.remove(removed);
                     titles.remove(removed);
+                    names.remove(removed);
                     runKeys.remove(removed);
                     programNames.remove(removed);
                     TerminalView pending = connecting.remove(removed);
@@ -209,6 +213,12 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             }
             updateEmpty();
             refreshTitles();
+            for (Tab tab : tabs.getTabs()) {
+                if (tab.getContextMenu() == null) {
+                    tab.setContextMenu(tabMenu(tab));
+                }
+            }
+            Platform.runLater(() -> installTabDrag(0));
             if (!hasTerminals() && !shuttingDown && change.getList().isEmpty()) {
                 onLastClosed.run();
             }
@@ -627,7 +637,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             if (title == null) {
                 continue;
             }
-            String base = title.get();
+            String renamed = names.get(tab);
+            String base = renamed != null ? renamed : title.get();
             int n = seen.merge(base, 1, Integer::sum);
             tab.setText(n == 1 ? base : base + " (" + n + ")");
         }
@@ -963,6 +974,16 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 return;
             }
         }
+        if (TerminalKeys.isMoveTabRight(e)) {
+            moveActive(1);
+            e.consume();
+            return;
+        }
+        if (TerminalKeys.isMoveTabLeft(e)) {
+            moveActive(-1);
+            e.consume();
+            return;
+        }
         if (TerminalKeys.isNextTab(e)) {
             selectNext(true);
             e.consume();
@@ -994,6 +1015,188 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     /** Every tab's started view, in tab order; for tests. */
     List<TerminalView> viewsForTest() {
         return List.copyOf(views.values());
+    }
+
+    // ---------------------------------------------------------------- tab menu, rename, reorder
+
+    /** Names the user gave tabs; a named tab keeps its name whatever its shell sets as the title. */
+    private final Map<Tab, String> names = new LinkedHashMap<>();
+
+    /** True while a move rewrites the tab list, so its remove is not taken for a close. */
+    private boolean reordering;
+
+    /** Asks for a tab's new name: the current one, and where the answer goes. */
+    private java.util.function.BiConsumer<String, Consumer<String>> renamer = (current, onName) -> {};
+
+    void setRenamer(java.util.function.BiConsumer<String, Consumer<String>> renamer) {
+        this.renamer = renamer == null ? (current, onName) -> {} : renamer;
+    }
+
+    /** Renames {@code tab}; a blank name gives it back its shell's title. */
+    void rename(Tab tab, String name) {
+        if (name == null || name.isBlank()) {
+            names.remove(tab);
+        } else {
+            names.put(tab, name.strip());
+        }
+        refreshTitles();
+    }
+
+    /** Asks for a new name for the selected tab ({@code terminal.rename}). */
+    void renameActive() {
+        Tab tab = activeTab();
+        if (tab != null) {
+            renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name));
+        }
+    }
+
+    /** Moves the selected tab one place left ({@code -1}) or right, keeping it selected. */
+    void moveActive(int delta) {
+        Tab tab = activeTab();
+        if (tab != null) {
+            moveTabBy(tab, delta);
+        }
+    }
+
+    private void moveTabBy(Tab tab, int delta) {
+        int from = tabs.getTabs().indexOf(tab);
+        moveTab(from, from + delta);
+    }
+
+    /** Moves the tab at {@code from} to {@code to} (indices of the list without it), keeping it selected. */
+    void moveTab(int from, int to) {
+        int count = tabs.getTabs().size();
+        if (from < 0 || from >= count || to < 0 || to >= count || from == to) {
+            return;
+        }
+        reordering = true;
+        try {
+            Tab tab = tabs.getTabs().remove(from);
+            tabs.getTabs().add(to, tab);
+            tabs.getSelectionModel().select(tab);
+        } finally {
+            reordering = false;
+        }
+        refreshTitles();
+        focusActive();
+    }
+
+    /** A tab's own menu (right-click on its header): the tab it acts on is the clicked one. */
+    private javafx.scene.control.ContextMenu tabMenu(Tab tab) {
+        MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
+        rename.setOnAction(e -> renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name)));
+        MenuItem newTab = new MenuItem(tr("terminal.new"), Icons.plus());
+        newTab.setOnAction(e -> newTerminal());
+        MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
+        close.setOnAction(e -> requestClose(tab));
+        MenuItem closeOthers = new MenuItem(tr("menu.closeOthers"), Icons.closeOtherTabs());
+        closeOthers.setOnAction(e -> new ArrayList<>(tabs.getTabs()).stream()
+                .filter(t -> t != tab)
+                .forEach(this::requestClose));
+        MenuItem closeRight = new MenuItem(tr("menu.closeRight"), Icons.closeTabsRight());
+        closeRight.setOnAction(e -> {
+            int at = tabs.getTabs().indexOf(tab);
+            if (at >= 0) {
+                new ArrayList<>(tabs.getTabs().subList(at + 1, tabs.getTabs().size())).forEach(this::requestClose);
+            }
+        });
+        MenuItem moveLeft = new MenuItem(tr("terminal.tab.moveLeft"), Icons.chevronLeft());
+        moveLeft.setOnAction(e -> moveTabBy(tab, -1));
+        MenuItem moveRight = new MenuItem(tr("terminal.tab.moveRight"), Icons.chevronRight());
+        moveRight.setOnAction(e -> moveTabBy(tab, 1));
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu(
+                rename,
+                newTab,
+                new javafx.scene.control.SeparatorMenuItem(),
+                close,
+                closeOthers,
+                closeRight,
+                new javafx.scene.control.SeparatorMenuItem(),
+                moveLeft,
+                moveRight);
+        // Per show: how many tabs there are, and where this one sits, change after the menu is built.
+        menu.setOnShowing(e -> {
+            int at = tabs.getTabs().indexOf(tab);
+            int count = tabs.getTabs().size();
+            closeOthers.setDisable(count < 2);
+            closeRight.setDisable(at < 0 || at >= count - 1);
+            moveLeft.setDisable(at <= 0);
+            moveRight.setDisable(at < 0 || at >= count - 1);
+        });
+        return menu;
+    }
+
+    /** The tab being dragged (a Dragboard carries only serialisable data, and a Tab is not). */
+    private Tab draggedTab;
+
+    private static final javafx.scene.input.DataFormat TAB_DRAG =
+            new javafx.scene.input.DataFormat("application/x-editora-terminal-tab");
+
+    private static final String TAB_DRAG_INSTALLED = "editora.terminalTabDrag";
+
+    /**
+     * Drag-to-reorder on every tab's whole header (JavaFX has none of its own). The header is JavaFX's node, found
+     * from the tab's chip upwards once the skin has built it, so this retries a few pulses.
+     */
+    private void installTabDrag(int attempt) {
+        int found = 0;
+        for (Tab tab : tabs.getTabs()) {
+            Node header = headerOf(tab);
+            if (header == null) {
+                continue;
+            }
+            found++;
+            if (header.getProperties().putIfAbsent(TAB_DRAG_INSTALLED, Boolean.TRUE) == null) {
+                installTabDrag(tab, header);
+            }
+        }
+        if (found < tabs.getTabs().size() && attempt < 5 && getScene() != null) {
+            Platform.runLater(() -> installTabDrag(attempt + 1));
+        }
+    }
+
+    private static Node headerOf(Tab tab) {
+        Node node = tab.getGraphic();
+        while (node != null && !node.getStyleClass().contains("tab")) {
+            node = node.getParent();
+        }
+        return node;
+    }
+
+    private void installTabDrag(Tab tab, Node header) {
+        header.setOnDragDetected(e -> {
+            if (tabs.getTabs().size() < 2) {
+                return;
+            }
+            draggedTab = tab;
+            var board = header.startDragAndDrop(javafx.scene.input.TransferMode.MOVE);
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.put(TAB_DRAG, "tab"); // a marker: the tab itself is draggedTab
+            board.setContent(content);
+            board.setDragView(header.snapshot(null, null));
+            e.consume();
+        });
+        header.setOnDragOver(e -> {
+            if (draggedTab == null || e.getGestureSource() == header || !e.getDragboard().hasContent(TAB_DRAG)) {
+                return;
+            }
+            e.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+            e.consume();
+        });
+        header.setOnDragDropped(e -> {
+            if (draggedTab == null || !e.getDragboard().hasContent(TAB_DRAG)) {
+                return;
+            }
+            int from = tabs.getTabs().indexOf(draggedTab);
+            int over = tabs.getTabs().indexOf(tab);
+            if (from >= 0 && over >= 0) {
+                boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
+                moveTab(from, TerminalTabReorder.insertIndex(from, over, after, tabs.getTabs().size()));
+            }
+            e.setDropCompleted(true);
+            e.consume();
+        });
+        header.setOnDragDone(e -> draggedTab = null);
     }
 
     /** The tab pane; for tests. */

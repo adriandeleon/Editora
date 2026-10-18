@@ -44,7 +44,9 @@ public final class TerminalKeys {
                 || isPromptJump(token, mac)
                 || isFindToken(token, mac)
                 || token.equals("C-pageup")
-                || token.equals("C-pagedown")) {
+                || token.equals("C-pagedown")
+                || token.equals("C-S-pageup")
+                || token.equals("C-S-pagedown")) {
             return false;
         }
         if (mac && token.contains("Cmd-")) {
@@ -171,6 +173,20 @@ public final class TerminalKeys {
     /** The previous terminal tab: Ctrl+PageUp. */
     public static boolean isPreviousTab(KeyEvent e) {
         return e.getCode() == KeyCode.PAGE_UP && onlyControl(e);
+    }
+
+    /** Move the selected terminal tab right: Ctrl+Shift+PageDown, as GNOME Terminal and browsers do. */
+    public static boolean isMoveTabRight(KeyEvent e) {
+        return e.getCode() == KeyCode.PAGE_DOWN && controlShift(e);
+    }
+
+    /** Move the selected terminal tab left: Ctrl+Shift+PageUp. */
+    public static boolean isMoveTabLeft(KeyEvent e) {
+        return e.getCode() == KeyCode.PAGE_UP && controlShift(e);
+    }
+
+    private static boolean controlShift(KeyEvent e) {
+        return e.isControlDown() && e.isShiftDown() && !e.isAltDown() && !e.isMetaDown();
     }
 
     private static boolean onlyControl(KeyEvent e) {

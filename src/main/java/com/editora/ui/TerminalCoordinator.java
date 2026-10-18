@@ -97,6 +97,8 @@ final class TerminalCoordinator {
             });
             panel.setOnError(host::setError);
             panel.setPasteGuard(this::confirmMultilinePaste);
+            panel.setRenamer((current, onName) ->
+                    host.promptText(tr("terminal.tab.rename.title"), tr("terminal.tab.rename.label"), current, onName));
             // The last shell gone, the window goes too (as in IntelliJ and VS Code), and the editor has the keys.
             panel.setOnLastClosed(() -> {
                 if (ops.isToolWindowOpen()) {
@@ -147,6 +149,15 @@ final class TerminalCoordinator {
         }));
         registry.register(Command.of("terminal.previous", () -> {
             if (panel != null) panel.selectNext(false);
+        }));
+        registry.register(Command.of("terminal.rename", () -> {
+            if (panel != null) panel.renameActive();
+        }));
+        registry.register(Command.of("terminal.moveTabLeft", () -> {
+            if (panel != null) panel.moveActive(-1);
+        }));
+        registry.register(Command.of("terminal.moveTabRight", () -> {
+            if (panel != null) panel.moveActive(1);
         }));
     }
 
