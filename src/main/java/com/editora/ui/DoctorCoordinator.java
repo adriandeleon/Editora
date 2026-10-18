@@ -532,7 +532,7 @@ final class DoctorCoordinator {
             }
             if (s.isJsDebugEnabled()) {
                 String jsPath = scope.debugTool("javascript", s.getJsDebugPath());
-                List<String> node = DapServerRegistry.interpreterArgv("javascript", "");
+                String nodeSetting = s.getNodePath();
                 DoctorCheck jsDebug = DoctorCheck.checking("debug.javascript", "debug", tr("doctor.label.jsDebug"), "")
                         .withSettings("debug")
                         .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVASCRIPT.name());
@@ -541,10 +541,20 @@ final class DoctorCoordinator {
                     if (server.isEmpty()) {
                         return base.missing("doctor.tip.missingInstallable", "js-debug");
                     }
-                    DoctorProbes.Presence nodeP = DoctorProbes.version(node);
-                    return nodeP.present()
-                            ? base.ok(server.get().toString())
-                            : base.missing("doctor.tip.missing", "node");
+                    // The Node.js that runs js-debug: the Debugging setting's, else node on PATH (as a launch does).
+                    String node = com.editora.run.NodeRuntimes.resolveLocal(null, null, "", nodeSetting)
+                            .executable();
+                    DoctorProbes.Presence nodeP = DoctorProbes.version(List.of(node));
+                    if (!nodeP.present()) {
+                        return base.missing("doctor.tip.missing", node);
+                    }
+                    return com.editora.dap.JsLaunch.runsAdapter(nodeP.version())
+                            ? base.ok(server.get() + " · Node.js " + nodeP.version())
+                            : base.warn(
+                                    server.get().toString(),
+                                    "doctor.tip.jsDebugOldNode",
+                                    nodeP.version(),
+                                    String.valueOf(com.editora.dap.JsLaunch.MIN_ADAPTER_NODE_MAJOR));
                 }));
             }
         } else {

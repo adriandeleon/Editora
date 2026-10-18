@@ -119,9 +119,16 @@ public final class InstallCatalog {
             + JDTLS_BUILD
             + ".tar.gz";
 
-    /** GitHub "latest release" metadata for vscode-js-debug (the {@code js-debug-dap-v*.tar.gz} asset). */
+    /**
+     * The vscode-js-debug release Editora installs: pinned, not "latest" (review D16) — a new release can raise the
+     * Node.js it needs or move its entry point under users, so a newer one is adopted deliberately, after testing.
+     * No checksum: GitHub publishes none for the release asset.
+     */
+    public static final String JS_DEBUG_VERSION = "v1.117.0";
+
+    /** GitHub release metadata for {@link #JS_DEBUG_VERSION} (the {@code js-debug-dap-v*.tar.gz} asset). */
     public static final String JS_DEBUG_RELEASES_API =
-            "https://api.github.com/repos/microsoft/vscode-js-debug/releases/latest";
+            "https://api.github.com/repos/microsoft/vscode-js-debug/releases/tags/" + JS_DEBUG_VERSION;
 
     /** The lemminx-maven release used for the Maven-aware pom.xml server. */
     public static final String LEMMINX_MAVEN_VERSION = "0.12.0";

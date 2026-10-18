@@ -172,6 +172,8 @@ class InstallCatalogTest {
         Step jsDebug = steps.get(1);
         assertEquals(Kind.TARBALL, jsDebug.kind());
         assertEquals(InstallCatalog.JS_DEBUG_RELEASES_API, jsDebug.apiUrl());
+        // pinned to the tested release, not "latest" (review D16)
+        assertTrue(jsDebug.apiUrl().endsWith("/releases/tags/v1.117.0"), jsDebug.apiUrl());
         assertEquals("dapDebugServer.js", jsDebug.verifyEntry());
         assertNull(jsDebug.directUrl());
     }
