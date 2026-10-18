@@ -36,6 +36,13 @@ and runs on a JDK that has JDI.
 
 - Groovy breakpoints, stepping, locals and exception stops work with nothing to install; Clojure (and Kotlin or
   Scala as a fallback) can reuse it.
+- Kotlin uses it as its primary debugger (its classes carry `SourceFile Foo.kt`). Kotlin need not keep a file in its
+  package's folder, so a breakpoint file's own `package` line also counts (`JvmSourceMap.declaredPackage`). A
+  compiled program started by `java` itself takes the agent on its command line. The adapter also attaches
+  (`attach`: `hostName`, `port`) to a JVM a build tool started under a suspended agent, which is how Debug via Build
+  Tool reaches a Kotlin program; kotlin-lsp's own debug server was not adopted (undocumented, alpha, open path
+  bugs).
 - No expression evaluation beyond variable and field paths, no conditional breakpoints or logpoints, no hot code
   replace. Those need code to run in the program, which this adapter deliberately does not do yet.
-- Debugging on a remote host is not covered: the adapter runs in Editora's process and connects to a loopback port.
+- Debugging on a remote host is not covered: the adapter runs in Editora's process and connects to a loopback port
+  (an attach may name another host, but nothing maps that host's paths).

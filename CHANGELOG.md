@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Kotlin: JetBrains' Kotlin LSP, Run and Debug.** Kotlin's language server is now JetBrains' Kotlin LSP: one
+  click installs a pinned release (about 370 MB with its own Java runtime, which Editora says before it starts),
+  and it imports the Gradle build for completion, navigation and diagnostics. A configured command is kept, so
+  fwcd's kotlin-language-server still works. Run File, the gutter ▶ and a new Kotlin run configuration run a
+  `.kts` script with `kotlinc -script`, and compile a `.kt` file with a top-level `main` into a cached jar that runs
+  with `java -jar` on the Settings JDK (compiled again only when the file changes); the Run window shows the Kotlin
+  and Java versions. Debug stops at breakpoints in programs, scripts and lambdas through Editora's own debugger,
+  names frames as Kotlin does (`Hello.main { lambda }`), and steps over the standard library and coroutines
+  machinery. Debug via Build Tool and Attach to JVM work from a Kotlin file too.
 - **Groovy: language server, Run and Debug.** Groovy files get completion, diagnostics, outline, rename and
   formatting from the gvy language server, installed in one click (a pinned jar, run on the JDK chosen in Settings).
   Run File, the gutter ▶ and a new Groovy script run configuration run a script with `groovy` on that JDK, and the
