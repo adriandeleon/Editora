@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Run console draws what a terminal would: colours, carriage-return progress bars, clear. */
 @Tag("fx")
-class RunPanelTerminalFxTest {
+class RunConsoleAnsiFxTest {
 
     @BeforeAll
     static void boot() throws Exception {

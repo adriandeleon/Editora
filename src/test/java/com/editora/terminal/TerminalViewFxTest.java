@@ -583,7 +583,7 @@ class TerminalViewFxTest {
             typed.append(key);
             String now = typed.toString();
             await(() -> screen().startsWith(now), "the echo of " + key);
-            assertEquals(null, call(this::predictedText), "nothing predicted after " + key);
+            assertEquals(null, fx(this::predictedText), "nothing predicted after " + key);
         }
     }
 
@@ -595,7 +595,7 @@ class TerminalViewFxTest {
         for (String key : java.util.List.of("a", "b", "c")) {
             type(key);
             Thread.sleep(150);
-            assertEquals(null, call(this::predictedText));
+            assertEquals(null, fx(this::predictedText));
             connector.emit(key);
         }
     }
@@ -644,6 +644,7 @@ class TerminalViewFxTest {
         });
     }
 
+    /** The screen's text. Throws when it cannot be read, so a negative check cannot pass on a failure. */
     private String screen() {
         try {
             return fx(() -> {
@@ -656,7 +657,7 @@ class TerminalViewFxTest {
                 }
             });
         } catch (Exception e) {
-            return "";
+            throw new IllegalStateException("the screen could not be read", e);
         }
     }
 

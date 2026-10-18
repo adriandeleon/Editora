@@ -102,6 +102,26 @@ class TerminalSessionPtyTest {
         }
     }
 
+    @Test
+    void aResizeReachesTheShell() throws Exception {
+        assumeTrue(!LocalShell.isWindows(), "shell syntax below is POSIX");
+        // Not just JediTerm's buffer: what the shell's own tty says (vim and htop draw at that size).
+        StubDisplay display = new StubDisplay();
+        TerminalSession session = new TerminalSession(
+                display, LocalShell.start(java.util.List.of("/bin/sh", "-i"), null, 80, 24), 80, 24, 5000);
+        try {
+            session.start();
+            assertTrue(awaitReady(session), "the shell started");
+            session.resize(100, 30);
+            TerminalTextBuffer buffer = session.getTextBuffer();
+            assertTrue(
+                    awaitTyping(session, buffer, "stty size\r", "30 100"),
+                    () -> "the tty never said 30 100. Screen was:\n" + screen(buffer));
+        } finally {
+            session.close();
+        }
+    }
+
     /** True once the shell has written anything at all — i.e. it is up and has printed a prompt. */
     private static boolean awaitReady(TerminalSession session) throws InterruptedException {
         TerminalTextBuffer buffer = session.getTextBuffer();

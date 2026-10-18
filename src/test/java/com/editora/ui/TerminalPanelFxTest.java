@@ -157,14 +157,28 @@ class TerminalPanelFxTest {
             panel.newTerminal();
             return null;
         });
+        shells.get(0).emit("copy me\r\n");
+        await(() -> call(() -> panel.activeView().getSession().getTextBuffer().getScreenLines().contains("copy me")),
+                "the output");
         fx(() -> {
             var view = panel.activeView();
+            view.selectAll();
+            javafx.scene.input.ClipboardContent empty = new javafx.scene.input.ClipboardContent();
+            empty.putString("");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(empty);
             Event.fireEvent(
                     view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, !mac, !mac, false, mac)); // copy
-            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, false, true, false, false));
             return null;
         });
-
+        assertTrue(
+                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString().contains("copy me")),
+                "the selection is on the clipboard");
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, false, true, false, false));
+            return null;
+        });
         await(() -> shells.get(0).written().equals("\u0003"), "only the plain Ctrl+C on the wire");
     }
 
@@ -497,7 +511,16 @@ class TerminalPanelFxTest {
             return null;
         });
         assertTrue(fx(() -> panel.findBar().isShowing()), "the chord opened the bar");
-        assertTrue(shells.get(0).written().isEmpty(), "and nothing reached the shell");
+        // The emulator writes on its own thread, so a leaked chord would arrive late: send a key after it and
+        // wait for that, then nothing else may be there.
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_TYPED, "z", "z", KeyCode.UNDEFINED, false, false, false, false));
+            return null;
+        });
+        await(() -> shells.get(0).written().contains("z"), "the key sent after the chord");
+        assertEquals("z", shells.get(0).written(), "and nothing of the chord reached the shell");
         String early = fx(() -> {
             panel.findBar().field().setText("b");
             panel.findBar().field().setText("be");
@@ -547,7 +570,10 @@ class TerminalPanelFxTest {
             return null;
         });
         assertTrue(program.wasClosed());
-        Thread.sleep(300);
+        // The program's end arrives after its tab's close: let it, then it must not have been told twice.
+        await(() -> call(() -> panel.terminalCount() == 0), "the tab gone");
+        fx(() -> null);
+        fx(() -> null);
         assertEquals(List.of(-1), exits);
     }
 
