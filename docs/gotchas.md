@@ -390,5 +390,8 @@ Watching** row says why. In tests, dispose every `ProjectPanel` (`@ExtendWith(Di
 stops its folder watchers.
 
 The polling fallback tells a file renamed over another apart by its file key (the inode). Windows has none
-(`fileKey()` is null, and NTFS tunnelling keeps the old creation time), so there a rename-over with the same
-size *and* the same modified millisecond goes unseen; a test of that case must `assumeTrue` a file key.
+(`fileKey()` is null), so there it compares the creation time at full precision instead: a replacing rename
+(`ATOMIC_MOVE` + `REPLACE_EXISTING`, as `AtomicFileWrite` does) keeps the new file's own creation time. Only
+delete-then-rename gets the old one back (NTFS tunnelling), so that case, with the same size and modified
+time, still goes unseen. Don't assume tunnelling applies to every replace; it was measured on `windows-latest`
+in #1276.

@@ -37,16 +37,12 @@ public final class PollingWatchService implements WatchService {
     public static final long INTERVAL_MS = 2000;
 
     /**
-     * A folder entry as last seen: what a change to it would alter. The file key (the inode on Linux and macOS)
-     * catches a save that renames a new file over the old one within the same millisecond and size.
-     *
-     * <p>Windows gives no file key ({@code fileKey()} is null), and NTFS tunnelling hands the replacement the old
-     * file's creation time, so there such a save goes unseen until the file next changes. Left so on purpose:
-     * reading the file's index or contents means opening every recently changed file each round, and an open
-     * handle can make another program's rename-over fail with a sharing violation — worse than a missed event on
-     * a path Windows rarely takes (its native watcher has no per-user limit to run out of).
+     * A folder entry as last seen: what a change to it would alter. A save that renames a new file over the old
+     * one within the same millisecond and size is caught by the file key (the inode on Linux and macOS) or, where
+     * there is none (Windows), by the creation time, kept to the filesystem's full precision (100 ns on NTFS): a
+     * Windows rename that replaces its target keeps the new file's own creation time.
      */
-    private record Stamp(long modified, long size, boolean dir, Object fileKey) {}
+    private record Stamp(long modified, long size, boolean dir, Object fileKey, long created) {}
 
     private final Map<Path, Key> keys = new ConcurrentHashMap<>();
     private final LinkedBlockingDeque<Key> signalled = new LinkedBlockingDeque<>();
@@ -135,7 +131,12 @@ public final class PollingWatchService implements WatchService {
                     BasicFileAttributes a = Files.readAttributes(p, BasicFileAttributes.class);
                     out.put(
                             p.getFileName().toString(),
-                            new Stamp(a.lastModifiedTime().toMillis(), a.size(), a.isDirectory(), a.fileKey()));
+                            new Stamp(
+                                    a.lastModifiedTime().toMillis(),
+                                    a.size(),
+                                    a.isDirectory(),
+                                    a.fileKey(),
+                                    a.creationTime().to(TimeUnit.NANOSECONDS)));
                 } catch (IOException gone) {
                     // removed between the listing and the read: the next round reports it
                 }

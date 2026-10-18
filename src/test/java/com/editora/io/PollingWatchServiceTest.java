@@ -4,13 +4,10 @@ import java.io.IOException;
 import java.nio.file.ClosedWatchServiceException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** The polling fallback reports what a native watcher would, and a refused native watcher falls back to it. */
 class PollingWatchServiceTest {
@@ -65,49 +61,30 @@ class PollingWatchServiceTest {
         }
     }
 
-    /** A save renames a new file over the old one, the same size: reported, by its newer time. */
+    /**
+     * A save renames a new file over the old one; same size, maybe the same millisecond — still a change. The file
+     * key tells on Linux and macOS; Windows has none, but a replacing rename (ATOMIC_MOVE) leaves the new file's own
+     * creation time. Windows "tunnels" the old creation time only onto a file renamed in after a delete.
+     */
     @Test
     void aFileReplacedByARenameIsReported(@TempDir Path dir) throws Exception {
         Path file = Files.writeString(dir.resolve("open.txt"), "v1");
-        Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis() - 60_000)); // saved earlier
         try (PollingWatchService ws = new PollingWatchService(30)) {
             ws.register(dir, ALL);
-            replaceByRename(file, "v2", false);
-            assertModifyReported(ws, dir, "open.txt");
-        }
-    }
-
-    /** The same, within the same millisecond: only the file key tells the two files apart. */
-    @Test
-    void aFileReplacedByARenameInTheSameMillisecondIsReported(@TempDir Path dir) throws Exception {
-        Path file = Files.writeString(dir.resolve("open.txt"), "v1");
-        // Windows has no file key (and NTFS tunnelling keeps the creation time): the documented limit of Stamp.
-        assumeTrue(
-                Files.readAttributes(file, BasicFileAttributes.class).fileKey() != null,
-                "the file system gives files a key");
-        try (PollingWatchService ws = new PollingWatchService(30)) {
-            ws.register(dir, ALL);
-            replaceByRename(file, "v2", true);
-            assertModifyReported(ws, dir, "open.txt");
-        }
-    }
-
-    /** Writes {@code text} to a temporary file beside {@code file}, then renames it over {@code file}. */
-    private static void replaceByRename(Path file, String text, boolean sameTime) throws IOException {
-        Path tmp = Files.writeString(file.resolveSibling(file.getFileName() + ".tmp"), text);
-        if (sameTime) {
+            Path tmp = Files.writeString(dir.resolve("open.txt.tmp"), "v2");
             Files.setLastModifiedTime(tmp, Files.getLastModifiedTime(file)); // the same time, to the millisecond
+            Files.move(
+                    tmp,
+                    file,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            List<String> events = new ArrayList<>();
+            long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!events.contains("ENTRY_MODIFY open.txt") && System.nanoTime() < end) {
+                events.addAll(next(ws, dir)); // the temporary file may show up in a round of its own
+            }
+            assertTrue(events.contains("ENTRY_MODIFY open.txt"), String.valueOf(events));
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    private static void assertModifyReported(WatchService ws, Path dir, String name) throws InterruptedException {
-        List<String> events = new ArrayList<>();
-        long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (!events.contains("ENTRY_MODIFY " + name) && System.nanoTime() < end) {
-            events.addAll(next(ws, dir)); // the temporary file may show up in a round of its own
-        }
-        assertTrue(events.contains("ENTRY_MODIFY " + name), String.valueOf(events));
     }
 
     @Test
