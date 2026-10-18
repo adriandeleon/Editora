@@ -564,7 +564,11 @@ final class RunConfigurationCoordinator {
             return;
         }
         try {
-            com.editora.config.SharedRunConfigs.save(new com.fasterxml.jackson.databind.ObjectMapper(), root, configs);
+            com.editora.config.SharedRunConfigs.save(
+                    new com.fasterxml.jackson.databind.ObjectMapper(),
+                    root,
+                    configs,
+                    host.config().getWorkspaceState().getDeployments());
             host.setStatus(tr(
                     "status.run.configsExported",
                     configs.size(),
@@ -597,6 +601,12 @@ final class RunConfigurationCoordinator {
         List<com.editora.config.RunConfiguration> merged = com.editora.config.SharedRunConfigs.merge(
                 host.config().getWorkspaceState().getRunConfigurations(), incoming);
         host.config().getWorkspaceState().setRunConfigurations(merged);
+        host.config()
+                .getWorkspaceState()
+                .setDeployments(com.editora.config.SharedRunConfigs.mergeDeployments(
+                        host.config().getWorkspaceState().getDeployments(),
+                        com.editora.config.SharedRunConfigs.loadDeployments(
+                                new com.fasterxml.jackson.databind.ObjectMapper(), root)));
         host.config().save();
         refreshRunConfigs();
         host.setStatus(tr("status.run.configsImported", incoming.size()));
