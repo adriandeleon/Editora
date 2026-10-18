@@ -78,6 +78,13 @@ class HostScriptsTest {
         assertEquals(new HostScripts.RemoteFile(5, 1_700_000_000L), l.files().get("a b.txt"));
         assertEquals(new HostScripts.RemoteFile(6, 1_700_000_001L), l.files().get("c/d.txt"));
         assertNull(HostScripts.parseListing("bash: sh: not found"));
+        String decomposed = java.text.Normalizer.normalize("Ñandú.txt", java.text.Normalizer.Form.NFD);
+        HostScripts.Listing mac =
+                HostScripts.parseListing("EDITORA-DEPLOY 1 present tar=1 gzip=1\n2 1700000000 ./" + decomposed + "\n");
+        assertEquals(
+                new HostScripts.RemoteFile(2, 1_700_000_000L),
+                mac.files().get("Ñandú.txt"),
+                "a name macOS's tar stored decomposed is the composed name that was sent");
     }
 
     @Test

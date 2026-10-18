@@ -80,6 +80,7 @@ public final class LocalFiles {
                 continue;
             }
             Path file = root.resolve(relative);
+            String name = nfc(relative);
             BasicFileAttributes attrs;
             try {
                 attrs = Files.readAttributes(file, BasicFileAttributes.class);
@@ -87,7 +88,7 @@ public final class LocalFiles {
                 continue; // tracked but deleted in the work tree: nothing to send
             }
             if (attrs.isRegularFile()) { // a submodule is listed as its folder: not sent
-                files.add(file(relative, file, attrs));
+                files.add(file(name, file, attrs));
                 if (files.size() > MAX_FILES) {
                     throw new IOException("more than " + MAX_FILES + " files to deploy");
                 }
@@ -159,7 +160,15 @@ public final class LocalFiles {
     }
 
     private static String relative(Path root, Path file) {
-        return root.relativize(file).toString().replace('\\', '/');
+        return nfc(root.relativize(file).toString().replace('\\', '/'));
+    }
+
+    /**
+     * {@code name} composed (NFC): how a deploy names a file on both sides, since a host may store it decomposed
+     * (macOS's tar does) and this machine may list it either way (HFS+, a Git index).
+     */
+    static String nfc(String name) {
+        return java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFC);
     }
 
     /**

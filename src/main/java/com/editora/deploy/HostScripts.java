@@ -150,6 +150,9 @@ public final class HostScripts {
                 if (path.startsWith("./")) {
                     path = path.substring(2);
                 }
+                // macOS's tar (libarchive) writes names decomposed (NFD), as HFS+ wanted: "Ñandú" sent composed
+                // comes back as other bytes, and would look missing on every deploy. Both sides compare composed.
+                path = java.text.Normalizer.normalize(path, java.text.Normalizer.Form.NFC);
                 if (LocalFiles.acceptable(path)) {
                     files.put(path, new RemoteFile(size, seconds));
                 }
