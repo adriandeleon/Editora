@@ -499,6 +499,43 @@ class DebugReviewCWindowFxTest {
     }
 
     /**
+     * The breakpoint form hugs its fields: its wrapping hint used to ask for its whole text on one line, which
+     * stretched the card across the window and squeezed the field labels to an ellipsis.
+     */
+    @Test
+    void theBreakpointFormHugsItsFieldsAndWrapsItsHint() throws Exception {
+        EditorBuffer b = open(file("util.py", UTIL));
+        OverlayHost overlay = FxTestSupport.field(fx.controller, "overlayHost");
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(1, 0);
+            debug.editBreakpointAtCaret();
+        });
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            Node card = completingFields().getFirst();
+            while (!card.getStyleClass().contains("overlay-form")) {
+                card = card.getParent();
+            }
+            double width = card.getLayoutBounds().getWidth();
+            assertTrue(width > 0 && width < 700, "the card is " + width + " px wide");
+            double height = card.getLayoutBounds().getHeight();
+            assertTrue(height < 400, "the card is " + height + " px tall: the hint wraps where it is laid out");
+            for (Node n : card.lookupAll(".label")) {
+                if (n instanceof javafx.scene.control.Label l
+                        && l.getParent() instanceof javafx.scene.layout.GridPane) {
+                    double w = l.getWidth();
+                    if (l.getStyleClass().contains("settings-note")) {
+                        assertTrue(l.getHeight() >= l.prefHeight(w) - 0.5, "the hint is not clipped");
+                    } else {
+                        assertTrue(w >= l.prefWidth(-1) - 0.5, l.getText() + " is shown whole");
+                    }
+                }
+            }
+        });
+        FxTestSupport.runOnFx(overlay::hide);
+    }
+
+    /**
      * Follow-up 5: the watch prompt and a breakpoint's condition and log message complete in the stopped frame
      * (a log message only inside its braces), and the editor's value popup is the expandable one (follow-up 6).
      */

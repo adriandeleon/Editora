@@ -2677,11 +2677,17 @@ final class DebugCoordinator {
                 false);
     }
 
-    /** A small muted hint label under a form field. */
+    /**
+     * A small muted hint label under a form field, wrapped at a fixed width. Left at its own preferred width a
+     * wrapping label asks for its whole text on one line, and the overlay card hugs its content, so the hint
+     * stretched the form across the window and squeezed the field labels to an ellipsis. (A width bound to the
+     * field's instead changes mid-layout and leaves the card at a stale height.)
+     */
     private static Label note(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note");
         l.setWrapText(true);
+        l.setPrefWidth(420);
         return l;
     }
 
