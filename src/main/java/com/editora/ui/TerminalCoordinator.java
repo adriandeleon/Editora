@@ -71,8 +71,6 @@ final class TerminalCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private TerminalPanel panel;
-    /** Whether the panel has opened its first shell: once, on first show, so a stripe click gets a prompt. */
-    private boolean started;
 
     TerminalCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -99,6 +97,12 @@ final class TerminalCoordinator {
             });
             panel.setOnError(host::setError);
             panel.setPasteGuard(this::confirmMultilinePaste);
+            // The last shell gone, the window goes too (as in IntelliJ and VS Code), and the editor has the keys.
+            panel.setOnLastClosed(() -> {
+                if (ops.isToolWindowOpen()) {
+                    ops.hideToolWindow();
+                }
+            });
             panel.setLinkActions(new LinkActions() {
                 @Override
                 public void openUrl(String url) {
@@ -111,13 +115,12 @@ final class TerminalCoordinator {
                 }
             });
             panel.apply(config(host.settings()));
-            // The first time the panel reaches a scene the theme can be read, and a shell started: opening the
-            // window from its stripe should give a prompt, not a "New Terminal" button.
+            // Each time the panel reaches a scene the theme can be read, and with no shell one is started: opening
+            // the window from its stripe should give a prompt, not a "New Terminal" button.
             panel.sceneProperty().addListener((o, was, scene) -> {
                 if (scene != null) {
                     applyTheme();
-                    if (!started && !panel.hasTerminals()) {
-                        started = true;
+                    if (!panel.hasTerminals()) {
                         // Without the keyboard: this is also how a terminal left open comes back at startup, and
                         // the editor keeps it then. Every path that shows the window on purpose focuses it itself.
                         // A pulse later, so a window being restored has its files back and the shell starts where
@@ -160,7 +163,6 @@ final class TerminalCoordinator {
         ops.showToolWindow();
         TerminalPanel p = panel();
         if (!p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         } else {
             p.focusActive();
@@ -174,7 +176,6 @@ final class TerminalCoordinator {
         TerminalPanel p = panel();
         // Showing the window may already have started the first shell; a second one would be a surprise.
         if (!fresh || !p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         }
     }
@@ -184,7 +185,6 @@ final class TerminalCoordinator {
      * its own is skipped, so the window does not open with a second tab in the project folder.
      */
     void openAt(Path dir) {
-        started = true;
         ops.showToolWindow();
         panel().newTerminal(dir);
     }
@@ -194,7 +194,6 @@ final class TerminalCoordinator {
         ops.showToolWindow();
         TerminalPanel p = panel();
         if (!p.hasTerminals()) {
-            started = true;
             p.newTerminal();
         }
         p.find();
@@ -473,7 +472,6 @@ final class TerminalCoordinator {
             java.util.Map<String, String> env,
             java.util.function.IntConsumer onExit)
             throws IOException {
-        started = true; // the window opening for a program does not also start a shell
         ops.showToolWindow();
         String program = argv.isEmpty() ? title : RunningProgram.displayName(argv.getFirst());
         return panel().runProgram(title, program, directory, programConnector(directory, argv, env), onExit);

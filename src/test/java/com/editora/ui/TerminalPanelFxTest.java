@@ -998,6 +998,33 @@ class TerminalPanelFxTest {
     }
 
     @Test
+    void aShellStartedInTheBackgroundGetsTheKeyboardOnlyWhenItWasAskedFor() throws Exception {
+        javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);
+        TerminalPanel.Shells fake = fakeShells();
+        fx(() -> {
+            panel = new TerminalPanel(
+                    (dir, shell) -> com.editora.terminal.TerminalConnector.Factory.background(fake.open(dir, shell)),
+                    (title, programs) -> true,
+                    () -> null);
+            stage = new Stage();
+            stage.setScene(new Scene(new javafx.scene.layout.VBox(editor, panel), 800, 400));
+            stage.show();
+            editor.requestFocus();
+            panel.newTerminalQuietly(); // a restored window's
+            return null;
+        });
+        await(() -> call(() -> panel.activeView() != null), "the quiet shell started");
+        Thread.sleep(200);
+        assertTrue(fx(editor::isFocused), "a quiet start leaves the editor the keyboard");
+
+        fx(() -> {
+            panel.newTerminal(); // asked for
+            return null;
+        });
+        await(() -> call(() -> panel.activeView() != null && panel.activeView().isFocused()), "the asked-for shell's focus");
+    }
+
+    @Test
     void aShellStartedQuietlyLeavesTheKeyboardWhereItWas() throws Exception {
         // A terminal left open comes back at startup: the editor's keystrokes must not land in a shell.
         javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);

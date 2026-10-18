@@ -208,6 +208,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             }
             updateEmpty();
             refreshTitles();
+            if (!hasTerminals() && !shuttingDown && change.getList().isEmpty()) {
+                onLastClosed.run();
+            }
         });
     }
 
@@ -425,9 +428,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     connecting.remove(tab);
                     views.put(tab, view);
                     content.getChildren().setAll(view);
-                    if (tab.isSelected()) {
-                        focusActive();
-                    }
+                    focusIfAsked(tab, view);
                 },
                 e -> {
                     connecting.remove(tab);
@@ -555,9 +556,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                     connecting.remove(tab);
                     content.getChildren().remove(note);
                     install(tab, view);
-                    if (tab.isSelected()) {
-                        focusActive();
-                    }
+                    focusIfAsked(tab, view);
                 },
                 e -> {
                     connecting.remove(tab);
@@ -680,7 +679,17 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Ends every shell, for the window closing. Asks nothing: the window has already decided. */
     void shutdown() {
+        shuttingDown = true;
         tabs.getTabs().clear();
+    }
+
+    private boolean shuttingDown;
+
+    /** Run when the last tab goes (its shell exited, or it was closed); not when the window closes. */
+    private Runnable onLastClosed = () -> {};
+
+    void setOnLastClosed(Runnable onLastClosed) {
+        this.onLastClosed = onLastClosed == null ? () -> {} : onLastClosed;
     }
 
     /** Whether there is a terminal tab, connected or still connecting. */
@@ -706,12 +715,30 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     void focusActive() {
         Platform.runLater(() -> {
             TerminalView view = activeView();
+            Tab tab = activeTab();
             if (view != null) {
                 view.requestFocus();
+            } else if (tab != null && connecting.containsKey(tab)) {
+                focusWhenStarted = tab; // its shell is still starting: the keyboard goes there once it has
             } else if (!hasTerminals() && emptyStart.isVisible()) {
                 emptyStart.requestFocus();
             }
         });
+    }
+
+    /**
+     * A tab whose shell was asked for the keyboard while it was still starting. Only an asked-for focus follows a
+     * start: a shell started quietly (a restored window's) must not take the keyboard when it comes up.
+     */
+    private Tab focusWhenStarted;
+
+    private void focusIfAsked(Tab tab, TerminalView view) {
+        if (focusWhenStarted == tab) {
+            focusWhenStarted = null;
+            if (tab.isSelected()) {
+                view.requestFocus();
+            }
+        }
     }
 
     /**

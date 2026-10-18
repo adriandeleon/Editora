@@ -72,10 +72,10 @@ class TerminalFocusFxTest {
 
             FxTestSupport.runOnFx(() -> terminals.panel().activeView().getSession().sendString("exit\n"));
             await(() -> call(() -> terminals.panel().terminalCount() == 0), "the shell's exit");
+            await(() -> call(() -> !toolWindows.isOpen(window)), "the window hiding with its last shell");
             await(
-                    () -> focusOwner(fx) instanceof javafx.scene.control.Button b
-                            && b.getText().equals(com.editora.i18n.Messages.tr("terminal.new")),
-                    "New Terminal has the keyboard, not a toolbar button: " + focusOwner(fx));
+                    () -> !(focusOwner(fx) instanceof javafx.scene.control.Button),
+                    "the editor has the keyboard, not a toolbar button: " + focusOwner(fx));
         }
     }
 
