@@ -593,4 +593,45 @@ class SettingsSyncPageFxTest {
             assertFalse(warning.isVisible(), "not again this run");
         });
     }
+
+    /** S2: Sync Now could not be stopped. Cancel stops it before it writes anything on this computer. */
+    @Test
+    void syncNowCanBeCancelledBeforeItWritesAnything() throws Exception {
+        open(null);
+        connect(remote.toString(), "main");
+        awaitIdle();
+        Files.writeString(other.resolve("dictionary.txt"), "zzfromother\n");
+        assertTrue(otherSyncs().ok());
+
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService worker = FxTestSupport.field(sync, "worker");
+        worker.execute(
+                () -> { // stands for a slow network: the sync waits behind this
+                    try {
+                        hold.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        FxTestSupport.runOnFx(() -> {
+            this.<Button>control("syncNowButton").fire();
+            Button cancel = control("syncCancelButton");
+            assertTrue(cancel.isVisible(), "offered while it syncs");
+            cancel.fire();
+        });
+        hold.countDown();
+        awaitIdle();
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(fx.shared.getUserDictionary().contains("zzfromother"), "nothing arrived");
+            assertFalse(this.<Button>control("syncCancelButton").isVisible());
+            assertNotEquals(
+                    tr("sync.state.syncing"),
+                    this.<Label>control("syncStateLabel").getText());
+        });
+
+        FxTestSupport.runOnFx(() -> this.<Button>control("syncNowButton").fire());
+        awaitIdle();
+        FxTestSupport.runOnFx(
+                () -> assertTrue(fx.shared.getUserDictionary().contains("zzfromother"), "the next sync runs in full"));
+    }
 }

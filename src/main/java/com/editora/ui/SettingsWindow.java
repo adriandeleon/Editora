@@ -4248,13 +4248,19 @@ public class SettingsWindow {
             }
         });
         syncCancelButton = new Button(tr("settings.sync.cancel"));
-        syncCancelButton.setOnAction(
-                e -> { // stops waiting; git finishes (or times out) on its own, unused
-                    syncConnectRun++;
-                    syncChecking = false;
-                    syncConnectMessage = null;
-                    showSyncNotice(tr("settings.sync.cancelled"));
-                });
+        syncCancelButton.setOnAction(e -> {
+            if (!syncChecking) { // a sync under way: stopped before it writes anything here, or let finish
+                if (settingsSync != null && !settingsSync.cancelSync()) {
+                    showSyncNotice(tr("settings.sync.cancelTooLate"));
+                }
+                return;
+            }
+            // Connect's look: stops waiting; git finishes (or times out) on its own, unused
+            syncConnectRun++;
+            syncChecking = false;
+            syncConnectMessage = null;
+            showSyncNotice(tr("settings.sync.cancelled"));
+        });
         Button openFolder = new Button(tr("settings.sync.openFolder"));
         openFolder.setOnAction(e -> openSyncFolder());
         cardRow(
@@ -4382,8 +4388,8 @@ public class SettingsWindow {
                 && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
         syncAnywayButton.setVisible(needsConfirmation);
         syncAnywayButton.setManaged(needsConfirmation);
-        syncCancelButton.setVisible(syncChecking);
-        syncCancelButton.setManaged(syncChecking);
+        syncCancelButton.setVisible(syncChecking || syncing);
+        syncCancelButton.setManaged(syncChecking || syncing);
         boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
                 && settingsSync != null
                 && !settingsSync.storedCredentialsKept;
