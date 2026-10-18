@@ -29,6 +29,12 @@ class RunServiceBackpressureFxTest {
                 System.out.print("x".repeat(2_000_000));
                 return;
             }
+            if (args.length > 0 && "numbered".equals(args[0])) {
+                for (int i = 0; i < 40_000; i++) {
+                    System.out.println("line " + i + " " + "x".repeat(50)); // about 60 characters a line
+                }
+                return;
+            }
             for (int i = 0; i < 20_000; i++) {
                 System.out.println("x".repeat(100));
             }
@@ -267,6 +273,71 @@ class RunServiceBackpressureFxTest {
         assertTrue(events.contains("[output truncated while the UI was busy]"));
         assertTrue(events.size() < 5_000, "the FX queue must stay bounded, got " + events.size());
         assertEquals("exit:0", events.get(events.size() - 1));
+    }
+
+    /**
+     * A flood the console cannot keep up with drops queued lines from the middle (the program is never slowed),
+     * and says so with a marker. What is queued when the flood ends must still cover a whole console (its
+     * 200,000-character cap): the queue used to stop at 2,048 lines, about 120,000 characters of 60-character
+     * lines, so the newest screenful the console kept was itself a patchwork with a gap in it.
+     */
+    @Test
+    void afterAFloodTheNewestConsolefulIsContiguous() throws Exception {
+        RunService service = new RunService();
+        List<String> lines = java.util.Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        CountDownLatch releaseFx = new CountDownLatch(1);
+        String java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
+                .toString();
+        List<String> command =
+                List.of(java, "-cp", System.getProperty("java.class.path"), FloodMain.class.getName(), "numbered");
+        Platform.runLater(() -> {
+            service.runInDir(Path.of("."), command, new RunService.Listener() {
+                @Override
+                public void onStart(String commandLine) {
+                    started.countDown();
+                }
+
+                @Override
+                public void onOutput(String line, boolean stderr) {
+                    lines.add(line);
+                }
+
+                @Override
+                public void onExit(int code) {
+                    exited.countDown();
+                }
+
+                @Override
+                public void onError(String message) {
+                    exited.countDown();
+                }
+            });
+            try {
+                releaseFx.await(20, TimeUnit.SECONDS); // the UI is busy for the whole flood
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        Process process = awaitProcess(service);
+        assertTrue(process.waitFor(30, TimeUnit.SECONDS));
+        Thread.sleep(300);
+        releaseFx.countDown();
+        assertTrue(exited.await(20, TimeUnit.SECONDS));
+
+        List<String> all = new ArrayList<>(lines);
+        assertTrue(all.contains(com.editora.process.OutputPump.OUTPUT_DROPPED), "the flood did overflow");
+        int chars = 0;
+        int expected = 39_999;
+        for (int i = all.size() - 1; i >= 0 && chars < 200_000; i--) {
+            String line = all.get(i);
+            assertEquals("line " + expected + " " + "x".repeat(50), line, "a gap inside the last 200,000 characters");
+            expected--;
+            chars += line.length() + 1;
+        }
+        service.shutdown();
     }
 
     private static Process awaitProcess(RunService service) throws Exception {
