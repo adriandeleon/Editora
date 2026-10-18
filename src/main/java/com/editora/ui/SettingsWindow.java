@@ -137,6 +137,7 @@ public class SettingsWindow {
         BUILD_TOOLS(tr("settings.cat.buildTools"), Group.LANGUAGES_TOOLS),
         WEB(tr("settings.cat.web"), Group.LANGUAGES_TOOLS),
         EXTERNAL_TOOLS(tr("settings.cat.externalTools"), Group.LANGUAGES_TOOLS),
+        TERMINAL(tr("settings.cat.terminal"), Group.LANGUAGES_TOOLS),
         // Version control
         GIT(tr("settings.cat.git"), Group.VERSION_CONTROL),
         GITHUB(tr("settings.cat.github"), Group.VERSION_CONTROL),
@@ -2070,6 +2071,7 @@ public class SettingsWindow {
         pages.put(Category.SNIPPETS, snippetsPage());
         pages.put(Category.TEMPLATES, templatesPage());
         pages.put(Category.TODO, todoPage());
+        pages.put(Category.TERMINAL, terminalPage());
         pages.put(Category.SPELL_CHECK, spellPage());
         pages.put(Category.SEARCH, searchPage());
         // Languages & Tools
@@ -3874,6 +3876,77 @@ public class SettingsWindow {
                 Category.TODO,
                 todoSettings.partColorsEditor(),
                 "todo tag priority critical high medium low part color");
+        return p;
+    }
+
+    /** LANGUAGES & TOOLS ▸ Terminal: the integrated terminal's shell, its look, and the keys Editora keeps. */
+    private VBox terminalPage() {
+        VBox p = page(tr("settings.cat.terminal"), tr("settings.terminal.subtitle"));
+        Category cat = Category.TERMINAL;
+        Card shell = card(p, tr("settings.section.terminalShell"));
+        textRow(
+                shell,
+                cat,
+                "terminal.shell",
+                "$SHELL",
+                Settings::getTerminalShell,
+                Settings::setTerminalShell,
+                "terminal shell bash zsh fish powershell cmd login");
+        Card display = card(p, tr("settings.section.terminalDisplay"));
+        intRow(
+                display,
+                cat,
+                "terminal.fontSize",
+                72,
+                1,
+                Settings::getTerminalFontSize,
+                Settings::setTerminalFontSize,
+                "terminal font text size zoom");
+        choiceRow(
+                display,
+                cat,
+                "terminal.cursor",
+                false,
+                java.util.List.of("block", "underline", "bar"),
+                Settings::getTerminalCursor,
+                Settings::setTerminalCursor,
+                "terminal cursor block underline bar caret shape");
+        switchRow(
+                display,
+                cat,
+                "terminal.bell",
+                false,
+                Settings::isTerminalBell,
+                Settings::setTerminalBell,
+                "terminal bell flash beep visual");
+        intRow(
+                display,
+                cat,
+                "terminal.scrollback",
+                100_000,
+                500,
+                Settings::getTerminalScrollback,
+                Settings::setTerminalScrollback,
+                "terminal scrollback history lines buffer");
+        Card keys = card(p, tr("settings.section.terminalKeys"));
+        textRow(
+                keys,
+                cat,
+                "terminal.ideCommands",
+                "",
+                st -> String.join(", ", st.getTerminalIdeCommands()),
+                (st, text) -> st.setTerminalIdeCommands(java.util.Arrays.stream(text.split("[,\\s]+"))
+                        .filter(id -> !id.isBlank())
+                        .toList()),
+                "terminal keys shortcuts commands shell keyboard ctrl escape allow");
+        switchRow(
+                keys,
+                cat,
+                "terminal.confirmClose",
+                false,
+                Settings::isTerminalConfirmClose,
+                Settings::setTerminalConfirmClose,
+                "terminal close confirm running program ask kill");
         return p;
     }
 

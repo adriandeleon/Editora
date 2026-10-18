@@ -67,6 +67,18 @@ module com.editora {
     // Bouncy Castle, for MINA SSHD's ed25519 (keys and host keys). Editora does not use it itself; required
     // here so the module is resolved at run time — MINA only reaches it by name.
     requires org.bouncycastle.provider;
+    // Integrated terminal (ADR 0014): JediTerm core emulates VT/xterm, pty4j opens the pseudo-terminal. Both are
+    // automatic modules written in Kotlin that log through slf4j. An automatic module reads every module in the
+    // graph but pulls none into it, so kotlin.stdlib and org.slf4j are required here by name; without them the
+    // build is clean and the first emulator call fails with NoClassDefFoundError (`editora --check-terminal`).
+    requires jediterm.core;
+    requires pty4j;
+    requires kotlin.stdlib;
+    requires org.slf4j;
+    // macOS has no /proc, so reading a local shell's working directory means proc_pidinfo through JNA
+    // (terminal/ProcessCwd). JNA is on the path for pty4j, but arriving through another module does not make it
+    // readable by this one.
+    requires com.sun.jna;
 
     opens com.editora to
             javafx.fxml;

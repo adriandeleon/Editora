@@ -59,8 +59,9 @@ Other inspected paths:
 - Git is **external `git`**, via `GitService`/`ProcessRunner`, not JGit. There is no JGit metadata to add.
 - SSH is Apache MINA SSHD 2.20.0 (`sshd-osgi`, `sshd-sftp`), with host verification and SFTP `Path`s
   through `RemoteFileSystems`. Its service providers caused a measured build-time heap failure.
-- Terminal integration is external OS terminal launching in `DesktopActions`, not an embedded PTY/JNI
-  terminal. Run/output tools use subprocesses.
+- Terminal integration is external OS terminal launching in `DesktopActions`. The integrated terminal's PTY
+  stack (pty4j over JNA, ADR 0014) is configured for the JVM build only; `--check-terminal` is reachable from
+  `App.main` but unqualified here. Run/output tools use subprocesses.
 - LSP and DAP use LSP4J 1.0.0 JSON-RPC over child-process streams/sockets. `ProcessRegistry` owns
   lifecycle cleanup. A native Editora does not eliminate the external JDK needed by JDT LS/debuggers.
 - HTTP and AI use JDK HTTP APIs, Jackson, and external ACP adapters. HTML preview serves loopback HTTP
@@ -392,7 +393,7 @@ process boundary.
 | Git diff UI/history | Not qualified. External Git status success does not certify these UIs. |
 | DAP/debugging | Not qualified; DTO/proxy coverage and actual debugger startup remain. |
 | SSH/remote editing | Not qualified. Runtime filesystem-provider discovery fixes image construction, not SSH behavior. |
-| Terminal integration | Not qualified; external process-launch integration remains a platform test. |
+| Terminal integration | Not qualified; external process-launch integration remains a platform test. The integrated terminal's JNA and pty4j natives (ADR 0014) are not configured for the native image. |
 | HTTP client | Not qualified. MCP's loopback HTTP **server** works; it does not certify HTTP editor requests. |
 | Spell checking | Startup reaches Hunspell/Lucene; spelling/suggestions not qualified. Non-HotSpot size/optimization warning remains visible. |
 | AI integrations | Not qualified; no provider credentials or external agent workflows exercised. |

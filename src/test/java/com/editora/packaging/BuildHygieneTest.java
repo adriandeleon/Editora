@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       themselves; this pins that they keep doing so — and that the fat-jar one never grows into a full
  *       clean, which would delete the installers the release workflow has just built.
  *   <li>The fat jar's licence handling (shade transformers).
- *   <li>The vendored RichTextFX jar against its recorded checksum.
+ *   <li>The vendored RichTextFX and JediTerm jars against their recorded checksums.
  *   <li>The coverage floors quoted in {@code docs/testing.md} against the ones the build enforces.
  * </ul>
  */
@@ -176,16 +176,29 @@ class BuildHygieneTest {
         assertTrue(found, "pom.xml no longer packages LICENSE and NOTICE into META-INF/editora/");
     }
 
-    // ---- the vendored RichTextFX fork -------------------------------------------------------------------
+    // ---- vendored artifacts (m2-repo) ------------------------------------------------------------------
 
     @Test
     void theVendoredRichTextFxJarMatchesItsRecordedChecksumAndIsTheOnlyVersion() throws Exception {
-        String version = text(child(pom.getDocumentElement(), "properties"), "richtextfx.version");
-        Path artifact = REPO.resolve(Path.of("m2-repo", "io", "github", "adriandeleon", "richtextfx"));
+        assertVendored(Path.of("io", "github", "adriandeleon", "richtextfx"), "richtextfx.version", "RichTextFX");
+    }
+
+    @Test
+    void theVendoredJediTermJarMatchesItsRecordedChecksumAndIsTheOnlyVersion() throws Exception {
+        assertVendored(Path.of("org", "jetbrains", "jediterm", "jediterm-core"), "jediterm.version", "JediTerm");
+    }
+
+    /** The jar and pom the pom.xml version names are there, match their recorded SHA-256, and stand alone. */
+    private static void assertVendored(Path coordinates, String versionProperty, String name) throws Exception {
+        String version = text(child(pom.getDocumentElement(), "properties"), versionProperty);
+        String artifactId = coordinates.getFileName().toString();
+        Path artifact = REPO.resolve("m2-repo").resolve(coordinates);
         Path dir = artifact.resolve(version);
-        assertTrue(Files.isDirectory(dir), "pom.xml asks for richtextfx " + version + " but " + dir + " is missing");
+        assertTrue(
+                Files.isDirectory(dir),
+                "pom.xml asks for " + artifactId + " " + version + " but " + dir + " is missing");
         for (String extension : List.of("jar", "pom")) {
-            Path file = dir.resolve("richtextfx-" + version + "." + extension);
+            Path file = dir.resolve(artifactId + "-" + version + "." + extension);
             Path recorded = dir.resolve(file.getFileName() + ".sha256");
             assertTrue(Files.isRegularFile(recorded), "no recorded checksum for the vendored " + file.getFileName());
             String actual = HexFormat.of()
@@ -193,8 +206,8 @@ class BuildHygieneTest {
             assertEquals(
                     Files.readString(recorded).trim(),
                     actual,
-                    file.getFileName() + " is not the file whose checksum was recorded — if the fork was "
-                            + "rebuilt on purpose, update the .sha256 beside it");
+                    file.getFileName() + " is not the file whose checksum was recorded — if it was replaced on "
+                            + "purpose, update the .sha256 beside it");
         }
         try (var versions = Files.list(artifact)) {
             assertEquals(
@@ -202,7 +215,7 @@ class BuildHygieneTest {
                     versions.filter(Files::isDirectory)
                             .map(p -> p.getFileName().toString())
                             .toList(),
-                    "m2-repo carries RichTextFX versions the pom does not use");
+                    "m2-repo carries " + name + " versions the pom does not use");
         }
     }
 
