@@ -47,7 +47,7 @@ class ProcessCwdPtyTest {
         AtomicReference<String> reported = new AtomicReference<>();
         try {
             session.start();
-            assumeTrue(awaitReady(session), "shell did not start");
+            assertTrue(awaitReady(session), "the shell started");
 
             // The shell is started in the user's home, and that is what a fresh tab should say.
             assertEquals(

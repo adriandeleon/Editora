@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
+import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -110,7 +111,15 @@ final class TerminalCoordinator {
                     applyTheme();
                     if (!started && !panel.hasTerminals()) {
                         started = true;
-                        panel.newTerminal();
+                        // Without the keyboard: this is also how a terminal left open comes back at startup, and
+                        // the editor keeps it then. Every path that shows the window on purpose focuses it itself.
+                        // A pulse later, so a window being restored has its files back and the shell starts where
+                        // the active one is rather than in the home folder.
+                        Platform.runLater(() -> {
+                            if (!panel.hasTerminals()) {
+                                panel.newTerminalQuietly();
+                            }
+                        });
                     }
                 }
             });
@@ -125,9 +134,13 @@ final class TerminalCoordinator {
         registry.register(Command.of("terminal.find", this::find));
     }
 
-    /** {@code tool.terminal}: hides an open terminal, or shows it with a shell ready and focused. */
+    /**
+     * {@code tool.terminal}: shows the terminal with a shell ready and focused; hides it when it already has the
+     * keyboard. An open terminal the keyboard is elsewhere gets the keyboard, as IntelliJ's Alt+F12 does: a
+     * keyboard user who can see it has no other way in.
+     */
     void toggle() {
-        if (ops.isToolWindowOpen() && panel != null) {
+        if (ops.isToolWindowOpen() && panel != null && panel.hasFocusWithin()) {
             ops.hideToolWindow();
             return;
         }

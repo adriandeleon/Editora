@@ -1628,6 +1628,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
+        toolWindows.setFloatingSceneSetup(dispatcher::install);
         // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
         // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {

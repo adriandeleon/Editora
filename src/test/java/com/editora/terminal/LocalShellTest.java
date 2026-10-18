@@ -20,6 +20,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LocalShellTest {
 
     @Test
+    void testShellsGetAHomeOfTheirOwnAndKeepNoHistory() {
+        // The developer's ~/.bash_history had gained 81 test commands, and their profile ran in every test shell.
+        String home = System.getProperty(LocalShell.TEST_HOME);
+        org.junit.jupiter.api.Assertions.assertNotNull(home, "the build names a HOME for test shells");
+        var env = LocalShell.environment();
+        org.junit.jupiter.api.Assertions.assertEquals(home, env.get("HOME"));
+        org.junit.jupiter.api.Assertions.assertEquals("/dev/null", env.get("HISTFILE"));
+        org.junit.jupiter.api.Assertions.assertTrue(java.nio.file.Files.isDirectory(java.nio.file.Path.of(home)));
+    }
+
+    @Test
     void aConfiguredShellIsUsed() {
         // Derived from this platform rather than hardcoded: the first version asserted /bin/sh and
         // CI caught it on Windows, where that is not executable so the override is ignored and the

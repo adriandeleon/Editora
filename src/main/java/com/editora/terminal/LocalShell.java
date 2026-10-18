@@ -123,7 +123,32 @@ public final class LocalShell {
         env.remove("_");
         env.remove("COLUMNS");
         env.remove("LINES");
+        isolateForTests(env, System.getProperty(TEST_HOME));
         return env;
+    }
+
+    /**
+     * System property naming a HOME for every shell started here, set by the build's test runs: a test shell then
+     * reads no profile of the developer's and writes no history (it used to append its commands to their
+     * {@code ~/.bash_history}).
+     */
+    static final String TEST_HOME = "editora.terminal.home";
+
+    /** With a test {@code home}: that HOME (created), no history file, and none of the user's startup-file paths. */
+    static void isolateForTests(Map<String, String> env, String home) {
+        if (home == null || home.isBlank()) {
+            return;
+        }
+        try {
+            Files.createDirectories(Path.of(home));
+        } catch (IOException | RuntimeException e) {
+            // the shell falls back to / for a HOME that is not there
+        }
+        env.put("HOME", home);
+        env.put("HISTFILE", "/dev/null");
+        env.remove("ZDOTDIR");
+        env.remove("ENV");
+        env.remove("BASH_ENV");
     }
 
     /**

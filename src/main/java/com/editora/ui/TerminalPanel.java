@@ -53,7 +53,7 @@ import static com.editora.i18n.Messages.tr;
  * exiting, or by the window closing, and every one of those must end the shell. Tabs are not reorderable,
  * because a reorder is a remove and an add, which that listener would read as a close.
  */
-final class TerminalPanel extends StackPane {
+final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Everything a terminal reads from Settings, as one snapshot the coordinator pushes. */
     record Config(
@@ -160,7 +160,9 @@ final class TerminalPanel extends StackPane {
             if (findBar.isShowing()) {
                 placeFindBar(now);
             }
-            focusActive();
+            if (!quiet) {
+                focusActive();
+            }
         });
         findBar.setOnClose(this::focusActive);
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
@@ -254,6 +256,22 @@ final class TerminalPanel extends StackPane {
         newTerminal(directory.get());
     }
 
+    /**
+     * Set while a shell starts without taking the keyboard: the one a restored window opens on its own, whose
+     * first keystrokes belong to the editor that had them before the restart.
+     */
+    private boolean quiet;
+
+    /** Opens a new tab with a shell in the coordinator's directory without moving focus. */
+    void newTerminalQuietly() {
+        quiet = true;
+        try {
+            newTerminal(directory.get());
+        } finally {
+            quiet = false;
+        }
+    }
+
     /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
     void newTerminal(Path dir) {
         Tab tab = new Tab();
@@ -279,7 +297,9 @@ final class TerminalPanel extends StackPane {
         }
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
-        focusActive();
+        if (!quiet) {
+            focusActive();
+        }
     }
 
     /** Program tabs, with whom to tell when the program ends; told once. */
@@ -558,13 +578,39 @@ final class TerminalPanel extends StackPane {
         return tab == null ? null : views.get(tab);
     }
 
+    /**
+     * Gives the keyboard to the selected terminal, or to "New Terminal" when there is none. Decided when it runs,
+     * not when asked: the last tab's removal asks before the empty state is shown, and focus then fell on whatever
+     * came next in the window (a toolbar button, which Space would press).
+     */
     void focusActive() {
-        TerminalView view = activeView();
-        if (view != null) {
-            Platform.runLater(view::requestFocus);
-        } else if (emptyStart.isVisible()) {
-            Platform.runLater(emptyStart::requestFocus);
+        Platform.runLater(() -> {
+            TerminalView view = activeView();
+            if (view != null) {
+                view.requestFocus();
+            } else if (!hasTerminals() && emptyStart.isVisible()) {
+                emptyStart.requestFocus();
+            }
+        });
+    }
+
+    /**
+     * The tool-window manager's way in, on every path that shows the window (stripe, float, jump, the next-window
+     * command): focus goes to the terminal, not to the panel, which takes no keys.
+     */
+    @Override
+    public void focusFirstItem() {
+        focusActive();
+    }
+
+    /** Whether the keyboard is in this panel (a terminal, its find bar, a banner's button). */
+    boolean hasFocusWithin() {
+        var scene = getScene();
+        var owner = scene == null ? null : scene.getFocusOwner();
+        for (Node n = owner; n != null; n = n.getParent()) {
+            if (n == this) return true;
         }
+        return false;
     }
 
     /** New settings: font, cursor and bell apply now; scrollback and shell from the next tab. */
