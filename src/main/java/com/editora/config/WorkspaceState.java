@@ -55,8 +55,11 @@ public class WorkspaceState {
      *
      * <p>v19 → v20 added {@code debugBreakpointsMuted} (Mute Breakpoints, kept per project). Additive; absent
      * means not muted, as before.
+     *
+     * <p>v20 → v21 added {@code runInTerminal} to a run configuration (run it in a Terminal tab). Additive; absent
+     * means the Run console, as before.
      */
-    public static final int SCHEMA_VERSION = 20;
+    public static final int SCHEMA_VERSION = 21;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";

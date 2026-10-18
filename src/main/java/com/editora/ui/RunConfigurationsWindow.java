@@ -11,6 +11,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -141,6 +142,9 @@ public final class RunConfigurationsWindow {
         ComboBox<JdkChoice> jdk = new ComboBox<>();
         JdkChoice.configure(jdk, tr("settings.runConfig.jdk.global"));
         jdk.setId("run-config-jdk");
+        CheckBox inTerminal = new CheckBox(tr("settings.runConfig.runInTerminal"));
+        inTerminal.setId("run-config-in-terminal");
+        inTerminal.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runInTerminal.hint")));
 
         GridPane form = new GridPane();
         form.setHgap(8);
@@ -166,6 +170,7 @@ public final class RunConfigurationsWindow {
         formRow(form, 10, "settings.runConfig.env", env);
         formRow(form, 11, "settings.runConfig.beforeLaunch", beforeLaunch);
         formRow(form, 12, "settings.runConfig.jdk", jdk);
+        formRow(form, 13, "settings.runConfig.console", inTerminal);
         form.setDisable(true);
 
         type.setId("run-config-type");
@@ -219,7 +224,8 @@ public final class RunConfigurationsWindow {
                 beforeLaunch.getText(),
                 jdk.getValue() == null ? "" : jdk.getValue().home(),
                 interpreter.getText(),
-                interpreterOptions.getText());
+                interpreterOptions.getText(),
+                inTerminal.isSelected());
         Runnable commit = () -> {
             int index = list.getSelectionModel().getSelectedIndex();
             if (index < 0 || loading) {
@@ -234,6 +240,7 @@ public final class RunConfigurationsWindow {
             commit.run();
         });
         jdk.valueProperty().addListener((o, was, now) -> commit.run());
+        inTerminal.selectedProperty().addListener((o, was, now) -> commit.run());
         for (TextField value : List.of(
                 name,
                 target,
@@ -286,6 +293,7 @@ public final class RunConfigurationsWindow {
                 env.setText(now == null ? "" : now.env());
                 beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
                 JdkChoice.select(jdk, now == null ? "" : now.jdkHome());
+                inTerminal.setSelected(now != null && now.runInTerminal());
                 applyType.run(); // the type listener is silent when two rows share a type
             } finally {
                 loading = false;

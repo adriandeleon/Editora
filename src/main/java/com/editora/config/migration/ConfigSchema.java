@@ -332,7 +332,9 @@ public enum ConfigSchema {
                     // v18→19: + debugExceptionFilters (additive; absent means each adapter's defaults)
                     Map.entry(18, ConfigMigrations::identity),
                     // v19→20: + debugBreakpointsMuted (additive; absent means not muted)
-                    Map.entry(19, ConfigMigrations::identity))),
+                    Map.entry(19, ConfigMigrations::identity),
+                    // v20→21: + a run configuration's runInTerminal (additive; absent means the Run console)
+                    Map.entry(20, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

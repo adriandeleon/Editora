@@ -6108,6 +6108,17 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public com.editora.terminal.ProgramRun runInTerminal(
+                String title,
+                Path dir,
+                List<String> command,
+                Map<String, String> env,
+                java.util.function.IntConsumer onExit)
+                throws java.io.IOException {
+            return terminalCoordinator.runProgram(title, dir, command, env, onExit);
+        }
+
+        @Override
         public void onRunStateChanged() {
             runConfigurations.updateRunConfigButtons();
             updateRunButton();
