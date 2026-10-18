@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -28,8 +29,15 @@ class GpgIntegrationTest {
     static void keyring() throws Exception {
         assumeTrue(GpgTestHome.available(), "gpg is not installed");
         home = GpgTestHome.create();
-        adrian = home.newKey("Adrian Test <adrian@example.com>");
-        dana = home.newKey("Dana Ruiz <dana@example.com>");
+        try {
+            adrian = home.newKey("Adrian Test <adrian@example.com>");
+            dana = home.newKey("Dana Ruiz <dana@example.com>");
+        } catch (IllegalStateException e) {
+            // A Windows gpg that cannot run against a throwaway home (no agent there) is the runner's limit, not
+            // Editora's: Editora never sets GNUPGHOME. Anywhere else this is a real failure.
+            assumeFalse(GpgTestHome.WINDOWS, "this Windows gpg cannot use a throwaway home: " + e.getMessage());
+            throw e;
+        }
         home.dropSecretKey(dana); // Dana's public key only, as for a colleague
     }
 

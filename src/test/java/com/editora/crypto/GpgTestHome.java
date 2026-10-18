@@ -22,6 +22,10 @@ public final class GpgTestHome implements AutoCloseable {
     public final Path home;
     public final String gpg;
 
+    /** Windows: Git for Windows' gpg is an MSYS build, which only takes POSIX paths in {@code GNUPGHOME}. */
+    public static final boolean WINDOWS =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+
     private GpgTestHome(Path home, String gpg) {
         this.home = home;
         this.gpg = gpg;
@@ -47,7 +51,22 @@ public final class GpgTestHome implements AutoCloseable {
     }
 
     public Map<String, String> env() {
-        return Map.of("GNUPGHOME", home.toString());
+        return Map.of("GNUPGHOME", msys(gpg) ? posixPath(home.toString()) : home.toString());
+    }
+
+    /** Whether {@code gpg} is an MSYS build (Git for Windows' {@code usr\bin}), which reads paths as POSIX. */
+    static boolean msys(String gpg) {
+        String g = gpg.toLowerCase(java.util.Locale.ROOT).replace('\\', '/');
+        return WINDOWS && g.contains("/usr/bin/");
+    }
+
+    /** {@code C:\\Users\\x} → {@code /c/Users/x}, the form an MSYS program reads. */
+    static String posixPath(String windows) {
+        if (windows.length() >= 2 && windows.charAt(1) == ':') {
+            return "/" + Character.toLowerCase(windows.charAt(0))
+                    + windows.substring(2).replace('\\', '/');
+        }
+        return windows.replace('\\', '/');
     }
 
     public Gpg gpg() {
