@@ -32,7 +32,12 @@ public final class TerminalKeys {
      * @param ideCommands command ids that pass, each exact or ending in {@code .*} for a prefix
      */
     public static boolean reachesEditora(String token, String commandId, List<String> ideCommands, boolean mac) {
-        if (token == null || isCopyOrPaste(token, mac) || isPromptJump(token, mac) || isFindToken(token, mac)) {
+        if (token == null
+                || isCopyOrPaste(token, mac)
+                || isPromptJump(token, mac)
+                || isFindToken(token, mac)
+                || token.equals("C-pageup")
+                || token.equals("C-pagedown")) {
             return false;
         }
         if (mac && token.contains("Cmd-")) {
@@ -85,6 +90,23 @@ public final class TerminalKeys {
     /** Scroll to the next prompt: Ctrl+Shift+Down, or Cmd+Down on macOS. */
     public static boolean isNextPrompt(KeyEvent e, boolean mac) {
         return e.getCode() == KeyCode.DOWN && clipboardModifier(e, mac);
+    }
+
+    /**
+     * The next terminal tab: Ctrl+PageDown, as in VS Code, browsers and most terminal emulators. Kept by the
+     * terminal on every platform; few programs read the chord.
+     */
+    public static boolean isNextTab(KeyEvent e) {
+        return e.getCode() == KeyCode.PAGE_DOWN && onlyControl(e);
+    }
+
+    /** The previous terminal tab: Ctrl+PageUp. */
+    public static boolean isPreviousTab(KeyEvent e) {
+        return e.getCode() == KeyCode.PAGE_UP && onlyControl(e);
+    }
+
+    private static boolean onlyControl(KeyEvent e) {
+        return e.isControlDown() && !e.isShiftDown() && !e.isAltDown() && !e.isMetaDown();
     }
 
     /** Copy: Ctrl+Shift+C, or Cmd+C on macOS. */

@@ -12,7 +12,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
-import javafx.beans.binding.Bindings;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -157,6 +156,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         addEventFilter(KeyEvent.KEY_PRESSED, this::onClipboardKey);
 
         tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (now != null) {
+                now.getStyleClass().remove(BELL);
+            }
             if (findBar.isShowing()) {
                 placeFindBar(now);
             }
@@ -173,6 +175,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                         killed.accept(-1); // its tab closed under it: the program ends with it
                     }
                     dirs.remove(removed);
+                    titles.remove(removed);
                     programNames.remove(removed);
                     TerminalView pending = connecting.remove(removed);
                     if (pending != null) {
@@ -185,6 +188,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 }
             }
             updateEmpty();
+            refreshTitles();
         });
     }
 
@@ -274,7 +278,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
     void newTerminal(Path dir) {
-        Tab tab = new Tab();
+        // Named while it connects: the host's name says what is coming, where an empty tab said nothing.
+        Tab tab = new Tab(dir == null ? tr("toolwindow.terminal") : targetLabel.apply(dir));
         // The view paints its own grid; the wrapper fills the strip a whole number of rows leaves below it
         // with the same ground. Only the content: the tab strip keeps the window theme's colours.
         StackPane content = new StackPane();
@@ -347,6 +352,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             }
         });
         view.setOnSessionEnded(() -> programEnded(tab, view));
+        markBell(tab, view);
+        titles.put(tab, () -> title);
         programExits.put(tab, onExit == null ? code -> {} : onExit);
         try {
             view.start(connector);
@@ -499,14 +506,50 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             previous.close();
         }
         ((StackPane) tab.getContent()).getChildren().setAll(view);
-        tab.textProperty().unbind();
-        tab.textProperty()
-                .bind(Bindings.createStringBinding(
-                        () -> titleOr(view.getDisplay().tabTitleProperty().get()),
-                        view.getDisplay().tabTitleProperty()));
+        titles.put(tab, () -> titleOr(view.getDisplay().tabTitleProperty().get()));
+        view.getDisplay().tabTitleProperty().addListener(o -> refreshTitles());
+        refreshTitles();
         tab.getTooltip().textProperty().unbind();
         tab.getTooltip().textProperty().bind(view.getDisplay().tabTooltipProperty());
+        markBell(tab, view);
     }
+
+    /** Each tab's own title, before same-name tabs are numbered (see {@link #refreshTitles}). */
+    private final Map<Tab, Supplier<String>> titles = new LinkedHashMap<>();
+
+    /**
+     * Sets every tab's text from its title, numbering repeats in tab order ("project", "project (2)"): eleven
+     * tabs in one folder all read "project" and could not be told apart.
+     */
+    private void refreshTitles() {
+        Map<String, Integer> seen = new java.util.HashMap<>();
+        for (Tab tab : tabs.getTabs()) {
+            Supplier<String> title = titles.get(tab);
+            if (title == null) {
+                continue;
+            }
+            String base = title.get();
+            int n = seen.merge(base, 1, Integer::sum);
+            tab.setText(n == 1 ? base : base + " (" + n + ")");
+        }
+    }
+
+    /**
+     * A bell in a tab out of sight marks the tab until it is looked at; the flash alone happens where nobody is
+     * looking.
+     */
+    private void markBell(Tab tab, TerminalView view) {
+        view.setOnBell(() -> {
+            if (!tab.isSelected() || !isVisible() || getScene() == null) {
+                if (!tab.getStyleClass().contains(BELL)) {
+                    tab.getStyleClass().add(BELL);
+                }
+            }
+        });
+    }
+
+    /** Style class of a tab whose bell rang while it was not in view. */
+    static final String BELL = "terminal-bell";
 
     /**
      * A shell ended: its tab closes, unless the connection to its machine went — then the tab keeps what the shell
@@ -530,9 +573,12 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         HBox banner = new HBox(10, message, reconnect);
         banner.getStyleClass().add("terminal-lost-banner");
         banner.setAlignment(Pos.CENTER_LEFT);
-        banner.setMaxHeight(Region.USE_PREF_SIZE);
-        StackPane.setAlignment(banner, Pos.TOP_CENTER);
-        ((StackPane) tab.getContent()).getChildren().add(banner);
+        // Above the text, taking rows from it, not over it: what the shell printed last (often the error) is
+        // exactly what an overlay covered.
+        StackPane content = (StackPane) tab.getContent();
+        javafx.scene.layout.VBox column = new javafx.scene.layout.VBox(banner, view);
+        javafx.scene.layout.VBox.setVgrow(view, javafx.scene.layout.Priority.ALWAYS);
+        content.getChildren().setAll(column);
         if (tab.isSelected()) {
             Platform.runLater(reconnect::requestFocus);
         }
@@ -540,9 +586,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Whether {@code tab}'s connection was lost and it is offering to reconnect. */
     boolean showsReconnect(Tab tab) {
-        return tab != null
-                && ((StackPane) tab.getContent())
-                        .getChildren().stream().anyMatch(n -> n.getStyleClass().contains("terminal-lost-banner"));
+        return tab != null && tab.getContent().lookup(".terminal-lost-banner") != null;
     }
 
     /** The selected tab, or null. */
@@ -685,6 +729,22 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         if (view == null) {
             return;
         }
+        // Typed in the find bar, these are the field's: Paste pastes the query, not into the shell.
+        for (Node n = e.getTarget() instanceof Node t ? t : null; n != null && n != this; n = n.getParent()) {
+            if (n == findBar) {
+                return;
+            }
+        }
+        if (TerminalKeys.isNextTab(e)) {
+            selectNext(true);
+            e.consume();
+            return;
+        }
+        if (TerminalKeys.isPreviousTab(e)) {
+            selectNext(false);
+            e.consume();
+            return;
+        }
         if (TerminalKeys.isCopy(e, MAC)) {
             view.copySelection();
             e.consume();
@@ -701,6 +761,21 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** The tab pane; for tests. */
+    TabPane tabsForTest() {
+        return tabs;
+    }
+
+    /** Selects the next terminal tab to the right ({@code forward}) or left, wrapping. */
+    void selectNext(boolean forward) {
+        int count = tabs.getTabs().size();
+        if (count < 2) {
+            return;
+        }
+        int at = tabs.getSelectionModel().getSelectedIndex();
+        tabs.getSelectionModel().select(Math.floorMod(at + (forward ? 1 : -1), count));
     }
 
     /** Opens the find bar over the selected tab, seeded with a one-line selection. */

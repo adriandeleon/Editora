@@ -34,12 +34,14 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The integrated terminal in a window: the Terminal tool window's panel, the {@code tool.terminal},
- * {@code terminal.new} and {@code terminal.close} commands, and the settings and theme it follows.
+ * {@code terminal.new}, {@code terminal.close}, {@code terminal.find}, {@code terminal.next} and
+ * {@code terminal.previous} commands, and the settings and theme it follows.
  * {@code MainController} keeps the {@code ToolWindow} (built with {@link #panel()}) and calls the apply hooks.
  *
  * <p>A shell runs where the project is: on its SSH host for a remote project (a PTY channel of the window's own
  * connection, through {@code ExecTarget.startTerminal}), else on this machine — in the project's folder, beside
- * the active file, or in the home folder. Containers and WSL come later (ADR 0014).
+ * the active file, or in the home folder. A folder a dev container mounts or a WSL distribution shares gets its
+ * shell there, through the same {@code ExecTarget.startTerminal} (ADR 0014).
  */
 final class TerminalCoordinator {
 
@@ -132,6 +134,12 @@ final class TerminalCoordinator {
         registry.register(Command.of("terminal.new", this::newTerminal));
         registry.register(Command.of("terminal.close", this::closeTerminal));
         registry.register(Command.of("terminal.find", this::find));
+        registry.register(Command.of("terminal.next", () -> {
+            if (panel != null) panel.selectNext(true);
+        }));
+        registry.register(Command.of("terminal.previous", () -> {
+            if (panel != null) panel.selectNext(false);
+        }));
     }
 
     /**
@@ -176,7 +184,6 @@ final class TerminalCoordinator {
         panel().newTerminal(dir);
     }
 
-    /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */
     /** {@code terminal.find}: the find bar over the selected terminal (opening the window, and a shell, if needed). */
     void find() {
         ops.showToolWindow();
@@ -188,6 +195,7 @@ final class TerminalCoordinator {
         p.find();
     }
 
+    /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */
     void closeTerminal() {
         if (panel != null) {
             panel.closeActive();
@@ -448,6 +456,7 @@ final class TerminalCoordinator {
         confirm.setTitle(tr("terminal.close.title"));
         confirm.setHeaderText(null);
         ((Button) confirm.getDialogPane().lookupButton(close)).setDefaultButton(false);
+        MainController.styleQuitButtonAsDanger(confirm, close);
         ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == close;
     }

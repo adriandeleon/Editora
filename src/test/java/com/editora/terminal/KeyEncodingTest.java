@@ -185,6 +185,27 @@ class KeyEncodingTest {
     }
 
     @Test
+    void ctrlAltChordsAreEscapeAndTheControlByteWhereAltGrIsToldApart() {
+        RecordingLookup none = new RecordingLookup(null);
+        assertArrayEquals(
+                new byte[] {0x1b, 0x06},
+                KeyEncoding.encodePressed(pressed(KeyCode.F, false, true, true, false), none, true, true),
+                "C-M-f");
+        assertNull(KeyEncoding.encodeTyped(typed("f", true, true, false), true, true), "and its character is not sent");
+        assertNull(
+                KeyEncoding.encodePressed(pressed(KeyCode.Q, false, true, true, false), none, true, false),
+                "where Ctrl+Alt is AltGr (Windows), it still composes");
+    }
+
+    @Test
+    void ctrlDigitsAreXtermsControls() {
+        RecordingLookup none = new RecordingLookup(null);
+        assertArrayEquals(new byte[] {0x1b}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT3, false, true, false, false), none, true));
+        assertArrayEquals(new byte[] {0x1c}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT4, false, true, false, false), none, true));
+        assertArrayEquals(new byte[] {0x7f}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT8, false, true, false, false), none, true));
+    }
+
+    @Test
     void pasteNormalisesNewlinesToCarriageReturns() {
         // A shell reading a line wants CR; sending LF submits nothing and looks like a hang.
         assertEquals("a\rb\rc", new String(KeyEncoding.encodePaste("a\r\nb\nc", false), StandardCharsets.UTF_8));

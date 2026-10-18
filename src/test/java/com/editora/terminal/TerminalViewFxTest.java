@@ -224,6 +224,105 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void colourQueriesAreAnsweredWithThePalette() throws Exception {
+        // vim, neovim, delta and bat ask, to tell a light terminal from a dark one.
+        open();
+        fx(() -> {
+            view.setPalette(TerminalPalettes.EDITORA_LIGHT);
+            return null;
+        });
+        connector.emit("\u001b]11;?\u0007\u001b]10;?\u0007");
+        await(() -> connector.written().contains("]11;rgb:") && connector.written().contains("]10;rgb:"), "replies");
+    }
+
+    @Test
+    void theFirstLineIntoHistoryDoesNotResizeTheShell() throws Exception {
+        open();
+        Thread.sleep(300);
+        int before = connector.resizes.get();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 80; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 79"), "the output");
+        fx(() -> {
+            view.getScene().getRoot().layout();
+            view.flushResize();
+            return null;
+        });
+        Thread.sleep(200);
+        assertEquals(before, connector.resizes.get(), "the scrollbar appearing kept the column count");
+    }
+
+    @Test
+    void aTrackpadsSmallDeltasAddUpInsteadOfEachScrollingThreeLines() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        int origin = fx(() -> {
+            for (int i = 0; i < 10; i++) Event.fireEvent(view, scroll(1, 0.075));
+            return view.scrollOrigin();
+        });
+        assertTrue(origin >= -1, "ten one-pixel events are less than a line or two: " + origin);
+        int notch = fx(() -> {
+            Event.fireEvent(view, scroll(40, 3));
+            return view.scrollOrigin();
+        });
+        assertEquals(origin - 3, notch, "a wheel notch is still three lines");
+    }
+
+    @Test
+    void draggingASelectionPastTheTopScrollsIntoHistory() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 200; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 199"), "the output");
+        fx(() -> {
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, 20, 40));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, 20, -30));
+            return null;
+        });
+        assertTrue(fx(view::isDragScrolling));
+        await(() -> call(view::scrollOrigin) < -3, "the view scrolling up while the pointer is above it");
+        fx(() -> {
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, 20, -30));
+            return null;
+        });
+        assertFalse(fx(view::isDragScrolling));
+        assertTrue(fx(() -> view.selectedText().contains("line")), "the selection reaches into history");
+    }
+
+    @Test
+    void aProgramsDefaultCursorRequestGivesTheUsersShapeBack() throws Exception {
+        open();
+        connector.emit("\u001b[6 q");
+        await(() -> call(() -> view.getDisplay().getCursorShape()) == com.jediterm.terminal.CursorShape.STEADY_VERTICAL_BAR,
+                "vim's bar");
+        connector.emit("\u001b[0 q");
+        await(() -> call(() -> view.getDisplay().getCursorShape()) == null, "back to the user's preference");
+    }
+
+    private static javafx.scene.input.ScrollEvent scroll(double deltaY, double textDeltaY) {
+        return new javafx.scene.input.ScrollEvent(
+                javafx.scene.input.ScrollEvent.SCROLL,
+                50, 50, 50, 50,
+                false, false, false, false, false, false,
+                0, deltaY, 0, deltaY,
+                javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE, 0,
+                javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.LINES, textDeltaY,
+                0, null);
+    }
+
+    private static javafx.scene.input.MouseEvent mouse(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y) {
+        return new javafx.scene.input.MouseEvent(
+                type, x, y, x, y, javafx.scene.input.MouseButton.PRIMARY, 1,
+                false, false, false, false, true, false, false, false, false, false, null);
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");

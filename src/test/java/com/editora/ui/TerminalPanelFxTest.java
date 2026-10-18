@@ -461,11 +461,8 @@ class TerminalPanelFxTest {
     }
 
     private javafx.scene.control.Button reconnectButton() {
-        var content = (javafx.scene.layout.StackPane) panel.activeTab().getContent();
-        return content.getChildren().stream()
-                .filter(n -> n.getStyleClass().contains("terminal-lost-banner"))
-                .map(n -> (javafx.scene.layout.HBox) n)
-                .flatMap(box -> box.getChildren().stream())
+        var banner = (javafx.scene.layout.HBox) panel.activeTab().getContent().lookup(".terminal-lost-banner");
+        return banner.getChildren().stream()
                 .filter(n -> n instanceof javafx.scene.control.Button)
                 .map(n -> (javafx.scene.control.Button) n)
                 .findFirst()
@@ -766,6 +763,105 @@ class TerminalPanelFxTest {
             openedIn.add(dir);
             return connector;
         };
+    }
+
+    @Test
+    void ctrlPageUpAndDownSwitchTerminalTabs() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
+        fx(() -> {
+            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_DOWN, false, true, false, false));
+            return null;
+        });
+        assertEquals(0, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()), "wraps");
+        fx(() -> {
+            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, false, true, false, false));
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
+        Thread.sleep(200);
+        assertTrue(shells.stream().allMatch(c -> c.written().isEmpty()), "the shells got nothing");
+    }
+
+    @Test
+    void tabsWithTheSameTitleAreNumbered() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        await(
+                () -> call(() -> panel.tabsForTest().getTabs().get(1).getText().endsWith(" (2)")),
+                "the second tab told apart from the first");
+        assertFalse(fx(() -> panel.tabsForTest().getTabs().getFirst().getText().endsWith(")")));
+    }
+
+    @Test
+    void pasteInTheFindFieldPastesTheQueryNotIntoTheShell() throws Exception {
+        boolean mac = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac");
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.find();
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("rm -rf build\n");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            Event.fireEvent(
+                    panel.findBar().field(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.V, !mac, !mac, false, mac));
+            return null;
+        });
+        Thread.sleep(200);
+        assertEquals("", shells.get(0).written(), "nothing reached the shell");
+    }
+
+    @Test
+    void aBellInATabOutOfSightMarksItUntilItIsSelected() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("\u0007");
+        await(
+                () -> call(() -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)),
+                "the first tab's bell mark");
+        fx(() -> {
+            panel.tabsForTest().getSelectionModel().select(0);
+            return null;
+        });
+        assertFalse(fx(() -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)));
+    }
+
+    @Test
+    void theConnectionLostBannerSitsAboveTheTextNotOverIt() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("last words\r\n");
+        shells.get(0).dropConnection();
+        await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the banner");
+        fx(() -> {
+            panel.getScene().getRoot().layout();
+            return null;
+        });
+        assertTrue(
+                fx(() -> {
+                    var view = panel.activeView();
+                    var banner = panel.activeTab().getContent().lookup(".terminal-lost-banner");
+                    return view.getBoundsInParent().getMinY() >= banner.getBoundsInParent().getMaxY();
+                }),
+                "the view starts below the banner");
     }
 
     @Test

@@ -205,6 +205,8 @@ public final class TerminalView extends Region {
         addEventFilter(KeyEvent.KEY_TYPED, this::onKeyTyped);
         addEventFilter(ScrollEvent.SCROLL, this::onScroll);
         setOnContextMenuRequested(this::onContextMenuRequested);
+        // The cursor is drawn hollow while the keyboard is elsewhere, so which terminal (or whether one) has it shows.
+        focusedProperty().addListener((o, was, now) -> markDirty());
 
         display.setOnRepaint(this::markDirty);
         display.setSelectionSupplier(() -> selection);
@@ -353,8 +355,11 @@ public final class TerminalView extends Region {
 
     /** Visual bell: a brief wash over the canvas, cleared by the next frame. */
     private void flashBell() {
+        if (onBellRung != null) onBellRung.run();
         GraphicsContext g = canvas.getGraphicsContext2D();
-        g.setFill(Color.color(1, 1, 1, 0.18));
+        // The text's own colour: a white wash vanished on a light theme.
+        Color fg = palette.foreground();
+        g.setFill(Color.color(fg.getRed(), fg.getGreen(), fg.getBlue(), 0.18));
         g.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
         javafx.animation.PauseTransition clear = new javafx.animation.PauseTransition(javafx.util.Duration.millis(80));
         clear.setOnFinished(e -> markDirty());
@@ -397,6 +402,7 @@ public final class TerminalView extends Region {
     public void setPalette(TerminalPalette palette) {
         this.palette = palette;
         this.selectionWash = washFor(palette);
+        display.setPalette(palette);
         styleScrollBar(palette);
         markDirty();
     }
@@ -436,6 +442,13 @@ public final class TerminalView extends Region {
         this.bellEnabled = bellEnabled;
     }
 
+    private Runnable onBellRung;
+
+    /** Told (on the FX thread) when the bell rings, so a tab out of sight can say so. */
+    public void setOnBell(Runnable onBellRung) {
+        this.onBellRung = onBellRung;
+    }
+
     private boolean typeAhead;
 
     /** Paints keystrokes before a slow shell echoes them (see {@link TypeAheadOverlay}); applies at once. */
@@ -469,12 +482,10 @@ public final class TerminalView extends Region {
         // Nothing to scroll on the alternate screen — a full-screen program owns the viewport and
         // has no scrollback of its own.
         boolean useful = ScrollBarModel.useful(scrollBarEnabled, history, display.isAlternateScreen());
-        if (scrollBar.isManaged() != useful) {
-            scrollBar.setVisible(useful);
-            scrollBar.setManaged(useful);
-            // Appearing or vanishing changes the width available for columns.
-            requestLayout();
-        }
+        // Only shown or hidden: its width is kept either way (see scrollBarWidth). Taking the width when the
+        // first line reached history and giving it back on `clear` or a full-screen program resized the shell
+        // and reflowed the scrollback each time.
+        scrollBar.setVisible(useful);
         if (!useful) return;
         updatingScrollBar = true;
         try {
@@ -487,9 +498,9 @@ public final class TerminalView extends Region {
         }
     }
 
-    /** Width the scrollbar takes from the terminal, or 0 when it is not shown. */
+    /** Width kept for the scrollbar, shown or not, unless the bar is turned off. */
     private double scrollBarWidth() {
-        return scrollBar.isManaged() ? scrollBar.prefWidth(-1) : 0;
+        return scrollBarEnabled ? scrollBar.prefWidth(-1) : 0;
     }
 
     private void measureFont() {
@@ -782,6 +793,12 @@ public final class TerminalView extends Region {
         double y = row * lineHeight;
         g.setFill(palette.foreground());
 
+        if (!isFocused()) {
+            g.setStroke(palette.foreground());
+            g.setLineWidth(1);
+            g.strokeRect(x + 0.5, y + 0.5, charWidth - 1, lineHeight - 1);
+            return;
+        }
         switch (effectiveCursorShape()) {
             case UNDERLINE -> g.fillRect(x, y + lineHeight - 2, charWidth, 2);
             case BAR -> g.fillRect(x, y, 2, lineHeight);
@@ -843,7 +860,12 @@ public final class TerminalView extends Region {
         }
         if (session == null || !session.isRunning()) return;
 
-        byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta);
+        if (e.getCode() == KeyCode.ALT_GRAPH) {
+            altGrHeld = true;
+        } else if (!e.isAltDown()) {
+            altGrHeld = false; // a release missed while focus was elsewhere must not outlive the next key
+        }
+        byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
@@ -855,7 +877,7 @@ public final class TerminalView extends Region {
 
     private void onKeyTyped(KeyEvent e) {
         if (session == null || !session.isRunning()) return;
-        byte[] encoded = KeyEncoding.encodeTyped(e, altIsMeta);
+        byte[] encoded = KeyEncoding.encodeTyped(e, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
@@ -1408,6 +1430,8 @@ public final class TerminalView extends Region {
     }
 
     private void onMouseReleased(MouseEvent e) {
+        dragScroll = 0;
+        dragScroller.stop();
         if (pressedOnScrollBar) {
             pressedOnScrollBar = false;
             return;
@@ -1931,6 +1955,10 @@ public final class TerminalView extends Region {
     private void onMouseMoved(MouseEvent e) {
         lastMouseX = e.getX();
         lastMouseY = e.getY();
+        // Any-event tracking (1003): the program wants the pointer's moves too, buttons up.
+        if (display.getMouseMode() == MouseMode.MOUSE_REPORTING_ALL_MOTION) {
+            reportMouse(e, com.jediterm.core.input.MouseEvent.Type.MOVED);
+        }
         updateHover(lastMouseX, lastMouseY, LinkGesture.opensLink(MAC, e.isMetaDown(), e.isControlDown()));
     }
 
@@ -1941,7 +1969,18 @@ public final class TerminalView extends Region {
     }
 
     private void onKeyReleased(KeyEvent e) {
+        if (e.getCode() == KeyCode.ALT_GRAPH) altGrHeld = false;
         onLinkModifierChanged(e);
+    }
+
+    private static final boolean LINUX =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("linux");
+
+    /** Whether AltGr is down: Linux reports it as its own key, so Ctrl+Alt there is a chord, not composing. */
+    private boolean altGrHeld;
+
+    private boolean ctrlAltIsMeta() {
+        return LINUX && !altGrHeld;
     }
 
     private void onMouseDragged(MouseEvent e) {
@@ -1951,6 +1990,13 @@ public final class TerminalView extends Region {
             return;
         }
         if (e.getButton() != MouseButton.PRIMARY || selectionAnchor == null) return;
+        dragX = e.getX();
+        dragScroll = e.getY() < 0 ? -1 : e.getY() >= getHeight() ? 1 : 0;
+        if (dragScroll != 0 && dragScroller.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            dragScroller.play();
+        } else if (dragScroll == 0) {
+            dragScroller.stop();
+        }
         Point at = cellAt(e);
         TerminalSelection current = selection;
         if (current == null) {
@@ -1961,6 +2007,38 @@ public final class TerminalView extends Region {
         }
         current.updateEnd(at);
         markDirty();
+    }
+
+    /** Which way a drag past the top (-1) or bottom (1) edge scrolls, or 0; and where the pointer is across. */
+    private int dragScroll;
+
+    private double dragX;
+
+    /** While a selection is dragged past an edge: a line a tick, the selection following, as every terminal does. */
+    private final javafx.animation.Timeline dragScroller = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.millis(50), e -> dragScrollTick()));
+
+    {
+        dragScroller.setCycleCount(javafx.animation.Animation.INDEFINITE);
+    }
+
+    private void dragScrollTick() {
+        TerminalSelection current = selection;
+        if (dragScroll == 0 || buffer == null || current == null) {
+            dragScroller.stop();
+            return;
+        }
+        int history = buffer.getHistoryLinesCount();
+        scrollOrigin = Math.max(-history, Math.min(0, scrollOrigin + dragScroll));
+        int line = dragScroll < 0 ? scrollOrigin : scrollOrigin + rows - 1;
+        int column = Math.max(0, Math.min(columns, (int) Math.floor(dragX / charWidth)));
+        current.updateEnd(new Point(dragScroll < 0 ? ColumnMap.slotAt(lineTextAt(line), column) : slotsInRow(line), line));
+        markDirty();
+    }
+
+    /** Whether a drag past an edge is scrolling the view; for tests. */
+    boolean isDragScrolling() {
+        return dragScroller.getStatus() == javafx.animation.Animation.Status.RUNNING;
     }
 
     /**
@@ -2083,8 +2161,11 @@ public final class TerminalView extends Region {
         // No scrollback exists on the alternate screen; a full-screen program owns the viewport.
         if (display.isAlternateScreen()) return;
 
-        int lines = (int) Math.signum(e.getDeltaY()) * 3;
-        if (lines == 0) return;
+        int lines = wheelLines(e);
+        if (lines == 0) {
+            e.consume();
+            return;
+        }
         int history = buffer.getHistoryLinesCount();
         int next = Math.max(-history, Math.min(0, scrollOrigin - lines));
         if (next != scrollOrigin) {
@@ -2092,6 +2173,25 @@ public final class TerminalView extends Region {
             markDirty();
         }
         e.consume();
+    }
+
+    /** Lines of scroll not yet applied: a trackpad sends many events of a pixel or two. */
+    private double wheelRemainder;
+
+    /**
+     * Whole lines to scroll for one event, positive up. A wheel notch says how many lines it means (three,
+     * usually); a trackpad's small pixel deltas add up until they make a line. One event of a pixel used to move
+     * three lines whatever its size, so a trackpad flick flew through the scrollback.
+     */
+    private int wheelLines(ScrollEvent e) {
+        double lines = e.getTextDeltaYUnits() == ScrollEvent.VerticalTextScrollUnits.LINES && e.getTextDeltaY() != 0
+                ? e.getTextDeltaY()
+                : e.getDeltaY() / Math.max(1, lineHeight);
+        if (Math.signum(lines) != Math.signum(wheelRemainder)) wheelRemainder = 0; // a change of direction
+        wheelRemainder += lines;
+        int whole = (int) wheelRemainder;
+        wheelRemainder -= whole;
+        return whole;
     }
 
     /** Pastes the clipboard, honouring bracketed-paste mode if the shell enabled it. */
