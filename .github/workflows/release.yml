@@ -264,11 +264,6 @@ jobs:
             **/pom.xml
             .mvn/maven.config
 
-      - name: Set up Python for packaging and smoke test
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
       - name: Install Linux Native Image build and GUI test dependencies
         if: runner.os == 'Linux'
         run: |
@@ -309,7 +304,7 @@ jobs:
         run: |
           binary=target/editora-native
           if [ "$RUNNER_OS" = Windows ]; then binary="${binary}.exe"; fi
-          python scripts/native/package-release.py "$binary" "$VERSION" "$TARGET" staging
+          java scripts/nativeimage/PackageRelease.java "$binary" "$VERSION" "$TARGET" staging
 
       # Extract and test the exact payload that would be released. Keep its
       # disposable project outside the checkout: repository .editorconfig can
@@ -321,7 +316,7 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           TARGET: ${{ matrix.target }}
         run: |
-          xvfb-run -a python scripts/native/smoke-release.py \
+          xvfb-run -a java scripts/nativeimage/SmokeRelease.java \
             "staging/Editora-${VERSION}-${TARGET}-native-experimental.tar.gz" \
             "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 
@@ -334,7 +329,7 @@ jobs:
         run: |
           ext=tar.gz
           if [ "$RUNNER_OS" = Windows ]; then ext=zip; fi
-          python scripts/native/smoke-release.py \
+          java scripts/nativeimage/SmokeRelease.java \
             "staging/Editora-${VERSION}-${TARGET}-native-experimental.${ext}" \
             "$TARGET" "$RUNNER_TEMP/editora-native-release-smoke"
 

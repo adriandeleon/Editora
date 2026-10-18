@@ -6,7 +6,7 @@ release workflow and use this catalog when changing platform-specific implementa
 The separate Linux x64 `native-experimental` job uses GraalVM 25 to build `-Pnative` with a 6 GiB
 builder heap/four workers. It runs the actual-application smoke probe under Xvfb with its
 disposable project in the runner's temporary directory, outside the repository's `.editorconfig`, before
-`scripts/native/package-release.py` bundles the executable and adjacent shared libraries as
+`scripts/nativeimage/PackageRelease.java` bundles the executable and adjacent shared libraries as
 `Editora-<version>-linux-x64-native-experimental.tar.gz`. The JReleaser `*.tar.gz` glob picks it
 up with the established Linux portable tarballs. The job is best-effort; the `release` job waits
 for its outcome but runs whenever the ordinary build matrix succeeds. A native failure leaves no
