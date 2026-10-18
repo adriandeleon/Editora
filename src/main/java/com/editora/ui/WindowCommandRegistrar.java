@@ -792,7 +792,10 @@ final class WindowCommandRegistrar {
                                         "plugins.setRegistryUrl",
                                         () -> host.config().getSettings().getPluginRegistryUrl(),
                                         v -> host.config().getSettings().setPluginRegistryUrl(v),
-                                        null)));
+                                        null,
+                                        v -> v.isEmpty() || com.editora.plugin.PluginRegistry.isHttps(v)
+                                                ? null // blank goes back to the built-in registry
+                                                : tr("settings.plugins.registryNotHttps"))));
         host.registry().register(Command.of("lsp.toggleServer", host.lspCoordinator()::chooseServerToggle));
         host.registry().register(Command.of("lsp.setServerCommand", host.lspCoordinator()::chooseServerCommand));
         host.registry().register(Command.of("lsp.trustProjectSettings", host.lspCoordinator()::trustProjectSettings));

@@ -684,8 +684,23 @@ final class EditorSettingsCoordinator {
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
             Runnable apply) {
+        promptStringSetting(commandId, get, set, apply, value -> null);
+    }
+
+    /** As above; an answer {@code refuse} gives a reason for (a translated text) is not saved, and the reason shows. */
+    void promptStringSetting(
+            String commandId,
+            java.util.function.Supplier<String> get,
+            java.util.function.Consumer<String> set,
+            Runnable apply,
+            java.util.function.Function<String, String> refuse) {
         host.promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
             String value = v.trim();
+            String why = refuse.apply(value);
+            if (why != null) {
+                host.setStatus(why);
+                return;
+            }
             set.accept(value);
             host.requestSave();
             if (apply != null) {
