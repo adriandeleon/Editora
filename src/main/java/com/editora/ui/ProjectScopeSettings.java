@@ -106,6 +106,11 @@ final class ProjectScopeSettings {
         trustButton.setOnAction(e -> trust.run());
         bar = new HBox(8, label, new HBox(userButton, projectButton), note, trustButton);
         bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new javafx.geometry.Insets(8, 16, 4, 16));
+        // The note wraps; the label and the buttons keep their width (a long note squeezed them to "...").
+        for (javafx.scene.layout.Region r : List.of(label, userButton, projectButton, trustButton)) {
+            r.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        }
         bar.getStyleClass().add("settings-scope-bar");
         SettingsSearch.setShown(bar, false);
     }
@@ -241,9 +246,7 @@ final class ProjectScopeSettings {
                 root == null
                         ? ""
                         : project
-                                ? tr(
-                                                "settings.scope.projectNote",
-                                                ProjectSettings.fileFor(root).toString())
+                                ? tr("settings.scope.projectNote", shortPath(root))
                                         + (untrustedValues ? " " + tr("settings.scope.untrusted") : "")
                                 : untrustedValues ? tr("settings.scope.untrusted") : "");
         SettingsSearch.setShown(trustButton, root != null && untrustedValues);
@@ -286,6 +289,13 @@ final class ProjectScopeSettings {
         for (Node row : rows.get()) {
             lock(row, project ? !scopedRows.contains(row) : projectOnlyRows.contains(row));
         }
+    }
+
+    /** {@code <project folder name>/.editora/settings.json}: where Project mode writes, without the whole path. */
+    private static String shortPath(Path root) {
+        Path name = root.getFileName();
+        return (name == null ? root.toString() : name.toString()) + "/" + ProjectSettings.DIR + "/"
+                + ProjectSettings.FILE;
     }
 
     /** Says, after the change that caused it, that a project file could not be written. */
