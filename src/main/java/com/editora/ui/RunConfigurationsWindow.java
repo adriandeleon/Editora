@@ -60,6 +60,43 @@ public final class RunConfigurationsWindow {
     /** Set while the rows are re-read from the workspace state. */
     private boolean reloading;
 
+    /** The Run on choices: "" (this machine), then the project's deployments. */
+    private final ObservableList<String> runOnChoices = FXCollections.observableArrayList("");
+
+    /** Opens the Deployments editor on a deployment (null: the first). */
+    private java.util.function.Consumer<String> editDeployments = name -> {};
+
+    /** Sets what the Run on row's Deployments… button opens. */
+    public void setEditDeployments(java.util.function.Consumer<String> editDeployments) {
+        this.editDeployments = editDeployments == null ? name -> {} : editDeployments;
+    }
+
+    /** Re-reads the project's deployments into the Run on choices (they were edited elsewhere). */
+    public void refreshDeployments() {
+        java.util.List<String> names = new ArrayList<>();
+        names.add("");
+        for (com.editora.config.Deployment d : config.getWorkspaceState().getDeployments()) {
+            if (!d.name().isBlank() && !names.contains(d.name())) {
+                names.add(d.name());
+            }
+        }
+        // A configuration naming a deployment that is gone keeps showing it, so the form does not rewrite it.
+        for (RunConfiguration c : items) {
+            if (!c.deployment().isBlank() && !names.contains(c.deployment())) {
+                names.add(c.deployment());
+            }
+        }
+        if (!names.equals(runOnChoices)) {
+            boolean was = loading;
+            loading = true; // a reset of the choices is not an edit
+            try {
+                runOnChoices.setAll(names);
+            } finally {
+                loading = was;
+            }
+        }
+    }
+
     public RunConfigurationsWindow(ConfigManager config, Supplier<String> suggestion, Runnable onChanged) {
         this(config, suggestion, null, null, onChanged);
     }
@@ -142,6 +179,33 @@ public final class RunConfigurationsWindow {
         ComboBox<JdkChoice> jdk = new ComboBox<>();
         JdkChoice.configure(jdk, tr("settings.runConfig.jdk.global"));
         jdk.setId("run-config-jdk");
+        ComboBox<String> runOn = new ComboBox<>(runOnChoices);
+        runOn.setId("run-config-run-on");
+        runOn.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String value) {
+                if (value == null || value.isEmpty()) {
+                    return tr("settings.runConfig.runOn.local");
+                }
+                return config.getWorkspaceState().deployment(value) == null
+                        ? tr("settings.runConfig.runOn.missing", value)
+                        : value;
+            }
+
+            @Override
+            public String fromString(String value) {
+                return value;
+            }
+        });
+        Button editDeploymentsButton = new Button(tr("settings.runConfig.runOn.edit"));
+        editDeploymentsButton.setId("run-config-edit-deployments");
+        editDeploymentsButton.setMinWidth(Region.USE_PREF_SIZE);
+        editDeploymentsButton.setOnAction(e -> editDeployments.accept(runOn.getValue()));
+        HBox runOnRow = new HBox(6, runOn, editDeploymentsButton);
+        runOnRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(runOn, Priority.ALWAYS);
+        runOn.setMaxWidth(Double.MAX_VALUE);
+        runOn.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runOn.hint")));
         CheckBox inTerminal = new CheckBox(tr("settings.runConfig.runInTerminal"));
         inTerminal.setId("run-config-in-terminal");
         inTerminal.setTooltip(new javafx.scene.control.Tooltip(tr("settings.runConfig.runInTerminal.hint")));
@@ -171,6 +235,7 @@ public final class RunConfigurationsWindow {
         formRow(form, 11, "settings.runConfig.beforeLaunch", beforeLaunch);
         formRow(form, 12, "settings.runConfig.jdk", jdk);
         formRow(form, 13, "settings.runConfig.console", inTerminal);
+        formRow(form, 14, "settings.runConfig.runOn", runOnRow);
         form.setDisable(true);
 
         type.setId("run-config-type");
@@ -225,7 +290,8 @@ public final class RunConfigurationsWindow {
                 jdk.getValue() == null ? "" : jdk.getValue().home(),
                 interpreter.getText(),
                 interpreterOptions.getText(),
-                inTerminal.isSelected());
+                inTerminal.isSelected(),
+                runOn.getValue() == null ? "" : runOn.getValue());
         Runnable commit = () -> {
             int index = list.getSelectionModel().getSelectedIndex();
             if (index < 0 || loading) {
@@ -241,6 +307,12 @@ public final class RunConfigurationsWindow {
         });
         jdk.valueProperty().addListener((o, was, now) -> commit.run());
         inTerminal.selectedProperty().addListener((o, was, now) -> commit.run());
+        runOn.valueProperty().addListener((o, was, now) -> commit.run());
+        stage.focusedProperty().addListener((o, was, now) -> {
+            if (now) {
+                refreshDeployments(); // edited in the Deployments window
+            }
+        });
         for (TextField value : List.of(
                 name,
                 target,
@@ -294,6 +366,8 @@ public final class RunConfigurationsWindow {
                 beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
                 JdkChoice.select(jdk, now == null ? "" : now.jdkHome());
                 inTerminal.setSelected(now != null && now.runInTerminal());
+                refreshDeployments();
+                runOn.setValue(now == null ? "" : now.deployment());
                 applyType.run(); // the type listener is silent when two rows share a type
             } finally {
                 loading = false;
@@ -455,6 +529,7 @@ public final class RunConfigurationsWindow {
         } finally {
             reloading = false;
         }
+        refreshDeployments();
         RunConfiguration selected = null;
         if (previous != null) {
             for (RunConfiguration value : items) {

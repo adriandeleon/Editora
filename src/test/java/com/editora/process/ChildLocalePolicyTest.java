@@ -70,7 +70,9 @@ class ChildLocalePolicyTest {
             "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)
             "ui/TerminalCoordinator.java", // `ps -A -o ppid=,comm=` on a target: what a remote shell is running
             "process/ProcessRegistry.java", // `kill -INT` before Stop escalates (exit code)
-            "container/ContainerEngine.java"); // the engine's inspect / ps output
+            "container/ContainerEngine.java", // the engine's inspect / ps output
+            "deploy/Deployer.java", // a deployment folder's file listing on its host, and removing files there
+            "deploy/LocalFiles.java"); // `git ls-files`: what a deploy sends
 
     /**
      * Long-lived, shown to the user, or a JVM tool on the user's paths: the inherited locale. The number is
@@ -81,6 +83,7 @@ class ChildLocalePolicyTest {
             Map.entry("agent/AcpClient.java", 1), // the agent CLI
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
+            Map.entry("build/GradleHostClasspath.java", 1), // Gradle building a deployment's copy on its host
             Map.entry("dap/DapManager.java", 3), // debugpy adapter, js-debug adapter
             Map.entry("dap/JavaCompilation.java", 2), // javac of the user's file, here and on its host
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)

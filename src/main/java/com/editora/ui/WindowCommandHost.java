@@ -342,6 +342,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public DeploymentCoordinator deployments() {
+        return mc.deployments;
+    }
+
+    @Override
     public GitCoordinator git() {
         return mc.git;
     }
