@@ -974,7 +974,7 @@ final class HistoryCoordinator {
             Encoding encoding,
             boolean evenWhenOff,
             java.util.function.Consumer<Boolean> durableCompletion) {
-        // An encrypted file has no Local History (ADR 0015): its revisions would be its text, unencrypted.
+        // An encrypted file has no Local History (ADR 0016): its revisions would be its text, unencrypted.
         if (file == null
                 || content == null
                 || !com.editora.vfs.Vfs.isLocal(file)

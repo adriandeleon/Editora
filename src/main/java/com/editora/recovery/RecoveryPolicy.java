@@ -38,7 +38,7 @@ public final class RecoveryPolicy {
         /** Longer than {@link #MAX_CHARS}. */
         TOO_LARGE,
         /**
-         * An encrypted file's decrypted text: a recovery copy would put it on disk unencrypted (ADR 0015), so an
+         * An encrypted file's decrypted text: a recovery copy would put it on disk unencrypted (ADR 0016), so an
          * encrypted file has none, and one taken before it was encrypted is deleted.
          */
         SENSITIVE

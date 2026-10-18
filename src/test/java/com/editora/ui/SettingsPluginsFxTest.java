@@ -140,11 +140,11 @@ class SettingsPluginsFxTest {
             String error =
                     SettingsRemoteSitesFxTest.all(list, javafx.scene.control.Label.class, new ArrayList<>()).stream()
                             .map(javafx.scene.control.Label::getText)
-                            .filter(t -> t != null && t.startsWith("Invalid plugin.json"))
+                            .filter(t -> t != null && t.contains("plugin.json"))
                             .findFirst()
                             .orElseThrow();
-            assertFalse(error.contains("REDACTED") || error.contains("StreamReadFeature"), error);
-            assertTrue(error.contains("(line 1, column 3)"), error);
+            // S3: said in the user's language, with where the file stops being valid.
+            assertEquals(Messages.tr("settings.plugins.error.manifestInvalidAt", "1", "3"), error);
         });
     }
 }

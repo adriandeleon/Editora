@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectExternalChangeFxTest {
 
     @BeforeAll
@@ -39,7 +40,7 @@ class ProjectExternalChangeFxTest {
     void anExternalChangeFiresTheHookButASelfChangeDoesNot(@TempDir Path root) throws Exception {
         AtomicInteger fired = new AtomicInteger();
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel p = new ProjectPanel(x -> {}, (a, b) -> {}, x -> {}, x -> false);
+            ProjectPanel p = DisposedPanels.track(new ProjectPanel(x -> {}, (a, b) -> {}, x -> {}, x -> false));
             p.setOnExternalChange(fired::incrementAndGet);
             p.setRoot(root);
             return p;

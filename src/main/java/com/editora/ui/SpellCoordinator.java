@@ -76,7 +76,9 @@ final class SpellCoordinator {
      * built-in default and says so once.
      */
     private String defaultLanguage() {
-        String id = host.config().getSettings().getSpellLanguage();
+        CoordinatorHost h = host.coordinatorHost();
+        String id = (h == null ? ProjectScope.NONE : h.projectScope())
+                .spellLanguage(host.config().getSettings());
         if (SpellDictionaries.isAvailable(id)) {
             return id;
         }

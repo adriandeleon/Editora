@@ -80,6 +80,7 @@ class ChildLocalePolicyTest {
      * the parse-stable environment (or to none).
      */
     private static final Map<String, Integer> USER_LOCALE_FILES = Map.ofEntries(
+            Map.entry("Relaunch.java", 1), // Editora itself, started again by Restart Now
             Map.entry("agent/AcpClient.java", 1), // the agent CLI
             Map.entry("build/BuildService.java", 1), // Maven/Gradle/npm/cargo/go builds
             Map.entry("build/BuildTool.java", 1), // `gradle tasks` (a JVM in the project dir)
@@ -107,6 +108,7 @@ class ChildLocalePolicyTest {
 
     /** Build their own {@code ProcessBuilder} and then apply one of the two environments above. */
     private static final Set<String> RAW_SPAWN_FILES = Set.of(
+            "Relaunch.java", // applyUserEnv: Editora itself, started again by Restart Now
             "agent/AcpClient.java",
             "container/ContainerExecTarget.java", // the engine's exec client: the user's environment, here only
             "wsl/WslExecTarget.java", // wsl.exe: the user's environment, here only

@@ -276,12 +276,15 @@ public enum ConfigSchema {
                     // v132→133: + terminalTypeAhead (on) and debugProgramInTerminal (off); additive, absent is the
                     // default.
                     Map.entry(132, (Migration) ConfigMigrations::identity),
-                    // v133→134: + encryptionGpgPath, encryptionIncludeSelf (on), encryptionDefaultKey,
+                    // v133→134: + aiModelCodex (Codex's model, which shared the Anthropic field: the shared value is
+                    // copied so Codex keeps its model) and aiApiKeysInKeychain (additive; absent = keys in this file).
+                    Map.entry(133, (Migration) ConfigMigrations::splitCodexModel),
+                    // v134→135: + encryptionGpgPath, encryptionIncludeSelf (on), encryptionDefaultKey,
                     // encryptionPassphrasePrompt ("agent"), encryptionLanguageServers (off) and
                     // encryptionRecentRecipients ([]) — encrypted files
                     // became a core feature. Additive: absent is the default. (The retired GnuPG plugin's own
                     // settings are carried over at startup by RetiredPlugins, not here: they live in its folder.)
-                    Map.entry(133, (Migration) ConfigMigrations::identity)),
+                    Map.entry(134, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

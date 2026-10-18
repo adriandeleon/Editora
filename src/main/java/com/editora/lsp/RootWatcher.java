@@ -37,6 +37,9 @@ final class RootWatcher implements AutoCloseable {
     /** The most folders one watcher registers. */
     static final int MAX_DIRS = 2000;
 
+    /** The most folders a polling fallback watches: each is listed every couple of seconds. */
+    static final int MAX_POLLED_DIRS = 300;
+
     /** How long a burst of events is gathered before it is reported. */
     static final long COALESCE_MS = 300;
 
@@ -58,8 +61,13 @@ final class RootWatcher implements AutoCloseable {
             if (!Files.isDirectory(root) || root.getFileSystem() != FileSystems.getDefault()) {
                 return null;
             }
-            RootWatcher w = new RootWatcher(root, root.getFileSystem().newWatchService(), sink);
-            w.registerTree(root);
+            RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink);
+            try {
+                w.registerTree(root);
+            } catch (IOException | RuntimeException e) {
+                w.ws.close(); // a watcher that is not returned is never closed: it held an inotify instance
+                throw e;
+            }
             Thread.ofVirtual().name("lsp-root-watcher").start(w::loop);
             return w;
         } catch (IOException | RuntimeException e) {
@@ -97,12 +105,13 @@ final class RootWatcher implements AutoCloseable {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 synchronized (dirs) {
-                    if (dirs.size() >= MAX_DIRS) {
+                    if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
                         return FileVisitResult.TERMINATE;
                     }
                     try {
                         dirs.put(
-                                dir.register(
+                                com.editora.io.WatchServices.register(
+                                        dir,
                                         ws,
                                         StandardWatchEventKinds.ENTRY_CREATE,
                                         StandardWatchEventKinds.ENTRY_DELETE,

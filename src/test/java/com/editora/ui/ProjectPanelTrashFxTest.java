@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 5 MB, history off) there was no way back at all.
  */
 @Tag("fx")
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelTrashFxTest {
 
     @BeforeAll
@@ -77,7 +78,8 @@ class ProjectPanelTrashFxTest {
         List<Path> deleted = new ArrayList<>();
         List<String> status = new ArrayList<>();
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel p = new ProjectPanel(x -> {}, (from, to) -> {}, deleted::add, x -> false);
+            ProjectPanel p =
+                    DisposedPanels.track(new ProjectPanel(x -> {}, (from, to) -> {}, deleted::add, x -> false));
             p.setDeleteOperations(ops);
             p.setOnStatus(status::add);
             return p;

@@ -16,8 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file is open, its text gets no crash-recovery copy and no Local History, bookmarks and breakpoints keep only
   line numbers, no personal notes can be added, language servers do not read it (a setting turns them on),
   agents, MCP clients and AI actions are refused, and diagrams are not rendered through temporary files. Save
-  As to a plain name, export, print and external tools ask first. Settings schema 134.
+  As to a plain name, export, print and external tools ask first. Settings schema 135.
 
+- **AI API keys are kept in the system keychain** (macOS Keychain, Windows Credential Manager, the Secret Service on
+  Linux). Keys in settings.json move there on first start, and Settings → AI Actions says where each key is. Where no
+  keychain answers, keys stay in settings.json and the page says so. Keys in the keychain are never exported.
 - **Export Configuration never includes a password or token stored in the Settings Sync repository URL**, and
   the Sync page offers to remove one stored there before the URL check existed.
 - **Switching the AI provider no longer sends one provider's API key to another provider's server.** Anthropic
@@ -33,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Encrypted files** (File ▸ Encryption; [ADR 0015](docs/decisions/0015-encrypted-files.md)). An encrypted
+- **Encrypted files** (File ▸ Encryption; [ADR 0016](docs/decisions/0016-encrypted-files.md)). An encrypted
   file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
   and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
   its format, its signature.
@@ -54,6 +57,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Settings ▸ Encryption (gpg path, always include my key, who asks for passphrases, language servers) and two
     Doctor rows (GnuPG, passphrase prompt). Samples in `samples/encrypted/` (passphrase `editora`).
 
+- **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
+  them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
+  only the changed settings.
+- **Project settings.** In a project window, Settings has a **User | Project** switch. A project's
+  `.editora/settings.json` can set indentation, tab size, rulers, wrap, trimming trailing whitespace, the final
+  newline, the spelling dictionary, build commands, debugger paths and language servers. The values apply in that
+  project's windows once the folder is trusted; `.editorconfig` still wins where it sets something. Rows say when a
+  project sets or overrides them.
+- **Import Configuration…** (Settings → Advanced, or *Configuration: Import from Zip*) reads a zip made by Export
+  Configuration. It shows each part and what it would replace, lets you untick parts, backs up the current
+  configuration to `backups/` first, applies what it can at once and offers a restart for the rest. It refuses a zip
+  that is not an export, unsafe entry names and oversized entries.
+- **Restart Now.** Settings that apply at startup (language, merged title bar, plugins) show "Restart Editora to apply
+  N changes." with **Restart Now** (also *Application: Restart*), which quits the usual way and starts Editora again.
+- **Settings → Sync shows a status pill:** green *Connected* (with when it last synced), amber *Not connected* (not set
+  up, turned off, or offline and retrying) and red *Sync failing* (it needs you), with the reason under it.
+- **Each Settings page links to its documentation** with a **?** beside the title.
+- **File Watching** row in the Doctor: says when the system has no file watcher to give and Editora checks folders by
+  polling instead.
 - **A Terminal tool window**: shells on this machine, in tabs, inside Editora. Open it with Tool Window:
   Terminal (Alt+F12 in the IntelliJ keymap, Ctrl+` in VS Code, CUA and Sublime). It starts in the project's
   folder; Terminal: New Terminal adds a tab.
@@ -234,6 +256,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The text is not part of the file: it is never copied, searched, saved or undone.
   - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
     Request Lines`.
+- **Run Configurations → Main class has a Browse… button**: pick the `.java` file and the fully qualified class
+  name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
+  package and name. A configuration still called "New Configuration" is renamed after the class.
 
 ### Removed
 
@@ -242,6 +267,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Changing tab size or another view setting with many files open is about nine times faster**; tabs that are not
+  shown catch up when you show them.
+- **Codex has its own model setting** instead of sharing Anthropic's.
+- **Sync Now can be cancelled** until it starts writing files on this computer.
+- **Plugin load errors are translated**; the parser's own text is in the tooltip.
+- **View: Toggle Word Wrap** changes the project's value in a trusted project that sets wrap. The Doctor's build and
+  debug rows and Markdown lint's tab handling use the project's values too. The trust command is named *Project: Trust
+  This Project's Settings*.
 - **Installing the Java language server gets Eclipse JDT LS 1.62.0** (was 1.60.0): Java 27 support,
   per-parameter signature help, a quick fix to change a field's access modifier, and Javadoc rendering fixes. An
   existing install keeps its version until it is installed again.
@@ -383,6 +416,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
+  servers silently stopped following the disk. They now check folders every 2 seconds.
+- **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
+- **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
+  submenu name. It now sits at the menu's right edge, past the shortcut column.
 - **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
   `` `c` `` literally): commonmark-java 0.30.1 fixes the regression 0.30.0 brought in.
 - **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with

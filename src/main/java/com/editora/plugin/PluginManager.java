@@ -178,6 +178,25 @@ public final class PluginManager {
         return String.valueOf(e.getMessage());
     }
 
+    /** What went wrong reading {@code plugin.json}, by kind (see {@link PluginDescriptor.LoadProblem}). Pure. */
+    static PluginDescriptor.LoadProblem manifestProblem(Exception e) {
+        if (e instanceof com.fasterxml.jackson.core.JsonProcessingException j) {
+            com.fasterxml.jackson.core.JsonLocation at = j.getLocation();
+            boolean placed = at != null && at.getLineNr() >= 1;
+            return new PluginDescriptor.LoadProblem(
+                    PluginDescriptor.LoadProblem.Kind.MANIFEST_INVALID,
+                    List.of(
+                            placed ? String.valueOf(at.getLineNr()) : "",
+                            placed ? String.valueOf(at.getColumnNr()) : ""),
+                    readableError(e));
+        }
+        return e instanceof IOException
+                ? new PluginDescriptor.LoadProblem(
+                        PluginDescriptor.LoadProblem.Kind.MANIFEST_UNREADABLE, List.of(), readableError(e))
+                : new PluginDescriptor.LoadProblem(
+                        PluginDescriptor.LoadProblem.Kind.MANIFEST_INVALID, List.of("", ""), readableError(e));
+    }
+
     private PluginDescriptor loadDescriptor(Path dir, Path manifestFile) {
         PluginManifest manifest;
         try (InputStream in = Files.newInputStream(manifestFile)) {
@@ -186,7 +205,7 @@ public final class PluginManager {
             PluginManifest stub = new PluginManifest();
             stub.id = dir.getFileName().toString();
             stub.name = stub.id;
-            return new PluginDescriptor(stub, dir, false, null, "Invalid plugin.json: " + readableError(e));
+            return PluginDescriptor.withProblem(stub, dir, false, null, manifestProblem(e));
         }
         if (manifest.id == null || manifest.id.isBlank()) {
             manifest.id = dir.getFileName().toString();
@@ -199,21 +218,27 @@ public final class PluginManager {
             if (manifest.name == null || manifest.name.isBlank()) {
                 manifest.name = manifest.id;
             }
-            return new PluginDescriptor(
-                    manifest, dir, false, null, "Invalid plugin id in plugin.json: \"" + declared + "\"");
+            return PluginDescriptor.withProblem(
+                    manifest,
+                    dir,
+                    false,
+                    null,
+                    new PluginDescriptor.LoadProblem(
+                            PluginDescriptor.LoadProblem.Kind.ID_NOT_ALLOWED, List.of(declared), ""));
         }
         boolean enabled = isEnabled.test(manifest.id);
         ClassLoader loader = null;
-        String error = null;
+        PluginDescriptor.LoadProblem error = null;
         if (enabled && manifest.main != null && !manifest.main.isBlank()) {
             try {
                 loader = buildClassLoader(dir);
             } catch (RuntimeException e) {
-                error = "Failed to build class loader: " + e.getMessage();
+                error = new PluginDescriptor.LoadProblem(
+                        PluginDescriptor.LoadProblem.Kind.CODE_NOT_LOADED, List.of(), String.valueOf(e.getMessage()));
                 LOG.log(Level.WARNING, "Plugin " + manifest.id + " class loader failed", e);
             }
         }
-        return new PluginDescriptor(manifest, dir, enabled, loader, error);
+        return PluginDescriptor.withProblem(manifest, dir, enabled, loader, error);
     }
 
     /** Builds a child loader from the plugin's {@code *.jar} and {@code lib/*.jar}; parent = the app loader. */

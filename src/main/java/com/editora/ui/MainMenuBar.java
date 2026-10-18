@@ -107,6 +107,9 @@ final class MainMenuBar {
 
     private static final double UI_FONT_SIZE = 14;
 
+    /** The chord label's size, matching `.menu-item-chord` in app.css. */
+    private static final double CHORD_FONT_SIZE = 11;
+
     /** True when the native menu bar owns rendering, so items must carry plain text (see the class javadoc). */
     private final boolean systemMenu = KeymapManager.isMac();
 
@@ -169,7 +172,7 @@ final class MainMenuBar {
             if (inlineKey != null) {
                 for (MenuBarModel.MenuSpec submenu : spec.submenus()) {
                     if (submenu.titleKey().equals(inlineKey)) {
-                        menu.getItems().add(nestedMenu(submenu));
+                        menu.getItems().add(nestedMenu(submenu, group));
                         inline.add(inlineKey);
                     }
                 }
@@ -188,18 +191,35 @@ final class MainMenuBar {
         if (!below.isEmpty()) {
             menu.getItems().add(new SeparatorMenuItem());
             for (MenuBarModel.MenuSpec submenu : below) {
-                menu.getItems().add(nestedMenu(submenu));
+                menu.getItems().add(nestedMenu(submenu, group));
             }
         }
         return menu;
     }
 
-    private Menu nestedMenu(MenuBarModel.MenuSpec submenu) {
+    /**
+     * A submenu inside its parent. In-window it joins the parent's chord-column group with the same
+     * icon/title/chord layout as a command row, its title drawn in the graphic and its chord an invisible copy
+     * of the group's widest one (see {@link #alignChordColumns}).
+     *
+     * <p>That is what puts the arrow at the right edge. JavaFX places a submenu's arrow right after the widest
+     * <em>label</em> among the plain items, but every command row is a {@link CustomMenuItem} whose content
+     * takes no part in that column — so with the title in the label, the arrow sat just past the longest
+     * submenu name, halfway across a menu the chords had made wide. Laid out like a command row, the submenu's
+     * graphic is exactly as wide as the widest row and the arrow column follows it. The Menu keeps its text
+     * (accessibility, and the system menu bar); app.css collapses the label that would draw it twice.
+     */
+    private Menu nestedMenu(MenuBarModel.MenuSpec submenu, java.util.List<Row> group) {
         Menu nested = menuOf(submenu);
         if (!systemMenu) {
-            // An empty icon column, so the submenu's title starts where the item titles do.
-            nested.setGraphic(iconColumn(null));
+            Label title = new Label(nested.getText());
+            title.getStyleClass().add("menu-item-title");
+            Label chord = new Label();
+            chord.getStyleClass().add("menu-item-chord");
+            chord.setVisible(false); // holds the chord column's width; never shows
+            nested.setGraphic(rowContent(iconColumn(null), title, chord));
             nested.getStyleClass().add("menu-submenu");
+            group.add(new Row(nested, title, chord));
         }
         return nested;
     }
@@ -231,20 +251,25 @@ final class MainMenuBar {
         title.getStyleClass().add("menu-item-title");
         Label chord = new Label();
         chord.getStyleClass().add("menu-item-chord");
+        CustomMenuItem item = new CustomMenuItem(rowContent(iconColumn(commandId), title, chord));
+        item.setHideOnClick(true);
+        return new Row(item, title, chord);
+    }
+
+    /** The in-window row layout shared by command rows and submenus: icon, title, spacer, chord. */
+    private static HBox rowContent(Node icon, Label title, Label chord) {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS); // pushes the chord to the item's right edge
         // Spacing 0 with explicit margins: one gap belongs between the icon and its title (small) and a
         // different one before the chord column (wide), which a single spacing value cannot express.
-        HBox box = new HBox(iconColumn(commandId), title, spacer, chord);
+        HBox box = new HBox(icon, title, spacer, chord);
         HBox.setMargin(title, new javafx.geometry.Insets(0, 0, 0, 8));
         HBox.setMargin(chord, new javafx.geometry.Insets(0, 0, 0, 18));
         box.setAlignment(Pos.CENTER_LEFT);
         // The popup sizes itself to its widest item and stretches the rest; without this the row would
         // hug its content and every chord would sit at a different x.
         box.setMaxWidth(Double.MAX_VALUE);
-        CustomMenuItem item = new CustomMenuItem(box);
-        item.setHideOnClick(true);
-        return new Row(item, title, chord);
+        return box;
     }
 
     /**
@@ -377,12 +402,37 @@ final class MainMenuBar {
     private void alignChordColumns() {
         for (java.util.List<Row> group : menuGroups) {
             double w = titleColumnWidth(group);
+            String widestChord = widestChord(group);
             for (Row r : group) {
                 if (r.title() != null) {
                     r.title().setMinWidth(w);
                     r.title().setPrefWidth(w);
                 }
+                if (r.item() instanceof Menu && r.chord() != null) {
+                    // A submenu row's invisible chord: as wide as the widest real one, so the row is as
+                    // wide as the widest command row and the arrow lands at the menu's right edge.
+                    r.chord().setText(widestChord);
+                }
             }
         }
+    }
+
+    /** The chord in a group that draws widest, measured like {@link #titleColumnWidth} (chords are 11px). */
+    private static String widestChord(java.util.List<Row> group) {
+        String widest = "";
+        double max = 0;
+        MEASURE.setFont(Font.font(UI_FONT, CHORD_FONT_SIZE));
+        for (Row r : group) {
+            if (r.chord() == null || r.item() instanceof Menu) {
+                continue;
+            }
+            MEASURE.setText(r.chord().getText());
+            double width = MEASURE.getLayoutBounds().getWidth();
+            if (width > max) {
+                max = width;
+                widest = r.chord().getText();
+            }
+        }
+        return widest;
     }
 }

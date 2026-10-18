@@ -275,7 +275,7 @@ final class AiCoordinator {
         ifReady(() -> {
             EditorBuffer b = host.activeBuffer();
             if (b != null && b.encryption().isEncrypted()) {
-                host.setStatus(tr("encryption.status.noAi")); // ADR 0015: decrypted text is not sent anywhere
+                host.setStatus(tr("encryption.status.noAi")); // ADR 0016: decrypted text is not sent anywhere
                 return;
             }
             String selection = b == null ? "" : b.getFocusedArea().getSelectedText();

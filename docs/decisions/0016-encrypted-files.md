@@ -1,4 +1,4 @@
-# 0015 — Encrypted files: the gpg CLI, encryption as a property of the file, sensitive buffers
+# 0016 — Encrypted files: the gpg CLI, encryption as a property of the file, sensitive buffers
 
 **Status:** Accepted. Replaces the `gpg-tools` registry plugin, which is retired.
 

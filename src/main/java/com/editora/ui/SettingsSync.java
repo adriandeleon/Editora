@@ -91,6 +91,11 @@ final class SettingsSync {
 
     private State state = new State(Phase.OFF, null, null);
     private boolean running;
+    /** The run under way (worker thread), for {@link #cancelSync()}; null between runs. */
+    private volatile SyncEngine runningEngine;
+    /** Cancel was asked before the run's engine existed (while the sign-in account was being chosen). */
+    private volatile boolean cancelRequested;
+
     private boolean again;
     /** True while a run's result is being written into the stores: those writes are not "the user changed something". */
     private boolean applying;
@@ -218,6 +223,22 @@ final class SettingsSync {
         request(true, false);
     }
 
+    /**
+     * Stops the sync that is running, if it has not started writing this computer's files (see
+     * {@link SyncEngine#cancel()}). False when it is too late: the run then finishes as usual.
+     */
+    boolean cancelSync() {
+        if (!running) {
+            return false;
+        }
+        SyncEngine engine = runningEngine;
+        if (engine == null) {
+            cancelRequested = true; // the engine checks this as soon as it exists
+            return true;
+        }
+        return engine.cancel();
+    }
+
     /** Repeats a run that stopped at {@link SyncReport.Status#NEEDS_CONFIRMATION}, allowing the removal. */
     void syncAllowingLargeRemoval() {
         if (active()) {
@@ -269,6 +290,7 @@ final class SettingsSync {
             return;
         }
         running = true;
+        cancelRequested = false;
         dirty.stop();
         setState(new State(Phase.SYNCING, state.report(), state.at()));
         Settings s = shared.getSettings();
@@ -285,7 +307,13 @@ final class SettingsSync {
             String login = SyncAccount.choose(
                     git, gh, url, host -> GitHubService.logins(gh, host, GH_TIMEOUT), verify, search);
             QuietGit signedIn = git.with(SyncAccount.credentialConfig(gh, SyncAccount.httpsHost(url), login));
-            SyncReport report = engine(url, branch, signedIn).run(categories, allowLargeRemoval);
+            SyncEngine engine = engine(url, branch, signedIn);
+            runningEngine = engine;
+            if (cancelRequested) {
+                engine.cancel();
+            }
+            SyncReport report = engine.run(categories, allowLargeRemoval);
+            runningEngine = null;
             Platform.runLater(() -> finished(report, login, userAsked, task));
         });
     }
@@ -303,6 +331,13 @@ final class SettingsSync {
             return;
         }
         account = login;
+        if (report.status() == SyncReport.Status.CANCELLED) { // nothing changed: the page goes back to what it said
+            again = false;
+            SyncReport last = state.report();
+            setState(new State(last == null || last.ok() ? Phase.IDLE : Phase.PROBLEM, last, state.at()));
+            windows.syncStatus(tr("status.sync.cancelled"), false);
+            return;
+        }
         // "The files changed while I was syncing" is not a problem to show: the change itself scheduled a run.
         boolean busy = report.status() == SyncReport.Status.LOCAL_BUSY;
         boolean problem = !report.ok() && !busy;

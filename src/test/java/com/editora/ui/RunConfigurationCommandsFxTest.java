@@ -410,7 +410,7 @@ class RunConfigurationCommandsFxTest {
             debug.shutdown();
             dap.shutdown();
         });
-        lspManager.shutdownAll();
+        lspManager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
     }
 
     // --- harness --------------------------------------------------------------------------------------

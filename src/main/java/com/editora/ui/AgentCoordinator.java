@@ -526,7 +526,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     ? com.editora.agent.LmStudioAgent.environment(
                             settings.getAiLmStudioEndpoint(),
                             settings.getAiLmStudioModel(),
-                            settings.getAiApiKeyLmstudio())
+                            settings.getApiKeyFor(com.editora.ai.AiProvider.LMSTUDIO))
                     : Map.of();
         } catch (IllegalArgumentException e) {
             return CompletableFuture.failedFuture(e);
@@ -935,7 +935,7 @@ final class AgentCoordinator implements AcpClient.Host {
         return here != null ? here : ops.bufferInAnotherWindow(file);
     }
 
-    /** Why an agent may not read or write an encrypted file (ADR 0015). */
+    /** Why an agent may not read or write an encrypted file (ADR 0016). */
     static final String ENCRYPTED = "This is an encrypted file; Editora does not share it with agents.";
 
     @Override
@@ -943,7 +943,7 @@ final class AgentCoordinator implements AcpClient.Host {
         Path file = sessionPath(path);
         String key = PathKeys.key(file);
         if (com.editora.editor.EncryptedNames.extensionOf(String.valueOf(file.getFileName())) != null) {
-            throw new IOException(ENCRYPTED); // ADR 0015: neither the decrypted text nor the ciphertext
+            throw new IOException(ENCRYPTED); // ADR 0016: neither the decrypted text nor the ciphertext
         }
         String text = fxCall(() -> {
             EditorBuffer open = openBuffer(file);

@@ -1396,12 +1396,21 @@ final class LspCoordinator {
     }
 
     /** The configured command for a server id (blank ⇒ the server's default). */
-    /** Shared "no overrides" instance, so a window with no project allocates nothing per read. */
-    private static final com.editora.config.ProjectSettings EMPTY_PROJECT_SETTINGS =
-            new com.editora.config.ProjectSettings();
+    /** This window's project scope: its .editora/settings.json, its trust, and the effective values. */
+    private final ProjectScope projectScope = new ProjectScope(this::scopeRoot, this::scopeConfig);
 
-    private Path projectSettingsRoot;
-    private com.editora.config.ProjectSettings projectSettingsCache = EMPTY_PROJECT_SETTINGS;
+    private Path scopeRoot() {
+        return ops.lspProjectRoot();
+    }
+
+    private com.editora.config.ConfigManager scopeConfig() {
+        return ops.config();
+    }
+
+    /** This window's project scope, which every reader of a project-scopable setting asks. */
+    ProjectScope projectScope() {
+        return projectScope;
+    }
 
     /**
      * The command {@code serverId} runs when the user chose one other than the default (a path, another server),
@@ -1438,12 +1447,7 @@ final class LspCoordinator {
      * something, so a project without one never touches the trust list.
      */
     private boolean projectTrusted() {
-        Path root = ops.lspProjectRoot();
-        com.editora.config.ConfigManager config = ops.config();
-        return root != null
-                && config != null
-                && !projectSettings().isEmpty()
-                && config.getTrustStore().isTrusted(root);
+        return projectScope.trusted();
     }
 
     /**
@@ -1470,12 +1474,45 @@ final class LspCoordinator {
         return parts.isEmpty() ? null : String.join(" ", parts);
     }
 
+    /**
+     * The name of a project value as Settings shows it: {@code editor.tabSize} → "Tab size",
+     * {@code build.maven} → "Maven command", {@code debug.python} → "Python debugger".
+     */
+    static String scopeLabel(String key) {
+        int dot = key.indexOf('.');
+        String section = dot < 0 ? key : key.substring(0, dot);
+        String name = dot < 0 ? key : key.substring(dot + 1);
+        return switch (section) {
+            case "build" -> tr("settings.scope.buildCommand", buildToolName(name));
+            case "debug" ->
+                tr(
+                        "settings.scope.debugTool",
+                        switch (name) {
+                            case "java" -> "Java";
+                            case "python" -> "Python";
+                            case "javascript" -> "JavaScript";
+                            default -> name;
+                        });
+            default -> tr("settings.scope." + name);
+        };
+    }
+
+    private static String buildToolName(String id) {
+        for (com.editora.build.BuildTool tool : com.editora.build.BuildTool.values()) {
+            if (ProjectScope.toolId(tool).equals(id)) {
+                return tool.displayName();
+            }
+        }
+        return id;
+    }
+
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
         List<String> requests = new java.util.ArrayList<>(
                 projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled));
         requests.addAll(
                 com.editora.lsp.BashIdeConfig.trustRequests(projectSettings().getBashIde()));
+        projectSettings().valueOverrides().forEach((key, value) -> requests.add(scopeLabel(key) + ": " + value));
         return requests;
     }
 
@@ -1597,6 +1634,7 @@ final class LspCoordinator {
         if (!sdkRequests.isEmpty()) {
             lspManager.shutdownServer(ASTRO_SERVER_ID); // restart it on the SDK the folder may now supply
         }
+        projectScope.reload(); // now trusted: the editor, build and debug values apply too
         applySupport();
         host.syncSettingsWindow();
         host.setStatus(tr("status.lsp.projectSettingsTrusted"));
@@ -1640,15 +1678,7 @@ final class LspCoordinator {
      * value that changes only when someone edits it. {@link #reloadProjectSettings()} drops the cache.
      */
     private com.editora.config.ProjectSettings projectSettings() {
-        Path root = ops.lspProjectRoot();
-        if (root == null) {
-            return EMPTY_PROJECT_SETTINGS;
-        }
-        if (!root.equals(projectSettingsRoot)) {
-            projectSettingsRoot = root;
-            projectSettingsCache = com.editora.config.ProjectSettings.load(root);
-        }
-        return projectSettingsCache;
+        return projectScope.settings();
     }
 
     /** Whether {@code file} is this window's project {@code .editora/settings.json}. */
@@ -1708,8 +1738,7 @@ final class LspCoordinator {
      * {@link #applySupport} so the change reaches the running servers instead of only the labels.
      */
     void reloadProjectSettings() {
-        projectSettingsRoot = null;
-        projectSettingsCache = EMPTY_PROJECT_SETTINGS;
+        projectScope.reload();
         applyOnTypeFormatting();
         applyBashIde();
         appliedProjectRoot = ops.lspProjectRoot();
@@ -2155,7 +2184,7 @@ final class LspCoordinator {
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
                 && !buffer.isNarrowed()
-                // An encrypted file's text reaches a language server only when Settings allow it (ADR 0015);
+                // An encrypted file's text reaches a language server only when Settings allow it (ADR 0016);
                 // a locked one has no text to serve yet.
                 && (!buffer.encryption().isEncrypted()
                         || (host.settings().isEncryptionLanguageServers()
@@ -3092,7 +3121,7 @@ final class LspCoordinator {
             JdtlsRefactor.Request request, com.google.gson.JsonArray arguments) {
         EditorBuffer buffer = activeLspBuffer();
         com.editora.lsp.FormattingIndent indent = buffer == null
-                ? new com.editora.lsp.FormattingIndent(host.settings().getTabSize(), true)
+                ? new com.editora.lsp.FormattingIndent(projectScope.tabSize(host.settings()), true)
                 : formattingIndent(buffer);
         return JdtlsRefactor.refactorEditParams(
                 request.name(), request.params(), indent.tabSize(), indent.insertSpaces(), arguments);

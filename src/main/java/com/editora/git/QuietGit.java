@@ -87,6 +87,11 @@ public final class QuietGit {
         return run(NETWORK, args);
     }
 
+    /** As {@link #network(String...)}, stopped (its process tree killed) by {@code cancel}. */
+    public ProcessRunner.Result network(ProcessRunner.Cancellation cancel, String... args) {
+        return ProcessRunner.run(dir, NETWORK, argv(interactive, extraConfig, args), env(), cancel);
+    }
+
     private ProcessRunner.Result run(Duration timeout, String... args) {
         return ProcessRunner.run(dir, timeout, argv(interactive, extraConfig, args), env());
     }
