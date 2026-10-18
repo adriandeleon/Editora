@@ -487,6 +487,10 @@ final class TestNavigationCoordinator {
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
             return;
         }
+        // A JavaScript/TypeScript test file's test at the caret is debugged under node --test (review D7).
+        if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugJsTestAtCaret(b)) {
+            return;
+        }
         com.editora.test.JavaTestScanner.TestTarget target = b == null ? null : b.testTargetAtCaret(classLevel);
         if (target == null) {
             host.setStatus(tr("status.testrunner.noTestAtCaret"));

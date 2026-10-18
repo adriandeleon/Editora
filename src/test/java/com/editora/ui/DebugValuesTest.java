@@ -121,4 +121,13 @@ class DebugValuesTest {
         assertEquals("title", DebugValues.stripAnsi("\u001B]0;window\u0007title"));
         assertEquals("a [b] c", DebugValues.stripAnsi("a [b] c"));
     }
+
+    @Test
+    void aMultiLineValueShowsItsFirstLine() {
+        // js-debug describes a function by its source (review D9)
+        assertEquals("ƒ next() { … }", DebugValues.display("ƒ next() {\n    count += 1;\n    return count;\n  }"));
+        assertEquals("first …", DebugValues.display("\nfirst\nsecond"));
+        assertEquals("'one line'", DebugValues.display("'one line'"));
+        assertNull(DebugValues.display(null));
+    }
 }
