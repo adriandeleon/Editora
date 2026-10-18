@@ -50,16 +50,23 @@ public final class IndentWindow {
         return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
     }
 
+    /** How far below the caret's line Enter looks in a brace language (see {@link CommentContinuation}). */
+    static final int LOOK_BELOW_CHARS = 4096;
+
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {
         int line = doc.lineOf(caret);
         // Shell and Python read the stretch above the caret (blocks, quotes, wrapped statements); the rest only the
         // line.
-        int start = Indenter.styleFor(language) == Indenter.Style.SHELL || "python".equals(language)
+        Indenter.Style style = Indenter.styleFor(language);
+        int start = style == Indenter.Style.SHELL || "python".equals(language)
                 ? backScanStart(doc, line)
                 : doc.lineStart(line);
-        return Indenter.enterEdit(
-                doc.text(start, doc.lineStart(line) + doc.lineLength(line)), caret - start, language, unit);
+        int end = doc.lineStart(line) + doc.lineLength(line);
+        if (style == Indenter.Style.BRACES) {
+            end = Math.min(doc.length(), end + LOOK_BELOW_CHARS); // is a `/**` here already closed below?
+        }
+        return Indenter.enterEdit(doc.text(start, end), caret - start, language, unit);
     }
 
     /** {@link Indenter#closerAlignIndent(Indenter.Style, String, int, int, String, char)} at {@code caret}. */

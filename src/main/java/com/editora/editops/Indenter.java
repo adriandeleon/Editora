@@ -292,7 +292,8 @@ public final class Indenter {
 
     /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
      *  reads only the caret's own line of {@code text} — except in shell, whose blocks, quotes and here-docs
-     *  are read from the bounded stretch above it ({@link ShellIndent}). */
+     *  are read from the bounded stretch above it ({@link ShellIndent}), and in a brace language's block comment,
+     *  where the text below says whether a {@code /**} is closed yet ({@link CommentContinuation}). */
     static EnterEdit enterEdit(String text, int caret, String language, String unit) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
@@ -303,6 +304,10 @@ public final class Indenter {
         // of code that is still indented by its own four.
         String indent = leadingWhitespace(before);
 
+        EnterEdit comment = style == Style.BRACES ? CommentContinuation.enter(text, caret, before, after) : null;
+        if (comment != null) {
+            return comment; // ` * ` inside a /** … */ comment
+        }
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;
             return new EnterEdit("\n" + body + "\n" + indent, 1 + body.length());
