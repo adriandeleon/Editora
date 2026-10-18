@@ -1501,6 +1501,8 @@ public final class DapManager {
             if (!attach && programConsole) {
                 c.setRunsDebuggee(true);
                 LaunchConfig.inClientConsole(args);
+            } else if (!attach) {
+                wrapForExitCode(file, args, epoch);
             }
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(filtersFor("java"));
@@ -1535,7 +1537,8 @@ public final class DapManager {
                             setState(State.RUNNING);
                         }
                         if (!attach && args.get("javaExec") instanceof String javaExec && !javaExec.isBlank()) {
-                            listener.onDebuggeeRuntime(List.of(javaExec), runtimeWhere(file), Map.of());
+                            listener.onDebuggeeRuntime(
+                                    List.of(realJavaExec(epoch, javaExec)), runtimeWhere(file), Map.of());
                         }
                     });
                 });
@@ -2610,6 +2613,7 @@ public final class DapManager {
         }
         killAdapterProgram(); // an adapter that is gone cannot end the program it launched
         releaseCompilationDirectory();
+        releaseExitWrapper();
         setState(State.INACTIVE);
     }
 
@@ -2733,11 +2737,28 @@ public final class DapManager {
             return;
         }
         c.variables(ref, filter, start, count)
+                .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(vars == null ? List.of() : vars);
                     }
                 }));
+    }
+
+    // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
+
+    /** Whether the session is java-debug's, whose string values may need {@link JdwpStringRepair}. */
+    private boolean javaDebugSession() {
+        return "java".equals(sessionLanguage);
+    }
+
+    private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
+            DapClient c, List<DapModels.VariableInfo> vars) {
+        return javaDebugSession() ? JdwpStringRepair.repairAll(c, vars) : CompletableFuture.completedFuture(vars);
+    }
+
+    private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
+        return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
     }
 
     public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
@@ -2750,12 +2771,14 @@ public final class DapManager {
         if (console) {
             consoleEvaluations++;
         }
-        c.evaluate(expression, frameId, context)
-                .whenComplete((r, e) -> Platform.runLater(() -> {
+        c.evaluateFull(expression, frameId, context) // the full answer: a string result can be repaired from it
+                .thenCompose(full -> repairString(c, full))
+                .whenComplete((full, e) -> Platform.runLater(() -> {
                     if (console && client == c) {
                         consoleEvaluations = Math.max(0, consoleEvaluations - 1);
                     }
                     if (client == c) {
+                        String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
                                         ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
@@ -2808,6 +2831,7 @@ public final class DapManager {
             return;
         }
         c.evaluateFull(expression, frameId, context)
+                .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(
@@ -2827,6 +2851,7 @@ public final class DapManager {
             return;
         }
         c.evaluateFull(expression, frameId, "hover")
+                .thenCompose(r -> repairString(c, r))
                 .whenComplete((r, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(e != null || r == null ? null : r.result());
@@ -3021,6 +3046,7 @@ public final class DapManager {
         }
         killAdapterProgram();
         releaseCompilationDirectory();
+        releaseExitWrapper(); // no exited event came for it
         setState(State.INACTIVE);
     }
 
@@ -3096,13 +3122,91 @@ public final class DapManager {
             exitReportedEpoch = epoch;
             outputPump.flush();
             if (javaAdapterEpoch == epoch) {
-                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live):
-                // the console says the program ended, not a code that is not its own (review A10).
-                listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live).
+                // The wrapper the program was started through recorded its real code; without one the console
+                // says only that the program ended, not a code that is not its own (review A10).
+                reportJavaExit(epoch);
                 return;
             }
             listener.onProgramExit(exitCode);
         });
+    }
+
+    /** A session's exit-code wrapper ({@link JavaExitCodeWrapper}) and the session it belongs to. */
+    private record ExitWrapper(long epoch, JavaExitCodeWrapper wrapper, String realJava) {}
+
+    /**
+     * The {@code java} a launch of {@code epoch} really runs: its {@code javaExec}, or the one behind the
+     * exit-code wrapper. Anything that runs it itself (the runtime chip's {@code -version}) must run this one: a
+     * run of the wrapper would record that run's exit code as the program's.
+     */
+    private String realJavaExec(long epoch, String javaExec) {
+        ExitWrapper own = exitWrapper;
+        return own != null && own.epoch() == epoch ? own.realJava() : javaExec;
+    }
+
+    /** The current session's exit-code wrapper, or null (the program console is on, a remote file, Windows). */
+    private volatile ExitWrapper exitWrapper;
+
+    /**
+     * Starts the program of a launch java-debug runs itself (the program console off) through a wrapper that
+     * records its exit code: {@code args}' {@code javaExec} becomes the wrapper, which runs the real one. Only for
+     * a program on this machine and not on Windows (see {@link JavaExitCodeWrapper}); and only when the launch
+     * names its {@code java} — without one java-debug picks its own, which the wrapper cannot know.
+     */
+    private void wrapForExitCode(Path file, Map<String, Object> args, long epoch) {
+        Object java = args.get("javaExec");
+        if (!(java instanceof String real)
+                || real.isBlank()
+                || !com.editora.process.ExecTargets.runsHere(file)
+                || LaunchConfig.Target.LOCAL.windows()) {
+            return;
+        }
+        try {
+            JavaExitCodeWrapper wrapper = JavaExitCodeWrapper.create(real);
+            releaseExitWrapper();
+            exitWrapper = new ExitWrapper(epoch, wrapper, real);
+            args.put("javaExec", wrapper.script().toString());
+        } catch (java.io.IOException | RuntimeException e) {
+            LOG.log(Level.FINE, "No exit-code wrapper; the program runs as before", e);
+        }
+    }
+
+    /**
+     * Says how the program of {@code epoch} ended: its real exit code when its wrapper recorded one — written a
+     * moment after java-debug reports the VM's death, so it is waited for off the FX thread — else that it
+     * ended. Nothing when another session has started meanwhile (its console is not this program's).
+     */
+    private void reportJavaExit(long epoch) {
+        ExitWrapper own = exitWrapper;
+        if (own == null || own.epoch() != epoch) {
+            listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+            return;
+        }
+        exitWrapper = null;
+        CompletableFuture.supplyAsync(() -> own.wrapper().awaitExitCode(java.time.Duration.ofSeconds(3)))
+                .whenComplete((code, e) -> Platform.runLater(() -> {
+                    own.wrapper().delete();
+                    if (managerClosed || sessionEpoch - epoch > 1) {
+                        return; // a new session (or a Stop after the end) owns the console now
+                    }
+                    outputPump.flush();
+                    if (code != null) {
+                        listener.onProgramExit(code);
+                    } else {
+                        listener.onOutput(com.editora.i18n.Messages.tr("debug.console.programEnded") + "\n", "console");
+                    }
+                }));
+    }
+
+    /** Removes the exit-code wrapper of a session that will not report its exit (stopped, replaced). */
+    private void releaseExitWrapper() {
+        ExitWrapper old = exitWrapper;
+        exitWrapper = null;
+        if (old != null) {
+            // After the stop: java-debug may still be ending the program the wrapper runs.
+            CompletableFuture.delayedExecutor(10, TimeUnit.SECONDS).execute(old.wrapper()::delete);
+        }
     }
 
     /** The session whose exit code was already reported (a child session may report it again). */
@@ -3156,6 +3260,7 @@ public final class DapManager {
         // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
         releaseCompilationDirectory();
+        releaseExitWrapper();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }
@@ -3524,5 +3629,31 @@ public final class DapManager {
             @Override
             public void onError(String message) {}
         };
+    }
+
+    // --- completions (follow-up 5) -------------------------------------------------------------------------
+
+    /** Whether the session's adapter completes expressions (DAP {@code completions}). */
+    public boolean supportsCompletions() {
+        DapClient c = client;
+        return c != null && c.supportsCompletions();
+    }
+
+    /**
+     * Completions of {@code text} at 0-based {@code column} in frame {@code frameId}, on the FX thread; an empty
+     * list when there is no session, the adapter cannot, or it failed (a completion is never worth an error).
+     */
+    public void completions(int frameId, String text, int column, Consumer<List<DapModels.CompletionTarget>> cb) {
+        DapClient c = client;
+        if (c == null || !c.supportsCompletions() || frameId < 0) {
+            cb.accept(List.of());
+            return;
+        }
+        c.completions(frameId, text, column)
+                .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(e != null || r == null ? List.of() : r);
+                    }
+                }));
     }
 }

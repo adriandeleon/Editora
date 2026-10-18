@@ -105,6 +105,13 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsStepInTargetsRequest}. */
     public volatile boolean stepInTargets;
 
+    /**
+     * When set (before the client connects), sessions advertise {@code supportsCompletionsRequest} and answer
+     * {@code completions} with these targets; the arguments of each request land in the session's
+     * {@code completionRequests}.
+     */
+    public volatile List<org.eclipse.lsp4j.debug.CompletionItem> completions;
+
     /** When set (before the client connects), every {@code launch}/{@code attach} is refused with this message. */
     public volatile String launchFailure;
 
@@ -444,6 +451,24 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         // --- IDebugProtocolServer -------------------------------------------------------------------
 
+        /** The {@code completions} requests received, in order. */
+        public final List<org.eclipse.lsp4j.debug.CompletionsArguments> completionRequests =
+                new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.CompletionsResponse> completions(
+                org.eclipse.lsp4j.debug.CompletionsArguments args) {
+            record("completions");
+            completionRequests.add(args);
+            org.eclipse.lsp4j.debug.CompletionsResponse r = new org.eclipse.lsp4j.debug.CompletionsResponse();
+            List<org.eclipse.lsp4j.debug.CompletionItem> scripted = completions;
+            r.setTargets(
+                    scripted == null
+                            ? new org.eclipse.lsp4j.debug.CompletionItem[0]
+                            : scripted.toArray(new org.eclipse.lsp4j.debug.CompletionItem[0]));
+            return CompletableFuture.completedFuture(r);
+        }
+
         @Override
         public CompletableFuture<Capabilities> initialize(InitializeRequestArguments args) {
             initializeArgs = args;
@@ -463,6 +488,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             }
             if (stepInTargets) {
                 capabilities.setSupportsStepInTargetsRequest(true);
+            }
+            if (completions != null) {
+                capabilities.setSupportsCompletionsRequest(true);
             }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             if (!javaDebug) {
