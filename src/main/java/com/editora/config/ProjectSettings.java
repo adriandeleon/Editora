@@ -7,6 +7,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
@@ -25,8 +26,16 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
  *
  * <p><b>Deliberately a curated subset, not "any setting".</b> Overriding appearance, keymap or font from a
  * repository would let a checkout silently rearrange someone's editor, which is a different and much more
- * invasive thing than telling it which toolchain the project needs. What is here is toolchain configuration:
- * which language server to run, whether to run it, and how the shell server checks and formats scripts.
+ * invasive thing than telling it which toolchain the project needs. What is here is what a project decides
+ * for everyone who works on it: which language server to run, whether to run it, and how the shell server
+ * checks and formats scripts (version 1); how its files are indented, ruled, wrapped and trimmed, which
+ * spelling dictionary they use, which command runs each build tool and which program each debugger uses
+ * (version 2, Settings' Project scope). Every value here applies only in a trusted folder; see
+ * {@link #editor()}, {@link #buildCommand} and {@link #debugTool}.
+ *
+ * <p><b>Versions.</b> A file without {@code version} is version 1 and reads unchanged. Settings writes
+ * {@link #VERSION} and keeps every key it does not know ({@link ProjectSettingsFile}); it refuses to write a
+ * file from a newer Editora, whose keys it could not keep in step.
  *
  * <p>Absent, unreadable or half-written ⇒ no overrides. A malformed file in someone's repository must not
  * stop the project opening, so every failure path yields empty rather than throwing.
@@ -40,8 +49,23 @@ public class ProjectSettings {
     public static final String FILE = "settings.json";
     public static final String LEGACY_FILE = "settings.toml";
 
-    private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private static final TomlMapper LEGACY_TOML = new TomlMapper();
+
+    /** The newest file shape this Editora reads and writes: 2 added {@code editor}, build and debug values. */
+    public static final int VERSION = 2;
+
+    /** The file's own {@code version}; null in a version-1 file, which never had one. */
+    private Integer version;
+
+    /** Editor values for the project's files ({@link Editor}); every field null means "the user's own". */
+    private Editor editor = new Editor();
+
+    /** Build tool id ({@code maven}, {@code npm}, …) → the command that runs it, overriding the user's. */
+    private Map<String, String> buildCommands = new LinkedHashMap<>();
+
+    /** Debug adapter id ({@code java}, {@code python}, {@code javascript}) → its program or command. */
+    private Map<String, String> debugTools = new LinkedHashMap<>();
 
     /** Server id → command line, overriding the global per-server command. */
     private Map<String, String> lspCommands = new LinkedHashMap<>();
@@ -118,7 +142,16 @@ public class ProjectSettings {
     /** Whether this overrides anything at all — lets callers skip the resolution entirely. */
     @JsonIgnore
     public boolean isEmpty() {
-        return lspCommands.isEmpty() && lspEnabled.isEmpty() && bashIde.isEmpty();
+        return lspCommands.isEmpty()
+                && lspEnabled.isEmpty()
+                && bashIde.isEmpty()
+                && editor.isEmpty()
+                && blankValues(buildCommands)
+                && blankValues(debugTools);
+    }
+
+    private static boolean blankValues(Map<String, String> map) {
+        return map.values().stream().allMatch(v -> v == null || v.isBlank());
     }
 
     /**
@@ -183,6 +216,330 @@ public class ProjectSettings {
             }
         });
         return java.util.List.copyOf(requests.values());
+    }
+
+    // --- version 2: the values Settings' Project scope edits ---------------------------------------------------
+
+    /**
+     * The command that runs build tool {@code toolId} here: the project's non-blank one in a trusted folder, else
+     * {@code user}. A build command is a program the checkout chooses to run, so it needs trust like a server's.
+     */
+    public String buildCommand(String toolId, String user, boolean trusted) {
+        String own = buildCommands.get(toolId);
+        return trusted && own != null && !own.isBlank() ? own.strip() : user;
+    }
+
+    /** The program or command debug adapter {@code adapterId} uses here; as {@link #buildCommand}. */
+    public String debugTool(String adapterId, String user, boolean trusted) {
+        String own = debugTools.get(adapterId);
+        return trusted && own != null && !own.isBlank() ? own.strip() : user;
+    }
+
+    /**
+     * Every value this file sets besides the language-server ones, as {@code key → shown value} in a fixed order
+     * ({@code editor.tabSize}, …, {@code build.maven}, {@code debug.python}) — what trusting the folder would
+     * apply, for the trust prompt and Settings to list. Values that would be ignored (out of range) are left out.
+     */
+    @JsonIgnore
+    public Map<String, String> valueOverrides() {
+        Map<String, String> out = new LinkedHashMap<>();
+        Editor e = editor;
+        if (e.validIndentStyle() != null) {
+            out.put("editor.indentStyle", e.validIndentStyle());
+        }
+        if (e.validTabSize() != null) {
+            out.put("editor.tabSize", String.valueOf(e.validTabSize()));
+        }
+        if (e.getRulers() != null) {
+            out.put("editor.rulers", Editor.columns(e.cleanRulers()));
+        }
+        if (e.getLanguageRulers() != null && !e.getLanguageRulers().isEmpty()) {
+            StringBuilder b = new StringBuilder();
+            e.cleanLanguageRulers().forEach((lang, cols) -> {
+                if (b.length() > 0) {
+                    b.append("; ");
+                }
+                b.append(lang).append(':');
+                if (!cols.isEmpty()) {
+                    b.append(' ').append(Editor.columns(cols));
+                }
+            });
+            out.put("editor.languageRulers", b.toString());
+        }
+        putFlag(out, "editor.wordWrap", e.getWordWrap());
+        putFlag(out, "editor.wordWrapProse", e.getWordWrapProse());
+        putFlag(out, "editor.trimTrailingWhitespace", e.getTrimTrailingWhitespace());
+        putFlag(out, "editor.insertFinalNewline", e.getInsertFinalNewline());
+        if (e.getSpellLanguage() != null && !e.getSpellLanguage().isBlank()) {
+            out.put("editor.spellLanguage", e.getSpellLanguage().strip());
+        }
+        new java.util.TreeMap<>(buildCommands).forEach((id, cmd) -> {
+            if (cmd != null && !cmd.isBlank()) {
+                out.put("build." + id, cmd.strip());
+            }
+        });
+        new java.util.TreeMap<>(debugTools).forEach((id, cmd) -> {
+            if (cmd != null && !cmd.isBlank()) {
+                out.put("debug." + id, cmd.strip());
+            }
+        });
+        return out;
+    }
+
+    private static void putFlag(Map<String, String> out, String key, Boolean value) {
+        if (value != null) {
+            out.put(key, value.toString());
+        }
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
+    }
+
+    /** The editor values (never null). */
+    public Editor editor() {
+        return editor;
+    }
+
+    public Editor getEditor() {
+        return editor;
+    }
+
+    public void setEditor(Editor editor) {
+        this.editor = editor == null ? new Editor() : editor;
+    }
+
+    public Map<String, String> getBuildCommands() {
+        return buildCommands;
+    }
+
+    public void setBuildCommands(Map<String, String> buildCommands) {
+        this.buildCommands = buildCommands == null ? new LinkedHashMap<>() : new LinkedHashMap<>(buildCommands);
+    }
+
+    public Map<String, String> getDebugTools() {
+        return debugTools;
+    }
+
+    public void setDebugTools(Map<String, String> debugTools) {
+        this.debugTools = debugTools == null ? new LinkedHashMap<>() : new LinkedHashMap<>(debugTools);
+    }
+
+    /**
+     * How a project's files are edited: indentation, tab size, rulers, wrapping, trimming and the spelling
+     * dictionary. A null field leaves the user's own value; a value out of range is ignored rather than
+     * clamped, so a typo in a committed file never silently becomes something else. Each resolver takes the
+     * user's value and whether the folder is trusted, and returns what applies.
+     *
+     * <p>{@code .editorconfig} still wins where it says something: these replace the user's values in the same
+     * place the user's values sit, below a file's {@code .editorconfig} rules.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class Editor {
+        /** The tab sizes Settings accepts (Settings.MIN_TAB_SIZE..MAX_TAB_SIZE). */
+        private static final int MIN_TAB = 1;
+
+        private static final int MAX_TAB = 16;
+        private static final int MAX_COLUMN = 1000;
+
+        private String indentStyle;
+        private Integer tabSize;
+        private java.util.List<Integer> rulers;
+        private Map<String, java.util.List<Integer>> languageRulers;
+        private Boolean wordWrap;
+        private Boolean wordWrapProse;
+        private Boolean trimTrailingWhitespace;
+        private Boolean insertFinalNewline;
+        private String spellLanguage;
+
+        @JsonIgnore
+        public boolean isEmpty() {
+            return validIndentStyle() == null
+                    && validTabSize() == null
+                    && rulers == null
+                    && (languageRulers == null || languageRulers.isEmpty())
+                    && wordWrap == null
+                    && wordWrapProse == null
+                    && trimTrailingWhitespace == null
+                    && insertFinalNewline == null
+                    && (spellLanguage == null || spellLanguage.isBlank());
+        }
+
+        String validIndentStyle() {
+            return "detect".equals(indentStyle) || "space".equals(indentStyle) || "tab".equals(indentStyle)
+                    ? indentStyle
+                    : null;
+        }
+
+        Integer validTabSize() {
+            return tabSize != null && tabSize >= MIN_TAB && tabSize <= MAX_TAB ? tabSize : null;
+        }
+
+        java.util.List<Integer> cleanRulers() {
+            java.util.TreeSet<Integer> set = new java.util.TreeSet<>();
+            if (rulers != null) {
+                for (Integer c : rulers) {
+                    if (c != null && c > 0 && c <= MAX_COLUMN) {
+                        set.add(c);
+                    }
+                }
+            }
+            return java.util.List.copyOf(set);
+        }
+
+        Map<String, java.util.List<Integer>> cleanLanguageRulers() {
+            Map<String, java.util.List<Integer>> out = new java.util.TreeMap<>();
+            if (languageRulers != null) {
+                languageRulers.forEach((lang, cols) -> {
+                    if (lang != null && !lang.isBlank()) {
+                        Editor one = new Editor();
+                        one.rulers = cols;
+                        out.put(lang.strip().toLowerCase(java.util.Locale.ROOT), one.cleanRulers());
+                    }
+                });
+            }
+            return out;
+        }
+
+        static String columns(java.util.List<Integer> cols) {
+            StringBuilder b = new StringBuilder();
+            for (Integer c : cols) {
+                if (b.length() > 0) {
+                    b.append(", ");
+                }
+                b.append(c);
+            }
+            return b.toString();
+        }
+
+        public String indentStyle(String user, boolean trusted) {
+            String own = validIndentStyle();
+            return trusted && own != null ? own : user;
+        }
+
+        public int tabSize(int user, boolean trusted) {
+            Integer own = validTabSize();
+            return trusted && own != null ? own : user;
+        }
+
+        public java.util.List<Integer> rulers(java.util.List<Integer> user, boolean trusted) {
+            return trusted && rulers != null ? cleanRulers() : user;
+        }
+
+        /** The user's per-language rulers with the project's laid over them, language by language. */
+        public Map<String, java.util.List<Integer>> languageRulers(
+                Map<String, java.util.List<Integer>> user, boolean trusted) {
+            if (!trusted || languageRulers == null || languageRulers.isEmpty()) {
+                return user;
+            }
+            Map<String, java.util.List<Integer>> out = new LinkedHashMap<>();
+            if (user != null) {
+                user.forEach((lang, cols) -> out.put(lang.toLowerCase(java.util.Locale.ROOT), cols));
+            }
+            out.putAll(cleanLanguageRulers());
+            return out;
+        }
+
+        public boolean wordWrap(boolean user, boolean trusted) {
+            return trusted && wordWrap != null ? wordWrap : user;
+        }
+
+        public boolean wordWrapProse(boolean user, boolean trusted) {
+            return trusted && wordWrapProse != null ? wordWrapProse : user;
+        }
+
+        /** Whether saving trims trailing whitespace, or null when the project leaves it (Editora's default: no). */
+        public Boolean trimTrailingWhitespace(boolean trusted) {
+            return trusted ? trimTrailingWhitespace : null;
+        }
+
+        /** Whether saving ends the file with a newline, or null when the project leaves it. */
+        public Boolean insertFinalNewline(boolean trusted) {
+            return trusted ? insertFinalNewline : null;
+        }
+
+        /** The default spelling dictionary: the project's when {@code available} has it, else {@code user}. */
+        public String spellLanguage(String user, boolean trusted, java.util.function.Predicate<String> available) {
+            String own = spellLanguage == null ? null : spellLanguage.strip();
+            return trusted && own != null && !own.isEmpty() && available.test(own) ? own : user;
+        }
+
+        public String getIndentStyle() {
+            return indentStyle;
+        }
+
+        public void setIndentStyle(String indentStyle) {
+            this.indentStyle = indentStyle;
+        }
+
+        public Integer getTabSize() {
+            return tabSize;
+        }
+
+        public void setTabSize(Integer tabSize) {
+            this.tabSize = tabSize;
+        }
+
+        public java.util.List<Integer> getRulers() {
+            return rulers;
+        }
+
+        public void setRulers(java.util.List<Integer> rulers) {
+            this.rulers = rulers;
+        }
+
+        public Map<String, java.util.List<Integer>> getLanguageRulers() {
+            return languageRulers;
+        }
+
+        public void setLanguageRulers(Map<String, java.util.List<Integer>> languageRulers) {
+            this.languageRulers = languageRulers;
+        }
+
+        public Boolean getWordWrap() {
+            return wordWrap;
+        }
+
+        public void setWordWrap(Boolean wordWrap) {
+            this.wordWrap = wordWrap;
+        }
+
+        public Boolean getWordWrapProse() {
+            return wordWrapProse;
+        }
+
+        public void setWordWrapProse(Boolean wordWrapProse) {
+            this.wordWrapProse = wordWrapProse;
+        }
+
+        public Boolean getTrimTrailingWhitespace() {
+            return trimTrailingWhitespace;
+        }
+
+        public void setTrimTrailingWhitespace(Boolean trimTrailingWhitespace) {
+            this.trimTrailingWhitespace = trimTrailingWhitespace;
+        }
+
+        public Boolean getInsertFinalNewline() {
+            return insertFinalNewline;
+        }
+
+        public void setInsertFinalNewline(Boolean insertFinalNewline) {
+            this.insertFinalNewline = insertFinalNewline;
+        }
+
+        public String getSpellLanguage() {
+            return spellLanguage;
+        }
+
+        public void setSpellLanguage(String spellLanguage) {
+            this.spellLanguage = spellLanguage;
+        }
     }
 
     public Map<String, String> getLspCommands() {
