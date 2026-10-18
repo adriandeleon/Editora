@@ -1211,12 +1211,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (watchService != null || disposed) {
             return;
         }
-        try {
-            watchService = java.nio.file.FileSystems.getDefault().newWatchService();
-        } catch (IOException | RuntimeException e) {
-            watchService = null; // watching unsupported here; the focus-regain refresh still applies
-            return;
-        }
+        // The system's watcher, or a polling one when it refuses (on Linux: the user's inotify instances are
+        // used up). The tree used to stop following the disk without a word then.
+        watchService = com.editora.io.WatchServices.open();
         localWriteWindowMs = localWriteWindowMs(isPollingWatcher(watchService));
         watchThread = new Thread(this::watchLoop, "project-fs-watch");
         watchThread.setDaemon(true);
@@ -1259,7 +1256,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 continue;
             }
             try {
-                java.nio.file.WatchKey key = dir.register(
+                java.nio.file.WatchKey key = com.editora.io.WatchServices.register(
+                        dir,
                         watchService,
                         java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
                         java.nio.file.StandardWatchEventKinds.ENTRY_DELETE,

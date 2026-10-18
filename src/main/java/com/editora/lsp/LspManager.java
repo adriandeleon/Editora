@@ -170,6 +170,7 @@ public final class LspManager {
         if (enabled) {
             ProcessRunner.warmAugmentedPathAsync(); // before the first session start reads it on FX
         } else {
+            closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
             shutdownAll();
             com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
         }
