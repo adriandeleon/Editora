@@ -1217,8 +1217,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         boolean added = false;
         for (Map.Entry<Integer, Symbol> e : symbolByLine.entrySet()) {
             int line = e.getKey();
-            if (used.contains(line) || line < 0 || line >= paras) {
-                continue;
+            if (used.contains(line)
+                    || line < 0
+                    || line >= paras
+                    || "tag".equals(e.getValue().kind())) {
+                continue; // a JSX element (`<p>`) is markup, not a declaration
             }
             List<StructureNode> siblings = rootNodes;
             for (boolean deeper = true; deeper; ) {

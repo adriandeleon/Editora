@@ -48,6 +48,10 @@ class JavaScriptStructureFxTest {
             "const twice = (x) => x * 2;",
             "const escapeTicks = (s) => s.split(/`/).join(\"'\");",
             "",
+            "function Banner() {",
+            "  return <p className=\"note\">hi</p>;",
+            "}",
+            "",
             "export default function main() {",
             "  if (process.argv.length < 3) {",
             "    throw new Error('usage');",
@@ -82,7 +86,9 @@ class JavaScriptStructureFxTest {
             collect(tree, tree.getRoot(), "", out);
             return out;
         });
-        assertEquals(List.of("load()", "Cache", "  get()", "  create()", "twice()", "escapeTicks()", "main()"), rows);
+        assertEquals(
+                List.of("load()", "Cache", "  get()", "  create()", "twice()", "escapeTicks()", "Banner()", "main()"),
+                rows);
     }
 
     private static void collect(TreeView<Object> tree, TreeItem<Object> parent, String indent, List<String> out) {
