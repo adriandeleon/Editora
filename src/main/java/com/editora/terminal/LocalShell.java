@@ -193,7 +193,7 @@ public final class LocalShell {
                 .setUseWinConPty(true)
                 .setWindowsAnsiColorEnabled(true)
                 .start();
-        return new LocalPtyConnector(process, command);
+        return new LocalPtyConnector(process, command, true);
     }
 
     /**
