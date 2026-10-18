@@ -1942,7 +1942,7 @@ public class SettingsWindow {
             config.getSettings().setNodePath(now.strip());
             apply();
             refreshDebugStatus();
-            // LEAD-WIRE: refreshHttpNodeStatus() — the Web page's Node.js row follows this field (Fixer E)
+            refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
