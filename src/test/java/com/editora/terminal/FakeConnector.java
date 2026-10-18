@@ -19,6 +19,9 @@ public final class FakeConnector implements TerminalConnector {
     private final PipedReader reader;
     private final ByteArrayOutputStream input = new ByteArrayOutputStream();
     private final CountDownLatch closed = new CountDownLatch(1);
+    /** Counted down by a close or the end of output: what a shell's exit does to a real connector. */
+    private final CountDownLatch finished = new CountDownLatch(1);
+
     public final AtomicReference<TermSize> lastResize = new AtomicReference<>();
     public volatile TermSize openedAt;
 
@@ -32,6 +35,7 @@ public final class FakeConnector implements TerminalConnector {
     }
 
     public void endOfOutput() throws IOException {
+        finished.countDown();
         output.close();
     }
 
@@ -71,7 +75,7 @@ public final class FakeConnector implements TerminalConnector {
 
     @Override
     public int waitFor() throws InterruptedException {
-        closed.await();
+        finished.await();
         return 0;
     }
 
@@ -88,11 +92,25 @@ public final class FakeConnector implements TerminalConnector {
     @Override
     public void close() {
         closed.countDown();
+        finished.countDown();
         try {
             output.close();
         } catch (IOException ignored) {
             // Already closed by the test.
         }
+    }
+
+    private volatile boolean lost;
+
+    /** Ends the "shell" as a dropped connection would: its output stops and it reports the connection lost. */
+    public void dropConnection() throws IOException {
+        lost = true;
+        endOfOutput();
+    }
+
+    @Override
+    public boolean lostConnection() {
+        return lost;
     }
 
     /** Whether the terminal closed this connector (its tab was closed, or its window). */

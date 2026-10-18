@@ -41,8 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Ctrl+click (Cmd+click on macOS) a `path:line:col` in the output to open the file at that place, or a URL
     to open it in the browser.
   - Settings → Terminal: the shell, text size, cursor, bell, scrollback, and which commands reach Editora.
-  - The terminal is Termina's (github.com/adriandeleon/Termina), ported. Terminals on remote hosts,
-    containers and WSL come next.
+  - **In a remote project, terminals run on the host**: a real terminal (vim, htop and resizing work) over the
+    project's own SSH connection, starting in the project's folder. Its tab is labelled with the host. If the
+    connection drops, the tab keeps its text and offers Reconnect.
+  - The terminal is Termina's (github.com/adriandeleon/Termina), ported. Terminals in containers and WSL come
+    next.
 - **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
   state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it
   for the runtime's own version banner and, for Java, the JDK's folder.

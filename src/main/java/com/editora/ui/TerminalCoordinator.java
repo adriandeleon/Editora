@@ -11,7 +11,12 @@ import javafx.scene.control.ButtonType;
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.Settings;
+import com.editora.process.ExecTarget;
+import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRegistry;
+import com.editora.process.TerminalChannel;
+import com.editora.process.TerminalSpec;
+import com.editora.terminal.ChannelConnector;
 import com.editora.terminal.LinkActions;
 import com.editora.terminal.LocalPtyConnector;
 import com.editora.terminal.LocalShell;
@@ -19,6 +24,7 @@ import com.editora.terminal.RunningProgram;
 import com.editora.terminal.TerminalConnector;
 import com.editora.terminal.TerminalCursor;
 import com.editora.terminal.TerminalPalettes;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -27,15 +33,15 @@ import static com.editora.i18n.Messages.tr;
  * {@code terminal.new} and {@code terminal.close} commands, and the settings and theme it follows.
  * {@code MainController} keeps the {@code ToolWindow} (built with {@link #panel()}) and calls the apply hooks.
  *
- * <p>Shells run on this machine for now: in the project's folder when it is local, else beside the active
- * file, else in the home folder. A remote project's terminal is still a local one until its host gets a
- * terminal connector (ADR 0014).
+ * <p>A shell runs where the project is: on its SSH host for a remote project (a PTY channel of the window's own
+ * connection, through {@code ExecTarget.startTerminal}), else on this machine — in the project's folder, beside
+ * the active file, or in the home folder. Containers and WSL come later (ADR 0014).
  */
 final class TerminalCoordinator {
 
     /** Window hooks beyond {@link CoordinatorHost}. */
     interface Ops {
-        /** Where a new shell starts: a local folder, or null for the home folder. */
+        /** Where a new shell starts: the project's folder (on its host for a remote project), or null for home. */
         Path workingDirectory();
 
         boolean isToolWindowOpen();
@@ -67,7 +73,8 @@ final class TerminalCoordinator {
     /** The tool window's content, built on first use. */
     TerminalPanel panel() {
         if (panel == null) {
-            panel = new TerminalPanel(this::localShell, this::confirmClose, ops::workingDirectory);
+            panel = new TerminalPanel(this::shellFor, this::confirmClose, ops::workingDirectory);
+            panel.setTargetLabel(TerminalCoordinator::targetLabel);
             panel.setOnError(host::setError);
             panel.setLinkActions(new LinkActions() {
                 @Override
@@ -186,6 +193,43 @@ final class TerminalCoordinator {
                 s.getTerminalShell(),
                 s.getTerminalIdeCommands(),
                 s.isTerminalConfirmClose());
+    }
+
+    /**
+     * A shell for a tab in {@code directory}: on the host of a remote folder (its target's login shell; the local
+     * shell setting names a program on this machine, so it is never sent there), else on this machine.
+     */
+    private TerminalConnector.Factory shellFor(Path directory, String shell) {
+        if (directory != null && !Vfs.isLocal(directory)) {
+            return remoteShell(directory);
+        }
+        return localShell(directory, shell);
+    }
+
+    /** The login shell of a remote folder's host, through its execution target. */
+    static TerminalConnector.Factory remoteShell(Path directory) {
+        return (columns, rows) -> {
+            ExecTarget target = ExecTargets.forPath(directory);
+            TerminalChannel channel = target.startTerminal(new TerminalSpec(directory, columns, rows));
+            return new ChannelConnector(channel, target.id());
+        };
+    }
+
+    /** What a tab's chip says: "Local", or the host of a remote folder. */
+    static String targetLabel(Path directory) {
+        String authority = directory == null ? null : Vfs.authorityOf(directory);
+        return authority == null ? tr("terminal.target.local") : hostOf(authority);
+    }
+
+    /** {@code user@host:port} → {@code host}: the chip is narrow, and the port is almost always 22. */
+    static String hostOf(String authority) {
+        String host = authority.substring(authority.lastIndexOf('@') + 1);
+        if (host.startsWith("[")) {
+            int close = host.indexOf(']');
+            return close > 0 ? host.substring(1, close) : host;
+        }
+        int colon = host.lastIndexOf(':');
+        return colon > 0 && host.indexOf(':') == colon ? host.substring(0, colon) : host;
     }
 
     /** A shell on this machine, tracked so it ends with Editora even when Editora does not end cleanly. */

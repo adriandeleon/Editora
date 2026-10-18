@@ -5352,3 +5352,13 @@
     -fx-shape: null;
     -fx-padding: 0;
 }
+/* A remote terminal whose connection went: its text stays, with this strip across the top offering to reconnect.
+   Amber, the "not durable" state — the scrollback below is a record, not a live shell. */
+.terminal-lost-banner {
+    -fx-background-color: -color-warning-subtle;
+    -fx-border-color: transparent transparent -color-warning-muted transparent;
+    -fx-padding: 6 10 6 10;
+}
+.terminal-lost-banner .label {
+    -fx-text-fill: -color-warning-fg;
+}

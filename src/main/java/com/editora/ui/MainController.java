@@ -5894,8 +5894,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public java.nio.file.Path workingDirectory() {
                     java.nio.file.Path root = windowProjectRoot();
-                    if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
-                        return root;
+                    if (root != null) {
+                        return root; // a remote project's root: its terminals run on the host
                     }
                     EditorBuffer b = activeBuffer();
                     java.nio.file.Path file = b == null ? null : b.getPath();
@@ -8703,7 +8703,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         if (!local) {
-            setStatus(tr("status.reveal.remote"));
+            // A system terminal would open on this machine, not the host, so a remote folder always gets a tab.
+            Path dir = isDir ? path : path.getParent();
+            terminalCoordinator.openAt(dir == null ? path : dir);
             return;
         }
         if (!config.getSettings().isTerminalUseExternal()) {

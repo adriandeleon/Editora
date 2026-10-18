@@ -23,6 +23,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
@@ -37,6 +39,7 @@ import com.editora.terminal.TerminalPalette;
 import com.editora.terminal.TerminalPalettes;
 import com.editora.terminal.TerminalView;
 import com.editora.terminal.ThemeSampler;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -84,6 +87,14 @@ final class TerminalPanel extends StackPane {
     private final Button newTab = new Button();
     private final Button emptyStart = new Button(tr("terminal.new"));
     private final Map<Tab, TerminalView> views = new LinkedHashMap<>();
+    /**
+     * Each tab's folder, as {@link Vfs#toStorableString} ("" for home), so a reconnect finds it again: after a
+     * dropped connection the old path belongs to a closed file system, and the folder has to be looked up on the
+     * new one.
+     */
+    private final Map<Tab, String> dirs = new LinkedHashMap<>();
+
+    private java.util.function.Function<Path, String> targetLabel = dir -> tr("terminal.target.local");
     private final Shells shells;
     private final CloseGuard closeGuard;
     private final Supplier<Path> directory;
@@ -127,6 +138,7 @@ final class TerminalPanel extends StackPane {
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
             while (change.next()) {
                 for (Tab removed : change.getRemoved()) {
+                    dirs.remove(removed);
                     TerminalView view = views.remove(removed);
                     if (view != null) {
                         view.close();
@@ -135,6 +147,11 @@ final class TerminalPanel extends StackPane {
             }
             updateEmpty();
         });
+    }
+
+    /** What a tab's chip says about where its shell runs ("Local", a host name). */
+    void setTargetLabel(java.util.function.Function<Path, String> targetLabel) {
+        this.targetLabel = targetLabel == null ? dir -> tr("terminal.target.local") : targetLabel;
     }
 
     /** Where a shell that failed to start says why. */
@@ -166,43 +183,109 @@ final class TerminalPanel extends StackPane {
 
     /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
     void newTerminal(Path dir) {
-        TerminalView view = new TerminalView(config.fontSize());
-        configure(view);
-        view.setPalette(palette);
         Tab tab = new Tab();
         // The view paints its own grid; the wrapper fills the strip a whole number of rows leaves below it
         // with the same ground. Only the content: the tab strip keeps the window theme's colours.
-        StackPane content = new StackPane(view);
+        StackPane content = new StackPane();
         content.getStyleClass().add("terminal-content");
         content.setStyle(groundStyle());
         tab.setContent(content);
-        Label target = new Label(tr("terminal.target.local"));
+        Label target = new Label(targetLabel.apply(dir));
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
-        tab.textProperty()
-                .bind(Bindings.createStringBinding(
-                        () -> titleOr(view.getDisplay().tabTitleProperty().get()),
-                        view.getDisplay().tabTitleProperty()));
-        Tooltip hover = new Tooltip();
-        hover.textProperty().bind(view.getDisplay().tabTooltipProperty());
-        tab.setTooltip(hover);
+        tab.setTooltip(new Tooltip());
         tab.setOnCloseRequest(e -> {
             if (!mayClose(tab)) {
                 e.consume();
             }
         });
-        views.put(tab, view);
+        dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
+        if (!startIn(tab)) {
+            dirs.remove(tab);
+            return;
+        }
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
-        view.setOnSessionEnded(() -> tabs.getTabs().remove(tab));
+        focusActive();
+    }
+
+    /**
+     * Starts a shell for {@code tab} in its folder and puts its view in the tab, replacing one whose connection
+     * was lost. Started before it is shown, so a shell that cannot start leaves the tab as it was.
+     */
+    private boolean startIn(Tab tab) {
+        String stored = dirs.getOrDefault(tab, "");
+        Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+        if (!stored.isEmpty() && dir == null) {
+            onError.accept(tr("terminal.startFailed", tr("terminal.notConnected", stored)));
+            return false;
+        }
+        TerminalView view = new TerminalView(config.fontSize());
+        configure(view);
+        view.setPalette(palette);
+        view.setOnSessionEnded(() -> shellEnded(tab, view));
         try {
             view.start(shells.open(dir, config.shell()));
         } catch (IOException | RuntimeException e) {
-            tabs.getTabs().remove(tab);
+            view.close();
             onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
+            return false;
+        }
+        TerminalView previous = views.put(tab, view);
+        if (previous != null) {
+            previous.close();
+        }
+        ((StackPane) tab.getContent()).getChildren().setAll(view);
+        tab.textProperty().unbind();
+        tab.textProperty()
+                .bind(Bindings.createStringBinding(
+                        () -> titleOr(view.getDisplay().tabTitleProperty().get()),
+                        view.getDisplay().tabTitleProperty()));
+        tab.getTooltip().textProperty().unbind();
+        tab.getTooltip().textProperty().bind(view.getDisplay().tabTooltipProperty());
+        return true;
+    }
+
+    /**
+     * A shell ended: its tab closes, unless the connection to its machine went — then the tab keeps what the shell
+     * printed and offers to reconnect, as an {@code ssh} session in a terminal window would leave its text.
+     */
+    private void shellEnded(Tab tab, TerminalView view) {
+        if (views.get(tab) != view) {
+            return; // replaced by a reconnect, or already gone
+        }
+        if (view.getSession() == null || !view.getSession().lostConnection()) {
+            tabs.getTabs().remove(tab);
             return;
         }
-        focusActive();
+        Label message = new Label(tr("terminal.connectionLost"));
+        Button reconnect = new Button(tr("terminal.reconnect"));
+        reconnect.setOnAction(e -> {
+            if (startIn(tab)) {
+                focusActive();
+            }
+        });
+        HBox banner = new HBox(10, message, reconnect);
+        banner.getStyleClass().add("terminal-lost-banner");
+        banner.setAlignment(Pos.CENTER_LEFT);
+        banner.setMaxHeight(Region.USE_PREF_SIZE);
+        StackPane.setAlignment(banner, Pos.TOP_CENTER);
+        ((StackPane) tab.getContent()).getChildren().add(banner);
+        if (tab.isSelected()) {
+            Platform.runLater(reconnect::requestFocus);
+        }
+    }
+
+    /** Whether {@code tab}'s connection was lost and it is offering to reconnect. */
+    boolean showsReconnect(Tab tab) {
+        return tab != null
+                && ((StackPane) tab.getContent())
+                        .getChildren().stream().anyMatch(n -> n.getStyleClass().contains("terminal-lost-banner"));
+    }
+
+    /** The selected tab, or null. */
+    Tab activeTab() {
+        return tabs.getSelectionModel().getSelectedItem();
     }
 
     /** Closes the selected tab, asking first if its shell is running something. */

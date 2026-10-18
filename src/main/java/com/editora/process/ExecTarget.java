@@ -41,6 +41,14 @@ public interface ExecTarget {
     PortForward forwardLocal(String host, int port) throws IOException;
 
     /**
+     * Starts the account's login shell on a pseudo-terminal, for the integrated terminal. Only targets that can
+     * give one implement it; the rest say so. Never used for tool commands, which take {@link #start}.
+     */
+    default TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
+        throw new IOException(id() + " cannot run a terminal yet");
+    }
+
+    /**
      * Where Editora may keep working files on this target ({@code ~/.cache/editora} on a remote host: a
      * language server's index, a debugger's jar), as Editora reaches it; {@code null} when there is none to
      * offer (the local target keeps its own under the config folder). May ask the target: call it off the FX

@@ -18,6 +18,14 @@ public interface TerminalConnector extends TtyConnector {
     }
 
     /**
+     * Whether the shell ended because the connection to its machine went, rather than by exiting. The terminal
+     * then keeps its scrollback and offers to reconnect instead of closing. Never true for a local shell.
+     */
+    default boolean lostConnection() {
+        return false;
+    }
+
+    /**
      * Opens a connector at the size the view has laid out, so the shell starts at the right size rather than
      * learning it from a resize a moment later.
      */
