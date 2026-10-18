@@ -8832,7 +8832,7 @@ public class EditorBuffer implements TabContent {
         boolean hasSel = a.getSelection().getLength() > 0;
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
         AutoClose.Decision d = AutoClose.decide(
-                c, a.getText(lineStart, caret), next, hasSel, language, TypingContext.inLiteral(a, caret));
+                c, a.getText(lineStart, caret), next, hasSel, language, TypingContext.inLiteral(a, caret, language));
         switch (d.action()) {
             case INSERT_PAIR -> {
                 a.replaceText(caret, caret, "" + c + d.closer());

@@ -129,10 +129,13 @@ class EditorBufferFeaturesFxTest {
             CodeArea area = buffer.getArea();
             area.setStyle(4, 9, List.of("string"));
             area.setStyle(14, 21, List.of("comment"));
-            assertTrue(TypingContext.inLiteral(area, 6), "between a and b");
-            assertFalse(TypingContext.inLiteral(area, 9), "right after the closing quote");
-            assertFalse(TypingContext.inLiteral(area, 2), "in code");
-            assertTrue(TypingContext.inLiteral(area, 21), "at the end of a line comment");
+            assertTrue(TypingContext.inLiteral(area, 6, "plaintext"), "between a and b");
+            assertFalse(TypingContext.inLiteral(area, 9, "plaintext"), "right after the closing quote");
+            assertFalse(TypingContext.inLiteral(area, 2, "plaintext"), "in code");
+            assertTrue(TypingContext.inLiteral(area, 21, "plaintext"), "at the end of a line comment");
+            area.replaceText("const r = /['");
+            assertTrue(TypingContext.inLiteral(area, area.getLength(), "javascript"), "a regex being typed");
+            assertFalse(TypingContext.inLiteral(area, area.getLength(), "python"));
             buffer.dispose();
         });
     }

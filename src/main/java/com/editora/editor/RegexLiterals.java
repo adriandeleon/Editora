@@ -63,6 +63,30 @@ public final class RegexLiterals {
         return i;
     }
 
+    /**
+     * Whether {@code lineBeforeCaret} ends inside a regex literal still being typed ({@code const r = /['}): one
+     * opened where an operand is expected and not closed yet. The highlighter cannot say so, since an unclosed
+     * regex is not a regex to it. Line and block comments end the search; strings are not tracked.
+     */
+    public static boolean openAtEnd(String lineBeforeCaret) {
+        for (int i = 0; i < lineBeforeCaret.length(); i++) {
+            if (lineBeforeCaret.charAt(i) != '/') {
+                continue;
+            }
+            if (lineBeforeCaret.startsWith("//", i) || lineBeforeCaret.startsWith("/*", i)) {
+                return false;
+            }
+            if (operandExpected(lineBeforeCaret, i)) {
+                int end = end(lineBeforeCaret, i);
+                if (end == i) {
+                    return true; // opened and not closed before the caret
+                }
+                i = end;
+            }
+        }
+        return false;
+    }
+
     /** Whether the code before {@code i} ends where an operand (so a regex) may begin. */
     private static boolean operandExpected(String text, int i) {
         int k = i - 1;
