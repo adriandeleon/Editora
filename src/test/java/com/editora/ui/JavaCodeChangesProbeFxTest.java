@@ -132,12 +132,29 @@ class JavaCodeChangesProbeFxTest {
         });
     }
 
-    private static void stop(Window w) throws Exception {
+    /**
+     * Ends the debug session and the window, then waits for the processes still working in {@code dir}.
+     * Disposing only asks jdtls to shut down; it goes on writing its workspace under {@code dir} for a moment,
+     * and JUnit's deletion of the {@code @TempDir} then fails on a folder that is not empty yet.
+     */
+    private static void stop(Window w, Path dir) throws Exception {
         FxTestSupport.runOnFx(w.dap()::stop);
         for (int i = 0; i < 100 && FxTestSupport.callOnFx(w.dap()::isActive); i++) {
             Thread.sleep(100);
         }
         w.fx().dispose();
+        String path = dir.toString();
+        for (int i = 0; i < 300 && usingFolder(path); i++) {
+            Thread.sleep(100);
+        }
+    }
+
+    /** Whether a process this test started still names {@code path} on its command line. */
+    private static boolean usingFolder(String path) {
+        return ProcessHandle.current()
+                .descendants()
+                .filter(ProcessHandle::isAlive)
+                .anyMatch(p -> p.info().commandLine().orElse("").contains(path));
     }
 
     /**
@@ -174,7 +191,7 @@ class JavaCodeChangesProbeFxTest {
             assertTrue(console(w).contains(tr("debug.hcr.applied", "Main")), console(w));
             assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(w.dap()::state), "no restart");
         } finally {
-            stop(w);
+            stop(w, dir);
         }
     }
 
@@ -207,7 +224,7 @@ class JavaCodeChangesProbeFxTest {
             assertTrue(top.name().contains("add"), "stepped over both twice() calls into add: " + top);
             assertEquals(ADD_FIRST_LINE, top.line());
         } finally {
-            stop(w);
+            stop(w, dir);
         }
     }
 
@@ -236,7 +253,7 @@ class JavaCodeChangesProbeFxTest {
             });
             assertTrue(!console(w).contains("r=6"), "add did not return: it was restarted");
         } finally {
-            stop(w);
+            stop(w, dir);
         }
     }
 }

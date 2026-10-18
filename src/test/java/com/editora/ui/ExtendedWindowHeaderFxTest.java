@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
+import javafx.application.ColorScheme;
 import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -13,6 +14,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HeaderBar;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -55,6 +57,25 @@ class ExtendedWindowHeaderFxTest {
             assertEquals("DRAGBAR", headerArea(scene, glyphs), "a press on the title's words");
             assertEquals("DRAGBAR", headerArea(scene, header.lookup(".window-header-title")), "and on the label");
             assertNotEquals("DRAGBAR", headerArea(scene, menuBar), "the menu bar opens menus instead");
+        });
+    }
+
+    @Test
+    void theWindowButtonsFollowTheAppThemeNotTheDesktop() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Stage stage = new Stage();
+            stage.initStyle(StageStyle.EXTENDED);
+            ExtendedWindow.matchButtonsToTheme(stage, true);
+            assertEquals(ColorScheme.DARK, HeaderBar.getSystemColorScheme(stage), "a dark theme: light glyphs");
+            ExtendedWindow.matchButtonsToTheme(stage, false);
+            assertEquals(ColorScheme.LIGHT, HeaderBar.getSystemColorScheme(stage), "and back, without a restart");
+
+            // Unset, the property falls back to the desktop's scheme — the very fallback that hid the buttons.
+            Stage decorated = new Stage();
+            ColorScheme desktop = HeaderBar.getSystemColorScheme(decorated);
+            ExtendedWindow.matchButtonsToTheme(decorated, desktop != ColorScheme.DARK);
+            assertEquals(
+                    desktop, HeaderBar.getSystemColorScheme(decorated), "the OS draws a decorated window's buttons");
         });
     }
 

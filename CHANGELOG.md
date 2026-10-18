@@ -457,7 +457,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node.js stack-trace links** work for ESM `file://` frames (spaces, Windows drives), paths with spaces,
   `.jsx/.tsx/.mts/.cts` files and tsc errors, and jump to the column.
 - **Run and Output consoles** say when the oldest output was dropped to stay under the size cap.
-
+- **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
+  title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
+  a light desktop drew them dark on dark. They now follow the app theme, and change with it.
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
   servers silently stopped following the disk. They now check folders every 2 seconds.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.

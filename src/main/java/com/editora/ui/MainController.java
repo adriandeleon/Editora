@@ -9791,6 +9791,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminalCoordinator.applySettings();
             terminalCoordinator.applyTheme();
         }
+        ExtendedWindow.matchButtonsToTheme(stage, appThemeDark()); // also every apply: cheap, and idempotent
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);
