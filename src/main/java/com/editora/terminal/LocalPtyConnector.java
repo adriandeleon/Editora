@@ -70,8 +70,8 @@ public final class LocalPtyConnector extends ProcessTtyConnector implements Term
 
     /**
      * Hangs the shell up: the pseudo-terminal is closed, which sends it SIGHUP, as closing a terminal window does.
-     * No SIGTERM: pty4j's {@code destroy} signals the shell's whole process group, which on macOS took a job the
-     * user had started with {@code nohup} too. A shell still there after the grace period is killed.
+     * No SIGTERM: pty4j's {@code destroy} signals the shell's whole process group, jobs and all. A shell still there
+     * after the grace period is killed.
      */
     private void hangUp() {
         for (java.io.Closeable stream : List.<java.io.Closeable>of(
