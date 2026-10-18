@@ -48,7 +48,7 @@ final class ProjectScopeSettings {
     private final BooleanSupplier loading;
     private final Runnable reloadControls;
     private final Runnable trust;
-    private final Consumer<String> error;
+    private final Supplier<javafx.stage.Window> owner;
     private final Map<String, Scoped> scoped = new LinkedHashMap<>();
     private final Map<Node, Object> lockedFrom = new java.util.IdentityHashMap<>();
 
@@ -70,7 +70,7 @@ final class ProjectScopeSettings {
      * @param loading whether the window is showing stored values (its control listeners then write nothing)
      * @param reloadControls shows the stored values in every control again (the window's load)
      * @param trust trusts the project folder (asks first)
-     * @param error reports a project file that could not be written
+     * @param owner the Settings window, which owns the message when a project file cannot be written
      */
     ProjectScopeSettings(
             Supplier<ProjectScope> scope,
@@ -78,13 +78,13 @@ final class ProjectScopeSettings {
             BooleanSupplier loading,
             Runnable reloadControls,
             Runnable trust,
-            Consumer<String> error) {
+            Supplier<javafx.stage.Window> owner) {
         this.scope = scope;
         this.applied = applied;
         this.loading = loading;
         this.reloadControls = reloadControls;
         this.trust = trust;
-        this.error = error;
+        this.owner = owner;
         userButton.setToggleGroup(group);
         projectButton.setToggleGroup(group);
         userButton.setSelected(true);
@@ -123,10 +123,35 @@ final class ProjectScopeSettings {
     /** Keys with no user setting: their rows can be changed only in Project mode. */
     private final java.util.Set<String> projectOnly = new java.util.HashSet<>();
 
-    /** Registers a setting that exists only per project (greyed out in User mode). */
-    void registerProjectOnly(String key, Node control) {
-        register(key, control, v -> {});
+    /**
+     * The control of a save rule that exists only per project: Not set / On / Off, greyed out in User mode,
+     * written to the project file in Project mode.
+     */
+    javafx.scene.control.ComboBox<String> projectOnlyCombo(String key) {
+        javafx.scene.control.ComboBox<String> combo = new javafx.scene.control.ComboBox<>();
+        combo.getItems().setAll("", "true", "false");
+        combo.setConverter(new javafx.util.StringConverter<>() {
+            @Override
+            public String toString(String v) {
+                return v == null || v.isEmpty()
+                        ? tr("settings.scope.notSet")
+                        : tr("true".equals(v) ? "common.on" : "common.off");
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        combo.setMinWidth(170);
+        combo.valueProperty().addListener((obs, was, now) -> {
+            if (!loading.getAsBoolean() && now != null) {
+                write(key, now.isEmpty() ? null : Boolean.valueOf(now));
+            }
+        });
+        register(key, combo, v -> combo.setValue(v == null ? "" : String.valueOf(v)));
         projectOnly.add(key);
+        return combo;
     }
 
     /** Registers the control of setting {@code key}, and how to show a value in it. */
@@ -173,11 +198,10 @@ final class ProjectScopeSettings {
         try {
             ProjectSettingsFile.set(root, section, key.substring(dot + 1), stored);
         } catch (ProjectSettingsFile.NewerFileException e) {
-            error.accept(
-                    tr("settings.scope.newerFile", ProjectSettings.fileFor(root).toString()));
+            error(tr("settings.scope.newerFile", ProjectSettings.fileFor(root).toString()));
             return true;
         } catch (java.io.IOException | RuntimeException e) {
-            error.accept(tr(
+            error(tr(
                     "settings.scope.writeFailed",
                     ProjectSettings.fileFor(root).toString(),
                     String.valueOf(e.getMessage())));
@@ -189,15 +213,16 @@ final class ProjectScopeSettings {
         return true;
     }
 
-    /** Shows the project's values in the scopable controls (Project mode; called while the window is loading). */
+    /**
+     * Shows the project's values in the scopable controls (Project mode; called while the window is loading).
+     * The project-only rules always show the project's choice, or Not set.
+     */
     void showProjectValues() {
-        if (!projectMode()) {
-            return;
-        }
+        boolean project = projectMode();
         ProjectSettings ps = scope.get().settings();
         scoped.forEach((key, s) -> {
-            Object own = valueOf(ps, key);
-            if (own != null) {
+            Object own = project || projectOnly.contains(key) ? valueOf(ps, key) : null;
+            if (own != null || projectOnly.contains(key)) {
                 s.show().accept(own);
             }
         });
@@ -263,9 +288,15 @@ final class ProjectScopeSettings {
         }
     }
 
-    /** Leaves Project mode (the window's project changed or went away). */
-    void toUser() {
-        userButton.setSelected(true);
+    /** Says, after the change that caused it, that a project file could not be written. */
+    private void error(String message) {
+        javafx.application.Platform.runLater(() -> {
+            javafx.scene.control.Alert failed = Dialogs.styled(new javafx.scene.control.Alert(
+                    javafx.scene.control.Alert.AlertType.ERROR, message, javafx.scene.control.ButtonType.OK));
+            failed.initOwner(owner.get());
+            failed.setHeaderText(null);
+            failed.showAndWait();
+        });
     }
 
     private void lock(Node row, boolean on) {

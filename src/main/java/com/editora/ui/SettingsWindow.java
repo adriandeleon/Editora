@@ -7994,15 +7994,15 @@ public class SettingsWindow {
     }
 
     /**
-     * Project scope (F4): the two save rules that exist only per project, the scopable controls, and how this
-     * window reaches its project (through the window's {@link LspCoordinator}, which owns its project scope).
+     * Project scope (F4): the User / Project switch, the two save rules that exist only per project, and how
+     * this window reaches its project (its {@link LspCoordinator}, which owns the window's project scope).
      */
-    private final ComboBox<String> trimOnSaveCombo = projectOnlyCombo("editor.trimTrailingWhitespace");
-
-    private final ComboBox<String> finalNewlineCombo = projectOnlyCombo("editor.insertFinalNewline");
-    private LspCoordinator projectLsp;
     private final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
-            this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, this::scopeError);
+            this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
+
+    private final ComboBox<String> trimOnSaveCombo = scopeUi.projectOnlyCombo("editor.trimTrailingWhitespace");
+    private final ComboBox<String> finalNewlineCombo = scopeUi.projectOnlyCombo("editor.insertFinalNewline");
+    private LspCoordinator projectLsp;
 
     /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
     void setProjectLsp(LspCoordinator lsp) {
@@ -8025,47 +8025,6 @@ public class SettingsWindow {
         load();
     }
 
-    private void scopeError(String message) {
-        javafx.application.Platform.runLater(() -> {
-            Alert failed = Dialogs.styled(new Alert(Alert.AlertType.ERROR, message, ButtonType.OK));
-            failed.initOwner(stage);
-            failed.setHeaderText(null);
-            failed.showAndWait();
-        });
-    }
-
-    /** A Not set / On / Off choice for a save rule only a project sets (greyed out in User mode). */
-    private ComboBox<String> projectOnlyCombo(String key) {
-        ComboBox<String> combo = new ComboBox<>();
-        combo.getItems().setAll("", "true", "false");
-        combo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String v) {
-                return v == null || v.isEmpty()
-                        ? tr("settings.scope.notSet")
-                        : tr("true".equals(v) ? "common.on" : "common.off");
-            }
-
-            @Override
-            public String fromString(String label) {
-                return label;
-            }
-        });
-        combo.setMinWidth(170);
-        combo.valueProperty().addListener((obs, was, now) -> {
-            if (!loading && now != null) {
-                scopeUi.write(key, now.isEmpty() ? null : Boolean.valueOf(now));
-            }
-        });
-        return combo;
-    }
-
-    /** The project-only rows show the project's choice in Project mode, "Not set" otherwise. */
-    private void showProjectOnlyValues() {
-        trimOnSaveCombo.setValue(String.valueOf(scopeUi.shown("editor.trimTrailingWhitespace", "")));
-        finalNewlineCombo.setValue(String.valueOf(scopeUi.shown("editor.insertFinalNewline", "")));
-    }
-
     /** Registers every project-scopable control with the User / Project switch. */
     private void registerScopedControls() {
         scopeUi.register("editor.indentStyle", indentStyleCombo, v -> indentStyleCombo.setValue((String) v));
@@ -8077,8 +8036,6 @@ public class SettingsWindow {
         scopeUi.register("editor.languageRulers", settingControls.get("languageRulers"), v -> {});
         scopeUi.register("editor.wordWrap", wordWrapCheck, v -> wordWrapCheck.setSelected((Boolean) v));
         scopeUi.register("editor.wordWrapProse", wordWrapProseCheck, v -> wordWrapProseCheck.setSelected((Boolean) v));
-        scopeUi.registerProjectOnly("editor.trimTrailingWhitespace", trimOnSaveCombo);
-        scopeUi.registerProjectOnly("editor.insertFinalNewline", finalNewlineCombo);
         scopeUi.register("editor.spellLanguage", spellLanguageCombo, v -> spellLanguageCombo.setValue((String) v));
         buildToolCommandFields.forEach((bt, field) ->
                 scopeUi.register("build." + ProjectScope.toolId(bt), field, v -> field.setText((String) v)));
@@ -8331,7 +8288,6 @@ public class SettingsWindow {
             autoSaveDelaySpinner.getValueFactory().setValue(Math.max(1, (int)
                     Math.round(settings.getAutoSaveDelayMillis() / 1000.0)));
             autoSaveDelaySpinner.setDisable(!FileWorkflowCoordinator.AUTOSAVE_DELAY.equals(mode));
-            showProjectOnlyValues();
             scopeUi.showProjectValues(); // Project mode: the project's values where its file sets them
             if (typing != null) {
                 typing.setText(typed);
