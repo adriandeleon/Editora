@@ -852,17 +852,17 @@ class TerminalPanelFxTest {
         shells.get(0).emit("last words\r\n");
         shells.get(0).dropConnection();
         await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the banner");
-        fx(() -> {
-            panel.getScene().getRoot().layout();
-            return null;
-        });
-        assertTrue(
-                fx(() -> {
+        await(
+                () -> call(() -> {
+                    panel.getScene().getRoot().applyCss();
+                    panel.getScene().getRoot().layout();
                     var view = panel.activeView();
                     var banner = panel.activeTab().getContent().lookup(".terminal-lost-banner");
-                    return view.getBoundsInParent().getMinY() >= banner.getBoundsInParent().getMaxY();
+                    // Layout positions: a focused Reconnect's focus ring draws a little past the banner.
+                    double bannerBottom = banner.getLayoutY() + banner.getLayoutBounds().getHeight();
+                    return banner.getLayoutBounds().getHeight() > 0 && view.getLayoutY() >= bannerBottom - 0.5;
                 }),
-                "the view starts below the banner");
+                "the view starting below the banner");
     }
 
     @Test

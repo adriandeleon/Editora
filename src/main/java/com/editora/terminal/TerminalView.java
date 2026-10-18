@@ -168,15 +168,55 @@ public final class TerminalView extends Region {
     /** Alt/Option prefixes ESC rather than composing a character; see {@link KeyEncoding}. */
     private boolean altIsMeta = true;
 
+    /**
+     * Paints dirty frames, and runs only while there are some: started by {@link #markDirty}, it stops after a
+     * few frames with nothing to paint. Left running, one idle terminal kept the FX pulse at 60 Hz forever, even
+     * with the tool window hidden — a wakeup every frame on a machine doing nothing.
+     */
     private final AnimationTimer painter = new AnimationTimer() {
+        private int idleFrames;
+
         @Override
         public void handle(long now) {
-            if (dirty) {
+            if (dirty && isPaintable()) {
                 dirty = false;
+                idleFrames = 0;
                 render();
+                return;
             }
+            if (++idleFrames < IDLE_FRAMES) return;
+            idleFrames = 0;
+            stop();
+            painting.set(false);
+            // A change that landed between the check above and the flag going down must still be painted.
+            if (dirty && isPaintable() && painting.compareAndSet(false, true)) start();
         }
     };
+
+    /** Frames with nothing to paint before the painter stops. */
+    private static final int IDLE_FRAMES = 30;
+
+    /** Whether {@link #painter} runs (or is about to). */
+    private final java.util.concurrent.atomic.AtomicBoolean painting = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** In a shown window and visible: a hidden terminal is painted when it is shown again, not meanwhile. */
+    private boolean isPaintable() {
+        if (getScene() == null || getScene().getWindow() == null || !getScene().getWindow().isShowing()) return false;
+        for (Node n = this; n != null; n = n.getParent()) {
+            if (!n.isVisible()) return false; // an unselected tab, a hidden panel
+        }
+        return true;
+    }
+
+    /** Paints again when next possible: its tab was selected, its window shown. */
+    public void repaint() {
+        markDirty();
+    }
+
+    /** Whether the painter is running; for tests. */
+    boolean isPainting() {
+        return painting.get();
+    }
 
     public TerminalView(double fontSize) {
         applyFont();
@@ -207,6 +247,12 @@ public final class TerminalView extends Region {
         setOnContextMenuRequested(this::onContextMenuRequested);
         // The cursor is drawn hollow while the keyboard is elsewhere, so which terminal (or whether one) has it shows.
         focusedProperty().addListener((o, was, now) -> markDirty());
+        // Not painted while out of sight (see isPaintable): shown again, it catches up.
+        visibleProperty().addListener((o, was, now) -> markDirty());
+        sceneProperty()
+                .flatMap(javafx.scene.Scene::windowProperty)
+                .flatMap(javafx.stage.Window::showingProperty)
+                .addListener((o, was, now) -> markDirty());
 
         display.setOnRepaint(this::markDirty);
         display.setSelectionSupplier(() -> selection);
@@ -316,7 +362,6 @@ public final class TerminalView extends Region {
                 }
             });
         }
-        painter.start();
         markDirty();
         if (columns != openColumns || rows != openRows) {
             session.resize(columns, rows); // laid out again while it was opening
@@ -342,6 +387,7 @@ public final class TerminalView extends Region {
     public void close() {
         closed = true;
         painter.stop();
+        painting.set(false);
         // Before the session: the watcher polls by pid, and a pid is reused. Left running past the
         // process it was watching, it would eventually start reporting some unrelated process's
         // directory into a tab that no longer exists.
@@ -351,6 +397,16 @@ public final class TerminalView extends Region {
 
     private void markDirty() {
         dirty = true;
+        if (session != null && !closed && painting.compareAndSet(false, true)) {
+            if (Platform.isFxApplicationThread()) {
+                painter.start();
+            } else {
+                Platform.runLater(() -> {
+                    if (closed) painting.set(false);
+                    else painter.start();
+                });
+            }
+        }
     }
 
     /** Visual bell: a brief wash over the canvas, cleared by the next frame. */

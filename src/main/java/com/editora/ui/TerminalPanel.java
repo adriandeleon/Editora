@@ -173,6 +173,10 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             if (now != null) {
                 now.getStyleClass().remove(BELL);
+                TerminalView shown = views.get(now);
+                if (shown != null) {
+                    shown.repaint(); // not painted while its tab was in the background
+                }
             }
             if (findBar.isShowing()) {
                 placeFindBar(now);

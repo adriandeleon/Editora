@@ -323,6 +323,17 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void anIdleTerminalStopsThePulseAndOutputStartsItAgain() throws Exception {
+        open();
+        connector.emit("hello\r\n");
+        await(() -> screen().contains("hello"), "the output");
+        await(() -> !call(view::isPainting), "the painter stopping once there is nothing to paint");
+        connector.emit("more\r\n");
+        await(() -> call(view::isPainting) || screen().contains("more"), "output wakes it");
+        await(() -> !call(view::isPainting), "and it stops again");
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
