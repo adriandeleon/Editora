@@ -70,6 +70,7 @@ final class SettingsReapply {
         last = now;
         if (viewOnly(changed)) {
             window.editorSettings.applyFontsAndPerBufferView(settings);
+            window.terminalCoordinator.applySettings(); // the terminal follows the text zoom too
             window.statusBar.refresh(); // it shows the tab size
             return;
         }

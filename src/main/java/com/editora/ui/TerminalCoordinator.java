@@ -269,7 +269,9 @@ final class TerminalCoordinator {
             case "bar" -> TerminalCursor.BAR;
             default -> TerminalCursor.BLOCK;
         };
-        int size = s.getTerminalFontSize() > 0 ? s.getTerminalFontSize() : s.getFontSize();
+        // The text zoom applies to terminals as to editors: zooming in for a demo used to leave them behind, and
+        // Ctrl+wheel over a terminal zoomed only the editors.
+        double size = (s.getTerminalFontSize() > 0 ? s.getTerminalFontSize() : s.getFontSize()) * s.getFontZoom();
         return new TerminalPanel.Config(
                 s.getFontFamily(),
                 size,

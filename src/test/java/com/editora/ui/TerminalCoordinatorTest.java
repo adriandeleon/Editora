@@ -59,4 +59,14 @@ class TerminalCoordinatorTest {
                 "M-0", "tool.terminal", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false),
                 "and it works from inside the terminal, to hide it again");
     }
+
+    @Test
+    void terminalsFollowTheTextZoom() {
+        com.editora.config.Settings s = new com.editora.config.Settings();
+        s.setFontSize(12);
+        s.setFontZoom(1.5);
+        org.junit.jupiter.api.Assertions.assertEquals(18.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+        s.setTerminalFontSize(10);
+        org.junit.jupiter.api.Assertions.assertEquals(15.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+    }
 }

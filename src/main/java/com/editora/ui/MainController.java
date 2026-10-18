@@ -9632,6 +9632,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // A font zoom changes no feature gate or theme — apply only the fonts/per-buffer view, not the full
         // settings cascade (editor-theme stylesheet swap + ~20 applySupport() calls). #545
         editorSettings.applyFontsAndPerBufferView(s);
+        terminalCoordinator.applySettings(); // terminals zoom with the editors
         statusBar.refresh();
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
