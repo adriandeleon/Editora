@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The ▶ of a test file (`*.test.*`, `*.spec.*`, `test/`, `__tests__/`) runs `node --test` into Test Results, with
   Rerun Failed and Rerun This Test. Run configurations gain a **Node.js script** type (script, Node.js arguments,
   interpreter, arguments, environment).
+- **One Node.js for everything.** Settings → Debugging → JavaScript has a **Node.js** field used by Run, run
+  configurations, Debug, npm scripts, the TypeScript language server and (when its own field is blank) HTTP
+  response handlers. Left blank, Editora uses the version a project's `.nvmrc` or `.node-version` names when nvm has
+  it, else `node` on PATH. Doctor has one **Node.js** row saying which Node runs and why.
+- **Debugging JavaScript and TypeScript.** `.ts`, `.mts` and `.cts` files can be debugged on Node 22.18+, and a
+  breakpoint in a compiled project's `.ts` source stops there through source maps. **Debug ▸ Attach** on a JS/TS file
+  connects to a Node started with `--inspect`. **Debug Test at Caret** runs the node:test test at the caret. Node.js
+  and npm run configurations can be debugged, started the way Run starts them.
+- **TypeScript server settings:** **Download type definitions automatically** (off), and inlay hints and code
+  lenses now work for JavaScript and TypeScript.
 - **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
   reporter flag, and node:test results can be rerun one by one or failed-only.
 
@@ -391,6 +401,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The TypeScript / JavaScript language server did not start on a fresh install.** npm's latest TypeScript is now
+  7, which has no tsserver; Editora's install step (and the Node.js TypeScript Project template) now take
+  TypeScript 6. When no usable TypeScript is found the server is not started and the message says why, instead of
+  three crashes and "keeps crashing"; Doctor and Settings no longer show it as OK, and opening more tabs no longer
+  starts it again.
+- **An untrusted folder's own `node_modules/typescript` no longer runs** when a JS/TS file opens: the TypeScript
+  installed beside the server is used until the folder is trusted, and the trust prompt lists the folder's copy.
+- **The TypeScript server no longer downloads type definitions silently** (`npm install` against the registry into
+  `~/.cache/typescript`), and loose scripts in different folders share one server (about 320 MB instead of 550 MB
+  each).
+- **Organize Imports works on JavaScript and TypeScript**, and the code-action menu offers Fix all, Add missing
+  imports and Remove unused. Quick fixes follow the file's indentation. A monorepo without a project open roots at
+  its tsconfig/jsconfig.
+- **Debugging JavaScript:** `process.stdout.write` / `process.stderr.write` output and `readline` prompts reach the
+  Debug console, and the program reads typed input; the program runs from its package folder; node-internal frames
+  are skipped; errors in the console and watches say what went wrong instead of "Unset error message."; a js-debug
+  that cannot start (or a Node older than 18) says so instead of stopping silently; function values take one line;
+  a bad breakpoint condition marks the breakpoint as rejected, once; child processes and workers list all their
+  threads; js-debug is pinned to v1.117.0.
+- **`node_modules` no longer floods search.** Find in Files, the symbol index, Go to File, Search Everywhere, TODO
+  and the Project filter skip `node_modules` even without a `.gitignore` (a 60,000-file `node_modules` used to push
+  every project file out of the index); `!node_modules/` in a `.gitignore`, or an include glob naming it, looks
+  inside. Find in Files also says when it stopped at its 5,000-match limit exactly at a file boundary.
+- **Run console after a flood:** the newest output on screen no longer has gaps when a program printed faster than
+  the console could show, and the status line says when output was skipped.
 - **npm scripts:** a workspace member runs its workspace's package manager (pnpm, yarn, bun), not npm; an npm run
   configuration uses the project's manager too, and the npm command setting no longer replaces a different manager.
   Settings → Build Tools names the detected manager and why ("pnpm (pnpm-lock.yaml)"). A file inside
