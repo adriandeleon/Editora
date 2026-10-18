@@ -429,6 +429,11 @@ public final class TextMateHighlighter {
         if (scopes == null) {
             return null;
         }
+        for (String scope : scopes) {
+            if (scope.startsWith("comment")) {
+                return null; // a JSDoc type such as {Promise<object>} names a type, but declares nothing
+            }
+        }
         for (int i = scopes.size() - 1; i >= 0; i--) {
             ScopeInfo info = scopeInfo(scopes.get(i));
             if (info.call()) {
