@@ -221,10 +221,10 @@ class PythonLspFxTest {
     @Test
     void otherServersUseTheirOrganizeImportsCodeAction() throws Exception {
         capabilities.setCodeActionProvider(true);
-        Path ts = root.resolve("a.ts");
+        Path ts = root.resolve("a.go");
         Files.writeString(ts, "import b from 'b';\nimport a from 'a';\n");
-        manager.configure(true, Map.of("typescript", "typescript-language-server --stdio"));
-        manager.openDocument(ts, root, "typescript", "import b from 'b';\nimport a from 'a';\n");
+        manager.configure(true, Map.of("go", "gopls"));
+        manager.openDocument(ts, root, "go", "import b from 'b';\nimport a from 'a';\n");
         FakeLanguageServer fake = fakes.get(0);
         var action = new CodeAction("Organize Imports");
         action.setKind(CodeActionKind.SourceOrganizeImports);
@@ -241,6 +241,27 @@ class PythonLspFxTest {
         assertEquals(
                 LspManager.OrganizeOutcome.UNSUPPORTED,
                 this.<LspManager.OrganizeOutcome>await(cb -> manager.organizeImportsAny(ts, 1, 18, cb)));
+    }
+
+    /**
+     * The TypeScript server organizes through its own command, which removes unused imports too; its code
+     * action only sorts (Node review B5). No edit sent back: already organized.
+     */
+    @Test
+    void typescriptOrganizesThroughItsOwnCommand() throws Exception {
+        Path ts = root.resolve("a.ts");
+        Files.writeString(ts, "import b from 'b';\n");
+        manager.configure(true, Map.of("typescript", "typescript-language-server --stdio"));
+        manager.openDocument(ts, root, "typescript", "import b from 'b';\n");
+        FakeLanguageServer fake = fakes.get(0);
+
+        assertEquals(
+                LspManager.OrganizeOutcome.UNCHANGED,
+                this.<LspManager.OrganizeOutcome>await(cb -> manager.organizeImportsAny(ts, 1, 0, cb)));
+        assertEquals("_typescript.organizeImports", fake.executedCommands.get(0).getCommand());
+        assertEquals(
+                ts.toString(),
+                String.valueOf(fake.executedCommands.get(0).getArguments().get(0)));
     }
 
     /**

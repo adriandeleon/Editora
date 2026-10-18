@@ -779,7 +779,7 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> LspTestHooks.simulateServerDeath(fx.manager, b.getPath()));
         fx.settle();
 
-        assertTrue(fx.host.statuses.contains(tr("status.lsp.crashed", "jdtls")));
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.crashed", tr("install.lang.java"))));
         assertEquals(sessions + 1, fx.fakes.size(), "the file on screen gets a fresh server at once");
         assertTrue(fx.manager.isManaged(b.getPath()));
         assertFalse(fx.manager.isManaged(other), "a background tab waits until it is shown");
@@ -791,7 +791,7 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> fx.host.active = b);
 
         // Keep killing it: after the allowed restarts the editor stops re-forking and says so.
-        String loop = tr("status.lsp.crashLoop", "jdtls");
+        String loop = tr("status.lsp.crashLoop", tr("install.lang.java"));
         for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
             FxTestSupport.runOnFx(() -> {
                 if (fx.manager.isManaged(b.getPath())) {

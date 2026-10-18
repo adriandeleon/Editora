@@ -91,6 +91,32 @@ public final class RootResolver {
     }
 
     /**
+     * Whether {@code filePath} has no root of its own: the project (when given) does not hold it and no
+     * ancestor short of the home folder or a file-system root holds any of {@code markers}. Such a file is
+     * "loose" — the JavaScript/TypeScript server serves all of them from one shared session (Node review B7).
+     */
+    public static boolean isLoose(Path projectRoot, Path filePath, List<String> markers) {
+        String home = System.getProperty("user.home");
+        return isLoose(projectRoot, filePath, markers, home == null || home.isBlank() ? null : Path.of(home));
+    }
+
+    /** {@link #isLoose(Path, Path, List)} with the user's home directory supplied (tests). */
+    static boolean isLoose(Path projectRoot, Path filePath, List<String> markers, Path home) {
+        if (filePath == null) {
+            return false;
+        }
+        Path abs = filePath.toAbsolutePath().normalize();
+        if (projectRoot != null) {
+            Path pr = projectRoot.toAbsolutePath().normalize();
+            if (abs.startsWith(pr) || sameTree(pr, abs)) {
+                return false;
+            }
+        }
+        Path markerRoot = findMarkerRoot(abs, markers);
+        return markerRoot == null || tooBroad(markerRoot, home);
+    }
+
+    /**
      * Whether {@code root} is a folder no server should walk for one file: a filesystem root, the user's home,
      * or the temporary-files folder. A loose script directly in {@code ~} (a {@code ~/.bashrc}), in
      * {@code /tmp} or at {@code /} gets that folder as its workspace — the fallback when no marker is found —

@@ -356,6 +356,16 @@ final class LanguageServerSession implements LanguageClient {
                 ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
                 pb.directory(root.toFile());
                 ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
+                Path prepend = pathPrepend;
+                if (prepend != null) {
+                    // The Node.js the user chose runs a Node server's "#!/usr/bin/env node" (and its tsserver).
+                    String key = pathKey(pb.environment());
+                    pb.environment()
+                            .put(
+                                    key,
+                                    prependedPath(
+                                            pb.environment().get(key), prepend.toString(), java.io.File.pathSeparator));
+                }
                 pb.command(JavaServerEnvironment.configure(serverId, pb.command(), pb.environment()));
                 process = BusyExecutable.start(pb);
             }
@@ -370,7 +380,13 @@ final class LanguageServerSession implements LanguageClient {
             // ready()/isManaged() keep returning true, every request fails into an empty result, and the
             // re-open guard (which tests isManaged) never restarts it — so LSP is silently dead for the
             // session, while the status bar still names the server.
-            process.onExit().thenRun(() -> markDead());
+            // The exit is reported once LSP4J has read everything the server wrote before it went: a server that
+            // refuses initialize and exits ("Could not find a valid TypeScript installation") must be heard as a
+            // refusal, not as a crash that a restart would repeat (Node review B3).
+            process.onExit().thenRunAsync(() -> {
+                awaitReaderDrained();
+                markDead();
+            });
             // Drain the server's stderr on a daemon thread (LSP traffic is on stdout). It MUST be drained —
             // an undrained PIPE fills its ~64 KB OS buffer on a chatty server (jdtls logs heavily) and the
             // server blocks writing, deadlocking mid-startup. Capturing it to the Debug Log (instead of the
@@ -404,7 +420,7 @@ final class LanguageServerSession implements LanguageClient {
                     .create();
             this.launcher = launcher;
             server = launcher.getRemoteProxy();
-            launcher.startListening();
+            listening = launcher.startListening();
             sendInitialize();
             return true;
         } catch (Exception e) {
@@ -463,6 +479,50 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /** LSP4J's reader, done when the server's output has been read to its end (null before the start). */
+    private volatile java.util.concurrent.Future<Void> listening;
+
+    /** Why the server refused {@code initialize}, in its own words (null: it did not refuse). */
+    private volatile String initializeRefusal;
+
+    /** The server's own reason for refusing {@code initialize}, or null. Such a session is not a crash. */
+    String initializeRefusal() {
+        return initializeRefusal;
+    }
+
+    /** Waits (briefly) until everything the exited server wrote has been read. */
+    private void awaitReaderDrained() {
+        java.util.concurrent.Future<Void> reader = listening;
+        if (reader == null) {
+            return;
+        }
+        try {
+            reader.get(2, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException
+                | java.util.concurrent.TimeoutException
+                | java.util.concurrent.CancellationException e) {
+            // Read as far as it got; the exit is reported either way.
+        }
+    }
+
+    /**
+     * The message of a server's error answer somewhere in {@code t}'s causes — what it said when it refused a
+     * request — or null when {@code t} is not such an answer (a timeout, a lost connection). Pure.
+     */
+    static String responseErrorMessage(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException ree) {
+                String message = ree.getResponseError() == null
+                        ? null
+                        : ree.getResponseError().getMessage();
+                return message == null || message.isBlank() ? ree.getMessage() : message.strip();
+            }
+        }
+        return null;
+    }
+
     private void sendInitialize() {
         InitializeParams ip = new InitializeParams();
         // Our pid means nothing on another machine; a server that watches its parent would exit at once.
@@ -508,6 +568,7 @@ final class LanguageServerSession implements LanguageClient {
                 })
                 .exceptionally(t -> {
                     LOG.log(Level.WARNING, "initialize failed", t);
+                    initializeRefusal = responseErrorMessage(t);
                     failPending(new IllegalStateException("language server initialization failed", t));
                     onStatus.accept("Error", null); // also stop the loading bar on a failed handshake
                     markDead(); // drop the session: it is cached but can never serve a request
@@ -813,8 +874,9 @@ final class LanguageServerSession implements LanguageClient {
      * settings for is sent nothing — see {@link LspServerSettings}.
      */
     private void pushConfiguration() {
-        java.util.Map<String, Object> settings =
-                LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
+        java.util.Map<String, Object> settings = TypeScriptServer.SERVER_ID.equals(serverId)
+                ? typeScriptSettings
+                : LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
         if (settings == null) {
             return;
         }
@@ -824,6 +886,50 @@ final class LanguageServerSession implements LanguageClient {
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
+    }
+
+    /** typescript-language-server's {@code javascript}/{@code typescript} settings (null: none to send). */
+    private volatile java.util.Map<String, Object> typeScriptSettings;
+
+    /** Sets the TypeScript settings ({@link TypeScriptServer#settings}); a running server gets them pushed. */
+    void setTypeScriptSettings(java.util.Map<String, Object> settings) {
+        boolean changed = !java.util.Objects.equals(typeScriptSettings, settings);
+        typeScriptSettings = settings;
+        if (changed && TypeScriptServer.SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /** A document's indentation by its wire URI, for the TypeScript server's {@code formattingOptions} question. */
+    private volatile java.util.function.Function<String, FormattingIndent> indentForUri = uri -> null;
+
+    void setIndentForUri(java.util.function.Function<String, FormattingIndent> lookup) {
+        indentForUri = lookup == null ? uri -> null : lookup;
+    }
+
+    /** A folder put first on the local server's PATH (the resolved Node.js's bin folder), or null. */
+    private volatile Path pathPrepend;
+
+    void setPathPrepend(Path dir) {
+        pathPrepend = dir;
+    }
+
+    /** {@code dir} put in front of the PATH value {@code existing} (null/blank: just {@code dir}). Pure. */
+    static String prependedPath(String existing, String dir, String separator) {
+        if (dir == null || dir.isBlank()) {
+            return existing;
+        }
+        return existing == null || existing.isBlank() ? dir : dir + separator + existing;
+    }
+
+    /** The environment key PATH is stored under (Windows spells it {@code Path}). Pure. */
+    static String pathKey(java.util.Map<String, String> env) {
+        for (String key : env.keySet()) {
+            if (key.equalsIgnoreCase("PATH")) {
+                return key;
+            }
+        }
+        return "PATH";
     }
 
     boolean isInitialized() {
@@ -1284,6 +1390,11 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var context = new org.eclipse.lsp4j.CodeActionContext(diagnostics == null ? List.of() : diagnostics);
+        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
+            // typescript-language-server offers its source actions (fix all, add missing imports, organize)
+            // only when they are asked for by kind (Node review B5).
+            context.setOnly(TypeScriptServer.CODE_ACTION_KINDS);
+        }
         var params = new org.eclipse.lsp4j.CodeActionParams(doc(uri), range, context);
         return bounded(server.getTextDocumentService().codeAction(params))
                 .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(
@@ -2241,7 +2352,13 @@ final class LanguageServerSession implements LanguageClient {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath));
+                out.add(
+                        TypeScriptServer.SERVER_ID.equals(serverId)
+                                ? TypeScriptServer.answer(
+                                        item.getSection(),
+                                        item.getScopeUri() == null ? null : indentForUri.apply(item.getScopeUri()))
+                                : LspServerSettings.answer(
+                                        serverId, item.getSection(), effectiveBashIde(), pythonPath));
             }
         }
         return CompletableFuture.completedFuture(out);

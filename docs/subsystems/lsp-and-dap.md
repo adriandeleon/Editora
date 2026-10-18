@@ -423,6 +423,27 @@ untrusted folder with no SDK beside the server gets **no server**: the session i
 to the project file's commands, and trusting restarts the Astro server so it picks the SDK up. Revoking
 trust does not stop a server that is already running; it applies from the next start.
 
+**typescript-language-server gets the same treatment, and Editora always names its tsserver.** Left to itself
+the server runs the first `node_modules/typescript/lib/tsserver.js` it finds walking up from the workspace
+root (a downloaded folder's own code), else the `typescript` package beside itself — and TypeScript 7, npm's
+`latest` since 2026, is the native compiler with no `tsserver.js`, so an unpinned install crash-looped on every
+file. `TypeScriptServer.choose` picks the folder's own tsserver only within its trusted part, else the one beside
+the resolved server, and passes it as `initializationOptions.tsserver.path`; with neither, the session is not
+started and `LspCoordinator.onStartRefused` says why (`status.lsp.tsSdkWithoutTsserver`, `tsNoSdk`,
+`tsSdkUntrusted`). The installer pins `InstallCatalog.TYPESCRIPT_PACKAGE` (`typescript@6`). The same options turn
+automatic type acquisition off unless `typescriptTypeAcquisition` is on (it runs `npm install` against the
+registry), the session pushes `javascript`/`typescript` inlay-hint and code-lens settings, and answers
+`formattingOptions` with the document's indent. Loose JS/TS files (no project, no marker below the home folder)
+share one session rooted at `<config>/lsp/loose-files`, with no separate syntax server; the server gives each
+file an inferred project of its own because none lies under that root. The server's PATH starts with the bin
+folder of the Node.js `NodeRuntimes` resolves.
+
+**A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
+`LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
+output) is dropped without the crash path and reported through `onStartRefused` with its own words. Such roots,
+and roots whose crash-loop cap was reached, are not restarted by opening or showing a tab
+(`LspCoordinator.startBlocked`) until Restart Language Servers, a settings apply or a reconnect.
+
 Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
 text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
 Pull and push diagnostics carry request generation, document version, and originating session checks through
