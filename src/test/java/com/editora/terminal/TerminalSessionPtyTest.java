@@ -46,7 +46,7 @@ class TerminalSessionPtyTest {
             String marker = "TERMINA_PTY_OK_" + ProcessHandle.current().pid();
             // Wait for the shell to be ready to read before typing at it: a login shell sources the
             // user's profile first, and input sent before then is simply discarded.
-            assumeTrue(awaitReady(session), "shell did not start");
+            assertTrue(awaitReady(session), "the shell started");
 
             // Typed repeatedly rather than once. First output is not the same as ready to read:
             // macOS bash prints a notice about zsh before it reaches its prompt, and anything sent
@@ -87,7 +87,7 @@ class TerminalSessionPtyTest {
                 new TerminalSession(display, LocalShell.start(java.util.List.of(), null, 80, 24), 80, 24, 5000);
         try {
             session.start();
-            assumeTrue(awaitReady(session), "shell did not start");
+            assertTrue(awaitReady(session), "the shell started");
             session.resize(100, 30);
 
             TerminalTextBuffer buffer = session.getTextBuffer();
@@ -97,6 +97,26 @@ class TerminalSessionPtyTest {
                 Thread.sleep(50);
             }
             assertTrue(false, "buffer stayed " + buffer.getWidth() + "x" + buffer.getHeight());
+        } finally {
+            session.close();
+        }
+    }
+
+    @Test
+    void aResizeReachesTheShell() throws Exception {
+        assumeTrue(!LocalShell.isWindows(), "shell syntax below is POSIX");
+        // Not just JediTerm's buffer: what the shell's own tty says (vim and htop draw at that size).
+        StubDisplay display = new StubDisplay();
+        TerminalSession session = new TerminalSession(
+                display, LocalShell.start(java.util.List.of("/bin/sh", "-i"), null, 80, 24), 80, 24, 5000);
+        try {
+            session.start();
+            assertTrue(awaitReady(session), "the shell started");
+            session.resize(100, 30);
+            TerminalTextBuffer buffer = session.getTextBuffer();
+            assertTrue(
+                    awaitTyping(session, buffer, "stty size\r", "30 100"),
+                    () -> "the tty never said 30 100. Screen was:\n" + screen(buffer));
         } finally {
             session.close();
         }

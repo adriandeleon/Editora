@@ -104,7 +104,9 @@ public final class ContainerExecTarget implements ExecTarget {
                 com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),
                 spec.columns(),
                 spec.rows(),
-                this::hangUp);
+                this::hangUp,
+                id(),
+                this::orphanRecord);
     }
 
     /** SIGHUP to the shell {@code pid} in the container — what a terminal window closing sends its shell. */

@@ -76,5 +76,6 @@
   "C-S-f9": "debug.breakpoints",
   "S-f7": "debug.smartStepInto",
   "C-f9": "debug.applyCodeChanges",
-  "M-f12": "tool.terminal"
+  "M-f12": "tool.terminal",
+  "S-escape": "terminal.focusEditor"
 }

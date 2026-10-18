@@ -70,6 +70,7 @@ final class SettingsReapply {
         last = now;
         if (viewOnly(changed)) {
             window.editorSettings.applyPerBufferViewToVisible(settings); // hidden tabs catch up when shown
+            window.terminalCoordinator.applySettings(); // the terminal follows the text zoom too
             window.statusBar.refresh(); // it shows the tab size
             return;
         }

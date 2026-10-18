@@ -581,9 +581,28 @@ final class RunCoordinator {
         ops.editConfiguration(cfg.name());
     }
 
-    /** Whether a program is currently running, so the toolbar Stop button can reflect it. */
+    /**
+     * Whether a program is currently running, so the toolbar Stop button and the Run stripe can reflect it: the
+     * console's, or a configuration's running in a Terminal tab.
+     */
     boolean isRunning() {
-        return service.isRunning() || beforeLaunch.isActive() || deploying;
+        return consoleRunning() || terminalProgramRunning() || deploying; // a deploy before a launch counts
+    }
+
+    /** Whether the console is busy: a program, or the build before one. */
+    private boolean consoleRunning() {
+        return service.isRunning() || beforeLaunch.isActive();
+    }
+
+    /** The configuration's program running in a Terminal tab, or null; Run's Stop ends it. */
+    private com.editora.terminal.ProgramRun terminalProgram;
+
+    /** Set by Run's Stop on {@link #terminalProgram}, so its end says "stopped" whatever its exit code. */
+    private boolean terminalStopRequested;
+
+    private boolean terminalProgramRunning() {
+        com.editora.terminal.ProgramRun program = terminalProgram;
+        return program != null && program.isRunning();
     }
 
     /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
@@ -598,7 +617,7 @@ final class RunCoordinator {
      * the console on the very output it was opened for, and an instant-exit program never appeared at all.
      */
     boolean consoleInUse() {
-        return consoleUsed || isRunning();
+        return consoleUsed || consoleRunning();
     }
 
     /** The root a configuration resolves against: its deployment's folder on the host, else the project's. */
@@ -1751,7 +1770,7 @@ final class RunCoordinator {
         launchRoot = null; // and only a deployed configuration's launch resolves on its host
         deployed = null;
         ops.openToolWindow();
-        if (!isRunning()) { // a before-launch build counts: a second Run must not start a second build
+        if (!consoleRunning()) { // a before-launch build counts: a second Run must not start a second build
             return true;
         }
         host.setStatus(tr("status.run.busy"));
@@ -1883,16 +1902,24 @@ final class RunCoordinator {
         ReadPromptShim.environment(System.getenv()).forEach((k, v) -> own.remove(k, v));
         lastRunCommand = null;
         try {
-            ops.runInTerminal(
-                    label,
-                    workingDir,
-                    command,
-                    own,
-                    code -> host.setStatus(
-                            code == 0
-                                    ? tr("status.run.ok")
-                                    : code < 0 ? tr("status.run.stopped") : tr("status.run.exit", code)));
+            com.editora.terminal.ProgramRun[] started = new com.editora.terminal.ProgramRun[1];
+            started[0] = ops.runInTerminal(label, workingDir, command, own, code -> {
+                // A stopped program's exit code is the signal's: report the Stop, as the console does.
+                boolean stopped = code < 0 || (terminalStopRequested && terminalProgram == started[0]);
+                host.setStatus(
+                        code == 0 && !stopped
+                                ? tr("status.run.ok")
+                                : stopped ? tr("status.run.stopped") : tr("status.run.exit", code));
+                if (terminalProgram == started[0]) {
+                    terminalProgram = null;
+                    terminalStopRequested = false;
+                }
+                ops.onRunStateChanged();
+            });
+            terminalProgram = started[0];
+            terminalStopRequested = false;
             host.setStatus(tr("status.run.inTerminal", label));
+            ops.onRunStateChanged();
         } catch (java.io.IOException | RuntimeException e) {
             String message = e.getMessage() == null ? e.toString() : e.getMessage();
             host.setStatus(tr("status.run.failed", message));
@@ -1929,6 +1956,9 @@ final class RunCoordinator {
             stopRequested = true;
             service.stop();
             host.setStatus(tr("status.run.stopped"));
+        } else if (terminalProgramRunning()) {
+            terminalStopRequested = true;
+            terminalProgram.stop(); // its tab stays; its end reports the stop
         }
     }
 

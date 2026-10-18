@@ -12,7 +12,6 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
-import javafx.beans.binding.Bindings;
 import javafx.collections.ListChangeListener;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -50,10 +49,10 @@ import static com.editora.i18n.Messages.tr;
  *
  * <p>Each tab owns a {@link TerminalView} and the shell behind it. Disposal is driven off the tab list rather
  * than the close button (Termina's rule): a tab leaves the list by its ✕, by "Close Terminal", by its shell
- * exiting, or by the window closing, and every one of those must end the shell. Tabs are not reorderable,
- * because a reorder is a remove and an add, which that listener would read as a close.
+ * exiting, or by the window closing, and every one of those must end the shell. A reorder is a remove and an add,
+ * so it runs with {@code reordering} set, which that listener reads as "nothing closed" (Termina's rule too).
  */
-final class TerminalPanel extends StackPane {
+final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Everything a terminal reads from Settings, as one snapshot the coordinator pushes. */
     record Config(
@@ -65,7 +64,33 @@ final class TerminalPanel extends StackPane {
             String shell,
             List<String> ideCommands,
             boolean confirmClose,
-            boolean typeAhead) {
+            boolean typeAhead,
+            boolean macOptionIsMeta,
+            boolean confirmMultilinePaste) {
+
+        Config(
+                String fontFamily,
+                double fontSize,
+                int scrollback,
+                TerminalCursor cursor,
+                boolean bell,
+                String shell,
+                List<String> ideCommands,
+                boolean confirmClose,
+                boolean typeAhead) {
+            this(
+                    fontFamily,
+                    fontSize,
+                    scrollback,
+                    cursor,
+                    bell,
+                    shell,
+                    ideCommands,
+                    confirmClose,
+                    typeAhead,
+                    false,
+                    true);
+        }
 
         Config(
                 String fontFamily,
@@ -157,13 +182,25 @@ final class TerminalPanel extends StackPane {
         addEventFilter(KeyEvent.KEY_PRESSED, this::onClipboardKey);
 
         tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (now != null) {
+                now.getStyleClass().remove(BELL);
+                TerminalView shown = views.get(now);
+                if (shown != null) {
+                    shown.repaint(); // not painted while its tab was in the background
+                }
+            }
             if (findBar.isShowing()) {
                 placeFindBar(now);
             }
-            focusActive();
+            if (!quiet) {
+                focusActive();
+            }
         });
         findBar.setOnClose(this::focusActive);
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
+            if (reordering) {
+                return; // a move is a remove and an add: nothing closed
+            }
             while (change.next()) {
                 for (Tab removed : change.getRemoved()) {
                     java.util.function.IntConsumer killed = programExits.remove(removed);
@@ -171,6 +208,9 @@ final class TerminalPanel extends StackPane {
                         killed.accept(-1); // its tab closed under it: the program ends with it
                     }
                     dirs.remove(removed);
+                    titles.remove(removed);
+                    names.remove(removed);
+                    runKeys.remove(removed);
                     programNames.remove(removed);
                     TerminalView pending = connecting.remove(removed);
                     if (pending != null) {
@@ -183,6 +223,16 @@ final class TerminalPanel extends StackPane {
                 }
             }
             updateEmpty();
+            refreshTitles();
+            for (Tab tab : tabs.getTabs()) {
+                if (tab.getContextMenu() == null) {
+                    tab.setContextMenu(tabMenu(tab));
+                }
+            }
+            Platform.runLater(() -> installTabDrag(0));
+            if (!hasTerminals() && !shuttingDown && change.getList().isEmpty()) {
+                onLastClosed.run();
+            }
         });
     }
 
@@ -227,6 +277,18 @@ final class TerminalPanel extends StackPane {
         this.targetLabel = targetLabel == null ? dir -> tr("terminal.target.local") : targetLabel;
     }
 
+    /** Whether Alt/Option is Meta in a terminal: always off macOS; on it, only when the setting says so. */
+    static boolean altIsMeta(boolean mac, boolean macOptionIsMeta) {
+        return !mac || macOptionIsMeta;
+    }
+
+    /** Asks whether to paste several lines into a program that would run each at once; true pastes. */
+    private java.util.function.Predicate<String> pasteGuard = text -> true;
+
+    void setPasteGuard(java.util.function.Predicate<String> pasteGuard) {
+        this.pasteGuard = pasteGuard == null ? text -> true : pasteGuard;
+    }
+
     /** Where a shell that failed to start says why. */
     void setOnError(Consumer<String> onError) {
         this.onError = onError == null ? message -> {} : onError;
@@ -254,9 +316,26 @@ final class TerminalPanel extends StackPane {
         newTerminal(directory.get());
     }
 
+    /**
+     * Set while a shell starts without taking the keyboard: the one a restored window opens on its own, whose
+     * first keystrokes belong to the editor that had them before the restart.
+     */
+    private boolean quiet;
+
+    /** Opens a new tab with a shell in the coordinator's directory without moving focus. */
+    void newTerminalQuietly() {
+        quiet = true;
+        try {
+            newTerminal(directory.get());
+        } finally {
+            quiet = false;
+        }
+    }
+
     /** Opens a new tab with a shell in {@code dir} (null: home), and focuses it. */
     void newTerminal(Path dir) {
-        Tab tab = new Tab();
+        // Named while it connects: the host's name says what is coming, where an empty tab said nothing.
+        Tab tab = new Tab(dir == null ? tr("toolwindow.terminal") : targetLabel.apply(dir));
         // The view paints its own grid; the wrapper fills the strip a whole number of rows leaves below it
         // with the same ground. Only the content: the tab strip keeps the window theme's colours.
         StackPane content = new StackPane();
@@ -268,9 +347,8 @@ final class TerminalPanel extends StackPane {
         tab.setGraphic(target);
         tab.setTooltip(new Tooltip());
         tab.setOnCloseRequest(e -> {
-            if (!mayClose(tab)) {
-                e.consume();
-            }
+            e.consume(); // closed by requestClose once it may be
+            requestClose(tab);
         });
         dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
         if (!startIn(tab)) {
@@ -279,7 +357,9 @@ final class TerminalPanel extends StackPane {
         }
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
-        focusActive();
+        if (!quiet) {
+            focusActive();
+        }
     }
 
     /** Program tabs, with whom to tell when the program ends; told once. */
@@ -313,6 +393,8 @@ final class TerminalPanel extends StackPane {
         view.setPalette(palette);
         view.setShellPaths(dir == null ? null : shellPaths.apply(dir));
         Tab tab = new Tab(title);
+        String runKey = title + "\u0000" + (dir == null ? "" : Vfs.toStorableString(dir));
+        runKeys.put(tab, runKey);
         StackPane content = new StackPane(view);
         content.getStyleClass().add("terminal-content");
         content.setStyle(groundStyle());
@@ -322,12 +404,23 @@ final class TerminalPanel extends StackPane {
         tab.setGraphic(target);
         tab.setTooltip(new Tooltip(title));
         tab.setOnCloseRequest(e -> {
-            if (!mayClose(tab)) {
-                e.consume();
-            }
+            e.consume(); // closed by requestClose once it may be
+            requestClose(tab);
         });
         view.setOnSessionEnded(() -> programEnded(tab, view));
+        markBell(tab, view);
+        titles.put(tab, () -> title);
         programExits.put(tab, onExit == null ? code -> {} : onExit);
+        if (connector.opensSlowly()) {
+            // A program on another machine: the channel opens off the FX thread, as a remote shell's does. A
+            // failure arrives later, as the program's end (-1) and the error.
+            dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
+            programNames.put(tab, program == null || program.isBlank() ? title : program);
+            addProgramTab(tab, runKey);
+            content.getChildren().clear();
+            startProgramSlowly(tab, view, connector, dir);
+            return programRun(tab, view);
+        }
         try {
             view.start(connector);
         } catch (IOException | RuntimeException e) {
@@ -338,9 +431,59 @@ final class TerminalPanel extends StackPane {
         dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
         views.put(tab, view);
         programNames.put(tab, program == null || program.isBlank() ? title : program);
+        addProgramTab(tab, runKey);
+        focusActive();
+        return programRun(tab, view);
+    }
+
+    /** What each program tab runs (its title and folder), so the next run of the same thing can take its place. */
+    private final Map<Tab, String> runKeys = new LinkedHashMap<>();
+
+    /**
+     * Adds a program tab where the last run of the same thing ended, replacing that tab, as IntelliJ reuses a run's
+     * tab: running a configuration five times left five tabs to close. A run still going keeps its tab, and the new
+     * one goes at the end.
+     */
+    private void addProgramTab(Tab tab, String runKey) {
+        for (int i = 0; i < tabs.getTabs().size(); i++) {
+            Tab old = tabs.getTabs().get(i);
+            if (old != tab && runKey.equals(runKeys.get(old)) && !programExits.containsKey(old)) {
+                // One change, so the list is never empty in between (that would hide the window); the old
+                // tab's view is closed as any removed tab's is.
+                tabs.getTabs().set(i, tab);
+                tabs.getSelectionModel().select(tab);
+                return;
+            }
+        }
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
-        focusActive();
+    }
+
+    /** {@link #startSlowly} for a program tab: connected, it shows the program; failed, the tab goes. */
+    private void startProgramSlowly(Tab tab, TerminalView view, TerminalConnector.Factory factory, Path dir) {
+        StackPane content = (StackPane) tab.getContent();
+        Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
+        note.getStyleClass().add("terminal-connecting");
+        StackPane.setAlignment(note, Pos.CENTER);
+        content.getChildren().add(note);
+        connecting.put(tab, view);
+        view.startAsync(
+                factory,
+                () -> {
+                    connecting.remove(tab);
+                    views.put(tab, view);
+                    content.getChildren().setAll(view);
+                    focusIfAsked(tab, view);
+                },
+                e -> {
+                    connecting.remove(tab);
+                    view.close();
+                    tabs.getTabs().remove(tab); // tells its starter: the program ended without a code
+                    onError.accept(tr("terminal.startFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
+                });
+    }
+
+    private ProgramRun programRun(Tab tab, TerminalView view) {
         return new ProgramRun() {
             @Override
             public long pid() {
@@ -356,7 +499,11 @@ final class TerminalPanel extends StackPane {
 
             @Override
             public void stop() {
-                if (view.getSession() != null) view.getSession().terminate();
+                if (view.getSession() != null) {
+                    view.getSession().terminate();
+                } else if (connecting.get(tab) == view) {
+                    tabs.getTabs().remove(tab); // still connecting: it never starts, and its starter is told
+                }
             }
         };
     }
@@ -444,7 +591,9 @@ final class TerminalPanel extends StackPane {
         Label note = new Label(tr("terminal.connecting", targetLabel.apply(dir)));
         note.getStyleClass().add("terminal-connecting");
         StackPane.setAlignment(note, Pos.CENTER);
-        content.getChildren().add(note);
+        if (factory.saysConnecting()) {
+            content.getChildren().add(note);
+        }
         connecting.put(tab, view);
         view.startAsync(
                 factory,
@@ -452,9 +601,7 @@ final class TerminalPanel extends StackPane {
                     connecting.remove(tab);
                     content.getChildren().remove(note);
                     install(tab, view);
-                    if (tab.isSelected()) {
-                        focusActive();
-                    }
+                    focusIfAsked(tab, view);
                 },
                 e -> {
                     connecting.remove(tab);
@@ -479,14 +626,51 @@ final class TerminalPanel extends StackPane {
             previous.close();
         }
         ((StackPane) tab.getContent()).getChildren().setAll(view);
-        tab.textProperty().unbind();
-        tab.textProperty()
-                .bind(Bindings.createStringBinding(
-                        () -> titleOr(view.getDisplay().tabTitleProperty().get()),
-                        view.getDisplay().tabTitleProperty()));
+        titles.put(tab, () -> titleOr(view.getDisplay().tabTitleProperty().get()));
+        view.getDisplay().tabTitleProperty().addListener(o -> refreshTitles());
+        refreshTitles();
         tab.getTooltip().textProperty().unbind();
         tab.getTooltip().textProperty().bind(view.getDisplay().tabTooltipProperty());
+        markBell(tab, view);
     }
+
+    /** Each tab's own title, before same-name tabs are numbered (see {@link #refreshTitles}). */
+    private final Map<Tab, Supplier<String>> titles = new LinkedHashMap<>();
+
+    /**
+     * Sets every tab's text from its title, numbering repeats in tab order ("project", "project (2)"): eleven
+     * tabs in one folder all read "project" and could not be told apart.
+     */
+    private void refreshTitles() {
+        Map<String, Integer> seen = new java.util.HashMap<>();
+        for (Tab tab : tabs.getTabs()) {
+            Supplier<String> title = titles.get(tab);
+            if (title == null) {
+                continue;
+            }
+            String renamed = names.get(tab);
+            String base = renamed != null ? renamed : title.get();
+            int n = seen.merge(base, 1, Integer::sum);
+            tab.setText(n == 1 ? base : base + " (" + n + ")");
+        }
+    }
+
+    /**
+     * A bell in a tab out of sight marks the tab until it is looked at; the flash alone happens where nobody is
+     * looking.
+     */
+    private void markBell(Tab tab, TerminalView view) {
+        view.setOnBell(() -> {
+            if (!tab.isSelected() || !isVisible() || getScene() == null) {
+                if (!tab.getStyleClass().contains(BELL)) {
+                    tab.getStyleClass().add(BELL);
+                }
+            }
+        });
+    }
+
+    /** Style class of a tab whose bell rang while it was not in view. */
+    static final String BELL = "terminal-bell";
 
     /**
      * A shell ended: its tab closes, unless the connection to its machine went — then the tab keeps what the shell
@@ -510,9 +694,12 @@ final class TerminalPanel extends StackPane {
         HBox banner = new HBox(10, message, reconnect);
         banner.getStyleClass().add("terminal-lost-banner");
         banner.setAlignment(Pos.CENTER_LEFT);
-        banner.setMaxHeight(Region.USE_PREF_SIZE);
-        StackPane.setAlignment(banner, Pos.TOP_CENTER);
-        ((StackPane) tab.getContent()).getChildren().add(banner);
+        // Above the text, taking rows from it, not over it: what the shell printed last (often the error) is
+        // exactly what an overlay covered.
+        StackPane content = (StackPane) tab.getContent();
+        javafx.scene.layout.VBox column = new javafx.scene.layout.VBox(banner, view);
+        javafx.scene.layout.VBox.setVgrow(view, javafx.scene.layout.Priority.ALWAYS);
+        content.getChildren().setAll(column);
         if (tab.isSelected()) {
             Platform.runLater(reconnect::requestFocus);
         }
@@ -520,9 +707,7 @@ final class TerminalPanel extends StackPane {
 
     /** Whether {@code tab}'s connection was lost and it is offering to reconnect. */
     boolean showsReconnect(Tab tab) {
-        return tab != null
-                && ((StackPane) tab.getContent())
-                        .getChildren().stream().anyMatch(n -> n.getStyleClass().contains("terminal-lost-banner"));
+        return tab != null && tab.getContent().lookup(".terminal-lost-banner") != null;
     }
 
     /** The selected tab, or null. */
@@ -533,14 +718,24 @@ final class TerminalPanel extends StackPane {
     /** Closes the selected tab, asking first if its shell is running something. */
     void closeActive() {
         Tab tab = tabs.getSelectionModel().getSelectedItem();
-        if (tab != null && mayClose(tab)) {
-            tabs.getTabs().remove(tab);
+        if (tab != null) {
+            requestClose(tab);
         }
     }
 
     /** Ends every shell, for the window closing. Asks nothing: the window has already decided. */
     void shutdown() {
+        shuttingDown = true;
         tabs.getTabs().clear();
+    }
+
+    private boolean shuttingDown;
+
+    /** Run when the last tab goes (its shell exited, or it was closed); not when the window closes. */
+    private Runnable onLastClosed = () -> {};
+
+    void setOnLastClosed(Runnable onLastClosed) {
+        this.onLastClosed = onLastClosed == null ? () -> {} : onLastClosed;
     }
 
     /** Whether there is a terminal tab, connected or still connecting. */
@@ -558,13 +753,57 @@ final class TerminalPanel extends StackPane {
         return tab == null ? null : views.get(tab);
     }
 
+    /**
+     * Gives the keyboard to the selected terminal, or to "New Terminal" when there is none. Decided when it runs,
+     * not when asked: the last tab's removal asks before the empty state is shown, and focus then fell on whatever
+     * came next in the window (a toolbar button, which Space would press).
+     */
     void focusActive() {
-        TerminalView view = activeView();
-        if (view != null) {
-            Platform.runLater(view::requestFocus);
-        } else if (emptyStart.isVisible()) {
-            Platform.runLater(emptyStart::requestFocus);
+        Platform.runLater(() -> {
+            TerminalView view = activeView();
+            Tab tab = activeTab();
+            if (view != null) {
+                view.requestFocus();
+            } else if (tab != null && connecting.containsKey(tab)) {
+                focusWhenStarted = tab; // its shell is still starting: the keyboard goes there once it has
+            } else if (!hasTerminals() && emptyStart.isVisible()) {
+                emptyStart.requestFocus();
+            }
+        });
+    }
+
+    /**
+     * A tab whose shell was asked for the keyboard while it was still starting. Only an asked-for focus follows a
+     * start: a shell started quietly (a restored window's) must not take the keyboard when it comes up.
+     */
+    private Tab focusWhenStarted;
+
+    private void focusIfAsked(Tab tab, TerminalView view) {
+        if (focusWhenStarted == tab) {
+            focusWhenStarted = null;
+            if (tab.isSelected()) {
+                view.requestFocus();
+            }
         }
+    }
+
+    /**
+     * The tool-window manager's way in, on every path that shows the window (stripe, float, jump, the next-window
+     * command): focus goes to the terminal, not to the panel, which takes no keys.
+     */
+    @Override
+    public void focusFirstItem() {
+        focusActive();
+    }
+
+    /** Whether the keyboard is in this panel (a terminal, its find bar, a banner's button). */
+    boolean hasFocusWithin() {
+        var scene = getScene();
+        var owner = scene == null ? null : scene.getFocusOwner();
+        for (Node n = owner; n != null; n = n.getParent()) {
+            if (n == this) return true;
+        }
+        return false;
     }
 
     /** New settings: font, cursor and bell apply now; scrollback and shell from the next tab. */
@@ -603,40 +842,167 @@ final class TerminalPanel extends StackPane {
         view.setPreferredCursor(config.cursor());
         view.setBellEnabled(config.bell());
         view.setTypeAhead(config.typeAhead());
+        // Option composes on macOS unless the user asked for Meta; Alt is Meta everywhere else (AltGr composes).
+        view.setAltIsMeta(altIsMeta(MAC, config.macOptionIsMeta()));
+        view.setPasteGuard(text -> !config.confirmMultilinePaste() || pasteGuard.test(text));
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);
         view.setLinkActions(linkActions);
     }
 
-    private boolean mayClose(Tab tab) {
+    /** Tabs whose remote shell is being asked what it runs; a second close request waits for that answer. */
+    private final java.util.Set<Tab> asking = new java.util.HashSet<>();
+
+    /**
+     * Closes {@code tab} once it may: at once, or after asking when its shell is running something. A shell on
+     * another machine is asked off the FX thread — over a slow link, or with the host's one-shot slots busy, that
+     * question took up to tens of seconds, and the editor waited on it. The tab stays meanwhile.
+     */
+    void requestClose(Tab tab) {
         TerminalView view = views.get(tab);
         if (view == null || !config.confirmClose() || view.getSession() == null) {
-            return true;
+            tabs.getTabs().remove(tab);
+            return;
         }
         if (programNames.containsKey(tab)) {
             // A program tab: its program is what closing ends, while it runs; once it ended there is nothing to ask.
-            return !programExits.containsKey(tab)
-                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))));
+            if (!programExits.containsKey(tab)
+                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))))) {
+                tabs.getTabs().remove(tab);
+            }
+            return;
         }
         long pid = view.getSession().pid();
         long remote = view.getSession().remotePid();
-        List<String> programs;
         if (pid > 0) {
-            programs = RunningProgram.in(pid);
-        } else if (remote > 0) {
+            closeUnlessDeclined(tab, RunningProgram.in(pid));
+            return;
+        }
+        String stored = dirs.getOrDefault(tab, "");
+        Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
+        if (remote <= 0 || dir == null) {
+            tabs.getTabs().remove(tab);
+            return;
+        }
+        if (!asking.add(tab)) {
+            return;
+        }
+        Thread.ofVirtual().name("terminal-close-ask").start(() -> {
+            List<String> programs;
+            try {
+                programs = remotePrograms.apply(dir, remote);
+            } catch (RuntimeException e) {
+                programs = List.of();
+            }
+            List<String> answer = programs;
+            Platform.runLater(() -> {
+                asking.remove(tab);
+                if (tabs.getTabs().contains(tab) && views.get(tab) == view) {
+                    closeUnlessDeclined(tab, answer);
+                }
+            });
+        });
+    }
+
+    private void closeUnlessDeclined(Tab tab, List<String> programs) {
+        if (programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs))) {
+            tabs.getTabs().remove(tab);
+        }
+    }
+
+    /**
+     * The tabs whose shell or program is running something, as "title (program, …)", for the question a window
+     * close or quit asks. A shell on another machine is asked in parallel with the others, all within
+     * {@code remoteWait}; one that does not answer in time is left out.
+     */
+    List<String> busyTabs(java.time.Duration remoteWait) {
+        List<String> busy = new ArrayList<>();
+        Map<Tab, java.util.concurrent.CompletableFuture<List<String>>> remoteAnswers = new LinkedHashMap<>();
+        for (Tab tab : tabs.getTabs()) {
+            TerminalView view = views.get(tab);
+            if (view == null || view.getSession() == null) {
+                continue;
+            }
+            if (programNames.containsKey(tab)) {
+                if (programExits.containsKey(tab)) {
+                    busy.add(describe(tab, List.of(programNames.get(tab))));
+                }
+                continue;
+            }
+            long pid = view.getSession().pid();
+            long remote = view.getSession().remotePid();
             String stored = dirs.getOrDefault(tab, "");
             Path dir = stored.isEmpty() ? null : Vfs.parseStorable(stored);
-            programs = dir == null ? List.of() : remotePrograms.apply(dir, remote);
-        } else {
-            programs = List.of();
+            if (pid > 0) {
+                List<String> programs = RunningProgram.in(pid);
+                if (!programs.isEmpty()) {
+                    busy.add(describe(tab, programs));
+                }
+            } else if (remote > 0 && dir != null) {
+                remoteAnswers.put(
+                        tab,
+                        java.util.concurrent.CompletableFuture.supplyAsync(
+                                () -> remotePrograms.apply(dir, remote),
+                                command -> Thread.ofVirtual().start(command)));
+            }
         }
-        return programs.isEmpty() || closeGuard.confirm(tab.getText(), new ArrayList<>(programs));
+        long deadline = System.nanoTime() + remoteWait.toNanos();
+        remoteAnswers.forEach((tab, answer) -> {
+            try {
+                List<String> programs = answer.get(
+                        Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
+                if (!programs.isEmpty()) {
+                    busy.add(describe(tab, programs));
+                }
+            } catch (Exception noAnswer) {
+                // slow or gone: not asked about
+            }
+        });
+        return busy;
+    }
+
+    private static String describe(Tab tab, List<String> programs) {
+        String running = programs.size() <= RunningProgram.MAX_NAMED
+                ? String.join(", ", programs)
+                : String.join(", ", programs.subList(0, RunningProgram.MAX_NAMED)) + ", …";
+        return tab.getText() + " (" + running + ")";
+    }
+
+    /** Whether a close of {@code tab} is waiting for its remote shell's answer; for tests. */
+    boolean isAskingToClose(Tab tab) {
+        return asking.contains(tab);
     }
 
     private void onClipboardKey(KeyEvent e) {
         TerminalView view = activeView();
         if (view == null) {
+            return;
+        }
+        // Typed in the find bar, these are the field's: Paste pastes the query, not into the shell.
+        for (Node n = e.getTarget() instanceof Node t ? t : null; n != null && n != this; n = n.getParent()) {
+            if (n == findBar) {
+                return;
+            }
+        }
+        if (TerminalKeys.isMoveTabRight(e)) {
+            moveActive(1);
+            e.consume();
+            return;
+        }
+        if (TerminalKeys.isMoveTabLeft(e)) {
+            moveActive(-1);
+            e.consume();
+            return;
+        }
+        if (TerminalKeys.isNextTab(e)) {
+            selectNext(true);
+            e.consume();
+            return;
+        }
+        if (TerminalKeys.isPreviousTab(e)) {
+            selectNext(false);
+            e.consume();
             return;
         }
         if (TerminalKeys.isCopy(e, MAC)) {
@@ -655,6 +1021,212 @@ final class TerminalPanel extends StackPane {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** Every tab's started view, in tab order; for tests. */
+    List<TerminalView> viewsForTest() {
+        return List.copyOf(views.values());
+    }
+
+    // ---------------------------------------------------------------- tab menu, rename, reorder
+
+    /** Names the user gave tabs; a named tab keeps its name whatever its shell sets as the title. */
+    private final Map<Tab, String> names = new LinkedHashMap<>();
+
+    /** True while a move rewrites the tab list, so its remove is not taken for a close. */
+    private boolean reordering;
+
+    /** Asks for a tab's new name: the current one, and where the answer goes. */
+    private java.util.function.BiConsumer<String, Consumer<String>> renamer = (current, onName) -> {};
+
+    void setRenamer(java.util.function.BiConsumer<String, Consumer<String>> renamer) {
+        this.renamer = renamer == null ? (current, onName) -> {} : renamer;
+    }
+
+    /** Renames {@code tab}; a blank name gives it back its shell's title. */
+    void rename(Tab tab, String name) {
+        if (name == null || name.isBlank()) {
+            names.remove(tab);
+        } else {
+            names.put(tab, name.strip());
+        }
+        refreshTitles();
+    }
+
+    /** Asks for a new name for the selected tab ({@code terminal.rename}). */
+    void renameActive() {
+        Tab tab = activeTab();
+        if (tab != null) {
+            renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name));
+        }
+    }
+
+    /** Moves the selected tab one place left ({@code -1}) or right, keeping it selected. */
+    void moveActive(int delta) {
+        Tab tab = activeTab();
+        if (tab != null) {
+            moveTabBy(tab, delta);
+        }
+    }
+
+    private void moveTabBy(Tab tab, int delta) {
+        int from = tabs.getTabs().indexOf(tab);
+        moveTab(from, from + delta);
+    }
+
+    /** Moves the tab at {@code from} to {@code to} (indices of the list without it), keeping it selected. */
+    void moveTab(int from, int to) {
+        int count = tabs.getTabs().size();
+        if (from < 0 || from >= count || to < 0 || to >= count || from == to) {
+            return;
+        }
+        reordering = true;
+        try {
+            Tab tab = tabs.getTabs().remove(from);
+            tabs.getTabs().add(to, tab);
+            tabs.getSelectionModel().select(tab);
+        } finally {
+            reordering = false;
+        }
+        refreshTitles();
+        focusActive();
+    }
+
+    /** A tab's own menu (right-click on its header): the tab it acts on is the clicked one. */
+    private javafx.scene.control.ContextMenu tabMenu(Tab tab) {
+        MenuItem rename = new MenuItem(tr("terminal.tab.rename"), Icons.edit());
+        rename.setOnAction(e -> renamer.accept(names.getOrDefault(tab, tab.getText()), name -> rename(tab, name)));
+        MenuItem newTab = new MenuItem(tr("terminal.new"), Icons.plus());
+        newTab.setOnAction(e -> newTerminal());
+        MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
+        close.setOnAction(e -> requestClose(tab));
+        MenuItem closeOthers = new MenuItem(tr("menu.closeOthers"), Icons.closeOtherTabs());
+        closeOthers.setOnAction(e ->
+                new ArrayList<>(tabs.getTabs()).stream().filter(t -> t != tab).forEach(this::requestClose));
+        MenuItem closeRight = new MenuItem(tr("menu.closeRight"), Icons.closeTabsRight());
+        closeRight.setOnAction(e -> {
+            int at = tabs.getTabs().indexOf(tab);
+            if (at >= 0) {
+                new ArrayList<>(tabs.getTabs().subList(at + 1, tabs.getTabs().size())).forEach(this::requestClose);
+            }
+        });
+        MenuItem moveLeft = new MenuItem(tr("terminal.tab.moveLeft"), Icons.chevronLeft());
+        moveLeft.setOnAction(e -> moveTabBy(tab, -1));
+        MenuItem moveRight = new MenuItem(tr("terminal.tab.moveRight"), Icons.chevronRight());
+        moveRight.setOnAction(e -> moveTabBy(tab, 1));
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu(
+                rename,
+                newTab,
+                new javafx.scene.control.SeparatorMenuItem(),
+                close,
+                closeOthers,
+                closeRight,
+                new javafx.scene.control.SeparatorMenuItem(),
+                moveLeft,
+                moveRight);
+        // Per show: how many tabs there are, and where this one sits, change after the menu is built.
+        menu.setOnShowing(e -> {
+            int at = tabs.getTabs().indexOf(tab);
+            int count = tabs.getTabs().size();
+            closeOthers.setDisable(count < 2);
+            closeRight.setDisable(at < 0 || at >= count - 1);
+            moveLeft.setDisable(at <= 0);
+            moveRight.setDisable(at < 0 || at >= count - 1);
+        });
+        return menu;
+    }
+
+    /** The tab being dragged (a Dragboard carries only serialisable data, and a Tab is not). */
+    private Tab draggedTab;
+
+    private static final javafx.scene.input.DataFormat TAB_DRAG =
+            new javafx.scene.input.DataFormat("application/x-editora-terminal-tab");
+
+    private static final String TAB_DRAG_INSTALLED = "editora.terminalTabDrag";
+
+    /**
+     * Drag-to-reorder on every tab's whole header (JavaFX has none of its own). The header is JavaFX's node, found
+     * from the tab's chip upwards once the skin has built it, so this retries a few pulses.
+     */
+    private void installTabDrag(int attempt) {
+        int found = 0;
+        for (Tab tab : tabs.getTabs()) {
+            Node header = headerOf(tab);
+            if (header == null) {
+                continue;
+            }
+            found++;
+            if (header.getProperties().putIfAbsent(TAB_DRAG_INSTALLED, Boolean.TRUE) == null) {
+                installTabDrag(tab, header);
+            }
+        }
+        if (found < tabs.getTabs().size() && attempt < 5 && getScene() != null) {
+            Platform.runLater(() -> installTabDrag(attempt + 1));
+        }
+    }
+
+    private static Node headerOf(Tab tab) {
+        Node node = tab.getGraphic();
+        while (node != null && !node.getStyleClass().contains("tab")) {
+            node = node.getParent();
+        }
+        return node;
+    }
+
+    private void installTabDrag(Tab tab, Node header) {
+        header.setOnDragDetected(e -> {
+            if (tabs.getTabs().size() < 2) {
+                return;
+            }
+            draggedTab = tab;
+            var board = header.startDragAndDrop(javafx.scene.input.TransferMode.MOVE);
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.put(TAB_DRAG, "tab"); // a marker: the tab itself is draggedTab
+            board.setContent(content);
+            board.setDragView(header.snapshot(null, null));
+            e.consume();
+        });
+        header.setOnDragOver(e -> {
+            if (draggedTab == null
+                    || e.getGestureSource() == header
+                    || !e.getDragboard().hasContent(TAB_DRAG)) {
+                return;
+            }
+            e.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+            e.consume();
+        });
+        header.setOnDragDropped(e -> {
+            if (draggedTab == null || !e.getDragboard().hasContent(TAB_DRAG)) {
+                return;
+            }
+            int from = tabs.getTabs().indexOf(draggedTab);
+            int over = tabs.getTabs().indexOf(tab);
+            if (from >= 0 && over >= 0) {
+                boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
+                moveTab(
+                        from,
+                        TerminalTabReorder.insertIndex(
+                                from, over, after, tabs.getTabs().size()));
+            }
+            e.setDropCompleted(true);
+            e.consume();
+        });
+        header.setOnDragDone(e -> draggedTab = null);
+    }
+
+    /** The tab pane; for tests. */
+    TabPane tabsForTest() {
+        return tabs;
+    }
+
+    /** Selects the next terminal tab to the right ({@code forward}) or left, wrapping. */
+    void selectNext(boolean forward) {
+        int count = tabs.getTabs().size();
+        if (count < 2) {
+            return;
+        }
+        int at = tabs.getSelectionModel().getSelectedIndex();
+        tabs.getSelectionModel().select(Math.floorMod(at + (forward ? 1 : -1), count));
     }
 
     /** Opens the find bar over the selected tab, seeded with a one-line selection. */

@@ -2,8 +2,9 @@ package com.editora.terminal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.IntFunction;
+
+import com.jediterm.terminal.util.CharUtils;
 
 /**
  * Finds text in a terminal's scrollback and screen. Pure: it reads rows through a function, so the view can feed
@@ -25,36 +26,79 @@ public final class TerminalSearch {
         }
     }
 
-    /** A search stops collecting past this many hits; the count then reads "1000+". */
+    /** A search stops collecting past this many hits, keeping the newest; the count then reads "1000+". */
     public static final int MAX_MATCHES = 1000;
 
     /**
-     * Every occurrence of {@code query} in rows {@code firstRow} to {@code lastRow} inclusive, oldest first.
-     * Occurrences do not overlap. An empty query finds nothing.
+     * The newest {@link #MAX_MATCHES} occurrences of {@code query} in rows {@code firstRow} to {@code lastRow}
+     * inclusive, returned oldest first. Rows are scanned from the bottom up, so a long scrollback full of hits
+     * still finds what was printed last. Occurrences do not overlap. An empty query finds nothing.
      */
     public static List<Match> find(
             IntFunction<String> rowText, int firstRow, int lastRow, String query, boolean matchCase) {
-        List<Match> matches = new ArrayList<>();
+        List<Match> newestFirst = new ArrayList<>();
         if (query == null || query.isEmpty()) {
-            return matches;
+            return newestFirst;
         }
-        String needle = matchCase ? query : query.toLowerCase(Locale.ROOT);
-        for (int row = firstRow; row <= lastRow && matches.size() < MAX_MATCHES; row++) {
-            String text = rowText.apply(row);
-            if (text == null || text.length() < needle.length()) {
-                continue;
-            }
-            String hay = matchCase ? text : text.toLowerCase(Locale.ROOT);
-            if (hay.length() != text.length()) {
-                hay = text; // a case mapping that changes length would misplace every hit; match exactly instead
-            }
-            int at = hay.indexOf(needle);
-            while (at >= 0 && matches.size() < MAX_MATCHES) {
-                matches.add(new Match(row, at, at + needle.length()));
-                at = hay.indexOf(needle, at + needle.length());
+        for (int row = lastRow; row >= firstRow && newestFirst.size() < MAX_MATCHES; row--) {
+            List<Match> inRow = inRow(row, rowText.apply(row), query, matchCase);
+            for (int i = inRow.size() - 1; i >= 0 && newestFirst.size() < MAX_MATCHES; i--) {
+                newestFirst.add(inRow.get(i));
             }
         }
-        return matches;
+        return newestFirst.reversed();
+    }
+
+    /**
+     * The occurrences of {@code query} in one row's text, left to right. The text is the buffer's: a wide character
+     * is followed by {@link CharUtils#DWC}, a placeholder that is not part of the text, so it is skipped while
+     * matching and a hit's slots still index the row (a hit ending on a wide character covers its placeholder).
+     * Case is folded per character, so no row is copied to lower case.
+     */
+    static List<Match> inRow(int row, String text, String query, boolean matchCase) {
+        if (text == null || text.isEmpty() || query.isEmpty()) {
+            return List.of();
+        }
+        int dwc = text.indexOf(CharUtils.DWC);
+        String hay = text;
+        int[] slotOf = null;
+        if (dwc >= 0) {
+            StringBuilder plain = new StringBuilder(text.length());
+            slotOf = new int[text.length() + 1];
+            for (int i = 0; i < text.length(); i++) {
+                if (text.charAt(i) != CharUtils.DWC) {
+                    slotOf[plain.length()] = i;
+                    plain.append(text.charAt(i));
+                }
+            }
+            slotOf[plain.length()] = text.length();
+            hay = plain.toString();
+        }
+        int length = query.length();
+        if (hay.length() < length) {
+            return List.of();
+        }
+        List<Match> found = new ArrayList<>();
+        char first = query.charAt(0);
+        char upper = Character.toUpperCase(first);
+        char lower = Character.toLowerCase(first);
+        for (int at = 0; at <= hay.length() - length; at++) {
+            char c = hay.charAt(at);
+            boolean candidate = matchCase ? c == first : c == first || c == upper || c == lower;
+            if (candidate && hay.regionMatches(!matchCase, at, query, 0, length)) {
+                if (slotOf == null) {
+                    found.add(new Match(row, at, at + length));
+                } else {
+                    int to = slotOf[at + length - 1] + 1;
+                    if (to < text.length() && text.charAt(to) == CharUtils.DWC) {
+                        to++;
+                    }
+                    found.add(new Match(row, slotOf[at], to));
+                }
+                at += length - 1;
+            }
+        }
+        return found;
     }
 
     /**

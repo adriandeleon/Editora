@@ -31,8 +31,12 @@ final class ColumnMap {
                 i++;
                 continue;
             }
-            cells++;
-            i += Character.charCount(line.codePointAt(i));
+            int codePoint = line.codePointAt(i);
+            int width = CellWidth.of(codePoint);
+            // A column inside a wide astral character is that character's.
+            if (cells + width > column) return i;
+            cells += width;
+            i += Character.charCount(codePoint);
         }
         return line.length() + (column - cells);
     }
@@ -49,8 +53,9 @@ final class ColumnMap {
                 i++;
                 continue;
             }
-            cells++;
-            i += Character.charCount(line.codePointAt(i));
+            int codePoint = line.codePointAt(i);
+            cells += CellWidth.of(codePoint);
+            i += Character.charCount(codePoint);
         }
         return cells + (slot - line.length());
     }
