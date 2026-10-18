@@ -524,7 +524,7 @@ final class AgentCoordinator implements AcpClient.Host {
                     ? com.editora.agent.LmStudioAgent.environment(
                             settings.getAiLmStudioEndpoint(),
                             settings.getAiLmStudioModel(),
-                            settings.getAiApiKeyLmstudio())
+                            settings.getApiKeyFor(com.editora.ai.AiProvider.LMSTUDIO))
                     : Map.of();
         } catch (IllegalArgumentException e) {
             return CompletableFuture.failedFuture(e);

@@ -36,7 +36,9 @@ public record SyncReport(
         /** The local files changed while the sync was running; nothing was changed, the next run retries. */
         LOCAL_BUSY,
         /** A local git or file error. */
-        FAILED
+        FAILED,
+        /** Stopped by the user before anything on this computer was written; the next run starts afresh. */
+        CANCELLED
     }
 
     /** One entry of one category, named as the user knows it. */

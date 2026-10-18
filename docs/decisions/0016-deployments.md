@@ -1,4 +1,4 @@
-# 0015 — Deployments: a local project copied to a host and run there, chosen per run configuration
+# 0016 — Deployments: a local project copied to a host and run there, chosen per run configuration
 
 **Status:** Accepted.
 

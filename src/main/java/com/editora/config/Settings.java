@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 133;
+    public static final int SCHEMA_VERSION = 134;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -648,6 +648,16 @@ public class Settings {
     private String aiLmStudioModel = "";
     private String aiLmStudioCompletionModel = "";
     private String aiApiKeyLmstudio = "";
+    /** Codex's model id (blank = the Codex default). Its own field: it shared the Anthropic one. */
+    private String aiModelCodex = "";
+    /**
+     * Whether the AI keys were moved to the system keychain ({@link ApiKeyVault}). Kept so that a session in which
+     * the keychain does not answer can say the keys are there, not lost.
+     */
+    private boolean aiApiKeysInKeychain = false;
+    /** Where the AI keys live this session; null (no keychain asked) means the fields above. Not persisted. */
+    @JsonIgnore
+    private transient ApiKeyVault apiKeyVault;
     /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
@@ -1331,32 +1341,81 @@ public class Settings {
     }
 
     /**
-     * The configured API key for {@code provider} — the Anthropic key ({@link #aiApiKey}) or the
-     * OpenAI-compatible key ({@link #aiApiKeyOpenai}); Codex always returns an empty key. Kept per-provider so switching provider never sends
-     * one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
+     * The API key for {@code provider}: from the system keychain when the keys live there ({@link ApiKeyVault}),
+     * else from this provider's own field. Codex always has none. Kept per provider so switching provider never
+     * sends one provider's credential to another's (user-supplied) endpoint. {@code provider} null → Anthropic.
      */
     public String getApiKeyFor(com.editora.ai.AiProvider provider) {
         if (provider == com.editora.ai.AiProvider.CODEX) {
             return "";
         }
-        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
-            return getAiApiKeyLmstudio();
-        }
-        return provider == com.editora.ai.AiProvider.OPENAI ? getAiApiKeyOpenai() : getAiApiKey();
+        ApiKeyVault vault = apiKeyVault;
+        return vault != null && vault.inKeychain() ? vault.get(aiSlot(provider)) : rawApiKey(aiSlot(provider));
     }
 
-    /** Sets the API key for {@code provider} (Anthropic or OpenAI-compatible). {@code provider} null → Anthropic. */
+    /** Sets the API key for {@code provider}: into the keychain when the keys live there, else into its field. */
     public void setApiKeyFor(com.editora.ai.AiProvider provider, String key) {
         if (provider == com.editora.ai.AiProvider.CODEX) {
             return;
         }
-        if (provider == com.editora.ai.AiProvider.LMSTUDIO) {
-            setAiApiKeyLmstudio(key);
-        } else if (provider == com.editora.ai.AiProvider.OPENAI) {
-            setAiApiKeyOpenai(key);
-        } else {
-            setAiApiKey(key);
+        ApiKeyVault vault = apiKeyVault;
+        if (vault != null && vault.inKeychain() && vault.put(aiSlot(provider), key)) {
+            return;
         }
+        setRawApiKey(aiSlot(provider), key); // no keychain, or it just refused (the vault fell back)
+    }
+
+    /** The key field of {@code provider} as {@code settings.json} holds it (blank once moved to the keychain). */
+    String rawApiKey(com.editora.ai.AiProvider provider) {
+        return switch (provider) {
+            case LMSTUDIO -> getAiApiKeyLmstudio();
+            case OPENAI -> getAiApiKeyOpenai();
+            default -> getAiApiKey();
+        };
+    }
+
+    void setRawApiKey(com.editora.ai.AiProvider provider, String key) {
+        switch (provider) {
+            case LMSTUDIO -> setAiApiKeyLmstudio(key);
+            case OPENAI -> setAiApiKeyOpenai(key);
+            default -> setAiApiKey(key);
+        }
+    }
+
+    /** Attaches the vault the keys are read from and written to (see {@link ApiKeyVault#open}). */
+    void useApiKeyVault(ApiKeyVault vault) {
+        this.apiKeyVault = vault;
+        if (vault != null) {
+            vault.bind(this);
+        }
+    }
+
+    /** Where the AI keys live this session (the fields, when no keychain was asked). */
+    public ApiKeyVault.Storage apiKeyStorage() {
+        ApiKeyVault vault = apiKeyVault;
+        return vault == null ? ApiKeyVault.Storage.SETTINGS_FILE : vault.storage();
+    }
+
+    /** The keychain's name, for the AI Actions page ("macOS Keychain", …); empty without a vault. */
+    public String apiKeyStoreName() {
+        ApiKeyVault vault = apiKeyVault;
+        return vault == null ? "" : vault.storeName();
+    }
+
+    public boolean isAiApiKeysInKeychain() {
+        return aiApiKeysInKeychain;
+    }
+
+    public void setAiApiKeysInKeychain(boolean aiApiKeysInKeychain) {
+        this.aiApiKeysInKeychain = aiApiKeysInKeychain;
+    }
+
+    public String getAiModelCodex() {
+        return aiModelCodex == null ? "" : aiModelCodex;
+    }
+
+    public void setAiModelCodex(String value) {
+        aiModelCodex = value;
     }
 
     public boolean isAiInlineCompletion() {
@@ -1468,6 +1527,7 @@ public class Settings {
         return switch (aiSlot(provider)) {
             case LMSTUDIO -> getAiLmStudioModel();
             case OPENAI -> getAiModelOpenai();
+            case CODEX -> getAiModelCodex();
             default -> getAiModel();
         };
     }
@@ -1476,6 +1536,7 @@ public class Settings {
         switch (aiSlot(provider)) {
             case LMSTUDIO -> setAiLmStudioModel(value);
             case OPENAI -> setAiModelOpenai(value);
+            case CODEX -> setAiModelCodex(value);
             default -> setAiModel(value);
         }
     }

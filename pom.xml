@@ -66,9 +66,9 @@
              Both are Kotlin and disagree on the stdlib (2.4.0 vs 2.1.21), and pty4j asks for JNA 5.14.0:
              the versions below are pinned so the choice is ours, not nearest-wins. Same versions as Termina. -->
         <jediterm.version>3.74</jediterm.version>
-        <pty4j.version>0.13.12</pty4j.version>
+        <pty4j.version>0.14.0</pty4j.version>
         <jna.version>5.19.1</jna.version>
-        <kotlin.version>2.4.0</kotlin.version>
+        <kotlin.version>2.4.21</kotlin.version>
         <moditect.version>1.3.0.Final</moditect.version>
         <spotless.version>3.10.4</spotless.version>
         <palantir.version>2.102.0</palantir.version>
@@ -562,6 +562,9 @@
                         <editora.trash>off</editora.trash>
                         <!-- No window opened by a test asks GitHub for the latest release. -->
                         <editora.updateCheck>off</editora.updateCheck>
+                        <!-- No test reaches the developer's real keychain: AI keys stay in the test's settings.json
+                             (SecretStores.PROPERTY). The keychain tests use a fake store. -->
+                        <editora.secretStore>none</editora.secretStore>
                         <!-- As App.main sets it: a .http request may send its own Host header. -->
                         <jdk.httpclient.allowRestrictedHeaders>host</jdk.httpclient.allowRestrictedHeaders>
                         <!-- Each fork extracts JavaFX's native libraries into its own cache, not the shared

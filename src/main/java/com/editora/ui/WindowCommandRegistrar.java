@@ -332,7 +332,8 @@ final class WindowCommandRegistrar {
 
         void renameFile(EditorBuffer buffer, Tab tab);
 
-        void onQuit();
+        /** Quits after the usual questions; false when the user cancelled. */
+        boolean onQuit();
 
         void requestSave();
 
@@ -381,6 +382,8 @@ final class WindowCommandRegistrar {
         void showDebugLog();
 
         void exportConfig();
+
+        void importConfig();
 
         void cancel();
 
@@ -472,6 +475,12 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("file.openTerminal", host::openTerminalForActiveBuffer));
         host.registry().register(Command.of("buffer.next", host::nextBuffer));
         host.registry().register(Command.of("app.quit", host::onQuit));
+        // Quit and start again (a setting that applies at startup). A cancelled quit (unsaved files) cancels it.
+        host.registry().register(Command.of("app.restart", () -> {
+            if (com.editora.Relaunch.arm() && !host.onQuit()) {
+                com.editora.Relaunch.disarm();
+            }
+        }));
         host.registry().register(Command.of("palette.show", host::onPalette));
         host.registry().register(Command.of("view.settings", host::onSettings));
         host.registry().register(Command.of("keymap.select", host.editorSettings()::chooseKeymap));
@@ -794,7 +803,10 @@ final class WindowCommandRegistrar {
                                         "plugins.setRegistryUrl",
                                         () -> host.config().getSettings().getPluginRegistryUrl(),
                                         v -> host.config().getSettings().setPluginRegistryUrl(v),
-                                        null)));
+                                        null,
+                                        v -> v.isEmpty() || com.editora.plugin.PluginRegistry.isHttps(v)
+                                                ? null // blank goes back to the built-in registry
+                                                : tr("settings.plugins.registryNotHttps"))));
         host.registry().register(Command.of("lsp.toggleServer", host.lspCoordinator()::chooseServerToggle));
         host.registry().register(Command.of("lsp.setServerCommand", host.lspCoordinator()::chooseServerCommand));
         host.registry().register(Command.of("lsp.trustProjectSettings", host.lspCoordinator()::trustProjectSettings));
@@ -886,6 +898,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("workspace.manageTrust", host::showTrustedFolders));
         host.registry().register(Command.of("workspace.revokeTrust", host::revokeTrustForActiveRoot));
         host.registry().register(Command.of("config.export", host::exportConfig));
+        host.registry().register(Command.of("config.import", host::importConfig));
         // Settings sync is one service for the whole process; each window's Settings window holds it.
         host.registry()
                 .register(Command.of("sync.setup", () -> host.settingsWindow().showSync(host.stage())));

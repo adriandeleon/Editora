@@ -1,11 +1,17 @@
 package com.editora.ui;
 
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.stage.Window;
 
+import com.editora.command.KeymapManager;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -136,6 +142,79 @@ class MenuBarFxTest {
 
         setFlag(s -> s.setSimpleMode(false));
         assertEquals(full, (int) FxTestSupport.callOnFx(() -> bar.getMenus().size()), "and back again");
+    }
+
+    /**
+     * A submenu's arrow sits at the menu's right edge, past every chord. JavaFX places the arrow after the
+     * widest plain label, and the command rows (custom items) take no part in that column, so a submenu
+     * titled with its plain label had its arrow halfway across the menu.
+     */
+    @Test
+    void submenuArrowsSitAtTheMenusRightEdge() throws Exception {
+        Assumptions.assumeFalse(KeymapManager.isMac(), "the system menu bar draws its own arrows");
+        MenuBar bar = bar();
+        int checked = 0;
+        java.util.List<Menu> menus = FxTestSupport.callOnFx(() -> java.util.List.copyOf(bar.getMenus()));
+        for (Menu menu : menus) {
+            if (FxTestSupport.callOnFx(() -> menu.getItems().stream().noneMatch(Menu.class::isInstance))) {
+                continue;
+            }
+            FxTestSupport.runOnFx(menu::show);
+            try {
+                Parent popup = awaitPopup();
+                checked += FxTestSupport.callOnFx(() -> {
+                    double chordsEnd = 0;
+                    for (Node chord : popup.lookupAll(".menu-item-chord")) {
+                        if (chord.isVisible()) {
+                            chordsEnd = Math.max(
+                                    chordsEnd,
+                                    chord.localToScene(chord.getLayoutBounds()).getMaxX());
+                        }
+                    }
+                    int rows = 0;
+                    for (Node n : popup.lookupAll(".menu-submenu")) {
+                        if (!(n instanceof Parent row) || !row.getStyleClass().contains("menu-item")) {
+                            continue;
+                        }
+                        Node arrow = row.lookup(".right-container");
+                        double arrowEnd =
+                                arrow.localToScene(arrow.getLayoutBounds()).getMaxX();
+                        double rowEnd = row.localToScene(row.getLayoutBounds()).getMaxX();
+                        String what = menu.getText() + " row at y=" + row.getLayoutY();
+                        assertTrue(
+                                arrowEnd > chordsEnd, what + ": arrow " + arrowEnd + " not past chords " + chordsEnd);
+                        assertTrue(rowEnd - arrowEnd < 16, what + ": arrow " + arrowEnd + " far from edge " + rowEnd);
+                        rows++;
+                    }
+                    return rows;
+                });
+            } finally {
+                FxTestSupport.runOnFx(menu::hide);
+            }
+        }
+        assertTrue(checked > 0, "some menu has a submenu to check");
+    }
+
+    /** The root of the showing menu popup, once it has been laid out. */
+    private static Parent awaitPopup() throws Exception {
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Parent root = FxTestSupport.callOnFx(() -> {
+                for (Window w : Window.getWindows()) {
+                    if (w instanceof ContextMenu && w.isShowing() && w.getScene() != null) {
+                        Parent r = w.getScene().getRoot();
+                        return r.lookup(".menu-submenu") == null ? null : r;
+                    }
+                }
+                return null;
+            });
+            if (root != null) {
+                FxTestSupport.drainFx();
+                return root;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("the menu popup never showed");
     }
 
     /** Flips a setting on the controller's own config and re-applies the chrome, as a settings apply does. */

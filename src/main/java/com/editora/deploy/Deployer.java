@@ -30,7 +30,7 @@ import com.editora.process.ProcessRunner;
  * {@link DeployPlan}, asks about files changed on the host, sends what changed as one gzip-compressed tar stream
  * over an exec channel of the existing SSH connection (file by file over SFTP when the host has no {@code tar}),
  * removes what the project no longer has, and keeps a {@link DeployManifest} for next time. No {@code rsync} and
- * no system {@code ssh}: everything goes over the connection Editora already holds (ADR 0015).
+ * no system {@code ssh}: everything goes over the connection Editora already holds (ADR 0016).
  *
  * <p>Blocking: run it off the FX thread. {@link Decisions} are asked from that thread too.
  */

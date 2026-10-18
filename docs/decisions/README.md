@@ -23,7 +23,8 @@ rather than rewriting history.
 | [0012](0012-settings-sync-git-transport.md) | Settings sync: Git carries the data, Editora merges it | Accepted |
 | [0013](0013-remote-execution-over-ssh-exec.md) | Remote development: tools run on the host over SSH exec channels | Accepted (terminal clause superseded by 0014) |
 | [0014](0014-integrated-terminal.md) | Integrated terminal: Termina's emulator, a PTY only for terminal channels | Accepted (in progress) |
-| [0015](0015-deployments.md) | Deployments: a local project copied to a host and run there, chosen per run configuration | Accepted |
+| [0015](0015-ai-keys-in-the-os-keychain.md) | AI API keys in the operating system's keychain (JNA), `settings.json` as fallback | Accepted |
+| [0016](0016-deployments.md) | Deployments: a local project copied to a host and run there, chosen per run configuration | Accepted |
 
 ## Writing a new one
 

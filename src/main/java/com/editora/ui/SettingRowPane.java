@@ -51,6 +51,11 @@ final class SettingRowPane extends Pane {
         return textColumn < Math.min(TEXT_MIN_WIDTH, textPrefWidth);
     }
 
+    /** The title-and-description column (where a row's state line goes, see {@link SettingRowState}). */
+    Node text() {
+        return text;
+    }
+
     boolean isStacked() {
         return control != null && stacks(contentWidth(getWidth()), text.prefWidth(-1), controlWidth());
     }

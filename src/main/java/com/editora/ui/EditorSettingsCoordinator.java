@@ -264,17 +264,36 @@ final class EditorSettingsCoordinator {
         EditorBuffer active = host.activeBuffer();
         boolean prose = active != null && Settings.isProseLanguage(active.getLanguage());
         String key = prose ? "status.toggle.wordWrapProse" : "status.toggle.wordWrap";
+        ProjectScope scope = projectScope();
+        boolean effective = prose ? scope.wordWrapProse(s) : scope.wordWrap(s); // a trusted project's, else mine
         if (active != null && active.wrap().isSuppressed()) {
             // Wrap was held off for this long-line file. Asking for it here is the explicit opt-in: if the
             // preference is already on, wrap this buffer rather than turning wrap off everywhere else.
             active.wrap().setSuppressed(false);
-            if (s.wrapsLanguage(active.getLanguage())) {
+            if (effective) {
                 active.setWordWrap(true);
                 host.setStatus(tr(key, tr("common.on")));
                 return;
             }
         }
-        boolean next = !(prose ? s.isWordWrapProse() : s.isWordWrap());
+        boolean next = !effective;
+        String field = prose ? "wordWrapProse" : "wordWrap";
+        if (scope.trusted() && ProjectScopeSettings.valueOf(scope.settings(), "editor." + field) != null) {
+            // The project's value governs this window: flipping the user's would change nothing on screen.
+            try {
+                com.editora.config.ProjectSettingsFile.set(scope.root(), "editor", field, next);
+            } catch (java.io.IOException e) {
+                host.setStatus(tr(
+                        "settings.scope.writeFailed",
+                        com.editora.config.ProjectSettings.fileFor(scope.root()).toString(),
+                        String.valueOf(e.getMessage())));
+                return;
+            }
+            scope.reload(); // re-lays out this window's buffers with the project's new value
+            syncSettingsViewChecks();
+            host.setStatus(tr("status.toggle.wordWrapProject", tr(key, tr(next ? "common.on" : "common.off"))));
+            return;
+        }
         if (prose) {
             s.setWordWrapProse(next);
         } else {
@@ -684,8 +703,23 @@ final class EditorSettingsCoordinator {
             java.util.function.Supplier<String> get,
             java.util.function.Consumer<String> set,
             Runnable apply) {
+        promptStringSetting(commandId, get, set, apply, value -> null);
+    }
+
+    /** As above; an answer {@code refuse} gives a reason for (a translated text) is not saved, and the reason shows. */
+    void promptStringSetting(
+            String commandId,
+            java.util.function.Supplier<String> get,
+            java.util.function.Consumer<String> set,
+            Runnable apply,
+            java.util.function.Function<String, String> refuse) {
         host.promptText(commandTitle(commandId), tr("palette.setting.value"), get.get(), v -> {
             String value = v.trim();
+            String why = refuse.apply(value);
+            if (why != null) {
+                host.setStatus(why);
+                return;
+            }
             set.accept(value);
             host.requestSave();
             if (apply != null) {
@@ -971,6 +1005,7 @@ final class EditorSettingsCoordinator {
      * result a load worker prepared — is applied as is.
      */
     void applyViewSettings(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        staleView.remove(buffer); // whatever was waiting for this buffer is applied now
         Settings s = host.config().getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
@@ -984,21 +1019,22 @@ final class EditorSettingsCoordinator {
         boolean zen = host.chrome().zenActive() || host.chrome().diffUiActive();
         boolean focus = zen || host.chrome().expertActive();
         boolean simple = host.chrome().simpleModeActive();
-        buffer.setRulerColumns(s.getRulers(), s.getLanguageRulers());
+        ProjectScope scope = projectScope(); // the project's values in a trusted folder, else the user's
+        buffer.setRulerColumns(scope.rulers(s), scope.languageRulers(s));
         buffer.setColumnRulerVisible(Chrome.columnRuler(s.isShowColumnRuler(), zen));
         buffer.setIndentGuidesVisible(Chrome.indentGuides(s.isShowIndentGuides(), zen, simple));
         buffer.setNoteIndicatorsVisible(s.isNotesSupport() && s.isShowNoteIndicators());
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.wrap().setPreference(s.isWordWrap(), s.isWordWrapProse()); // applied by the buffer's language
+        buffer.wrap().setPreference(scope.wordWrap(s), scope.wordWrapProse(s)); // applied by the buffer's language
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         buffer.setSimpleMenu(simple); // ... and trims the right-click menu to the editing actions
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
         }
         buffer.setWhitespaceVisible(Chrome.whitespace(s.isShowWhitespace(), focus));
-        buffer.setTabSize(s.getTabSize());
+        buffer.setTabSize(scope.tabSize(s));
         buffer.setLineHighlightColor(EditorThemes.lineHighlightFor(s.getEditorTheme()));
         buffer.setMinimapColors(
                 EditorThemes.minimapTextFor(s.getEditorTheme()), EditorThemes.minimapViewportFor(s.getEditorTheme()));
@@ -1136,7 +1172,8 @@ final class EditorSettingsCoordinator {
         buffer.setEditorConfigProps(p);
         applyEffectiveIndent(buffer, p);
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
-            buffer.setTabSize(p.effectiveTabWidth(host.config().getSettings().getTabSize()));
+            buffer.setTabSize(
+                    p.effectiveTabWidth(projectScope().tabSize(host.config().getSettings())));
         }
         // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
         // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
@@ -1152,15 +1189,31 @@ final class EditorSettingsCoordinator {
      * auto-detection ({@code Indenter.detectUnit}). For {@code space}, the size falls back to the global tab size
      * when {@code .editorconfig} didn't specify {@code indent_size}.
      */
+    /** This window's project scope (the user's values without a project or in an untrusted folder). */
+    ProjectScope projectScope() {
+        CoordinatorHost h = host.coordinatorHost();
+        ProjectScope scope = h == null ? ProjectScope.NONE : h.projectScope();
+        if (scope != ProjectScope.NONE && scope != listenedScope) {
+            listenedScope = scope;
+            // An edited .editora/settings.json, a trust decision or a Project-scope change in Settings re-lays
+            // out this window's buffers with the values that now apply.
+            scope.addChangeListener(
+                    () -> applyViewSettingsToAllBuffers(host.config().getSettings()));
+        }
+        return scope;
+    }
+
+    private ProjectScope listenedScope;
+
     void applyEffectiveIndent(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties p) {
         Boolean insertSpaces = p.insertSpaces();
         Integer size = p.indentSize();
         if (insertSpaces == null) {
-            String style = host.config().getSettings().getIndentStyle();
+            String style = projectScope().indentStyle(host.config().getSettings());
             if ("space".equals(style)) {
                 insertSpaces = Boolean.TRUE;
                 if (size == null) {
-                    size = host.config().getSettings().getTabSize();
+                    size = projectScope().tabSize(host.config().getSettings());
                 }
             } else if ("tab".equals(style)) {
                 insertSpaces = Boolean.FALSE;
@@ -1261,6 +1314,51 @@ final class EditorSettingsCoordinator {
      * scene stylesheet and re-run the whole cascade — #545).
      */
     void applyFontsAndPerBufferView(Settings settings) {
+        applyFontsAndPerBufferView(settings, false);
+    }
+
+    /**
+     * Buffers whose view settings changed while their tab was not showing; {@link #applyViewSettings} brings one
+     * up to date when its tab is next selected (or before it is saved). Weak: a closed buffer just drops out.
+     */
+    private final java.util.Set<EditorBuffer> staleView =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * {@link #applyFontsAndPerBufferView} after a change of per-buffer view settings only (tab size, rulers,
+     * line numbers …; {@link SettingsReapply#VIEW_ONLY}): the buffers on screen — each editor group's selected
+     * tab — are updated at once, the hidden ones when their tab is next shown. Re-laying out every hidden
+     * buffer made each tab-size step cost about 5 ms per open file.
+     */
+    void applyPerBufferViewToVisible(Settings settings) {
+        applyFontsAndPerBufferView(settings, true);
+    }
+
+    /** Applies a hidden buffer's pending view settings now, if any are waiting (e.g. before it is saved). */
+    void applyPendingView(EditorBuffer buffer) {
+        if (buffer != null && staleView.contains(buffer)) {
+            applyViewSettings(buffer);
+        }
+    }
+
+    private void markStaleView(Tab tab, EditorBuffer buffer) {
+        if (!staleView.add(buffer)) {
+            return; // already waiting for this tab to show
+        }
+        javafx.beans.value.ChangeListener<Boolean> onShown = new javafx.beans.value.ChangeListener<>() {
+            @Override
+            public void changed(
+                    javafx.beans.value.ObservableValue<? extends Boolean> o, Boolean was, Boolean selected) {
+                if (selected) {
+                    tab.selectedProperty().removeListener(this);
+                    applyPendingView(buffer);
+                }
+            }
+        };
+        tab.selectedProperty().addListener(onShown);
+    }
+
+    private void applyFontsAndPerBufferView(Settings settings, boolean visibleOnly) {
         int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
         Fonts.ensureFamily(settings.getFontFamily());
         // The coordinators remember the font for a console panel not built yet (they are built on first use).
@@ -1271,7 +1369,9 @@ final class EditorSettingsCoordinator {
         host.testRunCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);
-            if (buffer != null) {
+            if (buffer != null && visibleOnly && !tab.isSelected()) {
+                markStaleView(tab, buffer);
+            } else if (buffer != null) {
                 applyViewSettings(buffer);
             } else if (tab.getUserData() instanceof DiffViewerPane diff) {
                 diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)

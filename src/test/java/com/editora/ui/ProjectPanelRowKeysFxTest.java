@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelRowKeysFxTest {
 
     @BeforeAll
@@ -49,7 +50,7 @@ class ProjectPanelRowKeysFxTest {
     private static Harness harness() throws Exception {
         List<String> prompts = new ArrayList<>();
         return FxTestSupport.callOnFx(() -> {
-            ProjectPanel panel = new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false);
+            ProjectPanel panel = DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false));
             panel.setPrompt((title, label, initial, onAccept) -> prompts.add(initial));
             TreeView<Path> tree = FxTestSupport.field(panel, "tree");
             Path dir = Path.of("project").toAbsolutePath();

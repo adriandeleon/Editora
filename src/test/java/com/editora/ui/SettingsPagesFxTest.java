@@ -731,7 +731,8 @@ class SettingsPagesFxTest {
             assertFalse(greeter.isDisable());
             manager.descriptors().stream()
                     .filter(d -> d.loadError() != null)
-                    .forEach(d -> assertTrue(SettingsRig.texts(list).contains(d.loadError()), d.loadError()));
+                    .forEach(d -> assertTrue( // S3: in the user's language, not the loader's English
+                            SettingsRig.texts(list).contains(PluginLoadProblems.text(d)), d.loadError()));
 
             List<SettingsRig.Shown> asked =
                     SettingsRig.answering(ButtonBar.ButtonData.CANCEL_CLOSE, () -> greeter.setSelected(true));

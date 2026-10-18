@@ -120,4 +120,11 @@ class MainMethodScannerTest {
                         .get(0)
                         .fqn());
     }
+
+    @Test
+    void readsTheDeclaredPackage() {
+        assertEquals("com.example", MainMethodScanner.packageOf("// package not.this;\npackage com.example;\n"));
+        assertEquals("", MainMethodScanner.packageOf("class App {}"));
+        assertEquals("", MainMethodScanner.packageOf(null));
+    }
 }
