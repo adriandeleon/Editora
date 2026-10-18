@@ -330,7 +330,8 @@ final class WindowCommandRegistrar {
 
         void renameFile(EditorBuffer buffer, Tab tab);
 
-        void onQuit();
+        /** Quits after the usual questions; false when the user cancelled. */
+        boolean onQuit();
 
         void requestSave();
 
@@ -470,6 +471,12 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("file.openTerminal", host::openTerminalForActiveBuffer));
         host.registry().register(Command.of("buffer.next", host::nextBuffer));
         host.registry().register(Command.of("app.quit", host::onQuit));
+        // Quit and start again (a setting that applies at startup). A cancelled quit (unsaved files) cancels it.
+        host.registry().register(Command.of("app.restart", () -> {
+            if (com.editora.Relaunch.arm() && !host.onQuit()) {
+                com.editora.Relaunch.disarm();
+            }
+        }));
         host.registry().register(Command.of("palette.show", host::onPalette));
         host.registry().register(Command.of("view.settings", host::onSettings));
         host.registry().register(Command.of("keymap.select", host.editorSettings()::chooseKeymap));

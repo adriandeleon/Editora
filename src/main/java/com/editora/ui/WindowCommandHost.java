@@ -732,8 +732,8 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
-    public void onQuit() {
-        mc.onQuit();
+    public boolean onQuit() {
+        return mc.onQuit();
     }
 
     @Override

@@ -893,6 +893,7 @@ public class SettingsWindow {
             search.setListSource(
                     new SettingsSearch.ListSource(Category.KEYMAPS, shortcutFilter, this::shortcutMatches));
         }
+        modified = new SettingsModified(this);
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
@@ -960,7 +961,11 @@ public class SettingsWindow {
 
         // The kit puts the search at the top of the nav rail, not spanning the window: search scopes the
         // sidebar (it greys categories and auto-selects the first hit), so it lives with the sidebar.
-        VBox nav = new VBox(8, searchField, sidebar);
+        modifiedOnly.setTooltip(new Tooltip(tr("settings.search.modifiedOnly.tip")));
+        modifiedOnly.setAccessibleHelp(tr("settings.search.modifiedOnly.tip"));
+        modifiedOnly.setOnAction(e -> filter(searchField.getText()));
+        modifiedOnly.getStyleClass().add(atlantafx.base.theme.Styles.SMALL); // under the search: it filters it
+        VBox nav = new VBox(8, searchField, modifiedOnly, sidebar);
         nav.getStyleClass().add("settings-nav");
         VBox.setVgrow(sidebar, Priority.ALWAYS);
 
@@ -979,7 +984,20 @@ public class SettingsWindow {
         // Said once, for every page: there is nothing to confirm (it used to be a note on the Git page only).
         Label live = new Label(tr("settings.liveNote"));
         live.getStyleClass().add("settings-hint");
-        HBox buttons = new HBox(8, footReset, spacer, live, close);
+        // A restart-only setting changed this run: say so, with the way to apply it, in place of the live note.
+        restartNote.getStyleClass().add("settings-restart-note");
+        Button restartNow = new Button(tr("settings.restart.now"));
+        restartNow.setOnAction(e -> {
+            if (onRestart != null) {
+                onRestart.run();
+            }
+        });
+        restartBox.getChildren().setAll(restartNote, restartNow);
+        restartBox.setAlignment(Pos.CENTER_LEFT);
+        live.visibleProperty().bind(restartBox.visibleProperty().not());
+        live.managedProperty().bind(live.visibleProperty());
+        SettingsSearch.setShown(restartBox, false);
+        HBox buttons = new HBox(8, footReset, spacer, restartBox, live, close);
         buttons.setAlignment(Pos.CENTER_LEFT);
         buttons.getStyleClass().add("settings-footer");
 
@@ -2108,16 +2126,28 @@ public class SettingsWindow {
         pages.put(Category.AGENT, agentPage());
         pages.put(Category.AI, aiPage());
         pages.put(Category.ADVANCED, advancedPage());
-        // One beta treatment: the sidebar's pill, repeated beside the page's own title.
+        // Each title gets its "?" link to the page's docs; a beta page also the sidebar's Beta pill.
         for (Category c : Category.values()) {
-            if (c.beta
-                    && pages.get(c) instanceof VBox page
+            if (pages.get(c) instanceof VBox page
                     && !page.getChildren().isEmpty()
                     && page.getChildren().get(0) instanceof javafx.scene.text.Text title) {
-                Label pill = new Label(tr("settings.beta"));
-                pill.getStyleClass().addAll("settings-beta-pill", "settings-title-pill");
                 page.getChildren().remove(0);
-                HBox heading = new HBox(8, title, pill);
+                HBox heading = new HBox(8, title);
+                if (c.beta) {
+                    Label pill = new Label(tr("settings.beta"));
+                    pill.getStyleClass().addAll("settings-beta-pill", "settings-title-pill");
+                    heading.getChildren().add(pill);
+                }
+                Hyperlink help = new Hyperlink("?");
+                help.getStyleClass().add("settings-help-link");
+                help.setTooltip(new Tooltip(tr("settings.help", c.display)));
+                help.setAccessibleText(tr("settings.help", c.display));
+                help.setOnAction(e -> {
+                    if (openUrl != null) {
+                        openUrl.accept(SettingsFrameBits.helpUrl(c.name()));
+                    }
+                });
+                heading.getChildren().add(help);
                 heading.setAlignment(Pos.CENTER_LEFT);
                 page.getChildren().add(0, heading);
             }
@@ -7727,9 +7757,16 @@ public class SettingsWindow {
         return items;
     }
 
-    private void filter(String query) {
+    private void filter(String typed) {
         searchHiddenCats.clear();
         searchHiddenGroups.clear();
+        // "Modified" (or @modified typed in the search) lists only the rows that differ from their defaults.
+        boolean onlyModified = modifiedOnly.isSelected() || SettingsSearch.wantsModified(typed);
+        search.setRowFilter(
+                onlyModified
+                        ? r -> SettingRowState.peek(r.node()) instanceof SettingRowState st && st.isModified()
+                        : null);
+        String query = SettingsSearch.withoutModifiedToken(typed);
         SettingsSearch.Result found = search.filter(query);
         pushShortcutQuery(query);
         if (found != null) {
@@ -7746,7 +7783,12 @@ public class SettingsWindow {
         }
         sidebar.refresh();
         // No hit anywhere: say so, instead of a blank page beside a fully greyed-out sidebar.
-        searchEmpty.setText(found == null ? "" : tr("settings.search.empty", query.strip()));
+        searchEmpty.setText(
+                found == null
+                        ? ""
+                        : query.isBlank()
+                                ? tr("settings.search.noneModified")
+                                : tr("settings.search.empty", query.strip()));
         searchEmpty.setVisible(found != null && found.pages().isEmpty());
         showContent();
         Object sel = sidebar.getSelectionModel().getSelectedItem();
@@ -7808,10 +7850,9 @@ public class SettingsWindow {
                 getStyleClass().add("settings-sidebar-item");
                 setMouseTransparent(false);
                 setDisable(searchHiddenCats.contains(c));
-                if (c.beta) {
-                    Label pill = new Label(tr("settings.beta"));
-                    pill.getStyleClass().add("settings-beta-pill");
-                    setGraphic(pill); // small "Beta" pill beside the feature name
+                Node badges = SettingsFrameBits.sidebarBadges(c.beta, modifiedPerPage.getOrDefault(c, 0));
+                if (badges != null) { // the modified-row count and the "Beta" pill, beside the name
+                    setGraphic(badges);
                     setContentDisplay(ContentDisplay.RIGHT);
                     setGraphicTextGap(6);
                 }
@@ -8193,6 +8234,7 @@ public class SettingsWindow {
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
         updatePreviewFont();
         fileNotes.show(config.shared().settingsFileIssues());
+        refreshModified();
         // Once per open and per command: a sync from another window used to spawn `git --version` each time.
         String gitCommand = config.getSettings().getGitPath();
         if (!java.util.Objects.equals(gitCommand, gitProbedFor)) {
@@ -8737,6 +8779,38 @@ public class SettingsWindow {
         config.save();
         onApply.accept(settings);
         updatePreviewFont();
+        refreshModified();
+    }
+
+    /** Marks the rows that differ from their defaults, counts them per page, and updates the restart note. */
+    private void refreshModified() {
+        if (modified == null) {
+            return;
+        }
+        modifiedPerPage = modified.refresh(rows, config.getSettings(), keys -> {
+            SettingsModified.reset(config.getSettings(), keys);
+            commitReset(); // saves, applies, re-reads every control
+        });
+        List<String> restart = RestartPending.changed(config.getSettings());
+        restartNote.setText(tr("settings.restart.pending", restart.size()));
+        SettingsSearch.setShown(restartBox, !restart.isEmpty());
+        sidebar.refresh();
+        if (modifiedOnly.isSelected() || SettingsSearch.wantsModified(searchField.getText())) {
+            filter(searchField.getText()); // a row put back to its default leaves the list
+        }
+    }
+
+    private SettingsModified modified; // which rows differ from their defaults (built with the pages)
+    private Map<Object, Integer> modifiedPerPage = Map.of();
+    private final javafx.scene.control.ToggleButton modifiedOnly =
+            new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
+    private final Label restartNote = new Label();
+    private final HBox restartBox = new HBox(8);
+    private Runnable onRestart;
+
+    /** What "Restart now" runs (the {@code app.restart} command: quit after the usual questions, start again). */
+    public void setOnRestart(Runnable onRestart) {
+        this.onRestart = onRestart;
     }
 
     /**
