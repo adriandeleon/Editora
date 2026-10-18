@@ -226,6 +226,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The text is not part of the file: it is never copied, searched, saved or undone.
   - Settings → Web → HTTP Client → **Show results after each request line** (on), or `HTTP: Toggle Results After
     Request Lines`.
+- **Run Configurations → Main class has a Browse… button**: pick the `.java` file and the fully qualified class
+  name is filled in (`src/main/java/test/App.java` → `test.App`), from the file's `main` method or else its
+  package and name. A configuration still called "New Configuration" is renamed after the class.
 
 ### Changed
 
@@ -381,6 +384,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **When the system had no file watcher to give** (Linux: inotify instances used up), the project tree and language
   servers silently stopped following the disk. They now check folders every 2 seconds.
 - **Plugins: Set Registry URL** accepted an address that is not https; it now refuses it like the Settings field.
+- **A submenu's › arrow sat in the middle of its menu** (VCS → Changes, Branches, …), just past the longest
+  submenu name. It now sits at the menu's right edge, past the shortcut column.
 - **A Markdown code span after a stray double backtick rendered as plain text** (``` `` `a` `c` ``` showed
   `` `c` `` literally): commonmark-java 0.30.1 fixes the regression 0.30.0 brought in.
 - **With a dark UI theme and a light editor theme, the Welcome and Doctor tabs were white blocks** with

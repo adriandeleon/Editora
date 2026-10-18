@@ -2,6 +2,7 @@ package com.editora.run;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -64,6 +65,50 @@ public final class RunConfigDefaults {
         }
         return new com.editora.config.RunConfiguration(
                 script.getFileName().toString(), type, target, "", "", "", "", workingDir, "", "", "");
+    }
+
+    /**
+     * The main class a {@code .java} file picked with Run Configurations → Main class → <b>Browse…</b> launches,
+     * so nobody has to work a fully qualified name out by hand. A {@code static void main} the file declares
+     * wins (the one in the class named after the file first); otherwise the file's package plus its name — a
+     * Java 25 instance {@code void main()} or a multi-line signature the scanner does not see still runs as
+     * that class. Null when {@code fileName} is not a {@code .java} file.
+     */
+    public static String mainClassForSource(String source, String fileName) {
+        if (fileName == null || !fileName.endsWith(".java") || fileName.length() == ".java".length()) {
+            return null;
+        }
+        String stem = fileName.substring(0, fileName.length() - ".java".length());
+        List<MainMethodScanner.MainMethod> mains = MainMethodScanner.scan(source);
+        for (MainMethodScanner.MainMethod main : mains) {
+            if (nameFor(main.fqn(), "").equals(stem)) {
+                return main.fqn();
+            }
+        }
+        if (!mains.isEmpty()) {
+            return mains.get(0).fqn();
+        }
+        String pkg = MainMethodScanner.packageOf(source);
+        return pkg.isEmpty() ? stem : pkg + "." + stem;
+    }
+
+    /**
+     * The name a configuration gets when its main class changes from {@code oldMainClass} to
+     * {@code newMainClass}: still named after nothing in particular — blank, "New Configuration" or the old
+     * class ({@code (2)}-suffixed or not) — it is renamed after the new class, as Add would have named it;
+     * a name the user typed is kept.
+     */
+    public static String renamedForMainClass(
+            String currentName,
+            String oldMainClass,
+            String newMainClass,
+            String fallbackName,
+            Collection<String> otherNames) {
+        String stem = currentName == null ? "" : currentName.strip().replaceFirst(" \\(\\d+\\)$", "");
+        boolean placeholder = stem.isEmpty()
+                || stem.equalsIgnoreCase(fallbackName)
+                || stem.equalsIgnoreCase(nameFor(oldMainClass, fallbackName));
+        return placeholder ? uniqueName(nameFor(newMainClass, fallbackName), otherNames) : currentName;
     }
 
     /** {@code cfg} renamed with a {@link #uniqueName} among {@code existingNames}. */

@@ -130,4 +130,61 @@ class RunConfigDefaultsTest {
                 outside.getParent().toString(),
                 RunConfigDefaults.forScript("python", outside, root).workingDir());
     }
+
+    @Test
+    void aPickedJavaFileLaunchesItsMainClass() {
+        String app = """
+                package test;
+
+                /** Hello world! */
+                public class App {
+                    public static void main(String[] args) {}
+                }
+                """;
+        assertEquals("test.App", RunConfigDefaults.mainClassForSource(app, "App.java"));
+        assertEquals("App", RunConfigDefaults.mainClassForSource("class App {}", "App.java"), "default package");
+    }
+
+    @Test
+    void aFileWithoutAStaticMainStillNamesItsClass() {
+        // A Java 25 instance main, or a signature the scanner does not see: the file's class is the one to run.
+        String instanceMain = "package com.example.tools;\n\nclass Report {\n    void main() {}\n}\n";
+        assertEquals("com.example.tools.Report", RunConfigDefaults.mainClassForSource(instanceMain, "Report.java"));
+        assertEquals("Empty", RunConfigDefaults.mainClassForSource("", "Empty.java"), "an unreadable file");
+    }
+
+    @Test
+    void theMainOfTheClassNamedAfterTheFileWins() {
+        String two = """
+                package p;
+                class Helper { public static void main(String[] a) {} }
+                public class Tool { public static void main(String[] a) {} }
+                """;
+        assertEquals("p.Tool", RunConfigDefaults.mainClassForSource(two, "Tool.java"));
+        String other = "package p;\nclass Launcher {\n    public static void main(String[] a) {}\n}\n";
+        assertEquals("p.Launcher", RunConfigDefaults.mainClassForSource(other, "Tool.java"));
+    }
+
+    @Test
+    void onlyAJavaFileHasAMainClass() {
+        assertEquals(null, RunConfigDefaults.mainClassForSource("print('hi')", "tool.py"));
+        assertEquals(null, RunConfigDefaults.mainClassForSource("", ".java"));
+        assertEquals(null, RunConfigDefaults.mainClassForSource("", null));
+    }
+
+    @Test
+    void aPlaceholderNameFollowsThePickedClass() {
+        List<String> others = List.of("Server");
+        assertEquals("App", RunConfigDefaults.renamedForMainClass("New", "", "test.App", "New", others));
+        assertEquals("App", RunConfigDefaults.renamedForMainClass("New (2)", "", "test.App", "New", others));
+        assertEquals("App", RunConfigDefaults.renamedForMainClass("", "", "test.App", "New", others));
+        assertEquals("App", RunConfigDefaults.renamedForMainClass("Old", "p.Old", "test.App", "New", others));
+        assertEquals("App (2)", RunConfigDefaults.renamedForMainClass("New", "", "test.App", "New", List.of("App")));
+    }
+
+    @Test
+    void aNameTheUserTypedIsKept() {
+        assertEquals("Demo", RunConfigDefaults.renamedForMainClass("Demo", "p.Old", "test.App", "New", List.of()));
+        assertEquals("Demo", RunConfigDefaults.renamedForMainClass("Demo", "", "test.App", "New", List.of()));
+    }
 }
