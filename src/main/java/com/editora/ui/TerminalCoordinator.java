@@ -98,6 +98,7 @@ final class TerminalCoordinator {
                 return List.of(here, find);
             });
             panel.setOnError(host::setError);
+            panel.setPasteGuard(this::confirmMultilinePaste);
             panel.setLinkActions(new LinkActions() {
                 @Override
                 public void openUrl(String url) {
@@ -244,7 +245,9 @@ final class TerminalCoordinator {
                 s.getTerminalShell(),
                 s.getTerminalIdeCommands(),
                 s.isTerminalConfirmClose(),
-                s.isTerminalTypeAhead());
+                s.isTerminalTypeAhead(),
+                s.isTerminalMacOptionIsMeta(),
+                s.isTerminalConfirmMultilinePaste());
     }
 
     /**
@@ -466,6 +469,34 @@ final class TerminalCoordinator {
             }
             return connector;
         };
+    }
+
+    /**
+     * Asks before pasting several lines into a program without bracketed paste, where each line runs as it arrives.
+     * "Don't ask again" turns the question off in Settings.
+     */
+    private boolean confirmMultilinePaste(String text) {
+        long lines = text.strip().lines().count();
+        ButtonType paste = new ButtonType(tr("terminal.paste.confirm"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, ButtonType.CANCEL));
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("terminal.paste.title"));
+        confirm.setHeaderText(null);
+        javafx.scene.control.CheckBox dontAsk = new javafx.scene.control.CheckBox(tr("terminal.paste.dontAsk"));
+        confirm.getDialogPane().setExpandableContent(null);
+        confirm.getDialogPane().setContent(new javafx.scene.layout.VBox(
+                10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
+        ((Button) confirm.getDialogPane().lookupButton(paste)).setDefaultButton(false);
+        ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
+        boolean ok = confirm.showAndWait().orElse(ButtonType.CANCEL) == paste;
+        if (ok && dontAsk.isSelected()) {
+            host.settings().setTerminalConfirmMultilinePaste(false);
+            host.requestSave();
+            host.syncSettingsWindow();
+            applySettings();
+        }
+        return ok;
     }
 
     /** Asks before ending a shell that is running something; Cancel is the default, so Enter keeps it. */

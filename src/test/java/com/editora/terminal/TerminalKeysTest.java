@@ -35,7 +35,8 @@ class TerminalKeysTest {
     void theAllowListReachesEditora() {
         assertTrue(TerminalKeys.reachesEditora("C-S-p", "palette.show", DEFAULTS, false));
         assertTrue(TerminalKeys.reachesEditora("M-f12", "tool.terminal", DEFAULTS, false), "hide the terminal");
-        assertTrue(TerminalKeys.reachesEditora("M-1", "tool.project", DEFAULTS, false));
+        assertFalse(TerminalKeys.reachesEditora("M-1", "tool.project", DEFAULTS, false), "readline's digit-argument");
+        assertTrue(TerminalKeys.reachesEditora("M-1", "tool.project", List.of("tool.*", "M-1"), false), "unless listed");
         assertTrue(TerminalKeys.reachesEditora("C-S-back-quote", "terminal.new", DEFAULTS, false));
     }
 
@@ -99,5 +100,53 @@ class TerminalKeysTest {
         assertFalse(TerminalKeys.reachesEditora("C-S-f", "tool.find", List.of("tool.*"), false));
         assertFalse(TerminalKeys.reachesEditora("Cmd-f", "find.show", List.of(), true));
         assertTrue(TerminalKeys.reachesEditora("Cmd-g", "find.next", List.of(), true));
+    }
+
+    @Test
+    void noBundledKeymapTakesAShellKeyFromAFocusedTerminal() {
+        // Walks every keymap: a bare Ctrl+letter, Alt+letter, Alt+digit or F-key bound to something Editora lets
+        // through must stay with the shell, apart from the terminal's own commands and Emacs's M-x palette.
+        List<String> wrong = new java.util.ArrayList<>();
+        for (String name : List.of("emacs", "intellij", "vscode", "cua", "sublime")) {
+            for (boolean mac : new boolean[] {false, true}) {
+                com.editora.command.KeymapManager.defaults(name, mac).forEach((token, id) -> {
+                    if (token.contains(" ")) return; // a sequence: its first chord is a prefix, the shell's
+                    boolean reaches = TerminalKeys.reachesEditora(token, id, DEFAULTS, mac);
+                    boolean ownOrPalette = id.equals("tool.terminal")
+                            || id.startsWith("terminal.")
+                            || (id.equals("palette.show") && token.equals("M-x"));
+                    if (reaches && TerminalKeys.isShellChord(token) && !ownOrPalette) {
+                        wrong.add(name + (mac ? ".mac" : "") + " " + token + " -> " + id);
+                    }
+                });
+            }
+        }
+        assertEquals(List.of(), wrong);
+    }
+
+    @Test
+    void theKeysTheReviewFoundTakenNowReachTheShell() {
+        var intellij = com.editora.command.KeymapManager.defaults("intellij", false);
+        var vscode = com.editora.command.KeymapManager.defaults("vscode", false);
+        var emacs = com.editora.command.KeymapManager.defaults("emacs", false);
+        assertFalse(TerminalKeys.reachesEditora("C-k", intellij.get("C-k"), DEFAULTS, false), "kill-line");
+        assertFalse(TerminalKeys.reachesEditora("M-4", intellij.get("M-4"), DEFAULTS, false));
+        assertFalse(TerminalKeys.reachesEditora("C-b", vscode.get("C-b"), DEFAULTS, false), "tmux's prefix");
+        assertFalse(TerminalKeys.reachesEditora("f1", vscode.get("f1"), DEFAULTS, false), "help in htop and mc");
+        assertFalse(TerminalKeys.reachesEditora("M-1", emacs.get("M-1"), DEFAULTS, false));
+        assertTrue(TerminalKeys.reachesEditora("M-x", emacs.get("M-x"), DEFAULTS, false), "the Emacs palette stays");
+        assertTrue(TerminalKeys.reachesEditora("M-f12", intellij.get("M-f12"), DEFAULTS, false), "IntelliJ's way out");
+        assertTrue(TerminalKeys.reachesEditora("C-back-quote", vscode.get("C-back-quote"), DEFAULTS, false));
+        assertTrue(TerminalKeys.reachesEditora("C-S-p", vscode.get("C-S-p"), DEFAULTS, false), "the palette");
+    }
+
+    @Test
+    void shellChords() {
+        for (String t : List.of("C-k", "M-x", "M-1", "f1", "S-f1", "C-M-f", "escape", "a", "C-[")) {
+            assertTrue(TerminalKeys.isShellChord(t), t);
+        }
+        for (String t : List.of("C-S-p", "M-S-x", "M-f12", "C-back-quote", "C-S-back-quote", "Cmd-k", "C-pagedown")) {
+            assertFalse(TerminalKeys.isShellChord(t), t);
+        }
     }
 }

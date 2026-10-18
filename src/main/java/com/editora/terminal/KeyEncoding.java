@@ -211,7 +211,7 @@ public final class KeyEncoding {
     }
 
     /** The pasted text without the control characters a paste must not deliver (see {@link #encodePaste}). */
-    static String pasteText(String text) {
+    public static String pasteText(String text) {
         StringBuilder out = null;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);

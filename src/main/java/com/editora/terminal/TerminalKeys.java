@@ -10,8 +10,15 @@ import javafx.scene.input.KeyEvent;
  *
  * <p>The shell owns the keyboard: Ctrl+C is SIGINT, Ctrl+W deletes a word, Ctrl+R searches history, Escape is
  * vim's, and Emacs's C-x is Emacs's. Editora gets back only the commands named in the allow-list (by default
- * the tool-window toggles, the command palette and Search Everywhere), plus, on macOS, every Cmd chord — Cmd
+ * the tool windows, the command palette and Search Everywhere), plus, on macOS, every Cmd chord — Cmd
  * means nothing to a shell, so taking it costs the shell nothing.
+ *
+ * <p>An allowed command passes only on a chord a shell does not use ({@link #isShellChord}): a bare
+ * Ctrl+letter, Alt+letter, Alt+digit or F-key stays with the shell whatever a keymap binds to it. Going by the
+ * command alone took IntelliJ's Ctrl+K (kill-line) and VS Code's Ctrl+B (backward-char, tmux's prefix) and F1 from
+ * the shell. The terminal's own commands ({@code tool.terminal}, {@code terminal.*}) pass on any chord, and so does
+ * the Emacs keymap's M-x for the palette (adl's call). A chord typed into the setting itself ({@code M-1}) passes
+ * whatever it is bound to.
  *
  * <p>The terminal's own Copy and Paste are Ctrl+Shift+C/V off macOS and Cmd+C/V on it: plain Ctrl+C and Ctrl+V
  * belong to the shell (SIGINT, readline's literal-next).
@@ -43,7 +50,68 @@ public final class TerminalKeys {
         if (mac && token.contains("Cmd-")) {
             return true;
         }
-        return commandId != null && matches(commandId, ideCommands);
+        if (commandId == null) {
+            return false;
+        }
+        if (listsChord(token, ideCommands)) {
+            return true;
+        }
+        if (!matches(commandId, ideCommands)) {
+            return false;
+        }
+        if (commandId.equals("tool.terminal") || commandId.startsWith("terminal.")) {
+            return true; // the terminal's own: there must always be a way out of it
+        }
+        if (commandId.equals("palette.show") && token.equals("M-x")) {
+            return true; // the Emacs keymap's palette, kept from inside a terminal
+        }
+        return !isShellChord(token);
+    }
+
+    /** Whether the allow-list names {@code token} itself (an entry without a dot is a chord, not a command id). */
+    static boolean listsChord(String token, List<String> ideCommands) {
+        if (ideCommands == null) {
+            return false;
+        }
+        for (String entry : ideCommands) {
+            String e = entry == null ? "" : entry.strip();
+            if (!e.isEmpty() && !e.contains(".") && e.equals(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a chord token is one shells and terminal programs use: any key with no modifier or Shift alone
+     * (typing, F-keys, arrows), and a character key with Ctrl, Alt or both (control bytes, Meta, C-M chords).
+     * Ctrl+Shift+letter, Alt+Shift+letter, Alt+F12 and Ctrl+` are not.
+     */
+    static boolean isShellChord(String token) {
+        boolean ctrl = false;
+        boolean alt = false;
+        boolean shift = false;
+        String key = token;
+        while (true) {
+            if (key.startsWith("C-") && key.length() > 2) {
+                ctrl = true;
+                key = key.substring(2);
+            } else if (key.startsWith("M-") && key.length() > 2) {
+                alt = true;
+                key = key.substring(2);
+            } else if (key.startsWith("S-") && key.length() > 2) {
+                shift = true;
+                key = key.substring(2);
+            } else if (key.startsWith("Cmd-") && key.length() > 4) {
+                return false;
+            } else {
+                break;
+            }
+        }
+        if (!ctrl && !alt) {
+            return true;
+        }
+        return !shift && key.length() == 1;
     }
 
     /** Whether {@code commandId} is in an allow-list of exact ids and {@code prefix.*} entries. */

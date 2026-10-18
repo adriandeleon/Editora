@@ -64,7 +64,22 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             String shell,
             List<String> ideCommands,
             boolean confirmClose,
-            boolean typeAhead) {
+            boolean typeAhead,
+            boolean macOptionIsMeta,
+            boolean confirmMultilinePaste) {
+
+        Config(
+                String fontFamily,
+                double fontSize,
+                int scrollback,
+                TerminalCursor cursor,
+                boolean bell,
+                String shell,
+                List<String> ideCommands,
+                boolean confirmClose,
+                boolean typeAhead) {
+            this(fontFamily, fontSize, scrollback, cursor, bell, shell, ideCommands, confirmClose, typeAhead, false, true);
+        }
 
         Config(
                 String fontFamily,
@@ -231,6 +246,18 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     /** What a tab's chip says about where its shell runs ("Local", a host name). */
     void setTargetLabel(java.util.function.Function<Path, String> targetLabel) {
         this.targetLabel = targetLabel == null ? dir -> tr("terminal.target.local") : targetLabel;
+    }
+
+    /** Whether Alt/Option is Meta in a terminal: always off macOS; on it, only when the setting says so. */
+    static boolean altIsMeta(boolean mac, boolean macOptionIsMeta) {
+        return !mac || macOptionIsMeta;
+    }
+
+    /** Asks whether to paste several lines into a program that would run each at once; true pastes. */
+    private java.util.function.Predicate<String> pasteGuard = text -> true;
+
+    void setPasteGuard(java.util.function.Predicate<String> pasteGuard) {
+        this.pasteGuard = pasteGuard == null ? text -> true : pasteGuard;
     }
 
     /** Where a shell that failed to start says why. */
@@ -738,6 +765,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         view.setPreferredCursor(config.cursor());
         view.setBellEnabled(config.bell());
         view.setTypeAhead(config.typeAhead());
+        // Option composes on macOS unless the user asked for Meta; Alt is Meta everywhere else (AltGr composes).
+        view.setAltIsMeta(altIsMeta(MAC, config.macOptionIsMeta()));
+        view.setPasteGuard(text -> !config.confirmMultilinePaste() || pasteGuard.test(text));
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);

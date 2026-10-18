@@ -2209,10 +2209,23 @@ public final class TerminalView extends Region {
         return whole;
     }
 
+    /**
+     * Asked before a paste of several lines reaches a program that has not turned on bracketed paste — sh, a REPL,
+     * an older remote shell — where every line runs as it arrives. False drops the paste.
+     */
+    private java.util.function.Predicate<String> pasteGuard = text -> true;
+
+    public void setPasteGuard(java.util.function.Predicate<String> pasteGuard) {
+        this.pasteGuard = pasteGuard == null ? text -> true : pasteGuard;
+    }
+
     /** Pastes the clipboard, honouring bracketed-paste mode if the shell enabled it. */
     public void paste() {
         String text = Clipboard.getSystemClipboard().getString();
         if (text == null || text.isEmpty() || session == null) return;
+        if (!display.isBracketedPaste() && KeyEncoding.pasteText(text).strip().contains("\n") && !pasteGuard.test(text)) {
+            return;
+        }
         snapToLive();
         session.send(KeyEncoding.encodePaste(text, display.isBracketedPaste()));
     }

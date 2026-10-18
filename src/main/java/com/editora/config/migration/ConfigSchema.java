@@ -275,7 +275,11 @@ public enum ConfigSchema {
                     Map.entry(131, (Migration) ConfigMigrations::identity),
                     // v132→133: + terminalTypeAhead (on) and debugProgramInTerminal (off); additive, absent is the
                     // default.
-                    Map.entry(132, (Migration) ConfigMigrations::identity)),
+                    Map.entry(132, (Migration) ConfigMigrations::identity),
+                    // v133→134: + terminalMacOptionIsMeta (off: Option composes, as in Terminal.app) and
+                    // terminalConfirmMultilinePaste (on), both additive; the scrollback maximum drops from 100,000
+                    // to 50,000 lines (about 94 MB a tab at the old cap), so a larger value is clamped to it.
+                    Map.entry(133, (Migration) ConfigMigrations::clampTerminalScrollback)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

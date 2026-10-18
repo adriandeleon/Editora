@@ -181,7 +181,8 @@ class TerminalPanelFxTest {
             return null;
         });
         assertFalse(rule.test("C-S-p", "palette.show"), "the allow-list comes from the settings");
-        assertTrue(rule.test("C-s", "file.save"));
+        assertTrue(rule.test("C-S-s", "file.save"));
+        assertFalse(rule.test("C-s", "file.save"), "C-s is the shell's (XOFF, readline's forward search) unless listed");
     }
 
     @Test
@@ -930,6 +931,43 @@ class TerminalPanelFxTest {
         program.exit(0);
         await(() -> !exits.isEmpty(), "its end");
         assertEquals(List.of(0), exits);
+    }
+
+    @Test
+    void optionComposesOnMacUnlessTheSettingMakesItMeta() {
+        assertFalse(TerminalPanel.altIsMeta(true, false), "macOS default: @ [ ] { } on Option chords can be typed");
+        assertTrue(TerminalPanel.altIsMeta(true, true));
+        assertTrue(TerminalPanel.altIsMeta(false, false), "Alt is Meta on Linux and Windows");
+    }
+
+    @Test
+    void aMultiLinePasteIntoAProgramWithoutBracketedPasteAsksFirst() throws Exception {
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.setPasteGuard(text -> {
+                asked.add(text);
+                return false; // Cancel
+            });
+            panel.newTerminal();
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("echo one\necho two\n");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            panel.activeView().paste();
+            return null;
+        });
+        assertEquals(1, asked.size(), "asked");
+        Thread.sleep(200);
+        assertEquals("", shells.get(0).written(), "and Cancel pasted nothing");
+
+        shells.get(0).emit("\u001b[?2004h"); // bash turns bracketed paste on
+        await(() -> call(() -> panel.activeView().getDisplay().isBracketedPaste()), "bracketed paste");
+        fx(() -> {
+            panel.activeView().paste();
+            return null;
+        });
+        await(() -> shells.get(0).written().contains("echo two"), "the paste, unasked");
+        assertEquals(1, asked.size());
     }
 
     @Test
