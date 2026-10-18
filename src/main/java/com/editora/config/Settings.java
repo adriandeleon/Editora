@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 134;
+    public static final int SCHEMA_VERSION = 135;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -701,6 +701,17 @@ public class Settings {
     private boolean terminalTypeAhead = true;
     /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
     private boolean terminalUseExternal = false;
+    /**
+     * macOS: the Option key is Meta in a terminal (ESC + key, readline's M-b/M-f) instead of composing characters.
+     * Off by default, as in Terminal.app: on many layouts @ [ ] { } | ~ are Option chords. Alt is always Meta on
+     * Linux and Windows, where AltGr composes.
+     */
+    private boolean terminalMacOptionIsMeta = false;
+    /** Ask before pasting several lines into a program that has not turned on bracketed paste. */
+    private boolean terminalConfirmMultilinePaste = true;
+
+    /** The most scrollback a terminal keeps: about a megabyte per thousand lines, per tab. */
+    public static final int TERMINAL_SCROLLBACK_MAX = 50_000;
 
     /**
      * The commands a focused terminal still lets through; every other key goes to the shell. Exact ids or
@@ -3013,11 +3024,11 @@ public class Settings {
 
     /** Clamped on read too: a hand-edited million-line scrollback would exhaust memory at the next tab. */
     public int getTerminalScrollback() {
-        return Math.clamp(terminalScrollback, 0, 100_000);
+        return Math.clamp(terminalScrollback, 0, TERMINAL_SCROLLBACK_MAX);
     }
 
     public void setTerminalScrollback(int terminalScrollback) {
-        this.terminalScrollback = Math.clamp(terminalScrollback, 0, 100_000);
+        this.terminalScrollback = Math.clamp(terminalScrollback, 0, TERMINAL_SCROLLBACK_MAX);
     }
 
     public int getTerminalFontSize() {
@@ -3085,6 +3096,22 @@ public class Settings {
 
     public void setTerminalUseExternal(boolean terminalUseExternal) {
         this.terminalUseExternal = terminalUseExternal;
+    }
+
+    public boolean isTerminalMacOptionIsMeta() {
+        return terminalMacOptionIsMeta;
+    }
+
+    public void setTerminalMacOptionIsMeta(boolean terminalMacOptionIsMeta) {
+        this.terminalMacOptionIsMeta = terminalMacOptionIsMeta;
+    }
+
+    public boolean isTerminalConfirmMultilinePaste() {
+        return terminalConfirmMultilinePaste;
+    }
+
+    public void setTerminalConfirmMultilinePaste(boolean terminalConfirmMultilinePaste) {
+        this.terminalConfirmMultilinePaste = terminalConfirmMultilinePaste;
     }
 
     public java.util.List<String> getTerminalIdeCommands() {

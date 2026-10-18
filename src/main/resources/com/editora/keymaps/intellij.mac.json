@@ -75,5 +75,6 @@
   "Cmd-f5": "debug.restart",
   "S-f7": "debug.smartStepInto",
   "Cmd-f9": "debug.applyCodeChanges",
-  "M-f12": "tool.terminal"
+  "M-f12": "tool.terminal",
+  "S-escape": "terminal.focusEditor"
 }

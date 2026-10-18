@@ -8,6 +8,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.BooleanSupplier;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.testfx.api.FxToolkit;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -155,14 +157,35 @@ class TerminalPanelFxTest {
             panel.newTerminal();
             return null;
         });
+        shells.get(0).emit("copy me\r\n");
+        await(
+                () -> call(() -> panel.activeView()
+                        .getSession()
+                        .getTextBuffer()
+                        .getScreenLines()
+                        .contains("copy me")),
+                "the output");
         fx(() -> {
             var view = panel.activeView();
+            view.selectAll();
+            javafx.scene.input.ClipboardContent empty = new javafx.scene.input.ClipboardContent();
+            empty.putString("");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(empty);
             Event.fireEvent(
                     view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, !mac, !mac, false, mac)); // copy
-            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, false, true, false, false));
             return null;
         });
-
+        assertTrue(
+                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard()
+                        .getString()
+                        .contains("copy me")),
+                "the selection is on the clipboard");
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.C, false, true, false, false));
+            return null;
+        });
         await(() -> shells.get(0).written().equals("\u0003"), "only the plain Ctrl+C on the wire");
     }
 
@@ -181,7 +204,9 @@ class TerminalPanelFxTest {
             return null;
         });
         assertFalse(rule.test("C-S-p", "palette.show"), "the allow-list comes from the settings");
-        assertTrue(rule.test("C-s", "file.save"));
+        assertTrue(rule.test("C-S-s", "file.save"));
+        assertFalse(
+                rule.test("C-s", "file.save"), "C-s is the shell's (XOFF, readline's forward search) unless listed");
     }
 
     @Test
@@ -280,7 +305,8 @@ class TerminalPanelFxTest {
             panel.newTerminal();
             return null;
         });
-        shells.get(0).emit(file + ":12:3\r\nsee https://example.com/docs\r\n");
+        // The URL first: a long temp path (macOS's /var/folders/…) can wrap onto a second row.
+        shells.get(0).emit("see https://example.com/docs\r\n" + file + ":12:3\r\n");
         await(() -> call(() -> screen().contains("example.com")), "the output on screen");
         // A click is only a link once the view has a size: before its first layout every point is outside it.
         await(
@@ -288,10 +314,10 @@ class TerminalPanelFxTest {
                         panel.activeView().getWidth() > 0 && panel.activeView().getHeight() > 0),
                 "a layout");
 
-        clickWithLinkModifier(1, 0); // a column inside the path on the first row
-        clickWithLinkModifier(6, 1); // inside the URL on the second row
+        clickWithLinkModifier(6, 0); // inside the URL on the first row
+        clickWithLinkModifier(1, 1); // a column inside the path on the second row
 
-        assertEquals(List.of(file + ":12:3", "url https://example.com/docs"), opened);
+        assertEquals(List.of("url https://example.com/docs", file + ":12:3"), opened);
     }
 
     @Test
@@ -340,6 +366,47 @@ class TerminalPanelFxTest {
                 "hovering shows where the link really goes");
         mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_MOVED, 12, 0);
         assertEquals(null, fx(() -> panel.activeView().linkTipText()), "and hides off it");
+    }
+
+    @Test
+    void aRemoteShellsLinkIsCheckedOffTheFxThread(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        // A file system other than this machine's stands in for SFTP, where every check asks the host.
+        try (var remote =
+                java.nio.file.FileSystems.newFileSystem(dir.resolve("host.zip"), java.util.Map.of("create", "true"))) {
+            java.nio.file.Files.writeString(remote.getPath("/notes.txt"), "x");
+            List<String> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+            show(fakeShells(), (title, programs) -> true, remote.getPath("/"));
+            fx(() -> {
+                panel.setShellPaths(d -> p -> remote.getPath(p));
+                panel.setLinkActions(new com.editora.terminal.LinkActions() {
+                    @Override
+                    public void openUrl(String url) {}
+
+                    @Override
+                    public void openFile(Path f, int line, int column) {
+                        opened.add(f.toString());
+                    }
+                });
+                panel.newTerminal();
+                return null;
+            });
+            shells.get(0).emit("see /notes.txt\r\n");
+            await(() -> call(() -> screen().contains("notes")), "the output");
+            await(() -> call(() -> panel.activeView().getWidth() > 0), "a layout");
+            clickWithLinkModifier(6, 0);
+            assertEquals(List.of(), opened, "not asked of the host on the FX thread: no link until it answers");
+            await(
+                    () -> {
+                        try {
+                            clickWithLinkModifier(6, 0);
+                        } catch (Exception e) {
+                            return false;
+                        }
+                        return !opened.isEmpty();
+                    },
+                    "the link, once the host said the file is there");
+            assertEquals("/notes.txt", opened.getFirst());
+        }
     }
 
     /** A primary press with the platform's link modifier (Cmd on macOS, Ctrl elsewhere) at a cell. */
@@ -461,11 +528,8 @@ class TerminalPanelFxTest {
     }
 
     private javafx.scene.control.Button reconnectButton() {
-        var content = (javafx.scene.layout.StackPane) panel.activeTab().getContent();
-        return content.getChildren().stream()
-                .filter(n -> n.getStyleClass().contains("terminal-lost-banner"))
-                .map(n -> (javafx.scene.layout.HBox) n)
-                .flatMap(box -> box.getChildren().stream())
+        var banner = (javafx.scene.layout.HBox) panel.activeTab().getContent().lookup(".terminal-lost-banner");
+        return banner.getChildren().stream()
                 .filter(n -> n instanceof javafx.scene.control.Button)
                 .map(n -> (javafx.scene.control.Button) n)
                 .findFirst()
@@ -497,12 +561,24 @@ class TerminalPanelFxTest {
             return null;
         });
         assertTrue(fx(() -> panel.findBar().isShowing()), "the chord opened the bar");
-        assertTrue(shells.get(0).written().isEmpty(), "and nothing reached the shell");
+        // The emulator writes on its own thread, so a leaked chord would arrive late: send a key after it and
+        // wait for that, then nothing else may be there.
         fx(() -> {
-            panel.findBar().field().setText("beta");
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_TYPED, "z", "z", KeyCode.UNDEFINED, false, false, false, false));
             return null;
         });
-        assertEquals("2 of 2", fx(() -> panel.findBar().countText()));
+        await(() -> shells.get(0).written().contains("z"), "the key sent after the chord");
+        assertEquals("z", shells.get(0).written(), "and nothing of the chord reached the shell");
+        String early = fx(() -> {
+            panel.findBar().field().setText("b");
+            panel.findBar().field().setText("be");
+            panel.findBar().field().setText("beta");
+            return panel.findBar().countText();
+        });
+        assertEquals("", early, "typing does not scan the scrollback per keystroke");
+        await(() -> call(() -> panel.findBar().countText().equals("2 of 2")), "the search once the query settled");
 
         fx(() -> {
             Event.fireEvent(
@@ -544,7 +620,10 @@ class TerminalPanelFxTest {
             return null;
         });
         assertTrue(program.wasClosed());
-        Thread.sleep(300);
+        // The program's end arrives after its tab's close: let it, then it must not have been told twice.
+        await(() -> call(() -> panel.terminalCount() == 0), "the tab gone");
+        fx(() -> null);
+        fx(() -> null);
         assertEquals(List.of(-1), exits);
     }
 
@@ -763,6 +842,368 @@ class TerminalPanelFxTest {
             openedIn.add(dir);
             return connector;
         };
+    }
+
+    @Test
+    void ctrlPageUpAndDownSwitchTerminalTabs() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_DOWN, false, true, false, false));
+            return null;
+        });
+        assertEquals(0, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()), "wraps");
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, false, true, false, false));
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
+        Thread.sleep(200);
+        assertTrue(shells.stream().allMatch(c -> c.written().isEmpty()), "the shells got nothing");
+    }
+
+    @Test
+    void tabsWithTheSameTitleAreNumbered() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        await(
+                () -> call(() -> panel.tabsForTest().getTabs().get(1).getText().endsWith(" (2)")),
+                "the second tab told apart from the first");
+        assertFalse(fx(() -> panel.tabsForTest().getTabs().getFirst().getText().endsWith(")")));
+    }
+
+    @Test
+    void pasteInTheFindFieldPastesTheQueryNotIntoTheShell() throws Exception {
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.find();
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("rm -rf build\n");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            Event.fireEvent(
+                    panel.findBar().field(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.V, !mac, !mac, false, mac));
+            return null;
+        });
+        Thread.sleep(200);
+        assertEquals("", shells.get(0).written(), "nothing reached the shell");
+    }
+
+    @Test
+    void aBellInATabOutOfSightMarksItUntilItIsSelected() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("\u0007");
+        await(
+                () -> call(() ->
+                        panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)),
+                "the first tab's bell mark");
+        fx(() -> {
+            panel.tabsForTest().getSelectionModel().select(0);
+            return null;
+        });
+        assertFalse(fx(
+                () -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)));
+    }
+
+    @Test
+    void theConnectionLostBannerSitsAboveTheTextNotOverIt() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("last words\r\n");
+        shells.get(0).dropConnection();
+        await(() -> call(() -> panel.showsReconnect(panel.activeTab())), "the banner");
+        await(
+                () -> call(() -> {
+                    panel.getScene().getRoot().applyCss();
+                    panel.getScene().getRoot().layout();
+                    var view = panel.activeView();
+                    var banner = panel.activeTab().getContent().lookup(".terminal-lost-banner");
+                    // Layout positions: a focused Reconnect's focus ring draws a little past the banner.
+                    double bannerBottom =
+                            banner.getLayoutY() + banner.getLayoutBounds().getHeight();
+                    return banner.getLayoutBounds().getHeight() > 0 && view.getLayoutY() >= bannerBottom - 0.5;
+                }),
+                "the view starting below the banner");
+    }
+
+    @Test
+    void closingARemoteTabAsksItsHostOffTheFxThread() throws Exception {
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> (columns, rows) -> {
+                    FakeConnector c = (FakeConnector) fake.open(dir, shell).open(columns, rows);
+                    c.remotePid = 4242;
+                    return c;
+                },
+                (title, programs) -> {
+                    asked.add(String.join(",", programs));
+                    return true;
+                },
+                Path.of(System.getProperty("java.io.tmpdir")));
+        fx(() -> {
+            panel.setRemotePrograms((dir, pid) -> {
+                try {
+                    answer.await(10, TimeUnit.SECONDS); // a slow host
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return List.of("vim");
+            });
+            panel.newTerminal();
+            return null;
+        });
+        long t0 = System.nanoTime();
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 1_000, "the FX thread did not wait");
+        assertEquals(1, fx(panel::terminalCount), "the tab stays while the host is asked");
+        assertTrue(fx(() -> panel.isAskingToClose(panel.activeTab())));
+        answer.countDown();
+        await(() -> call(() -> panel.terminalCount() == 0), "the close once the host answered");
+        assertEquals(List.of("vim"), asked);
+    }
+
+    @Test
+    void aProgramOnAnotherMachineOpensOffTheFxThread() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        java.util.concurrent.CountDownLatch hostAnswers = new java.util.concurrent.CountDownLatch(1);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        com.editora.terminal.ProgramRun run = fx(() -> panel.runProgram(
+                "Main",
+                null,
+                com.editora.terminal.TerminalConnector.Factory.slow((c, r) -> {
+                    try {
+                        hostAnswers.await(10, TimeUnit.SECONDS); // an SSH channel opening
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return program;
+                }),
+                exits::add));
+        assertEquals(1, fx(panel::terminalCount), "the tab is there while it connects");
+        assertTrue(run.isRunning());
+        hostAnswers.countDown();
+        await(() -> call(() -> panel.activeView() != null), "the program's view once connected");
+        program.exit(0);
+        await(() -> !exits.isEmpty(), "its end");
+        assertEquals(List.of(0), exits);
+    }
+
+    @Test
+    void optionComposesOnMacUnlessTheSettingMakesItMeta() {
+        assertFalse(TerminalPanel.altIsMeta(true, false), "macOS default: @ [ ] { } on Option chords can be typed");
+        assertTrue(TerminalPanel.altIsMeta(true, true));
+        assertTrue(TerminalPanel.altIsMeta(false, false), "Alt is Meta on Linux and Windows");
+    }
+
+    @Test
+    void aMultiLinePasteIntoAProgramWithoutBracketedPasteAsksFirst() throws Exception {
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.setPasteGuard(text -> {
+                asked.add(text);
+                return false; // Cancel
+            });
+            panel.newTerminal();
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("echo one\necho two\n");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            panel.activeView().paste();
+            return null;
+        });
+        assertEquals(1, asked.size(), "asked");
+        Thread.sleep(200);
+        assertEquals("", shells.get(0).written(), "and Cancel pasted nothing");
+
+        shells.get(0).emit("\u001b[?2004h"); // bash turns bracketed paste on
+        await(() -> call(() -> panel.activeView().getDisplay().isBracketedPaste()), "bracketed paste");
+        fx(() -> {
+            panel.activeView().paste();
+            return null;
+        });
+        await(() -> shells.get(0).written().contains("echo two"), "the paste, unasked");
+        assertEquals(1, asked.size());
+    }
+
+    @Test
+    void theWindowCloseQuestionListsEveryBusyTerminal() throws Exception {
+        TerminalPanel.Shells fake = fakeShells();
+        show(
+                (dir, shell) -> (columns, rows) -> {
+                    FakeConnector c = (FakeConnector) fake.open(dir, shell).open(columns, rows);
+                    c.remotePid = 77;
+                    return c;
+                },
+                (title, programs) -> true,
+                Path.of(System.getProperty("java.io.tmpdir")));
+        FakeConnector program = new FakeConnector();
+        fx(() -> {
+            panel.setRemotePrograms((dir, pid) -> List.of("htop"));
+            panel.newTerminal();
+            panel.runProgram("Build", null, (c, r) -> program, code -> {});
+            return null;
+        });
+        List<String> busy = fx(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)));
+        assertEquals(2, busy.size(), busy.toString());
+        assertTrue(busy.stream().anyMatch(b -> b.endsWith("(htop)")), busy.toString());
+        assertTrue(busy.contains("Build (Build)"), busy.toString());
+
+        program.exit(0);
+        await(
+                () -> call(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)).size() == 1),
+                "an ended program is not busy");
+    }
+
+    @Test
+    void aShellStartedInTheBackgroundGetsTheKeyboardOnlyWhenItWasAskedFor() throws Exception {
+        javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);
+        TerminalPanel.Shells fake = fakeShells();
+        fx(() -> {
+            panel = new TerminalPanel(
+                    (dir, shell) -> com.editora.terminal.TerminalConnector.Factory.background(fake.open(dir, shell)),
+                    (title, programs) -> true,
+                    () -> null);
+            stage = new Stage();
+            stage.setScene(new Scene(new javafx.scene.layout.VBox(editor, panel), 800, 400));
+            stage.show();
+            editor.requestFocus();
+            panel.newTerminalQuietly(); // a restored window's
+            return null;
+        });
+        await(() -> call(() -> panel.activeView() != null), "the quiet shell started");
+        Thread.sleep(200);
+        assertTrue(fx(editor::isFocused), "a quiet start leaves the editor the keyboard");
+
+        fx(() -> {
+            panel.newTerminal(); // asked for
+            return null;
+        });
+        await(
+                () -> call(
+                        () -> panel.activeView() != null && panel.activeView().isFocused()),
+                "the asked-for shell's focus");
+    }
+
+    @Test
+    void runningTheSameProgramAgainReusesItsEndedTab() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        FakeConnector first = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> first, code -> {}));
+        first.exit(0);
+        await(() -> call(() -> panel.exitBanner(panel.activeTab()) != null), "the first run's end");
+
+        AtomicInteger emptied = new AtomicInteger();
+        fx(() -> {
+            panel.setOnLastClosed(emptied::incrementAndGet);
+            return null;
+        });
+        FakeConnector second = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> second, code -> {}));
+        assertEquals(1, fx(panel::terminalCount), "the ended run's tab was reused");
+        assertEquals(0, emptied.get(), "without the window ever seeing no tabs (it would hide)");
+        assertTrue(first.wasClosed() || !first.isConnected());
+
+        FakeConnector third = new FakeConnector();
+        fx(() -> panel.runProgram("App.java", null, (c, r) -> third, code -> {}));
+        assertEquals(2, fx(panel::terminalCount), "a run still going keeps its tab");
+    }
+
+    @Test
+    void tabsCanBeRenamedMovedAndHaveTheirOwnMenu() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            panel.newTerminal();
+            panel.newTerminal();
+            return null;
+        });
+        var first = fx(() -> panel.tabsForTest().getTabs().get(0));
+        var views = fx(panel::viewsForTest);
+
+        fx(() -> {
+            panel.rename(first, "build");
+            return null;
+        });
+        assertEquals("build", fx(first::getText), "a name of the user's own");
+
+        fx(() -> {
+            panel.moveTab(0, 2); // what a drag or Move Tab Right does
+            return null;
+        });
+        assertEquals(2, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)));
+        assertEquals(3, fx(panel::terminalCount), "a move closes nothing");
+        assertTrue(shells.stream().noneMatch(FakeConnector::wasClosed), "and ends no shell");
+        assertEquals(views.size(), fx(() -> panel.viewsForTest().size()));
+
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, true, false, false));
+            return null;
+        });
+        assertEquals(
+                1, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)), "Ctrl+Shift+PageUp moves it left");
+
+        assertTrue(
+                fx(() -> first.getContextMenu() != null
+                        && first.getContextMenu().getItems().stream()
+                                .anyMatch(i -> tr("terminal.tab.rename").equals(i.getText()))),
+                "its own menu");
+        fx(() -> {
+            panel.rename(first, "");
+            return null;
+        });
+        assertFalse(fx(() -> "build".equals(first.getText())), "an empty name gives back the shell's title");
+    }
+
+    @Test
+    void aShellStartedQuietlyLeavesTheKeyboardWhereItWas() throws Exception {
+        // A terminal left open comes back at startup: the editor's keystrokes must not land in a shell.
+        javafx.scene.control.TextField editor = fx(javafx.scene.control.TextField::new);
+        fx(() -> {
+            panel = new TerminalPanel(fakeShells(), (title, programs) -> true, () -> null);
+            stage = new Stage();
+            stage.setScene(new Scene(new javafx.scene.layout.VBox(editor, panel), 800, 400));
+            stage.show();
+            editor.requestFocus();
+            panel.newTerminalQuietly();
+            return null;
+        });
+        assertEquals(1, fx(panel::terminalCount));
+        Thread.sleep(200);
+        assertTrue(fx(editor::isFocused), "the editor kept the keyboard");
     }
 
     private void show(TerminalPanel.Shells source, TerminalPanel.CloseGuard guard, Path dir) throws Exception {

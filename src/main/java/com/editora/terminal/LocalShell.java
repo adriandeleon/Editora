@@ -47,16 +47,16 @@ public final class LocalShell {
     }
 
     /**
-     * @param override an explicit shell path, or blank to use the user's own. An override that is
-     *     not executable is ignored rather than failing the launch — a stale settings entry should
-     *     not leave someone unable to open a terminal at all.
+     * @param override the shell setting: a path or a name found on PATH, then any arguments ({@code /bin/bash
+     *     --norc}, {@code pwsh -NoLogo}), or blank to use the user's own. With no arguments a Unix shell (and Git
+     *     Bash or zsh on Windows) starts as a login shell. An override that cannot be run is ignored rather than
+     *     failing the launch — a stale settings entry should not leave someone unable to open a terminal at all;
+     *     {@link #overrideProblem} says why, for the status line.
      */
     public static List<String> shellCommand(String override) {
-        if (override != null && !override.isBlank()) {
-            Path path = Path.of(override.trim());
-            if (Files.isExecutable(path)) {
-                return isWindows() ? List.of(path.toString()) : List.of(path.toString(), "-l");
-            }
+        List<String> chosen = overrideCommand(override);
+        if (chosen != null) {
+            return chosen;
         }
         if (isWindows()) {
             String pwsh = findOnPath("pwsh.exe");
@@ -72,6 +72,53 @@ public final class LocalShell {
             if (!Files.isExecutable(Path.of(shell))) shell = "/bin/sh";
         }
         return List.of(shell, "-l");
+    }
+
+    /** The override as a command line, or null when it is blank or cannot be run. */
+    static List<String> overrideCommand(String override) {
+        if (override == null || override.isBlank()) {
+            return null;
+        }
+        String[] words = override.strip().split("\\s+");
+        String program = resolveProgram(words[0]);
+        if (program == null) {
+            return null;
+        }
+        List<String> command = new java.util.ArrayList<>();
+        command.add(program);
+        if (words.length > 1) {
+            command.addAll(List.of(words).subList(1, words.length));
+        } else {
+            String name = Path.of(program).getFileName().toString().toLowerCase(Locale.ROOT);
+            boolean loginShell = !isWindows() || name.equals("bash.exe") || name.equals("zsh.exe");
+            if (loginShell) command.add("-l");
+        }
+        return List.copyOf(command);
+    }
+
+    /** A program named by a path, or by a name found on PATH; null when it is neither. */
+    private static String resolveProgram(String word) {
+        try {
+            Path path = Path.of(word);
+            if (path.isAbsolute() || word.contains("/") || word.contains(java.io.File.separator)) {
+                return Files.isExecutable(path) ? path.toString() : null;
+            }
+        } catch (RuntimeException notAPath) {
+            return null;
+        }
+        String found = findOnPath(word);
+        if (found == null && isWindows() && !word.toLowerCase(Locale.ROOT).endsWith(".exe")) {
+            found = findOnPath(word + ".exe");
+        }
+        return found;
+    }
+
+    /** Why the shell setting is not used (null when it is, or is blank), for the status line. */
+    public static String overrideProblem(String override) {
+        if (override == null || override.isBlank() || overrideCommand(override) != null) {
+            return null;
+        }
+        return override.strip().split("\\s+")[0];
     }
 
     /**
@@ -110,20 +157,69 @@ public final class LocalShell {
         // Signals to shells and prompt frameworks that a full-featured terminal is present.
         overrides.put("COLORTERM", "truecolor");
         overrides.put("TERM_PROGRAM", "Editora");
+        overrides.put("TERM_PROGRAM_VERSION", com.editora.AppInfo.VERSION);
         Map<String, String> env = ProcessRunner.applyUserEnv(new HashMap<>(System.getenv()), overrides);
         if (!isWindows()) {
-            // Without a UTF-8 locale the child emits Latin-1 and every non-ASCII glyph is mojibake.
-            // Only fill in when the user has expressed no preference of their own.
-            if (env.get("LANG") == null && env.get("LC_ALL") == null) {
-                env.put("LANG", "en_US.UTF-8");
-            }
+            defaultLocale(env, isMac());
         }
         // Inherited from our own launch (and a launching terminal's size); meaningless to the child, and
         // COLUMNS/LINES would override what the pseudo-terminal reports.
         env.remove("_");
         env.remove("COLUMNS");
         env.remove("LINES");
+        dropLaunchEnvironment(env);
+        isolateForTests(env, System.getProperty(TEST_HOME));
         return env;
+    }
+
+    /**
+     * Variables that describe where Editora itself was started, not the terminal it now provides: started from a
+     * tmux pane, a shell's own tmux refused to nest and `tmux new-window` acted on the outer server; VTE_VERSION
+     * made shells source vte.sh; the AppImage's variables told other AppImages and scripts they were inside
+     * Editora's.
+     */
+    static final java.util.Set<String> LAUNCH_VARIABLES =
+            java.util.Set.of("TMUX", "TMUX_PANE", "STY", "VTE_VERSION", "APPDIR", "APPIMAGE", "ARGV0", "OWD");
+
+    /** Removes {@link #LAUNCH_VARIABLES} and the AppImage runtime's {@code APPRUN_*}. */
+    static void dropLaunchEnvironment(Map<String, String> env) {
+        env.keySet().removeIf(name -> LAUNCH_VARIABLES.contains(name) || name.startsWith("APPRUN_"));
+    }
+
+    /**
+     * A UTF-8 locale when the user has expressed no preference ({@code LANG}, {@code LC_ALL} and {@code LC_CTYPE}
+     * all unset): without one the child emits Latin-1 and every non-ASCII glyph is mojibake. {@code C.UTF-8} on
+     * Linux, which every current glibc has whatever was generated (a forced {@code en_US.UTF-8} that was never
+     * generated made every program print setlocale warnings); {@code en_US.UTF-8} on macOS, which has it built in.
+     */
+    static void defaultLocale(Map<String, String> env, boolean mac) {
+        if (env.get("LANG") == null && env.get("LC_ALL") == null && env.get("LC_CTYPE") == null) {
+            env.put("LANG", mac ? "en_US.UTF-8" : "C.UTF-8");
+        }
+    }
+
+    /**
+     * System property naming a HOME for every shell started here, set by the build's test runs: a test shell then
+     * reads no profile of the developer's and writes no history (it used to append its commands to their
+     * {@code ~/.bash_history}).
+     */
+    static final String TEST_HOME = "editora.terminal.home";
+
+    /** With a test {@code home}: that HOME (created), no history file, and none of the user's startup-file paths. */
+    static void isolateForTests(Map<String, String> env, String home) {
+        if (home == null || home.isBlank()) {
+            return;
+        }
+        try {
+            Files.createDirectories(Path.of(home));
+        } catch (IOException | RuntimeException e) {
+            // the shell falls back to / for a HOME that is not there
+        }
+        env.put("HOME", home);
+        env.put("HISTFILE", "/dev/null");
+        env.remove("ZDOTDIR");
+        env.remove("ENV");
+        env.remove("BASH_ENV");
     }
 
     /**
@@ -165,13 +261,19 @@ public final class LocalShell {
     /**
      * Starts a program (Run in Terminal, a debugged program) on a pseudo-terminal: {@code argv} in {@code directory}
      * with {@code extraEnv} over the user's environment, a null value unsetting a variable. Quitting the program
-     * ends the terminal. The executable is found on the user's augmented PATH, as Run finds it.
+     * ends the terminal. The executable is found on the user's augmented PATH, as Run finds it. A {@code directory}
+     * that is not there fails the start.
      */
     public static LocalPtyConnector startProgram(
             List<String> argv, String directory, int columns, int rows, Map<String, String> extraEnv)
             throws IOException {
         if (argv == null || argv.isEmpty()) {
             throw new IOException("no program to run");
+        }
+        // Unlike a shell, a program does not fall back to the home folder: its relative paths would land there.
+        // Console Run refuses a missing folder too.
+        if (directory != null && !directory.isBlank() && !Files.isDirectory(Path.of(directory.trim()))) {
+            throw new IOException("folder not found: " + directory);
         }
         Map<String, String> env = environment();
         if (extraEnv != null) {
@@ -193,7 +295,7 @@ public final class LocalShell {
                 .setUseWinConPty(true)
                 .setWindowsAnsiColorEnabled(true)
                 .start();
-        return new LocalPtyConnector(process, command);
+        return new LocalPtyConnector(process, command, true);
     }
 
     /**
@@ -203,7 +305,9 @@ public final class LocalShell {
      * whether the scripts exist; adds to {@code env}.
      */
     static List<String> integrated(List<String> login, Path integration, Map<String, String> env) {
-        if (integration == null || login.size() != 2 || !"-l".equals(login.get(1))) {
+        // Not on Windows: Git Bash given as the shell starts as a login shell, but the scripts' paths are this
+        // machine's, which it does not read as its own.
+        if (integration == null || isWindows() || login.size() != 2 || !"-l".equals(login.get(1))) {
             return login;
         }
         String shell = login.get(0);

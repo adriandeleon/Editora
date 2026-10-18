@@ -233,7 +233,7 @@ class MainControllerChromeFxTest {
     }
 
     @Test
-    void revealNeedsAFileOnThisComputerAndTerminalAFile() throws Exception {
+    void revealNeedsAFileOnThisComputerAndTerminalDoesNot() throws Exception {
         FxTestSupport.runOnFx(() -> {
             controller.setStatus("unchanged");
             FxTestSupport.invoke(controller, "revealActiveBuffer");
@@ -245,7 +245,10 @@ class MainControllerChromeFxTest {
             assertEquals(tr("status.reveal.noFile"), echo());
             controller.setStatus("");
             FxTestSupport.invoke(controller, "openTerminalForActiveBuffer");
-            assertEquals(tr("status.reveal.noFile"), echo());
+            assertEquals("", echo(), "an unsaved file is no reason to refuse");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    controller.terminalCoordinator.panel().hasTerminals(),
+                    "a terminal opens where tool.terminal would open one");
 
             // A file on a remote site has no folder a local file manager could show. A terminal can: Open Terminal
             // Here on a remote folder opens one on its host (RemoteTerminalPanelFxTest), so it is not refused here.

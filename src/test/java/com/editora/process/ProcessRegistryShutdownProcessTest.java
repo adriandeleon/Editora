@@ -72,4 +72,91 @@ class ProcessRegistryShutdownProcessTest {
             child.destroyForcibly();
         }
     }
+
+    /** A shell stand-in: ended by its hang-up, as an interactive shell is when its terminal closes. */
+    private static final class Shell extends Process implements ProcessRegistry.HangsUp {
+        private final Process p;
+        int hangUps;
+
+        Shell(Process p) {
+            this.p = p;
+        }
+
+        @Override
+        public void hangUp() {
+            hangUps++;
+            p.destroy();
+        }
+
+        @Override
+        public java.io.OutputStream getOutputStream() {
+            return p.getOutputStream();
+        }
+
+        @Override
+        public java.io.InputStream getInputStream() {
+            return p.getInputStream();
+        }
+
+        @Override
+        public java.io.InputStream getErrorStream() {
+            return p.getErrorStream();
+        }
+
+        @Override
+        public int waitFor() throws InterruptedException {
+            return p.waitFor();
+        }
+
+        @Override
+        public int exitValue() {
+            return p.exitValue();
+        }
+
+        @Override
+        public void destroy() {
+            p.destroy();
+        }
+
+        @Override
+        public Process destroyForcibly() {
+            return p.destroyForcibly();
+        }
+
+        @Override
+        public boolean isAlive() {
+            return p.isAlive();
+        }
+
+        @Override
+        public ProcessHandle toHandle() {
+            return p.toHandle();
+        }
+    }
+
+    @Test
+    void aShellIsHungUpAndTheJobItsUserDetachedKeepsRunning(@TempDir Path dir) throws Exception {
+        // `nohup sleep &`: what a user leaves running on purpose when they close a terminal.
+        Process root = new ProcessBuilder("sh", "-c", "nohup sleep 300 >/dev/null 2>&1 & echo $!; wait")
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        long job =
+                Long.parseLong(new BufferedReader(new InputStreamReader(root.getInputStream(), StandardCharsets.UTF_8))
+                        .readLine()
+                        .strip());
+        ProcessHandle detached = ProcessHandle.of(job).orElseThrow();
+        Shell shell = new Shell(root);
+        try {
+            ProcessRegistry.track(shell);
+
+            ProcessRegistry.killAll();
+
+            assertEquals(1, shell.hangUps, "the shell is hung up");
+            assertTrue(root.waitFor(10, TimeUnit.SECONDS), "and ends");
+            assertTrue(detached.isAlive(), "but its detached job is not the shell's to kill");
+        } finally {
+            detached.destroyForcibly();
+            root.destroyForcibly();
+        }
+    }
 }

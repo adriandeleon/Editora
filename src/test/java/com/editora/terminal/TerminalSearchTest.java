@@ -57,4 +57,29 @@ class TerminalSearchTest {
         assertEquals(3, TerminalSearch.startIndex(found, -5), "none above: wraps to the latest");
         assertEquals(-1, TerminalSearch.startIndex(List.of(), 0));
     }
+
+    @Test
+    void pastTheCapTheNewestHitsAreKept() {
+        // 1,500 rows of "hit": the newest 1,000 are what a user searching a long log is looking for.
+        List<TerminalSearch.Match> found = TerminalSearch.find(r -> "hit " + r, -1499, 0, "hit", false);
+        assertEquals(TerminalSearch.MAX_MATCHES, found.size());
+        assertEquals(-999, found.getFirst().row(), "oldest kept");
+        assertEquals(0, found.getLast().row(), "the bottom row's hit is found, oldest first order kept");
+    }
+
+    @Test
+    void wideCharactersAreFoundAndTheHitCoversTheirCells() {
+        char dwc = com.jediterm.terminal.util.CharUtils.DWC;
+        String row = "x 日" + dwc + "本" + dwc + "語" + dwc + " y";
+        assertEquals(List.of(new TerminalSearch.Match(0, 2, 6)), TerminalSearch.find(r -> row, 0, 0, "日本", true));
+        assertEquals(List.of(new TerminalSearch.Match(0, 9, 10)), TerminalSearch.find(r -> row, 0, 0, "y", false));
+    }
+
+    @Test
+    void ignoringCaseMatchesMixedCaseRows() {
+        assertEquals(
+                1,
+                TerminalSearch.find(r -> "Ünïcode TEXT", 0, 0, "üNÏCODE text", false)
+                        .size());
+    }
 }

@@ -50,13 +50,16 @@ final class MouseEncoding {
         return deltaY > 0 ? MouseButtonCodes.SCROLLDOWN : MouseButtonCodes.SCROLLUP;
     }
 
-    /** Modifier bits. Shift is included for completeness; callers treat it as a reporting bypass. */
+    /**
+     * Modifier bits. Shift is included for completeness; callers treat it as a reporting bypass. xterm's meta bit
+     * is Alt (Option on macOS), which is what a program reading it means; Cmd sets it too, as before.
+     */
     static int modifierFlags(MouseEvent e) {
-        return flags(e.isControlDown(), e.isShiftDown(), e.isMetaDown());
+        return flags(e.isControlDown(), e.isShiftDown(), e.isAltDown() || e.isMetaDown());
     }
 
     static int modifierFlags(ScrollEvent e) {
-        return flags(e.isControlDown(), e.isShiftDown(), e.isMetaDown());
+        return flags(e.isControlDown(), e.isShiftDown(), e.isAltDown() || e.isMetaDown());
     }
 
     private static int flags(boolean control, boolean shift, boolean meta) {

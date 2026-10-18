@@ -95,6 +95,18 @@ final class OscTap {
         flushText();
     }
 
+    /**
+     * Hands out an ESC that ended what was fed, when nothing follows yet: it may start a sequence, but holding it
+     * until more output arrives kept a program's last ESC (vim leaving a mode, a lone Escape echoed) from the screen.
+     */
+    void releaseTrailingEscape() {
+        if (state == State.ESCAPE) {
+            text.append(ESC);
+            state = State.TEXT;
+            flushText();
+        }
+    }
+
     /** True when there is something to hand out. */
     boolean hasNext() {
         return !queue.isEmpty();

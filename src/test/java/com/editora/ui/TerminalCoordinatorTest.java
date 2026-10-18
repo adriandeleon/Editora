@@ -29,4 +29,65 @@ class TerminalCoordinatorTest {
         assertEquals(java.util.List.of("vim", "sleep"), TerminalCoordinator.childrenOf(ps, 900));
         assertEquals(java.util.List.of(), TerminalCoordinator.childrenOf(ps, 42));
     }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.LINUX)
+    void withoutPsTheProgramsAreReadFromProc() throws Exception {
+        Process child = new ProcessBuilder("sleep", "30").start();
+        try {
+            ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", TerminalCoordinator.PROGRAMS_SCRIPT);
+            pb.environment().put("PATH", "/nonexistent"); // no ps
+            Process p = pb.start();
+            String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            p.waitFor();
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    TerminalCoordinator.childrenOf(out, ProcessHandle.current().pid())
+                            .contains("sleep"),
+                    out);
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    @Test
+    void theTerminalIsInTheMenusAndTheDefaultKeymapHasAKeyForIt() {
+        // A default install (Emacs keymap) offered only the stripe and the palette.
+        var ids = MenuBarModel.allCommandIds();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ids.containsAll(java.util.List.of("tool.terminal", "terminal.new", "file.openTerminal")),
+                ids.toString());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "tool.terminal",
+                com.editora.command.KeymapManager.defaults("emacs", false).get("M-0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                com.editora.terminal.TerminalKeys.reachesEditora(
+                        "M-0", "tool.terminal", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false),
+                "and it works from inside the terminal, to hide it again");
+    }
+
+    @Test
+    void terminalsFollowTheTextZoom() {
+        com.editora.config.Settings s = new com.editora.config.Settings();
+        s.setFontSize(12);
+        s.setFontZoom(1.5);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                18.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+        s.setTerminalFontSize(10);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                15.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+    }
+
+    @Test
+    void everyKeymapHasAKeyBackToTheEditorThatWorksFromATerminal() {
+        for (String name : java.util.List.of("emacs", "intellij", "vscode", "cua", "sublime")) {
+            for (boolean mac : new boolean[] {false, true}) {
+                org.junit.jupiter.api.Assertions.assertEquals(
+                        "terminal.focusEditor",
+                        com.editora.command.KeymapManager.defaults(name, mac).get("S-escape"),
+                        name + (mac ? ".mac" : ""));
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(com.editora.terminal.TerminalKeys.reachesEditora(
+                "S-escape", "terminal.focusEditor", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false));
+    }
 }
