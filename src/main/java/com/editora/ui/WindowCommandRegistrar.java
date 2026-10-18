@@ -3265,7 +3265,7 @@ final class WindowCommandRegistrar {
         });
     }
 
-    /** File ▸ Encryption: encrypted files (ADR 0016). */
+    /** Tools ▸ Encryption: encrypted files (ADR 0016). */
     private void registerEncryptionCommands() {
         EncryptionCoordinator e = host.encryption();
         host.registry().register(Command.of(EncryptionCoordinator.ENCRYPT_FILE, e::encryptFile));

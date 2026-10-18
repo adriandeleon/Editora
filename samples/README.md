@@ -537,7 +537,7 @@ passphrase **editora** (passphrase-only files, so no key is needed).
 
 - `samples/encrypted/diary.md.asc` — ASCII-armored, Markdown inside: opens as Markdown after the passphrase
   prompt. Edit and save: it stays encrypted, and the save does not ask again. Click the status bar's
-  *Encrypted · Passphrase* for the details card; File ▸ Encryption ▸ Lock File puts the text away.
+  *Encrypted · Passphrase* for the details card; Tools ▸ Encryption ▸ Lock File puts the text away.
 - `samples/encrypted/release-notes.md.gpg` — the same as a binary `.gpg` file. Save As to `release-notes.md`
   asks before writing it unencrypted.
 - `samples/encrypted/armored-message.md` — a note with an encrypted message pasted into it: put the caret in

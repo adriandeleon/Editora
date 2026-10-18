@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Encrypted files** (File ▸ Encryption; [ADR 0016](docs/decisions/0016-encrypted-files.md)). An encrypted
+- **Encrypted files** (Tools ▸ Encryption; [ADR 0016](docs/decisions/0016-encrypted-files.md)). An encrypted
   file opens as the text inside it, in that text's language (`notes.md.gpg` is Markdown), with a lock on its tab
   and an "Encrypted · 2" item in the status bar that opens the details: who can read it (you, verified or not),
   its format, its signature.
