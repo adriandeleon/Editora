@@ -20,6 +20,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LocalShellTest {
 
     @Test
+    void editorasOwnLaunchEnvironmentStaysOutOfItsTerminals() {
+        var env = new java.util.HashMap<>(java.util.Map.of(
+                "TMUX", "/tmp/tmux-1000/default,1,0",
+                "TMUX_PANE", "%3",
+                "STY", "1.pts",
+                "VTE_VERSION", "7600",
+                "APPDIR", "/tmp/.mount_Editora",
+                "APPIMAGE", "/home/a/Editora.AppImage",
+                "APPRUN_RUNTIME", "x",
+                "PATH", "/usr/bin",
+                "HOME", "/home/a"));
+        LocalShell.dropLaunchEnvironment(env);
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of("PATH", "HOME"), env.keySet());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.editora.AppInfo.VERSION, LocalShell.environment().get("TERM_PROGRAM_VERSION"), "our own version");
+    }
+
+    @Test
     @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
     void theShellSettingTakesArgumentsAndNamesOnPath() {
         org.junit.jupiter.api.Assertions.assertEquals(

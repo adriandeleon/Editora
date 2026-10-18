@@ -157,6 +157,7 @@ public final class LocalShell {
         // Signals to shells and prompt frameworks that a full-featured terminal is present.
         overrides.put("COLORTERM", "truecolor");
         overrides.put("TERM_PROGRAM", "Editora");
+        overrides.put("TERM_PROGRAM_VERSION", com.editora.AppInfo.VERSION);
         Map<String, String> env = ProcessRunner.applyUserEnv(new HashMap<>(System.getenv()), overrides);
         if (!isWindows()) {
             defaultLocale(env, isMac());
@@ -166,8 +167,23 @@ public final class LocalShell {
         env.remove("_");
         env.remove("COLUMNS");
         env.remove("LINES");
+        dropLaunchEnvironment(env);
         isolateForTests(env, System.getProperty(TEST_HOME));
         return env;
+    }
+
+    /**
+     * Variables that describe where Editora itself was started, not the terminal it now provides: started from a
+     * tmux pane, a shell's own tmux refused to nest and `tmux new-window` acted on the outer server; VTE_VERSION
+     * made shells source vte.sh; the AppImage's variables told other AppImages and scripts they were inside
+     * Editora's.
+     */
+    static final java.util.Set<String> LAUNCH_VARIABLES =
+            java.util.Set.of("TMUX", "TMUX_PANE", "STY", "VTE_VERSION", "APPDIR", "APPIMAGE", "ARGV0", "OWD");
+
+    /** Removes {@link #LAUNCH_VARIABLES} and the AppImage runtime's {@code APPRUN_*}. */
+    static void dropLaunchEnvironment(Map<String, String> env) {
+        env.keySet().removeIf(name -> LAUNCH_VARIABLES.contains(name) || name.startsWith("APPRUN_"));
     }
 
     /**

@@ -89,7 +89,7 @@ class ShellIntegrationPtyTest {
             await("the new directory reported", () -> events.contains("cwd " + target));
             connector.write("false\n".getBytes(StandardCharsets.UTF_8));
             await("the failed command's status", () -> events.contains("mark D 1"));
-            assertTrue(events.stream().filter("mark A"::equals).count() >= 3, () -> "a mark per prompt: " + events);
+            await("a mark per prompt", () -> events.stream().filter("mark A"::equals).count() >= 3);
             // bash before 4.4 (macOS's /bin/bash 3.2) has no PS0, so no output mark; zsh and newer bash do.
             if (!shell.endsWith("bash") || bashAtLeast44(shell)) {
                 assertTrue(events.contains("mark C"), () -> "the output mark: " + events);
@@ -109,6 +109,8 @@ class ShellIntegrationPtyTest {
                 home.resolve(".bash_profile"),
                 "alias ll='echo ALIAS_OK'\npc_one() { echo PC_OK; }\nPROMPT_COMMAND=pc_one\nHISTCONTROL=ignoreboth\n");
         Files.writeString(home.resolve(".bash_logout"), "echo ran > \"$HOME/logout.txt\"\n");
+        // An installer's .bash_profile that does not source .bashrc: its aliases still count.
+        Files.writeString(home.resolve(".bashrc"), "alias rc='echo RC_OK'\n");
         Path odd = Files.createDirectories(home.resolve("d #1? [x]")).toRealPath();
         Path integration = ShellIntegration.installLocal(config);
         var env = new HashMap<>(System.getenv());
@@ -150,6 +152,8 @@ class ShellIntegrationPtyTest {
         try {
             await("a first prompt", () -> events.contains("mark A"));
             assertTrue(events.stream().noneMatch(e -> e.startsWith("mark D")), () -> "no D before a command: " + events);
+            connector.write("rc\n".getBytes(StandardCharsets.UTF_8));
+            await("~/.bashrc read although the profile does not source it", () -> out.indexOf("RC_OK") >= 0);
             connector.write("ll\n".getBytes(StandardCharsets.UTF_8));
             await("the alias and the user's PROMPT_COMMAND", () -> out.indexOf("ALIAS_OK") >= 0 && out.indexOf("PC_OK") >= 0);
             connector.write(("cd '" + odd + "'\n").getBytes(StandardCharsets.UTF_8));

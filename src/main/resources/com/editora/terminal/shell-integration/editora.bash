@@ -4,13 +4,22 @@
 if [ -z "${__EDITORA_INTEGRATION:-}" ]; then
     __EDITORA_INTEGRATION=1
     [ -r /etc/profile ] && . /etc/profile
+    __editora_profile=
     if [ -r "$HOME/.bash_profile" ]; then
-        . "$HOME/.bash_profile"
+        __editora_profile=$HOME/.bash_profile
     elif [ -r "$HOME/.bash_login" ]; then
-        . "$HOME/.bash_login"
+        __editora_profile=$HOME/.bash_login
     elif [ -r "$HOME/.profile" ]; then
-        . "$HOME/.profile"
+        __editora_profile=$HOME/.profile
     fi
+    [ -n "$__editora_profile" ] && . "$__editora_profile"
+    # Interactive settings live in ~/.bashrc. A login shell reads it only through the profile, and an installer's
+    # ~/.bash_profile (rustup, sdkman, conda) often does not source it — hiding the aliases, prompt and nvm that a
+    # terminal's plain `bash -i` shows. Read it here when the profile does not mention it.
+    if [ -r "$HOME/.bashrc" ] && { [ -z "$__editora_profile" ] || [[ $(< "$__editora_profile") != *bashrc* ]]; }; then
+        . "$HOME/.bashrc"
+    fi
+    unset __editora_profile
 
     # What a login shell does that --init-file cannot ask for: `logout` works, and ~/.bash_logout runs at exit
     # (it often ends an ssh-agent or clears the screen).
