@@ -89,6 +89,11 @@ class JavaLooseLaunchFxTest {
                 public void onProgramExit(int code) {
                     console.add("exit:" + code);
                 }
+
+                @Override
+                public void onDebuggeeRuntime(List<String> runtime, Path where, Map<String, String> env) {
+                    runtimes.add(runtime);
+                }
             });
         });
         replies.put("vscode.java.startDebugSession", p -> adapter.port());
@@ -375,6 +380,8 @@ class JavaLooseLaunchFxTest {
 
     private final Path[] firstDir = new Path[1];
 
+    private final List<List<String>> runtimes = new CopyOnWriteArrayList<>();
+
     /**
      * With the program console off java-debug starts the program, and its {@code exited} event says 0 whatever
      * the program exited with: the console says the program ended, not a code that is not the program's (A10).
@@ -393,5 +400,48 @@ class JavaLooseLaunchFxTest {
 
         awaitTrue(() -> console.contains("console:The program ended.\n"), "the end is said: " + console);
         assertFalse(console.stream().anyMatch(l -> l.startsWith("exit:")), console.toString());
+    }
+
+    /**
+     * java-debug's {@code exited} carries 0 whatever the program exited with, and the program is a child of
+     * jdtls. With the program console off it is now started through a wrapper that records its real code: the
+     * console says "exited with 3" for {@code System.exit(3)} (follow-up to review A10). The arguments reach the
+     * program untouched, and the runtime version is read from the real java, never through the wrapper.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void theRealExitCodeIsReportedWhenTheAdapterStartsTheProgram() throws Exception {
+        Path folder = Files.createDirectories(dir.resolve("wrapped"));
+        Path file = folder.resolve("Quit.java");
+        open(
+                file,
+                folder,
+                "public class Quit {\n    public static void main(String[] a) {\n"
+                        + "        System.out.println(String.join(\"|\", a));\n        System.exit(3);\n    }\n}\n");
+
+        onFx(() -> dap.startLaunch(file, "java", noPicker, javaExec(), null));
+        Map<String, Object> launch = launch();
+        String wrapper = String.valueOf(launch.get("javaExec"));
+        assertFalse(wrapper.equals(javaExec()), "the program is started through the wrapper: " + wrapper);
+        assertTrue(
+                Path.of(wrapper).getParent().getFileName().toString().equals("bin"),
+                "java-debug runs <home>/bin/<name>");
+        awaitTrue(() -> !runtimes.isEmpty(), "the runtime chip asked");
+        assertEquals(List.of(javaExec()), runtimes.get(0), "the version comes from the real java");
+
+        // What java-debug does: run javaExec with the JVM and program arguments.
+        String classes = String.valueOf(((List<?>) launch.get("classPaths")).get(0));
+        Process p = new ProcessBuilder(wrapper, "-cp", classes, "Quit", "a b", "\"q\"", "$HOME", "ünï", "")
+                .redirectErrorStream(true)
+                .start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(3, p.waitFor(), "the wrapper exits as the program did");
+        assertEquals("a b|\"q\"|$HOME|ünï|\n", out, "every argument as it was given");
+        lastSession.exited(0);
+        lastSession.terminate();
+
+        awaitTrue(() -> console.contains("exit:3"), "the real exit code is reported: " + console);
+        assertFalse(console.contains("console:The program ended.\n"), console.toString());
+        awaitTrue(() -> !Files.exists(Path.of(wrapper).getParent().getParent()), "the wrapper's folder is removed");
     }
 }
