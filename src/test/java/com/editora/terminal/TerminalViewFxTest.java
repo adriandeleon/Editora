@@ -114,6 +114,94 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void aRunOfSizeChangesResizesTheShellOnceItSettles() throws Exception {
+        // A splitter drag: every column change used to reflow the whole scrollback, under the lock painting needs.
+        open();
+        await(() -> connector.resizes.get() >= 0, "the start");
+        Thread.sleep(300);
+        int before = connector.resizes.get();
+        fx(() -> {
+            for (int size = 14; size <= 18; size++) {
+                view.setFontSize(size);
+                view.getScene().getRoot().layout();
+            }
+            return null;
+        });
+        await(() -> connector.resizes.get() > before, "the resize once the size held still");
+        Thread.sleep((long) TerminalView.RESIZE_SETTLE.toMillis() + 300);
+        assertEquals(before + 1, connector.resizes.get(), "one resize for the whole run of changes");
+    }
+
+    @Test
+    void paintingDoesNotWaitForTheEmulatorsLock() throws Exception {
+        open();
+        var buffer = fx(() -> view.getSession().getTextBuffer());
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = Thread.ofPlatform().start(() -> {
+            buffer.lock(); // what a reflow of a long scrollback or a flood of output does
+            try {
+                held.countDown();
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        held.await();
+        try {
+            long t0 = System.nanoTime();
+            fx(() -> {
+                view.requestLayout();
+                view.layout(); // paints
+                return null;
+            });
+            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            assertTrue(ms < 1_000, "the FX thread skipped the frame instead of waiting: " + ms + " ms");
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+    }
+
+    @Test
+    void theFindBarsSearchRunsOffTheFxThread() throws Exception {
+        open();
+        connector.emit("needle one\r\nhay\r\nneedle two\r\n");
+        await(() -> screen().contains("needle two"), "the output");
+        var buffer = fx(() -> view.getSession().getTextBuffer());
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = Thread.ofPlatform().start(() -> {
+            buffer.lock();
+            try {
+                held.countDown();
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        held.await();
+        CompletableFuture<TerminalView.SearchResult> found = new CompletableFuture<>();
+        try {
+            long t0 = System.nanoTime();
+            fx(() -> {
+                view.searchAsync("needle", false, found::complete);
+                return null;
+            });
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0) < 1_000, "the FX thread did not scan");
+            assertFalse(found.isDone());
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+        assertEquals(new TerminalView.SearchResult(2, 2), found.get(10, TimeUnit.SECONDS));
+    }
+
+    @Test
     void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");

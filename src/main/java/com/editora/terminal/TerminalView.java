@@ -515,12 +515,45 @@ public final class TerminalView extends Region {
 
         int newColumns = Math.max(MIN_COLUMNS, (int) Math.floor((w - barWidth) / charWidth));
         int newRows = Math.max(MIN_ROWS, (int) Math.floor(h / lineHeight));
-        if (newColumns != columns || newRows != rows) {
+        if (session == null) {
             columns = newColumns;
             rows = newRows;
-            if (session != null) session.resize(columns, rows);
+        } else if (newColumns == columns && newRows == rows) {
+            resizeDebounce.stop(); // back to the size the shell has
+        } else {
+            // Every size change reflows the whole scrollback on the emulator's thread, under the
+            // buffer lock: a splitter drag across a full history would queue dozens of them. The
+            // size is applied once it has stopped changing; the old grid is painted meanwhile.
+            pendingColumns = newColumns;
+            pendingRows = newRows;
+            resizeDebounce.playFromStart();
         }
         render();
+    }
+
+    /** How long a size must hold before the shell is resized to it (see {@link #layoutChildren}). */
+    static final javafx.util.Duration RESIZE_SETTLE = javafx.util.Duration.millis(120);
+
+    private int pendingColumns;
+    private int pendingRows;
+    private final javafx.animation.PauseTransition resizeDebounce = new javafx.animation.PauseTransition(RESIZE_SETTLE);
+
+    {
+        resizeDebounce.setOnFinished(e -> applyPendingSize());
+    }
+
+    private void applyPendingSize() {
+        if (closed || (pendingColumns == columns && pendingRows == rows) || pendingColumns <= 0) return;
+        columns = pendingColumns;
+        rows = pendingRows;
+        if (session != null) session.resize(columns, rows);
+        markDirty();
+    }
+
+    /** Applies a size still waiting out {@link #RESIZE_SETTLE}; for tests. */
+    void flushResize() {
+        resizeDebounce.stop();
+        applyPendingSize();
     }
 
     @Override
@@ -541,15 +574,18 @@ public final class TerminalView extends Region {
         double h = canvas.getHeight();
         if (w <= 0 || h <= 0) return;
 
+        // The emulator writes into this buffer from its own thread; the lock is what makes a frame
+        // internally consistent rather than a mix of two states. Only tried: a flood of output or a
+        // reflow of a long scrollback holds it for a long time, and the FX thread waiting for it
+        // would freeze every window. The frame is skipped instead, and the next pulse paints.
+        if (buffer != null && !buffer.tryLock()) {
+            dirty = true;
+            return;
+        }
         g.setFontSmoothingType(FontSmoothingType.GRAY);
         g.setFill(palette.background());
         g.fillRect(0, 0, w, h);
-
         if (buffer == null) return;
-
-        // The emulator writes into this buffer from its own thread; the lock is what makes a frame
-        // internally consistent rather than a mix of two states.
-        buffer.lock();
         try {
             // x arrives as an index into the line's char[], which is not its column: see
             // RunColumns. Translating here rather than inside drawRun keeps every consumer
@@ -835,7 +871,36 @@ public final class TerminalView extends Region {
     /** A prompt mark (OSC 133) at a buffer row: 0 is the top of the live screen, negative is history. */
     record PromptMark(char kind, int row, String params) {}
 
-    private final java.util.List<PromptMark> marks = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /**
+     * A prompt mark as kept: at an absolute line ({@link #pushedLines} plus the row when it was made), so lines aging
+     * into history move nothing — the row is worked out when it is read.
+     */
+    private record Mark(char kind, long line, String params) {}
+
+    private final java.util.List<Mark> marks = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Lines ever pushed into history. A row plus this is an absolute line that stays put as output scrolls, which is
+     * how prompt marks and search hits keep to their text without being rewritten for every line of output. Written
+     * on the emulator thread under the buffer lock (see {@link #onHistoryLineCountChanged}).
+     */
+    private volatile long pushedLines;
+
+    /** The buffer row of absolute {@code line} now (0 is the top of the live screen, negative is history). */
+    private int rowOf(long line) {
+        return (int) Math.max(Integer.MIN_VALUE + 1, Math.min(Integer.MAX_VALUE, line - pushedLines));
+    }
+
+    /** The marks still in the buffer, as rows. */
+    private java.util.List<PromptMark> markRows() {
+        int floor = buffer == null ? 0 : -buffer.getHistoryLinesCount();
+        java.util.List<PromptMark> rows = new java.util.ArrayList<>(marks.size());
+        for (Mark m : marks) {
+            int row = rowOf(m.line());
+            if (row >= floor) rows.add(new PromptMark(m.kind(), row, m.params()));
+        }
+        return rows;
+    }
 
     /** Marks kept, oldest first; an older one is dropped past this many. */
     private static final int MAX_MARKS = 2000;
@@ -853,28 +918,12 @@ public final class TerminalView extends Region {
 
         @Override
         public void promptMark(char kind, String params) {
-            marks.add(new PromptMark(kind, display.getCursorY() - 1, params));
+            marks.add(new Mark(kind, display.getCursorY() - 1 + pushedLines, params));
             while (marks.size() > MAX_MARKS) {
                 marks.removeFirst();
             }
         }
     };
-
-    /** Moves the marks with their text as lines age into history; drops the ones that left it. */
-    private void shiftMarks(int delta, int history) {
-        if (marks.isEmpty()) {
-            return;
-        }
-        java.util.List<PromptMark> moved = new java.util.ArrayList<>(marks.size());
-        for (PromptMark m : marks) {
-            int row = m.row() - delta;
-            if (row >= -history) {
-                moved.add(new PromptMark(m.kind(), row, m.params()));
-            }
-        }
-        marks.clear();
-        marks.addAll(moved);
-    }
 
     /** Rows scrolled back from the live screen (0 at it, negative into history), for tests. */
     int scrollOrigin() {
@@ -888,14 +937,14 @@ public final class TerminalView extends Region {
 
     /** The prompt marks, for tests and the panel. */
     java.util.List<PromptMark> promptMarks() {
-        return java.util.List.copyOf(marks);
+        return markRows();
     }
 
     /** Scrolls to the prompt above the top of the view; false when there is none. */
     public boolean previousPrompt() {
         int top = scrollOrigin;
         int target = Integer.MIN_VALUE;
-        for (PromptMark m : marks) {
+        for (PromptMark m : markRows()) {
             if (m.kind() == 'A' && m.row() < top && m.row() > target) {
                 target = m.row();
             }
@@ -915,7 +964,7 @@ public final class TerminalView extends Region {
             return false;
         }
         int target = 0;
-        for (PromptMark m : marks) {
+        for (PromptMark m : markRows()) {
             if (m.kind() == 'A' && m.row() > top && m.row() < target) {
                 target = m.row();
             }
@@ -933,6 +982,7 @@ public final class TerminalView extends Region {
         if (buffer == null) {
             return null;
         }
+        java.util.List<PromptMark> marks = markRows();
         PromptMark start = null;
         int startIndex = -1;
         for (int i = marks.size() - 1; i >= 0; i--) {
@@ -987,42 +1037,56 @@ public final class TerminalView extends Region {
         static final SearchResult NONE = new SearchResult(0, 0);
     }
 
+    /** A hit as kept: at an absolute line (see {@link #pushedLines}), so output scrolling past moves nothing. */
+    private record Hit(long line, int from, int to) {}
+
     /** The search being shown: its hits, oldest first, and which one is current (-1 for none). */
-    private record SearchState(
-            String query, boolean matchCase, java.util.List<TerminalSearch.Match> matches, int current) {
+    private record SearchState(String query, boolean matchCase, java.util.List<Hit> hits, int current) {
 
         static final SearchState NONE = new SearchState("", false, java.util.List.of(), -1);
 
         SearchResult result() {
-            return new SearchResult(current < 0 ? 0 : current + 1, matches.size());
+            return new SearchResult(current < 0 ? 0 : current + 1, hits.size());
         }
     }
 
-    private final Object searchLock = new Object();
     private volatile SearchState search = SearchState.NONE;
 
     /** Set when the buffer changed under a search, so the next step finds again before moving. */
     private volatile boolean searchStale;
 
+    /** Bumped by every search started or cleared; a scan that sees it change gives up. */
+    private final java.util.concurrent.atomic.AtomicLong searchGeneration = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Rows scanned per hold of the buffer lock, so a scan of a long scrollback never stalls the emulator. */
+    private static final int SEARCH_CHUNK = 2000;
+
     /**
-     * Highlights every occurrence of {@code query} in the scrollback and screen and scrolls to the most recent one
-     * at or above the bottom of the view. An empty query clears the search.
+     * Highlights every occurrence of {@code query} in the scrollback and screen (the newest {@link
+     * TerminalSearch#MAX_MATCHES}) and scrolls to the most recent one at or above the bottom of the view. An empty
+     * query clears the search. Scans on the calling thread; the find bar uses {@link #searchAsync}.
      */
     public SearchResult search(String query, boolean matchCase) {
         if (buffer == null || query == null || query.isEmpty()) {
             clearSearch();
             return SearchResult.NONE;
         }
-        java.util.List<TerminalSearch.Match> found = findAll(query, matchCase);
-        int current = TerminalSearch.startIndex(found, scrollOrigin + rows - 1);
-        SearchState next = new SearchState(query, matchCase, java.util.List.copyOf(found), current);
-        synchronized (searchLock) {
-            search = next;
-            searchStale = false;
+        long generation = searchGeneration.incrementAndGet();
+        return show(query, matchCase, scan(query, matchCase, generation));
+    }
+
+    /**
+     * {@link #search}, scanning off the FX thread: {@code done} gets the result on the FX thread, unless another
+     * search started or the search was cleared meanwhile.
+     */
+    public void searchAsync(String query, boolean matchCase, java.util.function.Consumer<SearchResult> done) {
+        if (buffer == null || query == null || query.isEmpty()) {
+            clearSearch();
+            done.accept(SearchResult.NONE);
+            return;
         }
-        reveal(next);
-        markDirty();
-        return next.result();
+        long generation = searchGeneration.incrementAndGet();
+        scanAsync(query, matchCase, generation, hits -> done.accept(show(query, matchCase, hits)));
     }
 
     /**
@@ -1035,56 +1099,143 @@ public final class TerminalView extends Region {
             return SearchResult.NONE;
         }
         if (searchStale) {
-            int row =
-                    state.current() >= 0 ? state.matches().get(state.current()).row() : scrollOrigin + rows - 1;
-            java.util.List<TerminalSearch.Match> found = findAll(state.query(), state.matchCase());
-            state = new SearchState(
-                    state.query(),
-                    state.matchCase(),
-                    java.util.List.copyOf(found),
-                    TerminalSearch.startIndex(found, row));
-            searchStale = false;
+            long generation = searchGeneration.incrementAndGet();
+            state = rescanned(state, scan(state.query(), state.matchCase(), generation));
         }
-        int count = state.matches().size();
+        return step(state, older);
+    }
+
+    /** {@link #findNext}, finding again off the FX thread when output arrived since; {@code done} runs on FX. */
+    public void findNextAsync(boolean older, java.util.function.Consumer<SearchResult> done) {
+        SearchState state = search;
+        if (state.query().isEmpty()) {
+            done.accept(SearchResult.NONE);
+            return;
+        }
+        if (!searchStale) {
+            done.accept(step(state, older));
+            return;
+        }
+        long generation = searchGeneration.incrementAndGet();
+        scanAsync(state.query(), state.matchCase(), generation, hits -> done.accept(step(rescanned(state, hits), older)));
+    }
+
+    /** {@code state}'s query with {@code hits} found again, current on the one nearest the old current hit. */
+    private SearchState rescanned(SearchState state, java.util.List<Hit> hits) {
+        int row = state.current() >= 0 ? rowOf(state.hits().get(state.current()).line()) : scrollOrigin + rows - 1;
+        searchStale = false;
+        return new SearchState(state.query(), state.matchCase(), hits, startIndex(hits, row));
+    }
+
+    private SearchResult step(SearchState state, boolean older) {
+        int count = state.hits().size();
         if (count == 0) {
-            synchronized (searchLock) {
-                search = state;
-            }
+            search = state;
             markDirty();
             return state.result();
         }
         int current = state.current() < 0 ? count - 1 : Math.floorMod(state.current() + (older ? -1 : 1), count);
-        SearchState next = new SearchState(state.query(), state.matchCase(), state.matches(), current);
-        synchronized (searchLock) {
-            search = next;
-        }
+        SearchState next = new SearchState(state.query(), state.matchCase(), state.hits(), current);
+        search = next;
         reveal(next);
         markDirty();
         return next.result();
     }
 
-    /** Removes the highlights; the view stays where it is. */
-    public void clearSearch() {
-        synchronized (searchLock) {
-            search = SearchState.NONE;
-            searchStale = false;
+    /** Shows {@code hits} for {@code query}, current on the latest at or above the bottom of the view. */
+    private SearchResult show(String query, boolean matchCase, java.util.List<Hit> hits) {
+        SearchState next =
+                new SearchState(query, matchCase, java.util.List.copyOf(hits), startIndex(hits, scrollOrigin + rows - 1));
+        search = next;
+        searchStale = false;
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    private int startIndex(java.util.List<Hit> hits, int row) {
+        for (int i = hits.size() - 1; i >= 0; i--) {
+            if (rowOf(hits.get(i).line()) <= row) {
+                return i;
+            }
         }
+        return hits.isEmpty() ? -1 : hits.size() - 1;
+    }
+
+    /** Removes the highlights; the view stays where it is. A scan in progress is abandoned. */
+    public void clearSearch() {
+        searchGeneration.incrementAndGet();
+        search = SearchState.NONE;
+        searchStale = false;
         markDirty();
     }
 
-    /** The hits being highlighted, for tests. */
+    /** The hits being highlighted, as rows now; for tests. */
     public java.util.List<TerminalSearch.Match> searchMatches() {
-        return search.matches();
+        return search.hits().stream()
+                .map(h -> new TerminalSearch.Match(rowOf(h.line()), h.from(), h.to()))
+                .toList();
     }
 
-    private java.util.List<TerminalSearch.Match> findAll(String query, boolean matchCase) {
+    /** One scanner for every view: a scan is short, and only the latest one of a view matters. */
+    private static final java.util.concurrent.ExecutorService SEARCHER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "editora-terminal-search");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private void scanAsync(
+            String query,
+            boolean matchCase,
+            long generation,
+            java.util.function.Consumer<java.util.List<Hit>> onFx) {
+        SEARCHER.execute(() -> {
+            java.util.List<Hit> hits = scan(query, matchCase, generation);
+            if (hits == null) return;
+            Platform.runLater(() -> {
+                if (!closed && searchGeneration.get() == generation) onFx.accept(hits);
+            });
+        });
+    }
+
+    /**
+     * The newest hits of {@code query}, oldest first, scanned from the bottom up a chunk of rows per hold of the
+     * lock. Output may arrive between chunks: rows are turned into absolute lines under the lock, so the hits stay
+     * put. Null when {@code generation} was overtaken.
+     */
+    private java.util.List<Hit> scan(String query, boolean matchCase, long generation) {
+        java.util.List<Hit> newestFirst = new java.util.ArrayList<>();
+        long next; // the absolute line to scan next, going up
         buffer.lock();
         try {
-            int history = buffer.getHistoryLinesCount();
-            return TerminalSearch.find(this::lineTextAt, -history, buffer.getHeight() - 1, query, matchCase);
+            next = buffer.getHeight() - 1 + pushedLines;
         } finally {
             buffer.unlock();
         }
+        while (newestFirst.size() < TerminalSearch.MAX_MATCHES) {
+            if (searchGeneration.get() != generation || closed) return null;
+            buffer.lock();
+            try {
+                long pushed = pushedLines;
+                int top = -buffer.getHistoryLinesCount();
+                int row = (int) Math.min(buffer.getHeight() - 1, next - pushed);
+                if (row < top) break;
+                int last = Math.max(top, row - SEARCH_CHUNK + 1);
+                for (; row >= last && newestFirst.size() < TerminalSearch.MAX_MATCHES; row--) {
+                    java.util.List<TerminalSearch.Match> inRow =
+                            TerminalSearch.inRow(row, lineTextAt(row), query, matchCase);
+                    for (int i = inRow.size() - 1; i >= 0 && newestFirst.size() < TerminalSearch.MAX_MATCHES; i--) {
+                        TerminalSearch.Match m = inRow.get(i);
+                        newestFirst.add(new Hit(row + pushed, m.from(), m.to()));
+                    }
+                }
+                next = last - 1 + pushed;
+            } finally {
+                buffer.unlock();
+            }
+        }
+        return newestFirst.reversed();
     }
 
     /** Scrolls so the current hit is in view, a third of the way down, unless it already is. */
@@ -1092,7 +1243,7 @@ public final class TerminalView extends Region {
         if (state.current() < 0 || buffer == null) {
             return;
         }
-        int row = state.matches().get(state.current()).row();
+        int row = rowOf(state.hits().get(state.current()).line());
         if (row >= scrollOrigin && row < scrollOrigin + rows) {
             return;
         }
@@ -1100,48 +1251,33 @@ public final class TerminalView extends Region {
         scrollOrigin = Math.max(-buffer.getHistoryLinesCount(), Math.min(0, origin));
     }
 
-    /** Moves the hits with their text as lines age into history (see {@link #shiftMarks}). */
-    private void shiftSearch(int delta, int history) {
-        synchronized (searchLock) {
-            SearchState state = search;
-            if (state.matches().isEmpty()) {
-                return;
-            }
-            java.util.List<TerminalSearch.Match> moved =
-                    new java.util.ArrayList<>(state.matches().size());
-            int current = state.current();
-            for (int i = 0; i < state.matches().size(); i++) {
-                TerminalSearch.Match m = state.matches().get(i).shifted(delta);
-                if (m.row() >= -history) {
-                    moved.add(m);
-                } else if (i < state.current()) {
-                    current--;
-                } else if (i == state.current()) {
-                    current = -1;
-                }
-            }
-            search = new SearchState(state.query(), state.matchCase(), java.util.List.copyOf(moved), current);
-        }
-    }
-
-    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. */
+    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. Caller holds the lock. */
     private void drawSearch(GraphicsContext g) {
         SearchState state = search;
-        if (state.matches().isEmpty()) return;
+        if (state.hits().isEmpty()) return;
         Color yellow = palette.ansi()[3];
         Color wash = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.35);
         Color strong = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.75);
-        int first = scrollOrigin;
-        int last = scrollOrigin + rows - 1;
-        for (int i = 0; i < state.matches().size(); i++) {
-            TerminalSearch.Match m = state.matches().get(i);
-            if (m.row() < first || m.row() > last) continue;
-            String text = lineTextAt(m.row());
-            if (m.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
-            double x = ColumnMap.columnAt(text, m.from());
-            double to = ColumnMap.columnAt(text, m.to());
+        long first = scrollOrigin + pushedLines;
+        long last = first + rows - 1;
+        // Hits are in line order: skip to the first in view rather than walking all of them every frame.
+        java.util.List<Hit> hits = state.hits();
+        int lo = 0;
+        int hi = hits.size();
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (hits.get(mid).line() < first) lo = mid + 1;
+            else hi = mid;
+        }
+        for (int i = lo; i < hits.size() && hits.get(i).line() <= last; i++) {
+            Hit h = hits.get(i);
+            int row = rowOf(h.line());
+            String text = lineTextAt(row);
+            if (h.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
+            double x = ColumnMap.columnAt(text, h.from());
+            double to = ColumnMap.columnAt(text, h.to());
             g.setFill(i == state.current() ? strong : wash);
-            g.fillRect(x * charWidth, (m.row() - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
+            g.fillRect(x * charWidth, (row - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
         }
     }
 
@@ -1168,10 +1304,11 @@ public final class TerminalView extends Region {
         // scrolled-back viewport moves.
         if (scrollOrigin < 0) scrollOrigin = Math.max(-now, scrollOrigin - delta);
 
+        // Marks and hits are kept at absolute lines; this one count moves them all.
+        pushedLines += delta;
+
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
-        shiftMarks(delta, now);
-        shiftSearch(delta, now);
         markDirty();
     }
 
@@ -1362,7 +1499,8 @@ public final class TerminalView extends Region {
         int column = (int) Math.floor(x / charWidth);
         if (column < 0 || column >= columns) return null;
 
-        buffer.lock();
+        // Tried, not waited for: a hover is not worth a frozen editor while output floods in.
+        if (!buffer.tryLock()) return hover;
         try {
             LogicalLine logical = logicalLineAt(line);
             if (logical == null) return null;
@@ -1709,7 +1847,7 @@ public final class TerminalView extends Region {
         scrollOrigin = 0;
         knownHistoryLines = 0;
         discardedHistoryLines = 0;
-        marks.removeIf(m -> m.row() < 0);
+        marks.removeIf(m -> rowOf(m.line()) < 0);
         clearSearch();
         markDirty();
     }

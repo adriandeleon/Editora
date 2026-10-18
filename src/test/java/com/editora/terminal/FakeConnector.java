@@ -79,7 +79,11 @@ public final class FakeConnector implements TerminalConnector {
     @Override
     public void resize(TermSize size) {
         lastResize.set(size);
+        resizes.incrementAndGet();
     }
+
+    /** How many resizes reached the "shell". */
+    public final java.util.concurrent.atomic.AtomicInteger resizes = new java.util.concurrent.atomic.AtomicInteger();
 
     @Override
     public int waitFor() throws InterruptedException {

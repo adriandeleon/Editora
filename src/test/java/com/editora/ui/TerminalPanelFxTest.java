@@ -498,11 +498,14 @@ class TerminalPanelFxTest {
         });
         assertTrue(fx(() -> panel.findBar().isShowing()), "the chord opened the bar");
         assertTrue(shells.get(0).written().isEmpty(), "and nothing reached the shell");
-        fx(() -> {
+        String early = fx(() -> {
+            panel.findBar().field().setText("b");
+            panel.findBar().field().setText("be");
             panel.findBar().field().setText("beta");
-            return null;
+            return panel.findBar().countText();
         });
-        assertEquals("2 of 2", fx(() -> panel.findBar().countText()));
+        assertEquals("", early, "typing does not scan the scrollback per keystroke");
+        await(() -> call(() -> panel.findBar().countText().equals("2 of 2")), "the search once the query settled");
 
         fx(() -> {
             Event.fireEvent(
