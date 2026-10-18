@@ -478,7 +478,8 @@ final class DoctorCoordinator {
         // Debugging -------------------------------------------------------------------------------
         if (ops.debugFeatureEnabled()) {
             Path home = Path.of(System.getProperty("user.home", ""));
-            String javaPluginPath = s.getJavaDebugPluginPath();
+            ProjectScope scope = host.projectScope(); // a trusted project's debugger paths, else the user's
+            String javaPluginPath = scope.debugTool("java", s.getJavaDebugPluginPath());
             DoctorCheck javaDebug = DoctorCheck.checking("debug.java", "debug", tr("doctor.label.javaDebug"), "")
                     .withSettings("debug")
                     .withInstall(DoctorCheck.Install.LANG, InstallCatalog.Lang.JAVA.name());
@@ -502,7 +503,8 @@ final class DoctorCoordinator {
                                         : base.missing("doctor.tip.missingInstallable", "java-debug"))));
             }
             if (s.isPythonDebugEnabled()) {
-                List<String> py = DapServerRegistry.interpreterArgv("python", s.getPythonDebugCommand());
+                List<String> py = DapServerRegistry.interpreterArgv(
+                        "python", scope.debugTool("python", s.getPythonDebugCommand()));
                 DoctorCheck debugpy = DoctorCheck.checking(
                                 "debug.python", "debug", tr("doctor.label.debugpy"), String.join(" ", py))
                         .withSettings("debug")
@@ -529,7 +531,7 @@ final class DoctorCoordinator {
                 }));
             }
             if (s.isJsDebugEnabled()) {
-                String jsPath = s.getJsDebugPath();
+                String jsPath = scope.debugTool("javascript", s.getJsDebugPath());
                 List<String> node = DapServerRegistry.interpreterArgv("javascript", "");
                 DoctorCheck jsDebug = DoctorCheck.checking("debug.javascript", "debug", tr("doctor.label.jsDebug"), "")
                         .withSettings("debug")
@@ -822,7 +824,7 @@ final class DoctorCoordinator {
      * (review D1). Missing, it is amber when the project has its marker file, else "not installed".
      */
     private DoctorService.CheckSpec buildTool(com.editora.build.BuildTool tool, Settings s, Needs needs) {
-        String override = tool.commandIn(s);
+        String override = host.projectScope().buildCommand(tool, s); // a trusted project's command, else the user's
         List<String> configured = com.editora.process.ConfiguredCommand.tokens(override, tool.commandExample());
         String label = "go".equals(tool.id()) ? tr("doctor.label.goToolchain") : tool.displayName();
         DoctorCheck row = DoctorCheck.checking("build." + tool.id(), "build", label, String.join(" ", configured))
@@ -895,7 +897,7 @@ final class DoctorCoordinator {
     private DoctorService.CheckSpec pythonRun(Settings s) {
         java.nio.file.Path root = ops.projectRoot();
         String choice = ops.pythonInterpreterChoice();
-        String setting = s.getPythonDebugCommand();
+        String setting = host.projectScope().debugTool("python", s.getPythonDebugCommand());
         // The window's resolver when it has one: the active Python file's interpreter (its venv, the picked one,
         // a remote host's) — what the status bar shows and Pyright is told, so Doctor has one Python row.
         var resolver = ops.pythonInterpreter();

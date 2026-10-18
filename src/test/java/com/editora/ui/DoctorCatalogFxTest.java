@@ -39,6 +39,12 @@ class DoctorCatalogFxTest {
     private static final class Host extends CoordinatorHostStub {
         final Settings settings = new Settings();
         boolean simple;
+        ProjectScope scope = ProjectScope.NONE;
+
+        @Override
+        public ProjectScope projectScope() {
+            return scope;
+        }
 
         @Override
         public Settings settings() {
@@ -637,5 +643,32 @@ class DoctorCatalogFxTest {
         host.settings.setHttpScriptsEnabled(false);
         FxTestSupport.runOnFx(() -> doctor.enableFeature("httpScripts"));
         assertTrue(host.settings.isHttpScriptsEnabled());
+    }
+
+    /** A trusted project's build command and debugger program are what the Doctor checks (F4). */
+    @Test
+    void buildAndDebugRowsCheckATrustedProjectsCommands(@TempDir Path dir) throws Exception {
+        Path project = Files.createDirectories(dir.resolve("project"));
+        Path file = com.editora.config.ProjectSettings.fileFor(project);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, """
+                {"buildCommands": {"maven": "/opt/team/mvn"}, "debugTools": {"python": "/opt/team/python"}}
+                """);
+        com.editora.config.ConfigManager config =
+                new com.editora.config.ConfigManager(Files.createDirectories(dir.resolve("config")));
+        Host host = new Host();
+        host.scope = new ProjectScope(() -> project, () -> config);
+        Ops ops = new Ops();
+        ops.root = project;
+        ops.debug = true;
+
+        assertFalse(
+                spec(specs(host, ops), "build.maven").placeholder().command().contains("/opt/team/mvn"),
+                "untrusted: the user's command");
+        config.getTrustStore().trust(project);
+        host.scope.reload();
+        List<DoctorService.CheckSpec> trusted = specs(host, ops);
+        assertTrue(spec(trusted, "build.maven").placeholder().command().contains("/opt/team/mvn"));
+        assertTrue(spec(trusted, "debug.python").placeholder().command().contains("/opt/team/python"));
     }
 }

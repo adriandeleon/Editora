@@ -264,17 +264,36 @@ final class EditorSettingsCoordinator {
         EditorBuffer active = host.activeBuffer();
         boolean prose = active != null && Settings.isProseLanguage(active.getLanguage());
         String key = prose ? "status.toggle.wordWrapProse" : "status.toggle.wordWrap";
+        ProjectScope scope = projectScope();
+        boolean effective = prose ? scope.wordWrapProse(s) : scope.wordWrap(s); // a trusted project's, else mine
         if (active != null && active.wrap().isSuppressed()) {
             // Wrap was held off for this long-line file. Asking for it here is the explicit opt-in: if the
             // preference is already on, wrap this buffer rather than turning wrap off everywhere else.
             active.wrap().setSuppressed(false);
-            if (s.wrapsLanguage(active.getLanguage())) {
+            if (effective) {
                 active.setWordWrap(true);
                 host.setStatus(tr(key, tr("common.on")));
                 return;
             }
         }
-        boolean next = !(prose ? s.isWordWrapProse() : s.isWordWrap());
+        boolean next = !effective;
+        String field = prose ? "wordWrapProse" : "wordWrap";
+        if (scope.trusted() && ProjectScopeSettings.valueOf(scope.settings(), "editor." + field) != null) {
+            // The project's value governs this window: flipping the user's would change nothing on screen.
+            try {
+                com.editora.config.ProjectSettingsFile.set(scope.root(), "editor", field, next);
+            } catch (java.io.IOException e) {
+                host.setStatus(tr(
+                        "settings.scope.writeFailed",
+                        com.editora.config.ProjectSettings.fileFor(scope.root()).toString(),
+                        String.valueOf(e.getMessage())));
+                return;
+            }
+            scope.reload(); // re-lays out this window's buffers with the project's new value
+            syncSettingsViewChecks();
+            host.setStatus(tr("status.toggle.wordWrapProject", tr(key, tr(next ? "common.on" : "common.off"))));
+            return;
+        }
         if (prose) {
             s.setWordWrapProse(next);
         } else {

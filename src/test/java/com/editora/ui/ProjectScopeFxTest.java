@@ -110,4 +110,33 @@ class ProjectScopeFxTest {
             }
         });
     }
+
+    @Test
+    void toggleWordWrapFlipsTheProjectsValueWhereTheProjectSetsIt() throws Exception {
+        Files.writeString(ProjectSettings.fileFor(project), "{\"editor\": {\"wordWrap\": true}}");
+        EditorBuffer buffer = open(Files.writeString(project.resolve("B.java"), "class B {}\n"));
+        FxTestSupport.runOnFx(() -> {
+            config.getSettings().setWordWrap(false);
+            config.getTrustStore().trust(project);
+            scope().reload();
+            assertEquals(true, buffer.wrap().preferred(), "the project wraps code");
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            registry.run("view.toggleWordWrap");
+            assertEquals(false, buffer.wrap().preferred(), "the toggle acts on what is on screen");
+            assertEquals(false, config.getSettings().isWordWrap(), "the user's own setting is untouched");
+            assertEquals(Boolean.FALSE, ProjectSettings.load(project).editor().getWordWrap(), "the project's flipped");
+        });
+    }
+
+    @Test
+    void markdownLintFixesTabsWithTheProjectsTabSize() throws Exception {
+        EditorBuffer buffer = open(Files.writeString(project.resolve("README.md"), "# Title\n\nword\tafter\n"));
+        FxTestSupport.runOnFx(() -> {
+            config.getTrustStore().trust(project);
+            scope().reload();
+            CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+            registry.run("markdownLint.fix");
+            assertEquals("# Title\n\nword  after\n", buffer.getContent(), "two spaces: the project's tab size");
+        });
+    }
 }

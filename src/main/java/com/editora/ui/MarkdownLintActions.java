@@ -344,7 +344,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         MarkdownLintFix.Result fixed = MarkdownLintFix.fix(
                 text,
                 previews.effectiveMarkdownLintDisabled(buffer),
-                host.config().getSettings().getTabSize(),
+                buffer.getTabSize(), // the buffer's own: .editorconfig, else the project's, else the user's
                 MarkdownLintFix.Scope.ALL,
                 options(buffer));
         if (!fixed.text().equals(text)) {
@@ -362,7 +362,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         Set<String> off = previews.effectiveMarkdownLintDisabled(b);
         MarkdownLintOptions options = options(b);
         MarkdownLintFix.Result fixed =
-                MarkdownLintFix.fix(text, off, host.config().getSettings().getTabSize(), scope, options);
+                MarkdownLintFix.fix(text, off, b.getTabSize(), scope, options); // the buffer's effective tab size
         if (fixed.text().equals(text)) {
             int manual = MarkdownLint.lint(text, off, options).size();
             host.setStatus(
