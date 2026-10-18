@@ -144,7 +144,7 @@ GitHub releases here are **immutable**: once published, an asset can never be ad
 upstream steps are tolerant by design — JReleaser's globs match zero files without complaint, and
 `aot_build.java` lets the `.rpm` succeed alone when the `.deb` wrap fails. So immediately before
 JReleaser, the `Release` job runs
-[`scripts/release/check-release.py`](../scripts/release/check-release.py) against the downloaded
+[`scripts/release/CheckRelease.java`](../scripts/release/CheckRelease.java) against the downloaded
 artifacts and, on a tag, **refuses to publish unless all eleven expected files are present and
 non-empty** (the table above; fat jars are named after the pom version, everything else after the
 tag). It prints the full list with `ok`/`MISSING` per file. The AppImage and tarball steps are

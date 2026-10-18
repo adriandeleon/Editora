@@ -234,11 +234,11 @@ The dev loop (`mvn javafx:run`/`compile`) is unaffected; the check runs only at 
 
 A test guarded by an assumption reports "skipped" when its tool or filesystem feature is missing, so a
 runner that loses the tool stays green while the feature goes untested. After the Linux lanes run,
-`scripts/check_skips.py` compares every skipped test with `scripts/expected-skips-linux.txt` and fails
-on one that is not listed. To run it locally after `mvn test`:
+`scripts/ci/CheckSkips.java` compares every skipped test with `scripts/ci/expected-skips-linux.txt` and
+fails on one that is not listed. To run it locally after `mvn test`:
 
 ```
-python3 scripts/check_skips.py target/surefire-reports scripts/expected-skips-linux.txt
+java scripts/ci/CheckSkips.java target/surefire-reports scripts/ci/expected-skips-linux.txt
 ```
 
 If you add a test that legitimately skips on the runner, list it there with the reason. If it skips
@@ -246,14 +246,21 @@ because the runner lacks a tool, prefer installing the tool in `ci.yml`, as is d
 
 ## Script tests
 
-The release and packaging scripts have their own tests — Python `unittest` files beside the scripts,
-run by the `scripts` CI job (not by Maven):
+The scripts under `scripts/` need only the JDK (and bash for the Linux-only shell scripts). The Java
+ones are ordinary source files run by the JDK's source launcher (`java scripts/ci/ShardTests.java …`):
+the source root is `scripts/`, each file's package is its directory, and they share small helpers in
+`scripts/lib` (a JSON reader and writer, process and scratch-directory helpers). They have their own
+tests — `*Test.java` files beside them, run by the `scripts` CI job (not by Maven) through a minimal
+runner in `scripts/lib`, so nothing is built and no test library is needed:
 
 ```
-for d in scripts scripts/release scripts/packaging scripts/native; do
-  python3 -m unittest discover -s "$d" -p 'test_*.py'
-done
+java scripts/lib/RunTests.java              # every script test
+java scripts/lib/RunTests.java release ci   # only the classes whose name starts with these
 ```
+
+A test method is a no-argument method annotated `@lib.Test`; each runs on a fresh instance (the
+constructor is the set-up, `AutoCloseable.close` the tear-down), with the assertions of `lib.Assert`.
+`Assert.assumeTrue` skips a test, or every test of a class when called from its constructor.
 
 They run the real shell scripts against throwaway directories: the tarball installer in user mode and,
 through `--destdir`, in system mode; the `.deb` `postinst`/`postrm` against a scratch root
@@ -275,16 +282,16 @@ skips. The `Remote probe` workflow runs it against macOS's own sshd on `macos-15
 dropbear on localhost ([remote](subsystems/remote.md)).
 
 On Linux the suite runs as four shards, each on its own runner (the `tests` job in `ci.yml`), because in
-one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/shard_tests.py` deals
-the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself, and
+one JVM on one runner it took 15 minutes and grew with every pull request. `scripts/ci/ShardTests.java`
+deals the test classes out: it lists the files under `src/test/java` that Surefire would pick by itself, and
 shard *n* of 4 takes every fourth one, the `*FxTest` classes dealt separately so each shard gets its
 share of the slow ones. A shard runs `test` with that list as Surefire's `includesFile`; the `build` job
 (the check `master` requires, "Build & Test (JDK 25)") then fails if any shard failed, checks that every
-test class has a report (`shard_tests.py check`), checks the skips, joins the four JaCoCo data files and
+test class has a report (`ShardTests.java check`), checks the skips, joins the four JaCoCo data files and
 applies the coverage floors with `mvn -DskipTests verify`. To run one shard locally:
 
 ```
-python3 scripts/shard_tests.py list 2 4 > target/shard-includes.txt
+java scripts/ci/ShardTests.java list 2 4 > target/shard-includes.txt
 mvn -Dsurefire.includesFile=target/shard-includes.txt test
 ```
 
