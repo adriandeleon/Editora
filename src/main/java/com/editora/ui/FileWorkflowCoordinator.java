@@ -1742,6 +1742,7 @@ final class FileWorkflowCoordinator {
     }
 
     private void updateTocForExplicitSave(EditorBuffer buffer) {
+        host.editorSettings().applyPendingView(buffer); // a hidden tab's view settings (TOC levels) before saving
         if (buffer.isMarkdown() && host.config().getSettings().isMarkdownTocUpdateOnSave()) {
             buffer.markdown().updateTocForSave(); // an explicit Save only: autosave never edits the buffer
         }

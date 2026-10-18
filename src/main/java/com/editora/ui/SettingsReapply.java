@@ -69,7 +69,7 @@ final class SettingsReapply {
         Set<String> changed = last == null ? null : changedKeys(last, now);
         last = now;
         if (viewOnly(changed)) {
-            window.editorSettings.applyFontsAndPerBufferView(settings);
+            window.editorSettings.applyPerBufferViewToVisible(settings); // hidden tabs catch up when shown
             window.statusBar.refresh(); // it shows the tab size
             return;
         }

@@ -971,6 +971,7 @@ final class EditorSettingsCoordinator {
      * result a load worker prepared — is applied as is.
      */
     void applyViewSettings(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        staleView.remove(buffer); // whatever was waiting for this buffer is applied now
         Settings s = host.config().getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
         Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
@@ -1261,6 +1262,51 @@ final class EditorSettingsCoordinator {
      * scene stylesheet and re-run the whole cascade — #545).
      */
     void applyFontsAndPerBufferView(Settings settings) {
+        applyFontsAndPerBufferView(settings, false);
+    }
+
+    /**
+     * Buffers whose view settings changed while their tab was not showing; {@link #applyViewSettings} brings one
+     * up to date when its tab is next selected (or before it is saved). Weak: a closed buffer just drops out.
+     */
+    private final java.util.Set<EditorBuffer> staleView =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /**
+     * {@link #applyFontsAndPerBufferView} after a change of per-buffer view settings only (tab size, rulers,
+     * line numbers …; {@link SettingsReapply#VIEW_ONLY}): the buffers on screen — each editor group's selected
+     * tab — are updated at once, the hidden ones when their tab is next shown. Re-laying out every hidden
+     * buffer made each tab-size step cost about 5 ms per open file.
+     */
+    void applyPerBufferViewToVisible(Settings settings) {
+        applyFontsAndPerBufferView(settings, true);
+    }
+
+    /** Applies a hidden buffer's pending view settings now, if any are waiting (e.g. before it is saved). */
+    void applyPendingView(EditorBuffer buffer) {
+        if (buffer != null && staleView.contains(buffer)) {
+            applyViewSettings(buffer);
+        }
+    }
+
+    private void markStaleView(Tab tab, EditorBuffer buffer) {
+        if (!staleView.add(buffer)) {
+            return; // already waiting for this tab to show
+        }
+        javafx.beans.value.ChangeListener<Boolean> onShown = new javafx.beans.value.ChangeListener<>() {
+            @Override
+            public void changed(
+                    javafx.beans.value.ObservableValue<? extends Boolean> o, Boolean was, Boolean selected) {
+                if (selected) {
+                    tab.selectedProperty().removeListener(this);
+                    applyPendingView(buffer);
+                }
+            }
+        };
+        tab.selectedProperty().addListener(onShown);
+    }
+
+    private void applyFontsAndPerBufferView(Settings settings, boolean visibleOnly) {
         int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
         Fonts.ensureFamily(settings.getFontFamily());
         // The coordinators remember the font for a console panel not built yet (they are built on first use).
@@ -1271,7 +1317,9 @@ final class EditorSettingsCoordinator {
         host.testRunCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);
-            if (buffer != null) {
+            if (buffer != null && visibleOnly && !tab.isSelected()) {
+                markStaleView(tab, buffer);
+            } else if (buffer != null) {
                 applyViewSettings(buffer);
             } else if (tab.getUserData() instanceof DiffViewerPane diff) {
                 diff.setFont(settings.getFontFamily(), consoleFont); // text zoom applies inside a Diff tab too (#533)
