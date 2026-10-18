@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Plugins: consent belongs to a plugin's folder and to what you were shown.** A plugin's id must be its folder's
+  name (a folder that copies another plugin's id is listed with an error and never loads), and plugins.json stores
+  a fingerprint of the disclosure with each consent: a plugin whose code, commands or chords changed since does not
+  load until you enable it again. Entries of plugins whose folder is gone are dropped at start. plugins.json
+  schema 2 carries existing consents over.
+- **Plugins: nothing is replaced before you agree.** An install is unpacked beside the plugins and put in place only
+  on Enable; a registry archive must be the plugin and version its entry names; installing a different plugin
+  under an installed plugin's id asks "Replace A with B?" first. Remove deletes the row you clicked.
+- **The plugin consent dialog cannot be forged.** Manifest text is escaped (line breaks, control and bidi
+  characters are shown, not obeyed) and capped, the capability list scrolls in a fixed box, and it lists the main
+  class and every jar, each command's exact argv and folder, and what each chord replaces. A plugin whose
+  plugin.json cannot be read can no longer be ticked.
+- **MCP clients cannot switch plugins on, change the signed-registry requirement, install or remove plugins, or
+  trust a folder.** The registry URL setter refuses anything but https for every caller.
+
 - **AI API keys are kept in the system keychain** (macOS Keychain, Windows Credential Manager, the Secret Service on
   Linux). Keys in settings.json move there on first start, and Settings → AI Actions says where each key is. Where no
   keychain answers, keys stay in settings.json and the page says so. Keys in the keychain are never exported.
@@ -48,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `.npmrc`.
 - **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
   reporter flag, and node:test results can be rerun one by one or failed-only.
+- **`--disable-plugins`** starts Editora with no plugin loaded for the session: the way out of a plugin that hangs or
+  breaks startup. Settings and Doctor say when it is on.
+- **Doctor → Plugins** lists what runs and every plugin that failed to load or start, started slowly, or changed
+  since it was enabled.
+- **Plugin chords per keymap**: a manifest's `keymaps` gives chords for one keymap (`emacs`, `cua`, …) in place of
+  `keymap`.
+- **Plugins: Restart now** on a Settings row whose change waits for a restart, and status and errors shown on the
+  Plugins page itself.
 
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
@@ -284,6 +307,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **What a session runs is what it started with.** Every window applies the plugins that loaded at launch; an
+  install, update, enable, disable or removal takes effect at the next start, as the Settings page says. An update
+  or removal of a running plugin is applied at the next start before anything loads (Windows cannot replace an
+  open jar), and a declined update keeps the installed version, enabled.
+- **Plugin commands and tool windows are always in the plugin's namespace** (`plugin.<id>.…`), so a plugin can no
+  longer replace a built-in command; an untitled one shows the plugin's name, and tool-window toggles read
+  "Tool Window: …".
+- **`activeEditor()` stays on the buffer it was asked for**: a plugin that finishes on a worker writes into the
+  file it started on, never the tab in front by then (format-runner overwrote another file). Plugin API reads off
+  the JavaFX thread throw; writes are handed to it.
+- **Plugin feedback is visible and translated**: start and main-class failures go to the Message Log and the
+  Settings row, a failed start's commands, chords and segments are taken back, failing plugin commands name the
+  plugin, declared commands show their output, and install and registry errors are sentences in your language in
+  a dialog titled "Plugins".
+- **Settings → Plugins**: installed plugins come first, Browse comes back to Settings when its picker closes,
+  Browse and Install from file are greyed while plugins are off (Simple mode says it is the reason), Remove names
+  the plugin and its saved data, and "Require signed plugins" is now "Require a signed registry".
+- **Export Configuration asks before including the data plugins saved**, and never includes the installer's
+  staging folders.
+- **The example plugin uses chords that are free in every keymap** (Ctrl+Alt+Shift+E / Y).
+
 - **Changing tab size or another view setting with many files open is about nine times faster**; tabs that are not
   shown catch up when you show them.
 - **Codex has its own model setting** instead of sharing Anthropic's.
@@ -487,6 +531,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node.js stack-trace links** work for ESM `file://` frames (spaces, Windows drives), paths with spaces,
   `.jsx/.tsx/.mts/.cts` files and tsc errors, and jump to the column.
 - **Run and Output consoles** say when the oldest output was dropped to stay under the size cap.
+- **Closing a window no longer keeps it in memory** (about 21 MB each, plugin panes included): the Settings Sync
+  listener of every closed window was never removed.
+- **A plugin thread can no longer keep Editora running after quit**, where the next launch was "handed to" an
+  editor with no window.
+- **Chords a plugin bound in code survive a keymap switch or a key-binding edit**, and a keymap rebuild in Simple
+  mode no longer turns plugin chords on.
+- **A plugin's `start()` is timed**; one that holds up window opening is named.
+- **Registry and download reads have an overall deadline**, a second Browse while one is fetching joins it, a picked
+  file over the size cap is refused before it is read, and an install worker that fails always reports back.
+- **Removing a plugin deletes its plugin.json last**, so a folder that cannot be fully deleted stays listed and
+  removable; staging folders a crash left behind are swept at start; concurrent rescans can no longer close class
+  loaders in use.
+- **Plugin versions compare by semver**: `rc10 > rc2`, `+build` is ignored, `v2.0 < 10.0`; the install question
+  says Update, Reinstall or Downgrade where that is what an install would do, and Browse marks a newer installed
+  version.
+- **The palette shows plugin chords**, plugin right-click items have their own separator, a plugin status segment is
+  reachable by keyboard and names its plugin, and `caretLine()` is right in a narrowed buffer.
 - **The minimise, maximise and close buttons were nearly invisible with a dark theme and the menu bar in the
   title bar.** They followed the desktop's light or dark setting rather than Editora's theme, so a dark theme on
   a light desktop drew them dark on dark. They now follow the app theme, and change with it.

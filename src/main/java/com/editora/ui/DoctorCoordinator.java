@@ -99,6 +99,11 @@ final class DoctorCoordinator {
         /** Opens Settings focused on the page for a Doctor settings key ({@code git}/{@code lsp}/…). */
         void openSettingsFor(String settingsKey);
 
+        /** The shared plugin manager (the Plugins section), or null when there is none. */
+        default com.editora.plugin.PluginManager plugins() {
+            return null;
+        }
+
         /** This window's project root (where Python's venv is looked for), or null. */
         default java.nio.file.Path projectRoot() {
             return null;
@@ -718,12 +723,57 @@ final class DoctorCoordinator {
                             .orElse(""))));
         }
 
+        // Plugins ---------------------------------------------------------------------------------
+        specs.addAll(pluginRows(s, ops.plugins()));
+
         return specs;
     }
 
     // --- rows --------------------------------------------------------------------------------------
 
     /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
+    /**
+     * The Plugins section: what this session runs, then one row per plugin that failed to load or to start,
+     * started slowly, or changed since it was enabled — what used to show nowhere but the log. No "Turn on":
+     * enabling plugins is a security decision made on the Settings page. Pure over the manager's state.
+     */
+    static List<DoctorService.CheckSpec> pluginRows(Settings s, com.editora.plugin.PluginManager plugins) {
+        List<DoctorService.CheckSpec> rows = new ArrayList<>();
+        if (plugins == null) {
+            return rows;
+        }
+        DoctorCheck summary = DoctorCheck.checking("plugins", "plugins", tr("doctor.label.plugins"), "")
+                .withSettings("plugins");
+        if (com.editora.plugin.PluginManager.disabledForSession()) {
+            rows.add(terminal(summary.warn(tr("doctor.plugins.disabledForSession"), "")));
+            return rows;
+        }
+        if (!s.isPluginSupport()) {
+            rows.add(terminal(summary.disabled()));
+            return rows;
+        }
+        long running = plugins.launchSet().stream()
+                .filter(d -> d.enabled() && d.loadError() == null)
+                .count();
+        rows.add(terminal(summary.ok(
+                tr("doctor.plugins.summary", running, plugins.descriptors().size()))));
+        for (com.editora.plugin.PluginDescriptor d : plugins.descriptors()) {
+            com.editora.plugin.PluginDescriptor.LoadProblem runtime = plugins.runtimeProblem(d.id());
+            String problem = d.loadError() != null
+                    ? PluginLoadProblems.text(d)
+                    : runtime != null ? PluginLoadProblems.text(runtime) : null;
+            if (problem == null) {
+                continue;
+            }
+            DoctorCheck row = DoctorCheck.checking("plugin:" + d.id(), "plugins", d.displayName(), d.id())
+                    .withSettings("plugins");
+            boolean slow = d.loadError() == null
+                    && runtime.kind() == com.editora.plugin.PluginDescriptor.LoadProblem.Kind.SLOW_START;
+            rows.add(terminal(slow ? row.warn(problem, "") : row.missing("doctor.tip.pluginProblem", problem)));
+        }
+        return rows;
+    }
+
     private static DoctorCheck offRow(DoctorCheck placeholder, String enableKey) {
         // A whole section that is off says so in its label; a tip repeating it would be noise.
         boolean section = placeholder.label().equals(tr("doctor.label.sectionOff"));

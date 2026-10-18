@@ -53,6 +53,37 @@ class WindowReleasedOnCloseFxTest {
     }
 
     /**
+     * One of two windows closed — the app keeps running. The WindowManager-wide Settings Sync kept every closed
+     * window's Settings listener, and through it the whole window (about 21 MB, with its plugins' panes and
+     * command closures), for the life of the process (plugin review D2). Disposing the whole fixture, as the
+     * tests above do, could not see it: the WindowManager went too.
+     */
+    @Test
+    void oneOfTwoWindowsClosedIsReleasedWhileTheOtherRuns() throws Exception {
+        FxWindowFixture fx = FxWindowFixture.create();
+        try {
+            WeakReference<MainController> closed = openSecondAndClose(fx);
+            assertTrue(collected(closed), "the closed window is still reachable from the running one");
+            assertTrue(FxTestSupport.callOnFx(
+                    () -> FxTestSupport.<Stage>field(fx.controller, "stage").isShowing()));
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    private static WeakReference<MainController> openSecondAndClose(FxWindowFixture fx) throws Exception {
+        MainController second = FxTestSupport.callOnFx(() -> fx.windowManager.buildWindowForTest());
+        FxTestSupport.runOnFx(() -> {
+            Stage stage = FxTestSupport.field(second, "stage");
+            javafx.event.Event.fireEvent(
+                    stage, new javafx.stage.WindowEvent(stage, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST));
+            stage.hide();
+        });
+        FxTestSupport.drainFx();
+        return new WeakReference<>(second);
+    }
+
+    /**
      * Builds a window, opens a file in it, optionally gives the editor real focus, and disposes the window.
      * The controller is only ever referenced inside this call: a live local slot on the test's own frame
      * would itself root it and make the assertion meaningless.

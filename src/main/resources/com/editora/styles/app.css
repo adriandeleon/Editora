@@ -498,6 +498,16 @@
     -fx-font-size: 12px;
 }
 /* Git error dialog body: monospace so command output (paths, hints) lines up. */
+/* Plugin consent: the capability list, monospace so argv quoting and chords line up. */
+.plugin-consent-list {
+    -fx-font-family: "JetBrains Mono", "monospace";
+}
+
+/* Browse Plugins: an entry this Editora is too old for is shown, greyed, and cannot be installed. */
+.plugin-browse-unavailable {
+    -fx-opacity: 0.55;
+}
+
 .git-error-text {
     -fx-font-family: "JetBrains Mono", "monospace";
     -fx-font-size: 12px;
