@@ -88,6 +88,8 @@ class RemoteTerminalPanelFxTest {
                 TerminalCoordinator.hostOf(Vfs.authorityOf(remoteDir)),
                 fx(() -> ((Label) panel.activeTab().getGraphic()).getText()),
                 "the chip names the host");
+        // The host's shell opens off the FX thread: the tab is there at once, its view once connected.
+        await(() -> Boolean.TRUE.equals(call(() -> panel.activeView() != null)), "the host's shell connected");
 
         type("echo $((6 * 7))\n");
         await(() -> screen().contains("42"), "the host's answer");
