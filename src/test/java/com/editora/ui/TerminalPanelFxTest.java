@@ -359,6 +359,46 @@ class TerminalPanelFxTest {
         assertEquals(null, fx(() -> panel.activeView().linkTipText()), "and hides off it");
     }
 
+    @Test
+    void aRemoteShellsLinkIsCheckedOffTheFxThread(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        // A file system other than this machine's stands in for SFTP, where every check asks the host.
+        try (var remote = java.nio.file.FileSystems.newFileSystem(dir.resolve("host.zip"), java.util.Map.of("create", "true"))) {
+            java.nio.file.Files.writeString(remote.getPath("/notes.txt"), "x");
+            List<String> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
+            show(fakeShells(), (title, programs) -> true, remote.getPath("/"));
+            fx(() -> {
+                panel.setShellPaths(d -> p -> remote.getPath(p));
+                panel.setLinkActions(new com.editora.terminal.LinkActions() {
+                    @Override
+                    public void openUrl(String url) {}
+
+                    @Override
+                    public void openFile(Path f, int line, int column) {
+                        opened.add(f.toString());
+                    }
+                });
+                panel.newTerminal();
+                return null;
+            });
+            shells.get(0).emit("see /notes.txt\r\n");
+            await(() -> call(() -> screen().contains("notes")), "the output");
+            await(() -> call(() -> panel.activeView().getWidth() > 0), "a layout");
+            clickWithLinkModifier(6, 0);
+            assertEquals(List.of(), opened, "not asked of the host on the FX thread: no link until it answers");
+            await(
+                    () -> {
+                        try {
+                            clickWithLinkModifier(6, 0);
+                        } catch (Exception e) {
+                            return false;
+                        }
+                        return !opened.isEmpty();
+                    },
+                    "the link, once the host said the file is there");
+            assertEquals("/notes.txt", opened.getFirst());
+        }
+    }
+
     /** A primary press with the platform's link modifier (Cmd on macOS, Ctrl elsewhere) at a cell. */
     private void clickWithLinkModifier(int column, int row) throws Exception {
         mouseWithLinkModifier(javafx.scene.input.MouseEvent.MOUSE_PRESSED, column, row);

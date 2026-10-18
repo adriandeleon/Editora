@@ -1646,6 +1646,7 @@ public final class TerminalView extends Region {
      * reading, and pay for it on every move.
      */
     private void updateHover(double x, double y, boolean modifierDown) {
+        hoverModifierDown = modifierDown;
         Hover previous = hover;
         hover = modifierDown ? linkAt(x, y) : null;
         setCursor(hover == null ? javafx.scene.Cursor.DEFAULT : javafx.scene.Cursor.HAND);
@@ -1766,14 +1767,56 @@ public final class TerminalView extends Region {
             // A remote shell's file:// names a file of its machine: the tab's mapping finds it here.
             String onShell = shellPaths == null ? null : ShellIntegration.pathOfCwdUrl(target);
             java.nio.file.Path fromUri = onShell != null ? shellPaths.apply(onShell) : LinkPaths.fromFileUri(target);
-            return fromUri != null && java.nio.file.Files.exists(fromUri) ? fromUri : null;
+            return exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
         java.nio.file.Path resolved = shellPaths == null
                 ? LinkPaths.resolve(target, cwd == null || cwd.isBlank() ? null : java.nio.file.Path.of(cwd))
                 : LinkPaths.resolveOn(target, cwd, shellPaths);
-        return resolved != null && java.nio.file.Files.exists(resolved) ? resolved : null;
+        return exists(resolved) ? resolved : null;
     }
+
+    /** What remote paths are known to be there, as answered off the FX thread; a few hundred at most. */
+    private final java.util.Map<java.nio.file.Path, Boolean> remoteExists = new java.util.LinkedHashMap<>();
+
+    private final java.util.Set<java.nio.file.Path> remoteAsking = new java.util.HashSet<>();
+
+    /**
+     * Whether {@code path} is there. On this machine it is asked at once (a local stat is cheap); a remote shell's
+     * path is a file over SFTP, so it is asked off the FX thread — the hover and the right-click asked the host on
+     * the FX thread before, and a slow link froze the editor. Until the answer arrives the link is not offered; when
+     * it does, the hover is worked out again.
+     */
+    private boolean exists(java.nio.file.Path path) {
+        if (path == null) return false;
+        if (shellPaths == null || com.editora.vfs.Vfs.isLocal(path)) return java.nio.file.Files.exists(path);
+        Boolean known = remoteExists.get(path);
+        if (known != null) return known;
+        if (remoteAsking.add(path)) {
+            Thread.ofVirtual().name("terminal-link-check").start(() -> {
+                boolean there;
+                try {
+                    there = java.nio.file.Files.exists(path);
+                } catch (RuntimeException e) {
+                    there = false;
+                }
+                boolean answer = there;
+                Platform.runLater(() -> {
+                    remoteAsking.remove(path);
+                    if (remoteExists.size() > 500) remoteExists.clear();
+                    remoteExists.put(path, answer);
+                    if (answer && lastMouseX >= 0) {
+                        hover = null; // asked again now that the answer is in
+                        updateHover(lastMouseX, lastMouseY, hoverModifierDown);
+                    }
+                });
+            });
+        }
+        return false;
+    }
+
+    /** Whether the link modifier was down at the last hover update, to redo it when a remote answer arrives. */
+    private boolean hoverModifierDown;
 
     /** Opens the hovered link. */
     private void openLink(Hover target) {
