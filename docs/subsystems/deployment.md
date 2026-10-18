@@ -32,8 +32,10 @@ alternatives, are in [ADR 0015](../decisions/0015-deployments.md).
    (hashing only when size or time moved), adopt identical files on a first deploy, flag files changed on the
    host since they were sent (**conflicts**), and remove files Editora sent that the project no longer has while
    the host's copy is unchanged. Nothing else is ever removed.
-5. Decisions: conflicts → Overwrite / Keep the host's (they stop being Editora's files) / Cancel; a first deploy
-   into a folder with files it would replace → confirm.
+5. Decisions: conflicts → Overwrite / Keep the host's / Cancel; a first deploy into a folder with files it would
+   replace → confirm. A kept file is remembered in the manifest as the host's (`Entry.keptOnHost`): later deploys
+   leave it alone and never remove it while the local file is unchanged, ask again once it is edited here, and
+   send it again only if the host loses it.
 6. Send: `TarWriter` (ustar, pax `path` for long or non-ASCII names) gzip level 1 into `HostScripts.unpack`
    (`mkdir -p`, `tar -xof -`, in the host's locale so GNU tar can write UTF-8 names), files keeping the local
    modified second; per-file SFTP when the host has no `tar`. Then `HostScripts.remove` reads the files and

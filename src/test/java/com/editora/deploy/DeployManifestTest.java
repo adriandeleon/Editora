@@ -20,7 +20,8 @@ class DeployManifestTest {
     void entriesRoundTripIncludingNamesWithSpacesAndTabsLeftOut() throws Exception {
         DeployManifest m = DeployManifest.of(Map.of(
                 "src/My File.txt", new DeployManifest.Entry(12, 1_700_000_000_500L, "abc", 1_700_000_000L),
-                "Ñandú/ü.py", new DeployManifest.Entry(1, 2, "d", 3)));
+                "Ñandú/ü.py", new DeployManifest.Entry(1, 2, "d", 3),
+                "kept.txt", new DeployManifest.Entry(4, 5, "e", 6, true)));
         Path file = dir.resolve("deploy/x.manifest");
         m.save(file);
         DeployManifest back = DeployManifest.load(file);

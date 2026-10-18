@@ -257,6 +257,16 @@ class DeploymentFxTest {
         decisions.conflictAnswer = Deployer.Decisions.Conflicts.CANCEL;
         assertNotNull(deploy(new Console()), "kept files are the host's now: not asked about again");
         assertEquals(1, decisions.conflictsAsked.size());
+        assertEquals(
+                "edited on the host, longer",
+                Files.readString(served.resolve("src/notes.txt")),
+                "and not overwritten by the next deploy either");
+
+        write("src/notes.txt", "notes, edited here since");
+        decisions.conflictAnswer = Deployer.Decisions.Conflicts.OVERWRITE;
+        assertNotNull(deploy(new Console()));
+        assertEquals(2, decisions.conflictsAsked.size(), "a local edit after keeping asks again");
+        assertEquals("notes, edited here since", Files.readString(served.resolve("src/notes.txt")));
     }
 
     @Test

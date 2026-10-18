@@ -146,7 +146,6 @@ public final class Deployer {
         DeployManifest manifest = DeployManifest.load(request.manifestFile());
         DeployPlan.Hasher hasher = f -> Hashing.sha256(f.path());
         DeployPlan plan = DeployPlan.of(local, manifest, listing.files(), d.deleteRemoved(), hasher);
-        int keptOnHost = 0;
         if (!plan.conflicts().isEmpty()) {
             Decisions.Conflicts choice = decisions == null
                     ? Decisions.Conflicts.CANCEL
@@ -154,10 +153,7 @@ public final class Deployer {
                             plan.conflicts().stream().map(LocalFile::relative).toList());
             switch (choice) {
                 case OVERWRITE -> plan = plan.overwritingConflicts();
-                case KEEP_HOST -> {
-                    keptOnHost = plan.conflicts().size();
-                    plan = plan.keepingConflicts();
-                }
+                case KEEP_HOST -> plan = plan.keepingConflicts(hasher);
                 default -> {
                     return Outcome.cancelled();
                 }
@@ -188,7 +184,7 @@ public final class Deployer {
                 bytes,
                 plan.deletes().size(),
                 plan.unchanged(),
-                keptOnHost,
+                plan.keptOnHost(),
                 null,
                 null);
     }

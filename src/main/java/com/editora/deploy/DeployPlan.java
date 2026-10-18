@@ -48,6 +48,7 @@ public final class DeployPlan {
     private final Map<String, DeployManifest.Entry> kept = new HashMap<>();
     private final Map<String, String> hashes = new HashMap<>();
     private int unchanged;
+    private int keptOnHost;
 
     private DeployPlan() {}
 
@@ -70,6 +71,16 @@ public final class DeployPlan {
             RemoteFile there = remote.get(f.relative());
             if (there == null) {
                 plan.uploads.add(f);
+            } else if (sent != null && sent.keptOnHost()) {
+                // The user kept the host's version: left alone while the local file is what it was then.
+                if (f.modified() == sent.modified() || plan.hash(f, hasher).equals(sent.sha256())) {
+                    plan.keptOnHost++;
+                    plan.kept.put(
+                            f.relative(),
+                            new DeployManifest.Entry(f.size(), f.modified(), sent.sha256(), there.seconds(), true));
+                } else {
+                    plan.conflicts.add(f); // edited here since: the two differ again, so ask again
+                }
             } else if (sent != null && hostKept(sent, there)) {
                 if (f.size() == sent.size() && f.modified() == sent.modified()) {
                     plan.unchanged++;
@@ -104,7 +115,7 @@ public final class DeployPlan {
                 continue;
             }
             RemoteFile there = remote.get(relative);
-            if (deleteRemoved && there != null && hostKept(e.getValue(), there)) {
+            if (deleteRemoved && there != null && !e.getValue().keptOnHost() && hostKept(e.getValue(), there)) {
                 plan.deletes.add(relative);
             }
             // Otherwise it is no longer Editora's: dropped from the manifest, left on the host.
@@ -165,11 +176,24 @@ public final class DeployPlan {
         return copy;
     }
 
-    /** This plan leaving the conflicts as the host has them (no longer Editora's files). */
-    public DeployPlan keepingConflicts() {
+    /**
+     * This plan leaving the conflicts as the host has them. Each is remembered as kept (with the local file as it
+     * is now), so the next deploy leaves it alone too instead of taking it for a file it never sent.
+     */
+    public DeployPlan keepingConflicts(Hasher hasher) throws IOException {
         DeployPlan copy = copy();
+        for (LocalFile f : conflicts) {
+            copy.kept.put(
+                    f.relative(), new DeployManifest.Entry(f.size(), f.modified(), copy.hash(f, hasher), 0, true));
+            copy.keptOnHost++;
+        }
         copy.conflicts.clear();
         return copy;
+    }
+
+    /** Files left as the host has them because the user kept the host's version (now or earlier). */
+    public int keptOnHost() {
+        return keptOnHost;
     }
 
     private DeployPlan copy() {
@@ -181,6 +205,7 @@ public final class DeployPlan {
         copy.kept.putAll(kept);
         copy.hashes.putAll(hashes);
         copy.unchanged = unchanged;
+        copy.keptOnHost = keptOnHost;
         return copy;
     }
 

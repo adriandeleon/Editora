@@ -103,9 +103,38 @@ class DeployPlanTest {
         assertEquals(List.of("a.txt"), names(plan.conflicts()));
         assertTrue(plan.uploads().isEmpty());
         assertEquals(List.of("a.txt"), names(plan.overwritingConflicts().uploads()));
-        DeployPlan kept = plan.keepingConflicts();
+        DeployPlan kept = plan.keepingConflicts(hashes(Map.of("a.txt", "h"), new AtomicInteger()));
         assertTrue(kept.upToDate());
-        assertTrue(kept.manifestAfter(hashes(Map.of(), new AtomicInteger())).isEmpty(), "no longer Editora's file");
+        assertEquals(1, kept.keptOnHost());
+        DeployManifest.Entry remembered =
+                kept.manifestAfter(hashes(Map.of(), new AtomicInteger())).get("a.txt");
+        assertTrue(remembered.keptOnHost(), "remembered as the host's, not forgotten");
+    }
+
+    @Test
+    void aKeptFileIsLeftAloneUntilTheLocalFileChangesAndIsNeverRemoved() throws Exception {
+        DeployManifest m = DeployManifest.of(Map.of("a.txt", new DeployManifest.Entry(3, T, "h", 0, true)));
+        Map<String, RemoteFile> host = Map.of("a.txt", new RemoteFile(26, T / 1000 + 300));
+        AtomicInteger calls = new AtomicInteger();
+
+        DeployPlan same = DeployPlan.of(List.of(file("a.txt", 3, T)), m, host, true, hashes(Map.of(), calls));
+        assertTrue(same.upToDate(), "the host's version stays: no upload over it");
+        assertEquals(1, same.keptOnHost());
+        assertTrue(same.manifestAfter(hashes(Map.of(), calls)).get("a.txt").keptOnHost());
+
+        DeployPlan touched =
+                DeployPlan.of(List.of(file("a.txt", 3, T + 5000)), m, host, true, hashes(Map.of("a.txt", "h"), calls));
+        assertTrue(touched.upToDate(), "a new time with the same contents is still the kept version");
+
+        DeployPlan edited = DeployPlan.of(
+                List.of(file("a.txt", 9, T + 5000)), m, host, true, hashes(Map.of("a.txt", "new"), calls));
+        assertEquals(List.of("a.txt"), names(edited.conflicts()), "edited here since: asked again");
+
+        DeployPlan lost = DeployPlan.of(List.of(file("a.txt", 3, T)), m, Map.of(), true, hashes(Map.of(), calls));
+        assertEquals(List.of("a.txt"), names(lost.uploads()), "the host lost it: sent");
+
+        DeployPlan gone = DeployPlan.of(List.of(), m, host, true, hashes(Map.of(), calls));
+        assertTrue(gone.deletes().isEmpty(), "the host's file is never removed");
     }
 
     @Test

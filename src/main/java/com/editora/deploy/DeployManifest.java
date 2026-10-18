@@ -25,14 +25,25 @@ public final class DeployManifest {
     private static final String HEADER = "editora-deploy-manifest 1";
 
     /**
-     * One file Editora put on the host.
+     * One file Editora put on the host — or, {@code keptOnHost}, one the user chose to keep as the host has it
+     * (Keep the Host's): a deploy leaves that file alone, and never removes it, until the local file changes
+     * again (then it asks again) or the host loses it (then it is sent).
      *
      * @param size the local file's length when it was sent (also the host copy's)
-     * @param modified the local file's modified time when it was sent, in milliseconds
-     * @param sha256 the local file's SHA-256 when it was sent, hex
+     * @param modified the local file's modified time when it was sent (or kept), in milliseconds
+     * @param sha256 the local file's SHA-256 when it was sent (or kept), hex
      * @param remoteSeconds the host copy's modified time afterwards, in whole seconds
+     * @param keptOnHost the host's version was kept over this local one
      */
-    public record Entry(long size, long modified, String sha256, long remoteSeconds) {}
+    public record Entry(long size, long modified, String sha256, long remoteSeconds, boolean keptOnHost) {
+        /** A file Editora sent. */
+        public Entry(long size, long modified, String sha256, long remoteSeconds) {
+            this(size, modified, sha256, remoteSeconds, false);
+        }
+    }
+
+    /** How a kept file's hash is written, so the format stays five columns. */
+    private static final String KEPT = "kept:";
 
     private final TreeMap<String, Entry> entries;
 
@@ -81,8 +92,15 @@ public final class DeployManifest {
             for (String line : lines.subList(1, lines.size())) {
                 String[] f = line.split("\t", 5);
                 if (f.length == 5 && LocalFiles.acceptable(f[4])) {
+                    boolean kept = f[2].startsWith(KEPT);
                     entries.put(
-                            f[4], new Entry(Long.parseLong(f[0]), Long.parseLong(f[1]), f[2], Long.parseLong(f[3])));
+                            f[4],
+                            new Entry(
+                                    Long.parseLong(f[0]),
+                                    Long.parseLong(f[1]),
+                                    kept ? f[2].substring(KEPT.length()) : f[2],
+                                    Long.parseLong(f[3]),
+                                    kept));
                 }
             }
         } catch (IOException | RuntimeException e) {
@@ -99,7 +117,7 @@ public final class DeployManifest {
                 .append('\t')
                 .append(e.modified())
                 .append('\t')
-                .append(e.sha256())
+                .append(e.keptOnHost() ? KEPT + e.sha256() : e.sha256())
                 .append('\t')
                 .append(e.remoteSeconds())
                 .append('\t')
