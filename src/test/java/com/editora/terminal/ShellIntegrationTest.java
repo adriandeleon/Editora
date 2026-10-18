@@ -91,8 +91,9 @@ class ShellIntegrationTest {
         // What the scripts send now: every byte outside the unreserved set encoded.
         assertEquals("/tmp/dir #1", ShellIntegration.pathOfCwdUrl("file://h/tmp/dir%20%231"));
         assertEquals("/tmp/what?", ShellIntegration.pathOfCwdUrl("file://h/tmp/what%3F"));
-        assertEquals("/a/[x]/a\"b/a|b/a{b}/a\\b/é", ShellIntegration.pathOfCwdUrl(
-                "file://h/a/%5Bx%5D/a%22b/a%7Cb/a%7Bb%7D/a%5Cb/%C3%A9"));
+        assertEquals(
+                "/a/[x]/a\"b/a|b/a{b}/a\\b/é",
+                ShellIntegration.pathOfCwdUrl("file://h/a/%5Bx%5D/a%22b/a%7Cb/a%7Bb%7D/a%5Cb/%C3%A9"));
         assertEquals("/tmp/dir #1", ShellIntegration.pathOfCwdUrl("file://h/tmp/dir #1"), "and an older script's");
     }
 

@@ -56,9 +56,17 @@ class ConfigMigrationsTest {
     @Test
     void aScrollbackAboveTheNewMaximumIsClampedAndASmallerOneKept() throws Exception {
         ObjectNode big = (ObjectNode) mapper.readTree("{\"terminalScrollback\":100000}");
-        assertEquals(50_000, ConfigMigrations.clampTerminalScrollback(big).get("terminalScrollback").asInt());
+        assertEquals(
+                50_000,
+                ConfigMigrations.clampTerminalScrollback(big)
+                        .get("terminalScrollback")
+                        .asInt());
         ObjectNode small = (ObjectNode) mapper.readTree("{\"terminalScrollback\":8000}");
-        assertEquals(8000, ConfigMigrations.clampTerminalScrollback(small).get("terminalScrollback").asInt());
+        assertEquals(
+                8000,
+                ConfigMigrations.clampTerminalScrollback(small)
+                        .get("terminalScrollback")
+                        .asInt());
         ObjectNode none = (ObjectNode) mapper.readTree("{}");
         assertFalse(ConfigMigrations.clampTerminalScrollback(none).has("terminalScrollback"));
     }

@@ -93,7 +93,9 @@ final class TerminalCoordinator {
                 MenuItem find = new MenuItem(tr("terminal.menu.find"));
                 find.setOnAction(e -> panel.find());
                 find.setAccelerator(com.editora.terminal.TerminalView.chord(
-                        System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac")
+                        System.getProperty("os.name", "")
+                                        .toLowerCase(java.util.Locale.ROOT)
+                                        .startsWith("mac")
                                 ? "Meta+F"
                                 : "Ctrl+Shift+F"));
                 return List.of(here, find);
@@ -261,8 +263,8 @@ final class TerminalCoordinator {
     /** One question listing every busy terminal; {@code action} names the button that ends them. */
     static boolean confirmEndingTerminals(javafx.stage.Window owner, List<String> busy, String action) {
         ButtonType end = new ButtonType(action, ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, "• " + String.join("\n• ", busy), end, ButtonType.CANCEL));
+        Alert confirm = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, "• " + String.join("\n• ", busy), end, ButtonType.CANCEL));
         confirm.initOwner(owner);
         confirm.setTitle(tr("terminal.close.title"));
         confirm.setHeaderText(tr("terminal.closeWindow.header"));
@@ -530,15 +532,16 @@ final class TerminalCoordinator {
     private boolean confirmMultilinePaste(String text) {
         long lines = text.strip().lines().count();
         ButtonType paste = new ButtonType(tr("terminal.paste.confirm"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, ButtonType.CANCEL));
+        Alert confirm = Dialogs.styled(
+                new Alert(Alert.AlertType.CONFIRMATION, tr("terminal.paste.lines", lines), paste, ButtonType.CANCEL));
         confirm.initOwner(host.window());
         confirm.setTitle(tr("terminal.paste.title"));
         confirm.setHeaderText(null);
         javafx.scene.control.CheckBox dontAsk = new javafx.scene.control.CheckBox(tr("terminal.paste.dontAsk"));
         confirm.getDialogPane().setExpandableContent(null);
-        confirm.getDialogPane().setContent(new javafx.scene.layout.VBox(
-                10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
+        confirm.getDialogPane()
+                .setContent(new javafx.scene.layout.VBox(
+                        10, new javafx.scene.control.Label(tr("terminal.paste.lines", lines)), dontAsk));
         ((Button) confirm.getDialogPane().lookupButton(paste)).setDefaultButton(false);
         ((Button) confirm.getDialogPane().lookupButton(ButtonType.CANCEL)).setDefaultButton(true);
         boolean ok = confirm.showAndWait().orElse(ButtonType.CANCEL) == paste;

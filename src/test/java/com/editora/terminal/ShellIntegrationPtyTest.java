@@ -89,7 +89,9 @@ class ShellIntegrationPtyTest {
             await("the new directory reported", () -> events.contains("cwd " + target));
             connector.write("false\n".getBytes(StandardCharsets.UTF_8));
             await("the failed command's status", () -> events.contains("mark D 1"));
-            await("a mark per prompt", () -> events.stream().filter("mark A"::equals).count() >= 3);
+            await(
+                    "a mark per prompt",
+                    () -> events.stream().filter("mark A"::equals).count() >= 3);
             // bash before 4.4 (macOS's /bin/bash 3.2) has no PS0, so no output mark; zsh and newer bash do.
             if (!shell.endsWith("bash") || bashAtLeast44(shell)) {
                 assertTrue(events.contains("mark C"), () -> "the output mark: " + events);
@@ -151,11 +153,14 @@ class ShellIntegrationPtyTest {
         });
         try {
             await("a first prompt", () -> events.contains("mark A"));
-            assertTrue(events.stream().noneMatch(e -> e.startsWith("mark D")), () -> "no D before a command: " + events);
+            assertTrue(
+                    events.stream().noneMatch(e -> e.startsWith("mark D")), () -> "no D before a command: " + events);
             connector.write("rc\n".getBytes(StandardCharsets.UTF_8));
             await("~/.bashrc read although the profile does not source it", () -> out.indexOf("RC_OK") >= 0);
             connector.write("ll\n".getBytes(StandardCharsets.UTF_8));
-            await("the alias and the user's PROMPT_COMMAND", () -> out.indexOf("ALIAS_OK") >= 0 && out.indexOf("PC_OK") >= 0);
+            await(
+                    "the alias and the user's PROMPT_COMMAND",
+                    () -> out.indexOf("ALIAS_OK") >= 0 && out.indexOf("PC_OK") >= 0);
             connector.write(("cd '" + odd + "'\n").getBytes(StandardCharsets.UTF_8));
             await("a folder whose name has URL characters", () -> events.contains("cwd " + odd));
             long before = events.stream().filter(e -> e.startsWith("mark D")).count();

@@ -77,6 +77,9 @@ class TerminalSearchTest {
 
     @Test
     void ignoringCaseMatchesMixedCaseRows() {
-        assertEquals(1, TerminalSearch.find(r -> "Ünïcode TEXT", 0, 0, "üNÏCODE text", false).size());
+        assertEquals(
+                1,
+                TerminalSearch.find(r -> "Ünïcode TEXT", 0, 0, "üNÏCODE text", false)
+                        .size());
     }
 }

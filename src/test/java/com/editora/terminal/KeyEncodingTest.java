@@ -200,9 +200,15 @@ class KeyEncodingTest {
     @Test
     void ctrlDigitsAreXtermsControls() {
         RecordingLookup none = new RecordingLookup(null);
-        assertArrayEquals(new byte[] {0x1b}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT3, false, true, false, false), none, true));
-        assertArrayEquals(new byte[] {0x1c}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT4, false, true, false, false), none, true));
-        assertArrayEquals(new byte[] {0x7f}, KeyEncoding.encodePressed(pressed(KeyCode.DIGIT8, false, true, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x1b},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT3, false, true, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x1c},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT4, false, true, false, false), none, true));
+        assertArrayEquals(
+                new byte[] {0x7f},
+                KeyEncoding.encodePressed(pressed(KeyCode.DIGIT8, false, true, false, false), none, true));
     }
 
     @Test

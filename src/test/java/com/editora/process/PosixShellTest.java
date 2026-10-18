@@ -216,8 +216,8 @@ class PosixShellTest {
     }
 
     @Test
-    void aProgramsVariablesWinOverTheLoginProfileAsInConsoleRun(@org.junit.jupiter.api.io.TempDir java.nio.file.Path home)
-            throws Exception {
+    void aProgramsVariablesWinOverTheLoginProfileAsInConsoleRun(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path home) throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(
                 java.nio.file.Files.isExecutable(java.nio.file.Path.of("/bin/sh")));
         // A profile that sets what a run configuration also sets: Debian's /etc/profile sets PATH, an
@@ -230,8 +230,7 @@ class PosixShellTest {
         String script = PosixShell.terminalScript(
                 null,
                 false,
-                TerminalSpec.program(
-                        null, 80, 24, List.of("/bin/sh", "-c", "echo \"foo=$FOO java=$JAVA_HOME\""), env));
+                TerminalSpec.program(null, 80, 24, List.of("/bin/sh", "-c", "echo \"foo=$FOO java=$JAVA_HOME\""), env));
         ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", script);
         pb.environment().put("SHELL", "/bin/sh");
         pb.environment().put("HOME", home.toString());

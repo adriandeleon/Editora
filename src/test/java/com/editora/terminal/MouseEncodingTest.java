@@ -117,10 +117,24 @@ class MouseEncodingTest {
     void altIsXtermsMetaBit() {
         // On Linux and Windows the Meta of a mouse report is Alt; it used to be dropped.
         MouseEvent alt = new MouseEvent(
-                MouseEvent.MOUSE_PRESSED, 0, 0, 0, 0, MouseButton.PRIMARY, 1, false, false, true, false, true, false,
-                false, false, false, false, null);
-        assertEquals(
-                MouseButtonModifierFlags.MOUSE_BUTTON_META_FLAG,
-                MouseEncoding.modifierFlags(alt));
+                MouseEvent.MOUSE_PRESSED,
+                0,
+                0,
+                0,
+                0,
+                MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                true,
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                null);
+        assertEquals(MouseButtonModifierFlags.MOUSE_BUTTON_META_FLAG, MouseEncoding.modifierFlags(alt));
     }
 }

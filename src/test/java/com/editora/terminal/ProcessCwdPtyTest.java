@@ -69,8 +69,7 @@ class ProcessCwdPtyTest {
             String afterClose = reported.get();
             session.sendString("cd /\r");
             // The cd has to have run, or the check below proves nothing on a slow shell.
-            assertTrue(
-                    await(() -> "/".equals(ProcessCwd.of(session.pid()).orElse(null))), "the shell ran the cd");
+            assertTrue(await(() -> "/".equals(ProcessCwd.of(session.pid()).orElse(null))), "the shell ran the cd");
             Thread.sleep(2 * 750); // two of the watcher's polls: a running one would have reported "/"
             assertEquals(afterClose, reported.get(), "a closed watcher went on polling");
         } finally {

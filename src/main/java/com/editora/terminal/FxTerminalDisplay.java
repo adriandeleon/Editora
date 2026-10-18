@@ -167,7 +167,8 @@ public final class FxTerminalDisplay implements TerminalDisplay {
     }
 
     /** Whether a title update is already queued for the FX thread; the queued one reads the latest. */
-    private final java.util.concurrent.atomic.AtomicBoolean titlesQueued = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean titlesQueued =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     /**
      * Posts the titles to the FX thread, at most one update in flight: a program that sets thousands of titles a
@@ -265,7 +266,8 @@ public final class FxTerminalDisplay implements TerminalDisplay {
 
     private static com.jediterm.core.Color toCore(javafx.scene.paint.Color c) {
         return new com.jediterm.core.Color(
-                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int) Math.round(c.getBlue() * 255));
+                (int) Math.round(c.getRed() * 255), (int) Math.round(c.getGreen() * 255), (int)
+                        Math.round(c.getBlue() * 255));
     }
 
     public int getCursorX() {

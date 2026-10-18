@@ -158,7 +158,12 @@ class TerminalPanelFxTest {
             return null;
         });
         shells.get(0).emit("copy me\r\n");
-        await(() -> call(() -> panel.activeView().getSession().getTextBuffer().getScreenLines().contains("copy me")),
+        await(
+                () -> call(() -> panel.activeView()
+                        .getSession()
+                        .getTextBuffer()
+                        .getScreenLines()
+                        .contains("copy me")),
                 "the output");
         fx(() -> {
             var view = panel.activeView();
@@ -171,7 +176,9 @@ class TerminalPanelFxTest {
             return null;
         });
         assertTrue(
-                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString().contains("copy me")),
+                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard()
+                        .getString()
+                        .contains("copy me")),
                 "the selection is on the clipboard");
         fx(() -> {
             Event.fireEvent(
@@ -198,7 +205,8 @@ class TerminalPanelFxTest {
         });
         assertFalse(rule.test("C-S-p", "palette.show"), "the allow-list comes from the settings");
         assertTrue(rule.test("C-S-s", "file.save"));
-        assertFalse(rule.test("C-s", "file.save"), "C-s is the shell's (XOFF, readline's forward search) unless listed");
+        assertFalse(
+                rule.test("C-s", "file.save"), "C-s is the shell's (XOFF, readline's forward search) unless listed");
     }
 
     @Test
@@ -362,7 +370,8 @@ class TerminalPanelFxTest {
     @Test
     void aRemoteShellsLinkIsCheckedOffTheFxThread(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
         // A file system other than this machine's stands in for SFTP, where every check asks the host.
-        try (var remote = java.nio.file.FileSystems.newFileSystem(dir.resolve("host.zip"), java.util.Map.of("create", "true"))) {
+        try (var remote =
+                java.nio.file.FileSystems.newFileSystem(dir.resolve("host.zip"), java.util.Map.of("create", "true"))) {
             java.nio.file.Files.writeString(remote.getPath("/notes.txt"), "x");
             List<String> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
             show(fakeShells(), (title, programs) -> true, remote.getPath("/"));
@@ -845,12 +854,16 @@ class TerminalPanelFxTest {
         });
         assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
         fx(() -> {
-            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_DOWN, false, true, false, false));
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_DOWN, false, true, false, false));
             return null;
         });
         assertEquals(0, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()), "wraps");
         fx(() -> {
-            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, false, true, false, false));
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, false, true, false, false));
             return null;
         });
         assertEquals(2, (int) fx(() -> panel.tabsForTest().getSelectionModel().getSelectedIndex()));
@@ -874,7 +887,9 @@ class TerminalPanelFxTest {
 
     @Test
     void pasteInTheFindFieldPastesTheQueryNotIntoTheShell() throws Exception {
-        boolean mac = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac");
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
         show(fakeShells(), (title, programs) -> true, null);
         fx(() -> {
             panel.newTerminal();
@@ -901,13 +916,15 @@ class TerminalPanelFxTest {
         });
         shells.get(0).emit("\u0007");
         await(
-                () -> call(() -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)),
+                () -> call(() ->
+                        panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)),
                 "the first tab's bell mark");
         fx(() -> {
             panel.tabsForTest().getSelectionModel().select(0);
             return null;
         });
-        assertFalse(fx(() -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)));
+        assertFalse(fx(
+                () -> panel.tabsForTest().getTabs().getFirst().getStyleClass().contains(TerminalPanel.BELL)));
     }
 
     @Test
@@ -927,7 +944,8 @@ class TerminalPanelFxTest {
                     var view = panel.activeView();
                     var banner = panel.activeTab().getContent().lookup(".terminal-lost-banner");
                     // Layout positions: a focused Reconnect's focus ring draws a little past the banner.
-                    double bannerBottom = banner.getLayoutY() + banner.getLayoutBounds().getHeight();
+                    double bannerBottom =
+                            banner.getLayoutY() + banner.getLayoutBounds().getHeight();
                     return banner.getLayoutBounds().getHeight() > 0 && view.getLayoutY() >= bannerBottom - 0.5;
                 }),
                 "the view starting below the banner");
@@ -1062,7 +1080,9 @@ class TerminalPanelFxTest {
         assertTrue(busy.contains("Build (Build)"), busy.toString());
 
         program.exit(0);
-        await(() -> call(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)).size() == 1), "an ended program is not busy");
+        await(
+                () -> call(() -> panel.busyTabs(java.time.Duration.ofSeconds(2)).size() == 1),
+                "an ended program is not busy");
     }
 
     @Test
@@ -1089,7 +1109,10 @@ class TerminalPanelFxTest {
             panel.newTerminal(); // asked for
             return null;
         });
-        await(() -> call(() -> panel.activeView() != null && panel.activeView().isFocused()), "the asked-for shell's focus");
+        await(
+                () -> call(
+                        () -> panel.activeView() != null && panel.activeView().isFocused()),
+                "the asked-for shell's focus");
     }
 
     @Test
@@ -1144,14 +1167,18 @@ class TerminalPanelFxTest {
         assertEquals(views.size(), fx(() -> panel.viewsForTest().size()));
 
         fx(() -> {
-            Event.fireEvent(panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, true, false, false));
+            Event.fireEvent(
+                    panel.activeView(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, true, false, false));
             return null;
         });
-        assertEquals(1, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)), "Ctrl+Shift+PageUp moves it left");
+        assertEquals(
+                1, (int) fx(() -> panel.tabsForTest().getTabs().indexOf(first)), "Ctrl+Shift+PageUp moves it left");
 
-        assertTrue(fx(() -> first.getContextMenu() != null
-                && first.getContextMenu().getItems().stream()
-                        .anyMatch(i -> tr("terminal.tab.rename").equals(i.getText()))),
+        assertTrue(
+                fx(() -> first.getContextMenu() != null
+                        && first.getContextMenu().getItems().stream()
+                                .anyMatch(i -> tr("terminal.tab.rename").equals(i.getText()))),
                 "its own menu");
         fx(() -> {
             panel.rename(first, "");

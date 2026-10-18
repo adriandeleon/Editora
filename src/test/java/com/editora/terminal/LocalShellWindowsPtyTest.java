@@ -42,7 +42,11 @@ class LocalShellWindowsPtyTest {
             typeUntil(shell, seen, "Write-Output (\"W=\" + [Console]::WindowWidth)\r", "W=80");
             shell.resize(new TermSize(120, 30));
             typeUntil(shell, seen, "Write-Output (\"W=\" + [Console]::WindowWidth)\r", "W=120");
-            typeUntil(shell, seen, "Start-Process -NoNewWindow ping -ArgumentList '-n','60','127.0.0.1'; 'STARTED'\r", "STARTED");
+            typeUntil(
+                    shell,
+                    seen,
+                    "Start-Process -NoNewWindow ping -ArgumentList '-n','60','127.0.0.1'; 'STARTED'\r",
+                    "STARTED");
             List<ProcessHandle> children = process.descendants().toList();
             assertTrue(!children.isEmpty(), "ping runs under the shell");
 
@@ -51,7 +55,8 @@ class LocalShellWindowsPtyTest {
             assertTrue(process.waitFor(15, TimeUnit.SECONDS), "the shell ended");
             for (ProcessHandle child : children) {
                 child.onExit().get(15, TimeUnit.SECONDS);
-                assertTrue(!child.isAlive(), "and so did " + child.info().command().orElse("" + child.pid()));
+                assertTrue(
+                        !child.isAlive(), "and so did " + child.info().command().orElse("" + child.pid()));
             }
         } finally {
             process.destroyForcibly();

@@ -140,8 +140,8 @@ class ProcessRegistryShutdownProcessTest {
         Process root = new ProcessBuilder("sh", "-c", "nohup sleep 300 >/dev/null 2>&1 & echo $!; wait")
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
-        long job = Long.parseLong(
-                new BufferedReader(new InputStreamReader(root.getInputStream(), StandardCharsets.UTF_8))
+        long job =
+                Long.parseLong(new BufferedReader(new InputStreamReader(root.getInputStream(), StandardCharsets.UTF_8))
                         .readLine()
                         .strip());
         ProcessHandle detached = ProcessHandle.of(job).orElseThrow();

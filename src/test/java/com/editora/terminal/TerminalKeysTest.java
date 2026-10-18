@@ -36,7 +36,8 @@ class TerminalKeysTest {
         assertTrue(TerminalKeys.reachesEditora("C-S-p", "palette.show", DEFAULTS, false));
         assertTrue(TerminalKeys.reachesEditora("M-f12", "tool.terminal", DEFAULTS, false), "hide the terminal");
         assertFalse(TerminalKeys.reachesEditora("M-1", "tool.project", DEFAULTS, false), "readline's digit-argument");
-        assertTrue(TerminalKeys.reachesEditora("M-1", "tool.project", List.of("tool.*", "M-1"), false), "unless listed");
+        assertTrue(
+                TerminalKeys.reachesEditora("M-1", "tool.project", List.of("tool.*", "M-1"), false), "unless listed");
         assertTrue(TerminalKeys.reachesEditora("C-S-back-quote", "terminal.new", DEFAULTS, false));
     }
 

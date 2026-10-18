@@ -101,7 +101,10 @@ class TerminalToolWindowFxTest {
             }
 
             // Every tab's shell, not only the active one's, ends with the window.
-            await(() -> FxTestSupport.callOnFx(() -> terminals.panel().viewsForTest().size() == 3), "all three shells");
+            await(
+                    () -> FxTestSupport.callOnFx(
+                            () -> terminals.panel().viewsForTest().size() == 3),
+                    "all three shells");
             java.util.List<Long> pids = FxTestSupport.callOnFx(() -> terminals.panel().viewsForTest().stream()
                     .map(v -> v.getSession().pid())
                     .toList());

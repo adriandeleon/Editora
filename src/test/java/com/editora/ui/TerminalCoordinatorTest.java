@@ -41,7 +41,9 @@ class TerminalCoordinatorTest {
             String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             p.waitFor();
             org.junit.jupiter.api.Assertions.assertTrue(
-                    TerminalCoordinator.childrenOf(out, ProcessHandle.current().pid()).contains("sleep"), out);
+                    TerminalCoordinator.childrenOf(out, ProcessHandle.current().pid())
+                            .contains("sleep"),
+                    out);
         } finally {
             child.destroyForcibly();
         }
@@ -52,11 +54,14 @@ class TerminalCoordinatorTest {
         // A default install (Emacs keymap) offered only the stripe and the palette.
         var ids = MenuBarModel.allCommandIds();
         org.junit.jupiter.api.Assertions.assertTrue(
-                ids.containsAll(java.util.List.of("tool.terminal", "terminal.new", "file.openTerminal")), ids.toString());
+                ids.containsAll(java.util.List.of("tool.terminal", "terminal.new", "file.openTerminal")),
+                ids.toString());
         org.junit.jupiter.api.Assertions.assertEquals(
-                "tool.terminal", com.editora.command.KeymapManager.defaults("emacs", false).get("M-0"));
-        org.junit.jupiter.api.Assertions.assertTrue(com.editora.terminal.TerminalKeys.reachesEditora(
-                "M-0", "tool.terminal", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false),
+                "tool.terminal",
+                com.editora.command.KeymapManager.defaults("emacs", false).get("M-0"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                com.editora.terminal.TerminalKeys.reachesEditora(
+                        "M-0", "tool.terminal", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false),
                 "and it works from inside the terminal, to hide it again");
     }
 
@@ -65,9 +70,11 @@ class TerminalCoordinatorTest {
         com.editora.config.Settings s = new com.editora.config.Settings();
         s.setFontSize(12);
         s.setFontZoom(1.5);
-        org.junit.jupiter.api.Assertions.assertEquals(18.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                18.0, TerminalCoordinator.config(s).fontSize(), 0.001);
         s.setTerminalFontSize(10);
-        org.junit.jupiter.api.Assertions.assertEquals(15.0, TerminalCoordinator.config(s).fontSize(), 0.001);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                15.0, TerminalCoordinator.config(s).fontSize(), 0.001);
     }
 
     @Test

@@ -78,7 +78,18 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
                 List<String> ideCommands,
                 boolean confirmClose,
                 boolean typeAhead) {
-            this(fontFamily, fontSize, scrollback, cursor, bell, shell, ideCommands, confirmClose, typeAhead, false, true);
+            this(
+                    fontFamily,
+                    fontSize,
+                    scrollback,
+                    cursor,
+                    bell,
+                    shell,
+                    ideCommands,
+                    confirmClose,
+                    typeAhead,
+                    false,
+                    true);
         }
 
         Config(
@@ -939,8 +950,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         long deadline = System.nanoTime() + remoteWait.toNanos();
         remoteAnswers.forEach((tab, answer) -> {
             try {
-                List<String> programs =
-                        answer.get(Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
+                List<String> programs = answer.get(
+                        Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
                 if (!programs.isEmpty()) {
                     busy.add(describe(tab, programs));
                 }
@@ -1090,9 +1101,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         MenuItem close = new MenuItem(tr("menu.close"), Icons.closeTab());
         close.setOnAction(e -> requestClose(tab));
         MenuItem closeOthers = new MenuItem(tr("menu.closeOthers"), Icons.closeOtherTabs());
-        closeOthers.setOnAction(e -> new ArrayList<>(tabs.getTabs()).stream()
-                .filter(t -> t != tab)
-                .forEach(this::requestClose));
+        closeOthers.setOnAction(e ->
+                new ArrayList<>(tabs.getTabs()).stream().filter(t -> t != tab).forEach(this::requestClose));
         MenuItem closeRight = new MenuItem(tr("menu.closeRight"), Icons.closeTabsRight());
         closeRight.setOnAction(e -> {
             int at = tabs.getTabs().indexOf(tab);
@@ -1177,7 +1187,9 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             e.consume();
         });
         header.setOnDragOver(e -> {
-            if (draggedTab == null || e.getGestureSource() == header || !e.getDragboard().hasContent(TAB_DRAG)) {
+            if (draggedTab == null
+                    || e.getGestureSource() == header
+                    || !e.getDragboard().hasContent(TAB_DRAG)) {
                 return;
             }
             e.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
@@ -1191,7 +1203,10 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             int over = tabs.getTabs().indexOf(tab);
             if (from >= 0 && over >= 0) {
                 boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
-                moveTab(from, TerminalTabReorder.insertIndex(from, over, after, tabs.getTabs().size()));
+                moveTab(
+                        from,
+                        TerminalTabReorder.insertIndex(
+                                from, over, after, tabs.getTabs().size()));
             }
             e.setDropCompleted(true);
             e.consume();

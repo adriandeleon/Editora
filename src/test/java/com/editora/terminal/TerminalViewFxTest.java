@@ -232,7 +232,10 @@ class TerminalViewFxTest {
             return null;
         });
         connector.emit("\u001b]11;?\u0007\u001b]10;?\u0007");
-        await(() -> connector.written().contains("]11;rgb:") && connector.written().contains("]10;rgb:"), "replies");
+        await(
+                () -> connector.written().contains("]11;rgb:")
+                        && connector.written().contains("]10;rgb:"),
+                "replies");
     }
 
     @Test
@@ -298,7 +301,9 @@ class TerminalViewFxTest {
     void aProgramsDefaultCursorRequestGivesTheUsersShapeBack() throws Exception {
         open();
         connector.emit("\u001b[6 q");
-        await(() -> call(() -> view.getDisplay().getCursorShape()) == com.jediterm.terminal.CursorShape.STEADY_VERTICAL_BAR,
+        await(
+                () -> call(() -> view.getDisplay().getCursorShape())
+                        == com.jediterm.terminal.CursorShape.STEADY_VERTICAL_BAR,
                 "vim's bar");
         connector.emit("\u001b[0 q");
         await(() -> call(() -> view.getDisplay().getCursorShape()) == null, "back to the user's preference");
@@ -307,19 +312,49 @@ class TerminalViewFxTest {
     private static javafx.scene.input.ScrollEvent scroll(double deltaY, double textDeltaY) {
         return new javafx.scene.input.ScrollEvent(
                 javafx.scene.input.ScrollEvent.SCROLL,
-                50, 50, 50, 50,
-                false, false, false, false, false, false,
-                0, deltaY, 0, deltaY,
-                javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE, 0,
-                javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.LINES, textDeltaY,
-                0, null);
+                50,
+                50,
+                50,
+                50,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                0,
+                deltaY,
+                0,
+                deltaY,
+                javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE,
+                0,
+                javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.LINES,
+                textDeltaY,
+                0,
+                null);
     }
 
     private static javafx.scene.input.MouseEvent mouse(
             javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y) {
         return new javafx.scene.input.MouseEvent(
-                type, x, y, x, y, javafx.scene.input.MouseButton.PRIMARY, 1,
-                false, false, false, false, true, false, false, false, false, false, null);
+                type,
+                x,
+                y,
+                x,
+                y,
+                javafx.scene.input.MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                null);
     }
 
     @Test
@@ -341,16 +376,21 @@ class TerminalViewFxTest {
         connector.emit(lines.toString());
         await(() -> screen().contains("line 199"), "the output");
         int origin = fx(() -> {
-            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, false, false, false));
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.PAGE_UP, true, false, false, false));
             return view.scrollOrigin();
         });
         assertTrue(origin < 0, "Shift+PageUp scrolled back: " + origin);
         Thread.sleep(200);
         assertEquals("", connector.written(), "and sent nothing to the shell");
-        assertEquals(0, (int) fx(() -> {
-            Event.fireEvent(view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.END, true, false, false, false));
-            return view.scrollOrigin();
-        }), "Shift+End: back to the live screen");
+        assertEquals(
+                0,
+                (int) fx(() -> {
+                    Event.fireEvent(
+                            view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.END, true, false, false, false));
+                    return view.scrollOrigin();
+                }),
+                "Shift+End: back to the live screen");
 
         assertEquals(javafx.scene.AccessibleRole.TEXT_AREA, fx(view::getAccessibleRole));
         assertTrue(
@@ -405,7 +445,8 @@ class TerminalViewFxTest {
         assertNotNull(fx(extra::getParentPopup), "the extra item was added to the view's menu");
         assertTrue(
                 fx(() -> extra.getParentPopup().getItems().stream()
-                        .anyMatch(item -> item.getAccelerator() != null && item.getAccelerator().getName().contains("C"))),
+                        .anyMatch(item -> item.getAccelerator() != null
+                                && item.getAccelerator().getName().contains("C"))),
                 "Copy shows its chord");
         fx(() -> {
             extra.getParentPopup().hide();

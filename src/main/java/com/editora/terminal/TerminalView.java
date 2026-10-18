@@ -201,7 +201,9 @@ public final class TerminalView extends Region {
 
     /** In a shown window and visible: a hidden terminal is painted when it is shown again, not meanwhile. */
     private boolean isPaintable() {
-        if (getScene() == null || getScene().getWindow() == null || !getScene().getWindow().isShowing()) return false;
+        if (getScene() == null
+                || getScene().getWindow() == null
+                || !getScene().getWindow().isShowing()) return false;
         for (Node n = this; n != null; n = n.getParent()) {
             if (!n.isVisible()) return false; // an unselected tab, a hidden panel
         }
@@ -1272,7 +1274,8 @@ public final class TerminalView extends Region {
     private volatile boolean searchStale;
 
     /** Bumped by every search started or cleared; a scan that sees it change gives up. */
-    private final java.util.concurrent.atomic.AtomicLong searchGeneration = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong searchGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
 
     /** Rows scanned per hold of the buffer lock, so a scan of a long scrollback never stalls the emulator. */
     private static final int SEARCH_CHUNK = 2000;
@@ -1333,7 +1336,8 @@ public final class TerminalView extends Region {
             return;
         }
         long generation = searchGeneration.incrementAndGet();
-        scanAsync(state.query(), state.matchCase(), generation, hits -> done.accept(step(rescanned(state, hits), older)));
+        scanAsync(
+                state.query(), state.matchCase(), generation, hits -> done.accept(step(rescanned(state, hits), older)));
     }
 
     /** {@code state}'s query with {@code hits} found again, current on the one nearest the old current hit. */
@@ -1360,8 +1364,8 @@ public final class TerminalView extends Region {
 
     /** Shows {@code hits} for {@code query}, current on the latest at or above the bottom of the view. */
     private SearchResult show(String query, boolean matchCase, java.util.List<Hit> hits) {
-        SearchState next =
-                new SearchState(query, matchCase, java.util.List.copyOf(hits), startIndex(hits, scrollOrigin + rows - 1));
+        SearchState next = new SearchState(
+                query, matchCase, java.util.List.copyOf(hits), startIndex(hits, scrollOrigin + rows - 1));
         search = next;
         searchStale = false;
         reveal(next);
@@ -1402,10 +1406,7 @@ public final class TerminalView extends Region {
             });
 
     private void scanAsync(
-            String query,
-            boolean matchCase,
-            long generation,
-            java.util.function.Consumer<java.util.List<Hit>> onFx) {
+            String query, boolean matchCase, long generation, java.util.function.Consumer<java.util.List<Hit>> onFx) {
         SEARCHER.execute(() -> {
             java.util.List<Hit> hits = scan(query, matchCase, generation);
             if (hits == null) return;
@@ -2265,7 +2266,8 @@ public final class TerminalView extends Region {
         scrollOrigin = Math.max(-history, Math.min(0, scrollOrigin + dragScroll));
         int line = dragScroll < 0 ? scrollOrigin : scrollOrigin + rows - 1;
         int column = Math.max(0, Math.min(columns, (int) Math.floor(dragX / charWidth)));
-        current.updateEnd(new Point(dragScroll < 0 ? ColumnMap.slotAt(lineTextAt(line), column) : slotsInRow(line), line));
+        current.updateEnd(
+                new Point(dragScroll < 0 ? ColumnMap.slotAt(lineTextAt(line), column) : slotsInRow(line), line));
         markDirty();
     }
 
@@ -2441,7 +2443,9 @@ public final class TerminalView extends Region {
     public void paste() {
         String text = Clipboard.getSystemClipboard().getString();
         if (text == null || text.isEmpty() || session == null) return;
-        if (!display.isBracketedPaste() && KeyEncoding.pasteText(text).strip().contains("\n") && !pasteGuard.test(text)) {
+        if (!display.isBracketedPaste()
+                && KeyEncoding.pasteText(text).strip().contains("\n")
+                && !pasteGuard.test(text)) {
             return;
         }
         snapToLive();

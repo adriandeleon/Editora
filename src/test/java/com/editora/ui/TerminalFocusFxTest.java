@@ -70,7 +70,8 @@ class TerminalFocusFxTest {
             await(() -> call(() -> terminals.panel().terminalCount() == 1), "a shell");
             await(() -> focusOwner(fx) instanceof TerminalView, "the shell has the keyboard, not the panel");
 
-            FxTestSupport.runOnFx(() -> terminals.panel().activeView().getSession().sendString("exit\n"));
+            FxTestSupport.runOnFx(
+                    () -> terminals.panel().activeView().getSession().sendString("exit\n"));
             await(() -> call(() -> terminals.panel().terminalCount() == 0), "the shell's exit");
             await(() -> call(() -> !toolWindows.isOpen(window)), "the window hiding with its last shell");
             await(
@@ -118,8 +119,10 @@ class TerminalFocusFxTest {
             FxTestSupport.runOnFx(terminals::applySettings);
             FxTestSupport.runOnFx(() -> w.registry.run("tool.terminal"));
             await(() -> call(() -> terminals.panel().activeView() != null), "a shell");
-            long shell = FxTestSupport.callOnFx(() -> terminals.panel().activeView().getSession().pid());
-            FxTestSupport.runOnFx(() -> terminals.panel().activeView().getSession().sendString("sleep 30\n"));
+            long shell = FxTestSupport.callOnFx(
+                    () -> terminals.panel().activeView().getSession().pid());
+            FxTestSupport.runOnFx(
+                    () -> terminals.panel().activeView().getSession().sendString("sleep 30\n"));
             await(() -> com.editora.terminal.RunningProgram.in(shell).contains("sleep"), "sleep running");
 
             java.util.concurrent.CountDownLatch cancel =

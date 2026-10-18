@@ -137,10 +137,10 @@ class RemoteTerminalPanelFxTest {
         var content = (StackPane) panel.activeTab().getContent();
         return ((HBox) content.lookup(".terminal-lost-banner"))
                 .getChildren().stream()
-                .filter(n -> n instanceof Button)
-                .map(n -> (Button) n)
-                .findFirst()
-                .orElseThrow();
+                        .filter(n -> n instanceof Button)
+                        .map(n -> (Button) n)
+                        .findFirst()
+                        .orElseThrow();
     }
 
     private static <T> T call(Callable<T> work) {
