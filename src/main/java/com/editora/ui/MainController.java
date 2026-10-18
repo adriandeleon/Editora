@@ -291,6 +291,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     ToolWindow hierarchyToolWindow;
     /** Run: streams a runnable file's output; see {@link RunCoordinator}. The tool window stays here. */
     ToolWindow runToolWindow;
+    /** Terminal: shells on this machine; see {@link TerminalCoordinator}. */
+    ToolWindow terminalToolWindow;
     /** External Tools: the feature coordinator owns the service/panel/commands (see {@link ExternalToolCoordinator}). */
     ToolWindow externalToolToolWindow;
     /** Build tools (Maven/npm/…): one IntelliJ-style tasks-tree tool window per detected tool, whose stripe
@@ -1581,6 +1583,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> aiCoordinator.shutdown(), // cancel any in-flight AI generation
                 () -> exports.shutdown(),
                 () -> runCoordinator.shutdown(),
+                () -> terminalCoordinator.shutdown(), // end every terminal's shell
                 () -> testRunCoordinator.shutdown(), // stop the report poller + elapsed timer
                 installCoordinator == null ? null : () -> installCoordinator.shutdown(),
                 () -> fileWorkflows.shutdown(),
@@ -2495,6 +2498,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         hierarchyToolWindow =
                 toolWindow("hierarchy", ToolWindow.Side.BOTTOM, Icons::structure, lspCoordinator::hierarchyPanel);
         runToolWindow = toolWindow("run", ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel);
+        terminalToolWindow =
+                toolWindow("terminal", ToolWindow.Side.BOTTOM, Icons::terminal, terminalCoordinator::panel);
         runToolWindow.busyProperty().bind(runCoordinator.runningProperty()); // spinner badge on its stripe button
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
@@ -2668,7 +2673,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "buildOutput",
                 tr("toolwindow.buildOutput"),
                 ToolWindow.Side.BOTTOM,
-                Icons::terminal,
+                Icons::tools,
                 buildOutputPanel,
                 "tool.buildOutput");
         testResultsToolWindow =
@@ -2775,6 +2780,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         toolWindows.register(referencesToolWindow, false); // default-hidden; shown on demand by Find References
         toolWindows.register(hierarchyToolWindow, false); // default-hidden; shown on demand by lsp.callHierarchy (#682)
         toolWindows.register(runToolWindow);
+        toolWindows.register(terminalToolWindow); // always available: a shell needs no file
         toolWindows.setAvailable(runToolWindow, false); // shown only when the active file is a compact source
         toolWindows.register(debugToolWindow);
         toolWindows.setAvailable(debugToolWindow, false); // shown only while debugging is enabled
@@ -5883,6 +5889,46 @@ public class MainController implements com.editora.mcp.McpBridge {
                     () -> config.getSettings().isSearchRespectGitignore(),
                     (file, text, done) -> historyCoordinator.recordBeforeReplace(file, text, done)));
 
+    final TerminalCoordinator terminalCoordinator =
+            new TerminalCoordinator(coordinatorHost, new TerminalCoordinator.Ops() {
+                @Override
+                public java.nio.file.Path workingDirectory() {
+                    java.nio.file.Path root = windowProjectRoot();
+                    if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
+                        return root;
+                    }
+                    EditorBuffer b = activeBuffer();
+                    java.nio.file.Path file = b == null ? null : b.getPath();
+                    return file != null && com.editora.vfs.Vfs.isLocal(file)
+                            ? file.toAbsolutePath().getParent()
+                            : null;
+                }
+
+                @Override
+                public boolean isToolWindowOpen() {
+                    return terminalToolWindow != null && toolWindows.isOpen(terminalToolWindow);
+                }
+
+                @Override
+                public void showToolWindow() {
+                    toolWindows.open(terminalToolWindow);
+                }
+
+                @Override
+                public void hideToolWindow() {
+                    toolWindows.close(terminalToolWindow);
+                }
+
+                @Override
+                public void openLink(java.nio.file.Path file, int line, int column) {
+                    if (java.nio.file.Files.isDirectory(file)) {
+                        openAndNavigate(file, -1); // reveals it in the Project tree
+                    } else {
+                        openAndGoto(file, Math.max(0, line - 1), Math.max(0, column - 1));
+                    }
+                }
+            });
+
     final TodoCoordinator todoCoordinator = new TodoCoordinator(coordinatorHost, new TodoCoordinator.Ops() {
         @Override
         public java.nio.file.Path projectRoot() {
@@ -8661,7 +8707,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 msg -> Platform.runLater(() -> setStatus(tr("status.reveal.failed", msg))));
     }
 
-    /** Opens a terminal at {@code path}'s containing folder. Shared by the command, tab menu, and tree. */
+    /**
+     * Opens a terminal at {@code path}'s containing folder (or {@code path}, a folder): a tab in the Terminal
+     * tool window, or the system's terminal when Settings → Terminal says so. Shared by the command, tab menu,
+     * breadcrumb and tree.
+     */
     void openTerminalAt(Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
@@ -8669,6 +8719,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         if (!local) {
             setStatus(tr("status.reveal.remote"));
+            return;
+        }
+        if (!config.getSettings().isTerminalUseExternal()) {
+            Path abs = path.toAbsolutePath();
+            terminalCoordinator.openAt(isDir ? abs : abs.getParent());
             return;
         }
         com.editora.process.DesktopActions.openTerminal(
@@ -9688,6 +9743,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                     sheets.add(wanted);
                 }
             }
+        }
+        if (terminalCoordinator != null) { // runs on every settings apply, theme change or not
+            terminalCoordinator.applySettings();
+            terminalCoordinator.applyTheme();
         }
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);

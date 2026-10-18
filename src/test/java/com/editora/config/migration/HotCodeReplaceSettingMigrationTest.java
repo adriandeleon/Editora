@@ -23,7 +23,8 @@ class HotCodeReplaceSettingMigrationTest {
         JsonNode v128 = mapper.readTree("{\"schemaVersion\":128,\"debugSupport\":true,\"debugProgramConsole\":false}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v128.deepCopy(), mapper);
 
-        assertEquals(129, Settings.SCHEMA_VERSION);
+        // At least: the step under test is 128→129, and later additive steps must not fail it.
+        assertTrue(Settings.SCHEMA_VERSION >= 129);
         assertEquals(Settings.SCHEMA_VERSION, out.get("schemaVersion").asInt(), "stamped current");
         assertTrue(out.get("debugSupport").asBoolean());
         assertFalse(out.get("debugProgramConsole").asBoolean());

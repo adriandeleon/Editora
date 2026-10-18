@@ -24,6 +24,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Terminal tool window**: shells on this machine, in tabs, inside Editora. Open it with Tool Window:
+  Terminal (Alt+F12 in the IntelliJ keymap, Ctrl+` in VS Code, CUA and Sublime). It starts in the project's
+  folder; Terminal: New Terminal adds a tab.
+  - A focused terminal owns the keyboard: Ctrl+C interrupts, Ctrl+W deletes a word, Escape reaches vim. Only
+    the tool-window toggles, the command palette and Search Everywhere still reach Editora (Settings →
+    Terminal → Commands that reach Editora), plus every Cmd shortcut on macOS. Copy and Paste are
+    Ctrl+Shift+C/V (Cmd+C/V on macOS).
+  - Its colours follow the editor theme: the keyword colour is its red, the number colour its blue, and so on.
+    Its font is the editor's.
+  - Build Output's stripe icon is now the tools glyph; the terminal glyph is the Terminal's.
+  - Closing a terminal that is running a program asks first.
+  - **Open Terminal Here** (tab menu, Project tree, breadcrumb, command) opens a tab there instead of the
+    system's terminal; Settings → Terminal → "Open Terminal Here uses the system terminal" brings the old
+    behaviour back.
+  - Ctrl+click (Cmd+click on macOS) a `path:line:col` in the output to open the file at that place, or a URL
+    to open it in the browser.
+  - Settings → Terminal: the shell, text size, cursor, bell, scrollback, and which commands reach Editora.
+  - The terminal is Termina's (github.com/adriandeleon/Termina), ported. Terminals on remote hosts,
+    containers and WSL come next.
 - **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
   state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it
   for the runtime's own version banner and, for Java, the JDK's folder.
@@ -202,7 +221,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Doctor moved to a **Help** row with Documentation and What's New (this build's release notes).
 - **Closing the last tab leaves a hint in the editor area** (Open File, Open Folder, Command Palette, Welcome
   Page, with their chords) instead of a blank panel, and keeps focus there rather than on the toolbar.
-
+- **Groundwork for an integrated terminal** ([ADR 0014](docs/decisions/0014-integrated-terminal.md)): the
+  app now carries JediTerm core (the terminal emulator), pty4j (pseudo-terminals on macOS, Linux and Windows),
+  JNA and the Kotlin standard library, about 7.5 MB more in the installed app. Nothing uses them yet apart from
+  `editora --check-terminal`, which starts a shell on a pseudo-terminal and says whether it answered.
 - **The technical dictionary knows over 900 more terms**: Git (worktree, unstaged, rebasing), editor and UI
   words (submenu, breakpoint, strikethrough, monospace), shell tools (ripgrep, fzf, cwd), Unix and C (inode,
   glibc, malloc, cgroup, ncurses), cryptography (cryptographic, kerberos, keyring), fonts and graphics (harfbuzz,

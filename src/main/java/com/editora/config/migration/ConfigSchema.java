@@ -263,7 +263,14 @@ public enum ConfigSchema {
                     // session on save) and debugStepFilters / debugShowStatics / debugExceptionTypes (step
                     // filters on and statics shown — what java-debug is now told; every exception, as before).
                     // Additive: no earlier file could have chosen otherwise.
-                    Map.entry(128, (Migration) ConfigMigrations::identity)),
+                    Map.entry(128, (Migration) ConfigMigrations::identity),
+                    // v129→130: + the integrated terminal's settings (terminalShell, terminalScrollback,
+                    // terminalFontSize, terminalCursor, terminalBell, terminalConfirmClose, terminalIdeCommands).
+                    // Additive: there was no terminal to have chosen otherwise.
+                    Map.entry(129, (Migration) ConfigMigrations::identity),
+                    // v130→131: + terminalUseExternal (additive: absent is the default, off — Open in Terminal now
+                    // opens the Terminal tool window; the system terminal is the opt-in).
+                    Map.entry(130, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
