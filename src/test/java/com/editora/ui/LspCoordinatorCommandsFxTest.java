@@ -803,6 +803,14 @@ class LspCoordinatorCommandsFxTest {
         assertTrue(fx.host.statuses.contains(loop), "a crash loop is reported instead of restarted forever");
         assertFalse(fx.manager.isManaged(b.getPath()));
         assertFalse(FxTestSupport.callOnFx(b::isLspActive), "the dead server's marks are dropped");
+        // Showing or re-syncing a tab of that root does not fork it again (Node review E5)…
+        int afterLoop = fx.fakes.size();
+        FxTestSupport.runOnFx(() -> fx.coordinator.syncBuffer(b));
+        fx.settle();
+        assertEquals(afterLoop, fx.fakes.size(), "a crash-looped server is not restarted by a tab");
+        // …until the user asks for it.
+        fx.run(() -> fx.coordinator.restartServers());
+        assertTrue(fx.manager.isManaged(b.getPath()), "Restart Language Servers starts it again");
     }
 
     @Test
