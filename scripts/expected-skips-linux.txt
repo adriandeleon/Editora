@@ -18,6 +18,7 @@ com.editora.lsp.JdtlsSnippetProbeTest
 com.editora.lsp.JdtlsTypingProbeTest
 com.editora.lsp.JdtlsUpgradeProbeTest
 com.editora.ui.CompactSourceDebugProbeFxTest
+com.editora.ui.GroovyServerProbeFxTest
 com.editora.ui.JavaCodeChangesProbeFxTest
 com.editora.ui.JavaDebugRealAdapterProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
@@ -38,6 +39,11 @@ com.editora.ui.FileWorkflowSaveOrderingFxTest#newerSaveFromAnotherWindowSupersed
 # External tools the runner does not install (a JRE-sized download each). Covered on developer machines.
 com.editora.diagram.PlantumlOutputTest
 com.editora.typst.TypstStagedExportTest
+# Groovy (the runner installs none): the Groovy scripts the JVM debugger runs, and Run/Debug of a Groovy file in a
+# window. The Java case of JvmDebugAdapterTest runs everywhere and covers the adapter itself.
+com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptStopsInsideAClosureWhereGroovyIsInstalled
+com.editora.dap.jvm.JvmDebugAdapterTest#aGroovyScriptsUncaughtExceptionStopsWhereItIsThrownAndNowhereElse
+com.editora.ui.GroovyRunDebugWindowFxTest
 
 # Needs vscode-js-debug (Debug Request of HTTP Client scripts), which the runner does not install; it runs on
 # developer machines with js-debug. HttpResponseHandlersFxTest covers the inspector handoff on CI's Node.
