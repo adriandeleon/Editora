@@ -24,6 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deployments: develop locally, run on another machine.** A run configuration's new **Run on** setting names a
+  deployment — an SSH host and a folder there. Before the run, Editora copies what changed in the project to
+  that folder over the connection it already uses for remote folders (one compressed stream; no rsync or ssh
+  needed on this machine), then runs the before-launch step and the program there, with the host's tools.
+  - Only files whose contents changed are sent; a branch switch that only touched times sends nothing.
+  - Files Editora put on the host and the project no longer has are removed; nothing else on the host is ever
+    removed. A file changed on the host since it was sent is asked about, a first deploy into a folder with other
+    files asks first, and `/`, system folders and the home folder are refused.
+  - Java builds on the host with its Maven or Gradle. Debug starts the program on the host and attaches the
+    debugger here through a tunnel; breakpoints are the local files'.
+  - Run → Deployment: Deploy Now, Compare with Deployed, Open Terminal in Deployment, Edit Deployments. A
+    deployment can also upload a file when it is saved. Deployments are exported and imported with the run
+    configurations.
 - **A Terminal tool window**: shells on this machine, in tabs, inside Editora. Open it with Tool Window:
   Terminal (Alt+F12 in the IntelliJ keymap, Ctrl+` in VS Code, CUA and Sublime). It starts in the project's
   folder; Terminal: New Terminal adds a tab.

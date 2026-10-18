@@ -57,6 +57,13 @@ class DeployExcludesTest {
     }
 
     @Test
+    void aBangBuiltInTakesItOut() {
+        DeployExcludes ex = DeployExcludes.of("!build/\n!not-a-default/");
+        assertFalse(ex.excludes("build/gen/A.java"), "a project whose sources are in build/ keeps them");
+        assertTrue(ex.excludes("target/x.jar"), "the other built-ins stay");
+    }
+
+    @Test
     void regexCharactersInAPatternAreLiteral() {
         DeployExcludes ex = DeployExcludes.ofPatterns(List.of("a+b(1).txt"));
         assertTrue(ex.excludes("a+b(1).txt"));

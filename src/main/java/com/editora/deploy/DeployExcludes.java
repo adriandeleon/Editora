@@ -16,7 +16,9 @@ import java.util.regex.Pattern;
  *   <li>a trailing {@code /} matches only folders — {@code target/};
  *   <li>a pattern with a {@code /} in it matches from the project root — {@code src/generated/} or
  *       {@code /docs/*.pdf} — where {@code **} stands for any number of folders;
- *   <li>{@code *} and {@code ?} never cross a {@code /}; a line starting with {@code #} is a comment.
+ *   <li>{@code *} and {@code ?} never cross a {@code /}; a line starting with {@code #} is a comment;
+ *   <li>{@code !} followed by a built-in pattern takes it out ({@code !build/}); any other {@code !} line is
+ *       ignored.
  * </ul>
  *
  * <p>The built-in patterns are what no host needs: version control, editor state, and what the host builds or
@@ -56,10 +58,19 @@ public final class DeployExcludes {
         this.rules = List.copyOf(rules);
     }
 
-    /** The built-in patterns and then {@code extra}'s lines. */
+    /**
+     * The built-in patterns and then {@code extra}'s lines. A line {@code !<built-in>} (exactly as listed, such
+     * as {@code !build/}) takes that built-in pattern out — for a project whose sources live in such a folder.
+     */
     public static DeployExcludes of(String extra) {
-        List<String> lines = new ArrayList<>(DEFAULTS);
-        lines.addAll(lines(extra));
+        List<String> own = lines(extra);
+        List<String> lines = new ArrayList<>();
+        for (String builtIn : DEFAULTS) {
+            if (!own.contains("!" + builtIn)) {
+                lines.add(builtIn);
+            }
+        }
+        lines.addAll(own);
         return ofPatterns(lines);
     }
 
