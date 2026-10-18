@@ -391,16 +391,19 @@ name-conflict case. These probes print generated fixture source on failure, neve
 
 ### Sustained typing and large-file measurements
 
-`scripts/probes/java-typing-study.py` copies real projects to a new output directory and snapshots the
+`scripts/probes/JavaTypingStudy.java` copies real projects to a new output directory and snapshots the
 compiled runtime, so ongoing builds cannot change a running study. It never edits the source project.
 First run `mvn test` on JDK 25 to compile the probes and generate the dependency classpath, then:
 
 ```sh
-python3 scripts/probes/java-typing-study.py \
+java scripts/probes/JavaTypingStudy.java \
   --maven-project /path/to/Editora --gradle-project /path/to/RichTextFX \
   --jdtls /path/to/jdtls --java-home /path/to/jdk25 \
   --gradle-java-home /path/to/jdk21 --output /tmp/java-typing-study --seconds 1800
 ```
+
+`--projects maven` or `--projects gradle` studies one project only. The study's output goes to
+`study.log` in the output directory, which must not exist yet.
 
 The current readiness assertions are specific to these two projects: `EditorBuffer.getArea` and
 `CodeArea.getText` must resolve. Adapt those assertions and the source location for other projects.
