@@ -745,6 +745,8 @@ final class ProjectMapModel {
             "csharp",
             "kotlin",
             "groovy",
+            "scala",
+            "clojure",
             "php",
             "shell",
             "powershell",
@@ -763,8 +765,8 @@ final class ProjectMapModel {
 
     /** Extensions the registry has no language for yet, so the filter still files them sensibly. */
     private static final Set<String> EXTRA_SOURCE = Set.of(
-            "scala", "swift", "dart", "m", "mm", "r", "pl", "pm", "ex", "exs", "erl", "hs", "clj", "cljs", "fs", "vb",
-            "zig", "nim", "jl", "asm", "s", "fish", "vue", "svelte");
+            "swift", "dart", "m", "mm", "r", "pl", "pm", "ex", "exs", "erl", "hs", "fs", "vb", "zig", "nim", "jl",
+            "asm", "s", "fish", "vue", "svelte");
 
     private static final Set<String> EXTRA_MARKUP =
             Set.of("scss", "sass", "less", "adoc", "asciidoc", "rst", "tex", "latex", "org", "mdx", "textile");
@@ -780,7 +782,12 @@ final class ProjectMapModel {
             "settings.gradle",
             "build.gradle.kts",
             "settings.gradle.kts",
-            "gradle.properties");
+            "gradle.properties",
+            "build.sbt",
+            "build.mill",
+            "deps.edn",
+            "bb.edn",
+            "project.clj");
 
     /**
      * The Type filter's bucket for a file name. It asks {@link LanguageRegistry} — the registry behind the

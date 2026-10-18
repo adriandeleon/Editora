@@ -347,7 +347,8 @@ public final class NewFileContent {
 
     /**
      * The type's initial contents with its tokens filled in: <code>{package}</code> becomes a package
-     * declaration (nothing outside a source root), <code>{name}</code> the base name, and
+     * declaration (nothing outside a source root), <code>{name}</code> the base name, <code>{ns}</code> the
+     * base name as a Clojure namespace segment ({@code my_util} → {@code my-util}), and
      * <code>{cursor}</code> is removed, reporting where the caret goes.
      */
     public static Rendered render(NewFileType type, String baseName, String packageName) {
@@ -356,7 +357,9 @@ public final class NewFileContent {
             return new Rendered("", 0);
         }
         String declaration = packageName == null || packageName.isEmpty() ? "" : "package " + packageName + ";\n\n";
-        String text = template.replace("{package}", declaration).replace("{name}", baseName);
+        String text = template.replace("{package}", declaration)
+                .replace("{ns}", baseName.replace('_', '-'))
+                .replace("{name}", baseName);
         int caret = text.indexOf("{cursor}");
         if (caret >= 0) {
             text = text.substring(0, caret) + text.substring(caret + "{cursor}".length());

@@ -39,6 +39,7 @@ public final class Commenter {
                     "go",
                     "kotlin",
                     "groovy",
+                    "scala",
                     "json",
                     "php",
                     "javascript",
@@ -48,6 +49,7 @@ public final class Commenter {
                     "proto",
                     "typst",
                     "dot" -> new CommentStyle("//", "/*", "*/");
+            case "clojure" -> new CommentStyle(";;", null, null);
             case "plantuml" -> new CommentStyle("'", "/'", "'/");
             case "css" -> new CommentStyle(null, "/*", "*/");
             case "sql" -> new CommentStyle("--", "/*", "*/");
@@ -91,7 +93,7 @@ public final class Commenter {
     /**
      * Computes the toggle edit for the selection {@code [selStart, selEnd]}, or null if unsupported.
      *
-     * <p>A {@code #!} shebang on the first line of a {@code #}-comment language is never toggled: it is not a
+     * <p>A {@code #!} shebang on the first line of a line-comment language is never toggled: it is not a
      * comment, and removing its {@code #} breaks the script ({@code !/usr/bin/env bash}). A selection that
      * covers it toggles the lines after it; the shebang line alone toggles nothing.
      */
@@ -203,7 +205,8 @@ public final class Commenter {
 
     /** Whether {@code selStart} is on a first-line {@code #!} shebang of a {@code #}-comment language. */
     public static boolean onShebang(String text, int selStart, CommentStyle style) {
-        return "#".equals(style.line()) && text.startsWith("#!") && selStart <= lineEnd(text, 0);
+        // Any line-comment language: Scala CLI, Kotlin, Groovy and Node scripts carry one too (`// #!` breaks them).
+        return style.hasLine() && text.startsWith("#!") && selStart <= lineEnd(text, 0);
     }
 
     /** Whether the selection is the shebang line alone, which {@link #toggle} leaves untouched. */

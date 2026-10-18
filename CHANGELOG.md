@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scala and Clojure editing.** `.scala`, `.sc`, `.sbt`, `.mill` and `.clj`, `.cljs`, `.cljc`, `.cljx`, `.edn`, `.bb`
+  files are highlighted (grammars from tm-grammars 1.32.22), as are `#!` scripts run by `scala`, `scala-cli`,
+  `kotlin`, `clojure`, `clj` or `bb` and files with a `scala`/`clojure` modeline. Comment toggling (`;;` in Clojure),
+  folding (Scala 3's indentation blocks through their `end` marker; every multi-line Clojure form), Lisp indentation
+  (to the first argument, two spaces for a body form), Go to Symbol without a language server, a Structure outline,
+  snippets, brand file icons, and New ▸ Scala, Scala CLI script, Clojure and Babashka script. Groovy gets its own
+  icon and a server-free symbol index too, and stack-trace lines from Kotlin, Groovy, Scala and Clojure code are
+  links (including Clojure's `at my-app.core/f (core.clj:4)`).
 - **Settings shows what you changed.** A row whose value differs from the default carries a marker, the sidebar counts
   them per page, each row has **Reset to default**, and the **Modified** toggle (or `@modified` in the search) lists
   only the changed settings.

@@ -78,11 +78,16 @@ public final class AutoClose {
     /**
      * As {@link #decide(char, char, char, boolean)}, knowing the line before the caret and the language. In
      * Python a quote after a string prefix ({@code f'}, {@code rb"}, {@code t'} …) pairs, the third quote of
-     * a triple quote closes it as well (caret between), and a backtick (not Python syntax) does not pair.
+     * a triple quote closes it as well (caret between), and a backtick (not Python syntax) does not pair. In
+     * Clojure {@code '} and a backtick are the quote and syntax-quote reader macros, never string delimiters,
+     * so they neither pair nor wrap a selection.
      */
     public static Decision decide(
             char typed, String lineBeforeCaret, char next, boolean hasSelection, String language) {
         char prev = lineBeforeCaret.isEmpty() ? 0 : lineBeforeCaret.charAt(lineBeforeCaret.length() - 1);
+        if ("clojure".equals(language) && (typed == '\'' || typed == '`')) {
+            return Decision.NONE;
+        }
         if (!"python".equals(language) || hasSelection) {
             return decide(typed, prev, next, hasSelection);
         }
