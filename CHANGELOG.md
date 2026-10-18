@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and npm run configurations can be debugged, started the way Run starts them.
 - **TypeScript server settings:** **Download type definitions automatically** (off), and inlay hints and code
   lenses now work for JavaScript and TypeScript.
+- **A Node.js Script template** (New ▸ Scripts ▸ Node.js), and an npm icon on `package.json`, `package-lock.json`
+  and `.npmrc`.
 - **Test Results reads node:test's default output**, so `"test": "node --test"` fills the tree without a TAP
   reporter flag, and node:test results can be rerun one by one or failed-only.
 
@@ -401,6 +403,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript editing without a language server:**
+  - JSX in a `.js` file no longer turns the rest of the file into a comment or string (`.js` uses the TSX grammar,
+    as VS Code does), and JavaScript is in the status-bar language picker.
+  - A regex such as `/`/` or `/\{/` no longer removes every fold, sticky-scroll header and Structure entry below it.
+  - Structure lists one-line methods and arrow functions; Go to Symbol finds class and object methods and
+    `exports.x =`; Go to Definition picks the nearest declaration; `$` and `#` are part of names.
+  - Enter continues a `/** */` comment; Toggle Comment never touches a `#!` shebang and lines its markers up.
+  - Smart indent handles `case` bodies, brace-less `if`/`for`/`while`, open argument lists and call chains (in every
+    brace language).
+  - A quote typed inside a string, comment or regex is not paired.
+  - Template literals, `.length`, `import.meta` and BigInt literals get the right colours.
+  - `npx`/`pnpm exec`/`bunx` and `zx` shebangs and React modelines are recognised; `.mocharc`, `.nycrc`,
+    `.lintstagedrc` and similar open as JSON.
+- **A minified file with many long lines no longer stalls highlighting** in every JavaScript tab for about 45 s: it
+  opens in long-line mode, and the tokenizer gives long lines a time budget. Typing in a one-line bundle is about 30%
+  faster.
 - **The TypeScript / JavaScript language server did not start on a fresh install.** npm's latest TypeScript is now
   7, which has no tsserver; Editora's install step (and the Node.js TypeScript Project template) now take
   TypeScript 6. When no usable TypeScript is found the server is not started and the message says why, instead of
