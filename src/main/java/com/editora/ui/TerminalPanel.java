@@ -84,6 +84,7 @@ final class TerminalPanel extends StackPane {
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("mac");
 
     private final TabPane tabs = new TabPane();
+    private final TerminalFindBar findBar = new TerminalFindBar();
     private final Button newTab = new Button();
     private final Button emptyStart = new Button(tr("terminal.new"));
     private final Map<Tab, TerminalView> views = new LinkedHashMap<>();
@@ -141,7 +142,13 @@ final class TerminalPanel extends StackPane {
         // otherwise encode Ctrl+Shift+C as ^C.
         addEventFilter(KeyEvent.KEY_PRESSED, this::onClipboardKey);
 
-        tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> focusActive());
+        tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (findBar.isShowing()) {
+                placeFindBar(now);
+            }
+            focusActive();
+        });
+        findBar.setOnClose(this::focusActive);
         tabs.getTabs().addListener((ListChangeListener<Tab>) change -> {
             while (change.next()) {
                 for (Tab removed : change.getRemoved()) {
@@ -440,6 +447,9 @@ final class TerminalPanel extends StackPane {
         } else if (TerminalKeys.isPaste(e, MAC)) {
             view.paste();
             e.consume();
+        } else if (TerminalKeys.isFind(e, MAC)) {
+            find();
+            e.consume();
         } else if (TerminalKeys.isPreviousPrompt(e, MAC)) {
             view.previousPrompt();
             e.consume();
@@ -447,6 +457,37 @@ final class TerminalPanel extends StackPane {
             view.nextPrompt();
             e.consume();
         }
+    }
+
+    /** Opens the find bar over the selected tab, seeded with a one-line selection. */
+    void find() {
+        TerminalView view = activeView();
+        if (view == null) {
+            return;
+        }
+        placeFindBar(activeTab());
+        findBar.open(view, view.selectedText());
+    }
+
+    TerminalFindBar findBar() {
+        return findBar;
+    }
+
+    /** Moves the find bar into {@code tab}'s content and points it at that tab's terminal. */
+    private void placeFindBar(Tab tab) {
+        if (findBar.getParent() instanceof StackPane old) {
+            old.getChildren().remove(findBar);
+        }
+        TerminalView view = tab == null ? null : views.get(tab);
+        if (view == null) {
+            findBar.close();
+            return;
+        }
+        StackPane content = (StackPane) tab.getContent();
+        StackPane.setAlignment(findBar, Pos.TOP_RIGHT);
+        StackPane.setMargin(findBar, new javafx.geometry.Insets(6, 18, 0, 0));
+        content.getChildren().add(findBar);
+        findBar.bindTo(view);
     }
 
     private void updateEmpty() {

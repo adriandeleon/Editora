@@ -419,6 +419,48 @@ class TerminalPanelFxTest {
                 .orElseThrow();
     }
 
+    @Test
+    void theFindChordOpensTheFindBarOverTheTabAndEscapeGivesTheKeysBack() throws Exception {
+        boolean mac = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .startsWith("mac");
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        shells.get(0).emit("alpha beta\r\nbeta gamma\r\n");
+        await(
+                () -> call(() -> panel.activeView()
+                        .getSession()
+                        .getTextBuffer()
+                        .getScreenLines()
+                        .contains("gamma")),
+                "the output");
+
+        fx(() -> {
+            Event.fireEvent(
+                    panel.activeView(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.F, !mac, !mac, false, mac));
+            return null;
+        });
+        assertTrue(fx(() -> panel.findBar().isShowing()), "the chord opened the bar");
+        assertTrue(shells.get(0).written().isEmpty(), "and nothing reached the shell");
+        fx(() -> {
+            panel.findBar().field().setText("beta");
+            return null;
+        });
+        assertEquals("2 of 2", fx(() -> panel.findBar().countText()));
+
+        fx(() -> {
+            Event.fireEvent(
+                    panel.findBar().field(),
+                    new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ESCAPE, false, false, false, false));
+            return null;
+        });
+        assertFalse(fx(() -> panel.findBar().isShowing()));
+        assertTrue(fx(() -> panel.activeView().searchMatches().isEmpty()), "the highlights went with it");
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private TerminalPanel.Shells fakeShells() {

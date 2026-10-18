@@ -93,4 +93,11 @@ class TerminalKeysTest {
         assertFalse(
                 TerminalKeys.isPreviousPrompt(key(KeyCode.UP, false, true, false), false), "Ctrl+Up is the shell's");
     }
+
+    @Test
+    void theFindChordIsTheTerminals() {
+        assertFalse(TerminalKeys.reachesEditora("C-S-f", "tool.find", List.of("tool.*"), false));
+        assertFalse(TerminalKeys.reachesEditora("Cmd-f", "find.show", List.of(), true));
+        assertTrue(TerminalKeys.reachesEditora("Cmd-g", "find.next", List.of(), true));
+    }
 }

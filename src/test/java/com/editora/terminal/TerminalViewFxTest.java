@@ -250,6 +250,70 @@ class TerminalViewFxTest {
         assertEquals(before - 10, fx(() -> view.promptMarks().getFirst().row()), "and so did the mark");
     }
 
+    @Test
+    void searchFindsHitsInHistoryStartsAtTheLatestAndStepsUpThroughThem() throws Exception {
+        open();
+        StringBuilder out = new StringBuilder("needle zero\r\n");
+        for (int i = 0; i < 60; i++) {
+            out.append("line ").append(i).append(i == 30 ? " needle" : "").append("\r\n");
+        }
+        out.append("Needle last\r\n");
+        connector.emit(out.toString());
+        await(() -> screen().contains("Needle last"), "the output");
+
+        TerminalView.SearchResult first = fx(() -> view.search("needle", false));
+        assertEquals(new TerminalView.SearchResult(3, 3), first, "the latest of three, counted from the top");
+        assertEquals(0, fx(() -> view.scrollOrigin()), "already in view: no scroll");
+
+        TerminalView.SearchResult older = fx(() -> view.findNext(true));
+        assertEquals(2, older.index());
+        int row = fx(() -> view.searchMatches().get(1).row());
+        assertTrue(row < 0, "the middle hit is in history");
+        int origin = fx(() -> view.scrollOrigin());
+        assertTrue(origin <= row && row < origin + 10, () -> "scrolled to it: origin " + origin + ", row " + row);
+
+        assertEquals(1, fx(() -> view.findNext(true)).index());
+        assertEquals(3, fx(() -> view.findNext(true)).index(), "wraps to the latest");
+        assertEquals(1, fx(() -> view.findNext(false)).index(), "and down wraps to the oldest");
+        assertEquals(1, fx(() -> view.search("Needle", true)).count(), "match case");
+        assertEquals(new TerminalView.SearchResult(0, 0), fx(() -> view.search("absent", false)));
+    }
+
+    @Test
+    void searchHitsMoveWithTheirTextAsOutputArrives() throws Exception {
+        open();
+        connector.emit("needle\r\n");
+        await(() -> screen().contains("needle"), "the output");
+        int before = fx(() -> {
+            view.search("needle", false);
+            return view.searchMatches().getFirst().row();
+        });
+        StringBuilder more = new StringBuilder();
+        for (int i = 0; i < 70; i++) {
+            more.append("more ").append(i).append("\r\n");
+        }
+        connector.emit(more.toString());
+        await(() -> screen().contains("more 69"), "more output");
+
+        int after = fx(() -> view.searchMatches().getFirst().row());
+        String text = fx(() -> {
+            var buffer = view.getSession().getTextBuffer();
+            buffer.lock();
+            try {
+                return buffer.getLine(after).getText();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        assertTrue(after < before, "moved up into history");
+        assertTrue(text.startsWith("needle"), () -> "still on its text: " + text);
+        fx(() -> {
+            view.clearSearch();
+            return null;
+        });
+        assertTrue(fx(() -> view.searchMatches().isEmpty()));
+    }
+
     private static <T> T call(java.util.concurrent.Callable<T> work) {
         try {
             return fx(work);

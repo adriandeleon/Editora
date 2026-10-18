@@ -86,7 +86,9 @@ final class TerminalCoordinator {
             panel.setMenuExtras(() -> {
                 MenuItem here = new MenuItem(tr("terminal.newHere"));
                 here.setOnAction(e -> panel.newTerminalHere());
-                return List.of(here);
+                MenuItem find = new MenuItem(tr("terminal.menu.find"));
+                find.setOnAction(e -> panel.find());
+                return List.of(here, find);
             });
             panel.setOnError(host::setError);
             panel.setLinkActions(new LinkActions() {
@@ -120,6 +122,7 @@ final class TerminalCoordinator {
         registry.register(Command.of("tool.terminal", this::toggle));
         registry.register(Command.of("terminal.new", this::newTerminal));
         registry.register(Command.of("terminal.close", this::closeTerminal));
+        registry.register(Command.of("terminal.find", this::find));
     }
 
     /** {@code tool.terminal}: hides an open terminal, or shows it with a shell ready and focused. */
@@ -161,6 +164,17 @@ final class TerminalCoordinator {
     }
 
     /** {@code terminal.close}: closes the selected terminal, asking if its shell is running a program. */
+    /** {@code terminal.find}: the find bar over the selected terminal (opening the window, and a shell, if needed). */
+    void find() {
+        ops.showToolWindow();
+        TerminalPanel p = panel();
+        if (!p.hasTerminals()) {
+            started = true;
+            p.newTerminal();
+        }
+        p.find();
+    }
+
     void closeTerminal() {
         if (panel != null) {
             panel.closeActive();

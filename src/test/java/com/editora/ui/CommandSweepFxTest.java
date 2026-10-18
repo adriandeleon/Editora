@@ -126,6 +126,7 @@ class CommandSweepFxTest {
         String shell = "starts a shell on a pseudo-terminal (TerminalPanelFxTest drives the panel with a stand-in)";
         m.put("tool.terminal", shell);
         m.put("terminal.new", shell);
+        m.put("terminal.find", shell + "; its find bar is TerminalPanelFxTest's");
         m.put("help.checkForUpdates", "asks the release server over the network");
         String installs = "downloads and installs tools on this machine (npm install -g …), without asking";
         m.put("install.javaSupport", installs);

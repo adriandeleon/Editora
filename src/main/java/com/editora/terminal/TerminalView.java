@@ -247,6 +247,7 @@ public final class TerminalView extends Region {
         // clears), so the history shift is checked here too.
         buffer.addModelListener(() -> {
             onHistoryLineCountChanged();
+            if (search != SearchState.NONE) searchStale = true;
             markDirty();
         });
         buffer.addHistoryBufferListener(this::onHistoryLineCountChanged);
@@ -518,6 +519,7 @@ public final class TerminalView extends Region {
                 @Override
                 public void consumeQueue(int x, int y, int nulIndex, int startRow) {}
             });
+            drawSearch(g);
             drawSelection(g);
             drawLinkUnderline(g);
             drawCursor(g);
@@ -889,6 +891,172 @@ public final class TerminalView extends Region {
         return true;
     }
 
+    // ---------------------------------------------------------------- search
+
+    /** What a search found: the current hit (1-based; 0 for none) and how many there are. */
+    public record SearchResult(int index, int count) {
+
+        static final SearchResult NONE = new SearchResult(0, 0);
+    }
+
+    /** The search being shown: its hits, oldest first, and which one is current (-1 for none). */
+    private record SearchState(
+            String query, boolean matchCase, java.util.List<TerminalSearch.Match> matches, int current) {
+
+        static final SearchState NONE = new SearchState("", false, java.util.List.of(), -1);
+
+        SearchResult result() {
+            return new SearchResult(current < 0 ? 0 : current + 1, matches.size());
+        }
+    }
+
+    private final Object searchLock = new Object();
+    private volatile SearchState search = SearchState.NONE;
+
+    /** Set when the buffer changed under a search, so the next step finds again before moving. */
+    private volatile boolean searchStale;
+
+    /**
+     * Highlights every occurrence of {@code query} in the scrollback and screen and scrolls to the most recent one
+     * at or above the bottom of the view. An empty query clears the search.
+     */
+    public SearchResult search(String query, boolean matchCase) {
+        if (buffer == null || query == null || query.isEmpty()) {
+            clearSearch();
+            return SearchResult.NONE;
+        }
+        java.util.List<TerminalSearch.Match> found = findAll(query, matchCase);
+        int current = TerminalSearch.startIndex(found, scrollOrigin + rows - 1);
+        SearchState next = new SearchState(query, matchCase, java.util.List.copyOf(found), current);
+        synchronized (searchLock) {
+            search = next;
+            searchStale = false;
+        }
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    /**
+     * Moves to the next hit up ({@code older}) or down, wrapping at either end. Finds again first when output
+     * arrived since, keeping to the hit nearest the one that was current.
+     */
+    public SearchResult findNext(boolean older) {
+        SearchState state = search;
+        if (state.query().isEmpty()) {
+            return SearchResult.NONE;
+        }
+        if (searchStale) {
+            int row =
+                    state.current() >= 0 ? state.matches().get(state.current()).row() : scrollOrigin + rows - 1;
+            java.util.List<TerminalSearch.Match> found = findAll(state.query(), state.matchCase());
+            state = new SearchState(
+                    state.query(),
+                    state.matchCase(),
+                    java.util.List.copyOf(found),
+                    TerminalSearch.startIndex(found, row));
+            searchStale = false;
+        }
+        int count = state.matches().size();
+        if (count == 0) {
+            synchronized (searchLock) {
+                search = state;
+            }
+            markDirty();
+            return state.result();
+        }
+        int current = state.current() < 0 ? count - 1 : Math.floorMod(state.current() + (older ? -1 : 1), count);
+        SearchState next = new SearchState(state.query(), state.matchCase(), state.matches(), current);
+        synchronized (searchLock) {
+            search = next;
+        }
+        reveal(next);
+        markDirty();
+        return next.result();
+    }
+
+    /** Removes the highlights; the view stays where it is. */
+    public void clearSearch() {
+        synchronized (searchLock) {
+            search = SearchState.NONE;
+            searchStale = false;
+        }
+        markDirty();
+    }
+
+    /** The hits being highlighted, for tests. */
+    public java.util.List<TerminalSearch.Match> searchMatches() {
+        return search.matches();
+    }
+
+    private java.util.List<TerminalSearch.Match> findAll(String query, boolean matchCase) {
+        buffer.lock();
+        try {
+            int history = buffer.getHistoryLinesCount();
+            return TerminalSearch.find(this::lineTextAt, -history, buffer.getHeight() - 1, query, matchCase);
+        } finally {
+            buffer.unlock();
+        }
+    }
+
+    /** Scrolls so the current hit is in view, a third of the way down, unless it already is. */
+    private void reveal(SearchState state) {
+        if (state.current() < 0 || buffer == null) {
+            return;
+        }
+        int row = state.matches().get(state.current()).row();
+        if (row >= scrollOrigin && row < scrollOrigin + rows) {
+            return;
+        }
+        int origin = row - rows / 3;
+        scrollOrigin = Math.max(-buffer.getHistoryLinesCount(), Math.min(0, origin));
+    }
+
+    /** Moves the hits with their text as lines age into history (see {@link #shiftMarks}). */
+    private void shiftSearch(int delta, int history) {
+        synchronized (searchLock) {
+            SearchState state = search;
+            if (state.matches().isEmpty()) {
+                return;
+            }
+            java.util.List<TerminalSearch.Match> moved =
+                    new java.util.ArrayList<>(state.matches().size());
+            int current = state.current();
+            for (int i = 0; i < state.matches().size(); i++) {
+                TerminalSearch.Match m = state.matches().get(i).shifted(delta);
+                if (m.row() >= -history) {
+                    moved.add(m);
+                } else if (i < state.current()) {
+                    current--;
+                } else if (i == state.current()) {
+                    current = -1;
+                }
+            }
+            search = new SearchState(state.query(), state.matchCase(), java.util.List.copyOf(moved), current);
+        }
+    }
+
+    /** Paints the hits in view: a wash of the palette's yellow, stronger on the current one. */
+    private void drawSearch(GraphicsContext g) {
+        SearchState state = search;
+        if (state.matches().isEmpty()) return;
+        Color yellow = palette.ansi()[3];
+        Color wash = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.35);
+        Color strong = Color.color(yellow.getRed(), yellow.getGreen(), yellow.getBlue(), 0.75);
+        int first = scrollOrigin;
+        int last = scrollOrigin + rows - 1;
+        for (int i = 0; i < state.matches().size(); i++) {
+            TerminalSearch.Match m = state.matches().get(i);
+            if (m.row() < first || m.row() > last) continue;
+            String text = lineTextAt(m.row());
+            if (m.to() > text.length()) continue; // the row changed under the hit; it is found again on the next step
+            double x = ColumnMap.columnAt(text, m.from());
+            double to = ColumnMap.columnAt(text, m.to());
+            g.setFill(i == state.current() ? strong : wash);
+            g.fillRect(x * charWidth, (m.row() - scrollOrigin) * lineHeight, (to - x) * charWidth, lineHeight);
+        }
+    }
+
     // ---------------------------------------------------------------- selection
 
     /**
@@ -915,6 +1083,7 @@ public final class TerminalView extends Region {
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
         shiftMarks(delta, now);
+        shiftSearch(delta, now);
         markDirty();
     }
 
@@ -1393,6 +1562,7 @@ public final class TerminalView extends Region {
         knownHistoryLines = 0;
         discardedHistoryLines = 0;
         marks.removeIf(m -> m.row() < 0);
+        clearSearch();
         markDirty();
     }
 
@@ -1533,6 +1703,19 @@ public final class TerminalView extends Region {
 
     public boolean hasSelection() {
         return selection != null;
+    }
+
+    /** The selected text, or "" — the find bar starts from a one-line selection. */
+    public String selectedText() {
+        TerminalSelection current = selection;
+        if (current == null || buffer == null) return "";
+        buffer.lock();
+        try {
+            String text = SelectionUtil.getSelectionText(current, buffer);
+            return text == null ? "" : text;
+        } finally {
+            buffer.unlock();
+        }
     }
 
     /** Copies the selection, returning false when there was nothing to copy. */
