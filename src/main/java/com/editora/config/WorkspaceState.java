@@ -58,8 +58,12 @@ public class WorkspaceState {
      *
      * <p>v20 → v21 added {@code runInTerminal} to a run configuration (run it in a Terminal tab). Additive; absent
      * means the Run console, as before.
+     *
+     * <p>v21 → v22 added {@code deployments} (where a project is copied to run on another machine) and a run
+     * configuration's {@code deployment} ("Run on"). Additive; absent means none, and every configuration runs
+     * here, as before.
      */
-    public static final int SCHEMA_VERSION = 21;
+    public static final int SCHEMA_VERSION = 22;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -150,6 +154,9 @@ public class WorkspaceState {
     private Map<String, String> programArgs = new LinkedHashMap<>();
     /** Saved run/debug configurations for project main classes (this window's project). */
     private List<RunConfiguration> runConfigurations = new ArrayList<>();
+
+    /** This project's deployments: the hosts and folders its run configurations can run on (v22). */
+    private List<Deployment> deployments = new ArrayList<>();
 
     /** Name of the configuration selected in the toolbar, so the choice survives a restart. */
     private String selectedRunConfig = "";
@@ -475,6 +482,27 @@ public class WorkspaceState {
 
     public void setRunConfigurations(List<RunConfiguration> runConfigurations) {
         this.runConfigurations = runConfigurations == null ? new ArrayList<>() : runConfigurations;
+    }
+
+    public List<Deployment> getDeployments() {
+        return deployments;
+    }
+
+    public void setDeployments(List<Deployment> deployments) {
+        this.deployments = deployments == null ? new ArrayList<>() : deployments;
+    }
+
+    /** The deployment called {@code name}, or null. */
+    public Deployment deployment(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        for (Deployment d : deployments) {
+            if (d.name().equals(name.strip())) {
+                return d;
+            }
+        }
+        return null;
     }
 
     public String getSelectedRunConfig() {

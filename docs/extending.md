@@ -91,7 +91,7 @@ JavaScript (vscode-js-debug) is a socket. External adapters are never bundled â€
 `dap/DebugAdapterLocator` and installed by the `scripts/install-*.sh` helpers.
 
 A JVM language other than Java (Groovy, Clojure) uses `Kind.JVM`: Editora's own JDI adapter
-([ADR 0016](decisions/0016-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
+([ADR 0017](decisions/0017-jvm-debug-adapter.md)). Adding one is a `run/JvmScriptRun` entry (its tool and
 where its launcher takes JVM options: a variable such as Groovy's `JAVA_OPTS`, or an argument prefix such as
 the Clojure CLI's `-J`, which the adapter's launch request carries as `jvmOptionPrefix`), a `run/JvmTools`
 entry, a `DapServerRegistry` `Def`, its `RunScan` branch, its runtime-internal packages in

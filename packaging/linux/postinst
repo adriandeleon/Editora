@@ -20,7 +20,7 @@
 set -e
 
 # Every path is addressed under $root so the script can be run against a scratch tree
-# (scripts/packaging/test_deb_maintainer_scripts.py). dpkg exports DPKG_ROOT to maintainer scripts;
+# (scripts/packaging/MaintainerScriptsTest.java). dpkg exports DPKG_ROOT to maintainer scripts;
 # it is empty for an ordinary install.
 root="${DPKG_ROOT:-}"
 
