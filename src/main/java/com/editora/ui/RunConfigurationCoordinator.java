@@ -665,7 +665,11 @@ final class RunConfigurationCoordinator {
             String task = com.editora.build.SpringBoot.gradleRunTask(host.readGradleBuildFile(root)); // run / bootRun
             armDebugAttach(gradle, routing);
             host.setStatus(tr("status.debug.viaBuildStarting"));
-            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task), List.of());
+            // On a port the system picks (an init script), unless the build runs on another machine.
+            java.nio.file.Path init = com.editora.process.ExecTargets.runsHere(root)
+                    ? com.editora.build.GradleDebugInit.write(List.of(task))
+                    : null;
+            gradle.runTask(com.editora.build.BuildDebug.gradleDebugArgs(task, init), List.of());
             return;
         }
         BuildCoordinator maven = detectedBuildCoordinator(BuildTool.MAVEN);

@@ -553,7 +553,10 @@ class DapManagerSessionFxTest {
         assertEquals(1, picked.size());
         assertEquals(2, picked.get(0).size());
         assertEquals("Tool", session.launchArgs.get("mainClass"));
-        assertEquals("/chosen/jdk/bin/java", session.launchArgs.get("javaExec"), "the selected JDK wins");
+        assertEquals(
+                "/chosen/jdk/bin/java",
+                ExitCodeWrappers.wrappedJava(session.launchArgs.get("javaExec")),
+                "the selected JDK wins");
         assertEquals(List.of(), errors);
     }
 
@@ -1158,7 +1161,7 @@ class DapManagerSessionFxTest {
         assertEquals(List.of(), errors);
         assertEquals("demo.Launcher", session.launchArgs.get("mainClass"), "the declared type, not the file name");
         assertEquals("loose_1a2b", session.launchArgs.get("projectName"));
-        assertEquals(jdkJava, session.launchArgs.get("javaExec"));
+        assertEquals(jdkJava, ExitCodeWrappers.wrappedJava(session.launchArgs.get("javaExec")));
         assertEquals(loose.getParent().toString(), session.launchArgs.get("cwd"));
         List<String> javac = Files.readAllLines(dir.resolve("jdk-args.txt"));
         assertEquals("-g", javac.get(0), "local variables are kept for the debugger");

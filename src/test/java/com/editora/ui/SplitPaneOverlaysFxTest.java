@@ -337,9 +337,11 @@ class SplitPaneOverlaysFxTest {
         assertTrue(FxTestSupport.callOnFx(tip::getAnchorX) >= paneLeft, "and shown over pane 2, not pane 1");
         FxTestSupport.runOnFx(tip::hide);
 
-        // The debugger's value popup: the evaluator is asked for the word under pane 2's pointer.
+        // The debugger's value popup: the evaluator is asked for the word under pane 2's pointer. (The window's
+        // expandable popup is taken out here, to see the one-line tooltip; it is checked for the pane below.)
         String[] asked = new String[1];
         FxTestSupport.runOnFx(() -> {
+            b.setDebugValuePresenter(null);
             b.setDebugHoverEvaluator((word, sink) -> {
                 asked[0] = word;
                 sink.accept("42");
@@ -355,6 +357,40 @@ class SplitPaneOverlaysFxTest {
         assertNotNull(value);
         assertEquals("total = 42", FxTestSupport.callOnFx(value::getText));
         assertEquals(second, FxTestSupport.callOnFx(value::getOwnerNode));
+        FxTestSupport.runOnFx(() -> b.setDebugHoverActive(false));
+
+        // The expandable popup (follow-up 6) is opened for the pane the pointer is in, too.
+        CodeArea[] shownFor = new CodeArea[1];
+        FxTestSupport.runOnFx(() -> {
+            b.setDebugValuePresenter(new com.editora.editor.DebugValuePresenter() {
+                @Override
+                public void show(CodeArea area, String expression, double x, double y, boolean keyboard) {
+                    shownFor[0] = area;
+                }
+
+                @Override
+                public void hide() {}
+
+                @Override
+                public void mouseLeft() {}
+
+                @Override
+                public boolean mouseInside() {
+                    return false;
+                }
+
+                @Override
+                public boolean isShowing() {
+                    return shownFor[0] != null;
+                }
+            });
+            b.setDebugHoverActive(true);
+            com.editora.editor.DebugHover.setDebounceForTest(javafx.util.Duration.ZERO);
+        });
+        moveOver(second, 3, 9);
+        moveOver(second, 4, 9);
+        com.editora.editor.DebugHover.setDebounceForTest(null);
+        assertEquals(second, shownFor[0]);
         FxTestSupport.runOnFx(() -> b.setDebugHoverActive(false));
     }
 
