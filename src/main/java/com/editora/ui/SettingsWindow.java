@@ -473,7 +473,16 @@ public class SettingsWindow {
     private Runnable onKeymapChanged; // → MainController: reload the shared keymap live
     private Runnable onBrowsePlugins; // → MainController.browsePlugins
     private Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
-    private Consumer<String> onUninstallPlugin; // id → MainController.uninstallPlugin
+    private Consumer<com.editora.plugin.PluginDescriptor> onUninstallPlugin; // the clicked row's plugin
+    /** Ticking a row: asks the consent (what it can do) and stores it; false = not enabled. */
+    private java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnablePlugin = d -> false;
+    /** Unticking a row: switches it off. */
+    private Consumer<com.editora.plugin.PluginDescriptor> onDisablePlugin = d -> {};
+
+    private Label pluginStatusLabel; // what Browse / Install from file did, said where the user clicked
+    /** What the installed list was last built from; an unchanged list is not rebuilt on every Settings open. */
+    private Object pluginListKey;
+
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
     private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
@@ -680,10 +689,17 @@ public class SettingsWindow {
     }
 
     /** Wires the Plugins-page actions to the controller (browse registry / install zip / uninstall). */
-    public void setPluginActions(Runnable onBrowse, Runnable onInstallFromFile, Consumer<String> onUninstall) {
+    public void setPluginActions(
+            Runnable onBrowse,
+            Runnable onInstallFromFile,
+            Consumer<com.editora.plugin.PluginDescriptor> onUninstall,
+            java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnable,
+            Consumer<com.editora.plugin.PluginDescriptor> onDisable) {
         this.onBrowsePlugins = onBrowse;
         this.onInstallPluginFromFile = onInstallFromFile;
         this.onUninstallPlugin = onUninstall;
+        this.onEnablePlugin = onEnable == null ? d -> false : onEnable;
+        this.onDisablePlugin = onDisable == null ? d -> {} : onDisable;
     }
 
     /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
@@ -763,6 +779,7 @@ public class SettingsWindow {
             case "buildTools" -> Category.BUILD_TOOLS;
             case "editor" -> Category.EDITOR;
             case "remote" -> Category.REMOTE;
+            case "plugins" -> Category.PLUGINS;
             default -> null;
         };
         showAt(target, owner);
@@ -6240,7 +6257,28 @@ public class SettingsWindow {
         warn.setMaxWidth(440);
         cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
         checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
+        if (com.editora.plugin.PluginManager.disabledForSession()) {
+            Label off = note(tr("settings.plugins.disabledForSession"));
+            off.getStyleClass().add("settings-git-missing");
+            off.setWrapText(true);
+            off.setMaxWidth(440);
+            cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
+        }
+        Label restart = note(tr("settings.plugins.restart"));
+        restart.setWrapText(true);
+        restart.setMaxWidth(440);
+        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
 
+        // Installed Plugins first: they are what people come to this page for.
+        Card installed = card(p, tr("settings.plugins.installed"));
+        Button reload = new Button(tr("settings.plugins.reload"));
+        reload.setOnAction(e -> {
+            if (pluginManager != null) {
+                pluginManager.discover(); // the list only: what runs is the launch's set until a restart
+                pluginListKey = null;
+                refreshPluginList();
+            }
+        });
         Label folderLabel = new Label(tr("settings.plugins.folder"));
         Label folderPath =
                 new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
@@ -6249,24 +6287,48 @@ public class SettingsWindow {
         folderPath.setMaxWidth(380);
         HBox folderRow = new HBox(6, folderLabel, folderPath);
         folderRow.setAlignment(Pos.CENTER_LEFT);
-        cardRow(mainCard, Category.PLUGINS, folderRow, "plugins folder directory location path");
-
-        Button reload = new Button(tr("settings.plugins.reload"));
-        reload.setOnAction(e -> {
-            if (pluginManager != null) {
-                pluginManager.discover();
-                refreshPluginList();
-            }
-        });
-        cardRow(mainCard, Category.PLUGINS, reload, "plugins reload rescan discover refresh");
-
-        Label restart = note(tr("settings.plugins.restart"));
-        restart.setWrapText(true);
-        restart.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
+        HBox listHeader = new HBox(8, reload, folderRow);
+        listHeader.setAlignment(Pos.CENTER_LEFT);
+        pluginListBox = new VBox(8);
+        cardRow(
+                installed,
+                Category.PLUGINS,
+                new VBox(
+                        6,
+                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
+                        listHeader,
+                        pluginListBox),
+                "plugins installed list enable disable reload rescan folder directory");
 
         // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
         Card market = card(p, tr("settings.plugins.marketplace"));
+        Button browse = new Button(tr("settings.plugins.browse"));
+        browse.setOnAction(e -> {
+            if (onBrowsePlugins != null) {
+                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
+            }
+        });
+        Button installFile = new Button(tr("settings.plugins.installFromFile"));
+        installFile.setOnAction(e -> {
+            if (onInstallPluginFromFile != null) {
+                onInstallPluginFromFile.run();
+            }
+        });
+        HBox marketButtons = new HBox(8, browse, installFile);
+        marketButtons.setAlignment(Pos.CENTER_LEFT);
+        // Greyed with the master switch, like the rows: they did nothing visible while plugins were off.
+        SettingsDependents.bind(pluginCheck.selectedProperty(), marketButtons);
+        pluginStatusLabel = new Label();
+        pluginStatusLabel.setWrapText(true);
+        pluginStatusLabel.setMaxWidth(440);
+        pluginStatusLabel.getStyleClass().add("settings-hint");
+        pluginStatusLabel.setVisible(false);
+        pluginStatusLabel.managedProperty().bind(pluginStatusLabel.visibleProperty());
+        cardRow(
+                market,
+                Category.PLUGINS,
+                new VBox(4, marketButtons, pluginStatusLabel),
+                "plugins browse install file zip marketplace registry");
         pluginRegistryField = new TextField();
         pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
         // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
@@ -6284,8 +6346,8 @@ public class SettingsWindow {
                         config.getSettings().getPluginRegistryUrl(),
                         config.getSettings().getPluginRegistryUrlRaw()),
                 now -> {
-                    if (!now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now)) {
-                        return; // the field is red and says why; the registry in use stays
+                    if (!com.editora.config.Settings.isAcceptableRegistryUrl(now)) {
+                        return; // not https: the field is red and says why; the registry in use stays
                     }
                     config.getSettings().setPluginRegistryUrl(now);
                     apply();
@@ -6313,32 +6375,6 @@ public class SettingsWindow {
                 pluginRequireSigCheck,
                 tr("settings.plugins.requireSignatureNote"),
                 "plugins signature signed verify registry security trust");
-        Button browse = new Button(tr("settings.plugins.browse"));
-        browse.setOnAction(e -> {
-            if (onBrowsePlugins != null) {
-                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
-            }
-        });
-        Button installFile = new Button(tr("settings.plugins.installFromFile"));
-        installFile.setOnAction(e -> {
-            if (onInstallPluginFromFile != null) {
-                onInstallPluginFromFile.run();
-            }
-        });
-        HBox marketButtons = new HBox(8, browse, installFile);
-        marketButtons.setAlignment(Pos.CENTER_LEFT);
-        cardRow(market, Category.PLUGINS, marketButtons, "plugins browse install file zip marketplace registry");
-
-        Card installed = card(p, tr("settings.plugins.installed"));
-        pluginListBox = new VBox(8);
-        cardRow(
-                installed,
-                Category.PLUGINS,
-                new VBox(
-                        6,
-                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
-                        pluginListBox),
-                "plugins installed list enable disable");
         refreshPluginList();
         return p;
     }
@@ -6346,24 +6382,66 @@ public class SettingsWindow {
     /**
      * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
      * actually opens, so a registry that fails to load leaves Settings where it was, with the reason.
+     *
+     * @return whether it was showing (and is now hidden): the caller shows it again with {@link #restoreAfterPicker}
      */
-    void hideForMainWindowPicker() {
+    boolean hideForMainWindowPicker() {
         if (built && stage.isShowing()) {
             stage.hide();
+            return true;
         }
+        return false;
     }
 
-    /** Rebuilds the per-plugin enable list from the shared {@link com.editora.plugin.PluginManager}. */
-    /** Each listed plugin's enabled state when this window first showed it: what the running code reflects. */
-    private final Map<String, Boolean> pluginStateAtStart = new HashMap<>();
+    /** Shows this window again on the Plugins page once the picker it stepped aside for is done. */
+    void restoreAfterPicker() {
+        if (!built || stage.isShowing()) {
+            return;
+        }
+        pluginListKey = null;
+        load();
+        stage.show();
+        sidebar.getSelectionModel().select(Category.PLUGINS);
+        stage.toFront();
+    }
 
+    /** This window's stage while it is open (the owner for plugin dialogs started here), else null. */
+    Window stageIfShowing() {
+        return built && stage.isShowing() ? stage : null;
+    }
+
+    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
+    void showPluginStatus(String message, boolean error) {
+        if (pluginStatusLabel == null) {
+            return;
+        }
+        boolean shown = message != null && !message.isBlank();
+        pluginStatusLabel.setText(shown ? message : "");
+        pluginStatusLabel.setVisible(shown);
+        pluginStatusLabel.getStyleClass().removeAll("settings-hint", "settings-git-missing");
+        pluginStatusLabel.getStyleClass().add(error ? "settings-git-missing" : "settings-hint");
+    }
+
+    /**
+     * Rebuilds the per-plugin list from the shared {@link com.editora.plugin.PluginManager}: each row says what
+     * it is (name, version, id, a load or start error) and how it differs from what this session runs — the
+     * launch set — with a Restart now. A row that failed to load cannot be ticked: what it would do cannot be
+     * shown, so it cannot be consented to. Skipped when neither the list nor the store changed since.
+     */
     private void refreshPluginList() {
         if (pluginListBox == null) {
             return;
         }
-        pluginListBox.getChildren().clear();
         java.util.List<com.editora.plugin.PluginDescriptor> ds =
                 pluginManager == null ? java.util.List.of() : pluginManager.descriptors();
+        com.editora.config.PluginStore store = config.getPluginStore();
+        Object key =
+                java.util.List.of(ds, Map.copyOf(store.enabled), Map.copyOf(store.consent), pluginCheck.isSelected());
+        if (key.equals(pluginListKey)) {
+            return; // D6: re-opening Settings no longer rebuilds an unchanged list
+        }
+        pluginListKey = key;
+        pluginListBox.getChildren().clear();
         if (ds.isEmpty()) {
             Label empty = note(tr("settings.plugins.none"));
             empty.setWrapText(true);
@@ -6371,54 +6449,96 @@ public class SettingsWindow {
             return;
         }
         for (com.editora.plugin.PluginDescriptor d : ds) {
-            String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-            String ver = d.manifest().version == null ? "" : d.manifest().version;
-            String label = ver.isBlank() ? name + "  (" + d.id() + ")" : name + "  " + ver + "  (" + d.id() + ")";
-            CheckBox cb = new CheckBox(label);
-            cb.setSelected(config.getPluginStore().isEnabled(d.id()));
-            // Code is loaded at start: a row switched since then says it needs a restart.
-            boolean atStart = pluginStateAtStart.computeIfAbsent(d.id(), id -> cb.isSelected());
-            Label restartPill = new Label(tr("settings.plugins.restartPill"));
-            restartPill.getStyleClass().add("settings-git-status");
-            restartPill.visibleProperty().bind(atStart ? cb.selectedProperty().not() : cb.selectedProperty());
-            restartPill.managedProperty().bind(restartPill.visibleProperty());
-            SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
-            cb.selectedProperty().addListener((obs, was, now) -> {
-                if (loading) {
-                    return;
-                }
-                // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
-                if (now && !confirmEnablePlugin(d)) {
-                    cb.setSelected(false); // user declined; revert (fires again with now=false → persists off)
-                    return;
-                }
-                config.getPluginStore().setEnabled(d.id(), now);
-                config.savePlugins();
-            });
-            javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
-            Button remove = new Button(tr("settings.plugins.remove"));
-            remove.getStyleClass().add("settings-link-button");
-            remove.setOnAction(ev -> {
-                if (onUninstallPlugin != null) {
-                    onUninstallPlugin.accept(d.id());
-                }
-            });
-            HBox header = new HBox(8, cb, restartPill, spacer, remove);
-            header.setAlignment(Pos.CENTER_LEFT);
-            VBox entry = new VBox(2, header);
-            if (d.loadError() != null) {
-                Label err = new Label(PluginLoadProblems.text(d));
-                String detail = PluginLoadProblems.detail(d);
-                err.setTooltip(detail == null ? null : new Tooltip(detail));
-                err.getStyleClass().add("settings-git-missing");
-                err.setWrapText(true);
-                err.setMaxWidth(420);
-                err.setPadding(new Insets(0, 0, 0, 20));
-                entry.getChildren().add(err);
-            }
-            pluginListBox.getChildren().add(entry);
+            pluginListBox.getChildren().add(pluginRow(d, store));
         }
+    }
+
+    private Node pluginRow(com.editora.plugin.PluginDescriptor d, com.editora.config.PluginStore store) {
+        String name = d.displayName();
+        String ver = d.manifest().version == null ? "" : d.manifest().version.strip();
+        com.editora.plugin.PluginDescriptor runningNow = pluginManager.running(d.id());
+        boolean wanted = store.allows(d.id(), d.digest());
+        PluginRowState.Pill pill = PluginRowState.pill(
+                wanted,
+                store.isEnabled(d.id()),
+                runningNow != null,
+                runningNow == null ? null : runningNow.manifest().version,
+                ver,
+                pluginManager.pendingUpdate(d.id()),
+                pluginManager.pendingRemoval(d.id()));
+        CheckBox cb = new CheckBox(PluginDisclosure.clean(ver.isBlank() ? name : name + "  " + ver, 120));
+        cb.setSelected(wanted || pill == PluginRowState.Pill.UPDATE_PENDING);
+        cb.setMinWidth(0);
+        cb.setTooltip(new Tooltip(name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")"));
+        SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
+        if (d.loadError() != null || pill == PluginRowState.Pill.REMOVAL_PENDING) {
+            SettingsDependents.lockOf(cb).set(true); // a broken (or departing) plugin cannot be ticked at all
+        }
+        cb.selectedProperty().addListener((obs, was, now) -> {
+            if (loading) {
+                return;
+            }
+            // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
+            if (now) {
+                if (!onEnablePlugin.test(d)) {
+                    cb.setSelected(false); // declined: revert (fires again with now=false, was=true → off)
+                    return;
+                }
+            } else if (was && store.isEnabled(d.id())) {
+                onDisablePlugin.accept(d);
+            }
+            pluginListKey = null;
+            javafx.application.Platform.runLater(this::refreshPluginList); // the row's pill follows
+        });
+        Label id = new Label(d.id());
+        id.getStyleClass().add("settings-hint");
+        id.setMinWidth(Region.USE_PREF_SIZE);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button remove = new Button(tr("settings.plugins.remove"));
+        remove.getStyleClass().add("settings-link-button");
+        remove.setMinWidth(Region.USE_PREF_SIZE); // a long name elides the label, never the button
+        remove.setAccessibleText(tr("settings.plugins.removeNamed", name));
+        remove.setDisable(pill == PluginRowState.Pill.REMOVAL_PENDING);
+        remove.setOnAction(ev -> {
+            if (onUninstallPlugin != null) {
+                onUninstallPlugin.accept(d);
+            }
+        });
+        HBox header = new HBox(8, cb, id, spacer, remove);
+        header.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(cb, Priority.SOMETIMES);
+        VBox entry = new VBox(2, header);
+        String pillText = PluginRowState.text(pill, pluginManager.pendingUpdate(d.id()));
+        if (pillText != null) {
+            Label restartPill = new Label(pillText);
+            restartPill.getStyleClass().add("settings-git-status");
+            HBox pillRow = new HBox(8, restartPill);
+            pillRow.setAlignment(Pos.CENTER_LEFT);
+            if (pill != PluginRowState.Pill.CHANGED && onRestart != null) {
+                Button restartNow = new Button(tr("settings.restart.now"));
+                restartNow.getStyleClass().add("settings-link-button");
+                restartNow.setOnAction(e -> onRestart.run());
+                pillRow.getChildren().add(restartNow);
+            }
+            pillRow.setPadding(new Insets(0, 0, 0, 20));
+            entry.getChildren().add(pillRow);
+        }
+        com.editora.plugin.PluginDescriptor.LoadProblem runtime = pluginManager.runtimeProblem(d.id());
+        String problemText = d.loadError() != null
+                ? PluginLoadProblems.text(d)
+                : runtime != null ? PluginLoadProblems.text(runtime) : null;
+        if (problemText != null) {
+            Label err = new Label(problemText);
+            String detail = d.loadError() != null ? PluginLoadProblems.detail(d) : PluginLoadProblems.detail(runtime);
+            err.setTooltip(detail == null ? null : new Tooltip(detail));
+            err.getStyleClass().add("settings-git-missing");
+            err.setWrapText(true);
+            err.setMaxWidth(420);
+            err.setPadding(new Insets(0, 0, 0, 20));
+            entry.getChildren().add(err);
+        }
+        return entry;
     }
 
     /** Warns (with the host) when the registry URL isn't the bundled default — a phishing-vector guard. */
@@ -6441,22 +6561,6 @@ public class SettingsWindow {
         pluginRegistryWarn.setText(custom ? tr("settings.plugins.customRegistry", host == null ? "?" : host) : "");
         pluginRegistryWarn.setVisible(custom);
         pluginRegistryWarn.setManaged(custom);
-    }
-
-    /** Capability-disclosure confirm before enabling a plugin (mirrors the install gate). */
-    private boolean confirmEnablePlugin(com.editora.plugin.PluginDescriptor d) {
-        String name = d.manifest().name == null || d.manifest().name.isBlank() ? d.id() : d.manifest().name;
-        String body = tr(
-                "dialog.plugins.enableBody",
-                name,
-                d.manifest().version == null ? "" : d.manifest().version,
-                PluginCoordinator.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.plugins.enableTitle"));
-        confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
-        confirm.getDialogPane().setMinWidth(480);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     /** The page's "Turn on “X” to change these settings." note, shown while {@code master} is off. */

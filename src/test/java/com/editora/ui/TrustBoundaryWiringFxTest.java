@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -142,10 +143,20 @@ class TrustBoundaryWiringFxTest {
     @Test
     void enablingAPluginThatCannotBeDisclosedFailsClosed() throws Exception {
         PluginCoordinator plugins = FxTestSupport.field(fx.controller, "pluginCoordinator");
-        Method confirm = PluginCoordinator.class.getDeclaredMethod("confirmEnablePlugin", String.class);
-        confirm.setAccessible(true);
+        plugins.setConfirmForTest(q -> true); // the user would say yes to anything
         // No descriptor ⇒ nothing to show the user ⇒ not enabled (it used to return true: enabled, undisclosed).
-        boolean enabled = FxTestSupport.callOnFx(() -> (Boolean) confirm.invoke(plugins, "no-such-plugin"));
-        assertFalse(enabled);
+        assertFalse(FxTestSupport.callOnFx(() -> plugins.enableFromSettings(null)));
+        // A1: an unreadable plugin.json is not "no executable code": a load error is never consented to.
+        com.editora.plugin.PluginManifest stub = new com.editora.plugin.PluginManifest();
+        stub.id = "broken";
+        com.editora.plugin.PluginDescriptor broken = com.editora.plugin.PluginDescriptor.withProblem(
+                stub,
+                fx.configDir.resolve("plugins/broken"),
+                false,
+                null,
+                new com.editora.plugin.PluginDescriptor.LoadProblem(
+                        com.editora.plugin.PluginDescriptor.LoadProblem.Kind.MANIFEST_INVALID, List.of("1", "3"), "x"));
+        assertFalse(FxTestSupport.callOnFx(() -> plugins.enableFromSettings(broken)));
+        assertFalse(fx.shared.getPluginStore().isEnabled("broken"));
     }
 }

@@ -87,6 +87,14 @@ public interface McpBridge {
     boolean executeCommand(String id);
 
     /**
+     * Why a client may not run command {@code id} (and does not see it in {@link #listCommands}), or null. Default:
+     * none refused.
+     */
+    default String commandRefusal(String id) {
+        return null;
+    }
+
+    /**
      * Opens {@code path} in the editor and, when {@code line > 0}, moves the caret to the 1-based
      * {@code line}/{@code col}. Returns null when the file is open, else a human-readable error: the file
      * does not exist, or it is one this client may not bring into the editor (outside the window's project).

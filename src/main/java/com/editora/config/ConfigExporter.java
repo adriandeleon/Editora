@@ -96,17 +96,41 @@ public final class ConfigExporter {
      *   <li>a staging file of an atomic write that is in flight ({@code .<name>-<random>.tmp});
      *   <li>{@code http-history/} — the HTTP Client's saved responses: bodies, full URLs (a query may hold a
      *       key) and whatever a server sent back — unless the user asked for it at export time
-     *       ({@code includeHttpHistory}).
+     *       ({@code includeHttpHistory});
+     *   <li>the plugin installer's own entries under {@code plugins/} — {@code .installing-*} staging folders
+     *       (one a crash left could be a whole plugin), {@code .pending-<id>} updates and {@code .remove-<id>}
+     *       markers: they belong to this installation's next start, not to a configuration;
+     *   <li>each plugin's {@code data/} — the private store a plugin keeps (an API token, a scratchpad's notes)
+     *       — unless the user asked for it ({@code includePluginData}).
      * </ul>
      *
      * Pure.
      */
-    static boolean included(String relative, boolean includeHttpHistory) {
+    static boolean included(String relative, boolean includeHttpHistory, boolean includePluginData) {
         if (relative.startsWith(HTTP_HISTORY_DIR + "/") && !includeHttpHistory) {
             return false;
         }
+        String plugins = ConfigManager.PLUGINS_DIR_NAME + "/";
+        if (relative.startsWith(plugins)) {
+            String rest = relative.substring(plugins.length());
+            if (rest.startsWith(".")) {
+                return false;
+            }
+            int slash = rest.indexOf('/');
+            if (!includePluginData && slash > 0 && rest.startsWith(PLUGIN_DATA_DIR + "/", slash + 1)) {
+                return false;
+            }
+        }
         return includedConfig(relative);
     }
+
+    /** {@link #included(String, boolean, boolean)} with every plugin's data (the copy made before an import). */
+    static boolean included(String relative, boolean includeHttpHistory) {
+        return included(relative, includeHttpHistory, true);
+    }
+
+    /** A plugin's private store, {@code plugins/<id>/data/} ({@code PluginContext.dataDir()}). */
+    static final String PLUGIN_DATA_DIR = "data";
 
     /** The folder of the HTTP Client's saved responses, left out of an export unless asked for. */
     static final String HTTP_HISTORY_DIR = HttpResponseHistory.DIR_NAME;
@@ -190,15 +214,37 @@ public final class ConfigExporter {
             boolean includeHttpHistory,
             boolean includeApiKeys)
             throws IOException {
+        return export(configDir, destinationDir, version, userName, now, includeHttpHistory, includeApiKeys, true);
+    }
+
+    /** As above; the plugins' {@code data/} folders are left out unless {@code includePluginData}. */
+    public static Path export(
+            Path configDir,
+            Path destinationDir,
+            String version,
+            String userName,
+            LocalDateTime now,
+            boolean includeHttpHistory,
+            boolean includeApiKeys,
+            boolean includePluginData)
+            throws IOException {
         return exportTo(
                 configDir,
                 destinationDir.resolve(zipName(configDir, version, userName, now)),
                 includeHttpHistory,
-                includeApiKeys);
+                includeApiKeys,
+                includePluginData);
     }
 
     /** As {@link #export}, into the zip file {@code zip} (the copy made before an import, for one). */
     static Path exportTo(Path configDir, Path zip, boolean includeHttpHistory, boolean includeApiKeys)
+            throws IOException {
+        return exportTo(configDir, zip, includeHttpHistory, includeApiKeys, true);
+    }
+
+    /** As {@link #exportTo(Path, Path, boolean, boolean)}, leaving plugin data out unless asked for. */
+    static Path exportTo(
+            Path configDir, Path zip, boolean includeHttpHistory, boolean includeApiKeys, boolean includePluginData)
             throws IOException {
         ConfigWriter.createOwnerOnly(zip); // newOutputStream truncates it and keeps the mode
         boolean complete = false;
@@ -211,7 +257,7 @@ public final class ConfigExporter {
                 }
                 for (Path file : files) {
                     String entry = configDir.relativize(file).toString().replace('\\', '/');
-                    if (!included(entry, includeHttpHistory) || file.equals(zip)) {
+                    if (!included(entry, includeHttpHistory, includePluginData) || file.equals(zip)) {
                         continue;
                     }
                     try (InputStream in = Files.newInputStream(file)) {

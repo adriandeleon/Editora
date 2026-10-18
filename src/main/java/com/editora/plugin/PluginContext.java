@@ -14,13 +14,28 @@ import javafx.scene.layout.Region;
  *
  * <p>Everything registered here lives only for the session; toggling a plugin (or the master "Enable
  * plugins" setting) takes effect on the next app launch.
+ *
+ * <p><b>Threads.</b> Call these methods on the JavaFX application thread. From another thread, the methods that
+ * change something ({@code register…}, {@code bindKey}, {@code add…}, {@link #setStatus}, {@link #openUrl}) are
+ * handed to the FX thread and run later; {@link #activeEditor()} throws {@link IllegalStateException}.
+ *
+ * <p><b>Ids.</b> Command and tool-window ids are always namespaced {@code plugin.<pluginId>.<id>}, dotted or
+ * not, so a plugin cannot replace a built-in or another plugin's command. A chord or a status segment may
+ * target a built-in: a bare id there is the plugin's own command, a dotted one is used as written.
  */
 public interface PluginContext {
 
-    /** Registers a palette command (id is namespaced by the manager as {@code plugin.<pluginId>.<id>}). */
+    /**
+     * Registers a palette command, namespaced {@code plugin.<pluginId>.<id>}. A blank {@code title} shows as
+     * "&lt;plugin name&gt;: &lt;id&gt;". An action that throws is reported to the user with the plugin's name.
+     */
     void registerCommand(String id, String title, Runnable action);
 
-    /** Binds a chord (e.g. {@code "C-c x"}) to a command id (a plugin's or a built-in's). */
+    /**
+     * Binds a chord (e.g. {@code "C-c x"}) to a command id: a bare id is this plugin's own command, a dotted one
+     * a built-in's. Kept when the keymap is rebuilt (a keymap switch, a key-binding edit); the user's own
+     * bindings still win. Taking a chord another command had is named in the Message Log.
+     */
     void bindKey(String chord, String commandId);
 
     /**
@@ -75,7 +90,12 @@ public interface PluginContext {
     /** Adds a clickable status-bar segment that runs {@code commandId} when clicked. */
     void addStatusBarSegment(String label, String commandId);
 
-    /** The active editor facade for this window. */
+    /**
+     * A facade over the buffer that is active in this window <em>now</em>. It stays bound to that buffer: keep
+     * it across a worker thread and the result lands in the file the work started on, never in whatever tab is
+     * in front by then; once that buffer is closed it reads as empty and ignores writes. Call it again for the
+     * current tab. On the FX thread only.
+     */
     ActiveEditor activeEditor();
 
     /** This plugin's install directory ({@code <configDir>/plugins/<id>/}). */

