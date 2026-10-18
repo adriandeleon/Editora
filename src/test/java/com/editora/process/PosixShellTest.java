@@ -153,4 +153,15 @@ class PosixShellTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 out.matches(java.util.regex.Pattern.quote(PosixShell.TERMINAL_PID_MARK) + "\\d+\n"), out);
     }
+
+    @Test
+    void aTerminalScriptStartsBashAndZshWithTheIntegrationWhenItIsThere() {
+        String script = PosixShell.terminalScript("/w", true, "/home/ana/.cache/editora/shell-integration/abc");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                script.contains("I='/home/ana/.cache/editora/shell-integration/abc'"), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.contains("--init-file \"$I/editora.bash\" -i"), script);
+        org.junit.jupiter.api.Assertions.assertTrue(script.contains("ZDOTDIR=\"$I/zsh\""), script);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                script.endsWith("exec \"$s\" -l"), "the plain login shell is the fallback");
+    }
 }

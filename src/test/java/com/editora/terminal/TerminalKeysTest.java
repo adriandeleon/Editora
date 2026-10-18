@@ -83,4 +83,14 @@ class TerminalKeysTest {
     private static KeyEvent key(KeyCode code, boolean shift, boolean ctrl, boolean meta) {
         return new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, false, meta);
     }
+
+    @Test
+    void thePromptJumpsAreTheTerminalsOwn() {
+        assertFalse(TerminalKeys.reachesEditora("C-S-up", "edit.moveLineUp", DEFAULTS, false));
+        assertFalse(TerminalKeys.reachesEditora("Cmd-down", "nav.end", DEFAULTS, true), "even a Cmd chord on mac");
+        assertTrue(TerminalKeys.isPreviousPrompt(key(KeyCode.UP, true, true, false), false));
+        assertTrue(TerminalKeys.isNextPrompt(key(KeyCode.DOWN, false, false, true), true));
+        assertFalse(
+                TerminalKeys.isPreviousPrompt(key(KeyCode.UP, false, true, false), false), "Ctrl+Up is the shell's");
+    }
 }

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 131;
+    public static final int SCHEMA_VERSION = 132;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -677,6 +677,11 @@ public class Settings {
     private boolean terminalBell = true;
     /** Integrated terminal: ask before closing a tab whose shell is running a program. */
     private boolean terminalConfirmClose = true;
+    /**
+     * Integrated terminal: start bash and zsh with Editora's shell integration, so the terminal knows the shell's
+     * directory (links, New Terminal Here) and where each command's output is. Users' own files are not changed.
+     */
+    private boolean terminalShellIntegration = true;
     /** "Open in Terminal" starts the system's terminal application instead of a tab in the Terminal tool window. */
     private boolean terminalUseExternal = false;
 
@@ -2980,6 +2985,14 @@ public class Settings {
 
     public void setTerminalConfirmClose(boolean terminalConfirmClose) {
         this.terminalConfirmClose = terminalConfirmClose;
+    }
+
+    public boolean isTerminalShellIntegration() {
+        return terminalShellIntegration;
+    }
+
+    public void setTerminalShellIntegration(boolean terminalShellIntegration) {
+        this.terminalShellIntegration = terminalShellIntegration;
     }
 
     public boolean isTerminalUseExternal() {

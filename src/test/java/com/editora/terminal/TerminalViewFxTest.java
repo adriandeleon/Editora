@@ -171,6 +171,93 @@ class TerminalViewFxTest {
         assertTrue(ended.await(10, TimeUnit.SECONDS), "onSessionEnded after the connector closed");
     }
 
+    @Test
+    void aShellsCwdReportBecomesTheTerminalsDirectory() throws Exception {
+        open();
+        connector.emit("\u001b]7;file://box/srv/my%20app\u0007$ ");
+        await(() -> "/srv/my app".equals(call(() -> view.getDisplay().getCwd())), "the reported directory");
+        await(
+                () -> "my app"
+                        .equals(call(() -> view.getDisplay().tabTitleProperty().get())),
+                "the tab named after it");
+        assertFalse(screen().contains("]7;"), "the report is not drawn");
+    }
+
+    @Test
+    void theLastCommandsOutputIsWhatCameBetweenItsMarks() throws Exception {
+        open();
+        connector.emit("\u001b]133;A\u0007$ ls\r\n\u001b]133;C\u0007one\r\ntwo  \r\n\u001b]133;D;0\u0007"
+                + "\u001b]133;A\u0007$ ");
+        await(() -> call(() -> view.lastCommandOutput()) != null, "the output marks");
+        assertEquals("one\ntwo\n", fx(() -> view.lastCommandOutput()));
+        assertTrue(fx(() -> view.hasPromptMarks()));
+        assertFalse(screen().contains("133"), "the marks are not drawn");
+    }
+
+    @Test
+    void promptJumpsScrollBackThroughHistoryAndReturn() throws Exception {
+        open();
+        StringBuilder out = new StringBuilder("\u001b]133;A\u0007$ first\r\n");
+        for (int i = 0; i < 80; i++) {
+            out.append("line ").append(i).append("\r\n");
+        }
+        out.append("\u001b]133;A\u0007$ ");
+        connector.emit(out.toString());
+        await(() -> screen().contains("line 79"), "the output");
+
+        int history = fx(() -> view.getSession().getTextBuffer().getHistoryLinesCount());
+        assertTrue(history > 0, "the first prompt scrolled off the screen");
+        int firstRow = fx(() -> view.promptMarks().getFirst().row());
+        assertTrue(firstRow < 0, () -> "its mark moved into history with it: " + firstRow);
+        String firstLine = fx(() -> {
+            var buffer = view.getSession().getTextBuffer();
+            buffer.lock();
+            try {
+                return buffer.getLine(firstRow).getText();
+            } finally {
+                buffer.unlock();
+            }
+        });
+        assertTrue(firstLine.startsWith("$ first"), () -> "the mark is still on its prompt: " + firstLine);
+
+        assertTrue(fx(() -> view.previousPrompt()), "a prompt above");
+        assertEquals(firstRow, fx(() -> view.scrollOrigin()), "scrolled to it");
+        assertTrue(fx(() -> view.nextPrompt()), "and back down");
+        assertFalse(fx(() -> view.nextPrompt()), "already at the live screen");
+    }
+
+    @Test
+    void aScrolledBackViewStaysOnItsTextAsOutputArrives() throws Exception {
+        // JediTerm's history listener fires on resizes and clears only, not as lines scroll off.
+        open();
+        StringBuilder out = new StringBuilder("\u001b]133;A\u0007$ first\r\n");
+        for (int i = 0; i < 80; i++) {
+            out.append("line ").append(i).append("\r\n");
+        }
+        connector.emit(out.toString());
+        await(() -> screen().contains("line 79"), "the output");
+        assertTrue(fx(() -> view.previousPrompt()), "scrolled back to the prompt");
+        int before = fx(() -> view.scrollOrigin());
+
+        StringBuilder more = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            more.append("more ").append(i).append("\r\n");
+        }
+        connector.emit(more.toString());
+        await(() -> screen().contains("more 9"), "more output");
+
+        assertEquals(before - 10, fx(() -> view.scrollOrigin()), "the view moved up with its text");
+        assertEquals(before - 10, fx(() -> view.promptMarks().getFirst().row()), "and so did the mark");
+    }
+
+    private static <T> T call(java.util.concurrent.Callable<T> work) {
+        try {
+            return fx(work);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private void open() throws Exception {

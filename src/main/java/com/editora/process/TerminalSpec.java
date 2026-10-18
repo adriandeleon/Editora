@@ -8,11 +8,17 @@ import java.nio.file.Path;
  * on a language server's or debug adapter's channel would corrupt its framing (ADR 0013, ADR 0014).
  *
  * @param workingDir where the shell starts, a path on the target's file system; null for the account's home
+ * @param shellIntegration the folder holding Editora's bash/zsh integration scripts, as the target names it; null
+ *     for none (the setting is off, or they could not be installed there)
  */
-public record TerminalSpec(Path workingDir, int columns, int rows) {
+public record TerminalSpec(Path workingDir, int columns, int rows, String shellIntegration) {
 
     public TerminalSpec {
         columns = Math.max(1, columns);
         rows = Math.max(1, rows);
+    }
+
+    public TerminalSpec(Path workingDir, int columns, int rows) {
+        this(workingDir, columns, rows, null);
     }
 }

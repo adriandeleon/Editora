@@ -14,7 +14,7 @@ import com.editora.process.PosixShell;
  * and reported. The line comes first, ahead of anything the shell prints; whatever came before it (a launcher's
  * own warning) is kept. If no mark arrives within the first few kilobytes, everything is passed on as it is.
  */
-final class PidMarkStream extends FilterInputStream {
+public final class PidMarkStream extends FilterInputStream {
 
     /** How much output may arrive before the mark stops being looked for. */
     static final int LOOK_AHEAD = 8 * 1024;
@@ -26,7 +26,7 @@ final class PidMarkStream extends FilterInputStream {
     private int pendingAt;
     private boolean scanned;
 
-    PidMarkStream(InputStream in, LongConsumer onPid) {
+    public PidMarkStream(InputStream in, LongConsumer onPid) {
         super(in);
         this.onPid = onPid;
     }

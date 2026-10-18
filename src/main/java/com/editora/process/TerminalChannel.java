@@ -21,6 +21,11 @@ public interface TerminalChannel extends AutoCloseable {
 
     boolean isOpen();
 
+    /** The shell's pid on its machine, once its start script has said it; -1 before that, or when it cannot. */
+    default long pid() {
+        return -1;
+    }
+
     /** Blocks until the channel closes; the shell's exit status, or -1 when there was none. */
     int waitFor() throws InterruptedException;
 

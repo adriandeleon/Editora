@@ -136,9 +136,20 @@ public final class LocalShell {
      */
     public static LocalPtyConnector start(List<String> command, String directory, int columns, int rows)
             throws IOException {
-        List<String> argv = command == null || command.isEmpty() ? shellCommand() : command;
+        return start(command, directory, columns, rows, null);
+    }
+
+    /**
+     * As above, starting a bash or zsh login shell with Editora's shell integration from {@code integration} (see
+     * {@link ShellIntegration}); any other command, or a null folder, starts as it is.
+     */
+    public static LocalPtyConnector start(
+            List<String> command, String directory, int columns, int rows, Path integration) throws IOException {
+        List<String> login = command == null || command.isEmpty() ? shellCommand() : command;
+        Map<String, String> env = environment();
+        List<String> argv = integrated(login, integration, env);
         PtyProcess process = new PtyProcessBuilder(argv.toArray(String[]::new))
-                .setEnvironment(environment())
+                .setEnvironment(env)
                 .setDirectory(workingDirectory(directory))
                 .setInitialColumns(columns)
                 .setInitialRows(rows)
@@ -149,5 +160,29 @@ public final class LocalShell {
                 .setWindowsAnsiColorEnabled(true)
                 .start();
         return new LocalPtyConnector(process, argv);
+    }
+
+    /**
+     * {@code login} ({@code <shell> -l}) with the integration scripts when the shell is bash or zsh and they are
+     * there: {@code bash --init-file <dir>/editora.bash -i}, or zsh with {@code ZDOTDIR=<dir>/zsh} and the user's own
+     * {@code ZDOTDIR} kept in {@code USER_ZDOTDIR}. Anything else is returned as it is. Pure apart from reading
+     * whether the scripts exist; adds to {@code env}.
+     */
+    static List<String> integrated(List<String> login, Path integration, Map<String, String> env) {
+        if (integration == null || login.size() != 2 || !"-l".equals(login.get(1))) {
+            return login;
+        }
+        String shell = login.get(0);
+        String name = Path.of(shell).getFileName().toString();
+        if (name.equals("bash") && Files.isReadable(integration.resolve("editora.bash"))) {
+            return List.of(
+                    shell, "--init-file", integration.resolve("editora.bash").toString(), "-i");
+        }
+        if (name.equals("zsh") && Files.isReadable(integration.resolve("zsh").resolve(".zshrc"))) {
+            String own = env.get("ZDOTDIR");
+            env.put("USER_ZDOTDIR", own == null || own.isBlank() ? env.getOrDefault("HOME", "") : own);
+            env.put("ZDOTDIR", integration.resolve("zsh").toString());
+        }
+        return login;
     }
 }

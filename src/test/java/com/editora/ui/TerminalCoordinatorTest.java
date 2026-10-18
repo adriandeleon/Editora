@@ -22,4 +22,11 @@ class TerminalCoordinatorTest {
         assertEquals("Ubuntu-24.04", TerminalCoordinator.labelOf("wsl:Ubuntu-24.04"));
         assertEquals("plain", TerminalCoordinator.labelOf("plain"));
     }
+
+    @Test
+    void aRemoteShellsChildrenAreReadFromPs() {
+        String ps = "    1 init\n  812 bash\n  900 /usr/bin/vim\n  900 sleep\n  901 ps\n 9000 other\n";
+        assertEquals(java.util.List.of("vim", "sleep"), TerminalCoordinator.childrenOf(ps, 900));
+        assertEquals(java.util.List.of(), TerminalCoordinator.childrenOf(ps, 42));
+    }
 }

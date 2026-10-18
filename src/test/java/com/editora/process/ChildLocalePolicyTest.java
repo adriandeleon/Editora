@@ -68,6 +68,7 @@ class ChildLocalePolicyTest {
             "ui/FileWorkflowCoordinator.java", // pkexec probe + elevated save (exit code)
             "ui/GitPathScope.java", // `find` on a remote host: where a project's .git entries are
             "ui/PythonTestRunner.java", // `python -c "import pytest"`: whether pytest is there (exit code)
+            "ui/TerminalCoordinator.java", // `ps -A -o ppid=,comm=` on a target: what a remote shell is running
             "process/ProcessRegistry.java", // `kill -INT` before Stop escalates (exit code)
             "container/ContainerEngine.java"); // the engine's inspect / ps output
 

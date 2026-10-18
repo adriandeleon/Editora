@@ -152,7 +152,8 @@ public final class WslExecTarget implements ExecTarget {
     @Override
     public TerminalChannel startTerminal(TerminalSpec spec) throws IOException {
         String cwd = spec.workingDir() == null ? null : toTargetPath(spec.workingDir());
-        List<String> argv = argv(List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true)));
+        List<String> argv =
+                argv(List.of("/bin/sh", "-c", PosixShell.terminalScript(cwd, true, spec.shellIntegration())));
         return PtyChannel.start(
                 com.editora.process.ProcessRunner.resolveExecutable(argv),
                 com.editora.process.ProcessRunner.applyUserEnv(new java.util.HashMap<>(System.getenv()), Map.of()),

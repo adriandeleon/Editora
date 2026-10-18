@@ -79,4 +79,33 @@ class LocalShellTest {
         assertFalse(env.get("TERM").isBlank());
         assertTrue(env.containsKey("PATH"), "the child shell needs a PATH to find anything");
     }
+
+    @org.junit.jupiter.api.Test
+    void bashAndZshStartWithTheIntegrationAndOtherShellsAsTheyAre(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Files.createDirectories(dir.resolve("zsh"));
+        java.nio.file.Files.writeString(dir.resolve("editora.bash"), "");
+        java.nio.file.Files.writeString(dir.resolve("zsh/.zshrc"), "");
+        java.util.Map<String, String> env = new java.util.HashMap<>(java.util.Map.of("HOME", "/home/ana"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(
+                        "/bin/bash", "--init-file", dir.resolve("editora.bash").toString(), "-i"),
+                LocalShell.integrated(java.util.List.of("/bin/bash", "-l"), dir, env));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("/usr/bin/zsh", "-l"),
+                LocalShell.integrated(java.util.List.of("/usr/bin/zsh", "-l"), dir, env));
+        org.junit.jupiter.api.Assertions.assertEquals(dir.resolve("zsh").toString(), env.get("ZDOTDIR"));
+        org.junit.jupiter.api.Assertions.assertEquals("/home/ana", env.get("USER_ZDOTDIR"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("/usr/bin/fish", "-l"),
+                LocalShell.integrated(java.util.List.of("/usr/bin/fish", "-l"), dir, env));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("/bin/bash", "-l"),
+                LocalShell.integrated(java.util.List.of("/bin/bash", "-l"), null, env),
+                "off");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("vim"),
+                LocalShell.integrated(java.util.List.of("vim"), dir, env),
+                "a command, not a shell");
+    }
 }

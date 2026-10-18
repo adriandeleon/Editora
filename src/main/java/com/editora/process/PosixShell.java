@@ -68,6 +68,15 @@ public final class PosixShell {
      * else bash, else sh, since a container often sets none. Run with {@code /bin/sh -c}.
      */
     public static String terminalScript(String cwd, boolean markPid) {
+        return terminalScript(cwd, markPid, null);
+    }
+
+    /**
+     * As above, starting bash or zsh with Editora's shell integration from {@code integration} (a folder as the
+     * target names it) when the scripts are readable there: bash with {@code --init-file}, zsh with
+     * {@code ZDOTDIR}. Any other shell, or missing scripts, start as a plain login shell.
+     */
+    public static String terminalScript(String cwd, boolean markPid, String integration) {
         StringBuilder script = new StringBuilder();
         if (markPid) {
             script.append("printf '\\036EDITORA %s\\n' \"$$\"; ");
@@ -76,7 +85,16 @@ public final class PosixShell {
         if (cwd != null && !cwd.isBlank()) {
             script.append("cd -- ").append(quote(cwd)).append(" 2>/dev/null || cd; ");
         }
-        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); exec \"$s\" -l");
+        script.append("s=${SHELL:-}; [ -x \"$s\" ] || s=$(command -v bash || command -v sh); ");
+        if (integration != null && !integration.isBlank()) {
+            script.append("I=")
+                    .append(quote(integration))
+                    .append("; case \"${s##*/}\" in ")
+                    .append("bash) [ -r \"$I/editora.bash\" ] && exec \"$s\" --init-file \"$I/editora.bash\" -i ;; ")
+                    .append("zsh) [ -r \"$I/zsh/.zshrc\" ] && USER_ZDOTDIR=\"${ZDOTDIR:-$HOME}\" ZDOTDIR=\"$I/zsh\" ")
+                    .append("exec \"$s\" -l ;; esac; ");
+        }
+        script.append("exec \"$s\" -l");
         return script.toString();
     }
 

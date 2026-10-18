@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **A folder whose tools run in a dev container or a WSL distribution gets its terminal there too**: a login
     shell in the container (`docker`/`podman exec -it`) or the distribution (`wsl.exe`), in the folder, labelled
     with the container's or distribution's name. Closing the terminal ends the shell inside.
+  - **Shell integration** (bash and zsh, on this machine and on hosts, containers and WSL): the terminal knows
+    the shell's folder, so relative paths in the output open the right file and **New Terminal Here** opens a
+    tab where the shell is. Ctrl+Shift+Up/Down (Cmd+Up/Down on macOS) jump between prompts, and **Copy Last
+    Command Output** copies what the last command printed. Closing a remote terminal that is running a program
+    asks first. Settings → Terminal → Shell integration turns it off.
   - The terminal is Termina's (github.com/adriandeleon/Termina), ported.
 - **The Run and Debug tool windows say which runtime the program runs under**, in a small chip beside the
   state: `Java 25.0.4 (Temurin)`, `Python 3.13.5`, `Node.js 24.18.1`, `Bash 5.2.37`, `GNU Make 4.4.1`. Hover it

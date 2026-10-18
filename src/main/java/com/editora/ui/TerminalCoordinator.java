@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -7,6 +8,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.MenuItem;
 
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
@@ -21,6 +23,7 @@ import com.editora.terminal.LinkActions;
 import com.editora.terminal.LocalPtyConnector;
 import com.editora.terminal.LocalShell;
 import com.editora.terminal.RunningProgram;
+import com.editora.terminal.ShellIntegration;
 import com.editora.terminal.TerminalConnector;
 import com.editora.terminal.TerminalCursor;
 import com.editora.terminal.TerminalPalettes;
@@ -52,6 +55,9 @@ final class TerminalCoordinator {
         /** Closes the Terminal tool window. */
         void hideToolWindow();
 
+        /** Editora's config folder, where the shell-integration scripts for this machine go. */
+        Path configDir();
+
         /**
          * Opens a link clicked in a terminal: a file at its 1-based {@code line}/{@code column} (0 = none), or a
          * folder, revealed in the Project tree.
@@ -75,6 +81,13 @@ final class TerminalCoordinator {
         if (panel == null) {
             panel = new TerminalPanel(this::shellFor, this::confirmClose, ops::workingDirectory);
             panel.setTargetLabel(TerminalCoordinator::targetLabel);
+            panel.setShellPaths(TerminalCoordinator::shellPathsFor);
+            panel.setRemotePrograms(TerminalCoordinator::remotePrograms);
+            panel.setMenuExtras(() -> {
+                MenuItem here = new MenuItem(tr("terminal.newHere"));
+                here.setOnAction(e -> panel.newTerminalHere());
+                return List.of(here);
+            });
             panel.setOnError(host::setError);
             panel.setLinkActions(new LinkActions() {
                 @Override
@@ -200,22 +213,112 @@ final class TerminalCoordinator {
      */
     private TerminalConnector.Factory shellFor(Path directory, String shell) {
         if (directory != null && !Vfs.isLocal(directory)) {
-            return remoteShell(directory);
+            return remoteShell(directory, this::integrationOn);
         }
         // A folder of this machine can still run elsewhere: a dev container's mount, a WSL distribution's share.
         if (directory != null && !ExecTargets.forPath(directory).isLocal()) {
-            return remoteShell(directory);
+            return remoteShell(directory, this::integrationOn);
         }
         return localShell(directory, shell);
     }
 
     /** The login shell where a folder's commands run (its SSH host, container or WSL distribution). */
     static TerminalConnector.Factory remoteShell(Path directory) {
+        return remoteShell(directory, target -> null);
+    }
+
+    /** As above, with the shell-integration folder {@code integration} finds on the target (null for none). */
+    static TerminalConnector.Factory remoteShell(
+            Path directory, java.util.function.Function<ExecTarget, String> integration) {
         return (columns, rows) -> {
             ExecTarget target = ExecTargets.forPath(directory);
-            TerminalChannel channel = target.startTerminal(new TerminalSpec(directory, columns, rows));
+            TerminalChannel channel =
+                    target.startTerminal(new TerminalSpec(directory, columns, rows, integration.apply(target)));
             return new ChannelConnector(channel, target.id());
         };
+    }
+
+    /** Integration folders already installed, by target id: installing asks the target, so it is asked once. */
+    private final java.util.Map<String, String> installed = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private Path localIntegration;
+
+    /** The shell-integration folder on {@code target}, installed there on first use; null when off or not possible. */
+    private String integrationOn(ExecTarget target) {
+        if (!host.settings().isTerminalShellIntegration()) {
+            return null;
+        }
+        String known = installed.get(target.id());
+        if (known != null) {
+            return known.isEmpty() ? null : known;
+        }
+        String folder;
+        try {
+            var cache = target.cache();
+            folder = cache == null ? "" : ShellIntegration.installOn(cache);
+        } catch (IOException | RuntimeException e) {
+            folder = ""; // a read-only home, a container without a writable one: plain login shells there
+        }
+        installed.put(target.id(), folder);
+        return folder.isEmpty() ? null : folder;
+    }
+
+    /** The shell-integration folder on this machine, installed on first use; null when off or not possible. */
+    private Path localIntegration() {
+        if (!host.settings().isTerminalShellIntegration()) {
+            return null;
+        }
+        if (localIntegration == null) {
+            try {
+                localIntegration = ShellIntegration.installLocal(ops.configDir());
+            } catch (IOException | RuntimeException e) {
+                return null;
+            }
+        }
+        return localIntegration;
+    }
+
+    /**
+     * How the paths a shell in {@code directory} prints map to paths here: null for a shell on this machine, else
+     * its target's own mapping (the host's file over SFTP, the folder a container mounts, the WSL share).
+     */
+    static java.util.function.Function<String, Path> shellPathsFor(Path directory) {
+        if (directory == null) {
+            return null;
+        }
+        ExecTarget target = ExecTargets.forPath(directory);
+        return target.isLocal() ? null : target::toPath;
+    }
+
+    /** How long the "still running?" question may take on another machine before the tab closes without asking. */
+    private static final java.time.Duration REMOTE_PROGRAMS_TIMEOUT = java.time.Duration.ofSeconds(3);
+
+    /**
+     * What a shell elsewhere is running: its child processes' names, asked of its machine with one {@code ps} —
+     * empty when that machine has no {@code ps} or does not answer in time.
+     */
+    static List<String> remotePrograms(Path directory, Long pid) {
+        if (directory == null || pid == null || pid <= 0) {
+            return List.of();
+        }
+        var result = com.editora.process.ProcessRunner.run(
+                directory, REMOTE_PROGRAMS_TIMEOUT, List.of("ps", "-A", "-o", "ppid=,comm="));
+        return result.ok() ? childrenOf(result.out(), pid) : List.of();
+    }
+
+    /** {@code ps -A -o ppid=,comm=} output → the names of {@code pid}'s children, innermost-first order kept. Pure. */
+    static List<String> childrenOf(String psOutput, long pid) {
+        List<String> names = new java.util.ArrayList<>();
+        for (String line : psOutput.split("\\R")) {
+            String[] f = line.strip().split("\\s+", 2);
+            if (f.length == 2 && f[0].equals(Long.toString(pid))) {
+                String name = RunningProgram.displayName(f[1]);
+                if (!name.isBlank() && !names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        return names;
     }
 
     /** What a tab's chip says: "Local", the host of a remote folder, or the container or WSL distribution. */
@@ -249,8 +352,8 @@ final class TerminalCoordinator {
     private TerminalConnector.Factory localShell(Path directory, String shell) {
         return (columns, rows) -> {
             List<String> command = shell == null || shell.isBlank() ? List.of() : LocalShell.shellCommand(shell);
-            LocalPtyConnector connector =
-                    LocalShell.start(command, directory == null ? null : directory.toString(), columns, rows);
+            LocalPtyConnector connector = LocalShell.start(
+                    command, directory == null ? null : directory.toString(), columns, rows, localIntegration());
             try {
                 ProcessRegistry.track(connector.trackableProcess());
             } catch (RuntimeException e) {

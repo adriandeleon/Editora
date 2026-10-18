@@ -54,6 +54,7 @@ public final class PtyChannel implements TerminalChannel {
     }
 
     /** The shell's pid on its target, once its start script has said it; -1 before that. */
+    @Override
     public long pid() {
         return pid;
     }

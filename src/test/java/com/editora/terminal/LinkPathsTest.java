@@ -82,4 +82,17 @@ class LinkPathsTest {
         assertNull(LinkPaths.fromFileUri("https://example.com/a"));
         assertNull(LinkPaths.fromFileUri(null));
     }
+
+    @Test
+    void aPathFromAShellElsewhereIsMappedToWhereEditoraOpensIt() {
+        java.util.function.Function<String, java.nio.file.Path> host = p -> java.nio.file.Path.of("/mnt/host" + p);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.nio.file.Path.of("/mnt/host/srv/app/src/A.java"),
+                LinkPaths.resolveOn("src/A.java", "/srv/app", host));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.nio.file.Path.of("/mnt/host/etc/hosts"), LinkPaths.resolveOn("/etc/hosts", "/srv/app", host));
+        org.junit.jupiter.api.Assertions.assertNull(LinkPaths.resolveOn("src/A.java", null, host), "no cwd");
+        org.junit.jupiter.api.Assertions.assertNull(
+                LinkPaths.resolveOn("~/notes.txt", "/srv/app", host), "that machine's home is not this one's");
+    }
 }

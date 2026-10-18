@@ -2,7 +2,8 @@
 
 Status: **in progress** ([ADR 0014](../decisions/0014-integrated-terminal.md)). The Terminal tool window
 runs shells where a project's commands run: this machine, an SSH host, a dev container or a WSL distribution.
-Open Terminal Here opens one, and links in the output open in the editor.
+Open Terminal Here opens one, links in the output open in the editor, and shell integration reports the
+shell's folder and its prompts.
 
 ## Terminals on an SSH host
 
@@ -58,7 +59,8 @@ belongs elsewhere.
   [-u user] <id> /bin/sh -c <script>` (`ContainerEngine.terminalArgv`; the engine's client wants a tty of its own
   for `-t`, and forwards SIGWINCH), or `wsl.exe -d <distro> --exec /bin/sh -c …`, through
   `WslExecTarget.windowsSafe`, on ConPTY.
-- **The script** is `PosixShell.terminalScript(cwd, markPid)`, shared with SSH. It prints a pid line
+- **The script** is `PosixShell.terminalScript(cwd, markPid, integration)`, shared with SSH (which marks its pid
+  too, for the close check below). It prints a pid line
   (`TERMINAL_PID_MARK`), exports `TERM`/`COLORTERM`/`TERM_PROGRAM`, changes to the folder, and execs the login
   shell: `$SHELL`, else bash, else sh, since containers often set none. `PidMarkStream` takes the pid line out
   of the output and keeps the pid.
@@ -86,6 +88,45 @@ belongs elsewhere.
   offers one that exists. The coordinator's `LinkActions` sends files to `MainController.openAndGoto` at the
   1-based `line:col` the output carried, folders to the Project tree, and URLs to the browser.
 
+## Shell integration
+
+On by default (`terminalShellIntegration`, Settings → Terminal, schema 132; D7). The shell reports its folder
+with OSC 7 and marks its prompts with OSC 133 (`A` prompt, `C` command output starts, `D;<status>` it ended), as
+VS Code, iTerm2 and WezTerm shells do.
+
+- **Read loop:** `TappedConnector` wraps every connector and feeds what it reads through `OscTap`, which takes the
+  two sequences out of the stream and passes everything else on (other OSCs too). An event is delivered on the
+  *next* read, after JediTerm has drawn the text before it, so the cursor is where the sequence was. A sequence
+  longer than 4 KB is passed through unread.
+- **Scripts** (`resources/com/editora/terminal/shell-integration/`): `editora.bash` is bash's `--init-file`. It
+  reads the login files itself (`/etc/profile`, then the first of `~/.bash_profile`, `~/.bash_login`,
+  `~/.profile`), then adds its hook to the front of `PROMPT_COMMAND` and the `C` mark to `PS0`. `PS0`'s `$(…)`
+  runs in a subshell, so the mark is a literal escape, and "a command ran" (for `D`) is `HISTCMD` changing. zsh
+  gets `ZDOTDIR` wrappers that source the user's own `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` with
+  `ZDOTDIR` restored, plus `precmd`/`preexec` hooks. Other shells start plain.
+- **Where they live:** `ShellIntegration.version()` hashes the scripts, and they are written once per version:
+  locally under `<config>/terminal/shell-integration/<version>/` (`LocalShell.integrated` adds the arguments),
+  on a target through its `TargetCache` (`installOn`), once per target per window. The remote script checks the
+  files are readable before using them, and a target without a writable cache gets plain login shells.
+- **What it drives:** the tab's folder (OSC 7 replaces `ProcessCwd`, and is the only cwd a remote shell has),
+  relative links resolved against it on the target (`LinkPaths.resolveOn` with the target's `toPath`), **New
+  Terminal Here** in the terminal's menu (a tab in the shell's current folder), **Copy Last Command Output**
+  (what came between the last `C` and `D`), and prompt jumps: Ctrl+Shift+Up/Down (Cmd+Up/Down on macOS) scroll
+  to the previous or next prompt.
+- **Marks move with their text** as lines scroll into history. JediTerm's history listener fires only on
+  resizes and clears, so `TerminalView` derives the shift on every model change from the history count plus the
+  lines a full history drops (`linesDiscardedFromHistory`). The same fix keeps a scrolled-back view and a
+  selection on their text, which Termina's port did not.
+- **Closing a remote shell that is running something asks first**, as a local one does: the script's pid line
+  gives the shell's pid on the target, and `ps -A -o ppid=,comm=` there lists its children
+  (`TerminalCoordinator.remotePrograms`, 3 s budget; no answer means close without asking).
+- **Tests:** `OscTapTest`, `ShellIntegrationTest`, `ShellIntegrationPtyTest` (real bash and zsh on a PTY:
+  folder, marks, exit status; zsh is skipped where it is not installed), `TerminalViewFxTest` (cwd report, last
+  output, prompt jumps through history, a scrolled-back view staying put), the `PosixShellTest` and
+  `LocalShellTest` argument cases, and `RealSshdProbeFxTest`'s shell-integration step: the scripts installed
+  through the host's cache, OSC 7 and 133 from the host's bash or zsh, and the close check seeing a `sleep`
+  (passes against OpenSSH 10.0; skipped for an account with another shell).
+
 ## Keys
 
 A focused terminal owns the keyboard. `TerminalPanel` sets `KeyDispatcher.SHELL_KEYS`, a predicate that says
@@ -96,6 +137,7 @@ word, Escape is vim's, and Emacs's C-x is the shell's.
 - Through by default: `tool.*`, `palette.show`, `search.everywhere`, `terminal.*` (Settings → Terminal →
   Commands that reach Editora; `Settings.DEFAULT_TERMINAL_IDE_COMMANDS`, kept equal to
   `TerminalKeys.DEFAULT_IDE_COMMANDS` by a test). On macOS every Cmd chord reaches Editora too.
+- Prompt jumps (Ctrl+Shift+Up/Down, Cmd+Up/Down on macOS) are the terminal's own too, never Editora's.
 - Copy and Paste are the terminal's own: Ctrl+Shift+C/V, Cmd+C/V on macOS. A filter on the panel runs before
   the view's, which would otherwise encode Ctrl+Shift+C as ^C.
 - Bindings: `tool.terminal` is Alt+F12 (IntelliJ) and Ctrl+` (VS Code, CUA, Sublime); `terminal.new` is
@@ -106,7 +148,8 @@ word, Escape is vim's, and Emacs's C-x is the shell's.
 Settings → Terminal (Languages & Tools), schema 130: `terminalShell` (blank = login shell),
 `terminalFontSize` (0 = the editor's size; the face is always the editor's), `terminalCursor`, `terminalBell`,
 `terminalScrollback`, `terminalIdeCommands`, `terminalConfirmClose`. Font, cursor, bell and the key list apply
-to open terminals. Scrollback and shell apply from the next tab.
+to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds `terminalUseExternal`; 132
+adds `terminalShellIntegration`, which applies from the next tab.
 
 ## Where the code came from
 
@@ -161,7 +204,9 @@ terminal as it does into the editor.
 - On Linux pty4j sets the window size just after the child starts, so a program started directly (not a
   shell) can read 0×0 if it asks at once. See `TerminalImageCheck`.
 - Local shell cwd tracking (`ProcessCwd`) works on Linux (`/proc`) and macOS (`proc_pidinfo` via JNA), not
-  Windows. Remote shells will report their directory with OSC 7.
+  Windows. A shell with integration reports its own directory (OSC 7), which wins over the pid's.
+- A remote terminal opens on the FX thread (as since SSH terminals came in), and the first one on a target also
+  writes the integration scripts there: a few SFTP writes, or one `exec` per file in a container.
 - The scrollbar is coloured through the looked-up colours `-terminal-thumb` and `-terminal-thumb-hover`
   (`.terminal-scroll-bar` in `app.css`, Termina's rules).
 - No palette rescues a prompt built for a dark terminal. Oh My Bash's agnoster theme draws `user@host` in the

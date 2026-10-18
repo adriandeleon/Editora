@@ -797,6 +797,43 @@ class RealSshdProbeFxTest {
             }
         });
 
+        step("shell integration on the host: folder and prompt marks, and the close check", () -> {
+            String integration = com.editora.terminal.ShellIntegration.installOn(target().cache());
+            com.editora.process.TerminalChannel shell =
+                    target().startTerminal(new com.editora.process.TerminalSpec(app, 80, 24, integration));
+            try {
+                StringBuffer seen = pump(shell);
+                // Split so the echo of what was typed does not match: only the output reads "login=/…".
+                type(shell, "echo log\"\"in=$SHELL\n");
+                await("the account's shell", 20, () -> seen.toString().contains("login=/"));
+                java.util.regex.Matcher login =
+                        java.util.regex.Pattern.compile("login=\\S*/(\\S+)").matcher(seen.toString());
+                String name = login.find() ? login.group(1) : "?";
+                await("the shell's pid line", 20, () -> shell.pid() > 0);
+                check(!seen.toString().contains("EDITORA "), "the pid line is not shown");
+                if (!name.equals("bash") && !name.equals("zsh")) {
+                    return "SKIP — the account's shell is " + name + ", which has no integration";
+                }
+                awaitOutput(seen, "\u001b]133;A");
+                awaitOutput(seen, "\u001b]7;file://");
+                type(shell, "cd /; false\n");
+                awaitOutput(seen, "\u001b]133;D;1");
+                await(
+                        "an OSC 7 for / after the cd",
+                        20,
+                        () -> java.util.regex.Pattern.compile("\u001b]7;file://[^/\u0007]*/\u0007")
+                                .matcher(seen.toString())
+                                .find());
+                type(shell, "sleep 6011\n");
+                await("the terminal's sleep up", 10, () -> sleeping("6011"));
+                List<String> busy = TerminalCoordinator.remotePrograms(app, shell.pid());
+                check(busy.contains("sleep"), "the close check sees the shell's sleep: " + busy);
+                return name + ": OSC 7 and 133 A/D, pid " + shell.pid() + ", running " + busy;
+            } finally {
+                shell.close();
+            }
+        });
+
         String sshdPid = System.getProperty("remote.probe.sshdPid");
         step("a frozen connection is given up on, and its folder reconnects", () -> {
             if (sshdPid == null) {

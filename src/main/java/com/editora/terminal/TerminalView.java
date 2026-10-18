@@ -158,6 +158,9 @@ public final class TerminalView extends Region {
     /** Lines already in history, to derive the delta the history listener does not supply. */
     private int knownHistoryLines;
 
+    /** Lines a full history dropped since the last {@link #onHistoryLineCountChanged()}. */
+    private int discardedHistoryLines;
+
     private volatile boolean dirty = true;
     private int columns = 80;
     private int rows = 24;
@@ -236,12 +239,24 @@ public final class TerminalView extends Region {
      * view is in a scene.
      */
     public void start(TerminalConnector.Factory connectors) throws IOException {
-        TerminalConnector connector = connectors.open(columns, rows);
+        TerminalConnector connector = new TappedConnector(connectors.open(columns, rows), shellIntegration);
         session = new TerminalSession(display, connector, columns, rows, scrollbackLines);
         buffer = session.getTextBuffer();
         // Fires on the emulator thread for every buffer mutation — cheap by design.
-        buffer.addModelListener(this::markDirty);
+        // A line scrolling into history fires only this one (the history listener is for resizes and
+        // clears), so the history shift is checked here too.
+        buffer.addModelListener(() -> {
+            onHistoryLineCountChanged();
+            markDirty();
+        });
         buffer.addHistoryBufferListener(this::onHistoryLineCountChanged);
+        // Once history is full its count stops growing; the lines it drops say how far the text moved.
+        buffer.addChangesListener(new com.jediterm.terminal.model.TextBufferChangesListener() {
+            @Override
+            public void linesDiscardedFromHistory(java.util.List<com.jediterm.terminal.model.TerminalLine> lines) {
+                discardedHistoryLines += lines.size();
+            }
+        });
         session.setOnSessionEnded(() -> Platform.runLater(() -> {
             if (onSessionEnded != null) onSessionEnded.run();
         }));
@@ -251,7 +266,11 @@ public final class TerminalView extends Region {
         // called. Skipped outright where the OS cannot answer, or the shell is not on this machine,
         // so no thread runs to find out.
         if (ProcessCwd.isSupported() && session.pid() > 0) {
-            cwdWatch = CwdWatcher.watch(session.pid(), display::setCwd);
+            cwdWatch = CwdWatcher.watch(session.pid(), cwd -> {
+                if (!shellReportsCwd) {
+                    display.setCwd(cwd);
+                }
+            });
         }
         painter.start();
         markDirty();
@@ -707,22 +726,186 @@ public final class TerminalView extends Region {
         }
     }
 
+    // ---------------------------------------------------------------- shell integration
+
+    /**
+     * Maps a path as the shell names it (its working directory, a path in its output) to one Editora can open: the
+     * same path on this machine for a local shell, the host's file for an SSH shell, the mounted folder for a
+     * container. Null means this machine.
+     */
+    private java.util.function.Function<String, java.nio.file.Path> shellPaths;
+
+    public void setShellPaths(java.util.function.Function<String, java.nio.file.Path> shellPaths) {
+        this.shellPaths = shellPaths;
+    }
+
+    /** Set once the shell reports its own directory (OSC 7); from then on that, not the pid's, is the cwd. */
+    private volatile boolean shellReportsCwd;
+
+    /** A prompt mark (OSC 133) at a buffer row: 0 is the top of the live screen, negative is history. */
+    record PromptMark(char kind, int row, String params) {}
+
+    private final java.util.List<PromptMark> marks = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Marks kept, oldest first; an older one is dropped past this many. */
+    private static final int MAX_MARKS = 2000;
+
+    /** Called on the emulator thread, in stream order: the cursor is where the sequence was. */
+    private final OscTap.Listener shellIntegration = new OscTap.Listener() {
+        @Override
+        public void cwd(String url) {
+            String path = ShellIntegration.pathOfCwdUrl(url);
+            if (path != null) {
+                shellReportsCwd = true;
+                display.setCwd(path);
+            }
+        }
+
+        @Override
+        public void promptMark(char kind, String params) {
+            marks.add(new PromptMark(kind, display.getCursorY() - 1, params));
+            while (marks.size() > MAX_MARKS) {
+                marks.removeFirst();
+            }
+        }
+    };
+
+    /** Moves the marks with their text as lines age into history; drops the ones that left it. */
+    private void shiftMarks(int delta, int history) {
+        if (marks.isEmpty()) {
+            return;
+        }
+        java.util.List<PromptMark> moved = new java.util.ArrayList<>(marks.size());
+        for (PromptMark m : marks) {
+            int row = m.row() - delta;
+            if (row >= -history) {
+                moved.add(new PromptMark(m.kind(), row, m.params()));
+            }
+        }
+        marks.clear();
+        marks.addAll(moved);
+    }
+
+    /** Rows scrolled back from the live screen (0 at it, negative into history), for tests. */
+    int scrollOrigin() {
+        return scrollOrigin;
+    }
+
+    /** Whether the shell sends prompt marks (shell integration is running in it). */
+    public boolean hasPromptMarks() {
+        return !marks.isEmpty();
+    }
+
+    /** The prompt marks, for tests and the panel. */
+    java.util.List<PromptMark> promptMarks() {
+        return java.util.List.copyOf(marks);
+    }
+
+    /** Scrolls to the prompt above the top of the view; false when there is none. */
+    public boolean previousPrompt() {
+        int top = scrollOrigin;
+        int target = Integer.MIN_VALUE;
+        for (PromptMark m : marks) {
+            if (m.kind() == 'A' && m.row() < top && m.row() > target) {
+                target = m.row();
+            }
+        }
+        if (target == Integer.MIN_VALUE || buffer == null) {
+            return false;
+        }
+        scrollOrigin = Math.max(-buffer.getHistoryLinesCount(), Math.min(0, target));
+        markDirty();
+        return true;
+    }
+
+    /** Scrolls to the prompt below the top of the view, or back to the live screen; false when already there. */
+    public boolean nextPrompt() {
+        int top = scrollOrigin;
+        if (top >= 0) {
+            return false;
+        }
+        int target = 0;
+        for (PromptMark m : marks) {
+            if (m.kind() == 'A' && m.row() > top && m.row() < target) {
+                target = m.row();
+            }
+        }
+        scrollOrigin = target;
+        markDirty();
+        return true;
+    }
+
+    /**
+     * What the last command printed: the rows from its output mark (C) up to the mark that followed it (D, or the
+     * next prompt), or up to the cursor while it is still running. Null when the shell sent no such mark.
+     */
+    public String lastCommandOutput() {
+        if (buffer == null) {
+            return null;
+        }
+        PromptMark start = null;
+        int startIndex = -1;
+        for (int i = marks.size() - 1; i >= 0; i--) {
+            if (marks.get(i).kind() == 'C') {
+                start = marks.get(i);
+                startIndex = i;
+                break;
+            }
+        }
+        if (start == null) {
+            return null;
+        }
+        int end = display.getCursorY() - 1;
+        for (int i = startIndex + 1; i < marks.size(); i++) {
+            char k = marks.get(i).kind();
+            if (k == 'D' || k == 'A') {
+                end = marks.get(i).row();
+                break;
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        buffer.lock();
+        try {
+            for (int row = start.row(); row < end; row++) {
+                String line = lineTextAt(row).replace(CharUtils.DWC + "", "").stripTrailing();
+                out.append(line).append('\n');
+            }
+        } finally {
+            buffer.unlock();
+        }
+        String text = out.toString().stripTrailing();
+        return text.isEmpty() ? null : text + "\n";
+    }
+
+    /** Copies {@link #lastCommandOutput()}; false when there was none. */
+    public boolean copyLastOutput() {
+        String text = lastCommandOutput();
+        if (text == null) {
+            return false;
+        }
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
+        return true;
+    }
+
     // ---------------------------------------------------------------- selection
 
     /**
      * Keeps the viewport and any selection pinned to their text as lines age out of the screen and
      * into history.
      *
-     * <p>Called on the emulator thread. The listener carries no delta, so it is derived from the
-     * history line count. Without this, output arriving while the user is scrolled back slides the
+     * <p>Called on the emulator thread, after any buffer change. No listener carries the delta, so
+     * it is derived from the history line count plus the lines a full history dropped. Without this, output arriving while the user is scrolled back slides the
      * text under them, and a selection made moments earlier silently comes to refer to different
      * characters — which matters because copying it would then produce the wrong text.
      */
     private void onHistoryLineCountChanged() {
         if (buffer == null) return;
         int now = buffer.getHistoryLinesCount();
-        int delta = now - knownHistoryLines;
+        int delta = now - knownHistoryLines + discardedHistoryLines;
         knownHistoryLines = now;
+        discardedHistoryLines = 0;
         if (delta <= 0) return;
 
         // At the live view (origin 0) staying pinned to the bottom is what is wanted, so only a
@@ -731,6 +914,7 @@ public final class TerminalView extends Region {
 
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
+        shiftMarks(delta, now);
         markDirty();
     }
 
@@ -933,8 +1117,9 @@ public final class TerminalView extends Region {
             return fromUri != null && java.nio.file.Files.exists(fromUri) ? fromUri : null;
         }
         String cwd = display.getCwd();
-        java.nio.file.Path resolved =
-                LinkPaths.resolve(target, cwd == null || cwd.isBlank() ? null : java.nio.file.Path.of(cwd));
+        java.nio.file.Path resolved = shellPaths == null
+                ? LinkPaths.resolve(target, cwd == null || cwd.isBlank() ? null : java.nio.file.Path.of(cwd))
+                : LinkPaths.resolveOn(target, cwd, shellPaths);
         return resolved != null && java.nio.file.Files.exists(resolved) ? resolved : null;
     }
 
@@ -1046,6 +1231,7 @@ public final class TerminalView extends Region {
     // ---------------------------------------------------------------- context menu
 
     private ContextMenu contextMenu;
+    private MenuItem copyOutputItem;
     private MenuItem openLinkItem;
     private MenuItem copyLinkItem;
     private SeparatorMenuItem linkSeparator;
@@ -1105,6 +1291,8 @@ public final class TerminalView extends Region {
         // menu-bar checkbox on a setting the View menu, its own chord and the settings window can
         // all change while this menu sits built and invisible.
         copyItem.setDisable(!hasSelection());
+        copyOutputItem.setVisible(hasPromptMarks());
+        copyOutputItem.setDisable(lastCommandOutput() == null);
         pasteItem.setDisable(!Clipboard.getSystemClipboard().hasString());
         // The link items are the menu's answer to a gesture nobody was told about: they need no
         // modifier and they say what is there. Computed for the right-clicked cell, not the last
@@ -1140,6 +1328,8 @@ public final class TerminalView extends Region {
                 copyItem,
                 pasteItem,
                 item(tr("terminal.menu.selectAll"), menuIcons.apply("selectAll"), this::selectAll),
+                copyOutputItem =
+                        item(tr("terminal.menu.copyLastOutput"), menuIcons.apply("copy"), this::copyLastOutput),
                 new SeparatorMenuItem(),
                 item(tr("terminal.menu.clearScrollback"), menuIcons.apply("clear"), this::clearScrollback));
         menu.setAutoHide(true);
@@ -1201,6 +1391,8 @@ public final class TerminalView extends Region {
         selectionAnchor = null;
         scrollOrigin = 0;
         knownHistoryLines = 0;
+        discardedHistoryLines = 0;
+        marks.removeIf(m -> m.row() < 0);
         markDirty();
     }
 

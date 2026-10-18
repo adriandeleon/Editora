@@ -13,7 +13,15 @@ class SshTerminalChannelTest {
         assertTrue(line.startsWith("exec /bin/sh -c '"), line);
         assertTrue(line.contains("cd -- '\\''/srv/my app'\\''"), line);
         assertTrue(line.contains("TERM_PROGRAM=Editora"), line);
-        assertTrue(!line.contains("EDITORA %s"), "no pid line over SSH: " + line);
+        assertTrue(line.contains("EDITORA %s"), "a pid line, for the close check on the host: " + line);
+    }
+
+    @Test
+    void withShellIntegrationBashAndZshStartWithItsScripts() {
+        String line = SshTerminalChannel.commandLine("/srv/app", "/home/me/.cache/editora/shell-integration/abc");
+        assertTrue(line.contains("--init-file"), line);
+        assertTrue(line.contains("ZDOTDIR"), line);
+        assertTrue(line.endsWith("-l'"), "any other shell still starts plain: " + line);
     }
 
     @Test
