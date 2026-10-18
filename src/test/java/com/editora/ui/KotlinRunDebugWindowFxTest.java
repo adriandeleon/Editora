@@ -109,6 +109,16 @@ class KotlinRunDebugWindowFxTest {
             FxTestSupport.runOnFx(() -> registry.run("file.run")); // unchanged: straight to java -jar
             await("the second run's output", () -> output(c).contains("Hello, Kotlin"));
             assertFalse(output(c).contains("-include-runtime"), "not compiled again: " + output(c));
+            await("the second run to end", () -> !c.runCoordinator.isRunning());
+
+            // An edit, then Rerun: compiled again (not the old jar replayed), and the old jar is gone.
+            Files.writeString(source, Files.readString(source).replace("\"Kotlin\"", "\"again\""));
+            FxTestSupport.runOnFx(() -> registry.run("run.rerun"));
+            await("the rerun's new output", () -> output(c).contains("Hello, again"));
+            try (var files = Files.list(cache)) {
+                jars = files.filter(f -> f.getFileName().toString().startsWith("Hello-")).count();
+            }
+            assertEquals(1, jars, "the edited file's jar replaced the old one");
         }
     }
 

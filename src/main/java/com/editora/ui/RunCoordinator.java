@@ -182,8 +182,11 @@ final class RunCoordinator {
     /** The hooks the next {@link #streamRun} hands its output to (set by {@link #runTests}). */
     private TestStream pendingTestStream;
 
-    /** How Rerun repeats the last run when it was a test run (which feeds Test Results too); else null. */
-    private Runnable lastTestRerun;
+    /**
+     * How Rerun repeats the last run when replaying its command is not enough, else null: a test run (which feeds
+     * Test Results too), and a Kotlin program (an edited file is compiled again, not its old jar run).
+     */
+    private Runnable lastRerun;
 
     RunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -257,8 +260,8 @@ final class RunCoordinator {
         if (!beginRunRequest() || !saveScriptAndActive(lastRunScript)) {
             return;
         }
-        if (lastTestRerun != null) {
-            lastTestRerun.run();
+        if (lastRerun != null) {
+            lastRerun.run();
             return;
         }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv, lastRunScript);
@@ -282,7 +285,7 @@ final class RunCoordinator {
         }
         pendingTestStream = hooks;
         streamRun(label, dir, argv, env, script);
-        lastTestRerun = rerun;
+        lastRerun = rerun;
         return true;
     }
 
@@ -579,6 +582,7 @@ final class RunCoordinator {
         Runnable launch = () -> {
             runtimeCommand = List.of(kotlinc);
             streamRun(label, cwd, command, env, source);
+            lastRerun = () -> runKotlinProgram(label, source, cwd, javaExecutable, jvmOptions, args, env, kotlinc);
         };
         if (plan.compile().isEmpty()) {
             launch.run();
@@ -1689,7 +1693,7 @@ final class RunCoordinator {
         lastRunScript = script;
         TestStream tests = pendingTestStream;
         pendingTestStream = null;
-        lastTestRerun = null;
+        lastRerun = null;
         stopRequested = false;
         lastRunDir = workingDir;
         consoleDir = workingDir;

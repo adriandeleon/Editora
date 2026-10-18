@@ -742,7 +742,7 @@ class RunConfigurationCommandsFxTest {
     @Test
     void debugViaBuildSaysWhatItNeedsAtEachStep() throws Exception {
         FxTestSupport.runOnFx(coordinator::debugViaBuild);
-        assertEquals(List.of(tr("status.debug.needJavaFile")), statuses);
+        assertEquals(List.of(tr("status.debug.needJvmFile")), statuses);
 
         statuses.clear();
         buffer(dir.resolve("loose/Loose.java"), "class Loose {}\n");
