@@ -176,11 +176,34 @@ public final class KeyEncoding {
         return text.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Wraps text for bracketed paste, which lets the shell tell a paste from typing. */
+    /**
+     * Wraps text for bracketed paste, which lets the shell tell a paste from typing.
+     *
+     * <p>The text is cleaned first. A paste is data, never keystrokes, but a clipboard can hold control bytes —
+     * text copied from a web page may carry a hidden {@code ESC [201~} that ends the bracket early, after which
+     * the rest is typed: {@code \r} runs a command, ESC leaves vim's insert mode, Ctrl+C and Ctrl+D act. So, as
+     * xterm does with {@code allowPasteControls} off and as VTE does, every C0 control other than Tab and the
+     * line breaks, DEL, and every C1 control are dropped; with ESC gone no escape sequence survives.
+     */
     public static byte[] encodePaste(String text, boolean bracketed) {
-        String normalised = text.replace("\r\n", "\r").replace('\n', '\r');
+        String normalised = pasteText(text).replace("\r\n", "\r").replace('\n', '\r');
         if (!bracketed) return normalised.getBytes(StandardCharsets.UTF_8);
         return ("[200~" + normalised + "[201~").getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** The pasted text without the control characters a paste must not deliver (see {@link #encodePaste}). */
+    static String pasteText(String text) {
+        StringBuilder out = null;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean drop = (c < 0x20 && c != '\t' && c != '\n' && c != '\r') || (c >= 0x7f && c <= 0x9f);
+            if (drop && out == null) {
+                out = new StringBuilder(text.length()).append(text, 0, i);
+            } else if (!drop && out != null) {
+                out.append(c);
+            }
+        }
+        return out == null ? text : out.toString();
     }
 
     private static byte[] withMeta(byte[] bytes, KeyEvent e, boolean altIsMeta) {
