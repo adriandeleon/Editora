@@ -1,0 +1,87 @@
+# The integrated terminal's native stack inside the packaged app (ADR 0014): builds the jlink app image the
+# release builds (same JDK distribution, same -Pdist profile, APP_IMAGE only) and runs
+# `Editora --check-terminal`, which starts a shell on a pseudo-terminal and reads it back through JediTerm.
+#
+# Why the image and not just the tests: pty4j's natives load from a resource folder JPMS leaves readable only
+# by the accident of its name, jediterm and pty4j are Kotlin automatic modules whose descriptors are written
+# by moditect, and jlink links whatever those descriptors say. Each of those can pass every test on the class
+# path and still fail at the first emulator call of the linked app. TerminalImageCheckTest covers the class
+# path on the CI lanes.
+#
+# Runs on pull requests that touch the dependencies, the descriptors or the check itself, by hand (Actions →
+# Terminal image → Run workflow), and on `probe/**` branches.
+name: Terminal image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['probe/**']
+  pull_request:
+    paths:
+      - pom.xml
+      - m2-repo/**
+      - src/main/java/module-info.java
+      - src/main/java/com/editora/terminal/**
+      - scripts/aot_build.java
+      - .github/workflows/terminal-image.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terminal-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Image (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Liberica, as the release builds: jlink's output depends on the JDK it links from.
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: liberica
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .mvn/maven.config
+
+      # No virtual display on Linux: AOT training then skips (aot_build.java degrades gracefully), which this
+      # check does not need. macOS and Windows runners have a display and train as a release would.
+      - name: Build the app image (-Pdist)
+        shell: bash
+        run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package
+
+      - name: Check the terminal (Linux)
+        if: runner.os == 'Linux'
+        run: target/dist/Editora/bin/Editora --check-terminal
+
+      - name: Check the terminal (macOS)
+        if: runner.os == 'macOS'
+        run: target/dist/Editora.app/Contents/MacOS/Editora --check-terminal
+
+      # The Windows launcher is a GUI-subsystem program: run directly, the shell does not wait for it and its
+      # output goes nowhere. Start-Process with redirected streams waits and keeps both.
+      - name: Check the terminal (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'check-terminal.out'
+          $err = Join-Path $env:RUNNER_TEMP 'check-terminal.err'
+          $p = Start-Process -FilePath 'target\dist\Editora\Editora.exe' -ArgumentList '--check-terminal' `
+            -RedirectStandardOutput $out -RedirectStandardError $err -Wait -PassThru -NoNewWindow
+          Get-Content $out, $err
+          exit $p.ExitCode

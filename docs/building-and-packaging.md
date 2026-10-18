@@ -55,6 +55,11 @@ Quick unpackaged bundle (skips the installer):
 mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package    # → target/dist/Editora.app
 ```
 
+To check that the integrated terminal's native stack works in the bundle, run its launcher with
+`--check-terminal` (for example `target/dist/Editora/bin/Editora --check-terminal`). It prints one line and
+exits 0 when a shell on a pseudo-terminal answered with the right size. The Terminal image workflow does this
+on all three platforms; see [dependencies.md](dependencies.md#the-integrated-terminal--jediterm-pty4j-jna-kotlin).
+
 ### What the dist profile does
 
 - it consumes the **moditect**-patched jars. The `moditect-maven-plugin` execution
