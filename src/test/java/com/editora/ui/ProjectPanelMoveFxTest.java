@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelMoveFxTest {
 
     @BeforeAll
@@ -41,8 +42,8 @@ class ProjectPanelMoveFxTest {
 
         List<Rename> renames = new ArrayList<>();
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel p =
-                    new ProjectPanel(x -> {}, (from, to) -> renames.add(new Rename(from, to)), x -> {}, x -> false);
+            ProjectPanel p = DisposedPanels.track(
+                    new ProjectPanel(x -> {}, (from, to) -> renames.add(new Rename(from, to)), x -> {}, x -> false));
             p.setRoot(root);
             return p;
         });
@@ -71,8 +72,8 @@ class ProjectPanelMoveFxTest {
         List<String> asked = new ArrayList<>();
         boolean[] answer = {true};
         ProjectPanel panel = FxTestSupport.callOnFx(() -> {
-            ProjectPanel p =
-                    new ProjectPanel(x -> {}, (from, to) -> renames.add(new Rename(from, to)), x -> {}, x -> false);
+            ProjectPanel p = DisposedPanels.track(
+                    new ProjectPanel(x -> {}, (from, to) -> renames.add(new Rename(from, to)), x -> {}, x -> false));
             p.setRoot(root);
             p.setConfirmQuestionForTest(question -> {
                 asked.add(question);

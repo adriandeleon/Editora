@@ -231,7 +231,7 @@ class LspWorkspaceEditFxTest {
     @AfterEach
     void tearDown() throws Exception {
         FxTestSupport.runOnFx(() -> host.buffers.forEach(EditorBuffer::dispose));
-        manager.shutdownAll();
+        manager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
     }
 
     /** Creates the file and an open buffer for it, registered with the fakes. */

@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@org.junit.jupiter.api.extension.ExtendWith(DisposedPanels.class)
 class ProjectPanelFilterClearFxTest {
 
     @BeforeAll
@@ -26,7 +27,8 @@ class ProjectPanelFilterClearFxTest {
     }
 
     private static ProjectPanel newPanel() throws Exception {
-        return FxTestSupport.callOnFx(() -> new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false));
+        return FxTestSupport.callOnFx(
+                () -> DisposedPanels.track(new ProjectPanel(p -> {}, (a, b) -> {}, p -> {}, p -> false)));
     }
 
     private static Button clearButton(ProjectPanel panel) {

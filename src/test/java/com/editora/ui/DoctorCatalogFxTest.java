@@ -264,6 +264,32 @@ class DoctorCatalogFxTest {
         assertEquals("/home/u/proj/.venv/bin/python (.venv)", row.detail());
     }
 
+    /** A file watcher the system refuses (Linux: the inotify instances used up) is a warning with the reason. */
+    @Test
+    void theFileWatchingRowSaysWhenTheSystemRefusesAWatcher() throws Exception {
+        String limit = "User limit of inotify instances reached or too many open files";
+        com.editora.io.WatchServices.Opener previous = com.editora.io.WatchServices.setOpenerForTest(() -> {
+            throw new java.io.IOException(limit);
+        });
+        try {
+            DoctorCheck row =
+                    spec(specs(new Host(), new Ops()), "fileWatch").probe().get();
+            assertEquals(com.editora.doctor.DoctorStatus.WARN, row.status());
+            assertEquals(limit, row.detail());
+            assertEquals("doctor.tip.fileWatchPolling", row.tipKey());
+        } finally {
+            com.editora.io.WatchServices.setOpenerForTest(previous);
+        }
+        com.editora.io.WatchServices.setOpenerForTest(() -> new com.editora.io.PollingWatchService());
+        try {
+            DoctorCheck row =
+                    spec(specs(new Host(), new Ops()), "fileWatch").probe().get();
+            assertEquals(com.editora.doctor.DoctorStatus.OK, row.status(), "a watcher the system gives is fine");
+        } finally {
+            com.editora.io.WatchServices.setOpenerForTest(previous);
+        }
+    }
+
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {
         DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
         return FxTestSupport.callOnFx(doctor::buildSpecs);

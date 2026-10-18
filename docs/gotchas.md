@@ -370,3 +370,21 @@ which retries for about 0.6 s while the exec fails with `ETXTBSY`. Every local p
 goes through it: `LocalExecTarget` (so every `ProcessRunner` call), the login-shell PATH query, the Run
 and Build tool windows, local language servers, the debug adapters, the AI agent, the file manager /
 terminal launchers and the HTML preview's browser launch. Start new local processes through it too.
+
+## A file watcher is a scarce resource on Linux (inotify instances)
+
+**Symptom:** the project tree stops following the disk, or the watcher tests
+(`ProjectPanelIncrementalRefreshFxTest`, `MarkdownLintProjectFxTest`, `PythonLspFxTest`) time out, but only
+while several test runs or other programs are going. A new JVM then fails
+`FileSystems.getDefault().newWatchService()` with "User limit of inotify instances reached or too many open
+files".
+
+**Why/fix:** each JDK `WatchService` is one inotify instance, and a Linux user has
+`fs.inotify.max_user_instances` of them (128 by default) across *every* program. A test fork that never
+closed its `ProjectPanel`s and `LspManager`s held up to 72 for the whole run; three verifies at once used
+them all up. Open watchers through `WatchServices.open()` / `WatchServices.register(…)`
+([`WatchServices.java`](../src/main/java/com/editora/io/WatchServices.java)): when the system refuses one it
+falls back to `PollingWatchService` (folders listed every 2 s), logs it once, and the Doctor's **File
+Watching** row says why. In tests, dispose every `ProjectPanel` (`@ExtendWith(DisposedPanels.class)` +
+`DisposedPanels.track(…)`) and end an `LspManager` with `close()`, not `shutdownAll()` — only `close()`
+stops its folder watchers.

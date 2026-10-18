@@ -664,6 +664,14 @@ final class DoctorCoordinator {
                     ? base.ok(detail)
                     : base.warn(detail, "doctor.tip.prereqs", String.join(", ", missing));
         }));
+        // The project tree and language servers follow the disk through the system's file watcher; without one
+        // (Linux: the user's inotify instances used up) folders are polled, which the user should hear about.
+        DoctorCheck watch = DoctorCheck.checking("fileWatch", "system", tr("doctor.label.fileWatch"), "");
+        specs.add(probe(watch, base -> {
+            String why = com.editora.io.WatchServices.probe();
+            why = why != null ? why : com.editora.io.WatchServices.fallbackReason();
+            return why == null ? base.ok(tr("doctor.fileWatch.native")) : base.warn(why, "doctor.tip.fileWatchPolling");
+        }));
         String os = System.getProperty("os.name", "");
         if (s.isAdminSave() && ElevatedSave.supportedOnOs(os)) {
             DoctorCheck admin = DoctorCheck.checking(
