@@ -395,7 +395,8 @@ final class TerminalCoordinator {
             throws IOException {
         started = true; // the window opening for a program does not also start a shell
         ops.showToolWindow();
-        return panel().runProgram(title, directory, programConnector(directory, argv, env), onExit);
+        String program = argv.isEmpty() ? title : RunningProgram.displayName(argv.getFirst());
+        return panel().runProgram(title, program, directory, programConnector(directory, argv, env), onExit);
     }
 
     /** Opens {@code argv} on a pseudo-terminal where {@code directory}'s commands run. */

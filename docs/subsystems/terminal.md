@@ -159,6 +159,8 @@ VS Code, iTerm2 and WezTerm shells do.
   - When the program ends the tab stays, with a corner chip giving the exit code (`run.exited`), and `onExit`
     gets it: -1 when the tab was closed under the program or the connection went.
   - `ProgramRun.stop` ends the program and keeps the tab.
+  - Closing the tab while its program runs asks first: the busy-shell question, naming the program's
+    executable, under the same `terminalConfirmClose` setting. An ended program's tab closes without asking.
 - **Run in a Terminal tab** (a run configuration's Console option, `RunConfiguration.runInTerminal`, workspace
   schema 21): `RunCoordinator.runConfig` marks the request, and `streamRun`, where every type's launch ends,
   sends the command to `runProgram` instead of `RunService`.

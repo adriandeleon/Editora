@@ -549,6 +549,71 @@ class TerminalPanelFxTest {
     }
 
     @Test
+    void closingARunningProgramsTabAsksFirstAndAnEndedOneDoesNot() throws Exception {
+        AtomicBoolean answer = new AtomicBoolean(false);
+        List<String> asked = new ArrayList<>();
+        show(
+                fakeShells(),
+                (title, programs) -> {
+                    asked.add(title + ": " + programs);
+                    return answer.get();
+                },
+                null);
+        FakeConnector program = new FakeConnector();
+        List<Integer> exits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Main", "java", null, (c, r) -> program, exits::add));
+
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of("Main: [java]"), asked, "asked, naming the program");
+        assertTrue(fx(panel::hasTerminals), "Cancel keeps the tab");
+        assertFalse(program.wasClosed(), "and the program runs on");
+        assertTrue(exits.isEmpty());
+
+        answer.set(true);
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertFalse(fx(panel::hasTerminals), "Close ends it");
+        assertTrue(program.wasClosed());
+
+        // Once its program has ended, a tab closes without a question.
+        asked.clear();
+        FakeConnector done = new FakeConnector();
+        List<Integer> doneExits = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> panel.runProgram("Done", "make", null, (c, r) -> done, doneExits::add));
+        done.exit(0);
+        await(() -> !doneExits.isEmpty(), "the program's end");
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of(), asked);
+        assertFalse(fx(panel::hasTerminals));
+    }
+
+    @Test
+    void withConfirmCloseOffAProgramsTabClosesWithoutAsking() throws Exception {
+        List<String> asked = new ArrayList<>();
+        show(fakeShells(), (title, programs) -> asked.add(title) && false, null);
+        fx(() -> {
+            panel.apply(new TerminalPanel.Config("", 13, 1000, TerminalCursor.BAR, false, "", List.of(), false));
+            return null;
+        });
+        FakeConnector program = new FakeConnector();
+        fx(() -> panel.runProgram("Main", "java", null, (c, r) -> program, code -> {}));
+        fx(() -> {
+            panel.closeActive();
+            return null;
+        });
+        assertEquals(List.of(), asked);
+        assertTrue(program.wasClosed());
+    }
+
+    @Test
     void stopEndsTheProgramButKeepsItsTab() throws Exception {
         show(fakeShells(), (title, programs) -> true, null);
         FakeConnector program = new FakeConnector();

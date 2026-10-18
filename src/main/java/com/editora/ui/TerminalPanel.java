@@ -171,6 +171,7 @@ final class TerminalPanel extends StackPane {
                         killed.accept(-1); // its tab closed under it: the program ends with it
                     }
                     dirs.remove(removed);
+                    programNames.remove(removed);
                     TerminalView view = views.remove(removed);
                     if (view != null) {
                         view.close();
@@ -280,6 +281,9 @@ final class TerminalPanel extends StackPane {
     /** Program tabs, with whom to tell when the program ends; told once. */
     private final Map<Tab, java.util.function.IntConsumer> programExits = new LinkedHashMap<>();
 
+    /** What a program tab runs, by name, for the question its close asks while it runs. */
+    private final Map<Tab, String> programNames = new LinkedHashMap<>();
+
     /**
      * Runs a program in a new tab titled {@code title}: {@code connector} opens it at the tab's size. When it ends
      * the tab keeps its text under a banner with the exit code, which {@code onExit} receives on the FX thread (-1
@@ -288,6 +292,17 @@ final class TerminalPanel extends StackPane {
      */
     ProgramRun runProgram(
             String title, Path dir, TerminalConnector.Factory connector, java.util.function.IntConsumer onExit)
+            throws IOException {
+        return runProgram(title, title, dir, connector, onExit);
+    }
+
+    /** As above; {@code program} names what runs (its executable), for the question closing its tab asks. */
+    ProgramRun runProgram(
+            String title,
+            String program,
+            Path dir,
+            TerminalConnector.Factory connector,
+            java.util.function.IntConsumer onExit)
             throws IOException {
         TerminalView view = new TerminalView(config.fontSize());
         configure(view);
@@ -302,6 +317,11 @@ final class TerminalPanel extends StackPane {
         target.getStyleClass().add("terminal-target-chip");
         tab.setGraphic(target);
         tab.setTooltip(new Tooltip(title));
+        tab.setOnCloseRequest(e -> {
+            if (!mayClose(tab)) {
+                e.consume();
+            }
+        });
         view.setOnSessionEnded(() -> programEnded(tab, view));
         programExits.put(tab, onExit == null ? code -> {} : onExit);
         try {
@@ -313,6 +333,7 @@ final class TerminalPanel extends StackPane {
         }
         dirs.put(tab, dir == null ? "" : Vfs.toStorableString(dir));
         views.put(tab, view);
+        programNames.put(tab, program == null || program.isBlank() ? title : program);
         tabs.getTabs().add(tab);
         tabs.getSelectionModel().select(tab);
         focusActive();
@@ -532,6 +553,11 @@ final class TerminalPanel extends StackPane {
         TerminalView view = views.get(tab);
         if (view == null || !config.confirmClose() || view.getSession() == null) {
             return true;
+        }
+        if (programNames.containsKey(tab)) {
+            // A program tab: its program is what closing ends, while it runs; once it ended there is nothing to ask.
+            return !programExits.containsKey(tab)
+                    || closeGuard.confirm(tab.getText(), new ArrayList<>(List.of(programNames.get(tab))));
         }
         long pid = view.getSession().pid();
         long remote = view.getSession().remotePid();

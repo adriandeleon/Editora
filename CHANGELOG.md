@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     It starts only when echoes take over 100 ms (Settings → Terminal → Type-ahead).
   - **Run in a Terminal tab**: a run configuration's Console option runs its program in the Terminal (programs
     that draw on the screen or read single keys), locally or on the project's host. The tab stays when it
-    ends, with the exit code.
+    ends, with the exit code; closing it while the program runs asks first.
   - **Debug in a Terminal tab**: Settings → Debugging → Java → "Run the program in a Terminal tab instead" does the same
     for a debugged Java or Python program.
   - The terminal is Termina's (github.com/adriandeleon/Termina), ported.
