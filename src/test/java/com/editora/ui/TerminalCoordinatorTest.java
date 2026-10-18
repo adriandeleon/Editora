@@ -46,4 +46,17 @@ class TerminalCoordinatorTest {
             child.destroyForcibly();
         }
     }
+
+    @Test
+    void theTerminalIsInTheMenusAndTheDefaultKeymapHasAKeyForIt() {
+        // A default install (Emacs keymap) offered only the stripe and the palette.
+        var ids = MenuBarModel.allCommandIds();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                ids.containsAll(java.util.List.of("tool.terminal", "terminal.new", "file.openTerminal")), ids.toString());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "tool.terminal", com.editora.command.KeymapManager.defaults("emacs", false).get("M-0"));
+        org.junit.jupiter.api.Assertions.assertTrue(com.editora.terminal.TerminalKeys.reachesEditora(
+                "M-0", "tool.terminal", com.editora.terminal.TerminalKeys.DEFAULT_IDE_COMMANDS, false),
+                "and it works from inside the terminal, to hide it again");
+    }
 }
