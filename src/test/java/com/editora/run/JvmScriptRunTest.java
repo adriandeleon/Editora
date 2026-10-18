@@ -52,7 +52,20 @@ class JvmScriptRunTest {
         assertEquals(
                 List.of(Path.of("/sdk/candidates/groovy/current/bin/groovy.bat")),
                 JvmTools.candidates("groovy", Map.of("SDKMAN_DIR", "/sdk"), home, true));
-        assertEquals(List.of(), JvmTools.candidates("kotlinc", Map.of(), home, false), "not yet a known tool");
+        assertEquals(List.of(), JvmTools.candidates("no-such-tool", Map.of(), home, false), "not a known tool");
         assertTrue(JvmTools.knows("groovy"));
+    }
+
+    @Test
+    void kotlincIsLookedForInKotlinHomeThenSdkmansKotlinCandidate() {
+        Path home = Path.of("/home/u");
+        assertEquals(
+                List.of(
+                        Path.of("/opt/kotlinc/bin/kotlinc"),
+                        home.resolve(".sdkman/candidates/kotlin/current/bin/kotlinc")),
+                JvmTools.candidates("kotlinc", Map.of("KOTLIN_HOME", "/opt/kotlinc"), home, false));
+        assertEquals("kotlinc", JvmScriptRun.tool("kotlin"));
+        assertEquals("JAVA_OPTS", JvmScriptRun.jvmOptionsVariable("kotlin"), "kotlinc's launcher reads it");
+        assertEquals("status.run.toolMissing.kotlinc", JvmScriptRun.missingToolKey("kotlin"));
     }
 }

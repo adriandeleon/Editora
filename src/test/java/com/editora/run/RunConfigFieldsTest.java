@@ -15,7 +15,7 @@ class RunConfigFieldsTest {
 
     @Test
     void scriptTypesUseTheTargetAndNoJavaFields() {
-        for (String type : new String[] {"python", "shell", "make", "npm", "groovy"}) {
+        for (String type : new String[] {"python", "shell", "make", "npm", "groovy", "kotlin"}) {
             assertTrue(RunConfigFields.usesTarget(type), type);
             assertFalse(RunConfigFields.usesJavaFields(type), type);
         }
@@ -24,6 +24,8 @@ class RunConfigFieldsTest {
     @Test
     void groovyKeepsTheJdkAndVmArgumentsAndBrowsesForItsScript() {
         assertTrue(RunConfigFields.usesJvmFields("groovy"));
+        assertTrue(RunConfigFields.usesJvmFields("kotlin"));
+        assertTrue(RunConfigFields.usesScriptFile("kotlin"));
         assertTrue(RunConfigFields.usesJvmFields("java"));
         assertFalse(RunConfigFields.usesJvmFields("python"));
         assertTrue(RunConfigFields.usesScriptFile("groovy"));

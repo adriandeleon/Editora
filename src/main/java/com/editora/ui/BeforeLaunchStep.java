@@ -85,6 +85,28 @@ final class BeforeLaunchStep {
             Runnable then) {
         String command = cfg.beforeLaunch();
         List<String> argv = command == null || command.isBlank() ? List.of() : ProgramArgs.tokenize(command);
+        run(host, new Command(cfg.name(), argv, "status.run.beforeLaunch"), cwd, environment, console, then);
+    }
+
+    /**
+     * A step of the launch's own rather than a configuration's: the compile before a Kotlin program runs.
+     *
+     * @param name what the status messages call it (a configuration's or a file's name)
+     * @param argv the command; empty runs {@code then} straight away
+     * @param statusKey the message said while it runs; {@code <statusKey>Failed} (with the name and the last
+     *     line of output) and {@code <statusKey>Stopped} (with the name) say how it ended otherwise
+     */
+    record Command(String name, List<String> argv, String statusKey) {}
+
+    /** Runs {@code command}, then {@code then} when it exits 0 — or reports the failure and runs nothing. */
+    void run(
+            CoordinatorHost host,
+            Command command,
+            Path cwd,
+            Map<String, String> environment,
+            Console console,
+            Runnable then) {
+        List<String> argv = command.argv();
         if (argv.isEmpty()) {
             then.run();
             return;
@@ -96,7 +118,7 @@ final class BeforeLaunchStep {
         active = true;
         stopRequested = false;
         String[] lastLine = {""};
-        host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
+        host.setStatus(tr(command.statusKey(), command.name()));
         console.started(String.join(" ", argv));
         service.runInDir(cwd, argv, environment, new RunService.Listener() {
             @Override
@@ -117,15 +139,15 @@ final class BeforeLaunchStep {
                 active = false;
                 console.ended(code, null);
                 if (stopRequested) {
-                    host.setStatus(tr("status.run.beforeLaunchStopped", cfg.name()));
+                    host.setStatus(tr(command.statusKey() + "Stopped", command.name()));
                 } else if (code == 0) {
                     then.run();
                 } else {
                     // Surface the tool's own output: "before-launch failed" alone tells the user nothing
                     // about which step or why.
                     host.setStatus(tr(
-                            "status.run.beforeLaunchFailed",
-                            cfg.name(),
+                            command.statusKey() + "Failed",
+                            command.name(),
                             lastLine[0].isBlank() ? "exit " + code : lastLine[0].strip()));
                 }
             }
@@ -134,7 +156,7 @@ final class BeforeLaunchStep {
             public void onError(String message) {
                 active = false;
                 console.ended(-1, message);
-                host.setStatus(tr("status.run.beforeLaunchFailed", cfg.name(), message));
+                host.setStatus(tr(command.statusKey() + "Failed", command.name(), message));
             }
         });
         if (!interactive) {
